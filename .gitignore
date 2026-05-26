@@ -1,0 +1,31 @@
+brainstorm/
+plans/
+research/
+.env.*
+.DS_Store
+__pycache__
+*.py[cod]
+
+# Next.js
+.next
+
+# Dev workspaces
+local_state
+local_workspaces
+dump.rdb
+
+# Cursor IDE configuration (auto-managed by Portcullis)
+.cursorrules
+.cursor/
+.claude/
+CLAUDE.md
+.gstack/
+.conductor/
+
+# bridge build artifacts
+bridge/dist/
+bridge/_build/
+
+node_modules
+cli/node_modules
+draft-binresearch/

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:developers.google.com)",
+      "WebFetch(domain:modal.com)",
+      "WebSearch",
+      "WebFetch(domain:cli.github.com)",
+      "WebFetch(domain:station.railway.com)",
+      "WebFetch(domain:docs.railway.com)",
+      "WebFetch(domain:www.notion.so)",
+      "WebFetch(domain:posthog.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:app.posthog.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:longform.asmartbear.com)",
+      "WebFetch(domain:developers.openai.com)",
+      "WebFetch(domain:cursor.com)",
+      "WebFetch(domain:openai.github.io)",
+      "WebFetch(domain:www.google.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Skill(plan-eng-review)"
+    ]
+  }
+}

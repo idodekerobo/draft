@@ -1,0 +1,37 @@
+{
+  "display_information": {
+    "name": "Draft Context",
+    "description": "Passive listener — captures team context for AI sessions",
+    "background_color": "#1a1a1a"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Draft Context",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history",
+        "channels:read",
+        "groups:history",
+        "groups:read",
+        "users:read",
+        "reactions:read",
+        "files:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "message.channels",
+        "message.groups",
+        "reaction_added"
+      ]
+    },
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

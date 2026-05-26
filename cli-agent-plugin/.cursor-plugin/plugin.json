@@ -1,0 +1,35 @@
+{
+  "name": "draft",
+  "displayName": "Draft — Shared Team Context Layer for Cursor",
+  "version": "2.2.0",
+  "description": "Shared team context layer for AI coding agents. Install once — every session starts with full shared context across your whole team, no re-explaining required.",
+  "author": "Idode Kerobo",
+  "license": "MIT",
+  "repository": "https://github.com/idodekerobo/draft-cli-plugin",
+  "homepage": "https://draftai.us",
+  "keywords": ["context-layer", "team-context", "context", "memory", "shared-context", "decisions", "agent-context"],
+  "icon": "",
+  "rules": [
+    ".cursor/rules/draft-context.mdc"
+  ],
+  "skills": [
+    "skills/draft-setup/SKILL.md",
+    "skills/draft-learn/SKILL.md",
+    "skills/draft-setup-collab/SKILL.md",
+    "skills/draft-publish-team/SKILL.md",
+    "skills/draft-load-team/SKILL.md",
+    "skills/draft-switch/SKILL.md",
+    "skills/draft-profiles/SKILL.md"
+  ],
+  "agents": [
+    "agents/draft-researcher.md",
+    "agents/draft-executor.md",
+    "agents/draft-learner.md"
+  ],
+  "hooks": {
+    "config": ".cursor/hooks.json",
+    "scripts": [
+      "scripts/cursor-session-start.sh"
+    ]
+  }
+}

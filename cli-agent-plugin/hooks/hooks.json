@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/session-init.sh\""
+          },
+          {
+            "type": "command",
+            "command": "timeout 30 bash \"${HOME}/.draft/background/load-team.sh\" 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-context.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${HOME}/.draft/background/on-session-end.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

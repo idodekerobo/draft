@@ -1,0 +1,39 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "draft",
+  "owner": {
+    "name": "Idode Kerobo",
+    "email": "idode.kerobo@gmail.com"
+  },
+  "homepage": "https://draftai.us/",
+  "metadata": {
+    "description": "Shared team context layer for AI coding agents. Run /draft:setup once — every session starts with full shared context.",
+    "version": "2.2.0"
+  },
+  "plugins": [
+    {
+      "name": "draft",
+      "description": "Shared team context layer for AI coding agents. Install once — every session starts with full shared context across your whole team.",
+      "version": "2.2.0",
+      "source": "./",
+      "strict": false,
+      "author": {
+        "name": "Idode Kerobo",
+        "email": "idode.kerobo@gmail.com",
+        "url": "https://idode.xyz/"
+      },
+      "homepage": "https://github.com/idodekerobo/draft-cli-plugin",
+      "repository": "https://github.com/idodekerobo/draft-cli-plugin",
+      "license": "MIT",
+      "keywords": [
+        "product-management",
+        "context-layer",
+        "context",
+        "memory",
+        "founders",
+        "claude-code"
+      ],
+      "category": "productivity"
+    }
+  ]
+}

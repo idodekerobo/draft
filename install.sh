@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# install.sh — Draft CLI install script
+#
+# Usage (from repo root after cloning):
+#   bash install.sh
+#
+# What this does:
+#   1. Checks that bun is installed
+#   2. Installs TypeScript dependencies for the CLI
+#   3. Copies the `draft` wrapper script to ~/bin/ (or /usr/local/bin/)
+#   4. Runs `draft add claude-code` to install the plugin and daemon
+#
+# Safe to re-run — all steps are idempotent.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}[Draft]${NC} $1"; }
+warn() { echo -e "${YELLOW}[Draft]${NC} $1"; }
+err()  { echo -e "${RED}[Draft]${NC} $1" >&2; }
+bold() { echo -e "${BOLD}$1${NC}"; }
+
+echo ""
+bold "Draft — install"
+echo "──────────────────────────────────────"
+echo ""
+
+# ── 1. Check bun ──────────────────────────────────────────────────────────────
+
+if ! command -v bun &>/dev/null; then
+    err "bun is required but not installed."
+    echo "  Install it from: https://bun.sh"
+    echo "  Then re-run: bash install.sh"
+    exit 1
+fi
+
+log "bun $(bun --version) found"
+
+# ── 2. Install CLI TypeScript dependencies ────────────────────────────────────
+
+log "Installing CLI dependencies..."
+bun install --cwd "$REPO_ROOT/cli" --silent
+log "  Dependencies installed"
+
+# ── 3. Copy draft wrapper to PATH ─────────────────────────────────────────────
+
+WRAPPER_SRC="$REPO_ROOT/draft"
+INSTALL_DIR=""
+
+# Find a writable directory already in PATH
+for dir in "$HOME/bin" "$HOME/.local/bin" "/usr/local/bin"; do
+    if [ -d "$dir" ]; then
+        INSTALL_DIR="$dir"
+        break
+    fi
+done
+
+# ~/bin is the most common personal bin — create it if it doesn't exist
+if [ -z "$INSTALL_DIR" ]; then
+    INSTALL_DIR="$HOME/bin"
+    mkdir -p "$INSTALL_DIR"
+    warn "Created ~/bin — you may need to add it to your PATH:"
+    warn "  echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
+fi
+
+cp "$WRAPPER_SRC" "$INSTALL_DIR/draft"
+chmod +x "$INSTALL_DIR/draft"
+log "  draft wrapper installed to $INSTALL_DIR/draft"
+
+# ── 4. Verify draft is reachable ──────────────────────────────────────────────
+
+if ! command -v draft &>/dev/null; then
+    warn "'draft' not found in PATH yet. You may need to:"
+    warn "  export PATH=\"$INSTALL_DIR:\$PATH\""
+    warn "  (Add that line to ~/.zshrc or ~/.bashrc to make it permanent)"
+    echo ""
+    warn "Then run: draft add claude-code"
+    echo ""
+    log "Install complete — PATH update required before first use."
+    exit 0
+fi
+
+# ── 5. Install plugin + daemon ────────────────────────────────────────────────
+
+echo ""
+log "Running: draft add claude-code"
+echo ""
+draft add claude-code
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+
+echo ""
+bold "Install complete."
+echo ""
+echo "  draft status       — check daemon and integration health"
+echo "  draft doctor       — diagnose any issues"
+echo "  draft --help       — see all commands"
+echo ""

@@ -1,0 +1,9 @@
+{
+  "name": "draft-slack",
+  "version": "1.0.0",
+  "description": "Draft Slack capture and thread reconstruction (Bun/TypeScript)",
+  "scripts": {
+    "capture": "bun run slack-capture.ts",
+    "rebuild": "bun run slack-rebuild.ts"
+  }
+}

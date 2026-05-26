@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────
+   DESIGN TOKENS — change your palette here
+   ───────────────────────────────────────────── */
+:root {
+  /* Background layers */
+  --color-bg:        #F5F0E8;   /* warm parchment */
+  --color-surface:   #EDE6D9;   /* slightly darker warm paper */
+  --color-surface-2: #E4DCCC;
+
+  /* Text */
+  --color-primary:   #1C1610;   /* near-black, warm-toned */
+  --color-muted:     #7A7060;   /* warm medium gray */
+  --color-faint:     #98948d;   /* light warm gray — dividers / ghost text */
+
+  /* Brand colors — swap these to rebrand */
+  --color-accent:    #A86E20;   /* deeper amber — readable on light bg */
+  --color-accent-2:  #2D6B60;   /* deeper teal — secondary highlights */
+
+  /* Borders */
+  --color-border:    rgba(28, 22, 16, 0.08);
+  --color-border-md: rgba(28, 22, 16, 0.14);
+
+  /* Nav glass — uses bg color with alpha; update these when changing --color-bg */
+  --color-nav-bg:        rgba(245, 240, 232, 0.92);
+  --color-nav-bg-mobile: rgba(245, 240, 232, 0.98);
+
+  /* Fonts */
+  --font-display: var(--font-fraunces), 'Georgia', serif;
+  --font-body:    var(--font-jakarta), 'Helvetica Neue', sans-serif;
+  --font-mono:    var(--font-jetbrains), 'Courier New', monospace;
+
+  /* Grid size for blueprint texture */
+  --grid-size: 40px;
+}
+
+/* ─────────────────────────────────────────────
+   BASE RESET & BODY
+   ───────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─────────────────────────────────────────────
+   TYPOGRAPHY HELPERS
+   ───────────────────────────────────────────── */
+.font-display { font-family: var(--font-display); }
+.font-mono    { font-family: var(--font-mono); }
+
+/* ─────────────────────────────────────────────
+   BLUEPRINT GRID BACKGROUND
+   ───────────────────────────────────────────── */
+.blueprint-grid {
+  background-image:
+    linear-gradient(rgba(168, 110, 32, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168, 110, 32, 0.08) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+}
+
+.blueprint-grid-faint {
+  background-image:
+    linear-gradient(rgba(28, 22, 16, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 22, 16, 0.04) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* ─────────────────────────────────────────────
+   NOISE TEXTURE OVERLAY
+   ───────────────────────────────────────────── */
+.noise-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─────────────────────────────────────────────
+   SCROLL REVEAL ANIMATIONS
+   ───────────────────────────────────────────── */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes drawLine {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s ease both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Delay utilities */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-600 { animation-delay: 600ms; }
+.delay-700 { animation-delay: 700ms; }
+.delay-800 { animation-delay: 800ms; }
+
+/* Section entry — JS toggles .in-view class */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-delay-1 { transition-delay: 100ms; }
+.reveal-delay-2 { transition-delay: 200ms; }
+.reveal-delay-3 { transition-delay: 300ms; }
+.reveal-delay-4 { transition-delay: 400ms; }
+
+/* ─────────────────────────────────────────────
+   ACCENT LINE / DECORATIVE ELEMENTS
+   ───────────────────────────────────────────── */
+.accent-rule {
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-accent), transparent);
+}
+
+/* ─────────────────────────────────────────────
+   GLASS / SURFACE CARD
+   ───────────────────────────────────────────── */
+.glass-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  backdrop-filter: blur(12px);
+}
+
+/* ─────────────────────────────────────────────
+   CUSTOM SCROLLBAR
+   ───────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-faint);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* ─────────────────────────────────────────────
+   SELECTION COLOR
+   ───────────────────────────────────────────── */
+::selection {
+  background: rgba(200, 148, 59, 0.25);
+  color: var(--color-primary);
+}
