@@ -52,8 +52,10 @@ export async function capture(
     return { exitCode: 127, stdout: "", stderr: msg };
   }
 
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+
   const timeout = new Promise<CaptureResult>((resolve) => {
-    setTimeout(() => {
+    timerId = setTimeout(() => {
       proc.kill();
       resolve({ exitCode: 124, stdout: "", stderr: `Command timed out after ${timeoutMs}ms` });
     }, timeoutMs);
@@ -68,5 +70,7 @@ export async function capture(
     resolve({ exitCode, stdout: stdoutBuf.trim(), stderr: stderrBuf.trim() });
   });
 
-  return Promise.race([result, timeout]);
+  const winner = await Promise.race([result, timeout]);
+  clearTimeout(timerId); // cancel the timer if result won — prevents event loop hang
+  return winner;
 }
