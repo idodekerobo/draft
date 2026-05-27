@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, spyOn } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import * as exec from "../utils/exec.ts";
 
 // Doctor logic is mostly integration-level (reads real system state), so

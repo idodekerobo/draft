@@ -7,7 +7,7 @@
 import { existsSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { spawn, capture } from "../utils/exec.ts";
-import { red, yellow, dim, green, cyan, bold } from "../utils/output.ts";
+import { yellow, dim, green, cyan, bold } from "../utils/output.ts";
 
 const HOME = process.env.HOME!;
 const DRAFT_GLOBAL = `${HOME}/.draft`;

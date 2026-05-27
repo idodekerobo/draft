@@ -12,8 +12,8 @@
 //
 // For codex/cursor: spawn the existing bash setup scripts.
 
-import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync, statSync } from "fs";
-import { join, dirname } from "path";
+import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 import { spawn } from "../utils/exec.ts";
 import { getRepoRoot } from "../utils/config.ts";
 import { green, red, yellow, bold, cyan, dim } from "../utils/output.ts";

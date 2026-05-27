@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { readSecrets, readCollaboration, getActiveProfile, getWorkspacePath } from "../utils/config.ts";
+import { readSecrets, readCollaboration } from "../utils/config.ts";
 
 const TMP = `/tmp/draft-test-${Date.now()}`;
 

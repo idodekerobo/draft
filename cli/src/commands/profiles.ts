@@ -1,6 +1,6 @@
 // commands/profiles.ts — draft profiles [list|create|rename|delete]
 
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { getActiveProfile } from "../utils/config.ts";
 import { green, red, yellow, dim, cyan, bold } from "../utils/output.ts";

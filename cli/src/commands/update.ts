@@ -12,9 +12,9 @@
 
 import { existsSync, readFileSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
-import { spawn, capture } from "../utils/exec.ts";
+import { capture } from "../utils/exec.ts";
 import { getRepoRoot, getActiveProfile } from "../utils/config.ts";
-import { green, red, yellow, dim, bold, cyan } from "../utils/output.ts";
+import { green, red, yellow, dim, bold } from "../utils/output.ts";
 import { installClaudeCode } from "./add.ts";
 
 const HOME = process.env.HOME!;
