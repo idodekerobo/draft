@@ -239,11 +239,11 @@ echo ""
 if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
     echo "[Draft Daemon] Installation complete — daemon is running"
     echo ""
-    echo "  Check status:   bash ~/.draft/background/status.sh"
-    echo "  View logs:      tail -f ~/.draft/background/logs/daemon.log"
-    echo "  Stop:           bash ~/.draft/background/stop.sh"
-    echo "  Start:          bash ~/.draft/background/start.sh"
-    echo "  Uninstall:      bash ~/.draft/background/uninstall.sh"
+    echo "  Check status:   draft status"
+    echo "  View logs:      draft logs --follow"
+    echo "  Stop:           draft stop"
+    echo "  Start:          draft start"
+    echo "  Uninstall:      draft uninstall"
 else
     echo "[Draft Daemon] WARNING: daemon may not have started cleanly" >&2
     echo "  Check logs at: $DRAFT_BACKGROUND/logs/daemon-error.log" >&2
