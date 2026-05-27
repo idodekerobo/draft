@@ -4,7 +4,7 @@
 # Downloads the latest version from GitHub Releases and updates all installed files.
 # Called by the /draft:update skill after user confirmation.
 #
-# Safe: never touches ~/.draft/workspace/ (user's PM brain data)
+# Safe: never touches ~/.draft/workspace/ (user's context layer data)
 
 set -euo pipefail
 

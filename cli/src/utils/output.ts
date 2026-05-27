@@ -27,7 +27,7 @@ export function dot(state: DotState): string {
 }
 
 export function printHelp(): void {
-  console.log(`${bold("Draft")} — PM brain for Claude Code, Codex, and Cursor`);
+  console.log(`${bold("Draft")} — Shared context layer for Claude Code, Codex, and Cursor`);
   console.log("");
   console.log(`Usage: ${cyan("draft")} <command> [args]`);
   console.log("");

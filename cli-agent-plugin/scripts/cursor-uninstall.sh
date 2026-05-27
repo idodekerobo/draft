@@ -7,7 +7,7 @@
 #   3. Removes draft-context.mdc from ~/.cursor/rules/
 #   4. Removes the draft-setup skill from ~/.cursor/skills/ and ~/.agents/skills/
 #
-# Does NOT touch ~/.draft/workspace/ (your PM brain data stays intact)
+# Does NOT touch ~/.draft/workspace/ (your shared context layer data stays intact)
 
 set -euo pipefail
 
@@ -186,5 +186,5 @@ echo "    ~/.agents/skills/draft-setup/"
 echo "    ~/.agents/skills/draft-learn/"
 echo ""
 echo "  What was kept:"
-echo "    ~/.draft/workspace/  (your PM brain data is untouched)"
+echo "    ~/.draft/workspace/  (your shared context layer data is untouched)"
 echo ""

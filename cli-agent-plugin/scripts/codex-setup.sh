@@ -18,7 +18,7 @@
 #   6. Writes pm-agent instructions to ~/.codex/AGENTS.md
 #   7. Installs draft:setup skill to ~/.agents/skills/ for $draft:setup invocation
 #
-# After running: restart Codex, then run /draft:setup to load your PM brain.
+# After running: restart Codex, then run /draft:setup to load your shared context layer.
 
 set -euo pipefail
 
@@ -403,5 +403,5 @@ log "Setup complete."
 echo ""
 echo "  Next steps:"
 echo "  1. Restart Codex"
-echo "  2. Type \$draft:setup to initialize your PM brain"
+echo "  2. Type \$draft:setup to initialize your shared context layer"
 echo ""

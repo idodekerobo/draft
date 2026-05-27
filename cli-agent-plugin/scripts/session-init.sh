@@ -45,7 +45,7 @@ if [ ! -d "$WORKSPACE" ]; then
     if [ ! -f "$_profile_file" ]; then
         echo "$_active_profile" > "$_profile_file"
     fi
-    echo "[Draft] Workspace ready. Run /draft:setup to load your PM brain." >&2
+    echo "[Draft] Workspace ready. Run /draft:setup to load your shared context layer." >&2
 fi
 
 # ── 1b. Record installed version ──────────────────────────────────────────────

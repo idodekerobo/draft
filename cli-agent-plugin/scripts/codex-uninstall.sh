@@ -9,7 +9,7 @@
 #   4. Removes (or restores) ~/.codex/AGENTS.md
 #   5. Removes the draft:setup skill from ~/.agents/skills/setup/
 #
-# Does NOT touch ~/.draft/workspace/ (your PM brain data stays intact)
+# Does NOT touch ~/.draft/workspace/ (your shared context layer data stays intact)
 # Does NOT remove codex_hooks = true from config.toml (harmless Codex feature flag)
 
 set -euo pipefail
@@ -217,6 +217,6 @@ echo "    ~/.agents/skills/draft-setup/  (\$draft-setup skill)"
 echo "    ~/.agents/skills/draft-learn/  (\$draft-learn skill)"
 echo ""
 echo "  What was kept:"
-echo "    ~/.draft/workspace/  (your PM brain data is untouched)"
+echo "    ~/.draft/workspace/  (your shared context layer data is untouched)"
 echo "    ~/.codex/config.toml (left codex_hooks in place)"
 echo ""

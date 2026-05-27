@@ -117,7 +117,7 @@ ws = os.environ.get('DRAFT_WORKSPACE', os.path.expanduser('~/.draft/workspaces/d
 ctx = Path(ws) / 'context'
 files = sorted(ctx.glob('*/index.md'))
 if not files:
-    print('No context loaded yet — run /draft:setup to initialize your PM brain.')
+    print('No context loaded yet — run /draft:setup to initialize your shared context layer.')
 else:
     for idx in files:
         try:
@@ -129,7 +129,7 @@ else:
             print()
         except Exception:
             pass
-" 2>/dev/null || echo "Run /draft:setup to initialize your PM brain."
+" 2>/dev/null || echo "Run /draft:setup to initialize your shared context layer."
 echo ""
 echo "## Current priorities"
 cat "$DRAFT_WORKSPACE/context/priorities/index.md" 2>/dev/null || echo "No priorities recorded yet."

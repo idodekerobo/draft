@@ -83,7 +83,7 @@ if [ ! -d "$DRAFT_WORKSPACE/context" ]; then
     python3 -c "
 import json
 print(json.dumps({
-    'additional_context': 'Draft workspace not initialized. Run /draft:setup to load your PM brain.'
+    'additional_context': 'Draft workspace not initialized. Run /draft:setup to load your shared context layer.'
 }))
 "
     exit 0
@@ -154,7 +154,7 @@ if index_files:
         except Exception:
             pass
 else:
-    parts.append("No context loaded yet — run /draft:setup to initialize your PM brain.")
+    parts.append("No context loaded yet — run /draft:setup to initialize your shared context layer.")
     parts.append("")
 
 # ── Current priorities (full content) ─────────────────────────────────────────

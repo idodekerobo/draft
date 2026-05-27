@@ -17,7 +17,7 @@
 #
 # Cursor reads ~/.claude/agents/ and ~/.codex/AGENTS.md natively, so if the
 # Claude Code or Codex plugins are already installed we skip anything that would
-# create a duplicate PM brain in Cursor's context.
+# create a duplicate shared context layer in Cursor's context.
 #
 # After running: restart Cursor. Your product context is automatically injected
 # into every new Composer session — no action needed.
@@ -67,7 +67,7 @@ install_file() {
 
 # ── Detect existing Draft installations ────────────────────────────────────────
 # Cursor reads ~/.claude/agents/ and ~/.codex/AGENTS.md natively. If either
-# plugin is installed, the PM brain instructions and subagents are already
+# plugin is installed, the shared context layer instructions and subagents are already
 # flowing into Cursor — installing them again creates duplicate context blocks.
 
 CLAUDE_CODE_INSTALLED=false
@@ -244,11 +244,11 @@ print("[Draft] sessionStart hook registered in ~/.cursor/hooks.json")
 PYEOF
 
 # ── 4. Install draft-context.mdc — skip if Claude Code or Codex is installed ──
-# Claude Code: pm-agent.md in ~/.claude/agents/ already gives Cursor the PM brain.
-# Codex: ~/.codex/AGENTS.md already gives Cursor the PM brain.
+# Claude Code: pm-agent.md in ~/.claude/agents/ already gives Cursor the shared context layer.
+# Codex: ~/.codex/AGENTS.md already gives Cursor the shared context layer.
 
 if [ "$CLAUDE_CODE_INSTALLED" = true ] || [ "$CODEX_INSTALLED" = true ]; then
-    warn "Skipping draft-context.mdc — PM brain instructions already loaded from existing plugin."
+    warn "Skipping draft-context.mdc — shared context layer instructions already loaded from existing plugin."
 else
     log "Installing draft-context.mdc rules file..."
     mkdir -p "$CURSOR_HOME/rules"
@@ -386,9 +386,9 @@ echo ""
 echo "  Next steps:"
 echo "  1. Restart Cursor"
 if [ "$CLAUDE_CODE_INSTALLED" = false ] && [ "$CODEX_INSTALLED" = false ]; then
-    echo "  2. Run /draft-setup to initialize your PM brain"
+    echo "  2. Run /draft-setup to initialize your shared context layer"
 else
-    echo "  2. Your existing PM brain context will load automatically"
+    echo "  2. Your existing context will load automatically"
 fi
 echo ""
 echo "  How it works:"
