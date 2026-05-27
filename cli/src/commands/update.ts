@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { spawn, capture } from "../utils/exec.ts";
-import { getRepoRoot } from "../utils/config.ts";
+import { getRepoRoot, getActiveProfile } from "../utils/config.ts";
 import { green, red, yellow, dim, bold, cyan } from "../utils/output.ts";
 import { installClaudeCode } from "./add.ts";
 
@@ -92,7 +92,7 @@ export async function runUpdate(args: string[]): Promise<void> {
   if (existsSync(claudeSkillsDir) && hasAnyEntry(claudeSkillsDir, /^draft/)) {
     console.log(dim("  Updating claude-code..."));
     try {
-      await installClaudeCode();
+      await installClaudeCode(getActiveProfile());
       console.log(`  ${green("✓")} claude-code updated`);
       anyToolUpdated = true;
     } catch (err) {

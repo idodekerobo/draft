@@ -4,10 +4,11 @@
 //
 // For claude-code: fully inline TypeScript — no claude-setup.sh exists.
 //   1. Bootstrap daemon (run install.sh if not yet installed)
-//   2. Copy skills → ~/.claude/skills/
-//   3. Copy agents (all 4) → ~/.claude/agents/
-//   4. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/default/CLAUDE.md
-//   5. Merge ~/.claude/settings.json: agent, env, hooks, permissions
+//   2. Resolve or prompt for profile name (first install only)
+//   3. Copy skills → ~/.claude/skills/
+//   4. Copy agents (all 4) → ~/.claude/agents/
+//   5. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/<profile>/CLAUDE.md
+//   6. Merge ~/.claude/settings.json: agent, env, hooks, permissions
 //
 // For codex/cursor: spawn the existing bash setup scripts.
 
@@ -19,6 +20,7 @@ import { green, red, yellow, bold, cyan, dim } from "../utils/output.ts";
 
 const HOME = process.env.HOME!;
 const DRAFT_GLOBAL = `${HOME}/.draft`;
+const ACTIVE_PROFILE_FILE = `${DRAFT_GLOBAL}/active-profile`;
 const BACKGROUND_INSTALLED = `${DRAFT_GLOBAL}/background`;
 const CLAUDE_DIR = `${HOME}/.claude`;
 
@@ -47,7 +49,8 @@ export async function runAdd(args: string[]): Promise<void> {
 
   // ── Tool-specific install ───────────────────────────────────────────────────
   if (tool === "claude-code") {
-    await installClaudeCode();
+    const profileName = await resolveOrPromptProfile();
+    await installClaudeCode(profileName);
   } else if (tool === "codex") {
     const repoRoot = getRepoRoot();
     const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "codex-setup.sh");
@@ -77,9 +80,45 @@ async function bootstrapDaemon(): Promise<void> {
   }
 }
 
+// ── Profile resolution ─────────────────────────────────────────────────────────
+// On first install (no active-profile file), prompts the user to name their workspace.
+// On re-runs or if an active profile already exists, returns that name silently.
+
+async function resolveOrPromptProfile(): Promise<string> {
+  if (existsSync(ACTIVE_PROFILE_FILE)) {
+    const existing = readFileSync(ACTIVE_PROFILE_FILE, "utf8").trim();
+    if (existing) return existing;
+  }
+
+  // First install: ask for a workspace name
+  console.log("");
+  process.stdout.write(`  Name your workspace ${dim("(e.g. acme, my-startup)")} ${dim("[press Enter for 'default']:")} `);
+  const input = (await readLine()).trim();
+  const profileName = input || "default";
+
+  ensureDir(DRAFT_GLOBAL);
+  writeFileSync(ACTIVE_PROFILE_FILE, profileName + "\n");
+  return profileName;
+}
+
+function readLine(): Promise<string> {
+  return new Promise((resolve) => {
+    let input = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.resume();
+    process.stdin.on("data", (chunk: string) => {
+      input += chunk;
+      if (input.includes("\n")) {
+        process.stdin.pause();
+        resolve(input.split("\n")[0]);
+      }
+    });
+  });
+}
+
 // ── Claude Code install ────────────────────────────────────────────────────────
 
-export async function installClaudeCode(): Promise<void> {
+export async function installClaudeCode(profileName: string): Promise<void> {
   const repoRoot = getRepoRoot();
   const pluginRoot = join(repoRoot, "cli-agent-plugin");
 
@@ -100,20 +139,21 @@ export async function installClaudeCode(): Promise<void> {
   cpSync(agentsSrc, agentsDst, { recursive: true });
   console.log(`  ${green("✓")} Agents copied to ${dim("~/.claude/agents/")}`);
 
-  // 3. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/default/CLAUDE.md
+  // 3. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/<profileName>/CLAUDE.md
   const templateSrc = join(pluginRoot, "workspace-template", "CLAUDE.md");
-  const defaultWorkspace = `${DRAFT_GLOBAL}/workspaces/default`;
-  ensureDir(defaultWorkspace);
-  const templateDst = join(defaultWorkspace, "CLAUDE.md");
+  const workspacePath = `${DRAFT_GLOBAL}/workspaces/${profileName}`;
+  ensureDir(workspacePath);
+  const templateDst = join(workspacePath, "CLAUDE.md");
   cpSync(templateSrc, templateDst);
-  console.log(`  ${green("✓")} Workspace template written to ${dim("~/.draft/workspaces/default/CLAUDE.md")}`);
+  console.log(`  ${green("✓")} Workspace created at ${dim(`~/.draft/workspaces/${profileName}/`)}`);
 
   // 4. Merge ~/.claude/settings.json
-  await mergeClaudeSettings(repoRoot, pluginRoot);
+  await mergeClaudeSettings(repoRoot, pluginRoot, workspacePath);
   console.log(`  ${green("✓")} ~/.claude/settings.json updated`);
 
   console.log("");
-  console.log(`${bold("Draft added to Claude Code.")} Restart Claude Code to activate — then run ${cyan("/draft:setup")} to initialize your workspace.`);
+  console.log(`${bold(`Draft added to Claude Code`)} ${dim(`(profile: ${profileName})`)}.`);
+  console.log(`Restart Claude Code to activate — then run ${cyan("/draft:setup")} to initialize your workspace.`);
 }
 
 // ── Settings merge ─────────────────────────────────────────────────────────────
@@ -134,7 +174,7 @@ interface PluginHooks {
   hooks: Record<string, unknown>;
 }
 
-async function mergeClaudeSettings(repoRoot: string, pluginRoot: string): Promise<void> {
+async function mergeClaudeSettings(repoRoot: string, pluginRoot: string, workspacePath: string): Promise<void> {
   const settingsPath = join(CLAUDE_DIR, "settings.json");
   ensureDir(CLAUDE_DIR);
 
@@ -159,9 +199,6 @@ async function mergeClaudeSettings(repoRoot: string, pluginRoot: string): Promis
     }
   }
 
-  // Determine the default workspace path
-  const defaultWorkspace = `${DRAFT_GLOBAL}/workspaces/default`;
-
   // Build merged settings
   const merged: ClaudeSettings = {
     ...existing,
@@ -172,8 +209,8 @@ async function mergeClaudeSettings(repoRoot: string, pluginRoot: string): Promis
     // Environment variables
     env: {
       ...(existing.env ?? {}),
-      DRAFT_WORKSPACE: defaultWorkspace,
-      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: defaultWorkspace,
+      DRAFT_WORKSPACE: workspacePath,
+      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: workspacePath,
       CLAUDE_PLUGIN_ROOT: pluginRoot,
     },
 
@@ -195,7 +232,7 @@ async function mergeClaudeSettings(repoRoot: string, pluginRoot: string): Promis
       additionalDirectories: dedup([
         ...(existing.permissions?.additionalDirectories ?? []),
         DRAFT_GLOBAL,
-        defaultWorkspace,
+        workspacePath,
       ]),
     },
   };
