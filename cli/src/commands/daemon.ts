@@ -86,15 +86,25 @@ export async function runStatus(_args: string[]): Promise<void> {
 // ── start ──────────────────────────────────────────────────────────────────────
 
 export async function runStart(_args: string[]): Promise<void> {
-  const code = await spawn(["bash", `${BACKGROUND}/start.sh`]);
-  process.exit(code);
+  const result = await capture(["bash", `${BACKGROUND}/start.sh`]);
+  if (result.exitCode !== 0) {
+    console.error(red("Failed to start daemon."));
+    console.error(dim(result.stderr || result.stdout));
+    process.exit(result.exitCode);
+  }
+  console.log(`  ${green("✓")} Daemon started.`);
 }
 
 // ── stop ───────────────────────────────────────────────────────────────────────
 
 export async function runStop(_args: string[]): Promise<void> {
-  const code = await spawn(["bash", `${BACKGROUND}/stop.sh`]);
-  process.exit(code);
+  const result = await capture(["bash", `${BACKGROUND}/stop.sh`]);
+  if (result.exitCode !== 0) {
+    console.error(red("Failed to stop daemon."));
+    console.error(dim(result.stderr || result.stdout));
+    process.exit(result.exitCode);
+  }
+  console.log(`  ${green("✓")} Daemon stopped. Run ${cyan("draft start")} to resume.`);
 }
 
 // ── logs ───────────────────────────────────────────────────────────────────────

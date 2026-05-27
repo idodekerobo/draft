@@ -190,7 +190,11 @@ export async function runDoctor(_args: string[]): Promise<void> {
       const slackCheck: CheckResult = {
         label: "Slack capture running",
         passed: slackRunning,
-        fix: slackRunning ? undefined : "Run: draft start (daemon manages Slack capture)",
+        fix: slackRunning ? undefined : (
+          daemonRunning.passed
+            ? "Slack tokens may be invalid — reconnect: run /draft:connect slack in Claude Code"
+            : "Run: draft start (daemon manages Slack capture)"
+        ),
       };
       printCheck(slackCheck);
     } else {
