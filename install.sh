@@ -8,7 +8,9 @@
 #   1. Checks that bun is installed
 #   2. Installs TypeScript dependencies for the CLI
 #   3. Copies the `draft` wrapper script to ~/bin/ (or /usr/local/bin/)
-#   4. Runs `draft add claude-code` to install the plugin and daemon
+#   4. Verifies `draft` is reachable in PATH
+#   5. Installs shell tab completion (zsh or bash)
+#   6. Runs `draft add claude-code` to install the plugin and daemon
 #
 # Safe to re-run — all steps are idempotent.
 
@@ -89,7 +91,42 @@ if ! command -v draft &>/dev/null; then
     exit 0
 fi
 
-# ── 5. Install plugin + daemon ────────────────────────────────────────────────
+# ── 5. Install shell completions ──────────────────────────────────────────────
+# Write completion script once to ~/.draft/completions/ and source from rc file.
+# Fast shell startup (no bun on every new terminal). Idempotent on re-runs.
+
+COMPLETIONS_DIR="$HOME/.draft/completions"
+mkdir -p "$COMPLETIONS_DIR"
+
+SHELL_NAME="$(basename "$SHELL")"
+
+if [ "$SHELL_NAME" = "zsh" ]; then
+    draft completion --zsh > "$COMPLETIONS_DIR/draft.zsh"
+    RC_FILE="$HOME/.zshrc"
+    SOURCE_LINE="source \"$COMPLETIONS_DIR/draft.zsh\""
+elif [ "$SHELL_NAME" = "bash" ]; then
+    draft completion > "$COMPLETIONS_DIR/draft.bash"
+    RC_FILE="$HOME/.bashrc"
+    SOURCE_LINE="source \"$COMPLETIONS_DIR/draft.bash\""
+else
+    RC_FILE=""
+    SOURCE_LINE=""
+fi
+
+if [ -n "$RC_FILE" ] && [ -n "$SOURCE_LINE" ]; then
+    if grep -q "draft/completions" "$RC_FILE" 2>/dev/null; then
+        log "  Tab completion already configured in $RC_FILE"
+    else
+        echo "" >> "$RC_FILE"
+        echo "# Draft tab completion (added by install.sh)" >> "$RC_FILE"
+        echo "$SOURCE_LINE" >> "$RC_FILE"
+        log "  Tab completion installed — open a new terminal or run: source $RC_FILE"
+    fi
+else
+    warn "Unknown shell ($SHELL_NAME) — run 'draft completion --help' to set up tab completion manually"
+fi
+
+# ── 6. Install plugin + daemon ────────────────────────────────────────────────
 
 echo ""
 log "Running: draft add claude-code"
