@@ -2,9 +2,9 @@
 name: draft-connect
 description: >
   Connect integrations to the Draft daemon. Guides the user through configuring
-  Granola (MCP or API) and future integrations (Slack, GitHub). Run as
-  /draft:connect to see all integrations, or /draft:connect <name> to configure
-  a specific one. Each integration has its own sub-skill file in this directory.
+  Granola (MCP or API), Slack, and GitHub. Run as /draft:connect to see all
+  integrations, or /draft:connect <name> to configure a specific one. Each
+  integration has its own sub-skill file in this directory.
 ---
 
 # /draft:connect — Integration Hub
@@ -12,7 +12,8 @@ description: >
 **Usage:**
 - `/draft:connect` — show all integrations and current connection status
 - `/draft:connect granola` — set up or reconfigure Granola
-- `/draft:connect slack` — set up or reconfigure Slack *(coming Phase 3)*
+- `/draft:connect slack` — set up or reconfigure Slack
+- `/draft:connect github` — set up or reconfigure GitHub repo polling
 
 ---
 
@@ -26,6 +27,10 @@ and execute it from Step 0.
 
 **`/draft:connect slack`**
 Read the file at `${CLAUDE_PLUGIN_ROOT}/skills/draft-connect/slack/SKILL.md`
+and execute it from Step 0.
+
+**`/draft:connect github`**
+Read the file at `${CLAUDE_PLUGIN_ROOT}/skills/draft-connect/github/SKILL.md`
 and execute it from Step 0.
 
 **No argument — `/draft:connect`**
@@ -88,11 +93,22 @@ if secrets_path.exists():
         channels = d.get('slack_allowlist_channels', [])
         mode = d.get('slack_capture_mode', 'passive')
         if bot and app:
-            slack_status = f"connected ({mode}, {len(channels)} channel{'s' if len(channels) != 1 else ''})"
+            slack_status = f\"connected ({mode}, {len(channels)} channel{'s' if len(channels) != 1 else ''})\"
             slack_mode = mode
     except:
         pass
 print(f'slack:{slack_status}')
+# ── GitHub ────────────────────────────────────────────────────────────────────
+github_status = 'not configured — run /draft:connect github'
+github_config_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'github.json'
+if github_config_path.exists():
+    try:
+        d = json.loads(github_config_path.read_text())
+        repos = d.get('repos', [])
+        if repos:
+            github_status = f\"connected ({', '.join(repos)})\"
+    except: pass
+print(f'github:{github_status}')
 "
 ```
 
@@ -103,6 +119,7 @@ Draft Integrations
 
   granola   [connected (MCP) | connected (API) | not configured]
   slack     [connected (passive, 2 channels) | not configured]
+  github    [connected (org/repo1, org/repo2) | not configured — run /draft:connect github]
 
 Run /draft:connect <name> to set up an integration.
 ```
