@@ -92,10 +92,14 @@ else:
 
 changed = False
 
-# Update DRAFT_WORKSPACE to active profile's workspace — runs every session
+# Update DRAFT_WORKSPACE and CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD to active
+# profile's workspace — runs every session so profile switches take effect on next restart.
 env = settings.setdefault("env", {})
 if env.get("DRAFT_WORKSPACE") != workspace:
     env["DRAFT_WORKSPACE"] = workspace
+    changed = True
+if env.get("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD") != workspace:
+    env["CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"] = workspace
     changed = True
 
 # Set additionalDirectories to cover ~/.draft/workspaces/ (all profiles)

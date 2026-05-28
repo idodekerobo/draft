@@ -11,6 +11,14 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.1] — 2026-05-28
+
+### Fixed
+
+- **`scripts/session-init.sh`** — `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` is now updated alongside `DRAFT_WORKSPACE` on every session start. Previously, only `DRAFT_WORKSPACE` was kept in sync with the active profile; `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` (which controls which workspace `CLAUDE.md` Claude Code loads at startup) was written once at install time and never updated. Users who switched profiles via `/draft:switch` would get the correct dynamic context injection via the hook, but Claude Code would continue loading the CLAUDE.md from the profile that was active at install time.
+
+---
+
 ## [2.3.0] — 2026-05-28
 
 ---
