@@ -1,7 +1,7 @@
 {
   "name": "draft",
   "displayName": "Draft — Shared Team Context Layer for Cursor",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Shared team context layer for AI coding agents. Install once — every session starts with full shared context across your whole team, no re-explaining required.",
   "author": "Idode Kerobo",
   "license": "MIT",
