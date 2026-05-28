@@ -13,6 +13,7 @@ import { runDoctor } from "./commands/doctor.ts";
 import { runCompletion } from "./commands/completion.ts";
 import { runUninstall } from "./commands/uninstall.ts";
 import { runUpdate } from "./commands/update.ts";
+import { runPoll } from "./commands/poll.ts";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -65,6 +66,9 @@ switch (command) {
     break;
   case "update":
     await runUpdate(rest);
+    break;
+  case "poll":
+    await runPoll(rest);
     break;
   default:
     console.error(red(`Unknown command: ${command}`));
