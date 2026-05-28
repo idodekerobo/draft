@@ -51,7 +51,6 @@ log "  Dependencies installed"
 
 # ── 3. Copy draft wrapper to PATH ─────────────────────────────────────────────
 
-WRAPPER_SRC="$REPO_ROOT/draft"
 INSTALL_DIR=""
 
 # Find a writable directory already in PATH
@@ -70,7 +69,10 @@ if [ -z "$INSTALL_DIR" ]; then
     warn "  echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
 fi
 
-cp "$WRAPPER_SRC" "$INSTALL_DIR/draft"
+cat > "$INSTALL_DIR/draft" << EOF
+#!/usr/bin/env bash
+exec bun run "$REPO_ROOT/cli/src/index.ts" "\$@"
+EOF
 chmod +x "$INSTALL_DIR/draft"
 log "  draft wrapper installed to $INSTALL_DIR/draft"
 
