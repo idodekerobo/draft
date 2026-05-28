@@ -175,7 +175,7 @@ Two more steps required before synthesis will work:
      A browser window will open — sign in to Granola to complete OAuth.
 
   3. After authenticating, the daemon picks up Granola on the next poll (~5 min).
-     Test immediately with: bash ~/.draft/background/integrations/granola/granola-poller.sh
+     Test immediately with: `draft poll granola`
 
 The OAuth token is stored by Claude Code and reused across sessions — one-time auth only.
 ```
@@ -248,10 +248,10 @@ Print:
   Mode: api
 
 The daemon will fetch Granola transcripts on the next poll cycle (~5 min).
-Test now: DRAFT_GRANOLA_MODE=api bash ~/.draft/background/integrations/granola/granola-poller.sh
+Test now: `draft poll granola`
 
 Restart the daemon to pick up the new mode:
-  bash ~/.draft/background/stop.sh && bash ~/.draft/background/start.sh
+  `draft stop && draft start`
 ```
 
 Stop.

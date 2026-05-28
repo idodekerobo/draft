@@ -11,6 +11,60 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.0] — 2026-05-28
+
+---
+
+## [2.3.0] — 2026-05-28
+
+### Added
+
+#### New skills
+
+- **`skills/draft-connect/SKILL.md`** *(new)* — integration hub skill. Routes `/draft:connect <name>` to per-integration sub-skills. Shows a status table of all integrations when invoked with no args.
+- **`skills/draft-connect/granola/SKILL.md`** *(new)* — guided Granola setup. Handles both MCP (recommended) and REST API token paths. Validates credentials before writing config. Always registers MCP globally (`--scope user`) — project-scoped installs are not found by daemon synthesis sessions.
+- **`skills/draft-connect/slack/SKILL.md`** *(new)* — guided Slack onboarding. Generates a pre-filled app creation URL and opens it automatically. Validates bot and app tokens before writing config. Fetches `conversations.list` and presents a numbered channel picker sorted by member count. Infers channel roles via LLM and confirms via `AskUserQuestion`.
+- **`skills/draft-connect/github/SKILL.md`** *(new)* — guided GitHub setup. Configures which repos to watch, maps GitHub usernames to display names, and writes `config/github.json` and optionally `config/team-profiles.json`.
+- **`skills/draft-synthesize/SKILL.md`** *(new)* — `/draft:synthesize` skill. Replaces `/draft:learn` as the primary path for capturing team context mid-session. Two modes: no args reads the full session transcript and stages a proposal; with an explicit statement, classifies and stages a single-item proposal immediately. Three-action model enforced (append / tension / overwrite-forbidden). Proposal format matches daemon output — `/draft:publish` handles both identically.
+- **`skills/draft-compact/SKILL.md`** *(new)* — `/draft:compact` skill. Curator-triggered context compaction. Always confirms which dimension, shows full preview before writing, archives pre-compact state to `log/` first. The only authorized path for `action:overwrite` — the application layer rejects overwrite from all other sources.
+
+#### Hooks
+
+- **`hooks/hooks.json`** — SessionEnd hook added: calls `on-session-end.sh` when a Claude Code session closes to trigger daemon synthesis. `load-team.sh` added to the SessionStart chain (between `session-init.sh` and `inject-context.sh`) with a 30s timeout so a slow git clone never blocks Claude from starting.
+
+#### Codex parity
+
+- **`scripts/codex-session-end.sh`** *(new)* — Codex Stop hook. Writes a pending file to `~/.draft/pending/codex-{session_id}.json` after each turn for daemon synthesis.
+- **`scripts/codex-setup.sh`**, **`scripts/codex-uninstall.sh`** — updated to install and remove `codex-session-end.sh` and register the Stop hook in `~/.codex/hooks.json`.
+
+#### Session context
+
+- **`scripts/inject-context.sh`** — now surfaces two notifications from `load-team.sh` at session start: a success confirmation when team context was refreshed, and a warning when unpublished local changes caused the overwrite to be skipped. Both are echoed to stdout (system prompt) with instructions to surface them to the user. Files are cleared after reading.
+
+---
+
+### Changed
+
+- **`skills/draft-publish-team/SKILL.md`** — major update: Step 1.5 reads `proposals/` and presents each pending daemon-generated proposal to the curator before pushing. Applied proposals are archived to `accepted/` or `rejected/` instead of deleted. `CHANGES.jsonl` extended with daemon-synthesis provenance (`source`, `session_id`, `synthesized_by`, `approved_by`). `action:overwrite` annotated as compaction/curator-only. Tensions surface hint added when contradictions are spotted.
+- **`skills/draft-load-team/SKILL.md`** — adds Step 1.5 diff-and-warn before the clone. Scans for unpublished local changes, surfaces affected dimensions, and offers three choices: publish first, continue anyway, or abort. Silent if no changes.
+- **`skills/draft-setup-collab/SKILL.md`** — now optionally collects teammate GitHub display names and writes `config/team-profiles.json`.
+- **`skills/draft-learn/SKILL.md`** — deprecated. Redirects to `/draft:synthesize` with examples for each former use case. Legacy behavior preserved below the fold.
+- **`agents/draft-agent.md`**, **`.codex/AGENTS.md`** — updated for the three-command model (`/draft:synthesize` / `/draft:publish` / personal prefs → orchestrator). Path fixes: `~/.draft/workspace/` → `$DRAFT_WORKSPACE`, `$DRAFT_WORKSPACE/personal/` → `~/.draft/personal/`. Context directory discovery updated to find all subdirectories dynamically.
+- **`agents/draft-learner.md`**, **`.codex/agents/draft-learner.toml`** — reframed as the orchestrator's write engine (infrastructure, not user-facing). Log requirement reinforced throughout.
+- **`agents/draft-executor.md`** — context subdirectory discovery updated to be dynamic.
+- **`README.md`** — updated to reflect team sharing and daemon features.
+
+---
+
+### Fixed
+
+- **`scripts/inject-context.sh`** — load-team warning now surfaced via stdout (system prompt injection) instead of stderr. SessionStart hook stderr is not shown to the user in Claude Code — the warning was being silently dropped.
+- **`skills/draft-connect/granola/SKILL.md`** — removed scope selection step. Project-scoped MCP registration is not found by daemon synthesis sessions (which run outside any project directory). `--scope user` is now the only supported path.
+- **`skills/draft-connect/granola/SKILL.md`** — corrected file path reference.
+- **`skills/draft-connect/granola/SKILL.md`**, **`skills/draft-connect/slack/SKILL.md`** — manual poll instructions updated from raw bash script paths to `draft poll <integration>`.
+
+---
+
 ## [2.2.1] — 2026-05-14
 
 ---

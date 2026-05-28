@@ -178,6 +178,39 @@ Write `[ACTIVE_WORKSPACE]/config/collaboration.json`:
 }
 ```
 
+**Optional: Team display names**
+
+After writing `collaboration.json`, ask:
+> "Want to add display names for your teammates? This lets Draft show 'James shipped X' instead of 'jsmith shipped X' in GitHub activity summaries."
+
+If yes:
+- For each GitHub username in the `teammates` array, ask:
+  > "What's [username]'s display name? (press Enter to skip)"
+  > "Slack user ID for [username]? (optional, press Enter to skip)"
+- Collect any entries where a name was provided
+- If any names were provided, write `[ACTIVE_WORKSPACE]/config/team-profiles.json`:
+
+```bash
+python3 - <<'PYEOF'
+import json
+from pathlib import Path
+
+# Replace with actual entries collected above
+entries = [
+    {"name": "Display Name", "github": "username", "slack": None}
+]
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+profiles_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'team-profiles.json'
+profiles_path.parent.mkdir(parents=True, exist_ok=True)
+profiles_path.write_text(json.dumps(entries, indent=2) + '\n')
+print(f'wrote {len(entries)} team profiles to {profiles_path}')
+PYEOF
+```
+
+If they skip: tell them they can add this later via `/draft:connect github`.
+
 Write `[ACTIVE_WORKSPACE]/config/local.json`:
 
 ```json

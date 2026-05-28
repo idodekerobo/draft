@@ -8,13 +8,13 @@
   "homepage": "https://draftai.us/",
   "metadata": {
     "description": "Shared team context layer for AI coding agents. Run /draft:setup once — every session starts with full shared context.",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "plugins": [
     {
       "name": "draft",
       "description": "Shared team context layer for AI coding agents. Install once — every session starts with full shared context across your whole team.",
-      "version": "2.2.0",
+      "version": "2.3.0",
       "source": "./",
       "strict": false,
       "author": {

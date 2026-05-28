@@ -105,6 +105,7 @@ LOOP_COUNT=0
 LAST_GRANOLA_POLL=0     # epoch seconds; 0 = never polled this session
 LAST_SLACK_MANAGER=0    # process health check every 60s
 LAST_SLACK_ANALYSIS=0   # synthesis batch every DRAFT_SLACK_ANALYSIS seconds
+LAST_GITHUB_POLL=0      # epoch seconds; 0 = never polled this session
 SLACK_MANAGER_INTERVAL=60
 
 while true; do
@@ -149,6 +150,17 @@ while true; do
             bash "$DRAFT_BACKGROUND/integrations/slack/slack-analyzer.sh" >> "$DRAFT_LOGS/daemon.log" 2>&1 &
             LAST_SLACK_ANALYSIS=$_NOW
         fi
+    fi
+
+    # -- GitHub poller --------------------------------------------------------
+    _NOW=$(date +%s)
+    if [ $((_NOW - LAST_GITHUB_POLL)) -ge "${DRAFT_GITHUB_POLL:-3600}" ]; then
+        if [ -f "$DRAFT_WORKSPACE/config/github.json" ] && \
+           [ -x "$DRAFT_BACKGROUND/integrations/github/github-poller.sh" ]; then
+            _log "info" "github: starting poll (interval=${DRAFT_GITHUB_POLL}s)"
+            bash "$DRAFT_BACKGROUND/integrations/github/github-poller.sh" >> "$DRAFT_LOGS/daemon.log" 2>&1 &
+        fi
+        LAST_GITHUB_POLL=$_NOW
     fi
 
     # -- Periodic log trim (every 1000 loops) ----------------------------------
