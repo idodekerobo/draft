@@ -199,7 +199,7 @@ fi
 SYNTH_OUTPUT=$(mktemp /tmp/draft-github-output-XXXXXX.md)
 trap 'rm -f "$CONTEXT_FILE" "$SYNTH_OUTPUT"' EXIT
 
-if ! bash "$SYNTHESIZER" "$CONTEXT_FILE" > "$SYNTH_OUTPUT" 2>&1; then
+if ! bash "$SYNTHESIZER" "$CONTEXT_FILE" > "$SYNTH_OUTPUT"; then
     _log "error" "synthesizer failed"
     exit 1
 fi

@@ -124,7 +124,7 @@ PYEOF
 # ── Build prompt ──────────────────────────────────────────────────────────────
 PROMPT_FILE=$(mktemp /tmp/draft-github-prompt-XXXXXX.txt)
 mkdir -p "$DRAFT_WORKSPACE/tmp"
-OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/github-synthesis-XXXXXX.md")
+OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/github-synthesis-XXXXXX")
 
 _cleanup() { rm -f "$PROMPT_FILE"; }
 trap _cleanup EXIT

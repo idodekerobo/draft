@@ -509,10 +509,13 @@ Slack connected!
     PID file:  ~/.draft/background/integrations/slack/capture.pid
     Verify:    kill -0 $(cat ~/.draft/background/integrations/slack/capture.pid)
     Logs:      tail -f ~/.draft/background/logs/slack-capture.log
+
+  Trigger a manual Slack synthesis now:
+    `draft poll slack`
 ```
 
-**If daemon is running:** Say "The daemon will pick up Slack on the next 60-second cycle — no restart needed."
-**If daemon is stopped:** Say "Run `/draft:daemon start` to start the daemon and begin capturing."
+**If daemon is running:** Say "The daemon will pick up Slack on the next 60-second cycle — no restart needed. Or run `draft poll slack` to trigger analysis immediately."
+**If daemon is stopped:** Say "Run `draft start` to start the daemon and begin capturing. Once running, use `draft poll slack` to trigger analysis on demand."
 **If bun is missing:** Say "⚠️  `bun` is not installed. Install it with: `curl -fsSL https://bun.sh/install | bash`. The daemon needs bun to run the Slack capture process."
 
 Stop.

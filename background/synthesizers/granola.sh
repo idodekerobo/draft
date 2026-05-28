@@ -99,7 +99,7 @@ PROMPT_FILE=$(mktemp /tmp/draft-granola-prompt-XXXXXX.txt)
 # writes to paths within the CWD (~/.draft/workspaces/<profile>/) even with
 # --dangerously-skip-permissions. /tmp/ is outside that boundary.
 mkdir -p "$DRAFT_WORKSPACE/tmp"
-OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/granola-synthesis-XXXXXX.md")
+OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/granola-synthesis-XXXXXX")
 
 _cleanup() { rm -f "$PROMPT_FILE" "$OUTPUT_FILE"; }
 trap _cleanup EXIT
