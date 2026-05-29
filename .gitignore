@@ -2,6 +2,11 @@ brainstorm/
 plans/
 research/
 .env.*
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
 .DS_Store
 __pycache__
 *.py[cod]
@@ -22,10 +27,32 @@ CLAUDE.md
 .gstack/
 .conductor/
 
-# bridge build artifacts
-bridge/dist/
-bridge/_build/
-
 node_modules
 cli/node_modules
-draft-binresearch/
+
+
+# output
+desktop/build/
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
