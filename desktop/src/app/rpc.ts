@@ -62,3 +62,5 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
     },
   },
 });
+
+new Electroview({ rpc });
