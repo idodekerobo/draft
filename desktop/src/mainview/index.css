@@ -1,0 +1,134 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  background: #0f0f0f;
+  color: #e8e8e8;
+  min-height: 100vh;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────────────────── */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  font-size: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+  transition: background 0.3s;
+}
+
+.status-dot.running  { background: #4ade80; }
+.status-dot.stopped  { background: #f87171; }
+.status-dot.degraded { background: #fbbf24; }
+
+.status-label {
+  color: #aaa;
+}
+
+.profile-label {
+  margin-left: auto;
+  color: #666;
+  font-family: "SF Mono", "Menlo", monospace;
+}
+
+/* ── Content ─────────────────────────────────────────────────────────────────── */
+
+.content {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: #fff;
+}
+
+.subtitle {
+  margin-top: 4px;
+  color: #555;
+  font-size: 12px;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────────── */
+
+.card {
+  margin-top: 20px;
+  padding: 16px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+}
+
+.card h2 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+pre {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
+  color: #aaa;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Spike controls ──────────────────────────────────────────────────────────── */
+
+.spike-controls .hint {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 12px;
+}
+
+.spike-controls {
+  border-color: #2a3a2a;
+}
+
+button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: #1e2e1e;
+  border: 1px solid #3a5a3a;
+  border-radius: 6px;
+  color: #4ade80;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+button:hover {
+  background: #253525;
+  border-color: #4ade80;
+}
+
+button:active {
+  background: #1a2a1a;
+}

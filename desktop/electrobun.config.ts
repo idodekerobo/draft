@@ -10,6 +10,15 @@ export default {
     bun: {
       entrypoint: "src/index.ts",
     },
+    views: {
+      mainview: {
+        entrypoint: "src/mainview/index.ts",
+      },
+    },
+    copy: {
+      "src/mainview/index.html": "views/mainview/index.html",
+      "src/mainview/index.css":  "views/mainview/index.css",
+    },
     mac: {
       codesign: true,
       notarize: true,
