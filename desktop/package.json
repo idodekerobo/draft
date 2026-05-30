@@ -3,6 +3,7 @@
   "private": true,
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/diff": "^8.0.0",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3"
   },
@@ -10,6 +11,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "diff": "^9.0.0",
     "draft-core": "workspace:*",
     "electrobun": "^1.18.1",
     "react": "^19.2.6",

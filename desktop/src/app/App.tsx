@@ -10,7 +10,7 @@
 
 import { useState, useEffect } from "react";
 import type { DaemonStatus } from "../rpc/schema";
-import { rpc } from "./rpc";
+import { events, rpc } from "./rpc";
 import { StatusBar } from "./components/StatusBar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
@@ -46,6 +46,11 @@ export function App() {
     };
   }, []);
 
+  // ── Push updates from main-process watchers ───────────────────────────────
+  useEffect(() => {
+    return events.on("badgeUpdate", ({ count }) => setProposalCount(count));
+  }, []);
+
   // ── Start Draft handler ────────────────────────────────────────────────────
   // Phase 3: will wire to launchSession RPC. For now: no-op (daemon is started
   // via CLI: `draft start`). The button still gives the user the right mental
@@ -69,7 +74,11 @@ export function App() {
 
         <main className="content">
           {activeView === "proposals" && (
-            <ProposalInbox status={status} onStartDraft={handleStartDraft} />
+            <ProposalInbox
+              status={status}
+              onStartDraft={handleStartDraft}
+              onCountChange={setProposalCount}
+            />
           )}
           {activeView === "sessions" && (
             <div className="panel-placeholder">Sessions — Phase 3</div>
