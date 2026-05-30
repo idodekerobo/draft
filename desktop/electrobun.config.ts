@@ -11,13 +11,13 @@ export default {
       entrypoint: "src/index.ts",
     },
     views: {
-      mainview: {
-        entrypoint: "src/app/index.ts",
+      app: {
+        entrypoint: "src/app/index.tsx",
       },
     },
     copy: {
-      "src/app/index.html": "views/mainview/index.html",
-      "src/app/index.css":  "views/mainview/index.css",
+      "src/app/index.html": "views/app/index.html",
+      "src/app/index.css":  "views/app/index.css",
     },
     mac: {
       codesign: true,
