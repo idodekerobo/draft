@@ -34,6 +34,7 @@ cli/node_modules
 # output
 draft-bin
 desktop/build/
+desktop/artifacts/
 out
 dist
 *.tgz

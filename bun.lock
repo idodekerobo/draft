@@ -28,6 +28,7 @@
     "desktop": {
       "name": "draft-desktop",
       "dependencies": {
+        "draft-core": "workspace:*",
         "electrobun": "^1.18.1",
       },
       "devDependencies": {
