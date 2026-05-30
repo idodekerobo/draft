@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest"
+  },
+  "dependencies": {
+    "draft-core": "workspace:*"
   }
 }
