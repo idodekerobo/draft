@@ -3,7 +3,7 @@
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getWorkspacePath } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile } from "draft-core/config";
 import {
   listProposals,
   parseProposal,
@@ -13,7 +13,16 @@ import {
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { startHeartbeatWatch, stopHeartbeatWatch } from "./main/notifications";
-import { startProposalWatch, stopProposalWatch } from "./main/watchers/proposals";
+import {
+  startProposalWatch,
+  restartProposalWatch,
+  stopProposalWatch,
+  type ProposalWatchHandlers,
+} from "./main/watchers/proposals";
+import {
+  startActiveProfileWatch,
+  stopActiveProfileWatch,
+} from "./main/watchers/activeProfile";
 import type { AppRPCType } from "./rpc/schema";
 
 // ── Tray ───────────────────────────────────────────────────────────────────────
@@ -30,7 +39,11 @@ tray.setMenu([
 ]);
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
-// TODO: Phase 2–4 handlers return stubs.
+// watcherHandlers is forward-declared here so switchProfile can reference it.
+// It is assigned immediately after rpc is constructed — before any handler fires.
+
+// eslint-disable-next-line prefer-const
+let watcherHandlers!: ProposalWatchHandlers;
 
 const rpc = BrowserView.defineRPC<AppRPCType>({
   maxRequestTime: 30_000,
@@ -76,6 +89,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }));
       },
 
+      getProfiles: async () => getProfiles(),
+
+      switchProfile: async ({ profile }) => {
+        const result = setActiveProfile(profile);
+        if (!result.ok) {
+          return { ok: false, error: result.reason };
+        }
+        restartProposalWatch(result.active, watcherHandlers);
+        try { rpc.send.profileChanged({ profile: result.active }); } catch {}
+        return { ok: true, active: result.active };
+      },
+
       launchSession: async () => ({
         ok: false,
         error: "not implemented — Phase 3",
@@ -119,6 +144,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   },
 });
 
+// Assign after rpc is constructed so rpc.send is available in the closures,
+// but before any handler or watcher fires.
+watcherHandlers = {
+  onBadgeUpdate: (profile, count) => {
+    try { rpc.send.badgeUpdate({ profile, count }); } catch {}
+  },
+  onProposalAdded: (profile, source, count) => {
+    try { rpc.send.proposalAdded({ profile, source, count }); } catch {}
+  },
+};
+
 // ── Main window ────────────────────────────────────────────────────────────────
 
 const win = new BrowserWindow({
@@ -159,6 +195,7 @@ tray.on("tray-clicked", (e) => {
   if (action === "quit") {
     stopHeartbeatWatch();
     stopProposalWatch();
+    stopActiveProfileWatch();
     process.exit(0);
   }
 });
@@ -179,12 +216,13 @@ setTimeout(async () => {
   // Start heartbeat staleness watcher.
   // 500ms delay ensures app is fully initialised before the initial mtime check.
   startHeartbeatWatch();
-  startProposalWatch({
-    onBadgeUpdate: (count) => {
-      try { rpc.send.badgeUpdate({ count }); } catch {}
-    },
-    onProposalAdded: (source, count) => {
-      try { rpc.send.proposalAdded({ source, count }); } catch {}
+  startProposalWatch(getActiveProfile(), watcherHandlers);
+
+  // Watch ~/.draft/active-profile for CLI-driven profile switches (e.g. `draft switch`).
+  startActiveProfileWatch({
+    onProfileChanged: (profile) => {
+      restartProposalWatch(profile, watcherHandlers);
+      try { rpc.send.profileChanged({ profile }); } catch {}
     },
   });
 }, 500);
