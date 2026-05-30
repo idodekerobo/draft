@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { readSecrets, readCollaboration } from "../config";
+import { readSecrets, readCollaboration, getActiveProfile, getProfiles } from "../config";
 
 const TMP = `/tmp/draft-core-test-${Date.now()}`;
 
@@ -62,5 +62,81 @@ describe("readCollaboration", () => {
     const result = readCollaboration(TMP);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("missing");
+  });
+});
+
+// ── getActiveProfile ────────────────────────────────────────────────────────────
+// Use opts to point at a temp file — avoids HOME env manipulation and module caching issues.
+
+describe("getActiveProfile", () => {
+  const FAKE_DRAFT = `/tmp/draft-core-active-profile-test-${Date.now()}`;
+
+  beforeEach(() => mkdirSync(FAKE_DRAFT, { recursive: true }));
+  afterEach(() => rmSync(FAKE_DRAFT, { recursive: true, force: true }));
+
+  it("returns profile name from active-profile file", () => {
+    const file = join(FAKE_DRAFT, "active-profile");
+    writeFileSync(file, "acme\n");
+    expect(getActiveProfile({ activeProfileFile: file })).toBe("acme");
+  });
+
+  it("returns 'default' when active-profile file is missing", () => {
+    const file = join(FAKE_DRAFT, "active-profile"); // does not exist
+    expect(getActiveProfile({ activeProfileFile: file })).toBe("default");
+  });
+
+  it("returns 'default' when active-profile file is whitespace-only", () => {
+    const file = join(FAKE_DRAFT, "active-profile");
+    writeFileSync(file, "   \n");
+    expect(getActiveProfile({ activeProfileFile: file })).toBe("default");
+  });
+});
+
+// ── getProfiles ─────────────────────────────────────────────────────────────────
+
+describe("getProfiles", () => {
+  const FAKE_ROOT      = `/tmp/draft-core-profiles-test-${Date.now()}`;
+  const FAKE_WORKSPACES = join(FAKE_ROOT, "workspaces");
+  const FAKE_AP_FILE   = join(FAKE_ROOT, "active-profile");
+
+  afterEach(() => rmSync(FAKE_ROOT, { recursive: true, force: true }));
+
+  const opts = () => ({ workspacesDir: FAKE_WORKSPACES, activeProfileFile: FAKE_AP_FILE });
+
+  it("returns empty names list when workspaces dir does not exist", () => {
+    mkdirSync(FAKE_ROOT, { recursive: true });
+    const result = getProfiles(opts());
+    expect(result.names).toEqual([]);
+  });
+
+  it("lists profile directories sorted alphabetically", () => {
+    mkdirSync(join(FAKE_WORKSPACES, "zebra"), { recursive: true });
+    mkdirSync(join(FAKE_WORKSPACES, "acme"),  { recursive: true });
+    mkdirSync(join(FAKE_WORKSPACES, "myco"),  { recursive: true });
+    const result = getProfiles(opts());
+    expect(result.names).toEqual(["acme", "myco", "zebra"]);
+  });
+
+  it("excludes files — only directories are profiles", () => {
+    mkdirSync(join(FAKE_WORKSPACES, "acme"), { recursive: true });
+    writeFileSync(join(FAKE_WORKSPACES, "not-a-profile.txt"), "hello");
+    const result = getProfiles(opts());
+    expect(result.names).toEqual(["acme"]);
+  });
+
+  it("active field reflects the active-profile file", () => {
+    mkdirSync(join(FAKE_WORKSPACES, "acme"),           { recursive: true });
+    mkdirSync(join(FAKE_WORKSPACES, "draft-pm-agent"), { recursive: true });
+    writeFileSync(FAKE_AP_FILE, "acme");
+    const result = getProfiles(opts());
+    expect(result.active).toBe("acme");
+    expect(result.names).toContain("acme");
+    expect(result.names).toContain("draft-pm-agent");
+  });
+
+  it("active defaults to 'default' when active-profile file is missing", () => {
+    mkdirSync(join(FAKE_WORKSPACES, "acme"), { recursive: true });
+    const result = getProfiles(opts()); // FAKE_AP_FILE does not exist
+    expect(result.active).toBe("default");
   });
 });

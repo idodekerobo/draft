@@ -20,6 +20,13 @@ export interface HeartbeatResult {
 
 // ── Check ──────────────────────────────────────────────────────────────────────
 
+export interface HeartbeatOpts {
+  /** Override the background dir path. Used in tests. */
+  backgroundDir?: string;
+  /** Override the daemon log path. Used in tests. */
+  daemonLog?: string;
+}
+
 /**
  * Read filesystem state to determine daemon health.
  * Does NOT invoke launchctl — callers who need a definitive running/stopped
@@ -27,10 +34,15 @@ export interface HeartbeatResult {
  *
  * This function is intentionally fast (no subprocess) and suitable for
  * polling from a desktop tray or status bar.
+ *
+ * Pass `opts` to override path constants (useful in tests).
  */
-export function checkHeartbeat(): HeartbeatResult {
+export function checkHeartbeat(opts?: HeartbeatOpts): HeartbeatResult {
+  const bgDir   = opts?.backgroundDir ?? BACKGROUND_DIR;
+  const logFile = opts?.daemonLog     ?? DAEMON_LOG;
+
   // ── Pending queue depth ──────────────────────────────────────────────────────
-  const pendingDir = `${BACKGROUND_DIR}/pending`;
+  const pendingDir = `${bgDir}/pending`;
   let pendingQueueDepth = 0;
   if (existsSync(pendingDir)) {
     try {
@@ -42,9 +54,9 @@ export function checkHeartbeat(): HeartbeatResult {
 
   // ── Last log line ────────────────────────────────────────────────────────────
   let lastLogLine: string | null = null;
-  if (existsSync(DAEMON_LOG)) {
+  if (existsSync(logFile)) {
     try {
-      const content = readFileSync(DAEMON_LOG, "utf8");
+      const content = readFileSync(logFile, "utf8");
       const lines = content.split("\n").filter((l) => l.trim().length > 0);
       lastLogLine = lines[lines.length - 1] ?? null;
     } catch {
@@ -55,7 +67,7 @@ export function checkHeartbeat(): HeartbeatResult {
   // ── Daemon running (PID sentinel file) ──────────────────────────────────────
   // The daemon writes its PID to background/daemon.pid on start and removes it on stop.
   // This is a fast heuristic — use getDaemonStatus() for a definitive launchctl check.
-  const pidSentinel = `${BACKGROUND_DIR}/daemon.pid`;
+  const pidSentinel = `${bgDir}/daemon.pid`;
   const daemonRunning = existsSync(pidSentinel);
 
   return { daemonRunning, lastLogLine, pendingQueueDepth };

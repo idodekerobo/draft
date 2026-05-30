@@ -5,7 +5,7 @@
 // gracefully — callers never need to try/catch config reads.
 
 import { join } from "path";
-import { readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 
 // ── Path constants ─────────────────────────────────────────────────────────────
 
@@ -46,18 +46,27 @@ export type CollabResult =
 
 // ── Profile resolution ─────────────────────────────────────────────────────────
 
-export function getActiveProfile(): string {
+export interface ProfileOpts {
+  /** Override ~/.draft/active-profile path. Used in tests. */
+  activeProfileFile?: string;
+  /** Override ~/.draft/workspaces path. Used in tests. */
+  workspacesDir?: string;
+}
+
+export function getActiveProfile(opts?: ProfileOpts): string {
+  const file = opts?.activeProfileFile ?? ACTIVE_PROFILE_FILE;
   try {
-    const raw = readFileSync(ACTIVE_PROFILE_FILE, "utf8").trim();
+    const raw = readFileSync(file, "utf8").trim();
     return raw || "default";
   } catch {
     return "default";
   }
 }
 
-export function getWorkspacePath(profile?: string): string {
-  const active = profile ?? getActiveProfile();
-  return `${WORKSPACES_DIR}/${active}`;
+export function getWorkspacePath(profile?: string, opts?: ProfileOpts): string {
+  const wsDir  = opts?.workspacesDir ?? WORKSPACES_DIR;
+  const active = profile ?? getActiveProfile(opts);
+  return `${wsDir}/${active}`;
 }
 
 // ── Secrets ────────────────────────────────────────────────────────────────────
@@ -75,6 +84,36 @@ export function readSecrets(workspacePath: string): SecretsResult {
     return { ok: true, secrets: parsed };
   } catch {
     return { ok: false, reason: "malformed" };
+  }
+}
+
+// ── Profile list ───────────────────────────────────────────────────────────────
+
+export interface ProfileList {
+  /** All profile names, sorted alphabetically. */
+  names: string[];
+  /** The currently active profile (never empty — falls back to "default"). */
+  active: string;
+}
+
+/**
+ * List all named profiles under ~/.draft/workspaces/.
+ * Returns the data layer only — callers own the print/display logic.
+ *
+ * Pass `opts` to override path constants (used in tests).
+ */
+export function getProfiles(opts?: ProfileOpts): ProfileList {
+  const wsDir = opts?.workspacesDir ?? WORKSPACES_DIR;
+  const active = getActiveProfile(opts);
+  if (!existsSync(wsDir)) return { names: [], active };
+  try {
+    const names = readdirSync(wsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+    return { names, active };
+  } catch {
+    return { names: [], active };
   }
 }
 

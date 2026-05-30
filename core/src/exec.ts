@@ -15,7 +15,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  * Use when you want the user to see live output (start, stop, logs --follow).
  */
 export async function spawn(cmd: string[]): Promise<number> {
-  const [bin, ...args] = cmd;
+  const bin  = cmd[0] ?? "";
+  const args = cmd.slice(1);
   const proc = Bun.spawn([bin, ...args], {
     stdin: "inherit",
     stdout: "inherit",
@@ -39,7 +40,8 @@ export async function capture(
   opts?: { timeoutMs?: number }
 ): Promise<CaptureResult> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const [bin, ...args] = cmd;
+  const bin  = cmd[0] ?? "";
+  const args = cmd.slice(1);
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
