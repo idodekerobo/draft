@@ -7,12 +7,17 @@
     "./exec":      "./src/exec.ts",
     "./status":    "./src/status.ts",
     "./heartbeat": "./src/heartbeat.ts",
+    "./appState":  "./src/appState.ts",
     "./proposals": "./src/proposals.ts"
   },
   "scripts": {
     "test": "bun test"
   },
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/bun": "latest"
   },
   "peerDependencies": {
