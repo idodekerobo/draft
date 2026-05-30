@@ -19,6 +19,19 @@ summary: Add pricing decision context
 We decided to go with a freemium model.
 `;
 
+const DESKTOP_PROPOSAL = `---
+dimension: product
+action: update
+source: slack
+synthesized_by: draft:synthesize
+timestamp: 2026-05-27T09:15:00Z
+---
+
+# Product
+
+Updated content.
+`;
+
 const NO_FRONTMATTER = `This proposal has no frontmatter at all.`;
 
 beforeEach(() => {
@@ -78,6 +91,18 @@ describe("parseProposal", () => {
     expect(p.summary).toBe("Add pricing decision context");
   });
 
+  it("parses desktop proposal metadata from YAML frontmatter", () => {
+    const file = join(PROPOSALS_DIR, "desktop.md");
+    writeFileSync(file, DESKTOP_PROPOSAL);
+    const p = parseProposal("desktop.md", file);
+    expect(p.dimension).toBe("product");
+    expect(p.action).toBe("update");
+    expect(p.source).toBe("slack");
+    expect(p.synthesizedBy).toBe("draft:synthesize");
+    expect(p.timestamp).toBe("2026-05-27T09:15:00Z");
+    expect(p.summary).toBe("update product");
+  });
+
   it("extracts body (content after closing ---)", () => {
     const file = join(PROPOSALS_DIR, "body.md");
     writeFileSync(file, VALID_PROPOSAL);
@@ -92,6 +117,7 @@ describe("parseProposal", () => {
     const p = parseProposal("no-fm.md", file);
     expect(p.summary).toBe("no-fm.md");
     expect(p.source).toBe("unknown");
+    expect(p.dimension).toBe("unknown");
     expect(p.body).toBe(NO_FRONTMATTER);
   });
 
@@ -126,7 +152,8 @@ describe("acceptProposal", () => {
 
   it("throws when source file does not exist", () => {
     const ghost = { filename: "ghost.md", path: "/nonexistent/ghost.md", mtime: 0,
-      source: "unknown", createdAt: "", summary: "", body: "" };
+      source: "unknown", createdAt: "", timestamp: "", dimension: "unknown", action: "update",
+      synthesizedBy: "", summary: "", body: "" };
     expect(() => acceptProposal(ghost, ACCEPTED_DIR)).toThrow();
   });
 });
