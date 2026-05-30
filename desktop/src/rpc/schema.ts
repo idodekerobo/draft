@@ -18,6 +18,12 @@ import type { RPCSchema } from "electrobun/bun";
 
 export type DaemonState = "running" | "stopped" | "degraded";
 
+export interface IntegrationStatus {
+  granola: boolean;
+  slack: boolean;
+  github: boolean;
+}
+
 export interface DaemonStatus {
   state: DaemonState;
   pid: string | null;
@@ -29,6 +35,8 @@ export interface DaemonStatus {
   lastSync: string | null;
   /** First-run/setup-ready state for renderer routing and setup copy. */
   appState: AppState;
+  /** Which integrations are configured in secrets.json for the active profile. */
+  integrations: IntegrationStatus;
 }
 
 export type AppUserState =
@@ -115,6 +123,12 @@ export type AppRPCType = {
 
       /** Launch a terminal session for the given tool + profile. */
       launchSession: { params: SessionLaunchConfig; response: LaunchResult };
+
+      /** Start the background daemon via launchctl. */
+      startDaemon: { params: void; response: ActionResult };
+
+      /** Stop the background daemon via launchctl. */
+      stopDaemon: { params: void; response: ActionResult };
 
       /** Accept a pending proposal (moves to accepted/). */
       acceptProposal: { params: { filename: string }; response: ActionResult };

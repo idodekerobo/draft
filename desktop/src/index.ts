@@ -1,9 +1,10 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
-import { getDaemonStatus } from "draft-core/status";
+import { getDaemonStatus, PLIST_LABEL } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readSecrets } from "draft-core/config";
+import { capture } from "draft-core/exec";
 import {
   listProposals,
   parseProposal,
@@ -71,7 +72,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // file missing or malformed — daemon hasn't run yet
         }
 
-        return { ...daemonStatus, profile, lastSync, appState };
+        // Integration status — read secrets.json for active profile
+        const workspace = getWorkspacePath(getActiveProfile());
+        const secretsResult = readSecrets(workspace);
+        const secrets = secretsResult.ok ? secretsResult.secrets : {};
+        const integrations = {
+          granola: !!(secrets.granola_mode && secrets.granola_api_token),
+          slack:   !!(secrets.slack_bot_token),
+          github:  secrets.github_connected === true,
+        };
+
+        return { ...daemonStatus, profile, lastSync, appState, integrations };
       },
 
       getProposals: async () => {
@@ -105,6 +116,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         ok: false,
         error: "not implemented — Phase 3",
       }),
+
+      startDaemon: async () => {
+        const result = await capture(["launchctl", "start", PLIST_LABEL]);
+        return { ok: result.exitCode === 0, error: result.stderr || undefined };
+      },
+
+      stopDaemon: async () => {
+        const result = await capture(["launchctl", "stop", PLIST_LABEL]);
+        return { ok: result.exitCode === 0, error: result.stderr || undefined };
+      },
 
       acceptProposal: async ({ filename }) => {
         try {
@@ -162,6 +183,7 @@ const win = new BrowserWindow({
   url: "views://app/index.html",
   rpc,
 });
+win.setFrame(180, 100, 1150, 820);
 
 function readContextFile(workspace: string, dimension: string): string {
   if (!dimension || dimension === "unknown") return "";
