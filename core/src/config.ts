@@ -5,7 +5,7 @@
 // gracefully — callers never need to try/catch config reads.
 
 import { join } from "path";
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 
 // ── Path constants ─────────────────────────────────────────────────────────────
 
@@ -67,6 +67,28 @@ export function getWorkspacePath(profile?: string, opts?: ProfileOpts): string {
   const wsDir  = opts?.workspacesDir ?? WORKSPACES_DIR;
   const active = profile ?? getActiveProfile(opts);
   return `${wsDir}/${active}`;
+}
+
+export type SetActiveProfileResult =
+  | { ok: true; active: string }
+  | { ok: false; reason: "invalid" | "missing" };
+
+export function setActiveProfile(profile: string, opts?: ProfileOpts): SetActiveProfileResult {
+  const name = profile.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  const workspacePath = getWorkspacePath(name, opts);
+  if (!existsSync(workspacePath)) {
+    return { ok: false, reason: "missing" };
+  }
+
+  const activeProfileFile = opts?.activeProfileFile ?? ACTIVE_PROFILE_FILE;
+  const parentDir = activeProfileFile.slice(0, activeProfileFile.lastIndexOf("/"));
+  if (parentDir) mkdirSync(parentDir, { recursive: true });
+  writeFileSync(activeProfileFile, `${name}\n`, "utf8");
+  return { ok: true, active: name };
 }
 
 // ── Secrets ────────────────────────────────────────────────────────────────────

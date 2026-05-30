@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { readSecrets, readCollaboration, getActiveProfile, getProfiles } from "../config";
+import { readSecrets, readCollaboration, getActiveProfile, getProfiles, setActiveProfile } from "../config";
 
 const TMP = `/tmp/draft-core-test-${Date.now()}`;
 
@@ -138,5 +138,36 @@ describe("getProfiles", () => {
     mkdirSync(join(FAKE_WORKSPACES, "acme"), { recursive: true });
     const result = getProfiles(opts()); // FAKE_AP_FILE does not exist
     expect(result.active).toBe("default");
+  });
+});
+
+// ── setActiveProfile ───────────────────────────────────────────────────────────
+
+describe("setActiveProfile", () => {
+  const FAKE_ROOT       = `/tmp/draft-core-set-active-profile-test-${Date.now()}`;
+  const FAKE_WORKSPACES = join(FAKE_ROOT, "workspaces");
+  const FAKE_AP_FILE    = join(FAKE_ROOT, "active-profile");
+
+  afterEach(() => rmSync(FAKE_ROOT, { recursive: true, force: true }));
+
+  const opts = () => ({ workspacesDir: FAKE_WORKSPACES, activeProfileFile: FAKE_AP_FILE });
+
+  it("writes active-profile when the profile exists", () => {
+    mkdirSync(join(FAKE_WORKSPACES, "acme"), { recursive: true });
+    const result = setActiveProfile("acme", opts());
+    expect(result).toEqual({ ok: true, active: "acme" });
+    expect(getActiveProfile(opts())).toBe("acme");
+  });
+
+  it("rejects missing profile directories", () => {
+    mkdirSync(FAKE_WORKSPACES, { recursive: true });
+    const result = setActiveProfile("ghost", opts());
+    expect(result).toEqual({ ok: false, reason: "missing" });
+  });
+
+  it("rejects invalid profile names", () => {
+    mkdirSync(FAKE_WORKSPACES, { recursive: true });
+    const result = setActiveProfile("../nope", opts());
+    expect(result).toEqual({ ok: false, reason: "invalid" });
   });
 });
