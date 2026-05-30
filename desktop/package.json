@@ -12,7 +12,9 @@
   },
   "scripts": {
     "start": "electrobun dev",
-    "build": "electrobun build",
-    "dev": "electrobun dev --watch"
+    "dev": "electrobun dev --watch",
+    "build:dev": "electrobun build",
+    "build:canary": "electrobun build --env=canary",
+    "build:stable": "electrobun build --env=stable"
   }
 }
