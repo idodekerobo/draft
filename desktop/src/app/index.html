@@ -1,37 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Draft</title>
-  <link rel="stylesheet" href="./index.css" />
-</head>
-<body>
-  <div class="app">
-    <header class="status-bar">
-      <span class="status-dot" id="status-dot"></span>
-      <span class="status-label" id="status-label">Connecting...</span>
-      <span class="profile-label" id="profile-label"></span>
-    </header>
-
-    <main class="content">
-      <h1>Draft</h1>
-      <p class="subtitle">Session Launcher + Compound Loop Dashboard</p>
-
-      <section class="card">
-        <h2>Daemon status</h2>
-        <pre id="status-json">Loading...</pre>
-      </section>
-
-      <section class="card spike-controls">
-        <h2>Spike proof controls</h2>
-        <p class="hint">These buttons verify RPC and notifications are wired.</p>
-        <button id="btn-refresh-status">Refresh Status (RPC request →)</button>
-        <button id="btn-notify">Send Notification (RPC message → bun → notify)</button>
-      </section>
-    </main>
-  </div>
-
-  <script type="module" src="./index.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Draft</title>
+    <link rel="stylesheet" href="./index.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./index.js"></script>
+  </body>
 </html>

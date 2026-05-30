@@ -1,134 +1,314 @@
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Design tokens ───────────────────────────────────────────────────────────── */
+/* All colors live here. Zero hardcoded hex values in components. */
+/* v2: add @media (prefers-color-scheme: light) block here — no component changes needed */
+
+:root {
+  /* Backgrounds */
+  --color-bg-primary:     #1c1c1e;
+  --color-bg-sidebar:     #2c2c2e;
+  --color-bg-surface:     #3a3a3c;
+
+  /* Text */
+  --color-text-primary:   #ffffff;
+  --color-text-secondary: rgba(255, 255, 255, 0.55);
+  --color-text-tertiary:  rgba(255, 255, 255, 0.3);
+
+  /* Accent */
+  --color-accent-blue:    #0a84ff;
+
+  /* Status */
+  --color-status-green:   #30d158;
+  --color-status-yellow:  #ffd60a;
+  --color-status-red:     #ff453a;
+
+  /* Borders */
+  --color-border:         rgba(255, 255, 255, 0.08);
+  --color-border-strong:  rgba(255, 255, 255, 0.14);
+
+  /* Typography */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-mono: "SF Mono", "Menlo", "Monaco", monospace;
+  --font-size-sidebar:   13px;
+  --font-size-body:      14px;
+  --font-size-secondary: 13px;
+  --font-size-micro:     11px;
+
+  /* Layout */
+  --sidebar-width:     200px;
+  --statusbar-height:   36px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
-  background: #0f0f0f;
-  color: #e8e8e8;
-  min-height: 100vh;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+button {
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
+/* ── App shell ───────────────────────────────────────────────────────────────── */
 
 .app {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
 }
 
 /* ── Status bar ──────────────────────────────────────────────────────────────── */
+/* Compact single-line toolbar: "● running · profile: acme · synced 4m ago"     */
 
 .status-bar {
+  height: var(--statusbar-height);
+  background: var(--color-bg-sidebar);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #2a2a2a;
-  font-size: 12px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #555;
+  padding: 0 16px;
+  gap: 6px;
   flex-shrink: 0;
-  transition: background 0.3s;
+  user-select: none;
 }
 
-.status-dot.running  { background: #4ade80; }
-.status-dot.stopped  { background: #f87171; }
-.status-dot.degraded { background: #fbbf24; }
-
-.status-label {
-  color: #aaa;
+.status-bar__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.4s ease;
 }
 
-.profile-label {
+.status-bar__dot--running {
+  background: var(--color-status-green);
+  animation: dot-pulse 2.5s ease-in-out infinite;
+}
+
+.status-bar__dot--degraded {
+  background: var(--color-status-yellow);
+}
+
+.status-bar__dot--stopped {
+  background: var(--color-status-red);
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+.status-bar__text {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.status-bar__sep {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  padding: 0 1px;
+}
+
+/* ── Two-panel layout ────────────────────────────────────────────────────────── */
+
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--color-bg-sidebar);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar__nav {
+  padding: 6px 0;
+  flex: 1;
+}
+
+/* Nav item — hairline separator list style, not cards */
+.sidebar__item {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  font-size: var(--font-size-sidebar);
+  color: var(--color-text-secondary);
+  cursor: default;
+  border-left: 2px solid transparent;
+  transition: color 120ms, background 120ms;
+  user-select: none;
+  position: relative;
+}
+
+.sidebar__item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-primary);
+}
+
+.sidebar__item--active {
+  border-left-color: var(--color-accent-blue);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+/* Proposal count badge — only shown when count > 0 */
+.sidebar__badge {
   margin-left: auto;
-  color: #666;
-  font-family: "SF Mono", "Menlo", monospace;
+  background: var(--color-accent-blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── Content ─────────────────────────────────────────────────────────────────── */
+/* ── Main content area ───────────────────────────────────────────────────────── */
 
 .content {
-  padding: 24px;
+  flex: 1;
+  background: var(--color-bg-primary);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Proposals panel ─────────────────────────────────────────────────────────── */
+
+.proposals {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.proposals__header {
+  height: 40px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.proposals__title {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.proposals__list {
   flex: 1;
   overflow-y: auto;
 }
 
-h1 {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.3px;
-  color: #fff;
+/* ── Empty states ────────────────────────────────────────────────────────────── */
+/* Three states per DESIGN.md, shown in priority order. Never a blank screen.   */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px 40px 60px;
+  text-align: center;
+  gap: 0;
 }
 
-.subtitle {
-  margin-top: 4px;
-  color: #555;
-  font-size: 12px;
-}
-
-/* ── Cards ───────────────────────────────────────────────────────────────────── */
-
-.card {
-  margin-top: 20px;
-  padding: 16px;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 8px;
-}
-
-.card h2 {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: #666;
-  margin-bottom: 10px;
-}
-
-pre {
-  font-family: "SF Mono", "Menlo", monospace;
-  font-size: 12px;
-  color: #aaa;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-/* ── Spike controls ──────────────────────────────────────────────────────────── */
-
-.spike-controls .hint {
-  font-size: 12px;
-  color: #555;
+.empty-state__icon {
+  font-size: 18px;
+  line-height: 1;
   margin-bottom: 12px;
+  opacity: 0.5;
 }
 
-.spike-controls {
-  border-color: #2a3a2a;
+.empty-state__title {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
 }
 
-button {
-  display: block;
-  width: 100%;
-  padding: 8px 12px;
-  margin-top: 8px;
-  background: #1e2e1e;
-  border: 1px solid #3a5a3a;
-  border-radius: 6px;
-  color: #4ade80;
-  font-size: 12px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s, border-color 0.15s;
+.empty-state__body {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  max-width: 260px;
+  line-height: 1.55;
 }
 
-button:hover {
-  background: #253525;
-  border-color: #4ade80;
+.empty-state__cta {
+  margin-top: 20px;
+  height: 30px;
+  padding: 0 14px;
+  background: var(--color-accent-blue);
+  color: #fff;
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  border: none;
+  border-radius: var(--radius-md);
+  transition: opacity 120ms;
 }
 
-button:active {
-  background: #1a2a1a;
+.empty-state__cta:hover  { opacity: 0.85; }
+.empty-state__cta:active { opacity: 0.7; }
+
+/* ── Placeholder panels (Sessions, Context, Settings) ────────────────────────── */
+
+.panel-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-secondary);
+  user-select: none;
 }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar              { width: 6px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover  { background: rgba(255,255,255,0.18); }
