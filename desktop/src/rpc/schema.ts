@@ -23,6 +23,10 @@ export interface DaemonStatus {
   pid: string | null;
   lastExit: string | null;
   isRegistered: boolean;
+  /** Active profile name — read from last-heartbeat JSON. Null if daemon never ran. */
+  profile: string | null;
+  /** ISO timestamp of last synthesis run — read from last-heartbeat JSON. Null if no sync yet. */
+  lastSync: string | null;
 }
 
 export interface ProposalSummary {
