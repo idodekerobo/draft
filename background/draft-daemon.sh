@@ -24,7 +24,8 @@ fi
 source "$CONFIG"
 
 # Ensure runtime directories exist
-mkdir -p "$DRAFT_PENDING" "$DRAFT_FAILED" "$DRAFT_LOGS"
+STATE_DIR="$DRAFT_BACKGROUND/state"
+mkdir -p "$DRAFT_PENDING" "$DRAFT_FAILED" "$DRAFT_LOGS" "$STATE_DIR"
 
 LOG="$DRAFT_LOGS/daemon.log"
 MAX_LOG_LINES=10000   # trim when log exceeds this; keep last 5000
@@ -109,6 +110,15 @@ LAST_GITHUB_POLL=0      # epoch seconds; 0 = never polled this session
 SLACK_MANAGER_INTERVAL=60
 
 while true; do
+
+    # -- Heartbeat JSON write (every poll cycle) --------------------------------
+    # Desktop reads mtime for alive/dead detection (stale >2min = stopped).
+    # Parses JSON for status header: "● running · profile: acme · synced 4m ago"
+    _last_sync=$(cat "$STATE_DIR/last-synthesis" 2>/dev/null || echo "")
+    printf '{"pid":%d,"profile":"%s","ts":"%s","last_sync":"%s"}\n' \
+      "$$" "$DRAFT_ACTIVE_PROFILE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      "$_last_sync" \
+      > "$STATE_DIR/last-heartbeat"
 
     # -- Process pending jobs --------------------------------------------------
     for job_file in "$DRAFT_PENDING"/*.json; do
