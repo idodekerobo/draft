@@ -2,14 +2,18 @@
   "name": "draft-desktop",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
     "draft-core": "workspace:*",
-    "electrobun": "^1.18.1"
+    "electrobun": "^1.18.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "scripts": {
     "start": "electrobun dev",
