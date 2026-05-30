@@ -5,8 +5,18 @@
 
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus } from "draft-core/status";
-import { getActiveProfile } from "draft-core/config";
+import { getAppState } from "draft-core/appState";
+import { getActiveProfile, getWorkspacePath } from "draft-core/config";
+import {
+  listProposals,
+  parseProposal,
+  acceptProposal as acceptCoreProposal,
+  rejectProposal as rejectCoreProposal,
+} from "draft-core/proposals";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { startHeartbeatWatch, stopHeartbeatWatch } from "./main/notifications";
+import { startProposalWatch, stopProposalWatch } from "./main/watchers/proposals";
 import type { AppRPCType } from "./rpc/schema";
 
 // ── Tray ───────────────────────────────────────────────────────────────────────
@@ -33,6 +43,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       // ── SPIKE: wired ──────────────────────────────────────────────────────
       getStatus: async () => {
         const daemonStatus = await getDaemonStatus();
+        const appState = getAppState();
 
         // Enrich with heartbeat JSON for profile + lastSync display
         let profile: string | null = null;
@@ -52,26 +63,53 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // file missing or malformed — daemon hasn't run yet
         }
 
-        return { ...daemonStatus, profile, lastSync };
+        return { ...daemonStatus, profile, lastSync, appState };
       },
 
-      // ── STUBS: wired in later phases ─────────────────────────────────────
-      getProposals: async () => [],
+      // ── PHASE 2: proposal inbox ──────────────────────────────────────────
+      getProposals: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        return listProposals(workspace).map((proposal) => ({
+          filename: proposal.filename,
+          source: proposal.source,
+          dimension: proposal.dimension,
+          action: proposal.action,
+          timestamp: proposal.timestamp,
+          summary: proposal.summary,
+          createdAt: proposal.createdAt,
+          body: proposal.body,
+          currentContent: readContextFile(workspace, proposal.dimension),
+        }));
+      },
 
       launchSession: async () => ({
         ok: false,
         error: "not implemented — Phase 3",
       }),
 
-      acceptProposal: async () => ({
-        ok: false,
-        error: "not implemented — Phase 2",
-      }),
+      acceptProposal: async ({ filename }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const proposalPath = join(workspace, "proposals", filename);
+          const proposal = parseProposal(filename, proposalPath);
+          acceptCoreProposal(proposal, join(workspace, "accepted"));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Accept failed" };
+        }
+      },
 
-      rejectProposal: async () => ({
-        ok: false,
-        error: "not implemented — Phase 2",
-      }),
+      rejectProposal: async ({ filename }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const proposalPath = join(workspace, "proposals", filename);
+          const proposal = parseProposal(filename, proposalPath);
+          rejectCoreProposal(proposal, join(workspace, "rejected"));
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Reject failed" };
+        }
+      },
 
       loadDiff: async () => ({
         entries: [],
@@ -97,6 +135,17 @@ const win = new BrowserWindow({
   rpc,
 });
 
+function readContextFile(workspace: string, dimension: string): string {
+  if (!dimension || dimension === "unknown") return "";
+  const contextPath = join(workspace, "context", dimension, "index.md");
+  if (!existsSync(contextPath)) return "";
+  try {
+    return readFileSync(contextPath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
 // ── Tray event handling ────────────────────────────────────────────────────────
 
 tray.on("tray-clicked", (e) => {
@@ -118,6 +167,7 @@ tray.on("tray-clicked", (e) => {
 
   if (action === "quit") {
     stopHeartbeatWatch();
+    stopProposalWatch();
     process.exit(0);
   }
 });
@@ -138,4 +188,12 @@ setTimeout(async () => {
   // Start heartbeat staleness watcher (T3).
   // 500ms delay ensures app is fully initialised before the initial mtime check.
   startHeartbeatWatch();
+  startProposalWatch({
+    onBadgeUpdate: (count) => {
+      try { rpc.send.badgeUpdate({ count }); } catch {}
+    },
+    onProposalAdded: (source, count) => {
+      try { rpc.send.proposalAdded({ source, count }); } catch {}
+    },
+  });
 }, 500);

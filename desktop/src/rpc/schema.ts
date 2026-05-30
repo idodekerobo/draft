@@ -27,13 +27,35 @@ export interface DaemonStatus {
   profile: string | null;
   /** ISO timestamp of last synthesis run — read from last-heartbeat JSON. Null if no sync yet. */
   lastSync: string | null;
+  /** First-run/setup-ready state for renderer routing and setup copy. */
+  appState: AppState;
+}
+
+export type AppUserState =
+  | "first-run"
+  | "setup-incomplete"
+  | "ready-daemon-stopped"
+  | "ready-daemon-running";
+
+export interface AppState {
+  userState: AppUserState;
+  hasActiveProfile: boolean;
+  hasContextFiles: boolean;
+  daemonState: "running" | "stopped" | "never-started";
+  heartbeatAgeMs: number | null;
+  activeProfile: string;
 }
 
 export interface ProposalSummary {
   filename: string;
   source: string;
+  dimension: string;
+  action: string;
+  timestamp: string;
   summary: string;
   createdAt: string;
+  body: string;
+  currentContent: string;
 }
 
 export interface SessionLaunchConfig {
@@ -78,16 +100,16 @@ export type AppRPCType = {
       getStatus: { params: void; response: DaemonStatus };
 
       /** List pending proposals for the active workspace. Phase 2. */
-      getProposals: { params: { workspacePath: string }; response: ProposalSummary[] };
+      getProposals: { params: void; response: ProposalSummary[] };
 
       /** Launch a terminal session for the given tool + profile. Phase 3. */
       launchSession: { params: SessionLaunchConfig; response: LaunchResult };
 
       /** Accept a pending proposal (moves to accepted/). Phase 2. */
-      acceptProposal: { params: { workspacePath: string; filename: string }; response: ActionResult };
+      acceptProposal: { params: { filename: string }; response: ActionResult };
 
       /** Reject a pending proposal (moves to rejected/). Phase 2. */
-      rejectProposal: { params: { workspacePath: string; filename: string }; response: ActionResult };
+      rejectProposal: { params: { filename: string }; response: ActionResult };
 
       /** Read CHANGES.jsonl delta since last cursor. Phase 4. */
       loadDiff: { params: void; response: LoadDiffResult };
