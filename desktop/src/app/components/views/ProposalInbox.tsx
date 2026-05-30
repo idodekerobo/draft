@@ -11,14 +11,14 @@
 //
 // Copy rule per DESIGN.md: never use the word "daemon" in UI text.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { diffLines } from "diff";
 import type { DaemonStatus, ProposalSummary } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 
 // ── Empty state components ──────────────────────────────────────────────────────
 
-function State1DaemonStopped({ onStart }: { onStart: () => void }) {
+function DaemonStoppedPrompt({ onStart }: { onStart: () => void }) {
   return (
     <div className="empty-state">
       <div className="empty-state__icon">⬤</div>
@@ -31,7 +31,7 @@ function State1DaemonStopped({ onStart }: { onStart: () => void }) {
   );
 }
 
-function State3Watching() {
+function WatchingPrompt() {
   return (
     <div className="empty-state">
       <div className="empty-state__icon">◎</div>
@@ -47,6 +47,7 @@ function State3Watching() {
 
 interface ProposalInboxProps {
   status: DaemonStatus | null;
+  activeProfile: string;
   onStartDraft: () => void;
   onCountChange: (count: number) => void;
 }
@@ -56,12 +57,16 @@ function isDaemonStopped(status: DaemonStatus | null): boolean {
   return status.state === "stopped";
 }
 
-export function ProposalInbox({ status, onStartDraft, onCountChange }: ProposalInboxProps) {
+export function ProposalInbox({ status, activeProfile, onStartDraft, onCountChange }: ProposalInboxProps) {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stopped = isDaemonStopped(status);
+
+  // Ref so event handlers always see the current profile without re-registering.
+  const activeProfileRef = useRef(activeProfile);
+  useEffect(() => { activeProfileRef.current = activeProfile; }, [activeProfile]);
   const selected = useMemo(
     () => proposals.find((p) => p.filename === selectedFilename) ?? proposals[0] ?? null,
     [proposals, selectedFilename],
@@ -85,8 +90,15 @@ export function ProposalInbox({ status, onStartDraft, onCountChange }: ProposalI
 
   useEffect(() => {
     void refresh();
-    const offAdded = events.on("proposalAdded", () => void refresh());
-    const offBadge = events.on("badgeUpdate", () => void refresh());
+    // Guard: only refresh if the event is for the profile this inbox is showing.
+    // The component is keyed by activeProfile in App.tsx so it remounts on switch,
+    // but in-flight events from the previous profile can still arrive briefly.
+    const offAdded = events.on("proposalAdded", ({ profile }) => {
+      if (profile === activeProfileRef.current) void refresh();
+    });
+    const offBadge = events.on("badgeUpdate", ({ profile }) => {
+      if (profile === activeProfileRef.current) void refresh();
+    });
     return () => {
       offAdded();
       offBadge();
@@ -116,7 +128,7 @@ export function ProposalInbox({ status, onStartDraft, onCountChange }: ProposalI
 
       <div className="proposals__list proposals__list--split">
         {stopped ? (
-          <State1DaemonStopped onStart={onStartDraft} />
+          <DaemonStoppedPrompt onStart={onStartDraft} />
         ) : proposals.length > 0 && selected ? (
           <>
             <ProposalList
@@ -136,7 +148,7 @@ export function ProposalInbox({ status, onStartDraft, onCountChange }: ProposalI
             />
           </>
         ) : (
-          <State3Watching />
+          <WatchingPrompt />
         )}
       </div>
     </div>
