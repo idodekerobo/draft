@@ -1,40 +1,30 @@
 // StatusBar.tsx — compact single-line toolbar at the top of the main window
 //
-// Displays: ● running · profile: acme · synced 4m ago
+// Left:  ● running · N apps connected
+// Right: profile-name ▾  (custom dropdown portal)
 //
-// Dot color reflects freshness (not just running/stopped):
-//   Green  = running + last capture < 30min ago   (DESIGN.md thresholds)
+// Dot color thresholds (per DESIGN.md):
+//   Green  = running + last capture < 30min ago
 //   Yellow = running + last capture 30min–2hr ago, OR daemon degraded
-//   Red    = daemon stopped, OR last capture > 2hr ago, OR no sync yet
+//   Red    = daemon stopped, OR last capture > 2hr ago, OR never synced
 
+import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import type { DaemonStatus } from "../../rpc/schema";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function formatRelativeTime(ts: string | null | undefined): string {
-  if (!ts) return "never synced";
-  const diffMs = Date.now() - new Date(ts).getTime();
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 type DotVariant = "running" | "degraded" | "stopped";
 
 function getDotVariant(status: DaemonStatus | null): DotVariant {
   if (!status || status.state === "stopped") return "stopped";
   if (status.state === "degraded") return "degraded";
-
-  // Running — check freshness
   if (!status.lastSync) return "stopped"; // running but never synced → red
 
   const diffMins = (Date.now() - new Date(status.lastSync).getTime()) / 60_000;
-  if (diffMins < 30)  return "running";   // green
-  if (diffMins < 120) return "degraded";  // yellow
-  return "stopped";                        // red (stale > 2hr)
+  if (diffMins < 30)  return "running";
+  if (diffMins < 120) return "degraded";
+  return "stopped";
 }
 
 function getStatusText(status: DaemonStatus | null): string {
@@ -44,35 +34,135 @@ function getStatusText(status: DaemonStatus | null): string {
   return "running";
 }
 
+function getConnectedCount(status: DaemonStatus | null): number {
+  if (!status?.integrations) return 0;
+  return [
+    status.integrations.granola,
+    status.integrations.slack,
+    status.integrations.github,
+  ].filter(Boolean).length;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 interface StatusBarProps {
   status: DaemonStatus | null;
+  activeProfile: string;
+  profiles: string[];
+  onSwitchProfile: (profile: string) => Promise<void>;
 }
 
-export function StatusBar({ status }: StatusBarProps) {
-  const dotVariant  = getDotVariant(status);
-  const statusText  = getStatusText(status);
-  const profileText = status?.profile ?? null;
-  const syncText    = status?.lastSync ? formatRelativeTime(status.lastSync) : null;
+export function StatusBar({ status, activeProfile, profiles, onSwitchProfile }: StatusBarProps) {
+  const [dropdownOpen, setDropdownOpen]   = useState(false);
+  const [dropdownPos, setDropdownPos]     = useState<{ top: number; right: number } | null>(null);
+  const chipRef = useRef<HTMLButtonElement>(null);
 
+  const dotVariant      = getDotVariant(status);
+  const statusText      = getStatusText(status);
+  const connectedCount  = getConnectedCount(status);
+  const displayProfile  = activeProfile || "default";
+
+  // ── Open dropdown — calculate position from chip bounds ───────────────────
+  function openDropdown() {
+    const rect = chipRef.current?.getBoundingClientRect();
+    if (rect) {
+      setDropdownPos({
+        top:   rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setDropdownOpen(true);
+  }
+
+  function toggleDropdown() {
+    if (dropdownOpen) {
+      setDropdownOpen(false);
+    } else {
+      openDropdown();
+    }
+  }
+
+  // ── Click-outside to close ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!dropdownOpen) return;
+
+    function handleMouseDown(e: MouseEvent) {
+      if (chipRef.current && !chipRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [dropdownOpen]);
+
+  // ── Select a profile ──────────────────────────────────────────────────────
+  async function handleSelect(profile: string) {
+    setDropdownOpen(false);
+    await onSwitchProfile(profile);
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <header className="status-bar">
-      <span className={`status-bar__dot status-bar__dot--${dotVariant}`} />
-      <span className="status-bar__text">{statusText}</span>
+      {/* Left: daemon state + integration count */}
+      <div className="status-bar__left">
+        <span className={`status-bar__dot status-bar__dot--${dotVariant}`} />
+        <span className="status-bar__text">{statusText}</span>
 
-      {profileText && (
-        <>
-          <span className="status-bar__sep">·</span>
-          <span className="status-bar__text">profile: {profileText}</span>
-        </>
-      )}
+        {connectedCount > 0 && (
+          <>
+            <span className="status-bar__sep">·</span>
+            <span className="status-bar__text">
+              {connectedCount} {connectedCount === 1 ? "app" : "apps"} connected
+            </span>
+          </>
+        )}
+      </div>
 
-      {syncText && (
-        <>
-          <span className="status-bar__sep">·</span>
-          <span className="status-bar__text">synced {syncText}</span>
-        </>
+      {/* Right: profile chip */}
+      <div className="status-bar__right">
+        <button
+          ref={chipRef}
+          className={`profile-chip ${dropdownOpen ? "profile-chip--open" : ""}`}
+          onClick={toggleDropdown}
+          aria-haspopup="listbox"
+          aria-expanded={dropdownOpen}
+        >
+          {displayProfile}
+          <span className="profile-chip__arrow">▾</span>
+        </button>
+      </div>
+
+      {/* Dropdown — rendered via portal so it escapes the status bar's stacking context */}
+      {dropdownOpen && dropdownPos && createPortal(
+        <div
+          role="listbox"
+          className="profile-dropdown"
+          style={{ top: dropdownPos.top, right: dropdownPos.right }}
+        >
+          {profiles.length === 0 ? (
+            <div className="profile-dropdown__item profile-dropdown__item--empty">
+              {displayProfile}
+            </div>
+          ) : (
+            profiles.map((p) => (
+              <button
+                key={p}
+                role="option"
+                aria-selected={p === activeProfile}
+                className={`profile-dropdown__item ${p === activeProfile ? "profile-dropdown__item--active" : ""}`}
+                onClick={() => void handleSelect(p)}
+              >
+                <span className="profile-dropdown__check">
+                  {p === activeProfile ? "✓" : ""}
+                </span>
+                <span>{p}</span>
+              </button>
+            ))
+          )}
+        </div>,
+        document.body,
       )}
     </header>
   );
