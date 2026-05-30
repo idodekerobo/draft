@@ -1,4 +1,4 @@
-// commands/doctor.ts — diagnose configuration and dependency issues
+// commands/doctor — diagnose configuration and dependency issues
 //
 // Checks run in dependency order:
 //   Group 1: Runtime deps (always)
@@ -6,17 +6,12 @@
 //   Group 3: Config (after runtime)
 //   Group 4: Integrations (SKIP if claude CLI failed in Group 1)
 
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync, readFileSync } from "fs";
 import { join } from "path";
-import { capture } from "../utils/exec.ts";
-import { getActiveProfile, getWorkspacePath, readSecrets } from "../utils/config.ts";
-import { green, red, yellow, dim, bold, cyan } from "../utils/output.ts";
-
-const HOME = process.env.HOME!;
-const DRAFT_GLOBAL = `${HOME}/.draft`;
-const BACKGROUND = `${DRAFT_GLOBAL}/background`;
-const PLIST_LABEL = "com.draft.daemon";
-const PLIST_PATH = `${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist`;
+import { capture } from "../utils/exec";
+import { getActiveProfile, getWorkspacePath, readSecrets, DRAFT_ROOT, BACKGROUND_DIR } from "../utils/config";
+import { green, red, yellow, dim, bold, cyan } from "../utils/output";
+import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 
 interface CheckResult {
   label: string;
@@ -82,8 +77,8 @@ export async function runDoctor(_args: string[]): Promise<void> {
   }
   printCheck(daemonRunning);
 
-  const logsWritable = checkDir("Log files writable", `${BACKGROUND}/logs`);
-  if (!logsWritable.passed) logsWritable.fix = `mkdir -p ${BACKGROUND}/logs`;
+  const logsWritable = checkDir("Log files writable", `${BACKGROUND_DIR}/logs`);
+  if (!logsWritable.passed) logsWritable.fix = `mkdir -p ${BACKGROUND_DIR}/logs`;
   printCheck(logsWritable);
 
   if (!plistExists.passed || !daemonRegistered.passed || !daemonRunning.passed) allPassed = false;
@@ -91,7 +86,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   // ── Group 3: Config ────────────────────────────────────────────────────────
   console.log(`\n${bold("Config")}`);
 
-  const activeProfileFile = `${DRAFT_GLOBAL}/active-profile`;
+  const activeProfileFile = `${DRAFT_ROOT}/active-profile`;
   const profileReadable = checkFile("active-profile readable", activeProfileFile);
   printCheck(profileReadable);
 
@@ -176,11 +171,11 @@ export async function runDoctor(_args: string[]): Promise<void> {
     const hasSlack = Boolean(secrets.slack_bot_token) && Boolean(secrets.slack_app_token);
     if (hasSlack) {
       // Check if capture process is running
-      const pidFile = `${BACKGROUND}/integrations/slack/capture.pid`;
+      const pidFile = `${BACKGROUND_DIR}/integrations/slack/capture.pid`;
       let slackRunning = false;
       if (existsSync(pidFile)) {
         try {
-          const pid = Bun.fileSync(pidFile).text().trim();
+          const pid = readFileSync(pidFile, "utf8").trim();
           const pidCheck = await capture(["kill", "-0", pid]);
           slackRunning = pidCheck.exitCode === 0;
         } catch {
