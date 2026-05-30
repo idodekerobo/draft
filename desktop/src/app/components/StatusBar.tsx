@@ -55,7 +55,8 @@ interface StatusBarProps {
 export function StatusBar({ status, activeProfile, profiles, onSwitchProfile }: StatusBarProps) {
   const [dropdownOpen, setDropdownOpen]   = useState(false);
   const [dropdownPos, setDropdownPos]     = useState<{ top: number; right: number } | null>(null);
-  const chipRef = useRef<HTMLButtonElement>(null);
+  const chipRef     = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const dotVariant      = getDotVariant(status);
   const statusText      = getStatusText(status);
@@ -83,11 +84,17 @@ export function StatusBar({ status, activeProfile, profiles, onSwitchProfile }: 
   }
 
   // ── Click-outside to close ────────────────────────────────────────────────
+  // Check both the chip button AND the dropdown portal — the portal renders to
+  // document.body so it falls outside chipRef, but clicks inside it are not
+  // "outside" clicks. Without this guard, mousedown on a dropdown item fires
+  // the close handler before the item's onClick can run.
   useEffect(() => {
     if (!dropdownOpen) return;
 
     function handleMouseDown(e: MouseEvent) {
-      if (chipRef.current && !chipRef.current.contains(e.target as Node)) {
+      const outsideChip     = !chipRef.current?.contains(e.target as Node);
+      const outsideDropdown = !dropdownRef.current?.contains(e.target as Node);
+      if (outsideChip && outsideDropdown) {
         setDropdownOpen(false);
       }
     }
@@ -137,6 +144,7 @@ export function StatusBar({ status, activeProfile, profiles, onSwitchProfile }: 
       {/* Dropdown — rendered via portal so it escapes the status bar's stacking context */}
       {dropdownOpen && dropdownPos && createPortal(
         <div
+          ref={dropdownRef}
           role="listbox"
           className="profile-dropdown"
           style={{ top: dropdownPos.top, right: dropdownPos.right }}
