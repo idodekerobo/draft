@@ -75,6 +75,11 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface ProfileList {
+  names: string[];
+  active: string;
+}
+
 export interface LoadDiffEntry {
   dimension: string;
   action: string;
@@ -99,19 +104,25 @@ export type AppRPCType = {
       /** Get current daemon state. */
       getStatus: { params: void; response: DaemonStatus };
 
-      /** List pending proposals for the active workspace. Phase 2. */
+      /** List pending proposals for the active workspace. */
       getProposals: { params: void; response: ProposalSummary[] };
 
-      /** Launch a terminal session for the given tool + profile. Phase 3. */
+      /** List available profiles and the active profile. */
+      getProfiles: { params: void; response: ProfileList };
+
+      /** Switch the active profile and restart profile-scoped desktop watchers. */
+      switchProfile: { params: { profile: string }; response: ActionResult & { active?: string } };
+
+      /** Launch a terminal session for the given tool + profile. */
       launchSession: { params: SessionLaunchConfig; response: LaunchResult };
 
-      /** Accept a pending proposal (moves to accepted/). Phase 2. */
+      /** Accept a pending proposal (moves to accepted/). */
       acceptProposal: { params: { filename: string }; response: ActionResult };
 
-      /** Reject a pending proposal (moves to rejected/). Phase 2. */
+      /** Reject a pending proposal (moves to rejected/). */
       rejectProposal: { params: { filename: string }; response: ActionResult };
 
-      /** Read CHANGES.jsonl delta since last cursor. Phase 4. */
+      /** Read CHANGES.jsonl delta since last cursor. */
       loadDiff: { params: void; response: LoadDiffResult };
     };
     messages: {
@@ -127,21 +138,24 @@ export type AppRPCType = {
    */
   webview: RPCSchema<{
     requests: {
-      /** Bun asks renderer to show a confirm-load dialog. Phase 4. */
+      /** Bun asks renderer to show a confirm-load dialog. */
       confirmLoad: { params: LoadDiffResult; response: boolean };
     };
     messages: {
-      /** New proposal(s) arrived from the daemon. Phase 2. */
-      proposalAdded: { source: string; count: number };
+      /** New proposal(s) arrived from the daemon. */
+      proposalAdded: { profile: string; source: string; count: number };
 
       /** Daemon heartbeat went stale — daemon has stopped. Phase 1. */
       daemonStopped: Record<string, never>;
 
-      /** Daemon completed a capture cycle. Phase 2. */
+      /** Daemon completed a capture cycle. */
       captureComplete: { source: string };
 
-      /** Update the proposal badge count in the UI. Phase 2. */
-      badgeUpdate: { count: number };
+      /** Update the proposal badge count in the UI. */
+      badgeUpdate: { profile: string; count: number };
+
+      /** Active profile changed outside or inside desktop. */
+      profileChanged: { profile: string };
     };
   }>;
 };

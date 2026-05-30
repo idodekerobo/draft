@@ -14,10 +14,11 @@ import type { AppRPCType } from "../rpc/schema";
 // pushes (new proposal, daemon stopped, badge update). Empty in Phase 1.
 
 type EventMap = {
-  proposalAdded: { source: string; count: number };
+  proposalAdded: { profile: string; source: string; count: number };
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
-  badgeUpdate: { count: number };
+  badgeUpdate: { profile: string; count: number };
+  profileChanged: { profile: string };
 };
 
 // Internal listener type — erased at call sites; external API remains typed.
@@ -59,6 +60,9 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
 
       // TODO: Phase 2: update badge count in nav
       badgeUpdate: (data) => events.emit("badgeUpdate", data),
+
+      // TODO: Phase 1: active profile changed via desktop or CLI
+      profileChanged: (data) => events.emit("profileChanged", data),
     },
   },
 });
