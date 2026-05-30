@@ -52,9 +52,8 @@ export function App() {
   }, []);
 
   // ── Start Draft handler ────────────────────────────────────────────────────
-  // Phase 3: will wire to launchSession RPC. For now: no-op (daemon is started
-  // via CLI: `draft start`). The button still gives the user the right mental
-  // model — they need to start Draft.
+  // TODO: (Phase 3) will wire to launchSession RPC. For now: no-op (daemon is started
+  // via CLI: `draft start`). The button still gives the user the right mental model — they need to start Draft.
   function handleStartDraft() {
     // TODO Phase 3: rpc.request.launchSession({ tool: "claude-code", profile: status?.profile ?? "default" })
     console.info("[draft-desktop] Start Draft — wire to daemon start in Phase 3");

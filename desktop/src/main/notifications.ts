@@ -1,15 +1,15 @@
 // desktop/src/main/notifications.ts — macOS notification triggers
 //
-// Trigger 1: notifyNewProposal(source, count) — called by T1 proposals watcher
+// Trigger 1: notifyNewProposal(source, count)
 // Trigger 2: daemon stopped — self-contained: watches last-heartbeat mtime, fires at 2min stale
-// Trigger 3: notifyCaptureComplete(source) — called by T1 proposals watcher
+// Trigger 3: notifyCaptureComplete(source)
 //
 // Uses Utils.showNotification (legacy NSUserNotificationCenter — sidebar only).
 // Banner notifications via UNUserNotificationCenter deferred post-v1.
 //
 // Design note: if the heartbeat file does not exist on startup (daemon was never
 // started), no timer is armed and no notification fires. The "daemon never started"
-// state is surfaced visually via the status header (T1), not via notification.
+// state is surfaced visually via the status header, not via notification.
 
 import { Utils } from "electrobun/bun";
 import { existsSync, statSync, watch } from "fs";
@@ -20,7 +20,7 @@ const HEARTBEAT_PATH = `${STATE_DIR}/last-heartbeat`;
 const STALE_MS       = 2 * 60 * 1000; // 2 minutes
 
 // ── Public notification functions ──────────────────────────────────────────────
-// Called by T1 watcher code when the relevant fs.watch events fire.
+// Called by watcher code when the relevant fs.watch events fire.
 
 export function notifyNewProposal(source: string, count: number): void {
   Utils.showNotification({

@@ -1,7 +1,4 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
-//
-// Spike scope (T0a): tray + main window + typed RPC + macOS notification.
-// Full feature set built in phases per CEO plan.
 
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus } from "draft-core/status";
@@ -20,8 +17,7 @@ import { startProposalWatch, stopProposalWatch } from "./main/watchers/proposals
 import type { AppRPCType } from "./rpc/schema";
 
 // ── Tray ───────────────────────────────────────────────────────────────────────
-// title-only for the spike. Replace with image asset before Phase 1 ship.
-// Template image path (post-spike): "views://assets/tray-icon-template.png"
+// TODO: Replace with image asset before Phase 1 ship (put image in "views://assets/tray-icon-template.png")
 
 const tray = new Tray({ title: "Draft" });
 
@@ -34,13 +30,12 @@ tray.setMenu([
 ]);
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
-// Only spike endpoints are fully wired. Phase 2–4 handlers return stubs.
+// TODO: Phase 2–4 handlers return stubs.
 
 const rpc = BrowserView.defineRPC<AppRPCType>({
   maxRequestTime: 30_000,
   handlers: {
     requests: {
-      // ── SPIKE: wired ──────────────────────────────────────────────────────
       getStatus: async () => {
         const daemonStatus = await getDaemonStatus();
         const appState = getAppState();
@@ -66,7 +61,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return { ...daemonStatus, profile, lastSync, appState };
       },
 
-      // ── PHASE 2: proposal inbox ──────────────────────────────────────────
       getProposals: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
         return listProposals(workspace).map((proposal) => ({
@@ -117,9 +111,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       }),
     },
     messages: {
-      // ── SPIKE: wired ──────────────────────────────────────────────────────
-      // Renderer asks bun to fire a native notification. Renderer has no
-      // direct access to Utils — it goes through RPC.
+      // Renderer asks bun to fire a native notification. Renderer has no direct access to Utils — it goes through RPC.
       sendNotification: ({ title, subtitle, body }) => {
         Utils.showNotification({ title, subtitle, body });
       },
@@ -157,7 +149,6 @@ tray.on("tray-clicked", (e) => {
   }
 
   if (action === "test-notification") {
-    // Prove Utils.showNotification works directly from the tray (no RPC needed).
     Utils.showNotification({
       title: "Draft",
       subtitle: "Spike test",
@@ -185,7 +176,7 @@ setTimeout(async () => {
     console.error("[draft-desktop] startup status check failed:", err);
   }
 
-  // Start heartbeat staleness watcher (T3).
+  // Start heartbeat staleness watcher.
   // 500ms delay ensures app is fully initialised before the initial mtime check.
   startHeartbeatWatch();
   startProposalWatch({

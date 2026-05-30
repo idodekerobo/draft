@@ -10,7 +10,7 @@ import { Electroview } from "electrobun/view";
 import type { AppRPCType } from "../rpc/schema";
 
 // ── Event bus for webview push messages ────────────────────────────────────────
-// Phase 2+: components subscribe to these events to react to bun-initiated
+// TODO: Phase 2+: components subscribe to these events to react to bun-initiated
 // pushes (new proposal, daemon stopped, badge update). Empty in Phase 1.
 
 type EventMap = {
@@ -44,20 +44,20 @@ export const events = {
 export const rpc = Electroview.defineRPC<AppRPCType>({
   handlers: {
     requests: {
-      // Phase 4: bun asks renderer to confirm a load-team diff
+      // TODO: Phase 4: bun asks renderer to confirm a load-team diff
       confirmLoad: async () => false,
     },
     messages: {
-      // Phase 2: new proposal arrived from daemon
+      // TODO: Phase 2: new proposal arrived from daemon
       proposalAdded: (data) => events.emit("proposalAdded", data),
 
-      // Phase 2: heartbeat went stale — daemon stopped
+      // TODO: Phase 2: heartbeat went stale — daemon stopped
       daemonStopped: (data) => events.emit("daemonStopped", data),
 
-      // Phase 2: daemon completed a capture cycle
+      // TODO: Phase 2: daemon completed a capture cycle
       captureComplete: (data) => events.emit("captureComplete", data),
 
-      // Phase 2: update badge count in nav
+      // TODO: Phase 2: update badge count in nav
       badgeUpdate: (data) => events.emit("badgeUpdate", data),
     },
   },

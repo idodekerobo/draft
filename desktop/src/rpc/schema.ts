@@ -96,7 +96,7 @@ export type AppRPCType = {
    */
   bun: RPCSchema<{
     requests: {
-      /** Get current daemon state. Wired in spike. */
+      /** Get current daemon state. */
       getStatus: { params: void; response: DaemonStatus };
 
       /** List pending proposals for the active workspace. Phase 2. */
@@ -115,7 +115,7 @@ export type AppRPCType = {
       loadDiff: { params: void; response: LoadDiffResult };
     };
     messages: {
-      /** Renderer asks bun to fire a macOS notification. Wired in spike. */
+      /** Renderer asks bun to fire a macOS notification. */
       sendNotification: { title: string; subtitle?: string; body?: string };
     };
   }>;
