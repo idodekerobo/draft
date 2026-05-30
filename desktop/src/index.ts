@@ -6,6 +6,7 @@
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus } from "draft-core/status";
 import { getActiveProfile } from "draft-core/config";
+import { startHeartbeatWatch, stopHeartbeatWatch } from "./main/notifications";
 import type { AppRPCType } from "./rpc/schema";
 
 // ── Tray ───────────────────────────────────────────────────────────────────────
@@ -31,7 +32,27 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
     requests: {
       // ── SPIKE: wired ──────────────────────────────────────────────────────
       getStatus: async () => {
-        return getDaemonStatus();
+        const daemonStatus = await getDaemonStatus();
+
+        // Enrich with heartbeat JSON for profile + lastSync display
+        let profile: string | null = null;
+        let lastSync: string | null = null;
+        try {
+          const heartbeatPath = `${process.env.HOME}/.draft/background/state/last-heartbeat`;
+          const raw = await Bun.file(heartbeatPath).text();
+          const hb = JSON.parse(raw) as {
+            pid?: number;
+            profile?: string;
+            ts?: string;
+            last_sync?: string;
+          };
+          profile  = hb.profile  ?? null;
+          lastSync = hb.last_sync || null; // empty string → null
+        } catch {
+          // file missing or malformed — daemon hasn't run yet
+        }
+
+        return { ...daemonStatus, profile, lastSync };
       },
 
       // ── STUBS: wired in later phases ─────────────────────────────────────
@@ -72,7 +93,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
 const win = new BrowserWindow({
   title: "Draft",
-  url: "views://mainview/index.html",
+  url: "views://app/index.html",
   rpc,
 });
 
@@ -96,6 +117,7 @@ tray.on("tray-clicked", (e) => {
   }
 
   if (action === "quit") {
+    stopHeartbeatWatch();
     process.exit(0);
   }
 });
@@ -112,4 +134,8 @@ setTimeout(async () => {
   } catch (err) {
     console.error("[draft-desktop] startup status check failed:", err);
   }
+
+  // Start heartbeat staleness watcher (T3).
+  // 500ms delay ensures app is fully initialised before the initial mtime check.
+  startHeartbeatWatch();
 }, 500);
