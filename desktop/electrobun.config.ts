@@ -12,12 +12,12 @@ export default {
     },
     views: {
       mainview: {
-        entrypoint: "src/mainview/index.ts",
+        entrypoint: "src/app/index.ts",
       },
     },
     copy: {
-      "src/mainview/index.html": "views/mainview/index.html",
-      "src/mainview/index.css":  "views/mainview/index.css",
+      "src/app/index.html": "views/mainview/index.html",
+      "src/app/index.css":  "views/mainview/index.css",
     },
     mac: {
       codesign: true,
