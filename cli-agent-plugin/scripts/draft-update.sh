@@ -119,8 +119,25 @@ warn "  They will update when the latest plugin version is processed by the mark
 
 # ── Record new version and reset cache ───────────────────────────────────────
 
+# Write to flat files (backwards compat)
 echo "$LATEST" > "$VERSION_FILE"
 echo "UP_TO_DATE $LATEST" > "$LAST_CHECK_FILE"
+
+# Write to config.json (canonical source)
+CHECKED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+python3 -c "
+import json, pathlib
+cfg_path = pathlib.Path('$DRAFT_DIR/config.json')
+cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {'version': '1', 'tools': {}}
+cfg['plugin_version'] = '$LATEST'
+cfg['last_update_check'] = {
+    'status': 'UP_TO_DATE',
+    'installed_version': '$LATEST',
+    'latest_version': '$LATEST',
+    'checked_at': '$CHECKED_AT',
+}
+cfg_path.write_text(json.dumps(cfg, indent=2) + '\n')
+" 2>/dev/null || true
 
 echo ""
 log "Draft updated to v$LATEST."

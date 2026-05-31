@@ -167,17 +167,41 @@ if c.get('mode') == 'github':
 fi
 
 # ── Update notification ────────────────────────────────────────────────────────
-# Read cached check result — written by draft-update-check.sh in background.
+# Read cached check result from config.json, fall back to flat file.
 # If an upgrade is available, inject a notice so pm-agent surfaces it to the user.
 
-LAST_CHECK="$HOME/.draft/last-update-check"
-if [ -f "$LAST_CHECK" ]; then
-    read -r UPDATE_STATUS OLD_VER NEW_VER EXTRA < "$LAST_CHECK" 2>/dev/null || true
-    if [ "${UPDATE_STATUS:-}" = "UPGRADE_AVAILABLE" ]; then
-        echo ""
-        echo "## Draft Update Available"
-        echo "v${NEW_VER} is available (currently on v${OLD_VER}). Mention this to the user and offer to run \`/draft:update\` to upgrade."
+UPDATE_STATUS=""
+OLD_VER=""
+NEW_VER=""
+
+# Try config.json first (canonical source)
+_CONFIG="$HOME/.draft/config.json"
+if [ -f "$_CONFIG" ]; then
+    _RESULT=$(python3 -c "
+import json, pathlib
+cfg = json.loads(pathlib.Path('$_CONFIG').read_text())
+luc = cfg.get('last_update_check', {})
+print(luc.get('status', ''))
+print(luc.get('installed_version', ''))
+print(luc.get('latest_version', ''))
+" 2>/dev/null || echo "")
+    UPDATE_STATUS=$(echo "$_RESULT" | sed -n '1p')
+    OLD_VER=$(echo "$_RESULT" | sed -n '2p')
+    NEW_VER=$(echo "$_RESULT" | sed -n '3p')
+fi
+
+# Fall back to flat file if config.json had nothing
+if [ -z "$UPDATE_STATUS" ]; then
+    LAST_CHECK="$HOME/.draft/last-update-check"
+    if [ -f "$LAST_CHECK" ]; then
+        read -r UPDATE_STATUS OLD_VER NEW_VER _EXTRA < "$LAST_CHECK" 2>/dev/null || true
     fi
+fi
+
+if [ "${UPDATE_STATUS:-}" = "UPGRADE_AVAILABLE" ]; then
+    echo ""
+    echo "## Draft Update Available"
+    echo "v${NEW_VER} is available (currently on v${OLD_VER}). Mention this to the user and offer to run \`/draft:update\` to upgrade."
 fi
 
 # ── Load-team notifications ────────────────────────────────────────────────────
