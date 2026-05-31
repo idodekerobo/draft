@@ -3,7 +3,7 @@
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, BACKGROUND_DIR } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import {
   listProposals,
@@ -11,7 +11,7 @@ import {
   acceptProposal as acceptCoreProposal,
   rejectProposal as rejectCoreProposal,
 } from "draft-core/proposals";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { startHeartbeatWatch, stopHeartbeatWatch } from "./main/notifications";
 import {
@@ -81,7 +81,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           github:  int.github?.connected  ?? false,
         };
 
-        return { ...daemonStatus, profile, lastSync, appState, integrations };
+        const toolList = getInstalledTools();
+        const installedTools = {
+          "claude-code": toolList.includes("claude-code"),
+          codex:         toolList.includes("codex"),
+          cursor:        toolList.includes("cursor"),
+        };
+
+        return { ...daemonStatus, profile, lastSync, appState, integrations, installedTools };
       },
 
       getProposals: async () => {
@@ -192,11 +199,168 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         entries: [],
         cursorLine: 0,
       }),
+
+      getContextFiles: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const contextDir = join(workspace, "context");
+        if (!existsSync(contextDir)) return [];
+
+        const SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
+        const DIMENSION_ORDER = ["company", "product", "team", "priorities"];
+
+        function capitalize(str: string): string {
+          return str.replace(/\b\w/g, (c) => c.toUpperCase());
+        }
+
+        function slugToLabel(slug: string): string {
+          return capitalize(slug.replace(/[-_]/g, " "));
+        }
+
+        function stripFrontmatter(content: string): string {
+          if (!content.startsWith("---")) return content;
+          const end = content.indexOf("\n---", 3);
+          if (end === -1) return content;
+          return content.slice(end + 4).replace(/^\n/, "");
+        }
+
+        function logEntryLabel(filename: string): string {
+          const base = filename.replace(/\.md$/, "");
+          // Expect prefix like 20260514_ or 20260514-
+          const match = base.match(/^(\d{4})(\d{2})(\d{2})[_-]/);
+          if (match) {
+            const [, year, month, day] = match;
+            const date = new Date(Number(year), Number(month) - 1, Number(day));
+            return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+          }
+          return slugToLabel(base);
+        }
+
+        const entries: import("./rpc/schema").ContextFileEntry[] = [];
+
+        let topLevel: string[];
+        try {
+          topLevel = readdirSync(contextDir);
+        } catch {
+          return [];
+        }
+
+        for (const name of topLevel) {
+          if (SKIP_ROOT.has(name)) continue;
+          const fullPath = join(contextDir, name);
+          let stat;
+          try { stat = statSync(fullPath); } catch { continue; }
+
+          if (stat.isDirectory()) {
+            const indexPath = join(fullPath, "index.md");
+            const hasIndex = existsSync(indexPath);
+
+            if (hasIndex) {
+              // Dimension dir — emit index.md as "dim" entry
+              let content = "";
+              try { content = readFileSync(indexPath, "utf8"); } catch { /* empty */ }
+              entries.push({
+                relativePath: `${name}/index.md`,
+                label: slugToLabel(name),
+                content: stripFrontmatter(content),
+                kind: "dim",
+                group: name,
+                groupLabel: slugToLabel(name),
+              });
+
+              // Walk log/ subdir for log entries
+              const logDir = join(fullPath, "log");
+              if (existsSync(logDir)) {
+                let logFiles: string[];
+                try { logFiles = readdirSync(logDir); } catch { logFiles = []; }
+                const mdLogFiles = logFiles.filter((f) => f.endsWith(".md")).sort().reverse();
+                for (const lf of mdLogFiles) {
+                  const lfPath = join(logDir, lf);
+                  let lfContent = "";
+                  try { lfContent = readFileSync(lfPath, "utf8"); } catch { continue; }
+                  entries.push({
+                    relativePath: `${name}/log/${lf}`,
+                    label: logEntryLabel(lf),
+                    content: stripFrontmatter(lfContent),
+                    kind: "log",
+                    group: name,
+                    groupLabel: slugToLabel(name),
+                  });
+                }
+              }
+            } else {
+              // Group dir — all .md files as group-child entries
+              let children: string[];
+              try { children = readdirSync(fullPath); } catch { continue; }
+              const mdChildren = children.filter((c) => c.endsWith(".md")).sort();
+              for (const child of mdChildren) {
+                const childPath = join(fullPath, child);
+                let childContent = "";
+                try { childContent = readFileSync(childPath, "utf8"); } catch { continue; }
+                const childBase = child.replace(/\.md$/, "");
+                entries.push({
+                  relativePath: `${name}/${child}`,
+                  label: slugToLabel(childBase),
+                  content: stripFrontmatter(childContent),
+                  kind: "group-child",
+                  group: name,
+                  groupLabel: slugToLabel(name),
+                });
+              }
+            }
+          } else if (name.endsWith(".md")) {
+            let fileContent = "";
+            try { fileContent = readFileSync(fullPath, "utf8"); } catch { continue; }
+            const base = name.replace(/\.md$/, "");
+            entries.push({
+              relativePath: name,
+              label: slugToLabel(base),
+              content: stripFrontmatter(fileContent),
+              kind: "standalone",
+              group: base,
+              groupLabel: slugToLabel(base),
+            });
+          }
+        }
+
+        // Sort order:
+        //   1. Standard dims (company → product → team → priorities), then their log entries
+        //   2. Other dims with index.md (alphabetical), then their log entries
+        //   3. Standalone files
+        //   4. Group-child entries (by group, then filename)
+        entries.sort((a, b) => {
+          function sortKey(e: import("./rpc/schema").ContextFileEntry): [number, number, string, string] {
+            const stdIdx = DIMENSION_ORDER.indexOf(e.group);
+            if (e.kind === "dim") {
+              return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 0, e.group, ""];
+            }
+            if (e.kind === "log") {
+              return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
+            }
+            if (e.kind === "standalone") {
+              return [200, 0, e.group, ""];
+            }
+            // group-child
+            return [300, 0, e.group, e.relativePath];
+          }
+          const ka = sortKey(a);
+          const kb = sortKey(b);
+          for (let i = 0; i < ka.length; i++) {
+            const av = ka[i], bv = kb[i];
+            if (av < bv) return -1;
+            if (av > bv) return 1;
+          }
+          return 0;
+        });
+
+        return entries;
+      },
     },
     messages: {
-      // Renderer asks bun to fire a native notification. Renderer has no direct access to Utils — it goes through RPC.
       sendNotification: ({ title, subtitle, body }) => {
         Utils.showNotification({ title, subtitle, body });
+      },
+      openUrl: ({ url }) => {
+        Bun.spawn(["open", url], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       },
     },
   },

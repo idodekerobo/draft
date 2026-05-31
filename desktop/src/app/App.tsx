@@ -14,6 +14,7 @@ import { events, rpc } from "./rpc";
 import { StatusBar } from "./components/StatusBar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
+import { ContextViewer } from "./components/views/ContextViewer";
 import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ export function App() {
                 <div className="panel-placeholder">Sessions — Phase 3</div>
               )}
               {activeView === "context" && (
-                <div className="panel-placeholder">Context viewer — Phase 4</div>
+                <ContextViewer key={activeProfile} activeProfile={activeProfile} />
               )}
             </>
           )}

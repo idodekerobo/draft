@@ -26,7 +26,8 @@
   --color-border-strong:  rgba(255, 255, 255, 0.14);
 
   /* Typography */
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  /* To swap typefaces: update these two lines only. All components inherit via var(). */
+  --font-ui:  -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --font-mono: "SF Mono", "Menlo", "Monaco", monospace;
   --font-size-sidebar:   13px;
   --font-size-body:      14px;
@@ -163,11 +164,25 @@ button {
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
+  position: relative;
+}
+
+/* Subtle grain texture — adds tactile depth without visible texture at normal viewing distance */
+.sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.028;
+  z-index: 0;
 }
 
 .sidebar__nav {
   padding: 6px 0;
   flex: 1;
+  position: relative;
+  z-index: 1;
 }
 
 /* Nav item — hairline separator list style, not cards */
@@ -219,7 +234,7 @@ button {
 
 .content {
   flex: 1;
-  background: var(--color-bg-primary);
+  background: radial-gradient(ellipse 80% 60% at 20% 0%, rgba(42, 42, 52, 0.45) 0%, var(--color-bg-primary) 65%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -643,4 +658,331 @@ button {
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(6px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0);   }
+}
+
+/* ── Context viewer ──────────────────────────────────────────────────────────── */
+/* Two-panel layout: file tree left, rendered markdown right.                    */
+
+.context-viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.context-viewer__header {
+  height: 40px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.context-viewer__body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* ── Context file tree ───────────────────────────────────────────────────────── */
+
+.context-viewer__tree {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+/* Shared tree item base */
+.context-tree__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0 14px;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sidebar);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: default;
+  transition: background 100ms, color 100ms;
+  min-width: 0;
+}
+
+.context-tree__item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-primary);
+}
+
+.context-tree__item--active {
+  border-left-color: var(--color-accent-blue);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.context-tree__item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Log entry items — indented and muted */
+.context-tree__item--log {
+  height: 26px;
+  padding-left: 24px;
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+}
+
+/* Group child items — slightly indented */
+.context-tree__item--group-child {
+  height: 30px;
+  padding-left: 14px;
+}
+
+/* ── Dim row (expandable dimension) ──────────────────────────────────────────── */
+
+.context-dim-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.context-dim-row__main {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.context-dim-row__main--active {
+  border-left: 2px solid var(--color-accent-blue);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.context-dim-row__label {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px 0 14px;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sidebar);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  transition: color 100ms, background 100ms;
+}
+
+.context-dim-row__label:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.context-dim-row__main--active .context-dim-row__label {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.context-dim-row__expand-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 32px;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.45;
+  transition: transform 180ms ease, opacity 120ms;
+}
+
+.context-dim-row__expand-btn:hover {
+  opacity: 0.8;
+}
+
+.context-dim-row__expand-btn--expanded {
+  transform: rotate(90deg);
+  opacity: 0.7;
+}
+
+/* Log container — max-height transition for smooth expand/collapse */
+.context-dim-row__logs {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 240ms ease;
+}
+
+.context-dim-row__logs--expanded {
+  max-height: 400px;
+}
+
+/* ── Group section ────────────────────────────────────────────────────────────── */
+
+.context-group-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.context-group-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 14px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  cursor: pointer;
+  transition: color 100ms;
+  user-select: none;
+  min-width: 0;
+}
+
+.context-group-section__header:hover {
+  color: var(--color-text-secondary);
+}
+
+.context-group-section__arrow {
+  flex-shrink: 0;
+  font-size: 8px;
+  color: var(--color-text-tertiary);
+  transition: transform 180ms ease;
+}
+
+.context-group-section__arrow--expanded {
+  transform: rotate(90deg);
+}
+
+/* Group children container */
+.context-group-section__children {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 240ms ease;
+}
+
+.context-group-section__children--expanded {
+  max-height: 600px;
+}
+
+/* ── Context content panel ───────────────────────────────────────────────────── */
+
+.context-content {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 24px;
+}
+
+/* Markdown typography for rendered context files */
+.context-content__markdown {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  line-height: 1.6;
+  max-width: 720px;
+}
+
+.context-content__markdown h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 12px;
+  line-height: 1.3;
+}
+
+.context-content__markdown h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 20px 0 8px;
+  line-height: 1.35;
+}
+
+.context-content__markdown h3,
+.context-content__markdown h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 16px 0 6px;
+  line-height: 1.4;
+}
+
+.context-content__markdown p {
+  margin: 0 0 10px;
+  color: var(--color-text-secondary);
+}
+
+.context-content__markdown ul,
+.context-content__markdown ol {
+  padding-left: 20px;
+  margin: 0 0 10px;
+  color: var(--color-text-secondary);
+}
+
+.context-content__markdown li {
+  margin-bottom: 4px;
+  line-height: 1.55;
+}
+
+.context-content__markdown code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+}
+
+.context-content__markdown pre {
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+.context-content__markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.context-content__markdown strong {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.context-content__markdown blockquote {
+  border-left: 2px solid var(--color-border-strong);
+  padding-left: 12px;
+  margin: 0 0 10px;
+  color: var(--color-text-secondary);
+}
+
+.context-content__markdown a {
+  color: var(--color-accent-blue);
+  text-decoration: none;
+}
+
+.context-content__markdown a:hover {
+  text-decoration: underline;
 }

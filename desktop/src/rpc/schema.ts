@@ -24,6 +24,13 @@ export interface IntegrationStatus {
   github: boolean;
 }
 
+/** Coding tools that have been set up with `draft add <tool>`. */
+export interface InstalledToolsStatus {
+  "claude-code": boolean;
+  codex: boolean;
+  cursor: boolean;
+}
+
 export interface DaemonStatus {
   state: DaemonState;
   pid: string | null;
@@ -37,6 +44,8 @@ export interface DaemonStatus {
   appState: AppState;
   /** Which integrations are connected — read from integrations.json for the active profile. */
   integrations: IntegrationStatus;
+  /** Which coding tools have been set up with `draft add` — read from config.json. */
+  installedTools: InstalledToolsStatus;
 }
 
 export type AppUserState =
@@ -99,6 +108,23 @@ export interface LoadDiffResult {
   cursorLine: number;
 }
 
+export interface ContextFileEntry {
+  relativePath: string;
+  label: string;
+  content: string;
+  /**
+   * dim       — dimension index.md (has expand arrow for log entries)
+   * log       — log/ entry child of a dim (shown when dim is expanded)
+   * standalone — single root-level .md file (like tensions.md, no expand)
+   * group-child — file inside a multi-file group (decisions/, research/, etc.)
+   */
+  kind: "dim" | "log" | "standalone" | "group-child";
+  /** Dimension or group id — e.g. "company", "decisions", "research" */
+  group: string;
+  /** Human-readable label for the group — used in section headers */
+  groupLabel: string;
+}
+
 // ── RPC schema ─────────────────────────────────────────────────────────────────
 
 export type AppRPCType = {
@@ -138,10 +164,15 @@ export type AppRPCType = {
 
       /** Read CHANGES.jsonl delta since last cursor. */
       loadDiff: { params: void; response: LoadDiffResult };
+
+      /** List all readable context files for the active workspace. */
+      getContextFiles: { params: void; response: ContextFileEntry[] };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
       sendNotification: { title: string; subtitle?: string; body?: string };
+      /** Renderer asks Bun to open a URL in the system browser. */
+      openUrl: { url: string };
     };
   }>;
 

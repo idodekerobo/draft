@@ -14,6 +14,7 @@
     "diff": "^9.0.0",
     "draft-core": "workspace:*",
     "electrobun": "^1.18.1",
+    "marked": "^18.0.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
