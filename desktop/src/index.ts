@@ -1,7 +1,7 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
-import { getDaemonStatus, PLIST_LABEL } from "draft-core/status";
+import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, BACKGROUND_DIR } from "draft-core/config";
 import { capture } from "draft-core/exec";
@@ -121,21 +121,42 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         // We ignore start.sh's own exit code as the success signal — its
         // internal sleep 1 + verify check races the daemon's actual startup
         // and produces false-negative exits even when the daemon does start.
-        // Instead we poll getDaemonStatus ourselves until the daemon is
-        // confirmed running, or we hit the 8-second hard timeout.
-        const { stderr } = await capture(["bash", `${BACKGROUND_DIR}/start.sh`]);
-        const POLL_MS    = 500;
-        const TIMEOUT_MS = 8_000;
-        const deadline   = Date.now() + TIMEOUT_MS;
-        while (Date.now() < deadline) {
-          const s = await getDaemonStatus();
-          if (s.state !== "stopped") return { ok: true };
-          await Bun.sleep(POLL_MS);
+        // Plist missing = not installed. Fast check before spawning anything.
+        if (!existsSync(PLIST_PATH)) {
+          return { ok: false, error: "Draft is not installed. Run install.sh first." };
         }
-        return {
-          ok: false,
-          error: stderr || "Daemon did not start within 8 seconds. Check ~/.draft/background/logs/daemon-error.log",
-        };
+
+        // Spawn start.sh but only wait 300ms for it to exit.
+        // Fast-fail branches (bad config, etc.) finish in < 100ms — we surface those.
+        // The launchctl load + sleep 1 slow path takes > 1s, so we let it keep
+        // running and return ok:true immediately. The renderer polls getStatus()
+        // independently, avoiding Electrobun's short renderer-side RPC timeout.
+        let proc: ReturnType<typeof Bun.spawn>;
+        try {
+          proc = Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+        } catch {
+          return { ok: false, error: "Failed to launch start.sh." };
+        }
+
+        const timedOut = await Promise.race([
+          proc.exited.then(() => false),
+          Bun.sleep(300).then(() => true),
+        ]);
+
+        if (!timedOut) {
+          const code = await proc.exited; // already resolved — instant
+          if (code !== 0) {
+            const stderr = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
+            return { ok: false, error: stderr.trim() || "Failed to start Draft." };
+          }
+        }
+
+        // Slow path still running, or fast success — renderer polls getStatus().
+        return { ok: true };
       },
 
       stopDaemon: async () => {

@@ -103,17 +103,24 @@ export function App() {
   }, [startError]);
 
   // ── Daemon start ───────────────────────────────────────────────────────────
-  // startDaemon RPC polls until the daemon is confirmed running (or 8s timeout),
-  // so result.ok is a reliable signal — no race-window guesswork needed here.
+  // startDaemon RPC fires start.sh and returns immediately (avoids Electrobun's
+  // short renderer-side RPC timeout racing start.sh's internal sleep).
+  // We poll getStatus() here in the renderer — each call is fast, no timeout risk.
   async function handleStartDraft() {
     setIsStarting(true);
     try {
-      const result = await rpc.request.startDaemon();
-      if (result.ok) {
-        try { await fetchStatus(); } catch {}
-      } else {
-        setStartError(result.error ?? "Failed to start Draft.");
+      await rpc.request.startDaemon();
+
+      const POLL_MS    = 500;
+      const TIMEOUT_MS = 20_000;
+      const deadline   = Date.now() + TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await new Promise<void>((r) => setTimeout(r, POLL_MS));
+        const s = await rpc.request.getStatus();
+        setStatus(s);
+        if (s.state !== "stopped") return; // UI already updated via setStatus
       }
+      setStartError("Daemon did not start. Check ~/.draft/background/logs/daemon-error.log");
     } catch {
       setStartError("Failed to start Draft.");
     } finally {
