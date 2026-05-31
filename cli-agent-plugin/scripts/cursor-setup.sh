@@ -9,15 +9,18 @@
 #
 # What this does:
 #   1. Creates ~/.draft/personal/ (global layer) and ~/.draft/workspaces/default/ (profile workspace)
-#   2. Installs cursor-session-start.sh to ~/.cursor/hooks/draft/
-#   3. Registers the sessionStart hook in ~/.cursor/hooks.json
-#   4. [If no Claude Code plugin] Installs draft-context.mdc to ~/.cursor/rules/
-#   5. [If no Claude Code plugin] Installs sub-agents to ~/.cursor/agents/
-#   6. Installs draft-setup skill to ~/.cursor/skills/ and ~/.agents/skills/
+#   2. Populates ~/.draft/shared/ (shared content dir — skills, agents, hooks)
+#   3. Symlinks cursor-session-start.sh into ~/.cursor/hooks/draft/
+#   4. Registers the sessionStart hook in ~/.cursor/hooks.json
+#   5. [If no Claude Code or Codex] Symlinks draft-context.mdc to ~/.cursor/rules/
+#   6. [If no Claude Code] Symlinks sub-agents from ~/.draft/shared/agents/md/ to ~/.cursor/agents/
+#   7. Symlinks all Draft skills into ~/.agents/skills/ and ~/.cursor/skills/
 #
-# Cursor reads ~/.claude/agents/ and ~/.codex/AGENTS.md natively, so if the
-# Claude Code or Codex plugins are already installed we skip anything that would
-# create a duplicate shared context layer in Cursor's context.
+# Skills and hook scripts are symlinks into ~/.draft/shared/ — a single update
+# to shared/ propagates to Cursor automatically (no per-file re-download needed).
+#
+# Cursor reads ~/.claude/agents/ natively, so if Claude Code is already installed
+# we skip agent install to avoid duplicates.
 #
 # After running: restart Cursor. Your product context is automatically injected
 # into every new Composer session — no action needed.
@@ -28,6 +31,8 @@ GITHUB_RAW="https://raw.githubusercontent.com/idodekerobo/draft-cli-plugin/main"
 CURSOR_HOME="${CURSOR_HOME:-$HOME/.cursor}"
 DRAFT_GLOBAL="$HOME/.draft"
 DRAFT_WORKSPACE="$DRAFT_GLOBAL/workspaces/default"
+SHARED_DIR="$DRAFT_GLOBAL/shared"
+USER_AGENTS_SKILLS="$HOME/.agents/skills"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -63,6 +68,26 @@ install_file() {
     else
         curl -fsSL "$GITHUB_RAW/$src_rel" -o "$dest"
     fi
+}
+
+# Create a file symlink: target → link.
+# Removes existing regular files (old copy-based installs) before symlinking.
+symlink_file() {
+    local target="$1"
+    local link="$2"
+    mkdir -p "$(dirname "$link")"
+    if [ -e "$link" ] && [ ! -L "$link" ]; then rm -f "$link"; fi
+    ln -sfn "$target" "$link"
+}
+
+# Create a directory symlink: target → link.
+# Removes existing regular directories (old copy-based installs) before symlinking.
+symlink_dir() {
+    local target="$1"
+    local link="$2"
+    mkdir -p "$(dirname "$link")"
+    if [ -d "$link" ] && [ ! -L "$link" ]; then rm -rf "$link"; fi
+    ln -sfn "$target" "$link"
 }
 
 # ── Detect existing Draft installations ────────────────────────────────────────
@@ -189,17 +214,28 @@ if [ ! -f "$DRAFT_GLOBAL/active-profile" ]; then
     log "Active profile set to: default"
 fi
 
-# ── 2. Install cursor-session-start.sh ─────────────────────────────────────────
+# ── 2. Populate ~/.draft/shared/ ───────────────────────────────────────────────
+# All skill/agent/hook symlinks point into this directory. One update here
+# propagates to every tool instantly — no per-file re-downloads needed.
+
+if [ "$USE_LOCAL" = true ]; then
+    log "Populating ~/.draft/shared/ from local repo..."
+    bash "$SCRIPT_DIR/populate-shared.sh"
+else
+    log "Populating ~/.draft/shared/ from GitHub..."
+    USE_LOCAL=false GITHUB_RAW="$GITHUB_RAW" bash <(curl -fsSL "$GITHUB_RAW/scripts/populate-shared.sh")
+fi
+
+# ── 3. Symlink cursor-session-start.sh into ~/.cursor/hooks/draft/ ─────────────
 # Always installed regardless of other plugins — Cursor needs its own
 # sessionStart hook for workspace context injection.
 
-log "Installing cursor-session-start hook script..."
+log "Symlinking cursor-session-start hook script..."
 mkdir -p "$CURSOR_HOME/hooks/draft"
-install_file "scripts/cursor-session-start.sh" "$CURSOR_HOME/hooks/draft/cursor-session-start.sh"
-chmod +x "$CURSOR_HOME/hooks/draft/cursor-session-start.sh"
-log "Hook script installed to $CURSOR_HOME/hooks/draft/cursor-session-start.sh"
+symlink_file "$SHARED_DIR/hooks/cursor-session-start.sh" "$CURSOR_HOME/hooks/draft/cursor-session-start.sh"
+log "Hook script symlinked to $CURSOR_HOME/hooks/draft/cursor-session-start.sh"
 
-# ── 3. Register sessionStart hook in ~/.cursor/hooks.json ─────────────────────
+# ── 4. Register sessionStart hook in ~/.cursor/hooks.json ─────────────────────
 
 log "Registering sessionStart hook..."
 
@@ -243,110 +279,61 @@ hooks_path.write_text(json.dumps(data, indent=2) + "\n")
 print("[Draft] sessionStart hook registered in ~/.cursor/hooks.json")
 PYEOF
 
-# ── 4. Install draft-context.mdc — skip if Claude Code or Codex is installed ──
-# Claude Code: pm-agent.md in ~/.claude/agents/ already gives Cursor the shared context layer.
+# ── 5. Symlink draft-context.mdc — skip if Claude Code or Codex is installed ──
+# Claude Code: ~/.claude/agents/ already gives Cursor the shared context layer.
 # Codex: ~/.codex/AGENTS.md already gives Cursor the shared context layer.
 
 if [ "$CLAUDE_CODE_INSTALLED" = true ] || [ "$CODEX_INSTALLED" = true ]; then
-    warn "Skipping draft-context.mdc — shared context layer instructions already loaded from existing plugin."
+    warn "Skipping draft-context.mdc — shared context layer already loaded from existing plugin."
 else
-    log "Installing draft-context.mdc rules file..."
+    log "Symlinking draft-context.mdc rules file..."
     mkdir -p "$CURSOR_HOME/rules"
-    install_file ".cursor/rules/draft-context.mdc" "$CURSOR_HOME/rules/draft-context.mdc"
-    log "Rules file installed to $CURSOR_HOME/rules/draft-context.mdc"
+    symlink_file "$SHARED_DIR/cursor-context.mdc" "$CURSOR_HOME/rules/draft-context.mdc"
+    log "Rules file symlinked to $CURSOR_HOME/rules/draft-context.mdc"
 fi
 
-# ── 5. Install sub-agents — skip if Claude Code is installed ───────────────────
+# ── 6. Symlink sub-agents — skip if Claude Code is installed ───────────────────
 # Cursor reads ~/.claude/agents/ natively. If Claude Code is installed, the
-# draft-researcher/executor/learner agents are already there.
+# draft-researcher/executor/learner agents are already symlinked there.
 
 if [ "$CLAUDE_CODE_INSTALLED" = true ]; then
     warn "Skipping sub-agent install — agents already available from Claude Code plugin."
 else
-    log "Installing sub-agent definitions..."
+    log "Symlinking sub-agent definitions..."
     mkdir -p "$CURSOR_HOME/agents"
-
-    for agent in draft-researcher draft-executor draft-learner; do
-        install_file "agents/$agent.md" "$CURSOR_HOME/agents/$agent.md"
-        log "  Installed $agent.md"
+    for agent_file in "$SHARED_DIR/agents/md/"*.md; do
+        agent_name="$(basename "$agent_file")"
+        symlink_file "$agent_file" "$CURSOR_HOME/agents/$agent_name"
+        log "  Symlinked $agent_name"
     done
 fi
 
-# ── 6. Install Draft skills ─────────────────────────────────────────────────────
+# ── 7. Symlink all Draft skills into ~/.agents/skills/ and ~/.cursor/skills/ ───
+#
+# Codex/Cursor load skills from ~/.agents/skills/ for any repo.
+# Cursor also reads $CURSOR_HOME/skills/. Both dirs get directory symlinks into
+# ~/.draft/shared/skills/ — the same target, two entry points.
+# All skills are symlinked (not just a subset), so stale drift cannot happen.
 
-log "Installing draft-setup skill..."
+log "Symlinking Draft skills to $USER_AGENTS_SKILLS/..."
+mkdir -p "$USER_AGENTS_SKILLS"
+for skill_dir in "$SHARED_DIR/skills"/*/; do
+    skill_name="$(basename "$skill_dir")"
+    symlink_dir "$skill_dir" "$USER_AGENTS_SKILLS/$skill_name"
+    log "  Symlinked $skill_name → ~/.agents/skills/"
+done
 
-mkdir -p "$CURSOR_HOME/skills/draft-setup"
-install_file "skills/draft-setup/SKILL.md" "$CURSOR_HOME/skills/draft-setup/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-setup/SKILL.md"
+log "Symlinking Draft skills to $CURSOR_HOME/skills/..."
+mkdir -p "$CURSOR_HOME/skills"
+for skill_dir in "$SHARED_DIR/skills"/*/; do
+    skill_name="$(basename "$skill_dir")"
+    symlink_dir "$skill_dir" "$CURSOR_HOME/skills/$skill_name"
+    log "  Symlinked $skill_name → $CURSOR_HOME/skills/"
+done
 
-USER_AGENTS_SKILLS="$HOME/.agents/skills"
-mkdir -p "$USER_AGENTS_SKILLS/draft-setup"
-install_file "skills/draft-setup/SKILL.md" "$USER_AGENTS_SKILLS/draft-setup/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-setup/SKILL.md"
-
-log "Installing draft-learn skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-learn"
-install_file "skills/draft-learn/SKILL.md" "$CURSOR_HOME/skills/draft-learn/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-learn/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-learn"
-install_file "skills/draft-learn/SKILL.md" "$USER_AGENTS_SKILLS/draft-learn/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-learn/SKILL.md"
-
-log "Installing draft-setup-collab skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-setup-collab"
-install_file "skills/draft-setup-collab/SKILL.md" "$CURSOR_HOME/skills/draft-setup-collab/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-setup-collab/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-setup-collab"
-install_file "skills/draft-setup-collab/SKILL.md" "$USER_AGENTS_SKILLS/draft-setup-collab/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-setup-collab/SKILL.md"
-
-log "Installing draft-publish-team skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-publish-team"
-install_file "skills/draft-publish-team/SKILL.md" "$CURSOR_HOME/skills/draft-publish-team/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-publish-team/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-publish-team"
-install_file "skills/draft-publish-team/SKILL.md" "$USER_AGENTS_SKILLS/draft-publish-team/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-publish-team/SKILL.md"
-
-log "Installing draft-load-team skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-load-team"
-install_file "skills/draft-load-team/SKILL.md" "$CURSOR_HOME/skills/draft-load-team/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-load-team/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-load-team"
-install_file "skills/draft-load-team/SKILL.md" "$USER_AGENTS_SKILLS/draft-load-team/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-load-team/SKILL.md"
-
-log "Installing draft-switch skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-switch"
-install_file "skills/draft-switch/SKILL.md" "$CURSOR_HOME/skills/draft-switch/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-switch/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-switch"
-install_file "skills/draft-switch/SKILL.md" "$USER_AGENTS_SKILLS/draft-switch/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-switch/SKILL.md"
-
-log "Installing draft-profiles skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-profiles"
-install_file "skills/draft-profiles/SKILL.md" "$CURSOR_HOME/skills/draft-profiles/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-profiles/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-profiles"
-install_file "skills/draft-profiles/SKILL.md" "$USER_AGENTS_SKILLS/draft-profiles/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-profiles/SKILL.md"
-
-# ── 7. Install shared update scripts ──────────────────────────────────────────
-# Installed to ~/.draft/scripts/ — accessible from all platforms.
+# ── 8. Install shared update scripts ──────────────────────────────────────────
+# Installed to ~/.draft/scripts/ — these manage the update process itself and
+# are NOT in ~/.draft/shared/. Always kept current.
 
 log "Installing shared update scripts..."
 mkdir -p "$HOME/.draft/scripts"
@@ -354,18 +341,6 @@ install_file "scripts/draft-update-check.sh" "$HOME/.draft/scripts/draft-update-
 install_file "scripts/draft-update.sh" "$HOME/.draft/scripts/draft-update.sh"
 chmod +x "$HOME/.draft/scripts/"*.sh
 log "  Scripts installed to ~/.draft/scripts/"
-
-# ── 8. Install draft:update skill ─────────────────────────────────────────────
-
-log "Installing draft:update skill..."
-
-mkdir -p "$CURSOR_HOME/skills/draft-update"
-install_file "skills/draft-update/SKILL.md" "$CURSOR_HOME/skills/draft-update/SKILL.md"
-log "  Skill installed to $CURSOR_HOME/skills/draft-update/SKILL.md"
-
-mkdir -p "$USER_AGENTS_SKILLS/draft-update"
-install_file "skills/draft-update/SKILL.md" "$USER_AGENTS_SKILLS/draft-update/SKILL.md"
-log "  Skill installed to $USER_AGENTS_SKILLS/draft-update/SKILL.md"
 
 # ── 9. Record installed version ────────────────────────────────────────────────
 
