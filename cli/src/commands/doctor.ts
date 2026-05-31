@@ -6,10 +6,10 @@
 //   Group 3: Config (after runtime)
 //   Group 4: Integrations (SKIP if claude CLI failed in Group 1)
 
-import { existsSync, statSync, readFileSync, readdirSync } from "fs";
+import { existsSync, statSync, lstatSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { capture } from "../utils/exec";
-import { getActiveProfile, getWorkspacePath, readSecrets, DRAFT_ROOT, BACKGROUND_DIR, readDraftConfig, writeDraftConfig } from "../utils/config";
+import { getActiveProfile, getWorkspacePath, readSecrets, DRAFT_ROOT, BACKGROUND_DIR, readDraftConfig } from "../utils/config";
 import { green, red, yellow, dim, bold, cyan } from "../utils/output";
 import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 
@@ -205,32 +205,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   const CURSOR_HOME = process.env.CURSOR_HOME ?? `${HOME}/.cursor`;
 
   const configResult = readDraftConfig();
-  let config = configResult.ok ? configResult.config : null;
-
-  // Auto-migrate: no config.json yet — detect by filesystem markers.
-  if (!config) {
-    const migrated: Record<string, { added_at: string }> = {};
-    const agentsDir = `${HOME}/.claude/agents`;
-    if (existsSync(agentsDir)) {
-      try {
-        if (readdirSync(agentsDir).some((f) => /^draft/.test(f))) {
-          migrated["claude-code"] = { added_at: "migrated" };
-        }
-      } catch { /* ignore */ }
-    }
-    if (existsSync(`${CODEX_HOME}/hooks/draft/inject-context.sh`)) {
-      migrated["codex"] = { added_at: "migrated" };
-    }
-    if (existsSync(`${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`)) {
-      migrated["cursor"] = { added_at: "migrated" };
-    }
-    if (Object.keys(migrated).length > 0) {
-      const newConfig = { version: "1", tools: migrated as any };
-      writeDraftConfig(newConfig);
-      config = newConfig;
-      console.log(dim("  Auto-detected existing installs — wrote ~/.draft/config.json"));
-    }
-  }
+  const config = configResult.ok ? configResult.config : null;
 
   const TOOL_MARKERS: Record<string, string[]> = {
     "claude-code": [`${HOME}/.claude/agents`, `${HOME}/.claude/skills`],
@@ -254,6 +229,60 @@ export async function runDoctor(_args: string[]): Promise<void> {
       };
       printCheck(toolCheck);
       if (!toolCheck.passed) allPassed = false;
+    }
+  }
+
+  // ── Group 6: Plugin files (symlink health) ────────────────────────────────────
+  console.log(`\n${bold("Plugin files")}`);
+
+  const sharedDir = `${HOME}/.draft/shared`;
+  const sharedDirCheck = checkDir("~/.draft/shared/ present", sharedDir);
+  if (!sharedDirCheck.passed) sharedDirCheck.fix = "Run: draft add <tool>";
+  printCheck(sharedDirCheck);
+  if (!sharedDirCheck.passed) allPassed = false;
+
+  if (sharedDirCheck.passed) {
+    if (tools.includes("claude-code")) {
+      const broken =
+        countBrokenSymlinks(`${HOME}/.claude/skills`) +
+        countBrokenSymlinks(`${HOME}/.claude/agents`);
+      const check: CheckResult = {
+        label: "claude-code symlinks",
+        passed: broken === 0,
+        detail: broken > 0 ? `${broken} broken symlink(s)` : undefined,
+        fix: broken > 0 ? "draft add claude-code" : undefined,
+      };
+      printCheck(check);
+      if (!check.passed) allPassed = false;
+    }
+
+    if (tools.includes("codex")) {
+      const broken = countBrokenSymlinks(`${HOME}/.agents/skills`);
+      const check: CheckResult = {
+        label: "codex symlinks",
+        passed: broken === 0,
+        detail: broken > 0 ? `${broken} broken symlink(s) in ~/.agents/skills/` : undefined,
+        fix: broken > 0 ? "draft add codex" : undefined,
+      };
+      printCheck(check);
+      if (!check.passed) allPassed = false;
+    }
+
+    if (tools.includes("cursor")) {
+      const hookPath = `${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`;
+      const hookBroken = isSymlinkBroken(hookPath);
+      const check: CheckResult = {
+        label: "cursor symlinks",
+        passed: !hookBroken,
+        detail: hookBroken ? "cursor-session-start.sh symlink broken" : undefined,
+        fix: hookBroken ? "draft add cursor" : undefined,
+      };
+      printCheck(check);
+      if (!check.passed) allPassed = false;
+    }
+
+    if (tools.length === 0) {
+      console.log(dim("  No tools registered — symlink checks skipped."));
     }
   }
 
@@ -298,5 +327,36 @@ function printCheck(check: CheckResult): void {
   console.log(`  ${icon}  ${check.label.padEnd(30)}${detail}`);
   if (!check.passed && check.fix) {
     console.log(`     ${dim("→")} ${cyan(check.fix)}`);
+  }
+}
+
+/**
+ * Count symlinks in `dir` whose targets no longer exist (broken symlinks).
+ * Returns 0 if `dir` doesn't exist or can't be read.
+ */
+function countBrokenSymlinks(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  try {
+    return readdirSync(dir).filter((name) => {
+      const full = join(dir, name);
+      try {
+        return lstatSync(full).isSymbolicLink() && !existsSync(full);
+      } catch {
+        return false;
+      }
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Returns true if `filePath` is a symlink whose target no longer exists.
+ */
+function isSymlinkBroken(filePath: string): boolean {
+  try {
+    return lstatSync(filePath).isSymbolicLink() && !existsSync(filePath);
+  } catch {
+    return false;
   }
 }
