@@ -105,7 +105,7 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
         {error && <span className="proposals__error">{error}</span>}
       </div>
 
-      <div className="proposals__list proposals__list--split">
+      <div className={`proposals__list${proposals.length > 0 && selected ? " proposals__list--split" : ""}`}>
         {proposals.length > 0 && selected ? (
           <>
             <ProposalList
