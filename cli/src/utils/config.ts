@@ -17,10 +17,23 @@ export {
   type SecretsResult,
   type Collaboration,
   type CollabResult,
+  type Integrations,
+  type IntegrationEntry,
+  type IntegrationsResult,
+  type InstalledTool,
+  type ToolEntry,
+  type DraftConfig,
+  type DraftConfigResult,
   getActiveProfile,
   getWorkspacePath,
   readSecrets,
   readCollaboration,
+  readIntegrations,
+  writeIntegrations,
+  readDraftConfig,
+  writeDraftConfig,
+  writeToolConfig,
+  getInstalledTools,
 } from "draft-core/config";
 
 // ── CLI-specific: repo root detection ─────────────────────────────────────────

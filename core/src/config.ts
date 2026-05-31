@@ -13,6 +13,76 @@ export const DRAFT_ROOT          = `${process.env.HOME}/.draft`;
 export const WORKSPACES_DIR      = `${DRAFT_ROOT}/workspaces`;
 export const BACKGROUND_DIR      = `${DRAFT_ROOT}/background`;
 export const ACTIVE_PROFILE_FILE = `${DRAFT_ROOT}/active-profile`;
+export const DRAFT_CONFIG_FILE   = `${DRAFT_ROOT}/config.json`;
+
+// ── Global config schema ────────────────────────────────────────────────────────
+
+export type InstalledTool = "claude-code" | "codex" | "cursor";
+
+export interface ToolEntry {
+  /** ISO 8601 timestamp. "migrated" for auto-detected legacy installs. */
+  added_at: string;
+  /** Absolute path to cli-agent-plugin repo root. Claude Code only. */
+  plugin_root?: string;
+}
+
+export interface UpdateCheckEntry {
+  status: "UP_TO_DATE" | "UPGRADE_AVAILABLE";
+  installed_version: string;
+  latest_version: string;
+  checked_at: string;
+}
+
+export interface DraftConfig {
+  version: string;
+  plugin_version?: string;
+  tools: Partial<Record<InstalledTool, ToolEntry>>;
+  last_update_check?: UpdateCheckEntry;
+}
+
+export type DraftConfigResult =
+  | { ok: true; config: DraftConfig }
+  | { ok: false; reason: "missing" | "malformed" };
+
+export function readDraftConfig(): DraftConfigResult {
+  let raw: string;
+  try {
+    raw = readFileSync(DRAFT_CONFIG_FILE, "utf8");
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  try {
+    const parsed = JSON.parse(raw) as DraftConfig;
+    return { ok: true, config: parsed };
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+}
+
+export function writeDraftConfig(config: DraftConfig): void {
+  mkdirSync(DRAFT_ROOT, { recursive: true });
+  writeFileSync(DRAFT_CONFIG_FILE, JSON.stringify(config, null, 2) + "\n", "utf8");
+}
+
+/** Upsert a single tool entry. Preserves all other config fields. */
+export function writeToolConfig(tool: InstalledTool, entry: ToolEntry): void {
+  const result = readDraftConfig();
+  const current: DraftConfig =
+    result.ok ? result.config : { version: "1", tools: {} };
+  current.tools = { ...current.tools, [tool]: entry };
+  writeDraftConfig(current);
+}
+
+/**
+ * Returns tools the user has installed Draft into.
+ * Reads config.json only — no filesystem heuristics.
+ * Returns [] if config.json is missing or malformed.
+ */
+export function getInstalledTools(): InstalledTool[] {
+  const result = readDraftConfig();
+  if (!result.ok) return [];
+  return Object.keys(result.config.tools ?? {}) as InstalledTool[];
+}
 
 // ── Secrets schema ─────────────────────────────────────────────────────────────
 
