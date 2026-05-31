@@ -46,10 +46,36 @@ print(f'profiles_configured:{profiles_path.exists()}')
 "
 ```
 
-If both are already configured:
-> "GitHub is already connected (repos: [list repos]). Want to reconfigure?"
-- Yes → continue
-- No → show current config and stop
+If already configured:
+> "GitHub is already connected (repos: [list repos]). What do you want to do?
+> (1) Reconfigure  (2) Disconnect  (3) Cancel"
+
+- Reconfigure → write `connected: false` to integrations.json first (run snippet below), then continue.
+- Disconnect → run **Disconnect flow** below, then stop.
+- Cancel → show current config and stop.
+
+**Disconnect flow:**
+```bash
+python3 - <<'PYEOF'
+import json
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+workspace = Path.home() / '.draft' / 'workspaces' / profile
+
+integrations_path = workspace / 'config' / 'integrations.json'
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+integrations['github'] = {'connected': False}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('github:disconnected')
+PYEOF
+```
+
+Print: `✓ GitHub disconnected. Your github.json and team-profiles.json are preserved.`
 
 ---
 
@@ -86,6 +112,36 @@ with open(config_dir / "github.json", "w") as f:
 print(f'wrote {len(repos_list)} repo(s) to {config_dir / "github.json"}')
 PYEOF
 ```
+
+Write integrations.json:
+
+```bash
+python3 - <<'PYEOF'
+import json
+from datetime import datetime
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+integrations_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
+
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+
+# Replace with actual validated repos list
+integrations['github'] = {
+    'connected': True,
+    'repos': repos_list,
+    'last_connected': datetime.utcnow().isoformat() + 'Z',
+}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('integrations.json updated')
+PYEOF
+```
+
+Substitute `repos_list` with the actual list of validated repos collected in this step.
 
 ---
 

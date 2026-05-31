@@ -33,6 +33,9 @@ and execute it from Step 0.
 Read the file at `${CLAUDE_PLUGIN_ROOT}/skills/draft-connect/github/SKILL.md`
 and execute it from Step 0.
 
+**`/draft:connect granola disconnect`**, **`/draft:connect slack disconnect`**, **`/draft:connect github disconnect`**
+Read the corresponding sub-skill file and execute it from Step 1, passing `disconnect` as the action. The sub-skill's disconnect flow will run and stop.
+
 **No argument — `/draft:connect`**
 Continue to Step 2 (status display).
 
@@ -44,70 +47,43 @@ Show all integrations and their current connection state.
 
 ```bash
 python3 -c "
-import json, subprocess
+import json
 from pathlib import Path
-
-# ── Granola ──────────────────────────────────────────────────────────────────
-mcp_connected = False
-try:
-    result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
-    mcp_connected = 'granola' in result.stdout.lower()
-except: pass
-
-if not mcp_connected:
-    settings = Path.home() / '.claude' / 'settings.json'
-    if settings.exists():
-        try:
-            d = json.loads(settings.read_text())
-            mcp_connected = any('granola' in k.lower() for k in d.get('mcpServers', {}).keys())
-        except: pass
 
 ws_file = Path.home() / '.draft' / 'active-profile'
 profile = ws_file.read_text().strip() if ws_file.exists() else 'default'
-secrets_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'secrets.json'
-api_token_set = False
-saved_mode = ''
-if secrets_path.exists():
-    try:
-        d = json.loads(secrets_path.read_text())
-        api_token_set = bool(d.get('granola_api_token', ''))
-        saved_mode = d.get('granola_mode', '')
+int_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
+
+integrations = {}
+if int_path.exists():
+    try: integrations = json.loads(int_path.read_text())
     except: pass
 
-if mcp_connected:
-    granola_status = 'connected (MCP)'
-elif api_token_set:
-    granola_status = 'connected (API)'
+# ── Granola ───────────────────────────────────────────────────────────────────
+g = integrations.get('granola', {})
+if g.get('connected'):
+    granola_status = f\"connected ({g.get('mode', 'unknown')})\"
 else:
     granola_status = 'not configured'
-
 print(f'granola:{granola_status}')
+
 # ── Slack ─────────────────────────────────────────────────────────────────────
-slack_status = 'not configured'
-slack_mode = ''
-if secrets_path.exists():
-    try:
-        d = json.loads(secrets_path.read_text())
-        bot = d.get('slack_bot_token', '')
-        app = d.get('slack_app_token', '')
-        channels = d.get('slack_allowlist_channels', [])
-        mode = d.get('slack_capture_mode', 'passive')
-        if bot and app:
-            slack_status = f\"connected ({mode}, {len(channels)} channel{'s' if len(channels) != 1 else ''})\"
-            slack_mode = mode
-    except:
-        pass
+s = integrations.get('slack', {})
+if s.get('connected'):
+    ws = s.get('workspace', '')
+    ch = s.get('channels', 0)
+    slack_status = f\"connected ({ws}, {ch} channel{'s' if ch != 1 else ''})\"
+else:
+    slack_status = 'not configured'
 print(f'slack:{slack_status}')
+
 # ── GitHub ────────────────────────────────────────────────────────────────────
-github_status = 'not configured — run /draft:connect github'
-github_config_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'github.json'
-if github_config_path.exists():
-    try:
-        d = json.loads(github_config_path.read_text())
-        repos = d.get('repos', [])
-        if repos:
-            github_status = f\"connected ({', '.join(repos)})\"
-    except: pass
+gh = integrations.get('github', {})
+if gh.get('connected'):
+    repos = gh.get('repos', [])
+    github_status = f\"connected ({', '.join(repos)})\" if repos else 'connected'
+else:
+    github_status = 'not configured — run /draft:connect github'
 print(f'github:{github_status}')
 "
 ```

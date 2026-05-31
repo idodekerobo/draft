@@ -80,10 +80,49 @@ print(f'saved_mode:{saved_mode}')
 ```
 
 If already configured, show state and use **AskUserQuestion**:
-> "Granola is already connected via [mcp / api]. Reconfigure it?"
+> "Granola is already connected via [mcp / api]. What do you want to do?
+> (1) Reconfigure  (2) Disconnect  (3) Cancel"
 
-- No → print current status and stop.
-- Yes → continue to Step 2.
+- Reconfigure → write `connected: false` to integrations.json first (see helper below), then continue to Step 2.
+- Disconnect → run **Disconnect flow** below, then stop.
+- Cancel → print current status and stop.
+
+**Disconnect flow:**
+```bash
+python3 - <<'PYEOF'
+import json
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+workspace = Path.home() / '.draft' / 'workspaces' / profile
+
+secrets_path = workspace / 'config' / 'secrets.json'
+if secrets_path.exists():
+    try:
+        s = json.loads(secrets_path.read_text())
+        s.pop('granola_mode', None)
+        s.pop('granola_api_token', None)
+        secrets_path.write_text(json.dumps(s, indent=2) + '\n')
+    except: pass
+
+integrations_path = workspace / 'config' / 'integrations.json'
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+integrations['granola'] = {'connected': False}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('granola:disconnected')
+PYEOF
+```
+
+If granola was MCP mode, also deregister:
+```bash
+claude mcp remove granola 2>/dev/null || true
+```
+
+Print: `✓ Granola disconnected.`
 
 ---
 
@@ -156,7 +195,34 @@ print('wrote:' + str(secrets_path))
 PYEOF
 ```
 
-### 3d. Confirm
+### 3d. Write integrations.json
+
+```bash
+python3 - <<'PYEOF'
+import json
+from datetime import datetime
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+integrations_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
+
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+
+integrations['granola'] = {
+    'connected': True,
+    'mode': 'mcp',
+    'last_connected': datetime.utcnow().isoformat() + 'Z',
+}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('integrations.json updated')
+PYEOF
+```
+
+### 3e. Confirm
 
 Print:
 ```
@@ -219,6 +285,33 @@ secrets['granola_mode'] = 'api'
 secrets_path.write_text(json.dumps(secrets, indent=2) + '\n')
 os.chmod(str(secrets_path), 0o600)
 print('wrote:' + str(secrets_path))
+PYEOF
+```
+
+### 4b-ii. Write integrations.json
+
+```bash
+python3 - <<'PYEOF'
+import json
+from datetime import datetime
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+integrations_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
+
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+
+integrations['granola'] = {
+    'connected': True,
+    'mode': 'api',
+    'last_connected': datetime.utcnow().isoformat() + 'Z',
+}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('integrations.json updated')
 PYEOF
 ```
 
