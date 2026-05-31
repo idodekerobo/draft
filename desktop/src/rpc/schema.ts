@@ -35,7 +35,7 @@ export interface DaemonStatus {
   lastSync: string | null;
   /** First-run/setup-ready state for renderer routing and setup copy. */
   appState: AppState;
-  /** Which integrations are configured in secrets.json for the active profile. */
+  /** Which integrations are connected — read from integrations.json for the active profile. */
   integrations: IntegrationStatus;
 }
 

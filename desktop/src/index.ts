@@ -3,7 +3,7 @@
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readSecrets } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, BACKGROUND_DIR } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import {
   listProposals,
@@ -72,14 +72,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // file missing or malformed — daemon hasn't run yet
         }
 
-        // Integration status — read secrets.json for active profile
         const workspace = getWorkspacePath(getActiveProfile());
-        const secretsResult = readSecrets(workspace);
-        const secrets = secretsResult.ok ? secretsResult.secrets : {};
+        const intResult = readIntegrations(workspace);
+        const int = intResult.ok ? intResult.integrations : {};
         const integrations = {
-          granola: !!(secrets.granola_mode && secrets.granola_api_token),
-          slack:   !!(secrets.slack_bot_token),
-          github:  secrets.github_connected === true,
+          granola: int.granola?.connected ?? false,
+          slack:   int.slack?.connected   ?? false,
+          github:  int.github?.connected  ?? false,
         };
 
         return { ...daemonStatus, profile, lastSync, appState, integrations };
@@ -118,8 +117,25 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       }),
 
       startDaemon: async () => {
-        const result = await capture(["launchctl", "start", PLIST_LABEL]);
-        return { ok: result.exitCode === 0, error: result.stderr || undefined };
+        // Delegates to start.sh (same as `draft start` in the CLI).
+        // We ignore start.sh's own exit code as the success signal — its
+        // internal sleep 1 + verify check races the daemon's actual startup
+        // and produces false-negative exits even when the daemon does start.
+        // Instead we poll getDaemonStatus ourselves until the daemon is
+        // confirmed running, or we hit the 8-second hard timeout.
+        const { stderr } = await capture(["bash", `${BACKGROUND_DIR}/start.sh`]);
+        const POLL_MS    = 500;
+        const TIMEOUT_MS = 8_000;
+        const deadline   = Date.now() + TIMEOUT_MS;
+        while (Date.now() < deadline) {
+          const s = await getDaemonStatus();
+          if (s.state !== "stopped") return { ok: true };
+          await Bun.sleep(POLL_MS);
+        }
+        return {
+          ok: false,
+          error: stderr || "Daemon did not start within 8 seconds. Check ~/.draft/background/logs/daemon-error.log",
+        };
       },
 
       stopDaemon: async () => {
