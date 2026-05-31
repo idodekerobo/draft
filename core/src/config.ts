@@ -24,8 +24,28 @@ export interface Secrets {
   slack_allowlist_channels?: string[];
   slack_capture_mode?: "passive" | "tagged";
   slack_analysis_window_hours?: number;
-  github_connected?: boolean;
 }
+
+// ── Integrations schema ────────────────────────────────────────────────────────
+
+export interface IntegrationEntry {
+  connected: boolean;
+  mode?: string;
+  workspace?: string;
+  channels?: number;
+  repos?: string[];
+  last_connected?: string;
+}
+
+export interface Integrations {
+  granola?: IntegrationEntry;
+  slack?: IntegrationEntry;
+  github?: IntegrationEntry;
+}
+
+export type IntegrationsResult =
+  | { ok: true; integrations: Integrations }
+  | { ok: false; reason: "missing" | "malformed" };
 
 export type SecretsResult =
   | { ok: true; secrets: Secrets }
@@ -137,6 +157,28 @@ export function getProfiles(opts?: ProfileOpts): ProfileList {
   } catch {
     return { names: [], active };
   }
+}
+
+export function readIntegrations(workspacePath: string): IntegrationsResult {
+  const intPath = join(workspacePath, "config", "integrations.json");
+  let raw: string;
+  try {
+    raw = readFileSync(intPath, "utf8");
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  try {
+    const parsed = JSON.parse(raw) as Integrations;
+    return { ok: true, integrations: parsed };
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+}
+
+export function writeIntegrations(workspacePath: string, integrations: Integrations): void {
+  const intPath = join(workspacePath, "config", "integrations.json");
+  mkdirSync(join(workspacePath, "config"), { recursive: true });
+  writeFileSync(intPath, JSON.stringify(integrations, null, 2) + "\n", "utf8");
 }
 
 // ── Collaboration config ────────────────────────────────────────────────────────
