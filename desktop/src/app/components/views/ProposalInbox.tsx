@@ -1,35 +1,22 @@
 // ProposalInbox.tsx — proposal panel with contextual empty states
 //
-// Shows one of four states per DESIGN.md, in priority order:
-//   State 1 — Daemon not running (heartbeat stale or stopped)
-//   State 2 — No integrations connected (Phase 2: reads secrets.json)
-//   State 3 — Running + integrations, no proposals yet
-//   State 4 — Normal proposal list (Phase 2)
+// Shows one of three states, in priority order:
+//   State 1 — No integrations connected (Phase 2: reads secrets.json)
+//   State 2 — Running + integrations, no proposals yet
+//   State 3 — Normal proposal list
 //
-// State 2 detection is deferred to Phase 2 (requires reading secrets.json).
-// For now we jump from State 1 → State 3.
+// State 1 detection is deferred to Phase 2 (requires reading secrets.json).
+// The daemon-stopped state is handled upstream in App.tsx (DaemonStoppedOverlay)
+// so this component only renders when the daemon is running.
 //
 // Copy rule per DESIGN.md: never use the word "daemon" in UI text.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { diffLines } from "diff";
-import type { DaemonStatus, ProposalSummary } from "../../../rpc/schema";
+import type { ProposalSummary } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 
 // ── Empty state components ──────────────────────────────────────────────────────
-
-function DaemonStoppedPrompt({ onStart, isStarting }: { onStart: () => void; isStarting?: boolean }) {
-  return (
-    <div className="empty-state">
-      <div className="empty-state__icon">⬤</div>
-      <p className="empty-state__title">Draft isn't running</p>
-      <p className="empty-state__body">Your context isn't being captured.</p>
-      <button className="empty-state__cta" onClick={onStart} disabled={isStarting}>
-        {isStarting ? "Starting…" : "Start Draft"}
-      </button>
-    </div>
-  );
-}
 
 function WatchingPrompt() {
   return (
@@ -46,24 +33,15 @@ function WatchingPrompt() {
 // ── Main component ──────────────────────────────────────────────────────────────
 
 interface ProposalInboxProps {
-  status: DaemonStatus | null;
   activeProfile: string;
-  isStartingDraft?: boolean;
-  onStartDraft: () => void;
   onCountChange: (count: number) => void;
 }
 
-function isDaemonStopped(status: DaemonStatus | null): boolean {
-  if (!status) return true;
-  return status.state === "stopped";
-}
-
-export function ProposalInbox({ status, activeProfile, isStartingDraft, onStartDraft, onCountChange }: ProposalInboxProps) {
+export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxProps) {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const stopped = isDaemonStopped(status);
 
   // Ref so event handlers always see the current profile without re-registering.
   const activeProfileRef = useRef(activeProfile);
@@ -128,9 +106,7 @@ export function ProposalInbox({ status, activeProfile, isStartingDraft, onStartD
       </div>
 
       <div className="proposals__list proposals__list--split">
-        {stopped ? (
-          <DaemonStoppedPrompt onStart={onStartDraft} isStarting={isStartingDraft} />
-        ) : proposals.length > 0 && selected ? (
+        {proposals.length > 0 && selected ? (
           <>
             <ProposalList
               proposals={proposals}

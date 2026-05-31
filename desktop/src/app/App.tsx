@@ -14,6 +14,7 @@ import { events, rpc } from "./rpc";
 import { StatusBar } from "./components/StatusBar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
+import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
 const STATUS_POLL_MS = 5_000;
@@ -159,24 +160,27 @@ export function App() {
         />
 
         <main className="content">
-          {activeView === "proposals" && (
-            <ProposalInbox
-              key={activeProfile}
-              status={status}
-              activeProfile={activeProfile}
-              isStartingDraft={isStarting}
-              onStartDraft={handleStartDraft}
-              onCountChange={setProposalCount}
-            />
-          )}
-          {activeView === "sessions" && (
-            <div className="panel-placeholder">Sessions — Phase 3</div>
-          )}
-          {activeView === "context" && (
-            <div className="panel-placeholder">Context viewer — Phase 4</div>
-          )}
-          {activeView === "settings" && (
+          {/* Settings is always reachable regardless of daemon state. */}
+          {activeView === "settings" ? (
             <div className="panel-placeholder">Settings — Phase 5</div>
+          ) : status?.state === "stopped" ? (
+            <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
+          ) : (
+            <>
+              {activeView === "proposals" && (
+                <ProposalInbox
+                  key={activeProfile}
+                  activeProfile={activeProfile}
+                  onCountChange={setProposalCount}
+                />
+              )}
+              {activeView === "sessions" && (
+                <div className="panel-placeholder">Sessions — Phase 3</div>
+              )}
+              {activeView === "context" && (
+                <div className="panel-placeholder">Context viewer — Phase 4</div>
+              )}
+            </>
           )}
         </main>
       </div>
