@@ -7,6 +7,80 @@
 import { join } from "path";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 
+// ── Global config schema ────────────────────────────────────────────────────────
+
+export const DRAFT_CONFIG_FILE = `${process.env.HOME}/.draft/config.json`;
+
+export type InstalledTool = "claude-code" | "codex" | "cursor";
+
+export interface ToolEntry {
+  /** ISO 8601 timestamp of when the tool was added. "migrated" for auto-detected legacy installs. */
+  added_at: string;
+  /** Absolute path to the cli-agent-plugin repo root. Claude Code only. */
+  plugin_root?: string;
+}
+
+export interface UpdateCheckEntry {
+  status: "UP_TO_DATE" | "UPGRADE_AVAILABLE";
+  installed_version: string;
+  latest_version: string;
+  checked_at: string;
+}
+
+export interface DraftConfig {
+  version: string;
+  /** Installed plugin version — absorbed from ~/.draft/version. */
+  plugin_version?: string;
+  /** Which coding tools have been set up with Draft. Absence of a key = never installed. */
+  tools: Partial<Record<InstalledTool, ToolEntry>>;
+  /** Cached result of the last update check — absorbed from ~/.draft/last-update-check. */
+  last_update_check?: UpdateCheckEntry;
+}
+
+export type DraftConfigResult =
+  | { ok: true; config: DraftConfig }
+  | { ok: false; reason: "missing" | "malformed" };
+
+export function readDraftConfig(): DraftConfigResult {
+  let raw: string;
+  try {
+    raw = readFileSync(DRAFT_CONFIG_FILE, "utf8");
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  try {
+    const parsed = JSON.parse(raw) as DraftConfig;
+    return { ok: true, config: parsed };
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+}
+
+export function writeDraftConfig(config: DraftConfig): void {
+  mkdirSync(`${process.env.HOME}/.draft`, { recursive: true });
+  writeFileSync(DRAFT_CONFIG_FILE, JSON.stringify(config, null, 2) + "\n", "utf8");
+}
+
+/** Upsert a single tool entry. Preserves all other config fields. */
+export function writeToolConfig(tool: InstalledTool, entry: ToolEntry): void {
+  const result = readDraftConfig();
+  const current: DraftConfig =
+    result.ok ? result.config : { version: "1", tools: {} };
+  current.tools = { ...current.tools, [tool]: entry };
+  writeDraftConfig(current);
+}
+
+/**
+ * Returns the list of tools the user has installed Draft into.
+ * Reads from config.json only — no filesystem heuristics.
+ * Returns an empty array if config.json is missing or malformed.
+ */
+export function getInstalledTools(): InstalledTool[] {
+  const result = readDraftConfig();
+  if (!result.ok) return [];
+  return Object.keys(result.config.tools ?? {}) as InstalledTool[];
+}
+
 // ── Path constants ─────────────────────────────────────────────────────────────
 
 export const DRAFT_ROOT          = `${process.env.HOME}/.draft`;
