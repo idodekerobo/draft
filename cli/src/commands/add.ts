@@ -16,7 +16,6 @@ import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { spawn } from "../utils/exec.ts";
 import { getRepoRoot } from "../utils/config.ts";
-import { writeToolConfig } from "draft-core/config";
 import { green, red, yellow, bold, cyan, dim } from "../utils/output.ts";
 
 const HOME = process.env.HOME!;
@@ -151,13 +150,6 @@ export async function installClaudeCode(profileName: string): Promise<void> {
   // 4. Merge ~/.claude/settings.json
   await mergeClaudeSettings(repoRoot, pluginRoot, workspacePath);
   console.log(`  ${green("✓")} ~/.claude/settings.json updated`);
-
-  // 5. Register in global tool config registry
-  writeToolConfig("claude-code", {
-    added_at: new Date().toISOString(),
-    plugin_root: pluginRoot,
-  });
-  console.log(`  ${green("✓")} Registered in ~/.draft/config.json`);
 
   console.log("");
   console.log(`${bold(`Draft added to Claude Code`)} ${dim(`(profile: ${profileName})`)}.`);

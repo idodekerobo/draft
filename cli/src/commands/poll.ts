@@ -2,7 +2,7 @@
 
 import { existsSync } from "fs";
 import { spawn } from "../utils/exec.ts";
-import { getActiveProfile, getWorkspacePath, readIntegrations } from "../utils/config.ts";
+import { getActiveProfile, getWorkspacePath } from "../utils/config.ts";
 import { bold, dim, red, cyan, green } from "../utils/output.ts";
 
 const HOME = process.env.HOME!;
@@ -18,10 +18,7 @@ const INTEGRATIONS: Record<string, IntegrationConfig> = {
   github: {
     script: `${BACKGROUND}/integrations/github/github-poller.sh`,
     label: "GitHub",
-    configCheck: (workspace) => {
-      const result = readIntegrations(workspace);
-      return result.ok && (result.integrations.github?.connected ?? false);
-    },
+    configCheck: (workspace) => existsSync(`${workspace}/config/github.json`),
   },
   granola: {
     script: `${BACKGROUND}/integrations/granola/granola-poller.sh`,

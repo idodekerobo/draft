@@ -55,15 +55,6 @@ PLUGIN_VERSION=$(cat "${CLAUDE_PLUGIN_ROOT}/VERSION" 2>/dev/null || echo "unknow
 mkdir -p "$DRAFT_GLOBAL"
 echo "$PLUGIN_VERSION" > "$DRAFT_GLOBAL/version"
 
-# Also write to config.json (canonical source). Flat file kept for backwards compat.
-python3 -c "
-import json, pathlib
-cfg_path = pathlib.Path('$HOME/.draft/config.json')
-cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {'version': '1', 'tools': {}}
-cfg['plugin_version'] = '$PLUGIN_VERSION'
-cfg_path.write_text(json.dumps(cfg, indent=2) + '\n')
-" 2>/dev/null || true
-
 # ── 1c. Install shared scripts ─────────────────────────────────────────────────
 # Copies update scripts to ~/.draft/scripts/ so they're accessible from all platforms.
 # Runs every session so Codex/Cursor users always get the latest version.

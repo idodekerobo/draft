@@ -378,17 +378,6 @@ fi
 echo "$DRAFT_VERSION" > "$HOME/.draft/version"
 log "  Version $DRAFT_VERSION recorded at ~/.draft/version"
 
-# Register in global config.json — tools.cursor entry + plugin_version
-python3 -c "
-import json, pathlib, datetime
-cfg_path = pathlib.Path('$HOME/.draft/config.json')
-cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {'version': '1', 'tools': {}}
-cfg.setdefault('tools', {})['cursor'] = {'added_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}
-cfg['plugin_version'] = '$DRAFT_VERSION'
-cfg_path.write_text(json.dumps(cfg, indent=2) + '\n')
-" 2>/dev/null || true
-log "  Registered cursor in ~/.draft/config.json"
-
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""

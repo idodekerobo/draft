@@ -14,12 +14,10 @@ import { existsSync, readFileSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { capture } from "../utils/exec.ts";
 import { getRepoRoot, getActiveProfile } from "../utils/config.ts";
-import { readDraftConfig, writeDraftConfig, getInstalledTools } from "draft-core/config";
 import { green, red, yellow, dim, bold } from "../utils/output.ts";
 import { installClaudeCode } from "./add.ts";
 
 const HOME = process.env.HOME!;
-// Flat file kept for backwards compat — canonical source is now config.json
 const VERSION_FILE = `${HOME}/.draft/version`;
 const CODEX_HOME = process.env.CODEX_HOME ?? `${HOME}/.codex`;
 const CURSOR_HOME = process.env.CURSOR_HOME ?? `${HOME}/.cursor`;
@@ -89,48 +87,44 @@ export async function runUpdate(args: string[]): Promise<void> {
 
   let anyToolUpdated = false;
 
-  // Prefer config.json registry; fall back to filesystem heuristics for legacy installs.
-  let tools = getInstalledTools();
-  if (tools.length === 0) {
-    // Legacy install: no config.json yet — detect by file markers
-    const legacyTools: typeof tools = [];
-    const claudeSkillsDir = `${HOME}/.claude/skills`;
-    if (existsSync(claudeSkillsDir) && hasAnyEntry(claudeSkillsDir, /^draft/)) legacyTools.push("claude-code");
-    if (existsSync(`${CODEX_HOME}/hooks/draft/inject-context.sh`)) legacyTools.push("codex");
-    if (existsSync(`${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`)) legacyTools.push("cursor");
-    tools = legacyTools;
+  // Claude Code: check for installed skills
+  const claudeSkillsDir = `${HOME}/.claude/skills`;
+  if (existsSync(claudeSkillsDir) && hasAnyEntry(claudeSkillsDir, /^draft/)) {
+    console.log(dim("  Updating claude-code..."));
+    try {
+      await installClaudeCode(getActiveProfile());
+      console.log(`  ${green("✓")} claude-code updated`);
+      anyToolUpdated = true;
+    } catch (err) {
+      console.warn(`  ${yellow("⚠")}  claude-code update failed — run \`draft add claude-code\` manually`);
+    }
   }
 
-  for (const tool of tools) {
-    if (tool === "claude-code") {
-      console.log(dim("  Updating claude-code..."));
-      try {
-        await installClaudeCode(getActiveProfile());
-        console.log(`  ${green("✓")} claude-code updated`);
-        anyToolUpdated = true;
-      } catch {
-        console.warn(`  ${yellow("⚠")}  claude-code update failed — run \`draft add claude-code\` manually`);
-      }
-    } else if (tool === "codex") {
-      console.log(dim("  Updating codex..."));
-      const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "codex-setup.sh");
-      const result = await capture(["bash", setupScript], { timeoutMs: 60_000 });
-      if (result.exitCode === 0) {
-        console.log(`  ${green("✓")} codex updated`);
-        anyToolUpdated = true;
-      } else {
-        console.warn(`  ${yellow("⚠")}  codex update failed — run \`draft add codex\` manually`);
-      }
-    } else if (tool === "cursor") {
-      console.log(dim("  Updating cursor..."));
-      const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "cursor-setup.sh");
-      const result = await capture(["bash", setupScript], { timeoutMs: 60_000 });
-      if (result.exitCode === 0) {
-        console.log(`  ${green("✓")} cursor updated`);
-        anyToolUpdated = true;
-      } else {
-        console.warn(`  ${yellow("⚠")}  cursor update failed — run \`draft add cursor\` manually`);
-      }
+  // Codex: check for installed hook
+  const codexHookFile = `${CODEX_HOME}/hooks/draft/inject-context.sh`;
+  if (existsSync(codexHookFile)) {
+    console.log(dim("  Updating codex..."));
+    const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "codex-setup.sh");
+    const result = await capture(["bash", setupScript], { timeoutMs: 60_000 });
+    if (result.exitCode === 0) {
+      console.log(`  ${green("✓")} codex updated`);
+      anyToolUpdated = true;
+    } else {
+      console.warn(`  ${yellow("⚠")}  codex update failed — run \`draft add codex\` manually`);
+    }
+  }
+
+  // Cursor: check for installed hook
+  const cursorHookFile = `${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`;
+  if (existsSync(cursorHookFile)) {
+    console.log(dim("  Updating cursor..."));
+    const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "cursor-setup.sh");
+    const result = await capture(["bash", setupScript], { timeoutMs: 60_000 });
+    if (result.exitCode === 0) {
+      console.log(`  ${green("✓")} cursor updated`);
+      anyToolUpdated = true;
+    } else {
+      console.warn(`  ${yellow("⚠")}  cursor update failed — run \`draft add cursor\` manually`);
     }
   }
 
@@ -139,10 +133,6 @@ export async function runUpdate(args: string[]): Promise<void> {
   }
 
   // ── 6. Write new version ─────────────────────────────────────────────────────
-  // Write to both config.json (canonical) and flat file (backwards compat).
-  const configResult = readDraftConfig();
-  const currentConfig = configResult.ok ? configResult.config : { version: "1", tools: {} };
-  writeDraftConfig({ ...currentConfig, plugin_version: repoVersion });
   writeFileSync(VERSION_FILE, repoVersion, "utf8");
 
   // ── 7. Summary ───────────────────────────────────────────────────────────────
@@ -156,9 +146,6 @@ export async function runUpdate(args: string[]): Promise<void> {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function readInstalledVersion(): string {
-  // Prefer config.json; fall back to flat file for pre-registry installs.
-  const result = readDraftConfig();
-  if (result.ok && result.config.plugin_version) return result.config.plugin_version;
   try {
     return readFileSync(VERSION_FILE, "utf8").trim() || "unknown";
   } catch {
