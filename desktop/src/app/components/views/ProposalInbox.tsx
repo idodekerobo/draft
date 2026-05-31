@@ -18,14 +18,14 @@ import { events, rpc } from "../../rpc";
 
 // ── Empty state components ──────────────────────────────────────────────────────
 
-function DaemonStoppedPrompt({ onStart }: { onStart: () => void }) {
+function DaemonStoppedPrompt({ onStart, isStarting }: { onStart: () => void; isStarting?: boolean }) {
   return (
     <div className="empty-state">
       <div className="empty-state__icon">⬤</div>
       <p className="empty-state__title">Draft isn't running</p>
       <p className="empty-state__body">Your context isn't being captured.</p>
-      <button className="empty-state__cta" onClick={onStart}>
-        Start Draft
+      <button className="empty-state__cta" onClick={onStart} disabled={isStarting}>
+        {isStarting ? "Starting…" : "Start Draft"}
       </button>
     </div>
   );
@@ -48,6 +48,7 @@ function WatchingPrompt() {
 interface ProposalInboxProps {
   status: DaemonStatus | null;
   activeProfile: string;
+  isStartingDraft?: boolean;
   onStartDraft: () => void;
   onCountChange: (count: number) => void;
 }
@@ -57,7 +58,7 @@ function isDaemonStopped(status: DaemonStatus | null): boolean {
   return status.state === "stopped";
 }
 
-export function ProposalInbox({ status, activeProfile, onStartDraft, onCountChange }: ProposalInboxProps) {
+export function ProposalInbox({ status, activeProfile, isStartingDraft, onStartDraft, onCountChange }: ProposalInboxProps) {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
@@ -128,7 +129,7 @@ export function ProposalInbox({ status, activeProfile, onStartDraft, onCountChan
 
       <div className="proposals__list proposals__list--split">
         {stopped ? (
-          <DaemonStoppedPrompt onStart={onStartDraft} />
+          <DaemonStoppedPrompt onStart={onStartDraft} isStarting={isStartingDraft} />
         ) : proposals.length > 0 && selected ? (
           <>
             <ProposalList

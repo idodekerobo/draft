@@ -599,3 +599,48 @@ button {
   color: var(--color-accent-blue);
   flex-shrink: 0;
 }
+
+/* ── Toast notifications ─────────────────────────────────────────────────────── */
+/* Fixed to bottom-center of window. Auto-dismissed after 4s by App.tsx. */
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-secondary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 2000;
+  white-space: nowrap;
+  animation: toast-in 150ms ease;
+}
+
+.toast--error {
+  background: var(--color-status-red);
+  color: #fff;
+}
+
+.toast__dismiss {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.65;
+  font-size: 11px;
+  padding: 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.toast__dismiss:hover {
+  opacity: 1;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);   }
+}

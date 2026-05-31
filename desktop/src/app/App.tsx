@@ -6,6 +6,7 @@
 //   - Active profile state (updated by profileChanged events + switchProfile RPC)
 //   - Profile list (loaded on mount, refreshed on profileChanged)
 //   - Proposal badge count (from badgeUpdate push; filtered by active profile)
+//   - Daemon start state + error toast (auto-dismissing)
 
 import { useState, useEffect, useRef } from "react";
 import type { DaemonStatus } from "../rpc/schema";
@@ -25,10 +26,24 @@ export function App() {
   const [proposalCount, setProposalCount] = useState(0);
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
+  const [isStarting, setIsStarting]     = useState(false);
+  const [startError, setStartError]     = useState<string | null>(null);
 
   // Ref so event handlers always see the current profile without re-registering.
   const activeProfileRef = useRef(activeProfile);
   useEffect(() => { activeProfileRef.current = activeProfile; }, [activeProfile]);
+
+  // ── Shared status fetch ────────────────────────────────────────────────────
+  // Called by both the poll interval and handleStartDraft (for an immediate
+  // refresh after a daemon start, without waiting up to 5s for the next tick).
+  async function fetchStatus() {
+    const s = await rpc.request.getStatus();
+    setStatus(s);
+    // Seed activeProfile from status on first load only.
+    if (!activeProfileRef.current && s.appState.activeProfile) {
+      setActiveProfile(s.appState.activeProfile);
+    }
+  }
 
   // ── Status polling ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -36,14 +51,7 @@ export function App() {
 
     async function poll() {
       try {
-        const s = await rpc.request.getStatus();
-        if (!cancelled) {
-          setStatus(s);
-          // Seed activeProfile from status on first load only.
-          if (!activeProfileRef.current && s.appState.activeProfile) {
-            setActiveProfile(s.appState.activeProfile);
-          }
-        }
+        if (!cancelled) await fetchStatus();
       } catch {
         // RPC not yet ready (app just launched) — stay in null/loading state
       }
@@ -87,12 +95,29 @@ export function App() {
     });
   }, []);
 
+  // ── Start error auto-dismiss ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!startError) return;
+    const id = setTimeout(() => setStartError(null), 4_000);
+    return () => clearTimeout(id);
+  }, [startError]);
+
   // ── Daemon start ───────────────────────────────────────────────────────────
+  // startDaemon RPC polls until the daemon is confirmed running (or 8s timeout),
+  // so result.ok is a reliable signal — no race-window guesswork needed here.
   async function handleStartDraft() {
+    setIsStarting(true);
     try {
-      await rpc.request.startDaemon();
+      const result = await rpc.request.startDaemon();
+      if (result.ok) {
+        try { await fetchStatus(); } catch {}
+      } else {
+        setStartError(result.error ?? "Failed to start Draft.");
+      }
     } catch {
-      // Status poll will surface any failure via the next getStatus call.
+      setStartError("Failed to start Draft.");
+    } finally {
+      setIsStarting(false);
     }
   }
 
@@ -132,6 +157,7 @@ export function App() {
               key={activeProfile}
               status={status}
               activeProfile={activeProfile}
+              isStartingDraft={isStarting}
               onStartDraft={handleStartDraft}
               onCountChange={setProposalCount}
             />
@@ -147,6 +173,12 @@ export function App() {
           )}
         </main>
       </div>
+      {startError && (
+        <div className="toast toast--error" role="alert">
+          <span>{startError}</span>
+          <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
     </div>
   );
 }
