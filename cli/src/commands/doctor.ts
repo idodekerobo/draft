@@ -6,10 +6,10 @@
 //   Group 3: Config (after runtime)
 //   Group 4: Integrations (SKIP if claude CLI failed in Group 1)
 
-import { existsSync, statSync, readFileSync } from "fs";
+import { existsSync, statSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { capture } from "../utils/exec";
-import { getActiveProfile, getWorkspacePath, readSecrets, DRAFT_ROOT, BACKGROUND_DIR } from "../utils/config";
+import { getActiveProfile, getWorkspacePath, readSecrets, DRAFT_ROOT, BACKGROUND_DIR, readDraftConfig, writeDraftConfig } from "../utils/config";
 import { green, red, yellow, dim, bold, cyan } from "../utils/output";
 import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 
@@ -194,6 +194,66 @@ export async function runDoctor(_args: string[]): Promise<void> {
       printCheck(slackCheck);
     } else {
       console.log(`  ${dim("◯")}  Slack         ${dim("not configured")}`);
+    }
+  }
+
+  // ── Group 5: Installed tools ───────────────────────────────────────────────
+  console.log(`\n${bold("Installed tools")}`);
+
+  const HOME = process.env.HOME!;
+  const CODEX_HOME = process.env.CODEX_HOME ?? `${HOME}/.codex`;
+  const CURSOR_HOME = process.env.CURSOR_HOME ?? `${HOME}/.cursor`;
+
+  const configResult = readDraftConfig();
+  let config = configResult.ok ? configResult.config : null;
+
+  // Auto-migrate: no config.json yet — detect by filesystem markers.
+  if (!config) {
+    const migrated: Record<string, { added_at: string }> = {};
+    const agentsDir = `${HOME}/.claude/agents`;
+    if (existsSync(agentsDir)) {
+      try {
+        if (readdirSync(agentsDir).some((f) => /^draft/.test(f))) {
+          migrated["claude-code"] = { added_at: "migrated" };
+        }
+      } catch { /* ignore */ }
+    }
+    if (existsSync(`${CODEX_HOME}/hooks/draft/inject-context.sh`)) {
+      migrated["codex"] = { added_at: "migrated" };
+    }
+    if (existsSync(`${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`)) {
+      migrated["cursor"] = { added_at: "migrated" };
+    }
+    if (Object.keys(migrated).length > 0) {
+      const newConfig = { version: "1", tools: migrated as any };
+      writeDraftConfig(newConfig);
+      config = newConfig;
+      console.log(dim("  Auto-detected existing installs — wrote ~/.draft/config.json"));
+    }
+  }
+
+  const TOOL_MARKERS: Record<string, string[]> = {
+    "claude-code": [`${HOME}/.claude/agents`, `${HOME}/.claude/skills`],
+    "codex":       [`${CODEX_HOME}/hooks/draft/inject-context.sh`],
+    "cursor":      [`${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`],
+  };
+
+  const tools = config ? Object.keys(config.tools ?? {}) : [];
+
+  if (tools.length === 0) {
+    console.log(dim("  No tools registered. Run `draft add <tool>` to install."));
+  } else {
+    for (const tool of tools) {
+      const markers = TOOL_MARKERS[tool] ?? [];
+      const markersOk = markers.length === 0 || markers.some(existsSync);
+      const toolCheck: CheckResult = {
+        label: tool,
+        passed: markersOk,
+        detail: markersOk ? undefined : "registered but marker files missing",
+        fix: markersOk ? undefined : `draft add ${tool}`,
+      };
+      printCheck(toolCheck);
+      if (!toolCheck.passed) allPassed = false;
     }
   }
 

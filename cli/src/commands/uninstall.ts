@@ -7,6 +7,7 @@
 import { existsSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { spawn, capture } from "../utils/exec.ts";
+import { readDraftConfig, writeDraftConfig } from "../utils/config.ts";
 import { yellow, dim, green, cyan, bold } from "../utils/output.ts";
 
 const HOME = process.env.HOME!;
@@ -68,7 +69,16 @@ export async function runUninstall(args: string[]): Promise<void> {
   removeGlob(`${CLAUDE_DIR}/agents`, /^draft-/);
   console.log(`  ${green("✓")} Claude Code plugin files removed`);
 
-  // ── 3. Note about settings.json hooks ─────────────────────────────────────
+  // ── 3. Remove tool entry from config.json ──────────────────────────────────
+  const configResult = readDraftConfig();
+  if (configResult.ok) {
+    const updated = { ...configResult.config };
+    delete updated.tools["claude-code"];
+    writeDraftConfig(updated);
+    console.log(`  ${green("✓")} Removed claude-code from ~/.draft/config.json`);
+  }
+
+  // ── 4. Note about settings.json hooks ─────────────────────────────────────
   console.log("");
   console.log(dim(`Note: ~/.claude/settings.json hooks and env vars were not modified.`));
   console.log(dim(`Remove the Draft entries manually if needed.`));
