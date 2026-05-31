@@ -5,14 +5,18 @@
 // For claude-code: fully inline TypeScript — no claude-setup.sh exists.
 //   1. Bootstrap daemon (run install.sh if not yet installed)
 //   2. Resolve or prompt for profile name (first install only)
-//   3. Copy skills → ~/.claude/skills/
-//   4. Copy agents (all 4) → ~/.claude/agents/
-//   5. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/<profile>/CLAUDE.md
-//   6. Merge ~/.claude/settings.json: agent, env, hooks, permissions
+//   3. Populate ~/.draft/shared/ from the plugin repo (populate-shared.sh)
+//   4. Symlink skills → ~/.claude/skills/  (directory symlinks into ~/.draft/shared/)
+//   5. Symlink agents → ~/.claude/agents/ (file symlinks into ~/.draft/shared/)
+//   6. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/<profile>/CLAUDE.md
+//   7. Merge ~/.claude/settings.json: agent, env, hooks, permissions
 //
 // For codex/cursor: spawn the existing bash setup scripts.
+//
+// Shared dir (~/.draft/shared/) is the single source of truth for skills and agents.
+// All tool config dirs symlink into it. draft update only needs to write to shared/.
 
-import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, cpSync, readdirSync, symlinkSync, lstatSync, unlinkSync, rmSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { spawn } from "../utils/exec.ts";
 import { getRepoRoot } from "../utils/config.ts";
@@ -126,21 +130,41 @@ export async function installClaudeCode(profileName: string): Promise<void> {
   console.log(dim(`Using plugin root: ${pluginRoot}`));
   console.log("");
 
-  // 1. Copy skills → ~/.claude/skills/
-  const skillsSrc = join(pluginRoot, "skills");
-  const skillsDst = join(CLAUDE_DIR, "skills");
-  ensureDir(skillsDst);
-  cpSync(skillsSrc, skillsDst, { recursive: true });
-  console.log(`  ${green("✓")} Skills copied to ${dim("~/.claude/skills/")}`);
+  // 1. Populate ~/.draft/shared/ from the plugin repo
+  const sharedDir = join(DRAFT_GLOBAL, "shared");
+  const populateScript = join(pluginRoot, "scripts", "populate-shared.sh");
+  console.log(dim("Populating ~/.draft/shared/..."));
+  const popCode = await spawn(["bash", populateScript]);
+  if (popCode !== 0) {
+    console.error(red("Failed to populate ~/.draft/shared/ — aborting."));
+    process.exit(3);
+  }
 
-  // 2. Copy agents → ~/.claude/agents/
-  const agentsSrc = join(pluginRoot, "agents");
-  const agentsDst = join(CLAUDE_DIR, "agents");
-  ensureDir(agentsDst);
-  cpSync(agentsSrc, agentsDst, { recursive: true });
-  console.log(`  ${green("✓")} Agents copied to ${dim("~/.claude/agents/")}`);
+  // 2. Symlink skills → ~/.claude/skills/ (one directory symlink per skill)
+  const sharedSkillsDir = join(sharedDir, "skills");
+  const claudeSkillsDst = join(CLAUDE_DIR, "skills");
+  ensureDir(claudeSkillsDst);
+  for (const skill of readdirSync(sharedSkillsDir)) {
+    const target = join(sharedSkillsDir, skill);
+    const link = join(claudeSkillsDst, skill);
+    symlinkForce(link, target, "dir");
+  }
+  console.log(`  ${green("✓")} Skills symlinked to ${dim("~/.claude/skills/")}`);
 
-  // 3. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/<profileName>/CLAUDE.md
+  // 3. Symlink agents → ~/.claude/agents/ (one file symlink per .md file)
+  const sharedAgentsMdDir = join(sharedDir, "agents", "md");
+  const claudeAgentsDst = join(CLAUDE_DIR, "agents");
+  ensureDir(claudeAgentsDst);
+  for (const agent of readdirSync(sharedAgentsMdDir)) {
+    if (!agent.endsWith(".md")) continue;
+    const target = join(sharedAgentsMdDir, agent);
+    const link = join(claudeAgentsDst, agent);
+    symlinkForce(link, target, "file");
+  }
+  console.log(`  ${green("✓")} Agents symlinked to ${dim("~/.claude/agents/")}`);
+
+  // 5. Copy workspace-template/CLAUDE.md → ~/.draft/workspaces/<profileName>/CLAUDE.md
+  // Per-profile, unique seeded content — not symlinked.
   const templateSrc = join(pluginRoot, "workspace-template", "CLAUDE.md");
   const workspacePath = `${DRAFT_GLOBAL}/workspaces/${profileName}`;
   ensureDir(workspacePath);
@@ -148,11 +172,11 @@ export async function installClaudeCode(profileName: string): Promise<void> {
   cpSync(templateSrc, templateDst);
   console.log(`  ${green("✓")} Workspace created at ${dim(`~/.draft/workspaces/${profileName}/`)}`);
 
-  // 4. Merge ~/.claude/settings.json
+  // 6. Merge ~/.claude/settings.json
   await mergeClaudeSettings(repoRoot, pluginRoot, workspacePath);
   console.log(`  ${green("✓")} ~/.claude/settings.json updated`);
 
-  // 5. Register in global tool config registry
+  // 7. Register in global tool config registry
   writeToolConfig("claude-code", {
     added_at: new Date().toISOString(),
     plugin_root: pluginRoot,
@@ -258,4 +282,27 @@ function ensureDir(dirPath: string): void {
 
 function dedup(arr: string[]): string[] {
   return [...new Set(arr)];
+}
+
+/**
+ * Force-create a symlink at `link` pointing to `target`.
+ * - If `link` is already a symlink: removes and recreates (refreshes target path).
+ * - If `link` is an existing regular file or directory (old copy-based install):
+ *   removes it first, then creates the symlink.
+ * Safe to call on every `draft add` run — idempotent.
+ */
+function symlinkForce(link: string, target: string, type: "dir" | "file"): void {
+  try {
+    const stat = lstatSync(link);
+    if (stat.isSymbolicLink()) {
+      unlinkSync(link);
+    } else if (stat.isDirectory()) {
+      rmSync(link, { recursive: true });
+    } else {
+      unlinkSync(link);
+    }
+  } catch {
+    // link doesn't exist yet — nothing to remove
+  }
+  symlinkSync(target, link, type);
 }
