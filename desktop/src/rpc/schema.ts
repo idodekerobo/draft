@@ -54,6 +54,21 @@ export type AppUserState =
   | "ready-daemon-stopped"
   | "ready-daemon-running";
 
+// ── Installer types ────────────────────────────────────────────────────────────
+
+export type InstallableTool = "claude-code" | "codex" | "cursor";
+
+export interface InstallStep {
+  label: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface InstallResult {
+  ok: boolean;
+  steps: InstallStep[];
+}
+
 export interface AppState {
   userState: AppUserState;
   hasActiveProfile: boolean;
@@ -234,6 +249,17 @@ export type AppRPCType = {
 
       /** Disconnect an input source by setting connected=false in integrations.json. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" }; response: ActionResult };
+
+      /**
+       * Connect GitHub natively via `gh auth login --web`.
+       * Spawns the OAuth flow in the browser (fire-and-forget) and returns immediately.
+       * Writes connected=true to integrations.json when gh auth completes.
+       * Renderer should poll getConnectedApps until github.connected === true.
+       */
+      connectGitHub: { params: void; response: ActionResult };
+
+      /** First-launch install: extract binary, symlink to PATH, run `draft add` for each tool. */
+      runInstall: { params: { tools: InstallableTool[] }; response: InstallResult };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
