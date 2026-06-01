@@ -15,7 +15,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
-import { startHeartbeatWatch, stopHeartbeatWatch } from "./main/notifications";
+import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
+import { applyLoginItem } from "./main/loginItem";
 import {
   startProposalWatch,
   restartProposalWatch,
@@ -227,14 +228,24 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getLocalConfig: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
         const result = readLocalConfig(workspace);
-        const mode = result.ok ? (result.config.teamLoadMode ?? "auto") : "auto";
-        return { teamLoadMode: mode };
+        const c = result.ok ? result.config : {};
+        return {
+          teamLoadMode:        c.teamLoadMode        ?? "auto",
+          launchOnLogin:       c.launchOnLogin       ?? false,
+          notificationsEnabled: c.notificationsEnabled ?? true,
+        };
       },
 
-      setLocalConfig: async ({ teamLoadMode }) => {
+      setLocalConfig: async (patch) => {
         try {
           const workspace = getWorkspacePath(getActiveProfile());
-          if (teamLoadMode !== undefined) writeLocalConfig(workspace, { teamLoadMode });
+          writeLocalConfig(workspace, patch);
+          if (patch.launchOnLogin !== undefined) {
+            await applyLoginItem(patch.launchOnLogin);
+          }
+          if (patch.notificationsEnabled !== undefined) {
+            setNotificationsEnabled(patch.notificationsEnabled);
+          }
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Write failed." };
@@ -475,6 +486,14 @@ setTimeout(async () => {
     console.log(`[draft-desktop] daemon=${status.state} profile=${profile}`);
   } catch (err) {
     console.error("[draft-desktop] startup status check failed:", err);
+  }
+
+  // Apply persisted notification preference before starting any watchers so
+  // the first heartbeat check already respects the user's setting.
+  const wsPath = getWorkspacePath(getActiveProfile());
+  const localCfg = readLocalConfig(wsPath);
+  if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
+    setNotificationsEnabled(false);
   }
 
   // Start heartbeat staleness watcher.
