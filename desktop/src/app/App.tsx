@@ -30,6 +30,9 @@ export function App() {
   const [profiles, setProfiles]         = useState<string[]>([]);
   const [isStarting, setIsStarting]     = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
+  // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
+  // Cleared when the user navigates to the Context tab.
+  const [contextHasNew, setContextHasNew] = useState(false);
 
   // Ref so event handlers always see the current profile without re-registering.
   const activeProfileRef = useRef(activeProfile);
@@ -143,6 +146,11 @@ export function App() {
     }
   }
 
+  function handleNavigate(view: View) {
+    if (view === "context") setContextHasNew(false);
+    setActiveView(view);
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app">
@@ -156,8 +164,9 @@ export function App() {
       <div className="layout">
         <Sidebar
           activeView={activeView}
-          onNavigate={setActiveView}
+          onNavigate={handleNavigate}
           proposalCount={proposalCount}
+          contextHasNew={contextHasNew}
         />
 
         <main className="content">
@@ -179,7 +188,11 @@ export function App() {
                 <div className="panel-placeholder">Sessions — Phase 3</div>
               )}
               {activeView === "context" && (
-                <ContextViewer key={activeProfile} activeProfile={activeProfile} />
+                <ContextViewer
+                  key={activeProfile}
+                  activeProfile={activeProfile}
+                  onNewChanges={setContextHasNew}
+                />
               )}
             </>
           )}

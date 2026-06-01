@@ -986,3 +986,170 @@ button {
 .context-content__markdown a:hover {
   text-decoration: underline;
 }
+
+/* ── Team sync bar ───────────────────────────────────────────────────────────── */
+/* Full-width strip below the context header. Hidden when collab not configured. */
+
+.sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.sync-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sync-bar__timestamp {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.sync-bar__sep {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.sync-bar__count {
+  font-size: var(--font-size-micro);
+  color: var(--color-accent-blue);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sync-bar__error {
+  font-size: var(--font-size-micro);
+  color: var(--color-status-red);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-bar__btn {
+  height: 22px;
+  padding: 0 9px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+
+.sync-bar__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--color-text-primary);
+}
+
+.sync-bar__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Changelog panel ─────────────────────────────────────────────────────────── */
+/* Appears below sync bar when changes are loaded. Animates in.                  */
+
+.changelog-panel {
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  animation: changelog-in 160ms ease;
+}
+
+@keyframes changelog-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.changelog-panel__empty {
+  padding: 10px 20px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.changelog-panel__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ── Changelog entry ─────────────────────────────────────────────────────────── */
+/* Hairline separator list rows — consistent with proposal inbox pattern.        */
+
+.changelog-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.changelog-entry:last-child {
+  border-bottom: none;
+}
+
+.changelog-entry__pill {
+  flex-shrink: 0;
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.changelog-entry__action {
+  flex-shrink: 0;
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+}
+
+.changelog-entry__summary {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ── Changelog actions (HITL Apply / Dismiss) ────────────────────────────────── */
+
+.changelog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px 10px;
+}
+
+.changelog-actions__apply {
+  font-size: var(--font-size-micro);
+  height: 26px;
+  padding: 0 10px;
+}
+
+/* ── Sidebar blue dot (context awareness) ────────────────────────────────────── */
+/* Not a count badge — just a dot. Signals "something new", not "work to do".   */
+
+.sidebar__dot {
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent-blue);
+  flex-shrink: 0;
+}

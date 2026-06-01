@@ -15,6 +15,7 @@ interface SidebarProps {
   activeView: View;
   onNavigate: (view: View) => void;
   proposalCount: number;
+  contextHasNew: boolean;
 }
 
 interface NavItem {
@@ -29,13 +30,14 @@ const NAV_ITEMS: NavItem[] = [
   { id: "settings",  label: "Settings"  },
 ];
 
-export function Sidebar({ activeView, onNavigate, proposalCount }: SidebarProps) {
+export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew }: SidebarProps) {
   return (
     <nav className="sidebar">
       <ul className="sidebar__nav" role="tablist">
         {NAV_ITEMS.map((item) => {
           const isActive = item.id === activeView;
           const showBadge = item.id === "proposals" && proposalCount > 0;
+          const showDot = item.id === "context" && contextHasNew && !isActive;
 
           return (
             <li
@@ -50,6 +52,9 @@ export function Sidebar({ activeView, onNavigate, proposalCount }: SidebarProps)
                 <span className="sidebar__badge" aria-label={`${proposalCount} pending`}>
                   {proposalCount > 99 ? "99+" : proposalCount}
                 </span>
+              )}
+              {showDot && (
+                <span className="sidebar__dot" aria-label="New team context" />
               )}
             </li>
           );
