@@ -397,7 +397,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           const ka = sortKey(a);
           const kb = sortKey(b);
           for (let i = 0; i < ka.length; i++) {
-            const av = ka[i], bv = kb[i];
+            const av = ka[i];
+            const bv = kb[i];
+            if (av === undefined || bv === undefined) break;
             if (av < bv) return -1;
             if (av > bv) return 1;
           }
