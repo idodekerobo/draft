@@ -13,6 +13,8 @@ import {
 } from "draft-core/proposals";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
+import { readLocalConfig, writeLocalConfig } from "draft-core/config";
+import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
 import { startHeartbeatWatch, stopHeartbeatWatch } from "./main/notifications";
 import {
   startProposalWatch,
@@ -45,6 +47,11 @@ tray.setMenu([
 
 // eslint-disable-next-line prefer-const
 let watcherHandlers!: ProposalWatchHandlers;
+
+// Staging temp dir held between getTeamDiff (phase 1) and applyTeamDiff (phase 2).
+// Module-level so it survives across RPC calls. Cleaned up on next getTeamDiff call
+// or on applyTeamDiff. Empty string = no staging dir.
+let stagingTmpDir = "";
 
 const rpc = BrowserView.defineRPC<AppRPCType>({
   maxRequestTime: 30_000,
@@ -195,10 +202,44 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      loadDiff: async () => ({
-        entries: [],
-        cursorLine: 0,
-      }),
+      loadDiff: async () => {
+        const result = readLocalDiff();
+        return result;
+      },
+
+      getTeamDiff: async () => {
+        // Clean up any lingering staging dir before starting a fresh clone.
+        if (stagingTmpDir) {
+          try { (await import("fs")).rmSync(stagingTmpDir, { recursive: true, force: true }); } catch {}
+          stagingTmpDir = "";
+        }
+        const result = await fetchRemoteDiff();
+        if (result.tmpDir) stagingTmpDir = result.tmpDir;
+        return result;
+      },
+
+      applyTeamDiff: async ({ tmpDir, cursorLine }) => {
+        const result = applyFromTmpDir(tmpDir, cursorLine);
+        if (stagingTmpDir === tmpDir) stagingTmpDir = "";
+        return result;
+      },
+
+      getLocalConfig: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const result = readLocalConfig(workspace);
+        const mode = result.ok ? (result.config.teamLoadMode ?? "auto") : "auto";
+        return { teamLoadMode: mode };
+      },
+
+      setLocalConfig: async ({ teamLoadMode }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          if (teamLoadMode !== undefined) writeLocalConfig(workspace, { teamLoadMode });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Write failed." };
+        }
+      },
 
       getContextFiles: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
