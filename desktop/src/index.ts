@@ -3,7 +3,7 @@
 import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, writeIntegrations, readDraftConfig, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import {
   listProposals,
@@ -407,6 +407,65 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         });
 
         return entries;
+      },
+
+      getConnectedApps: async () => {
+        // Tools — read from global config.json (not per-profile)
+        const cfgResult = readDraftConfig();
+        const toolsCfg  = cfgResult.ok ? cfgResult.config.tools : {};
+
+        function toolDetail(key: "claude-code" | "codex" | "cursor") {
+          const entry = toolsCfg[key];
+          return {
+            installed: !!entry,
+            addedAt:   entry?.added_at ?? null,
+          };
+        }
+
+        // Integrations — read from per-profile integrations.json
+        const workspace  = getWorkspacePath(getActiveProfile());
+        const intResult  = readIntegrations(workspace);
+        const int        = intResult.ok ? intResult.integrations : {};
+
+        function integrationDetail(key: "granola" | "slack" | "github") {
+          const entry = int[key];
+          return {
+            connected:     entry?.connected    ?? false,
+            lastConnected: entry?.last_connected ?? null,
+            mode:          entry?.mode          ?? null,
+            channels:      entry?.channels      ?? null,
+            repos:         entry?.repos         ?? [],
+          };
+        }
+
+        return {
+          tools: {
+            "claude-code": toolDetail("claude-code"),
+            codex:         toolDetail("codex"),
+            cursor:        toolDetail("cursor"),
+          },
+          integrations: {
+            granola: integrationDetail("granola"),
+            slack:   integrationDetail("slack"),
+            github:  integrationDetail("github"),
+          },
+        };
+      },
+
+      disconnectIntegration: async ({ source }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const result    = readIntegrations(workspace);
+          const current   = result.ok ? result.integrations : {};
+          const updated   = {
+            ...current,
+            [source]: { ...(current[source] ?? {}), connected: false },
+          };
+          writeIntegrations(workspace, updated);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Disconnect failed." };
+        }
       },
     },
     messages: {
