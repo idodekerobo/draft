@@ -15,6 +15,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
+import { runInstall } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
 import {
@@ -466,6 +467,60 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Disconnect failed." };
         }
+      },
+
+      connectGitHub: async () => {
+        // Fast path: gh already authenticated — just mark connected in integrations.json.
+        const authCheck = await capture(["gh", "auth", "status"]);
+        if (authCheck.exitCode === 0) {
+          try {
+            const workspace = getWorkspacePath(getActiveProfile());
+            const result    = readIntegrations(workspace);
+            const current   = result.ok ? result.integrations : {};
+            writeIntegrations(workspace, {
+              ...current,
+              github: { ...(current.github ?? {}), connected: true, last_connected: new Date().toISOString() },
+            });
+            return { ok: true };
+          } catch (err) {
+            return { ok: false, error: err instanceof Error ? err.message : "Failed to save GitHub connection." };
+          }
+        }
+
+        // Slow path: open browser OAuth flow. Fire-and-forget — return immediately
+        // so the renderer doesn't wait on a 30s+ user interaction.
+        // Background promise writes integrations.json when gh exits cleanly.
+        let proc: ReturnType<typeof Bun.spawn>;
+        try {
+          proc = Bun.spawn(["gh", "auth", "login", "--web"], {
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+        } catch {
+          return { ok: false, error: "gh CLI not found. Install it with: brew install gh" };
+        }
+
+        // Background: when OAuth completes, persist the connection.
+        proc.exited.then((code) => {
+          if (code !== 0) return;
+          try {
+            const workspace = getWorkspacePath(getActiveProfile());
+            const result    = readIntegrations(workspace);
+            const current   = result.ok ? result.integrations : {};
+            writeIntegrations(workspace, {
+              ...current,
+              github: { ...(current.github ?? {}), connected: true, last_connected: new Date().toISOString() },
+            });
+          } catch { /* non-fatal */ }
+        }).catch(() => {});
+
+        // Renderer should poll getConnectedApps until github.connected === true.
+        return { ok: true };
+      },
+
+      runInstall: async ({ tools }) => {
+        return runInstall(tools);
       },
     },
     messages: {
