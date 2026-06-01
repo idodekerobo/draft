@@ -301,7 +301,7 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
         <section className="settings__section">
           <h2 className="settings__section-label">Intelligence Tools</h2>
           <div className="settings__rows">
-            {(["claude-code", "codex", "cursor"] as const).map((key) => (
+            {(["claude-code", "codex"] as const).map((key) => (
               <IntelligenceToolRow key={key} toolKey={key} detail={apps.tools[key]} />
             ))}
           </div>
