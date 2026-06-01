@@ -1153,3 +1153,194 @@ button {
   background: var(--color-accent-blue);
   flex-shrink: 0;
 }
+
+/* ── Settings view ───────────────────────────────────────────────────────────── */
+
+.settings {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings__header {
+  height: 40px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.settings__title {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 0 40px;
+}
+
+.settings__loading,
+.settings__load-error {
+  padding: 32px 20px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.settings__load-error {
+  color: var(--color-status-red);
+}
+
+/* ── Settings sections ───────────────────────────────────────────────────────── */
+
+.settings__section {
+  margin-bottom: 28px;
+}
+
+.settings__section-label {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 20px 8px;
+}
+
+.settings__rows {
+  border-top: 1px solid var(--color-border);
+}
+
+/* ── Settings rows ───────────────────────────────────────────────────────────── */
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+  gap: 20px;
+  min-height: 60px;
+}
+
+/* Stacked variant: label + description above, control below (for segment control) */
+.settings__row--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 16px;
+}
+
+.settings__row-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings__row-label {
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.settings__row-desc {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+  max-width: 420px;
+}
+
+/* ── Save error toast (inline at bottom of settings panel) ───────────────────── */
+
+.settings__save-error {
+  flex-shrink: 0;
+  padding: 8px 20px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-status-red);
+  border-top: 1px solid var(--color-border);
+  animation: toast-in 150ms ease;
+}
+
+/* ── Toggle (iOS-style pill) ─────────────────────────────────────────────────── */
+
+.toggle {
+  flex-shrink: 0;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: background 220ms ease;
+}
+
+.toggle--on {
+  background: var(--color-accent-blue);
+}
+
+.toggle--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toggle__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-text-primary);
+  transition: transform 220ms ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.toggle--on .toggle__thumb {
+  transform: translateX(16px);
+}
+
+/* ── Segment control ─────────────────────────────────────────────────────────── */
+
+.segment-control {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 2px;
+}
+
+.segment-control__btn {
+  height: 26px;
+  padding: 0 13px;
+  border-radius: calc(var(--radius-md) - 2px);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-secondary);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+}
+
+.segment-control__btn:hover:not(.segment-control__btn--active) {
+  color: var(--color-text-primary);
+}
+
+.segment-control__btn--active {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}

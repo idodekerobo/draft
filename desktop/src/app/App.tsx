@@ -15,6 +15,7 @@ import { StatusBar } from "./components/StatusBar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
+import { SettingsView } from "./components/views/SettingsView";
 import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ export function App() {
         <main className="content">
           {/* Settings is always reachable regardless of daemon state. */}
           {activeView === "settings" ? (
-            <div className="panel-placeholder">Settings — Phase 5</div>
+            <SettingsView key={activeProfile} activeProfile={activeProfile} />
           ) : status?.state === "stopped" ? (
             <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
           ) : (
