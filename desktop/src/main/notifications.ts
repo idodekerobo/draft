@@ -19,18 +19,33 @@ const STATE_DIR      = `${BACKGROUND_DIR}/state`;
 const HEARTBEAT_PATH = `${STATE_DIR}/last-heartbeat`;
 const STALE_MS       = 2 * 60 * 1000; // 2 minutes
 
+// ── Notification gate ──────────────────────────────────────────────────────────
+// Controlled by the user's notificationsEnabled setting in local.json.
+// Set on startup and updated immediately when the setting changes in the UI.
+
+let notificationsEnabled = true;
+
+export function setNotificationsEnabled(enabled: boolean): void {
+  notificationsEnabled = enabled;
+}
+
+function showNotif(opts: { title: string; subtitle?: string; body?: string }): void {
+  if (!notificationsEnabled) return;
+  Utils.showNotification(opts);
+}
+
 // ── Public notification functions ──────────────────────────────────────────────
 // Called by watcher code when the relevant fs.watch events fire.
 
 export function notifyNewProposal(source: string, count: number): void {
-  Utils.showNotification({
+  showNotif({
     title: "Draft",
     body:  `${count} new proposal${count === 1 ? "" : "s"} from ${source}`,
   });
 }
 
 export function notifyCaptureComplete(source: string): void {
-  Utils.showNotification({
+  showNotif({
     title: "Draft",
     body:  `${source} captured, proposals ready`,
   });
@@ -53,7 +68,7 @@ function armStaleTimer(): void {
   staleTimer = setTimeout(() => {
     if (!stoppedFired) {
       stoppedFired = true;
-      Utils.showNotification({ title: "Draft", body: "Draft daemon stopped" });
+      showNotif({ title: "Draft", body: "Draft daemon stopped" });
     }
   }, STALE_MS);
 }
@@ -71,7 +86,7 @@ export function startHeartbeatWatch(): void {
     const ageMs = Date.now() - statSync(HEARTBEAT_PATH).mtimeMs;
     if (ageMs > STALE_MS) {
       stoppedFired = true;
-      Utils.showNotification({ title: "Draft", body: "Draft daemon stopped" });
+      showNotif({ title: "Draft", body: "Draft daemon stopped" });
     } else {
       armStaleTimer();
     }
