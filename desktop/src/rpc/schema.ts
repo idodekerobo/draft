@@ -121,6 +121,8 @@ export interface TeamDiffResult {
 
 export interface LocalConfig {
   teamLoadMode: "auto" | "review";
+  launchOnLogin: boolean;
+  notificationsEnabled: boolean;
 }
 
 export interface ContextFileEntry {

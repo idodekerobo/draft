@@ -257,6 +257,8 @@ export function writeIntegrations(workspacePath: string, integrations: Integrati
 
 export interface LocalConfig {
   teamLoadMode?: "auto" | "review";
+  launchOnLogin?: boolean;
+  notificationsEnabled?: boolean;
   last_loaded?: string;
   last_published?: string;
   lastLoadCursor?: number;
