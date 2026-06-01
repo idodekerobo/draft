@@ -1,13 +1,126 @@
-// ContextViewer.tsx — two-panel context browser: tree left, rendered markdown right
+// ContextViewer.tsx — context browser with team sync visibility
+//
+// Layout (top → bottom):
+//   TeamSyncBar  — last loaded time, change count, Load button (hidden when collab not configured)
+//   ChangelogPanel — diff entries; Apply action in HITL mode (hidden when no entries)
+//   context-viewer__body — file tree (left) + markdown content (right)
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { marked } from "marked";
-import type { ContextFileEntry } from "../../../rpc/schema";
+import type { ContextFileEntry, LoadDiffEntry, LocalConfig, TeamDiffResult } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 
 marked.setOptions({ breaks: true });
 
-// ── Empty state ───────────────────────────────────────────────────────────────
+// ── Relative time helper ───────────────────────────────────────────────────────
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "never";
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// ── TeamSyncBar ────────────────────────────────────────────────────────────────
+
+type SyncStatus = "idle" | "loading" | "loaded" | "applying" | "error";
+
+interface TeamSyncBarProps {
+  lastLoaded: string | null;
+  pendingCount: number;
+  status: SyncStatus;
+  errorMsg: string;
+  onLoad: () => void;
+}
+
+function TeamSyncBar({ lastLoaded, pendingCount, status, errorMsg, onLoad }: TeamSyncBarProps) {
+  const isWorking = status === "loading" || status === "applying";
+
+  return (
+    <div className="sync-bar">
+      <div className="sync-bar__left">
+        {status === "error" ? (
+          <span className="sync-bar__error">{errorMsg}</span>
+        ) : (
+          <>
+            <span className="sync-bar__timestamp">
+              Last loaded {relativeTime(lastLoaded)}
+            </span>
+            {pendingCount > 0 && (
+              <>
+                <span className="sync-bar__sep">·</span>
+                <span className="sync-bar__count">
+                  {pendingCount} {pendingCount === 1 ? "change" : "changes"}
+                </span>
+              </>
+            )}
+          </>
+        )}
+      </div>
+      <button
+        className="sync-bar__btn"
+        onClick={onLoad}
+        disabled={isWorking}
+        aria-label="Load from team"
+      >
+        {status === "loading" ? "Loading…" : status === "applying" ? "Applying…" : "Load from team"}
+      </button>
+    </div>
+  );
+}
+
+// ── ChangelogPanel ─────────────────────────────────────────────────────────────
+
+interface ChangelogPanelProps {
+  entries: LoadDiffEntry[];
+  mode: "auto" | "review";
+  isApplying: boolean;
+  onApply: () => void;
+  onDismiss: () => void;
+}
+
+function ChangelogPanel({ entries, mode, isApplying, onApply, onDismiss }: ChangelogPanelProps) {
+  return (
+    <div className="changelog-panel">
+      {entries.length === 0 ? (
+        <p className="changelog-panel__empty">No changes since last load.</p>
+      ) : (
+        <ul className="changelog-panel__list">
+          {entries.map((e, i) => (
+            <li key={i} className="changelog-entry">
+              <span className="changelog-entry__pill">{e.dimension || "context"}</span>
+              <span className="changelog-entry__action">{e.action}</span>
+              <span className="changelog-entry__summary">{e.summary}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {mode === "review" && entries.length > 0 && (
+        <div className="changelog-actions">
+          <button
+            className="proposal-action proposal-action--primary changelog-actions__apply"
+            onClick={onApply}
+            disabled={isApplying}
+          >
+            {isApplying ? "Applying…" : "Apply"}
+          </button>
+          <button
+            className="proposal-action proposal-action--ghost"
+            onClick={onDismiss}
+            disabled={isApplying}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────────
 
 function ContextEmptyState() {
   return (
@@ -45,7 +158,7 @@ function TreeItem({
   );
 }
 
-// ── Dim row (expandable dimension with optional log children) ─────────────────
+// ── Dim row ───────────────────────────────────────────────────────────────────
 
 function DimRow({
   dim,
@@ -67,7 +180,6 @@ function DimRow({
   return (
     <div className="context-dim-row">
       <div className={`context-dim-row__main${dim.relativePath === selectedPath ? " context-dim-row__main--active" : ""}`}>
-        {/* Label area — select only */}
         <button
           className="context-dim-row__label"
           onClick={() => onSelect(dim.relativePath)}
@@ -76,7 +188,6 @@ function DimRow({
           <span className="context-tree__item-label">{dim.label}</span>
         </button>
 
-        {/* Expand arrow — toggle only, no selection */}
         {hasLogs && (
           <button
             className={`context-dim-row__expand-btn${isExpanded ? " context-dim-row__expand-btn--expanded" : ""}`}
@@ -104,7 +215,7 @@ function DimRow({
   );
 }
 
-// ── Group section (collapsible header + children) ─────────────────────────────
+// ── Group section ─────────────────────────────────────────────────────────────
 
 function GroupSection({
   groupId,
@@ -172,7 +283,6 @@ function ContextTree({
   const dims = files.filter((f) => f.kind === "dim");
   const standalones = files.filter((f) => f.kind === "standalone");
 
-  // Collect groups (decisions, research, etc.)
   const groupIds: string[] = [];
   const groupMap = new Map<string, ContextFileEntry[]>();
   for (const f of files) {
@@ -184,7 +294,6 @@ function ContextTree({
     groupMap.get(f.group)!.push(f);
   }
 
-  // Log entries keyed by dim group
   const logMap = new Map<string, ContextFileEntry[]>();
   for (const f of files) {
     if (f.kind !== "log") continue;
@@ -273,25 +382,143 @@ function ContextContent({ entry }: { entry: ContextFileEntry }) {
 
 interface ContextViewerProps {
   activeProfile: string;
+  onNewChanges: (hasNew: boolean) => void;
 }
 
-export function ContextViewer({ activeProfile: _activeProfile }: ContextViewerProps) {
+export function ContextViewer({ activeProfile: _activeProfile, onNewChanges }: ContextViewerProps) {
+  // ── File tree state ──────────────────────────────────────────────────────────
   const [files, setFiles] = useState<ContextFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [expandedDims, setExpandedDims] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
+  // ── Sync state ───────────────────────────────────────────────────────────────
+  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto" });
+  const [collabConfigured, setCollabConfigured] = useState(false);
+  const [lastLoaded, setLastLoaded] = useState<string | null>(null);
+  const [localEntries, setLocalEntries] = useState<LoadDiffEntry[]>([]);
+  const [localCursor, setLocalCursor] = useState(0);
+
+  // Staged remote diff (HITL mode — held between getTeamDiff and applyTeamDiff)
+  const [stagedDiff, setStagedDiff] = useState<TeamDiffResult | null>(null);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncError, setSyncError] = useState("");
+
+  // ── Load context files ───────────────────────────────────────────────────────
+  function loadFiles() {
     rpc.request.getContextFiles().then((result) => {
       setFiles(result);
       if (result.length > 0) {
-        const firstSelectable = result.find((f) => f.kind === "dim" || f.kind === "standalone" || f.kind === "group-child");
-        setSelectedPath(firstSelectable?.relativePath ?? result[0].relativePath);
+        const firstSelectable = result.find(
+          (f) => f.kind === "dim" || f.kind === "standalone" || f.kind === "group-child"
+        );
+        setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0].relativePath));
       }
-    }).catch(() => {
-      setFiles([]);
-    });
+    }).catch(() => setFiles([]));
+  }
+
+  // ── Load local diff (option B: check on mount, not on poll) ─────────────────
+  function refreshLocalDiff() {
+    rpc.request.loadDiff().then((result) => {
+      setLastLoaded(result.lastLoaded);
+      setLocalEntries(result.entries);
+      setLocalCursor(result.cursorLine);
+      // Signal App.tsx: new entries exist that haven't been seen yet
+      onNewChanges(result.entries.length > 0);
+    }).catch(() => {});
+  }
+
+  // ── On mount ─────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    loadFiles();
+    refreshLocalDiff();
+
+    rpc.request.getLocalConfig().then((cfg) => setLocalConfig(cfg)).catch(() => {});
+
+    // Check if collab is configured via getTeamDiff probe (collabConfigured field)
+    // We don't clone — just need to know whether to show the sync bar.
+    // Use getLocalConfig as proxy; check collaboration via a lightweight path.
+    // For now: attempt loadDiff — if it returns a lastLoaded timestamp, collab was used at least once.
+    // Full collabConfigured truth comes from the first getTeamDiff call.
+    // Show sync bar speculatively if last_loaded is set.
+    rpc.request.loadDiff().then((result) => {
+      if (result.lastLoaded) setCollabConfigured(true);
+    }).catch(() => {});
   }, []);
+
+  // ── "Load from team" handler ─────────────────────────────────────────────────
+  const handleLoad = useCallback(async () => {
+    setSyncStatus("loading");
+    setSyncError("");
+    setStagedDiff(null);
+
+    try {
+      const diff = await rpc.request.getTeamDiff();
+      setCollabConfigured(diff.collabConfigured);
+
+      if (!diff.collabConfigured) {
+        setSyncStatus("idle");
+        return;
+      }
+
+      if (localConfig.teamLoadMode === "review") {
+        // HITL: stage the diff, show changelog with Apply button
+        setStagedDiff(diff);
+        setLocalEntries(diff.entries);
+        setShowChangelog(true);
+        setSyncStatus("loaded");
+      } else {
+        // Auto: apply immediately
+        setSyncStatus("applying");
+        const apply = await rpc.request.applyTeamDiff({ tmpDir: diff.tmpDir, cursorLine: diff.cursorLine });
+        if (!apply.ok) throw new Error(apply.error ?? "Apply failed.");
+        setLastLoaded(new Date().toISOString());
+        setLocalEntries(diff.entries);
+        setLocalCursor(diff.cursorLine);
+        setShowChangelog(diff.entries.length > 0);
+        setSyncStatus("loaded");
+        onNewChanges(false); // user triggered this — they're seeing it now
+        loadFiles(); // refresh tree with newly applied context
+      }
+    } catch (err) {
+      setSyncStatus("error");
+      setSyncError(err instanceof Error ? err.message : "Sync failed.");
+    }
+  }, [localConfig.teamLoadMode]);
+
+  // ── HITL Apply ───────────────────────────────────────────────────────────────
+  async function handleApply() {
+    if (!stagedDiff?.tmpDir) return;
+    setSyncStatus("applying");
+    try {
+      const result = await rpc.request.applyTeamDiff({
+        tmpDir: stagedDiff.tmpDir,
+        cursorLine: stagedDiff.cursorLine,
+      });
+      if (!result.ok) throw new Error(result.error ?? "Apply failed.");
+      setLastLoaded(new Date().toISOString());
+      setLocalCursor(stagedDiff.cursorLine);
+      setStagedDiff(null);
+      setSyncStatus("loaded");
+      onNewChanges(false);
+      loadFiles();
+    } catch (err) {
+      setSyncStatus("error");
+      setSyncError(err instanceof Error ? err.message : "Apply failed.");
+    }
+  }
+
+  function handleDismiss() {
+    setStagedDiff(null);
+    setShowChangelog(false);
+    setSyncStatus("idle");
+  }
+
+  // ── Mode toggle (called from settings, reflected immediately) ────────────────
+  // ContextViewer doesn't expose a toggle directly — Settings tab calls setLocalConfig.
+  // Re-read on focus via a storage event is v2. For now, Settings changes take effect
+  // on next "Load from team" press (mode is read at handleLoad time).
 
   function toggleDim(group: string) {
     setExpandedDims((prev) => {
@@ -313,9 +540,21 @@ export function ContextViewer({ activeProfile: _activeProfile }: ContextViewerPr
 
   const selectedEntry = files.find((f) => f.relativePath === selectedPath) ?? null;
 
+  const changelogEntries = stagedDiff ? stagedDiff.entries : localEntries;
+  const isApplying = syncStatus === "applying";
+
   if (files.length === 0) {
     return (
       <div className="context-viewer">
+        {collabConfigured && (
+          <TeamSyncBar
+            lastLoaded={lastLoaded}
+            pendingCount={localEntries.length}
+            status={syncStatus}
+            errorMsg={syncError}
+            onLoad={handleLoad}
+          />
+        )}
         <ContextEmptyState />
       </div>
     );
@@ -326,6 +565,27 @@ export function ContextViewer({ activeProfile: _activeProfile }: ContextViewerPr
       <div className="context-viewer__header">
         <span className="proposals__title">Context</span>
       </div>
+
+      {collabConfigured && (
+        <TeamSyncBar
+          lastLoaded={lastLoaded}
+          pendingCount={localEntries.length}
+          status={syncStatus}
+          errorMsg={syncError}
+          onLoad={handleLoad}
+        />
+      )}
+
+      {showChangelog && (
+        <ChangelogPanel
+          entries={changelogEntries}
+          mode={localConfig.teamLoadMode}
+          isApplying={isApplying}
+          onApply={handleApply}
+          onDismiss={handleDismiss}
+        />
+      )}
+
       <div className="context-viewer__body">
         <ContextTree
           files={files}
