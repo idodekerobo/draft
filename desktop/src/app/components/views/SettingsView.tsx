@@ -160,7 +160,7 @@ function InputSourceRow({ sourceKey, detail, onDisconnect, isDisconnecting }: In
     if (detail.mode)     parts.push(detail.mode);
     if (detail.channels) parts.push(`${detail.channels} channels`);
     if (detail.repos.length > 0) {
-      parts.push(detail.repos.length === 1 ? detail.repos[0] : `${detail.repos.length} repos`);
+      parts.push(detail.repos.length === 1 ? detail.repos[0]! : `${detail.repos.length} repos`);
     }
     const time = relativeTime(detail.lastConnected);
     if (time) parts.push(time);
