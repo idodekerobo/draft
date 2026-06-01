@@ -1268,6 +1268,143 @@ button {
   animation: toast-in 150ms ease;
 }
 
+/* ── Connected app rows ──────────────────────────────────────────────────────── */
+/* Used in Intelligence Tools and Input Sources sections of Settings.            */
+
+.app-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border);
+  gap: 16px;
+  min-height: 56px;
+}
+
+.app-row__left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-row__status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  margin-top: 5px; /* vertically align with first line of text */
+}
+
+.app-row__status-dot--on {
+  background: var(--color-status-green);
+}
+
+.app-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.app-row__name {
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.app-row__meta {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.app-row__hint {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
+/* Copyable CLI command chip */
+.app-row__cmd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+  max-width: 260px;
+  overflow: hidden;
+}
+
+.app-row__cmd:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.app-row__cmd-text {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-row__cmd-copy {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* Disconnect button + note (shown for connected input sources) */
+.app-row__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.app-row__disconnect {
+  height: 24px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms, color 100ms;
+  white-space: nowrap;
+}
+
+.app-row__disconnect:hover:not(:disabled) {
+  background: rgba(255, 69, 58, 0.12);
+  border-color: var(--color-status-red);
+  color: var(--color-status-red);
+}
+
+.app-row__disconnect:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.app-row__disconnect-note {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
 /* ── Toggle (iOS-style pill) ─────────────────────────────────────────────────── */
 
 .toggle {
