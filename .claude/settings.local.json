@@ -18,7 +18,8 @@
       "WebFetch(domain:openai.github.io)",
       "WebFetch(domain:www.google.com)",
       "WebFetch(domain:docs.anthropic.com)",
-      "WebFetch(domain:docs.electrobunny.ai)"
+      "WebFetch(domain:docs.electrobunny.ai)",
+      "WebFetch(domain:bun.com)"
     ]
   }
 }
