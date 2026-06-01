@@ -253,6 +253,47 @@ export function writeIntegrations(workspacePath: string, integrations: Integrati
 
 // ── Collaboration config ────────────────────────────────────────────────────────
 
+// ── Local (per-machine, per-profile) config ─────────────────────────────────────
+
+export interface LocalConfig {
+  teamLoadMode?: "auto" | "review";
+  last_loaded?: string;
+  last_published?: string;
+  lastLoadCursor?: number;
+}
+
+export type LocalConfigResult =
+  | { ok: true; config: LocalConfig }
+  | { ok: false; reason: "missing" | "malformed" };
+
+export function readLocalConfig(workspacePath: string): LocalConfigResult {
+  const localPath = join(workspacePath, "config", "local.json");
+  let raw: string;
+  try {
+    raw = readFileSync(localPath, "utf8");
+  } catch {
+    return { ok: false, reason: "missing" };
+  }
+  try {
+    const parsed = JSON.parse(raw) as LocalConfig;
+    return { ok: true, config: parsed };
+  } catch {
+    return { ok: false, reason: "malformed" };
+  }
+}
+
+/** Patch-based write — merges patch into existing config so individual keys don't clobber each other. */
+export function writeLocalConfig(workspacePath: string, patch: Partial<LocalConfig>): void {
+  const localPath = join(workspacePath, "config", "local.json");
+  const result = readLocalConfig(workspacePath);
+  const current: LocalConfig = result.ok ? result.config : {};
+  const updated = { ...current, ...patch };
+  mkdirSync(join(workspacePath, "config"), { recursive: true });
+  writeFileSync(localPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+}
+
+// ── Collaboration config ────────────────────────────────────────────────────────
+
 export function readCollaboration(workspacePath: string): CollabResult {
   const collabPath = join(workspacePath, "config", "collaboration.json");
   let raw: string;
