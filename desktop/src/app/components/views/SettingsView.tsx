@@ -146,14 +146,33 @@ const SOURCE_LABELS: Record<string, string> = {
   github:  "GitHub",
 };
 
+// Hint shown below the meta line when a source is not connected.
+const SOURCE_CONNECT_HINT: Record<string, string> = {
+  granola: "Connect via /draft:connect in Claude Code",
+  slack:   "Connect via /draft:connect in Claude Code",
+  github:  "Authenticate with the GitHub CLI to connect",
+};
+
 interface InputSourceRowProps {
   sourceKey: "granola" | "slack" | "github";
   detail: IntegrationDetail;
   onDisconnect: () => void;
+  onConnectGitHub: () => void;
   isDisconnecting: boolean;
+  isConnectingGitHub: boolean;
 }
 
-function InputSourceRow({ sourceKey, detail, onDisconnect, isDisconnecting }: InputSourceRowProps) {
+function InputSourceRow({
+  sourceKey,
+  detail,
+  onDisconnect,
+  onConnectGitHub,
+  isDisconnecting,
+  isConnectingGitHub,
+}: InputSourceRowProps) {
+  const isGitHub = sourceKey === "github";
+  const isPending = isGitHub && isConnectingGitHub;
+
   function buildMeta(): string {
     if (!detail.connected) return "Not connected";
     const parts: string[] = [];
@@ -170,28 +189,40 @@ function InputSourceRow({ sourceKey, detail, onDisconnect, isDisconnecting }: In
   return (
     <div className="app-row">
       <div className="app-row__left">
-        <span className={`app-row__status-dot${detail.connected ? " app-row__status-dot--on" : ""}`} />
+        <span className={`app-row__status-dot${detail.connected ? " app-row__status-dot--on" : isPending ? " app-row__status-dot--pending" : ""}`} />
         <div className="app-row__text">
           <span className="app-row__name">{SOURCE_LABELS[sourceKey] ?? sourceKey}</span>
-          <span className="app-row__meta">{buildMeta()}</span>
-          {!detail.connected && (
-            <span className="app-row__hint">Connect with /draft:connect in Claude Code</span>
+          <span className="app-row__meta">
+            {isPending ? "Complete sign-in in your browser…" : buildMeta()}
+          </span>
+          {!detail.connected && !isPending && (
+            <span className="app-row__hint">{SOURCE_CONNECT_HINT[sourceKey]}</span>
           )}
         </div>
       </div>
 
-      {detail.connected && (
-        <div className="app-row__right">
+      <div className="app-row__right">
+        {detail.connected ? (
+          <>
+            <button
+              className="app-row__disconnect"
+              onClick={onDisconnect}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting ? "Disconnecting…" : "Disconnect"}
+            </button>
+            <span className="app-row__disconnect-note">Takes effect on next daemon cycle</span>
+          </>
+        ) : isGitHub ? (
           <button
-            className="app-row__disconnect"
-            onClick={onDisconnect}
-            disabled={isDisconnecting}
+            className="app-row__connect"
+            onClick={onConnectGitHub}
+            disabled={isPending}
           >
-            {isDisconnecting ? "Disconnecting…" : "Disconnect"}
+            {isPending ? "Waiting…" : "Connect"}
           </button>
-          <span className="app-row__disconnect-note">Takes effect on next daemon cycle</span>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -203,11 +234,12 @@ interface SettingsViewProps {
 }
 
 export function SettingsView({ activeProfile }: SettingsViewProps) {
-  const [settings, setSettings]     = useState<LocalConfig | null>(null);
-  const [apps, setApps]             = useState<ConnectedAppsStatus | null>(null);
-  const [loadError, setLoadError]   = useState<string | null>(null);
-  const [saveError, setSaveError]   = useState<string | null>(null);
+  const [settings, setSettings]           = useState<LocalConfig | null>(null);
+  const [apps, setApps]                   = useState<ConnectedAppsStatus | null>(null);
+  const [loadError, setLoadError]         = useState<string | null>(null);
+  const [saveError, setSaveError]         = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
+  const [connectingGitHub, setConnectingGitHub] = useState(false);
 
   // ── Load ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -271,6 +303,45 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
     }
   }
 
+  // ── GitHub connect ─────────────────────────────────────────────────────────
+  // Fire-and-forget: opens browser OAuth, then polls getConnectedApps every 2s
+  // until github.connected flips to true.
+  async function handleConnectGitHub() {
+    setConnectingGitHub(true);
+    setSaveError(null);
+    try {
+      const result = await rpc.request.connectGitHub();
+      if (!result.ok) {
+        setSaveError(result.error ?? "GitHub connect failed.");
+        setConnectingGitHub(false);
+      }
+      // On ok:true, background process is running. Polling effect takes over.
+    } catch {
+      setSaveError("GitHub connect failed.");
+      setConnectingGitHub(false);
+    }
+  }
+
+  // Poll getConnectedApps while GitHub OAuth is in progress.
+  useEffect(() => {
+    if (!connectingGitHub) return;
+    const id = setInterval(async () => {
+      try {
+        const updated = await rpc.request.getConnectedApps();
+        if (updated.integrations.github.connected) {
+          setApps(updated);
+          setConnectingGitHub(false);
+        }
+      } catch { /* keep polling */ }
+    }, 2_000);
+    // Safety timeout — stop polling after 5 minutes.
+    const timeout = setTimeout(() => {
+      setConnectingGitHub(false);
+      setSaveError("GitHub sign-in timed out. Try again.");
+    }, 5 * 60 * 1_000);
+    return () => { clearInterval(id); clearTimeout(timeout); };
+  }, [connectingGitHub]);
+
   // ── Loading / error states ─────────────────────────────────────────────────
   if (loadError) {
     return (
@@ -317,7 +388,9 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
                 sourceKey={key}
                 detail={apps.integrations[key]}
                 onDisconnect={() => void handleDisconnect(key)}
+                onConnectGitHub={() => void handleConnectGitHub()}
                 isDisconnecting={disconnecting === key}
+                isConnectingGitHub={connectingGitHub}
               />
             ))}
           </div>
