@@ -125,6 +125,38 @@ export interface LocalConfig {
   notificationsEnabled: boolean;
 }
 
+/** Detail for a single intelligence tool (claude-code, codex, cursor). */
+export interface ToolDetail {
+  installed: boolean;
+  /** ISO timestamp, "migrated" for auto-detected legacy installs, or null if never installed. */
+  addedAt: string | null;
+}
+
+/** Detail for a single input source integration (granola, slack, github). */
+export interface IntegrationDetail {
+  connected: boolean;
+  lastConnected: string | null;
+  /** "mcp"|"api" for Granola; "passive"|"tagged" for Slack; null otherwise. */
+  mode: string | null;
+  /** Slack: number of configured channels. Null for other sources. */
+  channels: number | null;
+  /** GitHub: list of watched repos. Empty for other sources. */
+  repos: string[];
+}
+
+export interface ConnectedAppsStatus {
+  tools: {
+    "claude-code": ToolDetail;
+    codex: ToolDetail;
+    cursor: ToolDetail;
+  };
+  integrations: {
+    granola: IntegrationDetail;
+    slack: IntegrationDetail;
+    github: IntegrationDetail;
+  };
+}
+
 export interface ContextFileEntry {
   relativePath: string;
   label: string;
@@ -196,6 +228,12 @@ export type AppRPCType = {
 
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
+
+      /** Rich connection status for all intelligence tools and input sources. */
+      getConnectedApps: { params: void; response: ConnectedAppsStatus };
+
+      /** Disconnect an input source by setting connected=false in integrations.json. */
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" }; response: ActionResult };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
