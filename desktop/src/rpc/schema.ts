@@ -106,6 +106,21 @@ export interface LoadDiffEntry {
 export interface LoadDiffResult {
   entries: LoadDiffEntry[];
   cursorLine: number;
+  lastLoaded: string | null;
+}
+
+/** Returned by getTeamDiff — includes staging tmpDir for HITL apply phase. */
+export interface TeamDiffResult {
+  entries: LoadDiffEntry[];
+  cursorLine: number;
+  /** Absolute path to the staging clone. Pass to applyTeamDiff to apply. Empty string if clone failed. */
+  tmpDir: string;
+  /** False when collaboration is not configured — UI hides sync bar entirely. */
+  collabConfigured: boolean;
+}
+
+export interface LocalConfig {
+  teamLoadMode: "auto" | "review";
 }
 
 export interface ContextFileEntry {
@@ -162,8 +177,20 @@ export type AppRPCType = {
       /** Reject a pending proposal (moves to rejected/). */
       rejectProposal: { params: { filename: string }; response: ActionResult };
 
-      /** Read CHANGES.jsonl delta since last cursor. */
+      /** Read CHANGES.jsonl delta since last cursor (from local workspace copy — what hook applied). */
       loadDiff: { params: void; response: LoadDiffResult };
+
+      /** Fetch team diff from remote: shallow-clone → read CHANGES.jsonl delta → return entries + tmpDir. */
+      getTeamDiff: { params: void; response: TeamDiffResult };
+
+      /** Apply staged tmpDir → workspace: copy context + CHANGES.jsonl, update cursor, delete tmpDir. */
+      applyTeamDiff: { params: { tmpDir: string; cursorLine: number }; response: ActionResult };
+
+      /** Read per-profile local config (teamLoadMode). */
+      getLocalConfig: { params: void; response: LocalConfig };
+
+      /** Patch per-profile local config. */
+      setLocalConfig: { params: Partial<LocalConfig>; response: ActionResult };
 
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
