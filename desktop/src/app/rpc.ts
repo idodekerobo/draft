@@ -19,6 +19,7 @@ type EventMap = {
   captureComplete: { source: string };
   badgeUpdate: { profile: string; count: number };
   profileChanged: { profile: string };
+  requestStatusRefresh: Record<string, never>;
 };
 
 // Internal listener type — erased at call sites; external API remains typed.
@@ -63,6 +64,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
 
       // TODO: Phase 1: active profile changed via desktop or CLI
       profileChanged: (data) => events.emit("profileChanged", data),
+      requestStatusRefresh: (data) => events.emit("requestStatusRefresh", data),
     },
   },
 });
