@@ -95,6 +95,35 @@ echo "[Draft] Active profile: $_active_profile" >&2
 export DRAFT_WORKSPACE
 DRAFT_PERSONAL="$DRAFT_GLOBAL/personal"
 
+# ── Read disabled context sections from per-profile local.json ────────────────
+# Falls back to empty list (all sections enabled) if file is missing or malformed.
+_DISABLED_JSON="[]"
+if [ -f "$DRAFT_WORKSPACE/config/local.json" ]; then
+    _DISABLED_JSON=$(python3 -c "
+import json, os
+from pathlib import Path
+ws = os.environ.get('DRAFT_WORKSPACE', '')
+try:
+    cfg = json.loads((Path(ws) / 'config' / 'local.json').read_text())
+    print(json.dumps(cfg.get('disabledContextSections', [])))
+except Exception:
+    print('[]')
+" 2>/dev/null || echo "[]")
+fi
+export _DISABLED_JSON
+
+# Space-separated string for bash checks: " priorities memory "
+_DISABLED_STR=$(python3 -c "
+import json, os
+try:
+    print(' '.join(json.loads(os.environ.get('_DISABLED_JSON', '[]'))))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+# Returns 0 (true) if the named section is disabled.
+_section_disabled() { echo " $_DISABLED_STR " | grep -q " $1 "; }
+
 # ── Skip gracefully if workspace not yet initialized ───────────────────────────
 if [ ! -d "$DRAFT_WORKSPACE/context" ]; then
     echo "(Draft workspace not initialized — run /draft:setup)"
@@ -107,19 +136,42 @@ echo "**Active profile:** $_active_profile"
 echo "**DRAFT_WORKSPACE:** $DRAFT_WORKSPACE"
 echo ""
 echo "## Workspace structure"
-tree -L 2 --charset ascii "$DRAFT_WORKSPACE/context/" 2>/dev/null || echo "(context/ not found — run /draft:setup)"
-echo ""
-echo "## Context index"
 python3 -c "
 import os
 from pathlib import Path
+ctx = Path(os.environ.get('DRAFT_WORKSPACE', '')) / 'context'
+if not ctx.is_dir():
+    print('(context/ not found — run /draft:setup)')
+else:
+    for item in sorted(ctx.iterdir()):
+        if item.name.startswith('.'):
+            continue
+        if item.is_dir():
+            children = [c for c in sorted(item.iterdir()) if not c.name.startswith('.')]
+            print(f'{item.name}/')
+            for child in children:
+                print(f'  {child.name}')
+        else:
+            print(item.name)
+" 2>/dev/null || echo "(context/ not found — run /draft:setup)"
+echo ""
+echo "## Context index"
+python3 -c "
+import os, json
+from pathlib import Path
 ws = os.environ.get('DRAFT_WORKSPACE', os.path.expanduser('~/.draft/workspaces/default'))
 ctx = Path(ws) / 'context'
+try:
+    disabled = json.loads(os.environ.get('_DISABLED_JSON', '[]'))
+except Exception:
+    disabled = []
 files = sorted(ctx.glob('*/index.md'))
 if not files:
     print('No context loaded yet — run /draft:setup to initialize your shared context layer.')
 else:
     for idx in files:
+        if idx.parent.name in disabled:
+            continue
         try:
             text = idx.read_text()
             parts = text.split('---')
@@ -130,12 +182,14 @@ else:
         except Exception:
             pass
 " 2>/dev/null || echo "Run /draft:setup to initialize your shared context layer."
-echo ""
-echo "## Current priorities"
-cat "$DRAFT_WORKSPACE/context/priorities/index.md" 2>/dev/null || echo "No priorities recorded yet."
+if ! _section_disabled "priorities"; then
+    echo ""
+    echo "## Current priorities"
+    cat "$DRAFT_WORKSPACE/context/priorities/index.md" 2>/dev/null || echo "No priorities recorded yet."
+fi
 
 # ── Memory (personal layer — global, shared across all profiles) ───────────────
-if [ -f "$DRAFT_PERSONAL/memory.md" ]; then
+if [ -f "$DRAFT_PERSONAL/memory.md" ] && ! _section_disabled "memory"; then
     echo ""
     echo "## Memory"
     cat "$DRAFT_PERSONAL/memory.md" 2>/dev/null
