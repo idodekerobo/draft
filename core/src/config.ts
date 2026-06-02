@@ -311,6 +311,7 @@ export interface LocalConfig {
   last_loaded?: string;
   last_published?: string;
   lastLoadCursor?: number;
+  disabledContextSections?: string[];
 }
 
 export type LocalConfigResult =

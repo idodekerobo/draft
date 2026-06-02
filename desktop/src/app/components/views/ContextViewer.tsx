@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { marked } from "marked";
-import type { ContextFileEntry, LoadDiffEntry, LocalConfig, TeamDiffResult } from "../../../rpc/schema";
+import type { ContextFileEntry, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 
 marked.setOptions({ breaks: true });
@@ -140,17 +140,20 @@ function TreeItem({
   entry,
   isActive,
   onSelect,
+  onContextMenu,
   extraClass,
 }: {
   entry: ContextFileEntry;
   isActive: boolean;
   onSelect: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   extraClass?: string;
 }) {
   return (
     <button
       className={`context-tree__item${isActive ? " context-tree__item--active" : ""}${extraClass ? ` ${extraClass}` : ""}`}
       onClick={onSelect}
+      onContextMenu={onContextMenu}
       title={entry.label}
     >
       <span className="context-tree__item-label">{entry.label}</span>
@@ -167,6 +170,7 @@ function DimRow({
   isExpanded,
   onToggle,
   onSelect,
+  onContextMenu,
 }: {
   dim: ContextFileEntry;
   logs: ContextFileEntry[];
@@ -174,6 +178,7 @@ function DimRow({
   isExpanded: boolean;
   onToggle: () => void;
   onSelect: (path: string) => void;
+  onContextMenu?: (e: React.MouseEvent, path: string) => void;
 }) {
   const hasLogs = logs.length > 0;
 
@@ -183,6 +188,7 @@ function DimRow({
         <button
           className="context-dim-row__label"
           onClick={() => onSelect(dim.relativePath)}
+          onContextMenu={(e) => onContextMenu?.(e, dim.relativePath)}
           title={dim.label}
         >
           <span className="context-tree__item-label">{dim.label}</span>
@@ -205,6 +211,7 @@ function DimRow({
             key={log.relativePath}
             className={`context-tree__item context-tree__item--log${log.relativePath === selectedPath ? " context-tree__item--active" : ""}`}
             onClick={() => onSelect(log.relativePath)}
+            onContextMenu={(e) => onContextMenu?.(e, log.relativePath)}
             title={log.label}
           >
             <span className="context-tree__item-label">· {log.label}</span>
@@ -225,6 +232,7 @@ function GroupSection({
   isCollapsed,
   onToggle,
   onSelect,
+  onContextMenu,
 }: {
   groupId: string;
   groupLabel: string;
@@ -233,6 +241,7 @@ function GroupSection({
   isCollapsed: boolean;
   onToggle: () => void;
   onSelect: (path: string) => void;
+  onContextMenu?: (e: React.MouseEvent, path: string) => void;
 }) {
   return (
     <div className="context-group-section">
@@ -253,6 +262,7 @@ function GroupSection({
             entry={entry}
             isActive={entry.relativePath === selectedPath}
             onSelect={() => onSelect(entry.relativePath)}
+            onContextMenu={(e) => onContextMenu?.(e, entry.relativePath)}
             extraClass="context-tree__item--group-child"
           />
         ))}
@@ -271,6 +281,7 @@ function ContextTree({
   onSelect,
   onToggleDim,
   onToggleGroup,
+  onContextMenu,
 }: {
   files: ContextFileEntry[];
   selectedPath: string;
@@ -279,6 +290,7 @@ function ContextTree({
   onSelect: (path: string) => void;
   onToggleDim: (group: string) => void;
   onToggleGroup: (group: string) => void;
+  onContextMenu?: (e: React.MouseEvent, path: string) => void;
 }) {
   const dims = files.filter((f) => f.kind === "dim");
   const standalones = files.filter((f) => f.kind === "standalone");
@@ -312,6 +324,7 @@ function ContextTree({
           isExpanded={expandedDims.has(dim.group)}
           onToggle={() => onToggleDim(dim.group)}
           onSelect={onSelect}
+          onContextMenu={onContextMenu}
         />
       ))}
 
@@ -321,6 +334,7 @@ function ContextTree({
           entry={entry}
           isActive={entry.relativePath === selectedPath}
           onSelect={() => onSelect(entry.relativePath)}
+          onContextMenu={(e) => onContextMenu?.(e, entry.relativePath)}
         />
       ))}
 
@@ -337,6 +351,7 @@ function ContextTree({
             isCollapsed={collapsedGroups.has(gid)}
             onToggle={() => onToggleGroup(gid)}
             onSelect={onSelect}
+            onContextMenu={onContextMenu}
           />
         );
       })}
@@ -378,6 +393,101 @@ function ContextContent({ entry }: { entry: ContextFileEntry }) {
   );
 }
 
+// ── Session preview panel ─────────────────────────────────────────────────
+
+function SessionPreviewPanel({ preview, loading }: { preview: SessionPreview | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="context-session-panel">
+        <div className="context-session-meta" />
+        <div className="context-session-scroll context-session-scroll--loading">
+          <span className="context-session-loading">Loading preview…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!preview || !preview.text) {
+    return (
+      <div className="context-session-panel">
+        <div className="context-session-meta" />
+        <ContextEmptyState />
+      </div>
+    );
+  }
+
+  const formatted = preview.tokenEstimate >= 1000
+    ? `~${(preview.tokenEstimate / 1000).toFixed(1)}k tokens`
+    : `~${preview.tokenEstimate} tokens`;
+
+  return (
+    <div className="context-session-panel">
+      <div className="context-session-meta">
+        <span className="context-token-pill">
+          <span className="context-token-pill__dot" />
+          {formatted}
+        </span>
+        <span className="context-session-meta__note">injected at every session start</span>
+      </div>
+      <div className="context-session-scroll">
+        <pre className="context-session-pre">{preview.text}</pre>
+      </div>
+    </div>
+  );
+}
+
+// ── Context menu ──────────────────────────────────────────────────────────
+
+interface CtxMenuState {
+  x: number;
+  y: number;
+  relativePath: string;
+}
+
+function ContextMenu({ state, onReveal, onClose }: {
+  state: CtxMenuState;
+  onReveal: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [onClose]);
+
+  // Flip left if near right edge
+  const x = Math.min(state.x, window.innerWidth - 180);
+  const y = Math.min(state.y + 2, window.innerHeight - 48);
+
+  return (
+    <div
+      ref={ref}
+      className="context-ctx-menu"
+      style={{ left: x, top: y }}
+      role="menu"
+    >
+      <button
+        className="context-ctx-menu__item"
+        role="menuitem"
+        onClick={() => { onReveal(); onClose(); }}
+      >
+        Reveal in Finder
+      </button>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface ContextViewerProps {
@@ -385,15 +495,23 @@ interface ContextViewerProps {
   onNewChanges: (hasNew: boolean) => void;
 }
 
-export function ContextViewer({ activeProfile: _activeProfile, onNewChanges }: ContextViewerProps) {
+export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProps) {
   // ── File tree state ──────────────────────────────────────────────────────────
   const [files, setFiles] = useState<ContextFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [expandedDims, setExpandedDims] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
+  // ── View mode + session preview ──────────────────────────────────────────────
+  const [mode, setMode] = useState<"browse" | "session">("browse");
+  const [sessionPreview, setSessionPreview] = useState<SessionPreview | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+
+  // ── Context menu ─────────────────────────────────────────────────────────────
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+
   // ── Sync state ───────────────────────────────────────────────────────────────
-  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto" });
+  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [] });
   const [collabConfigured, setCollabConfigured] = useState(false);
   const [lastLoaded, setLastLoaded] = useState<string | null>(null);
   const [localEntries, setLocalEntries] = useState<LoadDiffEntry[]>([]);
@@ -404,6 +522,33 @@ export function ContextViewer({ activeProfile: _activeProfile, onNewChanges }: C
   const [showChangelog, setShowChangelog] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncError, setSyncError] = useState("");
+
+  // ── Reset view state when profile switches ───────────────────────────────────
+  useEffect(() => {
+    setMode("browse");
+    setSessionPreview(null);
+    setCtxMenu(null);
+  }, [activeProfile]);
+
+  // ── Session preview ───────────────────────────────────────────────────────────
+  function fetchSessionPreview() {
+    if (sessionPreview) return; // already loaded
+    setSessionLoading(true);
+    rpc.request.getSessionPreview()
+      .then((p) => { setSessionPreview(p); setSessionLoading(false); })
+      .catch(() => setSessionLoading(false));
+  }
+
+  function handleModeSwitch(m: "browse" | "session") {
+    setMode(m);
+    if (m === "session") fetchSessionPreview();
+  }
+
+  // ── Context menu handler ──────────────────────────────────────────────────────
+  function handleContextMenu(e: React.MouseEvent, relativePath: string) {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, relativePath });
+  }
 
   // ── Load context files ───────────────────────────────────────────────────────
   function loadFiles() {
@@ -564,6 +709,20 @@ export function ContextViewer({ activeProfile: _activeProfile, onNewChanges }: C
     <div className="context-viewer">
       <div className="context-viewer__header">
         <span className="proposals__title">Context</span>
+        <div className="segment-control">
+          <button
+            className={`segment-control__btn${mode === "browse" ? " segment-control__btn--active" : ""}`}
+            onClick={() => handleModeSwitch("browse")}
+          >
+            Browse
+          </button>
+          <button
+            className={`segment-control__btn${mode === "session" ? " segment-control__btn--active" : ""}`}
+            onClick={() => handleModeSwitch("session")}
+          >
+            Session
+          </button>
+        </div>
       </div>
 
       {collabConfigured && (
@@ -586,18 +745,31 @@ export function ContextViewer({ activeProfile: _activeProfile, onNewChanges }: C
         />
       )}
 
-      <div className="context-viewer__body">
-        <ContextTree
-          files={files}
-          selectedPath={selectedPath}
-          expandedDims={expandedDims}
-          collapsedGroups={collapsedGroups}
-          onSelect={setSelectedPath}
-          onToggleDim={toggleDim}
-          onToggleGroup={toggleGroup}
+      {mode === "session" ? (
+        <SessionPreviewPanel preview={sessionPreview} loading={sessionLoading} />
+      ) : (
+        <div className="context-viewer__body">
+          <ContextTree
+            files={files}
+            selectedPath={selectedPath}
+            expandedDims={expandedDims}
+            collapsedGroups={collapsedGroups}
+            onSelect={setSelectedPath}
+            onToggleDim={toggleDim}
+            onToggleGroup={toggleGroup}
+            onContextMenu={handleContextMenu}
+          />
+          {selectedEntry && <ContextContent entry={selectedEntry} />}
+        </div>
+      )}
+
+      {ctxMenu && (
+        <ContextMenu
+          state={ctxMenu}
+          onReveal={() => rpc.request.revealInFinder({ relativePath: ctxMenu.relativePath })}
+          onClose={() => setCtxMenu(null)}
         />
-        {selectedEntry && <ContextContent entry={selectedEntry} />}
-      </div>
+      )}
     </div>
   );
 }

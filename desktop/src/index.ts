@@ -307,9 +307,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const result = readLocalConfig(workspace);
         const c = result.ok ? result.config : {};
         return {
-          teamLoadMode:        c.teamLoadMode        ?? "auto",
-          launchOnLogin:       c.launchOnLogin       ?? false,
-          notificationsEnabled: c.notificationsEnabled ?? true,
+          teamLoadMode:             c.teamLoadMode             ?? "auto",
+          launchOnLogin:            c.launchOnLogin            ?? false,
+          notificationsEnabled:     c.notificationsEnabled     ?? true,
+          disabledContextSections:  c.disabledContextSections  ?? [],
         };
       },
 
@@ -593,6 +594,75 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
         // Renderer should poll getConnectedApps until github.connected === true.
         return { ok: true };
+      },
+
+      getSessionPreview: async () => {
+        const scriptPath = `${process.env.HOME}/.draft/shared/hooks/inject-context.sh`;
+        if (!existsSync(scriptPath)) {
+          return { text: "", tokenEstimate: 0 };
+        }
+        try {
+          const proc = Bun.spawn(["bash", scriptPath], {
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "ignore",
+            env: { ...process.env } as Record<string, string>,
+          });
+          const text = await new Response(proc.stdout as ReadableStream<Uint8Array>).text();
+          await proc.exited;
+          return { text, tokenEstimate: Math.ceil(text.length / 4) };
+        } catch {
+          return { text: "", tokenEstimate: 0 };
+        }
+      },
+
+      getContextSections: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const contextDir = join(workspace, "context");
+        const sections: import("./rpc/schema").ContextSection[] = [];
+
+        function capitalize(s: string): string {
+          return s.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        }
+
+        if (existsSync(contextDir)) {
+          let names: string[];
+          try { names = readdirSync(contextDir, { withFileTypes: true })
+            .filter((e) => e.isDirectory() && existsSync(join(contextDir, e.name, "index.md")))
+            .map((e) => e.name)
+            .sort();
+          } catch { names = []; }
+
+          for (const name of names) {
+            sections.push({
+              name,
+              label: capitalize(name),
+              injectionMode: name === "priorities" ? "full" : "summary",
+            });
+          }
+        }
+
+        // Memory is a fixed global section
+        const memoryPath = join(process.env.HOME ?? "", ".draft", "personal", "memory.md");
+        if (existsSync(memoryPath)) {
+          sections.push({ name: "memory", label: "Memory", injectionMode: "full" });
+        }
+
+        return sections;
+      },
+
+      revealInFinder: async ({ relativePath }: { relativePath: string }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const absPath = join(workspace, "context", relativePath);
+          if (!existsSync(absPath)) {
+            return { ok: false, error: "File not found." };
+          }
+          Bun.spawn(["open", "-R", absPath], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to reveal in Finder." };
+        }
       },
 
       runInstall: async ({ tools }) => {

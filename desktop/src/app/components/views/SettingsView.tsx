@@ -11,7 +11,7 @@
 // loaded in parallel on mount and on every profile switch.
 
 import { useEffect, useState } from "react";
-import type { ConnectedAppsStatus, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
+import type { ConnectedAppsStatus, ContextSection, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -236,6 +236,7 @@ interface SettingsViewProps {
 export function SettingsView({ activeProfile }: SettingsViewProps) {
   const [settings, setSettings]           = useState<LocalConfig | null>(null);
   const [apps, setApps]                   = useState<ConnectedAppsStatus | null>(null);
+  const [sections, setSections]           = useState<ContextSection[]>([]);
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
@@ -250,10 +251,12 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
     Promise.all([
       rpc.request.getLocalConfig(),
       rpc.request.getConnectedApps(),
+      rpc.request.getContextSections(),
     ])
-      .then(([config, connectedApps]) => {
+      .then(([config, connectedApps, contextSections]) => {
         setSettings(config);
         setApps(connectedApps);
+        setSections(contextSections);
       })
       .catch(() => setLoadError("Failed to load settings."));
   }, [activeProfile]);
@@ -277,6 +280,16 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
       setSaveError("Save failed.");
       setSettings(settings);
     }
+  }
+
+  // ── Session context section toggle ─────────────────────────────────────────
+  async function toggleSection(sectionName: string) {
+    if (!settings) return;
+    const current = settings.disabledContextSections;
+    const next = current.includes(sectionName)
+      ? current.filter((s) => s !== sectionName)
+      : [...current, sectionName];
+    await patch({ disabledContextSections: next });
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
@@ -456,6 +469,33 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
             </div>
           </div>
         </section>
+
+        {/* ── Session Context ─────────────────────────────────────────────── */}
+        {sections.length > 0 && (
+          <section className="settings__section">
+            <h2 className="settings__section-label">Session Context</h2>
+            <div className="settings__rows">
+              {sections.map((sec) => {
+                const enabled = !settings.disabledContextSections.includes(sec.name);
+                const modeLabel = sec.injectionMode === "full" ? "full content" : "frontmatter only";
+                return (
+                  <div key={sec.name} className="settings__row">
+                    <div className="settings__row-content">
+                      <span className="settings__row-label">{sec.label}</span>
+                      <span className="settings__row-desc">
+                        Inject {modeLabel} into session start prompt
+                      </span>
+                    </div>
+                    <Toggle
+                      checked={enabled}
+                      onChange={() => void toggleSection(sec.name)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
       </div>
 

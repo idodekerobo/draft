@@ -10,8 +10,8 @@ import { Electroview } from "electrobun/view";
 import type { AppRPCType } from "../rpc/schema";
 
 // ── Event bus for webview push messages ────────────────────────────────────────
-// TODO: Phase 2+: components subscribe to these events to react to bun-initiated
-// pushes (new proposal, daemon stopped, badge update). Empty in Phase 1.
+// TODO: components subscribe to these events to react to bun-initiated
+// pushes (new proposal, daemon stopped, badge update).
 
 type EventMap = {
   proposalAdded: { profile: string; source: string; count: number };

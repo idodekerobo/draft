@@ -144,6 +144,23 @@ export interface LocalConfig {
   teamLoadMode: "auto" | "review";
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
+  disabledContextSections: string[];
+}
+
+/** Full text injected at session start, with token estimate. */
+export interface SessionPreview {
+  text: string;
+  tokenEstimate: number;
+}
+
+/**
+ * A single context section that can be toggled in Settings.
+ * "full" = entire file injected; "summary" = frontmatter description only.
+ */
+export interface ContextSection {
+  name: string;
+  label: string;
+  injectionMode: "full" | "summary";
 }
 
 /** Detail for a single intelligence tool (claude-code, codex, cursor). */
@@ -269,6 +286,21 @@ export type AppRPCType = {
 
       /** First-launch install: extract binary, symlink to PATH, run `draft add` for each tool. */
       runInstall: { params: { tools: InstallableTool[] }; response: InstallResult };
+
+      /**
+       * Run inject-context.sh and return the full text that would be injected
+       * at session start, plus a rough token estimate (chars / 4).
+       */
+      getSessionPreview: { params: void; response: SessionPreview };
+
+      /**
+       * List context sections for the active profile — one per context/*/index.md
+       * dimension, plus "memory" if personal/memory.md exists.
+       */
+      getContextSections: { params: void; response: ContextSection[] };
+
+      /** Open Finder with the file selected (macOS `open -R`). */
+      revealInFinder: { params: { relativePath: string }; response: ActionResult };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
