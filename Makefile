@@ -66,39 +66,92 @@ cli-push-branch:
 
 # ── Desktop Release ───────────────────────────────────────────────────────────
 #
-#   make desktop-release v=1.0.0
-#     Creates and pushes a v*.*.* tag → triggers the GitHub Actions release
-#     workflow which builds Draft.app, packages a DMG, and creates a release.
+#   make desktop-release v=1.0.0           # stable build → GitHub release
+#   make desktop-release v=1.0.0 canary=1  # canary build → GitHub prerelease
 #
-#   Must be run from main after your PR is merged and pulled.
+#   Builds locally, signs, notarizes, tags, and uploads artifacts to GitHub.
+#   Stable releases must be run from main. Canary can run from any branch.
 #   gh CLI must be authenticated: gh auth status
 
 DESKTOP_REPO = idodekerobo/draft
+
+ifdef canary
+_BUILD_CMD   = build:canary
+_TAG         = v$(v)-canary
+_GH_FLAGS    = --prerelease
+else
+_BUILD_CMD   = build:stable
+_TAG         = v$(v)
+_GH_FLAGS    =
+endif
 
 .PHONY: desktop-release
 
 desktop-release:
 	@if [ -z "$(v)" ]; then \
 		echo ""; \
-		echo "Usage: make desktop-release v=<version>"; \
-		echo "Example: make desktop-release v=1.0.0"; \
+		echo "Usage: make desktop-release v=<version> [canary=1]"; \
+		echo "  Stable:  make desktop-release v=1.0.0"; \
+		echo "  Canary:  make desktop-release v=1.0.0 canary=1"; \
 		echo ""; \
 		exit 1; \
 	fi
-	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$BRANCH" != "main" ]; then \
+	@if [ -z "$(canary)" ]; then \
+		BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+		if [ "$$BRANCH" != "main" ]; then \
+			echo ""; \
+			echo "Error: stable release must run from main (on: $$BRANCH)."; \
+			echo ""; \
+			exit 1; \
+		fi; \
+	fi
+	@# ── Guard: fail early if tag already exists ───────────────────────────────
+	@if git tag | grep -q "^$(_TAG)$$"; then \
 		echo ""; \
-		echo "Error: desktop-release must run from main (on: $$BRANCH)."; \
+		echo "Error: tag $(_TAG) already exists. Bump the version number."; \
 		echo ""; \
 		exit 1; \
 	fi
-	@echo "[desktop-release] Tagging v$(v) and pushing..."
-	@git tag v$(v)
-	@git push origin v$(v)
+	@# ── Bump version in electrobun.config.ts ──────────────────────────────────
+	@python3 -c "\
+import re; \
+from pathlib import Path; \
+p = Path('desktop/electrobun.config.ts'); \
+content = p.read_text(); \
+result = re.sub(r'version: \"[^\"]+\"', 'version: \"$(v)\"', content, count=1); \
+p.write_text(result)"
+	@echo "  Bumped: electrobun.config.ts → $(v)"
+	@# ── Commit version bump (stable only, skip if nothing changed) ─────────────
+	@if [ -z "$(canary)" ]; then \
+		git add desktop/electrobun.config.ts; \
+		git diff --cached --quiet \
+			&& echo "  Skipped: version already at $(v)" \
+			|| git commit -m "chore: release desktop v$(v)"; \
+		git push origin main; \
+		echo "  Pushed: version bump → origin/main"; \
+	fi
+	@# ── Build ─────────────────────────────────────────────────────────────────
 	@echo ""
-	@echo "[desktop-release] Tag pushed. GitHub Actions is building the release."
-	@echo "  https://github.com/$(DESKTOP_REPO)/actions"
-	@echo "  https://github.com/$(DESKTOP_REPO)/releases/tag/v$(v)"
+	@echo "[desktop-release] Building $(_TAG)..."
+	@echo ""
+	@bun run --cwd desktop $(_BUILD_CMD)
+	@# ── Tag + push ────────────────────────────────────────────────────────────
+	@echo ""
+	@echo "[desktop-release] Tagging $(_TAG) and pushing..."
+	@git tag $(_TAG)
+	@git push origin $(_TAG)
+	@# ── GitHub release ────────────────────────────────────────────────────────
+	@echo ""
+	@echo "[desktop-release] Creating GitHub release and uploading artifacts..."
+	@gh release create $(_TAG) \
+		--repo $(DESKTOP_REPO) \
+		--title "$(_TAG)" \
+		--generate-notes \
+		$(_GH_FLAGS) \
+		desktop/artifacts/*
+	@echo ""
+	@echo "[desktop-release] Done. $(_TAG) is live."
+	@echo "  https://github.com/$(DESKTOP_REPO)/releases/tag/$(_TAG)"
 	@echo ""
 
 cli-release:
