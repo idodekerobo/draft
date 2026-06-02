@@ -1564,6 +1564,65 @@ button {
   margin-top: 0;
 }
 
+/* ── Prerequisite callout ────────────────────────────────────────────────────── */
+/* Shown when a CLI-dependent tool is selected. Left-accent, terminal-flavored.  */
+
+.onboarding__prereq {
+  width: 100%;
+  border-left: 2px solid var(--color-accent-blue);
+  background: rgba(59, 130, 246, 0.05);
+  border-radius: 0 4px 4px 0;
+  padding: 10px 12px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onboarding__prereq-label {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent-blue);
+  opacity: 0.7;
+}
+
+.onboarding__prereq-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.onboarding__prereq-tool {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  font-family: monospace;
+}
+
+.onboarding__prereq-link {
+  font-size: var(--font-size-secondary);
+  color: var(--color-accent-blue);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  flex-shrink: 0;
+}
+
+.onboarding__prereq-link:hover {
+  opacity: 0.75;
+}
+
+.onboarding__prereq-note {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
 /* ── Tool selection rows ─────────────────────────────────────────────────────── */
 /* Hairline separator list — consistent with .settings__row pattern.            */
 /* No card shadows, no colored left borders, no icons in circles.               */
@@ -1714,4 +1773,244 @@ button {
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);
   padding: 1px 5px;
+}
+
+/* ── Step fade-in ────────────────────────────────────────────────────────────── */
+
+@keyframes onboardingFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+.onboarding__body {
+  animation: onboardingFadeIn 200ms ease both;
+}
+
+/* ── Workspace education callout ─────────────────────────────────────────────── */
+/* Shown in the profile step to explain what a workspace is before asking for one. */
+
+.onboarding__education {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+  background: rgba(10, 132, 255, 0.07);
+  border: 1px solid rgba(10, 132, 255, 0.18);
+  border-radius: var(--radius-md);
+}
+
+.onboarding__education-icon {
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--color-accent-blue);
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.onboarding__education-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-secondary);
+  line-height: 1.55;
+}
+
+.onboarding__education-text strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.onboarding__education-text span {
+  color: var(--color-text-secondary);
+}
+
+/* ── SetupIncompleteView ──────────────────────────────────────────────────────── */
+/* Shown when active profile has no context files yet.                             */
+
+.setup-incomplete {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  overflow-y: auto;
+}
+
+.setup-incomplete__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  max-width: 400px;
+  width: 100%;
+}
+
+.setup-incomplete__icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.setup-incomplete__title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+
+.setup-incomplete__desc {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.setup-incomplete__copy {
+  margin-top: 0;
+}
+
+/* ── Divider with centred label ─────────────────────────────────────────────── */
+
+.setup-incomplete__divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 12px;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.setup-incomplete__divider::before,
+.setup-incomplete__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* ── Profile list ────────────────────────────────────────────────────────────── */
+
+.setup-incomplete__profile-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.setup-incomplete__profile-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  text-align: left;
+  transition: background 120ms, border-color 120ms;
+}
+
+.setup-incomplete__profile-row:hover:not(:disabled) {
+  background: var(--color-bg-surface);
+  border-color: var(--color-border-strong);
+}
+
+.setup-incomplete__profile-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.setup-incomplete__profile-name {
+  font-weight: 500;
+}
+
+.setup-incomplete__profile-badge {
+  font-size: var(--font-size-micro);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.setup-incomplete__profile-badge--ready {
+  color: var(--color-status-green);
+}
+
+/* ── Create new workspace form ───────────────────────────────────────────────── */
+
+.setup-incomplete__create-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-secondary);
+  padding: 6px 0;
+  margin-top: 4px;
+  transition: color 120ms;
+}
+
+.setup-incomplete__create-btn:hover {
+  color: var(--color-text-secondary);
+}
+
+.setup-incomplete__create-form {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.setup-incomplete__create-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  font-family: var(--font-ui);
+  min-width: 0;
+  outline: none;
+}
+
+.setup-incomplete__create-input:focus {
+  border-color: var(--color-accent-blue);
+}
+
+.setup-incomplete__create-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Error + bypass ─────────────────────────────────────────────────────────── */
+
+.setup-incomplete__error {
+  margin-top: 10px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-status-red);
+}
+
+.setup-incomplete__bypass {
+  margin-top: 28px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  padding: 0;
+  transition: color 120ms;
+}
+
+.setup-incomplete__bypass:hover {
+  color: var(--color-text-secondary);
 }

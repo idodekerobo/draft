@@ -128,7 +128,7 @@ function ContextEmptyState() {
       <div className="empty-state__icon">◎</div>
       <p className="empty-state__title">No context files yet</p>
       <p className="empty-state__body">
-        Run /draft:setup in Claude Code to populate your workspace context.
+        Run /draft-setup in Claude Code to populate your workspace context.
       </p>
     </div>
   );

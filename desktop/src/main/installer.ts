@@ -6,10 +6,21 @@
 //
 // Idempotent — safe to call if partially or fully installed.
 
-import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync } from "fs";
 import { join } from "path";
 import { getBundledBinPath } from "./bundlePath";
 import { capture } from "draft-core/exec";
+
+const LOG_FILE = `${process.env.HOME}/.draft/logs/desktop-installer.log`;
+
+function log(msg: string): void {
+  const line = `[${new Date().toISOString()}] [installer] ${msg}\n`;
+  console.log(line.trimEnd());
+  try {
+    mkdirSync(`${process.env.HOME}/.draft/logs`, { recursive: true });
+    appendFileSync(LOG_FILE, line);
+  } catch { /* non-fatal */ }
+}
 
 export type InstallableTool = "claude-code" | "codex" | "cursor";
 
@@ -38,21 +49,36 @@ const SYSTEM_LINK    = "/usr/local/bin/draft";
  */
 export async function runInstall(tools: InstallableTool[]): Promise<InstallResult> {
   const steps: InstallStep[] = [];
+  log(`runInstall called — tools: ${JSON.stringify(tools)}`);
 
   // ── Step 1: Extract binary ───────────────────────────────────────────────────
   const draftBin = await extractBinary(steps);
+  log(`extractBinary result — draftBin: ${draftBin ?? "null (dev mode)"}`);
 
   // ── Step 2: Symlink to /usr/local/bin ────────────────────────────────────────
   if (draftBin) {
     await symlinkBinary(draftBin, steps);
+    log(`symlinkBinary done`);
   }
 
   // ── Step 3: Install selected tools ───────────────────────────────────────────
   for (const tool of tools) {
+    log(`installTool starting — tool: ${tool}`);
     await installTool(tool, draftBin, steps);
+    log(`installTool done — tool: ${tool}`);
   }
 
   const ok = steps.every((s) => s.ok);
+
+  for (const step of steps) {
+    if (!step.ok) {
+      log(`✕ ${step.label}: ${step.error ?? "unknown error"}`);
+    } else {
+      log(`✓ ${step.label}`);
+    }
+  }
+
+  log(`runInstall complete — ok: ${ok}, steps: ${steps.length}`);
   return { ok, steps };
 }
 
@@ -135,10 +161,16 @@ async function installTool(
 ): Promise<void> {
   // Resolve which binary to use: extracted from bundle, or fall back to PATH
   const bin = draftBin ?? "draft";
+  log(`capture starting — cmd: [${bin}, add, ${tool}]`);
 
   const label = toolLabel(tool);
   try {
+    const startMs = Date.now();
     const result = await capture([bin, "add", tool]);
+    const elapsedMs = Date.now() - startMs;
+    log(`capture done — tool: ${tool}, exitCode: ${result.exitCode}, elapsed: ${elapsedMs}ms`);
+    if (result.stdout) log(`  stdout: ${result.stdout.slice(0, 500)}`);
+    if (result.stderr) log(`  stderr: ${result.stderr.slice(0, 500)}`);
     if (result.exitCode === 0) {
       steps.push({ label, ok: true });
     } else {
@@ -149,6 +181,7 @@ async function installTool(
       });
     }
   } catch (err) {
+    log(`capture threw — tool: ${tool}, err: ${err instanceof Error ? err.message : String(err)}`);
     steps.push({
       label,
       ok: false,
