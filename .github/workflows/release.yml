@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install CLI dependencies
+        run: bun install --cwd cli
+
+      - name: Install core dependencies
+        run: bun install --cwd core
+
+      - name: Install desktop dependencies
+        run: bun install --cwd desktop
+
+      - name: Run prebuild (copy assets + compile draft binary)
+        run: bash desktop/scripts/prebuild.sh
+
+      - name: Build stable app
+        run: bun run --cwd desktop build:stable
+        env:
+          # Electrobun reads these for codesign + notarization.
+          # Store them as GitHub Actions secrets.
+          APPLE_ID:           ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID:      ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+
+      - name: Find built .app
+        id: find_app
+        run: |
+          APP_PATH=$(find desktop/build -name "Draft*.app" -maxdepth 3 | head -1)
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "Draft" \
+            -srcfolder "${{ steps.find_app.outputs.app_path }}" \
+            -ov -format UDZO \
+            draft-macos.dmg
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: draft-macos.dmg
+          generate_release_notes: true
