@@ -21,8 +21,9 @@
   "scripts": {
     "start": "electrobun dev",
     "dev": "electrobun dev --watch",
-    "build:dev": "electrobun build",
-    "build:canary": "electrobun build --env=canary",
-    "build:stable": "electrobun build --env=stable"
+    "prebuild": "bash scripts/prebuild.sh",
+    "build:dev": "bash scripts/prebuild.sh && electrobun build",
+    "build:canary": "bash scripts/prebuild.sh && electrobun build --env=canary",
+    "build:stable": "bash scripts/prebuild.sh && electrobun build --env=stable"
   }
 }

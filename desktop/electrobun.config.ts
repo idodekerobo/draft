@@ -18,8 +18,13 @@ export default {
     copy: {
       "src/app/index.html": "views/app/index.html",
       "src/app/index.css":  "views/app/index.css",
+      // Bundled at build time by desktop/scripts/prebuild.sh
+      "assets/background/": "background/",
+      "assets/plugin/":     "plugin/",
+      "assets/bin/draft":   "bin/draft",
     },
     mac: {
+      icons: "assets/icon.iconset",
       codesign: true,
       notarize: true,
     },
