@@ -1,6 +1,6 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
-import { BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, writeIntegrations, readDraftConfig, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
@@ -29,6 +29,31 @@ import {
   stopActiveProfileWatch,
 } from "./main/watchers/activeProfile";
 import type { AppRPCType } from "./rpc/schema";
+
+// ── Application menu ───────────────────────────────────────────────────────────
+
+ApplicationMenu.setApplicationMenu([
+  {
+    submenu: [
+      { label: "Stop Daemon", action: "stop-daemon" },
+      { type: "separator" },
+      { label: "Quit Draft", role: "quit" },
+    ],
+  },
+  {
+    label: "Edit",
+    submenu: [
+      { role: "copy" },
+    ],
+  },
+]);
+
+Electrobun.events.on("application-menu-clicked", (event) => {
+  const { action } = (event as { data: { action: string } }).data;
+  if (action === "stop-daemon") {
+    capture(["launchctl", "stop", PLIST_LABEL]).catch(() => {});
+  }
+});
 
 // ── Tray ───────────────────────────────────────────────────────────────────────
 // TODO: Replace with image asset before Phase 1 ship (put image in "views://assets/tray-icon-template.png")
