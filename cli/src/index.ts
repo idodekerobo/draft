@@ -24,54 +24,56 @@ if (!command || command === "--help" || command === "-h") {
   process.exit(0);
 }
 
-switch (command) {
-  case "status":
-    await runStatus(rest);
-    break;
-  case "start":
-    await runStart(rest);
-    break;
-  case "stop":
-    await runStop(rest);
-    break;
-  case "logs":
-    await runLogs(rest);
-    break;
-  case "add":
-    await runAdd(rest);
-    break;
-  case "switch":
-    await runSwitch(rest);
-    break;
-  case "profiles":
-    await runProfiles(rest);
-    break;
-  case "publish":
-    await runPublish(rest);
-    break;
-  case "load":
-    await runLoad(rest);
-    break;
-  case "proposals":
-    await runProposals(rest);
-    break;
-  case "doctor":
-    await runDoctor(rest);
-    break;
-  case "completion":
-    await runCompletion(rest);
-    break;
-  case "uninstall":
-    await runUninstall(rest);
-    break;
-  case "update":
-    await runUpdate(rest);
-    break;
-  case "poll":
-    await runPoll(rest);
-    break;
-  default:
-    console.error(red(`Unknown command: ${command}`));
-    console.error(`Run ${"`draft`"} to see the full command list.`);
-    process.exit(1);
-}
+(async () => {
+  switch (command) {
+    case "status":
+      await runStatus(rest);
+      break;
+    case "start":
+      await runStart(rest);
+      break;
+    case "stop":
+      await runStop(rest);
+      break;
+    case "logs":
+      await runLogs(rest);
+      break;
+    case "add":
+      await runAdd(rest);
+      break;
+    case "switch":
+      await runSwitch(rest);
+      break;
+    case "profiles":
+      await runProfiles(rest);
+      break;
+    case "publish":
+      await runPublish(rest);
+      break;
+    case "load":
+      await runLoad(rest);
+      break;
+    case "proposals":
+      await runProposals(rest);
+      break;
+    case "doctor":
+      await runDoctor(rest);
+      break;
+    case "completion":
+      await runCompletion(rest);
+      break;
+    case "uninstall":
+      await runUninstall(rest);
+      break;
+    case "update":
+      await runUpdate(rest);
+      break;
+    case "poll":
+      await runPoll(rest);
+      break;
+    default:
+      console.error(red(`Unknown command: ${command}`));
+      console.error(`Run ${"`draft`"} to see the full command list.`);
+      process.exit(1);
+  }
+})();
