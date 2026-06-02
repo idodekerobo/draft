@@ -90,9 +90,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px 0 16px;
+  padding: 0 12px 0 80px;
   flex-shrink: 0;
   user-select: none;
+  -webkit-app-region: drag;
+}
+
+.status-bar button,
+.status-bar a,
+.status-bar [role="button"],
+.profile-chip {
+  -webkit-app-region: no-drag;
 }
 
 .status-bar__left {

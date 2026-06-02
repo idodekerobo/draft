@@ -699,6 +699,7 @@ watcherHandlers = {
 const win = new BrowserWindow({
   title: "Draft",
   url: "views://app/index.html",
+  titleBarStyle: "hiddenInset",
   rpc,
 });
 win.setFrame(180, 100, 1150, 820);
