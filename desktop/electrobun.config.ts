@@ -6,6 +6,9 @@ export default {
     identifier: "us.draftai.draft-desktop",
     version: "0.0.1",
   },
+  runtime: {
+    exitOnLastWindowClosed: false,
+  },
   build: {
     bun: {
       entrypoint: "src/index.ts",
