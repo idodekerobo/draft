@@ -32,7 +32,9 @@ export function App() {
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
   const [isStarting, setIsStarting]     = useState(false);
+  const [bypassSetup, setBypassSetup]   = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
+  const [isOnboarding, setIsOnboarding] = useState(false);
   // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
   // Cleared when the user navigates to the Context tab.
   const [contextHasNew, setContextHasNew] = useState(false);
@@ -115,6 +117,12 @@ export function App() {
     return () => clearTimeout(id);
   }, [startError]);
 
+  useEffect(() => {
+    if (status?.appState?.userState === "first-run") {
+      setIsOnboarding(true);
+    }
+  }, [status?.appState?.userState]);
+
   // ── Daemon start ───────────────────────────────────────────────────────────
   // startDaemon RPC fires start.sh and returns immediately (avoids Electrobun's
   // short renderer-side RPC timeout racing start.sh's internal sleep).
@@ -181,10 +189,10 @@ export function App() {
           {/* Settings is always reachable regardless of install/daemon state. */}
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} />
-          ) : status?.appState?.userState === "first-run" ? (
-            <OnboardingView onComplete={fetchStatus} />
-          ) : status?.appState?.userState === "setup-incomplete" ? (
-            <SetupIncompleteView />
+          ) : (isOnboarding || status?.appState?.userState === "first-run") ? (
+            <OnboardingView onComplete={async () => { setIsOnboarding(false); await fetchStatus(); }} />
+          ) : status?.appState?.userState === "setup-incomplete" && !bypassSetup ? (
+            <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
           ) : status?.state === "stopped" ? (
             <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
           ) : (
