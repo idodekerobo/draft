@@ -64,6 +64,43 @@ cli-push-branch:
 	@echo "  See README for full beta install instructions."
 	@echo ""
 
+# ── Desktop Release ───────────────────────────────────────────────────────────
+#
+#   make desktop-release v=1.0.0
+#     Creates and pushes a v*.*.* tag → triggers the GitHub Actions release
+#     workflow which builds Draft.app, packages a DMG, and creates a release.
+#
+#   Must be run from main after your PR is merged and pulled.
+#   gh CLI must be authenticated: gh auth status
+
+DESKTOP_REPO = idodekerobo/draft
+
+.PHONY: desktop-release
+
+desktop-release:
+	@if [ -z "$(v)" ]; then \
+		echo ""; \
+		echo "Usage: make desktop-release v=<version>"; \
+		echo "Example: make desktop-release v=1.0.0"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$BRANCH" != "main" ]; then \
+		echo ""; \
+		echo "Error: desktop-release must run from main (on: $$BRANCH)."; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "[desktop-release] Tagging v$(v) and pushing..."
+	@git tag v$(v)
+	@git push origin v$(v)
+	@echo ""
+	@echo "[desktop-release] Tag pushed. GitHub Actions is building the release."
+	@echo "  https://github.com/$(DESKTOP_REPO)/actions"
+	@echo "  https://github.com/$(DESKTOP_REPO)/releases/tag/v$(v)"
+	@echo ""
+
 cli-release:
 	@if [ -z "$(v)" ] || [ -z "$(m)" ]; then \
 		echo ""; \
