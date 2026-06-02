@@ -18,14 +18,14 @@ if (!buildDir || !appName) {
 // Source: compiled by prebuild.sh into desktop/assets/bin/draft
 // import.meta.dir is desktop/scripts/, so ../assets/bin/draft resolves correctly
 const src  = join(import.meta.dir, "..", "assets", "bin", "draft");
-const dest = join(buildDir, appName, "Contents", "MacOS", "draft");
+const dest = join(buildDir, appName + ".app", "Contents", "MacOS", "draft");
 
 if (!existsSync(src)) {
   console.error(`[postbuild] draft binary not found at ${src} — did prebuild.sh run?`);
   process.exit(1);
 }
 
-mkdirSync(join(buildDir, appName, "Contents", "MacOS"), { recursive: true });
+mkdirSync(join(buildDir, appName + ".app", "Contents", "MacOS"), { recursive: true });
 copyFileSync(src, dest);
 chmodSync(dest, 0o755);
 console.log(`[postbuild] Copied draft binary → ${dest}`);
