@@ -27,7 +27,7 @@ const STATUS_POLL_MS = 5_000;
 
 export function App() {
   const [status, setStatus]             = useState<DaemonStatus | null>(null);
-  const [activeView, setActiveView]     = useState<View>("proposals");
+  const [activeView, setActiveView]     = useState<View>("context");
   const [proposalCount, setProposalCount] = useState(0);
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
@@ -203,9 +203,6 @@ export function App() {
                   activeProfile={activeProfile}
                   onCountChange={setProposalCount}
                 />
-              )}
-              {activeView === "sessions" && (
-                <div className="panel-placeholder">Sessions — Phase 3</div>
               )}
               {activeView === "context" && (
                 <ContextViewer

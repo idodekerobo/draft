@@ -1,11 +1,5 @@
 // Sidebar.tsx — left navigation panel
 //
-// Four sections per DESIGN.md information architecture:
-//   1. Proposals — default, blue badge when pending count > 0
-//   2. Sessions
-//   3. Context
-//   4. Settings
-//
 // Active state: left 2px blue border + slightly lighter bg + white text.
 // No icons in colored circles — hairline separator list rows only.
 
@@ -24,9 +18,8 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "proposals", label: "Proposals" },
-  { id: "sessions",  label: "Sessions"  },
   { id: "context",   label: "Context"   },
+  { id: "proposals", label: "Proposals" },
   { id: "settings",  label: "Settings"  },
 ];
 
