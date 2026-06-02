@@ -24,12 +24,14 @@ export default {
       // Bundled at build time by desktop/scripts/prebuild.sh
       "assets/background/": "background/",
       "assets/plugin/":     "plugin/",
-      "assets/bin/draft":   "bin/draft",
     },
     mac: {
       icons: "assets/icon.iconset",
       codesign: true,
       notarize: true,
     },
+  },
+  scripts: {
+    postBuild: "scripts/postbuild.ts",
   },
 } satisfies ElectrobunConfig;

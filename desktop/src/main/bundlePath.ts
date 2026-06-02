@@ -41,7 +41,10 @@ export function getBundledPluginDir(): string {
 
 /** Path to bundled compiled draft binary. Returns null in dev mode (binary not compiled). */
 export function getBundledBinPath(): string | null {
-  const resources = getBundleResourcesPath();
-  if (!resources) return null;
-  return join(resources, "bin", "draft");
+  const execPath = process.execPath;
+  const marker = ".app/Contents/MacOS/";
+  const idx = execPath.indexOf(marker);
+  if (idx === -1) return null;
+  const appPath = execPath.slice(0, idx + ".app".length);
+  return join(appPath, "Contents", "MacOS", "draft");
 }
