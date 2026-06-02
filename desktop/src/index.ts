@@ -3,7 +3,7 @@
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, readIntegrations, writeIntegrations, readDraftConfig, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import {
   listProposals,
@@ -185,6 +185,20 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         restartProposalWatch(result.active, watcherHandlers);
         try { rpc.send.profileChanged({ profile: result.active }); } catch {}
         return { ok: true, active: result.active };
+      },
+
+      createProfile: async ({ name }) => {
+        const created = createProfile(name);
+        if (!created.ok) {
+          return { ok: false, error: created.reason === "exists" ? `Workspace "${name}" already exists.` : `Invalid name. Use letters, numbers, hyphens, and underscores only.` };
+        }
+        const activated = setActiveProfile(created.name);
+        if (!activated.ok) {
+          return { ok: false, error: "Created workspace but could not set it as active." };
+        }
+        restartProposalWatch(activated.active, watcherHandlers);
+        try { rpc.send.profileChanged({ profile: activated.active }); } catch {}
+        return { ok: true, active: activated.active };
       },
 
       launchSession: async () => ({
@@ -582,7 +596,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       runInstall: async ({ tools }) => {
-        return runInstall(tools);
+        console.log(`[rpc] runInstall called — tools: ${JSON.stringify(tools)}`);
+        const result = await runInstall(tools);
+        console.log(`[rpc] runInstall returned — ok: ${result.ok}, steps: ${result.steps.length}`);
+        return result;
       },
     },
     messages: {

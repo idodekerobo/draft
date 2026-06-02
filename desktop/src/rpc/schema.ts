@@ -107,9 +107,15 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface ProfileDetail {
+  name: string;
+  hasContext: boolean;
+}
+
 export interface ProfileList {
   names: string[];
   active: string;
+  details: ProfileDetail[];
 }
 
 export interface LoadDiffEntry {
@@ -210,6 +216,9 @@ export type AppRPCType = {
 
       /** Switch the active profile and restart profile-scoped desktop watchers. */
       switchProfile: { params: { profile: string }; response: ActionResult & { active?: string } };
+
+      /** Create a new workspace directory, set it as active, and fire profileChanged. */
+      createProfile: { params: { name: string }; response: ActionResult & { active?: string } };
 
       /** Launch a terminal session for the given tool + profile. */
       launchSession: { params: SessionLaunchConfig; response: LaunchResult };
