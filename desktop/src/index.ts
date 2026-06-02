@@ -32,26 +32,57 @@ import type { AppRPCType } from "./rpc/schema";
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
-ApplicationMenu.setApplicationMenu([
-  {
-    submenu: [
-      { label: "Stop Daemon", action: "stop-daemon" },
-      { type: "separator" },
-      { label: "Quit Draft", role: "quit" },
-    ],
-  },
-  {
-    label: "Edit",
-    submenu: [
-      { role: "copy" },
-    ],
-  },
-]);
+function setAppMenu(daemonRunning: boolean) {
+  ApplicationMenu.setApplicationMenu([
+    {
+      submenu: [
+        daemonRunning
+          ? { label: "Stop Draft",  action: "stop-draft"  }
+          : { label: "Start Draft", action: "start-draft" },
+        { type: "separator" },
+        { label: "Quit Draft", action: "quit-app", accelerator: "q" },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [{ role: "copy" }],
+    },
+  ]);
+}
+
+async function refreshAppMenu() {
+  try {
+    const s = await getDaemonStatus();
+    setAppMenu(s.state === "running");
+  } catch { /* non-fatal */ }
+}
+
+// Render with default state immediately; startup check corrects it.
+setAppMenu(true);
 
 Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
-  if (action === "stop-daemon") {
-    capture(["launchctl", "stop", PLIST_LABEL]).catch(() => {});
+
+  if (action === "stop-draft") {
+    capture(["launchctl", "stop", PLIST_LABEL])
+      .then(() => setTimeout(refreshAppMenu, 500))
+      .catch(() => {});
+  }
+
+  if (action === "start-draft") {
+    if (existsSync(PLIST_PATH)) {
+      Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
+        stdin: "ignore", stdout: "ignore", stderr: "ignore",
+      });
+      setTimeout(refreshAppMenu, 1500);
+    }
+  }
+
+  if (action === "quit-app") {
+    stopHeartbeatWatch();
+    stopProposalWatch();
+    stopActiveProfileWatch();
+    process.exit(0);
   }
 });
 
@@ -197,11 +228,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
 
         // Slow path still running, or fast success — renderer polls getStatus().
+        setTimeout(refreshAppMenu, 1500);
         return { ok: true };
       },
 
       stopDaemon: async () => {
         const result = await capture(["launchctl", "stop", PLIST_LABEL]);
+        refreshAppMenu().catch(() => {});
         return { ok: result.exitCode === 0, error: result.stderr || undefined };
       },
 
@@ -625,6 +658,7 @@ setTimeout(async () => {
     const status  = await getDaemonStatus();
     const profile = getActiveProfile();
     console.log(`[draft-desktop] daemon=${status.state} profile=${profile}`);
+    setAppMenu(status.state === "running");
   } catch (err) {
     console.error("[draft-desktop] startup status check failed:", err);
   }
