@@ -65,7 +65,10 @@ Electrobun.events.on("application-menu-clicked", (event) => {
 
   if (action === "stop-draft") {
     capture(["launchctl", "stop", PLIST_LABEL])
-      .then(() => setTimeout(refreshAppMenu, 500))
+      .then(() => {
+        setTimeout(refreshAppMenu, 500);
+        try { rpc.send.requestStatusRefresh({}); } catch {}
+      })
       .catch(() => {});
   }
 
@@ -75,6 +78,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
         stdin: "ignore", stdout: "ignore", stderr: "ignore",
       });
       setTimeout(refreshAppMenu, 1500);
+      try { rpc.send.requestStatusRefresh({}); } catch {}
     }
   }
 

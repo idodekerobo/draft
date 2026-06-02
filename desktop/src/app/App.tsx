@@ -17,6 +17,8 @@ import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
+import { OnboardingView } from "./components/views/OnboardingView";
+import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
 const STATUS_POLL_MS = 5_000;
@@ -90,6 +92,11 @@ export function App() {
     return events.on("badgeUpdate", ({ profile, count }) => {
       if (profile === activeProfileRef.current) setProposalCount(count);
     });
+  }, []);
+
+  // ── Push: immediate status refresh (e.g. after menu start/stop action) ───
+  useEffect(() => {
+    return events.on("requestStatusRefresh", () => { void fetchStatus(); });
   }, []);
 
   // ── Push: profile changed (CLI-driven or desktop-driven) ──────────────────
@@ -171,9 +178,13 @@ export function App() {
         />
 
         <main className="content">
-          {/* Settings is always reachable regardless of daemon state. */}
+          {/* Settings is always reachable regardless of install/daemon state. */}
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} />
+          ) : status?.appState?.userState === "first-run" ? (
+            <OnboardingView onComplete={fetchStatus} />
+          ) : status?.appState?.userState === "setup-incomplete" ? (
+            <SetupIncompleteView />
           ) : status?.state === "stopped" ? (
             <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
           ) : (

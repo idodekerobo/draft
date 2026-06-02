@@ -294,6 +294,9 @@ export type AppRPCType = {
 
       /** Active profile changed outside or inside desktop. */
       profileChanged: { profile: string };
+
+      /** Bun asks renderer to re-fetch status immediately (e.g. after a menu start/stop action). */
+      requestStatusRefresh: Record<string, never>;
     };
   }>;
 };
