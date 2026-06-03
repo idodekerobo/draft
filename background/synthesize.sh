@@ -1,7 +1,7 @@
 #!/bin/bash
 # synthesize.sh — Draft synthesis router
 #
-# Called by draft-daemon.sh for each pending job file.
+# Called by draft-background.ts for each pending job file.
 # Checks the job is synthesis-eligible, delegates to the source adapter,
 # handles timeout, and writes the output to proposals/.
 #

@@ -1,7 +1,7 @@
 #!/bin/bash
 # slack-analyzer.sh — Draft Slack synthesis runner
 #
-# Called by draft-daemon.sh on DRAFT_SLACK_ANALYSIS interval (default: 4hr).
+# Called by draft-background.ts on DRAFT_SLACK_ANALYSIS interval (default: 4hr).
 # For each configured channel:
 #   1. Calls slack-rebuild.ts → reconstructed thread markdown
 #   2. Passes reconstructed files to synthesizers/slack.sh

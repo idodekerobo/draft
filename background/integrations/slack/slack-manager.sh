@@ -2,7 +2,7 @@
 # slack-manager.sh — Draft Slack capture process manager
 #
 # Ensures slack-capture.ts is running if Slack is configured.
-# Called by draft-daemon.sh every SLACK_MANAGER_INTERVAL seconds (default: 60s).
+# Called by draft-background.ts every SLACK_MANAGER_INTERVAL seconds (default: 60s).
 # Manages process lifecycle via PID file — starts if dead, exits if healthy.
 #
 # Does NOT start if:
