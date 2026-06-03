@@ -5,6 +5,16 @@
     "": {
       "name": "draft",
     },
+    "background": {
+      "name": "draft-background",
+      "dependencies": {
+        "draft-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.14",
+        "bun-types": "^1.3.14",
+      },
+    },
     "cli": {
       "name": "draft-cli",
       "version": "0.1.0",
@@ -92,6 +102,8 @@
     "degenerator": ["degenerator@5.0.1", "", { "dependencies": { "ast-types": "^0.13.4", "escodegen": "^2.1.0", "esprima": "^4.0.1" } }, "sha512-TllpMR/t0M5sqCXfj85i4XaAzxmS5tVA16dqvdkMwGmzI+dXLXnw3J+3Vdv7VKw+ThlTMboK6i9rnZ6Nntj5CQ=="],
 
     "diff": ["diff@9.0.0", "", {}, "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="],
+    
+    "draft-background": ["draft-background@workspace:background"],
 
     "draft-cli": ["draft-cli@workspace:cli"],
 

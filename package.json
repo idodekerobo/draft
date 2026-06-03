@@ -2,6 +2,7 @@
   "name": "draft",
   "private": true,
   "workspaces": [
+    "background",
     "cli",
     "core",
     "desktop"

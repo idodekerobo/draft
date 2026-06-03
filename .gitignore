@@ -33,6 +33,7 @@ cli/node_modules
 
 # output
 draft-bin
+background/draft-background-bin
 desktop/build/
 desktop/artifacts/
 out
