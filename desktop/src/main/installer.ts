@@ -185,7 +185,7 @@ async function installTool(
   const label = toolLabel(tool);
   try {
     const startMs = Date.now();
-    const result = await capture([bin, "add", tool], { env });
+    const result = await capture([bin, "add", tool], { env, timeoutMs: 25_000 });
     const elapsedMs = Date.now() - startMs;
     log(`capture done — tool: ${tool}, exitCode: ${result.exitCode}, elapsed: ${elapsedMs}ms`);
     if (result.stdout) log(`  stdout: ${result.stdout.slice(0, 500)}`);
