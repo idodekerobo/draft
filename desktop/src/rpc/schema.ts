@@ -301,7 +301,7 @@ export type AppRPCType = {
       getSessionPreview: { params: void; response: SessionPreview };
 
       /**
-       * List context sections for the active profile — one per context/*/index.md
+       * List context sections for the active profile — one per context/{name}/index.md
        * dimension, plus "memory" if personal/memory.md exists.
        */
       getContextSections: { params: void; response: ContextSection[] };
