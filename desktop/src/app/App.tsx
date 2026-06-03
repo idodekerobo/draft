@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { DaemonStatus } from "../rpc/schema";
 import { events, rpc } from "./rpc";
+import { useAnalytics } from "./analytics/AnalyticsContext";
 import { StatusBar } from "./components/StatusBar";
 import { Sidebar, type View } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
@@ -19,6 +20,7 @@ import { SettingsView } from "./components/views/SettingsView";
 import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
+import { ConsentModal } from "./components/ConsentModal";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
 const STATUS_POLL_MS = 5_000;
@@ -35,9 +37,13 @@ export function App() {
   const [bypassSetup, setBypassSetup]   = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
   const [isOnboarding, setIsOnboarding] = useState(false);
+  const [showConsent, setShowConsent]   = useState(false);
   // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
   // Cleared when the user navigates to the Context tab.
   const [contextHasNew, setContextHasNew] = useState(false);
+
+  const { track, config } = useAnalytics();
+  const hasLaunchedRef = useRef(false);
 
   // Ref so event handlers always see the current profile without re-registering.
   const activeProfileRef = useRef(activeProfile);
@@ -52,6 +58,10 @@ export function App() {
     // Seed activeProfile from status on first load only.
     if (!activeProfileRef.current && s.appState.activeProfile) {
       setActiveProfile(s.appState.activeProfile);
+    }
+    if (!hasLaunchedRef.current) {
+      hasLaunchedRef.current = true;
+      track("app_launched", { user_state: s.appState.userState });
     }
   }
 
@@ -123,12 +133,22 @@ export function App() {
     }
   }, [status?.appState?.userState]);
 
+  // Show consent modal when consent is pending and not mid-onboarding.
+  // Covers both new users (after onboarding) and existing users on first upgrade.
+  useEffect(() => {
+    if (config?.consent === "pending" && !isOnboarding) {
+      setShowConsent(true);
+    }
+  }, [config?.consent, isOnboarding]);
+
   // ── Daemon start ───────────────────────────────────────────────────────────
   // startDaemon RPC fires start.sh and returns immediately (avoids Electrobun's
   // short renderer-side RPC timeout racing start.sh's internal sleep).
   // We poll getStatus() here in the renderer — each call is fast, no timeout risk.
   async function handleStartDraft() {
     setIsStarting(true);
+    track("daemon_start_attempted", {});
+    const startedAt = Date.now();
     try {
       await rpc.request.startDaemon();
 
@@ -139,10 +159,15 @@ export function App() {
         await new Promise<void>((r) => setTimeout(r, POLL_MS));
         const s = await rpc.request.getStatus();
         setStatus(s);
-        if (s.state !== "stopped") return; // UI already updated via setStatus
+        if (s.state !== "stopped") {
+          track("daemon_start_succeeded", { duration_ms: Date.now() - startedAt });
+          return;
+        }
       }
+      track("daemon_start_failed", { error_code: "timeout" });
       setStartError("Daemon did not start. Check ~/.draft/background/logs/daemon-error.log");
     } catch {
+      track("daemon_start_failed", { error_code: "rpc_error" });
       setStartError("Failed to start Draft.");
     } finally {
       setIsStarting(false);
@@ -165,6 +190,7 @@ export function App() {
   function handleNavigate(view: View) {
     if (view === "context") setContextHasNew(false);
     setActiveView(view);
+    track("view_navigated", { view: view as "context" | "proposals" | "settings" });
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -190,7 +216,7 @@ export function App() {
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} />
           ) : (isOnboarding || status?.appState?.userState === "first-run") ? (
-            <OnboardingView onComplete={async () => { setIsOnboarding(false); await fetchStatus(); }} />
+            <OnboardingView onComplete={async () => { setIsOnboarding(false); await fetchStatus(); if (config?.consent === "pending") setShowConsent(true); }} />
           ) : status?.appState?.userState === "setup-incomplete" && !bypassSetup ? (
             <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
           ) : status?.state === "stopped" ? (
@@ -221,6 +247,7 @@ export function App() {
           <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
+      {showConsent && <ConsentModal onDismiss={() => setShowConsent(false)} />}
     </div>
   );
 }

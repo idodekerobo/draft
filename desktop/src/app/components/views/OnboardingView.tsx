@@ -8,11 +8,19 @@
 //   3. Tool selection + install (calls runInstall RPC)
 //   4. Done — start Draft
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { InstallableTool, InstallStep, ProfileDetail } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
+import { useAnalytics } from "../../analytics/AnalyticsContext";
+import type { OnboardingStep } from "../../analytics/events";
 
 type Step = "welcome" | "install" | "profile" | "done";
+
+function toAnalyticsStep(step: Step): OnboardingStep {
+  if (step === "install") return "tool-select";
+  if (step === "done") return "complete";
+  return step;
+}
 
 interface ToolOption {
   id: InstallableTool;
@@ -61,6 +69,25 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
   const [installError, setInstallError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
+
+  const { track } = useAnalytics();
+  const completedRef = useRef(false);
+  const stepRef = useRef(step);
+  useEffect(() => { stepRef.current = step; }, [step]);
+
+  // Track step views
+  useEffect(() => {
+    track("onboarding_step_viewed", { step: toAnalyticsStep(step) });
+  }, [step]);
+
+  // Fire abandoned if the component unmounts before completion
+  useEffect(() => {
+    return () => {
+      if (!completedRef.current) {
+        track("onboarding_abandoned", { last_step: toAnalyticsStep(stepRef.current) });
+      }
+    };
+  }, []);
 
   // Profile step state
   const [profileList, setProfileList]     = useState<ProfileDetail[]>([]);
@@ -145,14 +172,23 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
       const result = await rpc.request.runInstall({ tools: [...selected] });
       setSteps(result.steps);
       if (result.ok) {
+        for (const tool of selected) {
+          track("tool_installed", { tool });
+        }
         setInstallError(null);
         setSteps([]);
         setStep("done");
       } else {
-        // Show results inline — user can still proceed after seeing errors
+        const failedStep = result.steps.find((s) => !s.ok);
+        for (const tool of selected) {
+          track("install_failed", { tool, step_label: failedStep?.label ?? "unknown" });
+        }
         setInstallError("Some steps failed. You can continue or try again.");
       }
     } catch {
+      for (const tool of selected) {
+        track("install_failed", { tool, step_label: "rpc_error" });
+      }
       setInstallError("Installation failed. Try again, or continue and run `draft add claude-code` in your terminal to finish setup.");
     } finally {
       setInstalling(false);
@@ -161,6 +197,8 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
 
   async function handleStart() {
     setIsStarting(true);
+    completedRef.current = true;
+    track("onboarding_completed", { tools_selected: [...selected] });
     try {
       await rpc.request.startDaemon();
     } finally {

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import type { ContextFileEntry, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
+import { useAnalytics } from "../../analytics/AnalyticsContext";
 
 marked.setOptions({ breaks: true });
 
@@ -496,6 +497,8 @@ interface ContextViewerProps {
 }
 
 export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProps) {
+  const { track } = useAnalytics();
+
   // ── File tree state ──────────────────────────────────────────────────────────
   const [files, setFiles] = useState<ContextFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string>("");
@@ -558,7 +561,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
         const firstSelectable = result.find(
           (f) => f.kind === "dim" || f.kind === "standalone" || f.kind === "group-child"
         );
-        setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0].relativePath));
+        setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0]?.relativePath ?? ""));
       }
     }).catch(() => setFiles([]));
   }
@@ -665,13 +668,23 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   // Re-read on focus via a storage event is v2. For now, Settings changes take effect
   // on next "Load from team" press (mode is read at handleLoad time).
 
+  function handleSelectDoc(path: string) {
+    setSelectedPath(path);
+    const entry = files.find((f) => f.relativePath === path);
+    if (entry) {
+      track("context_doc_viewed", { kind: entry.kind, group: entry.group });
+    }
+  }
+
   function toggleDim(group: string) {
+    const expanding = !expandedDims.has(group);
     setExpandedDims((prev) => {
       const next = new Set(prev);
       if (next.has(group)) next.delete(group);
       else next.add(group);
       return next;
     });
+    if (expanding) track("context_doc_expanded", { group });
   }
 
   function toggleGroup(group: string) {
@@ -754,7 +767,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
             selectedPath={selectedPath}
             expandedDims={expandedDims}
             collapsedGroups={collapsedGroups}
-            onSelect={setSelectedPath}
+            onSelect={handleSelectDoc}
             onToggleDim={toggleDim}
             onToggleGroup={toggleGroup}
             onContextMenu={handleContextMenu}

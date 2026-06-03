@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { diffLines } from "diff";
 import type { ProposalSummary } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
+import { useAnalytics } from "../../analytics/AnalyticsContext";
 
 // ── Empty state components ──────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { track } = useAnalytics();
 
   // Ref so event handlers always see the current profile without re-registering.
   const activeProfileRef = useRef(activeProfile);
@@ -94,6 +97,8 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
       return;
     }
 
+    const source = proposals.find((p) => p.filename === filename)?.source ?? "unknown";
+    track("proposal_actioned", { action: kind === "accept" ? "accepted" : "rejected", source });
     setRawOpen(false);
     await refresh();
   }
