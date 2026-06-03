@@ -34,14 +34,19 @@ export interface CaptureResult {
 /**
  * capture: buffered stdout/stderr. Use when you need to parse the output
  * (status, doctor, publish loop). Times out after opts.timeoutMs (default 30s).
+ *
+ * opts.env — additional env vars merged on top of process.env.
  */
 export async function capture(
   cmd: string[],
-  opts?: { timeoutMs?: number }
+  opts?: { timeoutMs?: number; env?: Record<string, string> }
 ): Promise<CaptureResult> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const bin  = cmd[0] ?? "";
   const args = cmd.slice(1);
+  const env  = opts?.env
+    ? { ...(process.env as Record<string, string>), ...opts.env }
+    : undefined;
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
@@ -49,6 +54,7 @@ export async function capture(
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
+      ...(env ? { env } : {}),
     });
   } catch (err: unknown) {
     // Binary not found or failed to spawn — treat as non-zero exit

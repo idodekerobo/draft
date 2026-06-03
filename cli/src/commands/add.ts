@@ -76,8 +76,12 @@ async function bootstrapDaemon(): Promise<void> {
     return; // already installed
   }
   console.log(dim("Installing Draft daemon..."));
-  const repoRoot = getRepoRoot();
-  const installScript = join(repoRoot, "background", "install.sh");
+  // DRAFT_BACKGROUND_DIR is injected by the desktop installer when running as a
+  // compiled binary — import.meta.dir resolves to a Bun virtual path in that
+  // context and getRepoRoot() can't walk up to find the repo. Fall back to
+  // getRepoRoot() in dev mode where the real source tree is present.
+  const backgroundDir = process.env.DRAFT_BACKGROUND_DIR ?? join(getRepoRoot(), "background");
+  const installScript = join(backgroundDir, "install.sh");
   const code = await spawn(["bash", installScript]);
   if (code !== 0) {
     console.error(red("Daemon installation failed. Check the output above for details."));
@@ -124,8 +128,9 @@ function readLine(): Promise<string> {
 // ── Claude Code install ────────────────────────────────────────────────────────
 
 export async function installClaudeCode(profileName: string): Promise<void> {
-  const repoRoot = getRepoRoot();
-  const pluginRoot = join(repoRoot, "cli-agent-plugin");
+  // DRAFT_PLUGIN_ROOT is injected by the desktop installer in bundle mode.
+  // Fall back to getRepoRoot() in dev mode.
+  const pluginRoot = process.env.DRAFT_PLUGIN_ROOT ?? join(getRepoRoot(), "cli-agent-plugin");
 
   console.log(dim(`Using plugin root: ${pluginRoot}`));
   console.log("");
@@ -173,7 +178,7 @@ export async function installClaudeCode(profileName: string): Promise<void> {
   console.log(`  ${green("✓")} Workspace created at ${dim(`~/.draft/workspaces/${profileName}/`)}`);
 
   // 6. Merge ~/.claude/settings.json
-  await mergeClaudeSettings(repoRoot, pluginRoot, workspacePath);
+  await mergeClaudeSettings(pluginRoot, workspacePath);
   console.log(`  ${green("✓")} ~/.claude/settings.json updated`);
 
   // 7. Register in global tool config registry
@@ -206,7 +211,7 @@ interface PluginHooks {
   hooks: Record<string, unknown>;
 }
 
-async function mergeClaudeSettings(repoRoot: string, pluginRoot: string, workspacePath: string): Promise<void> {
+async function mergeClaudeSettings(pluginRoot: string, workspacePath: string): Promise<void> {
   const settingsPath = join(CLAUDE_DIR, "settings.json");
   ensureDir(CLAUDE_DIR);
 

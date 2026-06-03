@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync } from "fs";
 import { join } from "path";
-import { getBundledBinPath } from "./bundlePath";
+import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir } from "./bundlePath";
 import { capture } from "draft-core/exec";
 
 const LOG_FILE = `${process.env.HOME}/.draft/logs/desktop-installer.log`;
@@ -163,10 +163,24 @@ async function installTool(
   const bin = draftBin ?? "draft";
   log(`capture starting — cmd: [${bin}, add, ${tool}]`);
 
+  // In bundle mode, the compiled `draft` binary can't walk up import.meta.dir
+  // to find the repo root (it's a Bun virtual path, not a real filesystem path).
+  // Pass the bundled asset dirs explicitly so add.ts can skip getRepoRoot().
+  const env: Record<string, string> | undefined = draftBin
+    ? {
+        DRAFT_BACKGROUND_DIR: getBundledBackgroundDir(),
+        DRAFT_PLUGIN_ROOT:    getBundledPluginDir(),
+      }
+    : undefined;
+  if (env) {
+    log(`  env: DRAFT_BACKGROUND_DIR=${env.DRAFT_BACKGROUND_DIR}`);
+    log(`  env: DRAFT_PLUGIN_ROOT=${env.DRAFT_PLUGIN_ROOT}`);
+  }
+
   const label = toolLabel(tool);
   try {
     const startMs = Date.now();
-    const result = await capture([bin, "add", tool]);
+    const result = await capture([bin, "add", tool], { env });
     const elapsedMs = Date.now() - startMs;
     log(`capture done — tool: ${tool}, exitCode: ${result.exitCode}, elapsed: ${elapsedMs}ms`);
     if (result.stdout) log(`  stdout: ${result.stdout.slice(0, 500)}`);

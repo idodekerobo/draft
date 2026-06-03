@@ -44,6 +44,10 @@ export const events = {
 // ── RPC singleton ──────────────────────────────────────────────────────────────
 
 export const rpc = Electroview.defineRPC<AppRPCType>({
+  // Default Electrobun renderer-side timeout is 1s — runInstall takes ~3s,
+  // so without this the renderer times out and shows "Installation failed"
+  // even though the main process completes successfully in the background.
+  maxRequestTime: 30_000,
   handlers: {
     requests: {
       // TODO: Phase 4: bun asks renderer to confirm a load-team diff

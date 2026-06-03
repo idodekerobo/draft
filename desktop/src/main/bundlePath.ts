@@ -27,7 +27,8 @@ export function getBundleResourcesPath(): string | null {
 /** Path to bundled background/ daemon scripts. Falls back to repo sibling in dev mode. */
 export function getBundledBackgroundDir(): string {
   const resources = getBundleResourcesPath();
-  if (resources) return join(resources, "background");
+  // Electrobun places copy: assets under Resources/app/, not Resources/ directly
+  if (resources) return join(resources, "app", "background");
   // Dev fallback: desktop/ is one level below repo root
   return join(import.meta.dir, "../../../background");
 }
@@ -35,7 +36,8 @@ export function getBundledBackgroundDir(): string {
 /** Path to bundled cli-agent-plugin/ assets. Falls back to repo sibling in dev mode. */
 export function getBundledPluginDir(): string {
   const resources = getBundleResourcesPath();
-  if (resources) return join(resources, "plugin");
+  // Electrobun places copy: assets under Resources/app/, not Resources/ directly
+  if (resources) return join(resources, "app", "plugin");
   return join(import.meta.dir, "../../../cli-agent-plugin");
 }
 
