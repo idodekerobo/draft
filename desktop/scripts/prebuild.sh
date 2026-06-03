@@ -61,7 +61,19 @@ bun build \
 chmod +x "$ASSETS_DIR/bin/draft"
 log "  Binary: assets/bin/draft"
 
-# ── 4. Generate app icon set ───────────────────────────────────────────────────
+# ── 4. Compile daemon binary ───────────────────────────────────────────────────
+
+log "Compiling daemon binary..."
+bun build \
+  --compile \
+  --target="$BUN_TARGET" \
+  --bytecode \
+  --outfile "$ASSETS_DIR/background/draft-background-bin" \
+  "$REPO_ROOT/background/draft-background.ts"
+chmod +x "$ASSETS_DIR/background/draft-background-bin"
+log "  Binary: assets/background/draft-background-bin"
+
+# ── 5. Generate app icon set ───────────────────────────────────────────────────
 
 log "Generating icon.iconset..."
 mkdir -p "$ASSETS_DIR/icon.iconset"

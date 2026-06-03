@@ -29,3 +29,17 @@ mkdirSync(join(buildDir, appName + ".app", "Contents", "MacOS"), { recursive: tr
 copyFileSync(src, dest);
 chmodSync(dest, 0o755);
 console.log(`[postbuild] Copied draft binary → ${dest}`);
+
+// Daemon binary — compiled by prebuild.sh into assets/background/draft-background-bin
+// Must be in Contents/MacOS/ for Electrobun's auto-codesign step (notarization requires
+// all Mach-O binaries in the bundle to be signed; Resources/ binaries are not signed).
+const daemonSrc  = join(import.meta.dir, "..", "assets", "background", "draft-background-bin");
+const daemonDest = join(buildDir, appName + ".app", "Contents", "MacOS", "draft-background-bin");
+
+if (existsSync(daemonSrc)) {
+  copyFileSync(daemonSrc, daemonDest);
+  chmodSync(daemonDest, 0o755);
+  console.log(`[postbuild] Copied daemon binary → ${daemonDest}`);
+} else {
+  console.warn(`[postbuild] daemon binary not found at ${daemonSrc} — skipping (dev build?)`);
+}
