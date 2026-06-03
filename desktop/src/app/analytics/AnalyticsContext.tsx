@@ -2,11 +2,11 @@
 // PostHog is never imported outside this file — it is the single SDK boundary.
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import posthog from "posthog-js";
 import type { AnalyticsConfig } from "../../rpc/schema";
 import type { AnalyticsEvent } from "./events";
 import { rpc } from "../rpc";
 
-const POSTHOG_KEY = import.meta.env.DRAFT_POSTHOG_KEY ?? "";
 
 interface AnalyticsContextValue {
   track: <E extends AnalyticsEvent>(
@@ -36,24 +36,19 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       const cfg = await rpc.request.getAnalyticsConfig();
       setConfig(cfg);
       if (cfg.consent !== "opted_in") return;
-      // posthog.init(cfg) goes here when posthog-js is installed
-      console.debug("[analytics] init", cfg.anonymous_id);
+      _initPostHog(cfg);
       setReady(true);
     }
     void init();
   }, []);
 
   const track = useCallback(
-    <E extends AnalyticsEvent>(
-      event: E["event"],
-      props: Extract<AnalyticsEvent, { event: E["event"] }>["props"]
-    ) => {
+    (event: string, props: Record<string, unknown>) => {
       if (!ready) return;
-      // posthog.capture(event, props) goes here when posthog-js is installed
-      console.debug("[analytics] track", event, props);
+      posthog.capture(event, props);
     },
     [ready]
-  );
+  ) as AnalyticsContextValue["track"];
 
   const setConsent = useCallback(
     async (granted: boolean) => {
@@ -62,8 +57,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       setConfig((prev) => (prev ? { ...prev, ...patch } : null));
       if (granted && !ready) {
         const cfg = await rpc.request.getAnalyticsConfig();
-        // posthog.init(cfg) goes here when posthog-js is installed
-        console.debug("[analytics] consent granted", cfg.anonymous_id);
+        _initPostHog(cfg);
         setReady(true);
       }
     },
@@ -74,8 +68,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     async (enabled: boolean) => {
       await rpc.request.setAnalyticsConfig({ replay_enabled: enabled });
       setConfig((prev) => (prev ? { ...prev, replay_enabled: enabled } : null));
-      // posthog.startSessionRecording() goes here when posthog-js is installed
-      console.debug("[analytics] replay_enabled set to", enabled);
+      if (enabled && ready) posthog.startSessionRecording();
     },
     [ready]
   );
@@ -89,4 +82,19 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 
 export function useAnalytics() {
   return useContext(AnalyticsContext);
+}
+
+// ── Internal ─────────────────────────────────────────────────────────────────
+
+function _initPostHog(cfg: AnalyticsConfig) {
+  if (!cfg.posthog_key) return; // OSS builds or missing build-config.json — silently skip
+  posthog.init(cfg.posthog_key, {
+    api_host: cfg.posthog_host ?? "https://us.i.posthog.com",
+    defaults: "2026-05-30",
+    autocapture: false,
+    capture_pageview: false,
+    disable_session_recording: !cfg.replay_enabled,
+    persistence: "localStorage",
+  });
+  posthog.identify(cfg.anonymous_id); // stable anon UUID — never an email or name
 }

@@ -38,6 +38,7 @@ export interface AnalyticsConfig {
   replay_enabled: boolean;
   anonymous_id: string;
   posthog_host?: string;
+  posthog_key?: string;
 }
 
 export interface DraftConfig {

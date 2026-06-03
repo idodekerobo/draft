@@ -152,6 +152,8 @@ export interface AnalyticsConfig {
   replay_enabled: boolean;
   anonymous_id: string;
   posthog_host?: string;
+  /** Runtime-only: sourced from build-config.json, never persisted to ~/.draft/config.json. */
+  posthog_key?: string;
 }
 
 /** Full text injected at session start, with token estimate. */

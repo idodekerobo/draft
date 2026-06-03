@@ -30,6 +30,13 @@ import {
 } from "./main/watchers/activeProfile";
 import type { AppRPCType } from "./rpc/schema";
 
+// Graceful fallback if build-config.json is absent (OSS builds).
+let buildConfig: { posthog_key?: string; api_host?: string } = {};
+try {
+  const raw = await Bun.file(new URL("./build-config.json", import.meta.url).pathname).text();
+  buildConfig = JSON.parse(raw) as { posthog_key?: string };
+} catch { /* OSS build — no config file, analytics key will be empty */ }
+
 // ── Application menu ───────────────────────────────────────────────────────────
 
 function setAppMenu(daemonRunning: boolean) {
@@ -674,12 +681,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       getAnalyticsConfig: async () => {
         const result = readDraftConfig();
-        const config = result.ok ? result.config : { version: "1", tools: {} };
+        const config: import("draft-core/config").DraftConfig = result.ok ? result.config : { version: "1", tools: {} };
         const analytics = ensureAnalyticsConfig(config);
+        // Persist only if anonymous_id was just generated (first launch).
         if (!config.analytics?.anonymous_id) {
           writeDraftConfig({ ...config, analytics });
         }
-        return analytics;
+        // posthog_key and api_host sourced from build-config.json — never written to config.json.
+        // posthog_host from config.json takes precedence (allows per-user override).
+        return {
+          ...analytics,
+          posthog_key: buildConfig.posthog_key ?? "",
+          posthog_host: analytics.posthog_host ?? buildConfig.api_host ?? "https://us.i.posthog.com",
+        };
       },
 
       setAnalyticsConfig: async (patch: Partial<AnalyticsConfig>) => {
