@@ -57,13 +57,13 @@ export async function runAdd(args: string[]): Promise<void> {
     const profileName = await resolveOrPromptProfile();
     await installClaudeCode(profileName);
   } else if (tool === "codex") {
-    const repoRoot = getRepoRoot();
-    const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "codex-setup.sh");
+    const pluginRoot = process.env.DRAFT_PLUGIN_ROOT ?? join(getRepoRoot(), "cli-agent-plugin");
+    const setupScript = join(pluginRoot, "scripts", "codex-setup.sh");
     const code = await spawn(["bash", setupScript]);
     process.exit(code);
   } else if (tool === "cursor") {
-    const repoRoot = getRepoRoot();
-    const setupScript = join(repoRoot, "cli-agent-plugin", "scripts", "cursor-setup.sh");
+    const pluginRoot = process.env.DRAFT_PLUGIN_ROOT ?? join(getRepoRoot(), "cli-agent-plugin");
+    const setupScript = join(pluginRoot, "scripts", "cursor-setup.sh");
     const code = await spawn(["bash", setupScript]);
     process.exit(code);
   }
