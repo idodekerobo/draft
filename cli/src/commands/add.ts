@@ -82,11 +82,6 @@ async function bootstrapDaemon(): Promise<void> {
   // getRepoRoot() in dev mode where the real source tree is present.
   const backgroundDir = process.env.DRAFT_BACKGROUND_DIR ?? join(getRepoRoot(), "background");
   const installScript = join(backgroundDir, "install.sh");
-  // Run through the user's login shell so install.sh inherits the full shell
-  // environment (Homebrew PATH etc). Without -l, macOS GUI apps spawn with
-  // launchd's minimal PATH and command -v claude/tmux/bun all fail, causing
-  // the daemon plist to be written without Homebrew dirs — breaking synthesis,
-  // session monitoring, and Slack capture silently.
   const userShell = process.env.SHELL ?? "/bin/zsh";
   const code = await spawn([userShell, "-l", "-c", `bash ${installScript}`]);
   if (code !== 0) {
