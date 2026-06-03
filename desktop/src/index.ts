@@ -30,12 +30,10 @@ import {
 } from "./main/watchers/activeProfile";
 import type { AppRPCType } from "./rpc/schema";
 
-// Graceful fallback if build-config.json is absent (OSS builds).
-let buildConfig: { posthog_key?: string; api_host?: string } = {};
-try {
-  const raw = await Bun.file(new URL("./build-config.json", import.meta.url).pathname).text();
-  buildConfig = JSON.parse(raw) as { posthog_key?: string };
-} catch { /* OSS build — no config file, analytics key will be empty */ }
+// Key + host baked in at build time via electrobun.config.ts define → process.env.
+// Falls back to empty string for OSS builds (no build-config.json) → phTrack no-ops.
+const _phKey  = process.env.DRAFT_PH_KEY  ?? "";
+const _phHost = process.env.DRAFT_PH_HOST ?? "https://us.i.posthog.com";
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
@@ -687,12 +685,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!config.analytics?.anonymous_id) {
           writeDraftConfig({ ...config, analytics });
         }
-        // posthog_key and api_host sourced from build-config.json — never written to config.json.
+        // posthog_key and api_host baked in at build time — never written to config.json.
         // posthog_host from config.json takes precedence (allows per-user override).
         return {
           ...analytics,
-          posthog_key: buildConfig.posthog_key ?? "",
-          posthog_host: analytics.posthog_host ?? buildConfig.api_host ?? "https://us.i.posthog.com",
+          posthog_key:  _phKey,
+          posthog_host: analytics.posthog_host ?? _phHost,
         };
       },
 

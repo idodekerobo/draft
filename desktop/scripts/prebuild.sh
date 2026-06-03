@@ -64,10 +64,17 @@ log "  Binary: assets/bin/draft"
 # ── 4. Compile daemon binary ───────────────────────────────────────────────────
 
 log "Compiling daemon binary..."
+
+# Read PostHog key + host from build-config.json (absent for OSS builds → empty → no-op in daemon).
+DRAFT_PH_KEY=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('posthog_key',''))" 2>/dev/null || echo "")
+DRAFT_PH_HOST=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('api_host','https://us.i.posthog.com'))" 2>/dev/null || echo "https://us.i.posthog.com")
+
 bun build \
   --compile \
   --target="$BUN_TARGET" \
   --bytecode \
+  --define "process.env.DRAFT_PH_KEY=\"${DRAFT_PH_KEY}\"" \
+  --define "process.env.DRAFT_PH_HOST=\"${DRAFT_PH_HOST}\"" \
   --outfile "$ASSETS_DIR/background/draft-background-bin" \
   "$REPO_ROOT/background/draft-background.ts"
 chmod +x "$ASSETS_DIR/background/draft-background-bin"
