@@ -6,8 +6,13 @@
 import "./rpc"; // side-effect: registers all webview message handlers
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { AnalyticsProvider } from "./analytics/AnalyticsContext";
 
 const container = document.getElementById("root");
 if (!container) throw new Error("[draft-desktop] #root element not found in index.html");
 
-createRoot(container).render(<App />);
+createRoot(container).render(
+  <AnalyticsProvider>
+    <App />
+  </AnalyticsProvider>
+);

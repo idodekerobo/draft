@@ -147,6 +147,13 @@ export interface LocalConfig {
   disabledContextSections: string[];
 }
 
+export interface AnalyticsConfig {
+  consent: "pending" | "opted_in" | "opted_out";
+  replay_enabled: boolean;
+  anonymous_id: string;
+  posthog_host?: string;
+}
+
 /** Full text injected at session start, with token estimate. */
 export interface SessionPreview {
   text: string;
@@ -301,6 +308,12 @@ export type AppRPCType = {
 
       /** Open Finder with the file selected (macOS `open -R`). */
       revealInFinder: { params: { relativePath: string }; response: ActionResult };
+
+      /** Read analytics config from ~/.draft/config.json. Generates anonymous_id on first call. */
+      getAnalyticsConfig: { params: void; response: AnalyticsConfig };
+
+      /** Patch analytics config (consent, replay_enabled, etc.) in ~/.draft/config.json. */
+      setAnalyticsConfig: { params: Partial<AnalyticsConfig>; response: ActionResult };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */

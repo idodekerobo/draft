@@ -3,7 +3,7 @@
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, getInstalledTools, BACKGROUND_DIR } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import {
   listProposals,
@@ -670,6 +670,28 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const result = await runInstall(tools);
         console.log(`[rpc] runInstall returned — ok: ${result.ok}, steps: ${result.steps.length}`);
         return result;
+      },
+
+      getAnalyticsConfig: async () => {
+        const result = readDraftConfig();
+        const config = result.ok ? result.config : { version: "1", tools: {} };
+        const analytics = ensureAnalyticsConfig(config);
+        if (!config.analytics?.anonymous_id) {
+          writeDraftConfig({ ...config, analytics });
+        }
+        return analytics;
+      },
+
+      setAnalyticsConfig: async (patch: Partial<AnalyticsConfig>) => {
+        try {
+          const result = readDraftConfig();
+          const config = result.ok ? result.config : { version: "1", tools: {} };
+          const current = ensureAnalyticsConfig(config);
+          writeDraftConfig({ ...config, analytics: { ...current, ...patch } });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Write failed." };
+        }
       },
     },
     messages: {
