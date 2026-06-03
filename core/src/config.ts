@@ -33,11 +33,33 @@ export interface UpdateCheckEntry {
   checked_at: string;
 }
 
+export interface AnalyticsConfig {
+  consent: "pending" | "opted_in" | "opted_out";
+  replay_enabled: boolean;
+  anonymous_id: string;
+  posthog_host?: string;
+}
+
 export interface DraftConfig {
   version: string;
   plugin_version?: string;
   tools: Partial<Record<InstalledTool, ToolEntry>>;
   last_update_check?: UpdateCheckEntry;
+  analytics?: AnalyticsConfig;
+}
+
+/**
+ * Returns existing analytics config or creates a fresh one with a new anonymous_id.
+ * Does NOT write to disk — callers decide whether to persist.
+ */
+export function ensureAnalyticsConfig(config: DraftConfig): AnalyticsConfig {
+  if (config.analytics?.anonymous_id) return config.analytics;
+  return {
+    consent: "pending",
+    replay_enabled: false,
+    anonymous_id: crypto.randomUUID(),
+    ...config.analytics,
+  };
 }
 
 export type DraftConfigResult =
