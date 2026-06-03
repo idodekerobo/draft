@@ -6,7 +6,7 @@
 //
 // Idempotent — safe to call if partially or fully installed.
 
-import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync } from "fs";
+import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir } from "./bundlePath";
 import { capture } from "draft-core/exec";
@@ -131,24 +131,29 @@ async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<vo
     symlinkSync(draftBin, SYSTEM_LINK);
     steps.push({ label: "Add draft to PATH (/usr/local/bin)", ok: true });
   } catch (err) {
-    // /usr/local/bin requires elevated permissions on some systems.
-    // Fall back to ~/bin if available, otherwise report the error but continue —
-    // `draft add <tool>` will still work using the full DRAFT_BIN_PATH.
-    const fallbackDir = `${process.env.HOME}/bin`;
-    const fallbackLink = join(fallbackDir, "draft");
+    // /usr/local/bin requires elevated permissions on most user machines.
+    // Fall back to appending to the user's shell profile — the same pattern
+    // used by Cargo, nvm, and Homebrew. Takes effect in new terminal sessions.
+    const HOME = process.env.HOME!;
+    const shell = process.env.SHELL ?? "/bin/zsh";
+    const profile = shell.includes("zsh")  ? join(HOME, ".zprofile")
+                  : shell.includes("bash") ? join(HOME, ".bash_profile")
+                  :                          join(HOME, ".profile");
+    const exportLine = `\nexport PATH="$HOME/.draft/bin:$PATH"  # added by Draft\n`;
     try {
-      mkdirSync(fallbackDir, { recursive: true });
-      if (existsSync(fallbackLink)) unlinkSync(fallbackLink);
-      symlinkSync(draftBin, fallbackLink);
+      const existing = existsSync(profile) ? readFileSync(profile, "utf8") : "";
+      if (!existing.includes(".draft/bin")) {
+        appendFileSync(profile, exportLine);
+      }
       steps.push({
-        label: "Add draft to PATH (~/bin)",
+        label: `Add draft to PATH (${profile.replace(HOME, "~")} — open a new terminal to activate)`,
         ok: true,
       });
-    } catch (fallbackErr) {
+    } catch (profileErr) {
       steps.push({
         label: "Add draft to PATH",
         ok: false,
-        error: `Could not symlink to /usr/local/bin or ~/bin. Run: ln -s ${draftBin} /usr/local/bin/draft`,
+        error: `Could not write to ${profile}. Run manually: echo 'export PATH="$HOME/.draft/bin:$PATH"' >> ${profile}`,
       });
     }
   }
