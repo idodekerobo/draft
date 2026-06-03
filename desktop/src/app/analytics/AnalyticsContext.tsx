@@ -6,6 +6,8 @@ import type { AnalyticsConfig } from "../../rpc/schema";
 import type { AnalyticsEvent } from "./events";
 import { rpc } from "../rpc";
 
+const POSTHOG_KEY = import.meta.env.DRAFT_POSTHOG_KEY ?? "";
+
 interface AnalyticsContextValue {
   track: <E extends AnalyticsEvent>(
     event: E["event"],
