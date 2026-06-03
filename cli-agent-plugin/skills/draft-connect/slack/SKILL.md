@@ -537,7 +537,7 @@ if [ "$DAEMON_STATUS" = "stopped" ] && launchctl list com.draft.daemon &>/dev/nu
 fi
 
 # 3. Process search (fallback)
-if [ "$DAEMON_STATUS" = "stopped" ] && pgrep -f "draft-daemon.sh" >/dev/null 2>&1; then
+if [ "$DAEMON_STATUS" = "stopped" ] && pgrep -f "draft-background" >/dev/null 2>&1; then
     DAEMON_STATUS="running"
 fi
 
