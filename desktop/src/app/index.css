@@ -2129,3 +2129,71 @@ button {
 .setup-incomplete__bypass:hover {
   color: var(--color-text-secondary);
 }
+
+/* ── Consent modal ───────────────────────────────────────────────────────────── */
+/* Shown once after onboarding when analytics.consent === "pending".             */
+
+.consent-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: consent-in 200ms ease;
+}
+
+.consent-modal {
+  background: var(--color-bg-sidebar);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+  padding: 24px;
+  max-width: 340px;
+  width: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.consent-modal__title {
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.consent-modal__body {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.consent-modal__link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  color: var(--color-accent-blue);
+  cursor: pointer;
+  transition: opacity 100ms;
+}
+
+.consent-modal__link:hover {
+  opacity: 0.75;
+}
+
+.consent-modal__actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+@keyframes consent-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
