@@ -39,7 +39,6 @@ fi
 
 # ── 2. Copy scripts ────────────────────────────────────────────────────────────
 _SCRIPTS=(
-    "draft-daemon.sh"
     "on-session-end.sh"
     "config.sh"
     "status.sh"
@@ -66,6 +65,15 @@ if [ ${#_MISSING[@]} -eq 0 ]; then
     echo "[Draft Daemon] Scripts installed to $DRAFT_BACKGROUND"
 else
     echo "[Draft Daemon] WARNING: ${#_MISSING[@]} script(s) missing — daemon may not function correctly" >&2
+fi
+
+# Copy daemon binary (compiled Bun binary — not a .sh script)
+if [ -f "$SCRIPT_DIR/draft-background-bin" ]; then
+    cp "$SCRIPT_DIR/draft-background-bin" "$DRAFT_BACKGROUND/draft-background-bin"
+    chmod +x "$DRAFT_BACKGROUND/draft-background-bin"
+    echo "[Draft Daemon] Copied daemon binary"
+else
+    echo "[Draft Daemon] NOTE: draft-background-bin not found in $SCRIPT_DIR — run prebuild.sh first (or use bun run for dev)" >&2
 fi
 
 # ── 2b. Copy synthesizers/ and intelligence/ subdirectories ────────────────────
@@ -137,8 +145,8 @@ fi
 if command -v python3 &>/dev/null; then
     echo "[Draft Daemon]   python3 .. ok"
 else
-    echo "[Draft Daemon]   python3 .. NOT FOUND — daemon requires python3 for JSON parsing" >&2
-    _DEPS_OK=false
+    # Synthesis and pollers (bash scripts) will fail without python.
+    echo "[Draft Daemon]   python3 .. NOT FOUND — synthesis will fail until installed" >&2
 fi
 
 if command -v bun &>/dev/null; then
@@ -195,8 +203,7 @@ cat > "$PLIST_PATH" <<PLIST
     <string>${PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>${DRAFT_BACKGROUND}/draft-daemon.sh</string>
+        <string>${DRAFT_BACKGROUND}/draft-background-bin</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -247,6 +254,6 @@ if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
 else
     echo "[Draft Daemon] WARNING: daemon may not have started cleanly" >&2
     echo "  Check logs at: $DRAFT_BACKGROUND/logs/daemon-error.log" >&2
-    echo "  Try running manually to debug: bash $DRAFT_BACKGROUND/draft-daemon.sh" >&2
+    echo "  Check logs at: $DRAFT_BACKGROUND/logs/daemon.log" >&2
     exit 1
 fi
