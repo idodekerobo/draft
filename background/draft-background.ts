@@ -6,7 +6,8 @@
 // Logs: structured JSON to ~/.draft/background/logs/daemon.log
 // stdout/stderr are captured by LaunchAgent to logs/daemon.log / logs/daemon-error.log
 
-import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR } from 'draft-core/config';
+import { PostHog } from 'posthog-node';
+import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, unlinkSync, renameSync } from 'fs';
 
 const DRAFT_BACKGROUND = BACKGROUND_DIR;
@@ -31,6 +32,26 @@ mkdirSync(DRAFT_PENDING, { recursive: true });
 mkdirSync(DRAFT_FAILED,  { recursive: true });
 mkdirSync(DRAFT_LOGS,    { recursive: true });
 mkdirSync(STATE_DIR,     { recursive: true });
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+// Key baked in at compile time via prebuild.sh --define; falls back to env in dev mode.
+
+const _phKey  = process.env.DRAFT_PH_KEY  ?? '';
+const _phHost = process.env.DRAFT_PH_HOST ?? 'https://us.i.posthog.com';
+
+const _draftCfg  = readDraftConfig();
+const _analytics = ensureAnalyticsConfig(_draftCfg.ok ? _draftCfg.config : { version: '1', tools: {} });
+
+const phClient = _phKey
+  ? new PostHog(_phKey, { host: _phHost })
+  : null;
+
+function phTrack(event: string, properties: Record<string, unknown> = {}) {
+  if (!phClient)                           return;
+  if (_analytics.consent !== 'opted_in')   return;
+  if (!_analytics.anonymous_id)            return;
+  phClient.capture({ distinctId: _analytics.anonymous_id, event, properties });
+}
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 
@@ -109,12 +130,15 @@ async function processJob(jobPath: string) {
       stdin: 'ignore', stdout: 'pipe', stderr: 'pipe',
     });
     const code = await proc.exited;
+    const jobSource = String(job.source ?? 'session');
     if (code === 0) {
       unlinkSync(jobPath);
       log('info', `job ${jobName} complete`);
+      phTrack('daemon_synthesis_completed', { source: jobSource });
     } else {
       log('error', `synthesize.sh failed for ${jobName} — quarantining to failed/`);
       renameSync(jobPath, `${DRAFT_FAILED}/${jobName}`);
+      phTrack('daemon_synthesis_failed', { source: jobSource });
     }
   } else {
     // synthesize.sh not installed — phase-0 fallback
@@ -133,6 +157,7 @@ async function processPendingJobs() {
 // ── Startup log (before arming timers — matches bash daemon ordering) ─────────
 
 log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
+phTrack('daemon_started');
 
 // ── Integration pollers (interval-based) ─────────────────────────────────────
 // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
@@ -185,7 +210,18 @@ async function tick() {
 setInterval(tick, PENDING_POLL_MS);
 void tick(); // immediate first tick
 
+// Daily alive ping — independent of poll loop cadence
+setInterval(() => phTrack('daemon_daily_alive'), 24 * 60 * 60 * 1000);
+
 // ── Signal handling ───────────────────────────────────────────────────────────
 
-process.on('SIGTERM', () => { log('info', 'daemon stopping (SIGTERM)'); process.exit(0); });
-process.on('SIGINT',  () => { log('info', 'daemon stopping (SIGINT)');  process.exit(0); });
+process.on('SIGTERM', async () => {
+  log('info', 'daemon stopping (SIGTERM)');
+  await phClient?.shutdown();
+  process.exit(0);
+});
+process.on('SIGINT', async () => {
+  log('info', 'daemon stopping (SIGINT)');
+  await phClient?.shutdown();
+  process.exit(0);
+});
