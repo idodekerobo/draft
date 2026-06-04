@@ -1902,7 +1902,7 @@ button {
 }
 
 /* ── Workspace education callout ─────────────────────────────────────────────── */
-/* Shown in the profile step to explain what a workspace is before asking for one. */
+/* Used in profile step and done step. No decorative icons — bold label + body.  */
 
 .onboarding__education {
   display: flex;
@@ -1914,14 +1914,6 @@ button {
   background: rgba(10, 132, 255, 0.07);
   border: 1px solid rgba(10, 132, 255, 0.18);
   border-radius: var(--radius-md);
-}
-
-.onboarding__education-icon {
-  font-size: 15px;
-  line-height: 1.4;
-  color: var(--color-accent-blue);
-  flex-shrink: 0;
-  opacity: 0.8;
 }
 
 .onboarding__education-text {
@@ -1941,6 +1933,231 @@ button {
 
 .onboarding__education-text span {
   color: var(--color-text-secondary);
+}
+
+/* ── Architecture rows (welcome step) ───────────────────────────────────────── */
+/* Flat hairline rows — no outer box, consistent with app's list-row language.  */
+
+.onboarding__arch {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.onboarding__arch-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.onboarding__arch-row:last-child {
+  border-bottom: none;
+}
+
+.onboarding__arch-label {
+  flex-shrink: 0;
+  width: 88px;
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.onboarding__arch-desc {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+/* ── Nav row: back button + step indicator ───────────────────────────────────── */
+
+.onboarding__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* When nav is present, suppress the standalone step-indicator margin */
+.onboarding__nav .onboarding__step-indicator {
+  margin-bottom: 0;
+}
+
+.onboarding__back {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-secondary);
+  font-family: var(--font-ui);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 100ms;
+  line-height: 1;
+}
+
+.onboarding__back:hover {
+  color: var(--color-text-primary);
+}
+
+/* ── Copyable command chip ────────────────────────────────────────────────────── */
+/* Matches .app-row__cmd pattern from SettingsView for visual consistency.       */
+
+.onboarding__cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+  margin-top: 7px;
+  max-width: 100%;
+}
+
+.onboarding__cmd:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.onboarding__cmd-text {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.onboarding__cmd-copy {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Section label + body (install and collab steps) ────────────────────────── */
+/* Used for the two-role explanation in the tools step and collab step sections. */
+
+.onboarding__section-group {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.onboarding__section-label {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.onboarding__section-body {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin-bottom: 2px;
+}
+
+/* ── Input source rows (inputs step) ─────────────────────────────────────────── */
+/* Non-interactive variant of .onboarding__tool-row — no checkbox.              */
+/* Default: full-width text block (Granola/Slack — cmd chip renders inside).    */
+/* --with-action variant: text left, action button right (GitHub connect).      */
+
+.onboarding__input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.onboarding__input-row--with-action {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.onboarding__input-action {
+  flex-shrink: 0;
+}
+
+.onboarding__input-connected {
+  font-size: var(--font-size-secondary);
+  color: var(--color-status-green);
+  font-weight: 500;
+}
+
+/* Label above copyable cmd chips (e.g. "Run in Claude Code or Codex:") */
+.onboarding__input-cmd-label {
+  display: block;
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+
+/* ── Collaboration sections (collab step) ────────────────────────────────────── */
+
+.onboarding__collab-section {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 10px;
+}
+
+.onboarding__collab-section .onboarding__section-label {
+  margin-bottom: 6px;
+}
+
+/* ── Consent details (consent step) ─────────────────────────────────────────── */
+/* List of what Draft doesn't collect. Red ✗ items.                              */
+
+.onboarding__consent-details {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.onboarding__consent-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+}
+
+.onboarding__consent-check--no {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-status-red);
+  opacity: 0.7;
+}
+
+/* ── Privacy link (consent step) ────────────────────────────────────────────── */
+
+.onboarding__privacy-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  color: var(--color-accent-blue);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: opacity 100ms;
+}
+
+.onboarding__privacy-link:hover {
+  opacity: 0.75;
 }
 
 /* ── SetupIncompleteView ──────────────────────────────────────────────────────── */
