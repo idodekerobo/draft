@@ -8,7 +8,7 @@
 // error codes).
 
 export type View = "context" | "proposals" | "settings";
-export type OnboardingStep = "welcome" | "tool-select" | "profile" | "complete";
+export type OnboardingStep = "welcome" | "profile" | "tool-select" | "inputs" | "collab" | "consent" | "complete";
 
 export type AnalyticsEvent =
   | { event: "app_launched";               props: { user_state: string } }
