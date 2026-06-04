@@ -50,3 +50,23 @@ export function getBundledBinPath(): string | null {
   const appPath = execPath.slice(0, idx + ".app".length);
   return join(appPath, "Contents", "MacOS", "draft");
 }
+
+/** Path to bundled Bun runtime (copied from Electrobun dist by postbuild.ts). Returns null in dev mode. */
+export function getBundledBunPath(): string | null {
+  const execPath = process.execPath;
+  const marker = ".app/Contents/MacOS/";
+  const idx = execPath.indexOf(marker);
+  if (idx === -1) return null;
+  const appPath = execPath.slice(0, idx + ".app".length);
+  return join(appPath, "Contents", "MacOS", "bun");
+}
+
+/** Path to bundled tmux binary (staged by prebuild.sh, copied by postbuild.ts). Returns null in dev mode. */
+export function getBundledTmuxPath(): string | null {
+  const execPath = process.execPath;
+  const marker = ".app/Contents/MacOS/";
+  const idx = execPath.indexOf(marker);
+  if (idx === -1) return null;
+  const appPath = execPath.slice(0, idx + ".app".length);
+  return join(appPath, "Contents", "MacOS", "tmux");
+}
