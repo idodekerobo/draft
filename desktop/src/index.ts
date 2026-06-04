@@ -88,10 +88,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "quit-app") {
-    stopHeartbeatWatch();
-    stopProposalWatch();
-    stopActiveProfileWatch();
-    process.exit(0);
+    win.hide();
   }
 });
 
@@ -100,13 +97,27 @@ Electrobun.events.on("application-menu-clicked", (event) => {
 
 const tray = new Tray({ title: "Draft" });
 
-tray.setMenu([
-  { type: "normal",  label: "Open Draft",          action: "open"              },
-  { type: "divider"                                                              },
-  { type: "normal",  label: "Test Notification",    action: "test-notification" },
-  { type: "divider"                                                              },
-  { type: "normal",  label: "Quit",                 action: "quit"              },
-]);
+function setTrayMenu(daemonRunning: boolean) {
+  tray.setMenu([
+    { type: "normal",  label: "Open Draft",                                   action: "open"        },
+    { type: "divider"                                                                                 },
+    daemonRunning
+      ? { type: "normal", label: "Stop Draft",  action: "tray-stop-draft"  }
+      : { type: "normal", label: "Start Draft", action: "tray-start-draft" },
+    { type: "divider"                                                                                 },
+    { type: "normal",  label: "Quit Completely",                              action: "quit"        },
+  ]);
+}
+
+async function refreshTrayMenu() {
+  try {
+    const s = await getDaemonStatus();
+    setTrayMenu(s.state === "running");
+  } catch { /* non-fatal */ }
+}
+
+// Render with default state immediately; startup check corrects it.
+setTrayMenu(true);
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
 // watcherHandlers is forward-declared here so switchProfile can reference it.
@@ -759,12 +770,25 @@ tray.on("tray-clicked", (e) => {
     win.show?.();
   }
 
-  if (action === "test-notification") {
-    Utils.showNotification({
-      title: "Draft",
-      subtitle: "Spike test",
-      body: "Tray → notification ✓",
-    });
+  if (action === "tray-stop-draft") {
+    capture(["launchctl", "unload", PLIST_PATH])
+      .then(() => {
+        setTimeout(refreshTrayMenu, 500);
+        setTimeout(refreshAppMenu, 500);
+        try { rpc.send.requestStatusRefresh({}); } catch {}
+      })
+      .catch(() => {});
+  }
+
+  if (action === "tray-start-draft") {
+    if (existsSync(PLIST_PATH)) {
+      Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
+        stdin: "ignore", stdout: "ignore", stderr: "ignore",
+      });
+      setTimeout(refreshTrayMenu, 1500);
+      setTimeout(refreshAppMenu, 1500);
+      try { rpc.send.requestStatusRefresh({}); } catch {}
+    }
   }
 
   if (action === "quit") {
@@ -785,6 +809,7 @@ setTimeout(async () => {
     const profile = getActiveProfile();
     console.log(`[draft-desktop] daemon=${status.state} profile=${profile}`);
     setAppMenu(status.state === "running");
+    setTrayMenu(status.state === "running");
   } catch (err) {
     console.error("[draft-desktop] startup status check failed:", err);
   }
