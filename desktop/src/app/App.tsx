@@ -20,7 +20,6 @@ import { SettingsView } from "./components/views/SettingsView";
 import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
-import { ConsentModal } from "./components/ConsentModal";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
 const STATUS_POLL_MS = 5_000;
@@ -37,12 +36,11 @@ export function App() {
   const [bypassSetup, setBypassSetup]   = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
   const [isOnboarding, setIsOnboarding] = useState(false);
-  const [showConsent, setShowConsent]   = useState(false);
   // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
   // Cleared when the user navigates to the Context tab.
   const [contextHasNew, setContextHasNew] = useState(false);
 
-  const { track, config } = useAnalytics();
+  const { track } = useAnalytics();
   const hasLaunchedRef = useRef(false);
 
   // Ref so event handlers always see the current profile without re-registering.
@@ -133,13 +131,6 @@ export function App() {
     }
   }, [status?.appState?.userState]);
 
-  // Show consent modal when consent is pending and not mid-onboarding.
-  // Covers both new users (after onboarding) and existing users on first upgrade.
-  useEffect(() => {
-    if (config?.consent === "pending" && !isOnboarding) {
-      setShowConsent(true);
-    }
-  }, [config?.consent, isOnboarding]);
 
   // ── Daemon start ───────────────────────────────────────────────────────────
   // startDaemon RPC fires start.sh and returns immediately (avoids Electrobun's
@@ -216,7 +207,7 @@ export function App() {
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} />
           ) : (isOnboarding || status?.appState?.userState === "first-run") ? (
-            <OnboardingView onComplete={async () => { setIsOnboarding(false); await fetchStatus(); if (config?.consent === "pending") setShowConsent(true); }} />
+            <OnboardingView onComplete={async () => { setIsOnboarding(false); await fetchStatus(); }} />
           ) : status?.appState?.userState === "setup-incomplete" && !bypassSetup ? (
             <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
           ) : status?.state === "stopped" ? (
@@ -247,7 +238,6 @@ export function App() {
           <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
-      {showConsent && <ConsentModal onDismiss={() => setShowConsent(false)} />}
     </div>
   );
 }
