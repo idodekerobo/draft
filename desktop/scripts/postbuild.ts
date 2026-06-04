@@ -4,7 +4,7 @@
 // Electrobun auto-signs every Mach-O binary in Contents/MacOS/ with
 // --options runtime --timestamp, which satisfies Apple notarization.
 
-import { copyFileSync, chmodSync, existsSync, mkdirSync } from "fs";
+import { copyFileSync, chmodSync, existsSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 
 const buildDir = process.env.ELECTROBUN_BUILD_DIR;
@@ -42,4 +42,13 @@ if (existsSync(daemonSrc)) {
   console.log(`[postbuild] Copied daemon binary → ${daemonDest}`);
 } else {
   console.warn(`[postbuild] daemon binary not found at ${daemonSrc} — skipping (dev build?)`);
+}
+
+// Remove the unsigned copy that Electrobun's copy config places in Resources/app/background/.
+// Electrobun only signs binaries in MacOS/ — any Mach-O left in Resources/ will fail
+// Apple notarization. install.sh is updated to source the binary from MacOS/ instead.
+const resourcesDaemon = join(buildDir, appName + ".app", "Contents", "Resources", "app", "background", "draft-background-bin");
+if (existsSync(resourcesDaemon)) {
+  rmSync(resourcesDaemon);
+  console.log(`[postbuild] Removed unsigned daemon copy from Resources (install.sh will source from MacOS/)`);
 }

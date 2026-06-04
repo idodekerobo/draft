@@ -68,12 +68,23 @@ else
 fi
 
 # Copy daemon binary (compiled Bun binary — not a .sh script)
-if [ -f "$SCRIPT_DIR/draft-background-bin" ]; then
-    cp "$SCRIPT_DIR/draft-background-bin" "$DRAFT_BACKGROUND/draft-background-bin"
+# When running from the app bundle, the signed binary lives in MacOS/ (Resources/ copy is
+# removed at build time so it doesn't fail notarization). Fall back to SCRIPT_DIR for dev
+# mode or when re-running install.sh from ~/.draft/background/ after first install.
+_BIN_SRC=""
+_MACOS_BIN="$(cd "$SCRIPT_DIR/../../../MacOS" 2>/dev/null && pwd 2>/dev/null)/draft-background-bin"
+if [ -f "$_MACOS_BIN" ]; then
+    _BIN_SRC="$_MACOS_BIN"
+elif [ -f "$SCRIPT_DIR/draft-background-bin" ]; then
+    _BIN_SRC="$SCRIPT_DIR/draft-background-bin"
+fi
+
+if [ -n "$_BIN_SRC" ]; then
+    cp "$_BIN_SRC" "$DRAFT_BACKGROUND/draft-background-bin"
     chmod +x "$DRAFT_BACKGROUND/draft-background-bin"
     echo "[Draft Daemon] Copied daemon binary"
 else
-    echo "[Draft Daemon] NOTE: draft-background-bin not found in $SCRIPT_DIR — run prebuild.sh first (or use bun run for dev)" >&2
+    echo "[Draft Daemon] NOTE: draft-background-bin not found — run prebuild.sh first (or use bun run for dev)" >&2
 fi
 
 # ── 2b. Copy synthesizers/ and intelligence/ subdirectories ────────────────────
