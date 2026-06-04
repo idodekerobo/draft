@@ -65,9 +65,9 @@ export function checkHeartbeat(opts?: HeartbeatOpts): HeartbeatResult {
   }
 
   // ── Daemon running (PID sentinel file) ──────────────────────────────────────
-  // The daemon writes its PID to background/daemon.pid on start and removes it on stop.
+  // The daemon writes its PID to background/draft-background.pid on start and removes it on stop.
   // This is a fast heuristic — use getDaemonStatus() for a definitive launchctl check.
-  const pidSentinel = `${bgDir}/daemon.pid`;
+  const pidSentinel = `${bgDir}/draft-background.pid`;
   const daemonRunning = existsSync(pidSentinel);
 
   return { daemonRunning, lastLogLine, pendingQueueDepth };

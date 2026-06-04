@@ -14,13 +14,13 @@ beforeEach(() => mkdirSync(FAKE_BG, { recursive: true }));
 afterEach(() => rmSync(TMP, { recursive: true, force: true }));
 
 describe("checkHeartbeat", () => {
-  it("returns daemonRunning:false when daemon.pid sentinel is absent", () => {
+  it("returns daemonRunning:false when draft-background.pid sentinel is absent", () => {
     const result = checkHeartbeat(opts);
     expect(result.daemonRunning).toBe(false);
   });
 
-  it("returns daemonRunning:true when daemon.pid sentinel exists", () => {
-    writeFileSync(join(FAKE_BG, "daemon.pid"), "12345");
+  it("returns daemonRunning:true when draft-background.pid sentinel exists", () => {
+    writeFileSync(join(FAKE_BG, "draft-background.pid"), "12345");
     const result = checkHeartbeat(opts);
     expect(result.daemonRunning).toBe(true);
   });
@@ -64,7 +64,7 @@ describe("checkHeartbeat", () => {
     const pendingDir = join(FAKE_BG, "pending");
     mkdirSync(logDir,     { recursive: true });
     mkdirSync(pendingDir, { recursive: true });
-    writeFileSync(join(FAKE_BG, "daemon.pid"), "99");
+    writeFileSync(join(FAKE_BG, "draft-background.pid"), "99");
     writeFileSync(FAKE_LOG, "[daemon] polling\n");
     writeFileSync(join(pendingDir, "job.json"), "{}");
 

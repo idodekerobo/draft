@@ -8,7 +8,7 @@
 
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
-import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, unlinkSync, renameSync } from 'fs';
+import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 
 const DRAFT_BACKGROUND = BACKGROUND_DIR;
 
@@ -154,6 +154,13 @@ async function processPendingJobs() {
   for (const f of files) await processJob(`${DRAFT_PENDING}/${f}`);
 }
 
+// ── PID sentinel ─────────────────────────────────────────────────────────────
+// Written on start, deleted on stop. Used by checkHeartbeat() in core/src/heartbeat.ts
+// as a fast no-subprocess heuristic for daemon alive/dead detection.
+
+const PID_FILE = `${DRAFT_BACKGROUND}/draft-background.pid`;
+writeFileSync(PID_FILE, String(process.pid));
+
 // ── Startup log (before arming timers — matches bash daemon ordering) ─────────
 
 log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
@@ -217,11 +224,13 @@ setInterval(() => phTrack('daemon_daily_alive'), 24 * 60 * 60 * 1000);
 
 process.on('SIGTERM', async () => {
   log('info', 'daemon stopping (SIGTERM)');
+  try { unlinkSync(PID_FILE); } catch { /* already gone */ }
   await phClient?.shutdown();
   process.exit(0);
 });
 process.on('SIGINT', async () => {
   log('info', 'daemon stopping (SIGINT)');
+  try { unlinkSync(PID_FILE); } catch { /* already gone */ }
   await phClient?.shutdown();
   process.exit(0);
 });
