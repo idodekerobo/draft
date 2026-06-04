@@ -525,8 +525,8 @@ Check if the daemon is running — try three detection methods in order:
 ```bash
 DAEMON_STATUS="stopped"
 
-# 1. PID file (written by start.sh / on-session-end.sh)
-DAEMON_PID_FILE="$HOME/.draft/background/draft-daemon.pid"
+# 1. PID file (written by draft-background.ts on startup)
+DAEMON_PID_FILE="$HOME/.draft/background/draft-background.pid"
 if [ -f "$DAEMON_PID_FILE" ] && kill -0 "$(cat "$DAEMON_PID_FILE")" 2>/dev/null; then
     DAEMON_STATUS="running"
 fi
