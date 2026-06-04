@@ -94,6 +94,7 @@ function _initPostHog(cfg: AnalyticsConfig) {
     autocapture: false,
     capture_pageview: false,
     disable_session_recording: !cfg.replay_enabled,
+    session_recording: { maskTextSelector: '*', maskAllInputs: true },
     persistence: "localStorage",
   });
   posthog.identify(cfg.anonymous_id); // stable anon UUID — never an email or name
