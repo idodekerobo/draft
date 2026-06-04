@@ -50,9 +50,11 @@ if [ -z "$SLACK_APP_TOKEN" ]; then
 fi
 
 # ── Preflight: check bun ───────────────────────────────────────────────────────
-
-if ! command -v bun &>/dev/null; then
-    _log "warn" "bun not found — slack-capture unavailable. Install: https://bun.sh"
+# Fall back to Draft's bundled bun runtime if bun is not on the system PATH.
+# The daemon's plist PATH is minimal (no ~/.draft/bin) so we check explicitly.
+BUN_BIN=$(command -v bun 2>/dev/null || echo "$HOME/.draft/bin/bun")
+if [ ! -x "$BUN_BIN" ]; then
+    _log "warn" "bun not found on PATH or at ~/.draft/bin/bun — slack-capture unavailable. Install Draft app to get the bundled runtime."
     exit 0
 fi
 
@@ -82,7 +84,7 @@ fi
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
-bun run "$CAPTURE_SCRIPT" >> "$LOG_FILE" 2>&1 &
+"$BUN_BIN" run "$CAPTURE_SCRIPT" >> "$LOG_FILE" 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 
