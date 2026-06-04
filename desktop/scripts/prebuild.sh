@@ -122,25 +122,11 @@ bun build \
 chmod +x "$ASSETS_DIR/background/draft-background-bin"
 log "  Binary: assets/background/draft-background-bin"
 
-# ── 6. Generate app icon set ───────────────────────────────────────────────────
+# ── 6. Stage app icon set ──────────────────────────────────────────────────────
 
-log "Generating icon.iconset..."
-mkdir -p "$ASSETS_DIR/icon.iconset"
-
-ICON_SRC="$REPO_ROOT/assets/icon.png"
-ICONSET="$ASSETS_DIR/icon.iconset"
-
-sips -z 16 16     "$ICON_SRC" --out "$ICONSET/icon_16x16.png"      > /dev/null
-sips -z 32 32     "$ICON_SRC" --out "$ICONSET/icon_16x16@2x.png"   > /dev/null
-sips -z 32 32     "$ICON_SRC" --out "$ICONSET/icon_32x32.png"      > /dev/null
-sips -z 64 64     "$ICON_SRC" --out "$ICONSET/icon_32x32@2x.png"   > /dev/null
-sips -z 128 128   "$ICON_SRC" --out "$ICONSET/icon_128x128.png"    > /dev/null
-sips -z 256 256   "$ICON_SRC" --out "$ICONSET/icon_128x128@2x.png" > /dev/null
-sips -z 256 256   "$ICON_SRC" --out "$ICONSET/icon_256x256.png"    > /dev/null
-sips -z 512 512   "$ICON_SRC" --out "$ICONSET/icon_256x256@2x.png" > /dev/null
-sips -z 512 512   "$ICON_SRC" --out "$ICONSET/icon_512x512.png"    > /dev/null
-
-log "  Done ($(find "$ICONSET" -type f | wc -l | tr -d ' ') files)"
+log "Staging icon.iconset from assets/AppIcon.iconset..."
+cp -r "$REPO_ROOT/assets/AppIcon.iconset/." "$ASSETS_DIR/icon.iconset/"
+log "  Done ($(find "$ASSETS_DIR/icon.iconset" -type f | wc -l | tr -d ' ') files)"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
