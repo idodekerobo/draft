@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync } from "fs";
 import { join } from "path";
-import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir } from "./bundlePath";
+import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir, getBundledBunPath, getBundledTmuxPath } from "./bundlePath";
 import { capture } from "draft-core/exec";
 
 const LOG_FILE = `${process.env.HOME}/.draft/logs/desktop-installer.log`;
@@ -107,7 +107,6 @@ async function extractBinary(steps: InstallStep[]): Promise<string | null> {
     copyFileSync(bundledBin, DRAFT_BIN_PATH);
     chmodSync(DRAFT_BIN_PATH, 0o755);
     steps.push({ label: "Extract draft binary", ok: true });
-    return DRAFT_BIN_PATH;
   } catch (err) {
     steps.push({
       label: "Extract draft binary",
@@ -116,6 +115,36 @@ async function extractBinary(steps: InstallStep[]): Promise<string | null> {
     });
     return null;
   }
+
+  // Extract bundled bun runtime — non-fatal; Slack capture degrades gracefully if missing
+  const bundledBun = getBundledBunPath();
+  if (bundledBun && existsSync(bundledBun)) {
+    try {
+      copyFileSync(bundledBun, `${DRAFT_BIN_DIR}/bun`);
+      chmodSync(`${DRAFT_BIN_DIR}/bun`, 0o755);
+      log(`bun runtime extracted to ${DRAFT_BIN_DIR}/bun`);
+    } catch (err) {
+      log(`bun extract failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else {
+    log(`bundled bun not found (dev build or postbuild skipped) — Slack capture requires user-installed bun`);
+  }
+
+  // Extract bundled tmux binary — non-fatal; session monitoring degrades gracefully if missing
+  const bundledTmux = getBundledTmuxPath();
+  if (bundledTmux && existsSync(bundledTmux)) {
+    try {
+      copyFileSync(bundledTmux, `${DRAFT_BIN_DIR}/tmux`);
+      chmodSync(`${DRAFT_BIN_DIR}/tmux`, 0o755);
+      log(`tmux extracted to ${DRAFT_BIN_DIR}/tmux`);
+    } catch (err) {
+      log(`tmux extract failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else {
+    log(`bundled tmux not found (dev build or prebuild skipped) — session monitoring requires user-installed tmux`);
+  }
+
+  return DRAFT_BIN_PATH;
 }
 
 async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<void> {
