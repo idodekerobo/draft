@@ -69,7 +69,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
 
   if (action === "stop-draft") {
-    capture(["launchctl", "stop", PLIST_LABEL])
+    capture(["launchctl", "unload", PLIST_PATH])
       .then(() => {
         setTimeout(refreshAppMenu, 500);
         try { rpc.send.requestStatusRefresh({}); } catch {}
@@ -256,7 +256,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       stopDaemon: async () => {
-        const result = await capture(["launchctl", "stop", PLIST_LABEL]);
+        const result = await capture(["launchctl", "unload", PLIST_PATH]);
         refreshAppMenu().catch(() => {});
         return { ok: result.exitCode === 0, error: result.stderr || undefined };
       },
