@@ -37,7 +37,49 @@ log "Copying cli-agent-plugin/..."
 cp -r "$REPO_ROOT/cli-agent-plugin/." "$ASSETS_DIR/plugin/"
 log "  Done"
 
-# ── 3. Compile draft CLI binary ────────────────────────────────────────────────
+# ── 3. Stage tmux static binary ───────────────────────────────────────────────
+# Download a precompiled static macOS tmux binary and stage it for bundling.
+# Pin a specific release + SHA256 checksum for reproducibility.
+# For CI: set TMUX_DOWNLOAD_URL and TMUX_SHA256 in the environment.
+
+TMUX_DEST="$ASSETS_DIR/bin/tmux"
+
+# TODO(ci): Replace the dev fallback below with a self-hosted static build for production CI.
+#   Build from source on a Mac (links only against system libs — no Homebrew dylib deps):
+#     cd /tmp && curl -fsSL https://github.com/tmux/tmux/releases/download/3.5a/tmux-3.5a.tar.gz | tar xz
+#     cd tmux-3.5a
+#     ./configure --prefix=/tmp/tmux-out --enable-static \
+#       CFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include" \
+#       LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
+#     make -j4 && make install
+#     otool -L /tmp/tmux-out/bin/tmux  # verify: only /usr/lib/* and /System/* entries
+#     shasum -a 256 /tmp/tmux-out/bin/tmux
+#   Upload the binary to a GitHub Release on this repo (e.g. tag: build-deps-v1).
+#   Then set TMUX_DOWNLOAD_URL + TMUX_SHA256 as CI secrets and hardcode defaults here.
+if [ -n "${TMUX_DOWNLOAD_URL:-}" ]; then
+  log "Downloading tmux from $TMUX_DOWNLOAD_URL"
+  curl -fsSL "$TMUX_DOWNLOAD_URL" -o "$TMUX_DEST"
+  if [ -n "${TMUX_SHA256:-}" ]; then
+    echo "$TMUX_SHA256  $TMUX_DEST" | shasum -a 256 -c - || {
+      echo "[prebuild] ERROR: tmux checksum mismatch" >&2; exit 1
+    }
+  fi
+  chmod +x "$TMUX_DEST"
+  log "  tmux downloaded: $TMUX_DEST"
+else
+  # Dev fallback: copy from build machine (requires tmux installed — e.g. brew install tmux)
+  TMUX_BIN=$(command -v tmux 2>/dev/null || true)
+  if [ -n "$TMUX_BIN" ]; then
+    log "  Copying tmux from $TMUX_BIN (build-machine fallback)"
+    cp "$TMUX_BIN" "$TMUX_DEST"
+    chmod +x "$TMUX_DEST"
+    log "  tmux staged: $TMUX_DEST"
+  else
+    log "  WARN: tmux not found on PATH — session monitoring will be unavailable in this build"
+  fi
+fi
+
+# ── 4. Compile draft CLI binary ────────────────────────────────────────────────
 
 log "Compiling draft CLI binary..."
 
@@ -61,7 +103,7 @@ bun build \
 chmod +x "$ASSETS_DIR/bin/draft"
 log "  Binary: assets/bin/draft"
 
-# ── 4. Compile daemon binary ───────────────────────────────────────────────────
+# ── 5. Compile daemon binary ───────────────────────────────────────────────────
 
 log "Compiling daemon binary..."
 
@@ -80,7 +122,7 @@ bun build \
 chmod +x "$ASSETS_DIR/background/draft-background-bin"
 log "  Binary: assets/background/draft-background-bin"
 
-# ── 5. Generate app icon set ───────────────────────────────────────────────────
+# ── 6. Generate app icon set ───────────────────────────────────────────────────
 
 log "Generating icon.iconset..."
 mkdir -p "$ASSETS_DIR/icon.iconset"
