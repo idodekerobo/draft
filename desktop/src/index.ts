@@ -45,7 +45,8 @@ function setAppMenu(daemonRunning: boolean) {
           ? { label: "Stop Draft",  action: "stop-draft"  }
           : { label: "Start Draft", action: "start-draft" },
         { type: "separator" },
-        { label: "Quit Draft", action: "quit-app", accelerator: "q" },
+        { label: "Quit Draft",       action: "quit-app",        accelerator: "q" },
+        { label: "Quit Completely",  action: "quit-completely"                   },
       ],
     },
     {
@@ -89,6 +90,13 @@ Electrobun.events.on("application-menu-clicked", (event) => {
 
   if (action === "quit-app") {
     win.hide();
+  }
+
+  if (action === "quit-completely") {
+    stopHeartbeatWatch();
+    stopProposalWatch();
+    stopActiveProfileWatch();
+    process.exit(0);
   }
 });
 
