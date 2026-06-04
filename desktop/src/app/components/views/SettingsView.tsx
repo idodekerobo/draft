@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import type { ConnectedAppsStatus, ContextSection, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
+import { useAnalytics } from "../../analytics/AnalyticsContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -241,6 +242,8 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
+
+  const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
 
   // ── Load ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -493,6 +496,31 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
                   </div>
                 );
               })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Privacy ─────────────────────────────────────────────────────── */}
+        {analyticsConfig?.consent === "opted_in" && (
+          <section className="settings__section">
+            <h2 className="settings__section-label">Privacy</h2>
+            <div className="settings__rows">
+              <div className="settings__row">
+                <div className="settings__row-content">
+                  <span className="settings__row-label">Share interaction recordings</span>
+                  <span className="settings__row-desc">
+                    Masked — no text or file content is ever captured. Helps us improve
+                    navigation and layout.
+                  </span>
+                </div>
+                <Toggle
+                  checked={analyticsConfig.replay_enabled}
+                  onChange={(v) => {
+                    if (v) track("replay_consent_granted", {});
+                    void setReplayEnabled(v);
+                  }}
+                />
+              </div>
             </div>
           </section>
         )}

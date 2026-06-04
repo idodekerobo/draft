@@ -26,10 +26,13 @@ export function ConsentModal({ onDismiss }: ConsentModalProps) {
   return (
     <div className="consent-backdrop" role="dialog" aria-modal="true" aria-labelledby="consent-title">
       <div className="consent-modal">
-        <p className="consent-modal__title" id="consent-title">Help improve Draft</p>
+        <div className="consent-modal__header">
+          <p className="consent-modal__title" id="consent-title">Help improve Draft</p>
+          <p className="consent-modal__subtitle">Anonymous · No prompts or file content</p>
+        </div>
         <p className="consent-modal__body">
-          Share anonymous usage data so we can understand what's working and fix
-          what isn't. No prompts, file content, or personal info are ever collected.
+          Share usage data so we can see where people get stuck and what's working.
+          We collect navigation patterns and error codes — nothing you type or write.
         </p>
         <button
           className="consent-modal__link"
@@ -38,10 +41,10 @@ export function ConsentModal({ onDismiss }: ConsentModalProps) {
           See exactly what we collect ↗
         </button>
         <div className="consent-modal__actions">
-          <button className="empty-state__cta onboarding__cta" onClick={() => void handleAccept()}>
+          <button className="consent-modal__btn consent-modal__btn--accept" onClick={() => void handleAccept()}>
             Yes, help improve Draft
           </button>
-          <button className="onboarding__skip" onClick={() => void handleDecline()}>
+          <button className="consent-modal__btn consent-modal__btn--decline" onClick={() => void handleDecline()}>
             No thanks
           </button>
         </div>
