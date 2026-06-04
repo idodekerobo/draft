@@ -23,7 +23,7 @@ source "$DRAFT_BACKGROUND/config.sh"
 # ── Expand PATH for LaunchAgent environment ────────────────────────────────────
 # LaunchAgent runs with a minimal PATH that excludes user-installed tools.
 # Prepend common install locations for claude and tmux.
-export PATH="$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+export PATH="$HOME/.draft/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 
 _log() {
     printf '[claude-code.sh] %s\n' "$*" >&2
