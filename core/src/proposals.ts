@@ -71,11 +71,11 @@ export function parseProposal(filename: string, filePath: string): Proposal {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
   if (fmMatch) {
     const fm = parseFrontmatter(fmMatch[1] ?? "");
-    source = stringField(fm.source) || source;
+    source = stringField(fm.source) || stringField(fm.input_source) || source;
     createdAt = stringField(fm.created_at) || stringField(fm.createdAt) || createdAt;
     timestamp = stringField(fm.timestamp) || createdAt;
-    dimension = stringField(fm.dimension) || dimension;
-    action = stringField(fm.action) || action;
+    dimension = stringField(fm.dimension) || firstContextUpdateDimension(fm) || dimension;
+    action = stringField(fm.action) || firstContextUpdateAction(fm) || action;
     synthesizedBy = stringField(fm.synthesized_by) || stringField(fm.synthesizedBy) || synthesizedBy;
     summary = stringField(fm.summary) || summary;
   }
@@ -137,6 +137,22 @@ function parseFrontmatter(raw: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function firstContextUpdateDimension(fm: Record<string, unknown>): string {
+  const updates = fm.context_updates;
+  if (!Array.isArray(updates) || updates.length === 0) return "";
+  const first = updates[0] as Record<string, unknown>;
+  const file = stringField(first?.file); // e.g. "context/product/index.md"
+  const match = file.match(/context\/([^/]+)\//);
+  return match?.[1] ?? "";
+}
+
+function firstContextUpdateAction(fm: Record<string, unknown>): string {
+  const updates = fm.context_updates;
+  if (!Array.isArray(updates) || updates.length === 0) return "";
+  const first = updates[0] as Record<string, unknown>;
+  return stringField(first?.action);
 }
 
 function stringField(value: unknown): string {
