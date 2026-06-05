@@ -344,11 +344,15 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
           </div>
 
           <p className="onboarding__hint">
-            All three work together. Draft captures and synthesizes context in the
-            background; the plugin injects it when each agent session starts. You can
-            run and control Draft entirely from the terminal if you prefer.
+            All three work together.
             <br/>
-            Works solo or with your whole team.
+            Draft captures and synthesizes context in the
+            background; the plugin injects it when each agent session starts.
+            <br/>
+            You can run and control Draft entirely from the terminal if you prefer.
+            <br/>
+            <br/>
+            <b>Works solo or share and collaborate on context with your whole team.</b>
           </p>
 
           <button
