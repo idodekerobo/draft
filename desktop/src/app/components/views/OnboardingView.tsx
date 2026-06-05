@@ -13,35 +13,27 @@ import { useState, useEffect, useRef } from "react";
 import type { InstallableTool, InstallStep, ProfileDetail } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import type { OnboardingStep } from "../../analytics/events";
+import type { OnboardingStep } from "../../types";
 
-type Step = "welcome" | "profile" | "install" | "inputs" | "collab" | "consent" | "done";
-
-const STEP_NUMBER: Record<Step, number> = {
-  welcome: 1,
-  profile: 2,
-  install: 3,
-  inputs:  4,
-  collab:  5,
-  consent: 6,
-  done:    7,
+const STEP_NUMBER: Record<OnboardingStep, number> = {
+  welcome:     1,
+  profile:     2,
+  "intelligence-tools": 3,
+  inputs:      4,
+  collab:      5,
+  consent:     6,
+  complete:    7,
 };
 const TOTAL_STEPS = 7;
 
-const PREV_STEP: Partial<Record<Step, Step>> = {
-  profile: "welcome",
-  install: "profile",
-  inputs:  "install",
-  collab:  "inputs",
-  consent: "collab",
-  done:    "consent",
+const PREV_STEP: Partial<Record<OnboardingStep, OnboardingStep>> = {
+  profile:       "welcome",
+  "intelligence-tools": "profile",
+  inputs:        "intelligence-tools",
+  collab:        "inputs",
+  consent:       "collab",
+  complete:      "consent",
 };
-
-function toAnalyticsStep(step: Step): OnboardingStep {
-  if (step === "install") return "tool-select";
-  if (step === "done")    return "complete";
-  return step as OnboardingStep;
-}
 
 // ── Copyable command chip ───────────────────────────────────────────────────────
 
@@ -105,7 +97,7 @@ interface OnboardingViewProps {
 }
 
 export function OnboardingView({ onComplete }: OnboardingViewProps) {
-  const [step, setStep]               = useState<Step>("welcome");
+  const [step, setStep]               = useState<OnboardingStep>("welcome");
   const [selected, setSelected]       = useState<Set<InstallableTool>>(new Set(["claude-code"]));
   const [installing, setInstalling]   = useState(false);
   const [steps, setSteps]             = useState<InstallStep[]>([]);
@@ -119,21 +111,21 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
   const [githubConnected, setGithubConnected]   = useState(false);
   const [githubError, setGithubError]           = useState<string | null>(null);
 
-  const { track, setConsent } = useAnalytics();
+  const { track, setConsent, setReplayEnabled } = useAnalytics();
   const completedRef = useRef(false);
-  const stepRef      = useRef(step);
+  const stepRef      = useRef<OnboardingStep>(step);
   useEffect(() => { stepRef.current = step; }, [step]);
 
   // Track step views
   useEffect(() => {
-    track("onboarding_step_viewed", { step: toAnalyticsStep(step) });
+    track("onboarding_step_viewed", { step });
   }, [step]);
 
   // Fire abandoned if component unmounts before completion
   useEffect(() => {
     return () => {
       if (!completedRef.current) {
-        track("onboarding_abandoned", { last_step: toAnalyticsStep(stepRef.current) });
+        track("onboarding_abandoned", { last_step: stepRef.current });
       }
     };
   }, []);
@@ -195,7 +187,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
     try {
       const result = await rpc.request.switchProfile({ profile: name });
       if (result.ok) {
-        setStep("install");
+        setStep("intelligence-tools");
       } else {
         setProfileError(result.error ?? "Switch failed.");
       }
@@ -214,7 +206,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
     try {
       const result = await rpc.request.createProfile({ name: trimmed });
       if (result.ok) {
-        setStep("install");
+        setStep("intelligence-tools");
       } else {
         setProfileError(result.error ?? "Create failed.");
       }
@@ -286,11 +278,12 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
   async function handleConsent(granted: boolean) {
     setConsentSaving(true);
     try {
+      if (granted) await setReplayEnabled(true); // must run before setConsent so _initPostHog picks up replay_enabled:true
       await setConsent(granted);
       if (granted) track("analytics_consent_granted", {});
     } finally {
       setConsentSaving(false);
-      setStep("done");
+      setStep("complete");
     }
   }
 
@@ -436,7 +429,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
       )}
 
       {/* ── Step 3: Install ─────────────────────────────────────────────────── */}
-      {step === "install" && (
+      {step === "intelligence-tools" && (
         <div className="onboarding__body">
           <div className="onboarding__nav">
             <button className="onboarding__back" onClick={handleBack}>← Back</button>
@@ -536,6 +529,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
               >
                 Continue anyway
               </button>
+
             )}
           </div>
         </div>
@@ -706,7 +700,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
       )}
 
       {/* ── Step 7: Done ────────────────────────────────────────────────────── */}
-      {step === "done" && (
+      {step === "complete" && (
         <div className="onboarding__body">
           <div className="onboarding__nav">
             <button className="onboarding__back" onClick={handleBack}>← Back</button>
