@@ -13,7 +13,8 @@ import type { DaemonStatus } from "../rpc/schema";
 import { events, rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
 import { StatusBar } from "./components/StatusBar";
-import { Sidebar, type View } from "./components/Sidebar";
+import type { View } from "./types";
+import { Sidebar } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
@@ -35,10 +36,17 @@ export function App() {
   const [isStarting, setIsStarting]     = useState(false);
   const [bypassSetup, setBypassSetup]   = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
-  const [isOnboarding, setIsOnboarding] = useState(false);
+  // Latch: set true when status first indicates first-run, cleared only by onComplete.
+  // Kept separate from status so polling can't dismiss onboarding mid-flow if the
+  // daemon updates userState (e.g. after install completes).
+  const [onboardingActive, setOnboardingActive] = useState(false);
   // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
   // Cleared when the user navigates to the Context tab.
   const [contextHasNew, setContextHasNew] = useState(false);
+
+  useEffect(() => {
+    if (status?.appState?.userState === "no-profile") setOnboardingActive(true);
+  }, [status?.appState?.userState]);
 
   const { track } = useAnalytics();
   const hasLaunchedRef = useRef(false);
@@ -125,11 +133,6 @@ export function App() {
     return () => clearTimeout(id);
   }, [startError]);
 
-  useEffect(() => {
-    if (status?.appState?.userState === "first-run") {
-      setIsOnboarding(true);
-    }
-  }, [status?.appState?.userState]);
 
 
   // ── Daemon start ───────────────────────────────────────────────────────────
@@ -181,7 +184,7 @@ export function App() {
   function handleNavigate(view: View) {
     if (view === "context") setContextHasNew(false);
     setActiveView(view);
-    track("view_navigated", { view: view as "context" | "proposals" | "settings" });
+    track("view_navigated", { view });
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -206,9 +209,9 @@ export function App() {
           {/* Settings is always reachable regardless of install/daemon state. */}
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} />
-          ) : (isOnboarding || status?.appState?.userState === "first-run") ? (
-            <OnboardingView onComplete={async () => { setIsOnboarding(false); await fetchStatus(); }} />
-          ) : status?.appState?.userState === "setup-incomplete" && !bypassSetup ? (
+          ) : (onboardingActive || status?.appState?.userState === "no-profile") ? (
+            <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); }} />
+          ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
             <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
           ) : status?.state === "stopped" ? (
             <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
