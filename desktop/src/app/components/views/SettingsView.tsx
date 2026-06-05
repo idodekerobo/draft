@@ -1,11 +1,12 @@
 // SettingsView.tsx — user-configurable settings + connected apps
 //
 // Sections (top → bottom):
+//   Context             — Apply team context mode
+//   Session Context     — per-section injection toggles (conditional)
 //   Intelligence Tools  — which coding tools have Draft installed (view-only)
 //   Input Sources       — which integrations are connected; disconnect action
-//   System              — Start on login
-//   Context             — Apply team context mode
-//   Notifications       — Enable notifications
+//   System              — Start on login, Enable notifications
+//   Privacy             — interaction recording opt-out
 //
 // Connected apps data (getConnectedApps) and settings (getLocalConfig) are
 // loaded in parallel on mount and on every profile switch.
@@ -408,6 +409,56 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
 
       <div className="settings__body">
 
+        {/* ── Context ────────────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Context</h2>
+          <div className="settings__rows">
+            <div className="settings__row settings__row--stacked">
+              <div className="settings__row-content">
+                <span className="settings__row-label">Apply team context</span>
+                <span className="settings__row-desc">
+                  How updates from your team's shared context are applied at session start
+                </span>
+              </div>
+              <SegmentControl
+                value={settings.teamLoadMode}
+                options={[
+                  { value: "auto",   label: "Automatically" },
+                  { value: "review", label: "Review first"  },
+                ]}
+                onChange={(v) => void patch({ teamLoadMode: v as "auto" | "review" })}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* ── Session Context ─────────────────────────────────────────────── */}
+        {sections.length > 0 && (
+          <section className="settings__section">
+            <h2 className="settings__section-label">Session Context</h2>
+            <div className="settings__rows">
+              {sections.map((sec) => {
+                const enabled = !settings.disabledContextSections.includes(sec.name);
+                const modeLabel = sec.injectionMode === "full" ? "full content" : "frontmatter only";
+                return (
+                  <div key={sec.name} className="settings__row">
+                    <div className="settings__row-content">
+                      <span className="settings__row-label">{sec.label}</span>
+                      <span className="settings__row-desc">
+                        Inject {modeLabel} into session start prompt
+                      </span>
+                    </div>
+                    <Toggle
+                      checked={enabled}
+                      onChange={() => void toggleSection(sec.name)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {/* ── Intelligence Tools ─────────────────────────────────────────── */}
         <section className="settings__section">
           <h2 className="settings__section-label">Intelligence Tools</h2>
@@ -452,36 +503,6 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
                 onChange={(v) => void patch({ launchOnLogin: v })}
               />
             </div>
-          </div>
-        </section>
-
-        {/* ── Context ────────────────────────────────────────────────────── */}
-        <section className="settings__section">
-          <h2 className="settings__section-label">Context</h2>
-          <div className="settings__rows">
-            <div className="settings__row settings__row--stacked">
-              <div className="settings__row-content">
-                <span className="settings__row-label">Apply team context</span>
-                <span className="settings__row-desc">
-                  How updates from your team's shared context are applied at session start
-                </span>
-              </div>
-              <SegmentControl
-                value={settings.teamLoadMode}
-                options={[
-                  { value: "auto",   label: "Automatically" },
-                  { value: "review", label: "Review first"  },
-                ]}
-                onChange={(v) => void patch({ teamLoadMode: v as "auto" | "review" })}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ── Notifications ──────────────────────────────────────────────── */}
-        <section className="settings__section">
-          <h2 className="settings__section-label">Notifications</h2>
-          <div className="settings__rows">
             <div className="settings__row">
               <div className="settings__row-content">
                 <span className="settings__row-label">Enable notifications</span>
@@ -496,33 +517,6 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
             </div>
           </div>
         </section>
-
-        {/* ── Session Context ─────────────────────────────────────────────── */}
-        {sections.length > 0 && (
-          <section className="settings__section">
-            <h2 className="settings__section-label">Session Context</h2>
-            <div className="settings__rows">
-              {sections.map((sec) => {
-                const enabled = !settings.disabledContextSections.includes(sec.name);
-                const modeLabel = sec.injectionMode === "full" ? "full content" : "frontmatter only";
-                return (
-                  <div key={sec.name} className="settings__row">
-                    <div className="settings__row-content">
-                      <span className="settings__row-label">{sec.label}</span>
-                      <span className="settings__row-desc">
-                        Inject {modeLabel} into session start prompt
-                      </span>
-                    </div>
-                    <Toggle
-                      checked={enabled}
-                      onChange={() => void toggleSection(sec.name)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {/* ── Privacy ─────────────────────────────────────────────────────── */}
         {analyticsConfig?.consent === "opted_in" && (
