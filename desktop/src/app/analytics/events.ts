@@ -7,8 +7,7 @@
 // workspace names, or user-entered text. Use coded values only (tool names, view names,
 // error codes).
 
-export type View = "context" | "proposals" | "settings";
-export type OnboardingStep = "welcome" | "profile" | "tool-select" | "inputs" | "collab" | "consent" | "complete";
+import type { View, OnboardingStep } from "../types";
 
 export type AnalyticsEvent =
   | { event: "app_launched";               props: { user_state: string } }
@@ -27,5 +26,4 @@ export type AnalyticsEvent =
   | { event: "context_section_toggled";    props: { section: string; enabled: boolean } }
   | { event: "context_doc_viewed";         props: { kind: "dim" | "log" | "standalone" | "group-child"; group: string } }
   | { event: "context_doc_expanded";       props: { group: string } }
-  | { event: "analytics_consent_granted";  props: Record<string, never> }
-  | { event: "replay_consent_granted";     props: Record<string, never> };
+  | { event: "analytics_consent_granted";  props: Record<string, never> };

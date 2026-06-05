@@ -3,7 +3,7 @@
 // Active state: left 2px blue border + slightly lighter bg + white text.
 // No icons in colored circles — hairline separator list rows only.
 
-export type View = "proposals" | "sessions" | "context" | "settings";
+import type { View } from "../types";
 
 interface SidebarProps {
   activeView: View;
