@@ -11,7 +11,7 @@
 // loaded in parallel on mount and on every profile switch.
 
 import { useEffect, useState } from "react";
-import type { ConnectedAppsStatus, ContextSection, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
+import type { ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 
@@ -99,17 +99,29 @@ const TOOL_COMMANDS: Record<string, string> = {
 interface IntelligenceToolRowProps {
   toolKey: string;
   detail: ToolDetail;
+  onInstalled: () => void;
 }
 
-function IntelligenceToolRow({ toolKey, detail }: IntelligenceToolRowProps) {
-  const [copied, setCopied] = useState(false);
-  const cmd = TOOL_COMMANDS[toolKey] ?? `draft add ${toolKey}`;
+function IntelligenceToolRow({ toolKey, detail, onInstalled }: IntelligenceToolRowProps) {
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
 
-  function handleCopy() {
-    void navigator.clipboard.writeText(cmd).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2_000);
-    });
+  async function handleAdd() {
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const result = await rpc.request.runInstall({ tools: [toolKey as InstallableTool] });
+      if (result.ok) {
+        onInstalled();
+      } else {
+        const failed = result.steps.find((s) => !s.ok);
+        setInstallError(failed?.error ?? "Install failed.");
+      }
+    } catch {
+      setInstallError(`Install failed. Run: ${TOOL_COMMANDS[toolKey] ?? `draft add ${toolKey}`}`);
+    } finally {
+      setInstalling(false);
+    }
   }
 
   return (
@@ -128,13 +140,17 @@ function IntelligenceToolRow({ toolKey, detail }: IntelligenceToolRowProps) {
           ) : (
             <span className="app-row__meta">Not set up</span>
           )}
+          {installError && <span className="app-row__hint">{installError}</span>}
         </div>
       </div>
 
       {!detail.installed && (
-        <button className="app-row__cmd" onClick={handleCopy} title="Copy to clipboard">
-          <span className="app-row__cmd-text">{cmd}</span>
-          <span className="app-row__cmd-copy">{copied ? "Copied" : "Copy"}</span>
+        <button
+          className="app-row__connect"
+          onClick={() => void handleAdd()}
+          disabled={installing}
+        >
+          {installing ? "Adding…" : "Add"}
         </button>
       )}
     </div>
@@ -149,9 +165,9 @@ const SOURCE_LABELS: Record<string, string> = {
 
 // Hint shown below the meta line when a source is not connected.
 const SOURCE_CONNECT_HINT: Record<string, string> = {
-  granola: "Connect via /draft:connect in Claude Code",
-  slack:   "Connect via /draft:connect in Claude Code",
-  github:  "Authenticate with the GitHub CLI to connect",
+  granola: "Run /draft-connect granola in Claude Code or Codex",
+  slack:   "Run /draft-connect slack in Claude Code or Codex",
+  github:  "",
 };
 
 interface InputSourceRowProps {
@@ -319,6 +335,14 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
     }
   }
 
+  // ── Tool install (from Settings) ───────────────────────────────────────────
+  async function handleToolInstalled() {
+    try {
+      const updated = await rpc.request.getConnectedApps();
+      setApps(updated);
+    } catch { /* non-fatal */ }
+  }
+
   // ── GitHub connect ─────────────────────────────────────────────────────────
   // Fire-and-forget: opens browser OAuth, then polls getConnectedApps every 2s
   // until github.connected flips to true.
@@ -389,7 +413,7 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
           <h2 className="settings__section-label">Intelligence Tools</h2>
           <div className="settings__rows">
             {(["claude-code", "codex"] as const).map((key) => (
-              <IntelligenceToolRow key={key} toolKey={key} detail={apps.tools[key]} />
+              <IntelligenceToolRow key={key} toolKey={key} detail={apps.tools[key]} onInstalled={handleToolInstalled} />
             ))}
           </div>
         </section>
