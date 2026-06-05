@@ -1,6 +1,6 @@
 // SetupIncompleteView.tsx — workspace selector shown when active profile has no context
 //
-// Shown when appState.userState === "setup-incomplete":
+// Shown when appState.userState === "no-context":
 // A profile is active but its workspace has no context files yet.
 // Options: run /draft-setup in the current workspace, switch to a ready workspace,
 // create a new workspace, or bypass to the app.

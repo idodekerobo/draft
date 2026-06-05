@@ -1,6 +1,6 @@
 // desktop/src/main/installer.ts — first-launch installer for Draft.app
 //
-// Called from the onboarding wizard when appState.userState === "first-run".
+// Called from the onboarding wizard when appState.userState === "no-profile".
 // Extracts the bundled draft binary, symlinks it to /usr/local/bin/draft,
 // then delegates all tool installs to `draft add <tool>` (single source of truth).
 //

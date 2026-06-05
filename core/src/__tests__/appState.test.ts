@@ -35,38 +35,38 @@ function writeHeartbeat(ageMs: number) {
 }
 
 describe("getAppState", () => {
-  it("returns first-run when active-profile is missing", () => {
+  it("returns no-profile when active-profile is missing", () => {
     const result = getAppState(opts());
-    expect(result.userState).toBe("first-run");
+    expect(result.userState).toBe("no-profile");
     expect(result.hasActiveProfile).toBe(false);
     expect(result.activeProfile).toBe("default");
   });
 
-  it("returns setup-incomplete when profile exists but context has no markdown files", () => {
+  it("returns no-context when profile exists but context has no markdown files", () => {
     writeFileSync(ACTIVE_PROFILE_FILE, "acme\n");
     mkdirSync(join(WORKSPACES_DIR, "acme", "context"), { recursive: true });
     const result = getAppState(opts());
-    expect(result.userState).toBe("setup-incomplete");
+    expect(result.userState).toBe("no-context");
     expect(result.hasContextFiles).toBe(false);
   });
 
-  it("returns ready-daemon-running when context exists and heartbeat is fresh", () => {
+  it("returns ready-running when context exists and heartbeat is fresh", () => {
     writeFileSync(ACTIVE_PROFILE_FILE, "acme\n");
     mkdirSync(join(WORKSPACES_DIR, "acme", "context", "product"), { recursive: true });
     writeFileSync(join(WORKSPACES_DIR, "acme", "context", "product", "index.md"), "# Product\n");
     writeHeartbeat(30_000);
     const result = getAppState(opts());
-    expect(result.userState).toBe("ready-daemon-running");
+    expect(result.userState).toBe("ready-running");
     expect(result.daemonState).toBe("running");
   });
 
-  it("returns ready-daemon-stopped when context exists and heartbeat is stale", () => {
+  it("returns ready-stopped when context exists and heartbeat is stale", () => {
     writeFileSync(ACTIVE_PROFILE_FILE, "acme\n");
     mkdirSync(join(WORKSPACES_DIR, "acme", "context", "company"), { recursive: true });
     writeFileSync(join(WORKSPACES_DIR, "acme", "context", "company", "index.md"), "# Company\n");
     writeHeartbeat(3 * 60 * 1000);
     const result = getAppState(opts());
-    expect(result.userState).toBe("ready-daemon-stopped");
+    expect(result.userState).toBe("ready-stopped");
     expect(result.daemonState).toBe("stopped");
   });
 
@@ -75,7 +75,7 @@ describe("getAppState", () => {
     mkdirSync(join(WORKSPACES_DIR, "acme", "context", "team"), { recursive: true });
     writeFileSync(join(WORKSPACES_DIR, "acme", "context", "team", "index.md"), "# Team\n");
     const result = getAppState(opts());
-    expect(result.userState).toBe("ready-daemon-stopped");
+    expect(result.userState).toBe("ready-stopped");
     expect(result.daemonState).toBe("never-started");
     expect(result.heartbeatAgeMs).toBe(null);
   });

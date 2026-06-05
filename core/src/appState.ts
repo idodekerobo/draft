@@ -7,10 +7,10 @@ import { join } from "path";
 import { ACTIVE_PROFILE_FILE, BACKGROUND_DIR, getActiveProfile, getWorkspacePath, type ProfileOpts } from "./config";
 
 export type AppUserState =
-  | "first-run"
-  | "setup-incomplete"
-  | "ready-daemon-stopped"
-  | "ready-daemon-running";
+  | "no-profile"
+  | "no-context"
+  | "ready-stopped"
+  | "ready-running";
 
 export interface AppState {
   userState: AppUserState;
@@ -45,13 +45,13 @@ export function getAppState(opts?: AppStateOpts): AppState {
 
   let userState: AppUserState;
   if (!hasActiveProfile) {
-    userState = "first-run";
+    userState = "no-profile";
   } else if (!hasContextFiles) {
-    userState = "setup-incomplete";
+    userState = "no-context";
   } else if (daemonState === "running") {
-    userState = "ready-daemon-running";
+    userState = "ready-running";
   } else {
-    userState = "ready-daemon-stopped";
+    userState = "ready-stopped";
   }
 
   return {

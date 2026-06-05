@@ -49,10 +49,10 @@ export interface DaemonStatus {
 }
 
 export type AppUserState =
-  | "first-run"
-  | "setup-incomplete"
-  | "ready-daemon-stopped"
-  | "ready-daemon-running";
+  | "no-profile"
+  | "no-context"
+  | "ready-stopped"
+  | "ready-running";
 
 // ── Installer types ────────────────────────────────────────────────────────────
 
