@@ -33,6 +33,8 @@ function WatchingPrompt() {
 
 // ── Main component ──────────────────────────────────────────────────────────────
 
+type SortOrder = "newest" | "oldest";
+
 interface ProposalInboxProps {
   activeProfile: string;
   onCountChange: (count: number) => void;
@@ -43,15 +45,25 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
 
   const { track } = useAnalytics();
 
   // Ref so event handlers always see the current profile without re-registering.
   const activeProfileRef = useRef(activeProfile);
   useEffect(() => { activeProfileRef.current = activeProfile; }, [activeProfile]);
+
+  const sortedProposals = useMemo(() => {
+    return [...proposals].sort((a, b) => {
+      const aTime = new Date(a.timestamp || a.createdAt).getTime();
+      const bTime = new Date(b.timestamp || b.createdAt).getTime();
+      return sortOrder === "newest" ? bTime - aTime : aTime - bTime;
+    });
+  }, [proposals, sortOrder]);
+
   const selected = useMemo(
-    () => proposals.find((p) => p.filename === selectedFilename) ?? proposals[0] ?? null,
-    [proposals, selectedFilename],
+    () => sortedProposals.find((p) => p.filename === selectedFilename) ?? sortedProposals[0] ?? null,
+    [sortedProposals, selectedFilename],
   );
 
   async function refresh() {
@@ -62,7 +74,8 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
       if (next.length === 0) {
         setSelectedFilename(null);
       } else if (!next.some((p) => p.filename === selectedFilename)) {
-        setSelectedFilename(next[0]?.filename ?? null);
+        // Clear selection — the sortedProposals memo will auto-select [0] per sort order.
+        setSelectedFilename(null);
       }
       setError(null);
     } catch (err) {
@@ -107,14 +120,23 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
     <div className="proposals">
       <div className="proposals__header">
         <span className="proposals__title">Proposals</span>
-        {error && <span className="proposals__error">{error}</span>}
+        <div className="proposals__header-right">
+          {error && <span className="proposals__error">{error}</span>}
+          <button
+            className="proposals__sort-toggle"
+            onClick={() => setSortOrder((o) => (o === "newest" ? "oldest" : "newest"))}
+            title={sortOrder === "newest" ? "Sorted: newest first" : "Sorted: oldest first"}
+          >
+            {sortOrder === "newest" ? "↓ Newest" : "↑ Oldest"}
+          </button>
+        </div>
       </div>
 
-      <div className={`proposals__list${proposals.length > 0 && selected ? " proposals__list--split" : ""}`}>
-        {proposals.length > 0 && selected ? (
+      <div className={`proposals__list${sortedProposals.length > 0 && selected ? " proposals__list--split" : ""}`}>
+        {sortedProposals.length > 0 && selected ? (
           <>
             <ProposalList
-              proposals={proposals}
+              proposals={sortedProposals}
               selectedFilename={selected.filename}
               onSelect={(filename) => {
                 setSelectedFilename(filename);

@@ -259,6 +259,13 @@ button {
   text-transform: uppercase;
 }
 
+.proposals__header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .proposals__error {
   color: var(--color-status-red);
   font-size: var(--font-size-micro);
@@ -266,6 +273,26 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.proposals__sort-toggle {
+  background: transparent;
+  border: none;
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: color 0.12s, background 0.12s;
+}
+
+.proposals__sort-toggle:hover {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .proposals__list {
