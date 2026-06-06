@@ -81,7 +81,6 @@ button {
 }
 
 /* ── Status bar ──────────────────────────────────────────────────────────────── */
-/* Left: ● running · N apps connected          Right: profile ▾                 */
 
 .status-bar {
   height: var(--statusbar-height);
@@ -89,18 +88,9 @@ button {
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 12px 0 80px;
   flex-shrink: 0;
   user-select: none;
-  -webkit-app-region: drag;
-}
-
-.status-bar button,
-.status-bar a,
-.status-bar [role="button"],
-.profile-chip {
-  -webkit-app-region: no-drag;
 }
 
 .status-bar__left {
@@ -108,12 +98,6 @@ button {
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.status-bar__right {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
 }
 
 .status-bar__dot {
