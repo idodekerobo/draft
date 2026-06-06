@@ -19,7 +19,9 @@
       "WebFetch(domain:www.google.com)",
       "WebFetch(domain:docs.anthropic.com)",
       "WebFetch(domain:docs.electrobunny.ai)",
-      "WebFetch(domain:bun.com)"
+      "WebFetch(domain:bun.com)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "WebFetch(domain:hermes-agent.nousresearch.com)"
     ]
   }
 }
