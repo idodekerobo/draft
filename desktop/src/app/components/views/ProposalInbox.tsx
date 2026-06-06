@@ -49,7 +49,7 @@ interface ProposalInboxProps {
 export function ProposalInbox({ activeProfile, onCountChange, daemonStopped = false }: ProposalInboxProps) {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
-  const [rawOpen, setRawOpen] = useState(false);
+  const [rawOpen, setRawOpen] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
 
