@@ -228,25 +228,6 @@ draft connect                 # configure integrations
 
 ---
 
-## Release workflow
-
-**CLI plugin:**
-```bash
-# from main, after merging your branch
-make cli-release v=1.3.0 m="what changed"
-```
-
-**Desktop app:**
-```bash
-# from main, requires Apple Developer credentials
-make desktop-release v=1.0.0
-
-# canary build (any branch)
-make desktop-release v=1.0.0 canary=1
-```
-
----
-
 ## Docs
 
 - [What is Draft](./docs/overview.md)
