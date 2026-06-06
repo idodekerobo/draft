@@ -126,6 +126,7 @@ See [Setting up collaboration](./setting-up-collaboration.md).
 ## See also
 
 - [How context injection works](./how-context-injection-works.md)
+- [How proposals work](./proposals.md)
 - [Architecture](./architecture.md)
 - [Setting up collaboration](./setting-up-collaboration.md)
 - [Privacy](./privacy.md)
