@@ -184,14 +184,15 @@ function ProposalList({
           className={`proposal-row ${proposal.filename === selectedFilename ? "proposal-row--active" : ""}`}
           onClick={() => onSelect(proposal.filename)}
         >
-          <span className="proposal-row__meta">
-            <span>{proposal.source}</span>
-            <span>{formatDate(proposal.timestamp || proposal.createdAt)}</span>
-          </span>
           <span className="proposal-row__summary">{proposal.summary}</span>
           <span className="proposal-row__tags">
+            <span>{proposal.source}</span>
+            <span className="proposal-row__sep">·</span>
             <span>{proposal.dimension}</span>
+            <span className="proposal-row__sep">·</span>
             <span>{proposal.action}</span>
+            <span className="proposal-row__sep">·</span>
+            <span>{formatDate(proposal.timestamp || proposal.createdAt)}</span>
           </span>
         </button>
       ))}

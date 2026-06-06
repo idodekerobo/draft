@@ -323,7 +323,7 @@ button {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
+  gap: 5px;
   padding: 12px 14px;
   background: transparent;
   border: 0;
@@ -373,6 +373,11 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.proposal-row__sep {
+  opacity: 0.45;
+  flex-shrink: 0;
 }
 
 .proposal-detail {
