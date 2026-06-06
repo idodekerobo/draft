@@ -19,7 +19,7 @@ A native macOS app that runs as a tray icon. Browse your context files, review a
 A compiled binary installed to `/usr/local/bin/draft`. Every feature in the desktop app is also a CLI command: manage profiles, check daemon status, review proposals, publish team context, add integrations. Run `draft --help` to explore.
 
 **Plugin**
-Installed into Claude Code, Codex, or Cursor via `draft add <tool>`. At the start of every agent session, the plugin injects your current workspace context — company, product, team, priorities, decisions — directly into the agent's system prompt. At session end, it queues a job so the daemon can extract and propose updates. No copy-pasting. No re-explaining.
+Installed into Claude Code, Codex, Cursor, OpenClaw, or Hermes via `draft add <tool>`. At the start of every agent session, the plugin injects your current workspace context — company, product, team, priorities, decisions — directly into the agent's system prompt. At session end, it queues a job so the daemon can extract and propose updates. No copy-pasting. No re-explaining.
 
 ---
 
@@ -73,7 +73,7 @@ When you run `draft add claude-code`, Draft registers hooks directly into your l
 
 This all runs locally. Draft does not intercept or proxy any model calls. It configures your tool once, then gets out of the way.
 
-The same pattern applies to Codex and Cursor — `draft add codex` and `draft add cursor` wire equivalent hooks into each tool's own config.
+The same pattern applies to other platforms/agents — `draft add <tool>` wire equivalent hooks into each tool's own config.
 
 See [How context injection works](./how-context-injection-works.md) for the full technical details.
 
