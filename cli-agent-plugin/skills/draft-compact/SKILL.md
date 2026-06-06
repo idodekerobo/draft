@@ -62,11 +62,24 @@ Run this full sequence for each selected dimension, one at a time:
 
 ### 3a. Gather source material
 
-Read:
-- `$DRAFT_WORKSPACE/context/<dim>/index.md` — current content (may have accumulated appends)
-- All files in `$DRAFT_WORKSPACE/context/<dim>/log/` — the full history of changes (read all, note total count)
+Read `$DRAFT_WORKSPACE/context/<dim>/index.md` directly in full.
 
-Record the current word count before touching anything.
+For `log/` files, use a scoped approach:
+
+1. **List** all files in `$DRAFT_WORKSPACE/context/<dim>/log/` — filenames alone are informative
+   (format: `YYYYMMDDHHMMSS_<slug>.md`). Note total count and the full filename list.
+2. **Filter** to files with a timestamp from the past 7 days (compare the 8-digit YYYYMMDD
+   prefix against today minus 7 days). These are the files whose full content will be read.
+3. **Delegate reading** of the filtered files to a subagent to protect the main context window:
+   - Prefer `draft-researcher` subagent if available.
+   - Otherwise, use a general research/explore subagent.
+   - Instruct the subagent: read each selected log file and return a structured summary
+     (date, change type, key facts captured).
+4. **Note the scope:** total log files listed vs. files read in full (e.g. "23 total, 4 read — last 7 days").
+
+If no log files fall within the 7-day window, synthesize from `index.md` alone.
+
+Record the current word count of `index.md` before touching anything.
 
 ### 3b. Synthesize a clean current-state document
 
@@ -167,4 +180,5 @@ Then remind:
 - **Discard only what's superseded.** Compaction is synthesis, not deletion — if older content is still accurate, keep it.
 - **Do not compact `tensions.md`.** Tensions are resolved manually by the curator, not synthesized away.
 - **Prefer lean over comprehensive.** When in doubt, cut. The `log/` archive preserves full history.
+- **Read log/ directory in full, content scoped to 7 days.** Always list all log/ files — filenames are descriptive and inform the synthesis. Only read full content for files timestamped within the past 7 days. Use a subagent to read them.
 - **This is a direct write.** Compact writes directly to `index.md` — it does not produce a `proposals/` file. This is intentional: compact is an explicit curator action, not automated synthesis. The daemon's overwrite guard (`commit-to-team-context.sh`) applies only to synthesis proposals, not to this skill.
