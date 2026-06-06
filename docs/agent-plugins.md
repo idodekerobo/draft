@@ -1,6 +1,6 @@
 # Agent Plugins
 
-Draft integrates with Claude Code, Codex, and Cursor by installing a plugin into each tool's local config. The plugin does two things: injects your workspace context at the start of every session, and queues a synthesis job when the session ends.
+Draft integrates with Claude Code, Codex, Cursor, OpenClaw, and Hermes by installing a plugin into each tool's local config. The plugin does two things: injects your workspace context at the start of every session, and queues a synthesis job when the session ends.
 
 All plugins point back to `~/.draft/shared/` — a single directory that is the source of truth for skills, agents, and hook scripts. When Draft updates, only `shared/` changes; all tool configs pick up the new files automatically via symlinks.
 
@@ -12,6 +12,8 @@ All plugins point back to `~/.draft/shared/` — a single directory that is the 
 draft add claude-code
 draft add codex
 draft add cursor
+draft add openclaw
+draft add hermes
 ```
 
 Each command is idempotent — safe to re-run after updates. The install flow is described per-tool below.
@@ -152,6 +154,69 @@ Cursor uses its rules system rather than a shell-based system prompt injection. 
 
 ---
 
+## OpenClaw
+
+**Install command:** `draft add openclaw`
+
+Requires OpenClaw to be installed and `~/.openclaw/` to exist before running.
+
+### What gets installed
+
+| What | Where |
+|------|-------|
+| Skills path | `~/.openclaw/openclaw.json` → `skills.load.extraDirs` and `allowSymlinkTargets` updated to include `~/.draft/shared/skills/` |
+| Subagents | `draft-learner` and `draft-researcher` entries added to `agents.list[]` in `openclaw.json` |
+| AGENTS.md block | Draft managed block appended to `~/.openclaw/workspace/AGENTS.md` |
+| Lifecycle plugin | Installed via `openclaw plugins install path:<openclaw-plugin-dir>` |
+
+### How injection works
+
+The OpenClaw plugin registers three hooks:
+
+**`session_start`** — calls `inject-context.sh` and passes the output to `api.enqueueNextTurnInjection`, which injects it into the agent's first model turn. Also fires `draft start` to ensure the daemon is running.
+
+**`session_end`** — calls `openclaw-session-end.sh`, which writes a pending record to `~/.draft/pending/openclaw-{session_id}.json`. The daemon picks it up on the next poll cycle and synthesizes proposals.
+
+**`resolve_exec_env`** — reads `~/.draft/active-profile` at runtime and sets `DRAFT_WORKSPACE`, `DRAFT_PROFILE`, and `DRAFT_SHARED` in every tool execution environment. Profile switches take effect without reinstalling the plugin.
+
+The `AGENTS.md` managed block contains `!bash` commands that mirror the Claude Code injection model and serve as a fallback if the plugin hook is unavailable.
+
+### Skills
+
+All Draft slash commands are available in OpenClaw automatically once `~/.draft/shared/skills/` is in `extraDirs`. OpenClaw discovers them at session start.
+
+---
+
+## Hermes
+
+**Install command:** `draft add hermes`
+
+Requires Hermes to be installed and `~/.hermes/config.yaml` to exist before running.
+
+### What gets installed
+
+| What | Where |
+|------|-------|
+| Skills path | `skills.external_dirs` in `~/.hermes/config.yaml` updated to include `~/.draft/shared/skills/` |
+| SOUL.md block | Draft managed block appended to `~/.hermes/SOUL.md` |
+| Lifecycle plugin | Copied to `~/.hermes/plugins/draft/` |
+
+### How injection works
+
+The Hermes plugin (`~/.hermes/plugins/draft/__init__.py`) registers two hooks:
+
+**`on_session_start`** — reads `~/.draft/active-profile` at runtime and sets `DRAFT_WORKSPACE`, `DRAFT_PROFILE`, and `DRAFT_SHARED` as environment variables. Profile switches take effect without reinstalling the plugin. Also fires `draft start` to ensure the daemon is running.
+
+**`on_session_end`** — calls `hermes-session-end.sh`, which writes a pending record to `~/.draft/pending/hermes-{session_id}.json`. The daemon picks it up on the next poll cycle and synthesizes proposals.
+
+**Context delivery in SOUL.md:** `SOUL.md` is a system prompt / identity file and does not support `!bash` execution. The managed block instructs the agent to run `inject-context.sh` via bash at the start of each session to read the active workspace context.
+
+### Skills
+
+All Draft slash commands are available in Hermes automatically once `~/.draft/shared/skills/` is in `skills.external_dirs`. Hermes discovers them at session start.
+
+---
+
 ## Skills (slash commands)
 
 Draft installs a set of `/draft:*` slash commands as skills. These are available in any tool that has been set up with `draft add`.
@@ -173,7 +238,17 @@ Draft installs a set of `/draft:*` slash commands as skills. These are available
 | `/draft:connect slack` | Set up Slack integration |
 | `/draft:connect github` | Set up GitHub integration |
 
-Skills are installed to `~/.claude/skills/` (Claude Code) or `~/.agents/skills/` (Codex) as symlinks into `~/.draft/shared/skills/`. Updating Draft updates all skills without re-running setup.
+Skills live in `~/.draft/shared/skills/` and are surfaced per-tool:
+
+| Tool | How skills are discovered |
+|------|--------------------------|
+| Claude Code | Symlinked into `~/.claude/skills/` |
+| Codex | Symlinked into `~/.agents/skills/` |
+| Cursor | Via Cursor rules (context block) |
+| OpenClaw | `skills.load.extraDirs` in `openclaw.json` points to `~/.draft/shared/skills/` |
+| Hermes | `skills.external_dirs` in `config.yaml` points to `~/.draft/shared/skills/` |
+
+Updating Draft updates all skills without re-running `draft add`.
 
 ---
 

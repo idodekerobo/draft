@@ -65,6 +65,8 @@ Installs Draft into an agent tool. Run once per tool. Safe to re-run after updat
 draft add claude-code
 draft add codex
 draft add cursor
+draft add openclaw
+draft add hermes
 ```
 
 For `claude-code`, this:
@@ -75,7 +77,20 @@ For `claude-code`, this:
 5. Merges hooks, env vars, and permissions into `~/.claude/settings.json`.
 6. Registers the tool in `~/.draft/config.json`.
 
-For `codex` and `cursor`, delegates to the tool-specific setup scripts. See [Agent plugins](./agent-plugins.md) for details.
+For `codex` and `cursor`, delegates to the tool-specific setup scripts.
+
+For `openclaw`, this:
+1. Merges `~/.draft/shared/skills/` into `skills.load.extraDirs` and `allowSymlinkTargets` in `openclaw.json`.
+2. Registers `draft-learner` and `draft-researcher` in `agents.list[]` in `openclaw.json`.
+3. Appends a managed context block to `~/.openclaw/workspace/AGENTS.md`.
+4. Installs the OpenClaw lifecycle plugin (`session_start` injection + `session_end` synthesis trigger).
+
+For `hermes`, this:
+1. Merges `~/.draft/shared/skills/` into `skills.external_dirs` in `~/.hermes/config.yaml`.
+2. Appends a managed context block to `~/.hermes/SOUL.md`.
+3. Copies the Hermes plugin to `~/.hermes/plugins/draft/` (`on_session_start` env injection + `on_session_end` synthesis trigger).
+
+See [Agent plugins](./agent-plugins.md) for full details on each tool.
 
 ---
 
