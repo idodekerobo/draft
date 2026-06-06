@@ -70,6 +70,14 @@ const TOOL_PREREQS: Partial<Record<InstallableTool, { label: string; url: string
     label: "Codex CLI",
     url: "https://developers.openai.com/codex/cli",
   },
+  openclaw: {
+    label: "OpenClaw CLI",
+    url: "https://openclaw.dev/install",
+  },
+  hermes: {
+    label: "Hermes CLI",
+    url: "https://hermes.dev/install",
+  },
 };
 
 const TOOL_OPTIONS: ToolOption[] = [
@@ -87,6 +95,16 @@ const TOOL_OPTIONS: ToolOption[] = [
     id: "cursor",
     name: "Cursor",
     description: "Context applied via Cursor rules at session start",
+  },
+  {
+    id: "openclaw",
+    name: "OpenClaw",
+    description: "Context injected at session start · post-session synthesis",
+  },
+  {
+    id: "hermes",
+    name: "Hermes",
+    description: "Context injected at session start · post-session synthesis",
   },
 ];
 

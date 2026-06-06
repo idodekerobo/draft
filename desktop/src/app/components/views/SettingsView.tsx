@@ -89,12 +89,16 @@ const TOOL_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
   codex:         "Codex",
   cursor:        "Cursor",
+  openclaw:      "OpenClaw",
+  hermes:        "Hermes",
 };
 
 const TOOL_COMMANDS: Record<string, string> = {
   "claude-code": "draft add claude-code",
   codex:         "draft add codex",
   cursor:        "draft add cursor",
+  openclaw:      "draft add openclaw",
+  hermes:        "draft add hermes",
 };
 
 interface IntelligenceToolRowProps {
@@ -463,7 +467,7 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
         <section className="settings__section">
           <h2 className="settings__section-label">Intelligence Tools</h2>
           <div className="settings__rows">
-            {(["claude-code", "codex"] as const).map((key) => (
+            {(["claude-code", "codex", "openclaw", "hermes"] as const).map((key) => (
               <IntelligenceToolRow key={key} toolKey={key} detail={apps.tools[key]} onInstalled={handleToolInstalled} />
             ))}
           </div>

@@ -29,6 +29,8 @@ export interface InstalledToolsStatus {
   "claude-code": boolean;
   codex: boolean;
   cursor: boolean;
+  openclaw: boolean;
+  hermes: boolean;
 }
 
 export interface DaemonStatus {
@@ -56,7 +58,7 @@ export type AppUserState =
 
 // ── Installer types ────────────────────────────────────────────────────────────
 
-export type InstallableTool = "claude-code" | "codex" | "cursor";
+export type InstallableTool = "claude-code" | "codex" | "cursor" | "openclaw" | "hermes";
 
 export interface InstallStep {
   label: string;
@@ -200,6 +202,8 @@ export interface ConnectedAppsStatus {
     "claude-code": ToolDetail;
     codex: ToolDetail;
     cursor: ToolDetail;
+    openclaw: ToolDetail;
+    hermes: ToolDetail;
   };
   integrations: {
     granola: IntegrationDetail;

@@ -521,7 +521,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const cfgResult = readDraftConfig();
         const toolsCfg  = cfgResult.ok ? cfgResult.config.tools : {};
 
-        function toolDetail(key: "claude-code" | "codex" | "cursor") {
+        function toolDetail(key: "claude-code" | "codex" | "cursor" | "openclaw" | "hermes") {
           const entry = toolsCfg[key];
           return {
             installed: !!entry,
@@ -550,6 +550,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             "claude-code": toolDetail("claude-code"),
             codex:         toolDetail("codex"),
             cursor:        toolDetail("cursor"),
+            openclaw:      toolDetail("openclaw"),
+            hermes:        toolDetail("hermes"),
           },
           integrations: {
             granola: integrationDetail("granola"),

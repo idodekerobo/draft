@@ -22,7 +22,7 @@ function log(msg: string): void {
   } catch { /* non-fatal */ }
 }
 
-export type InstallableTool = "claude-code" | "codex" | "cursor";
+export type InstallableTool = "claude-code" | "codex" | "cursor" | "openclaw" | "hermes";
 
 export interface InstallStep {
   label: string;
@@ -243,6 +243,8 @@ function toolLabel(tool: InstallableTool): string {
     case "claude-code": return "Install Claude Code plugin";
     case "codex":       return "Install Codex plugin";
     case "cursor":      return "Install Cursor plugin";
+    case "openclaw":    return "Install OpenClaw plugin";
+    case "hermes":      return "Install Hermes plugin";
   }
 }
 
