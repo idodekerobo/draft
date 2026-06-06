@@ -360,10 +360,40 @@ function ContextTree({
   );
 }
 
+// ── Frontmatter parser ────────────────────────────────────────────────────────
+
+interface FrontmatterResult {
+  name?: string;
+  last_updated?: string;
+  source?: string;
+  body: string;
+}
+
+function parseFrontmatter(content: string): FrontmatterResult {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) return { body: content };
+
+  const raw = match[1];
+  const body = match[2];
+  const fields: Record<string, string> = {};
+
+  for (const line of raw.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (value && value !== ">") fields[key] = value;
+  }
+
+  return { name: fields["name"], last_updated: fields["last_updated"], source: fields["source"], body };
+}
+
 // ── Content panel ─────────────────────────────────────────────────────────────
 
 function ContextContent({ entry }: { entry: ContextFileEntry }) {
-  const html = marked.parse(entry.content) as string;
+  const { name, last_updated, source, body } = parseFrontmatter(entry.content);
+  const hasMeta = name || last_updated || source;
+  const html = marked.parse(body) as string;
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -384,12 +414,30 @@ function ContextContent({ entry }: { entry: ContextFileEntry }) {
     return () => el.removeEventListener("click", handleClick);
   }, []);
 
+  const metaParts = [
+    name,
+    last_updated ? `updated ${last_updated}` : undefined,
+    source ? `source: ${source}` : undefined,
+  ].filter(Boolean) as string[];
+
   return (
     <div className="context-content" ref={containerRef}>
-      <div
-        className="context-content__markdown"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      {hasMeta && (
+        <div className="context-meta-strip">
+          {metaParts.map((part, i) => (
+            <span key={part}>
+              {i > 0 && <span className="context-meta-strip__sep"> · </span>}
+              {part}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="context-content__scroll">
+        <div
+          className="context-content__markdown"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </div>
     </div>
   );
 }

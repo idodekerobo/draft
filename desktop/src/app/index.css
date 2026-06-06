@@ -916,8 +916,34 @@ button {
 
 .context-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.context-content__scroll {
+  flex: 1;
   overflow: auto;
   padding: 20px 24px;
+}
+
+/* Frontmatter metadata strip — shown above markdown when file has frontmatter */
+.context-meta-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 24px 6px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.context-meta-strip__sep {
+  opacity: 0.45;
 }
 
 /* Markdown typography for rendered context files */
