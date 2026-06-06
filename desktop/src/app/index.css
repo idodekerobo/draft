@@ -347,10 +347,8 @@ button {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: var(--color-text-tertiary);
+  color: rgba(255, 255, 255, 0.42);
   font-size: var(--font-size-micro);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .proposal-row__meta {
@@ -367,7 +365,20 @@ button {
   -webkit-box-orient: vertical;
 }
 
-.proposal-row__tags span,
+/* Tags in the list row: source + dimension never shrink; only the date (last) clips */
+.proposal-row__tags span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.proposal-row__tags span:last-child {
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tags in the detail header can all truncate — more space available */
 .proposal-detail__meta span {
   min-width: 0;
   overflow: hidden;

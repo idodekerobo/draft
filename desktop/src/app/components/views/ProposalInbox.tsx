@@ -190,8 +190,6 @@ function ProposalList({
             <span className="proposal-row__sep">·</span>
             <span>{proposal.dimension}</span>
             <span className="proposal-row__sep">·</span>
-            <span>{proposal.action}</span>
-            <span className="proposal-row__sep">·</span>
             <span>{formatDate(proposal.timestamp || proposal.createdAt)}</span>
           </span>
         </button>
