@@ -1,0 +1,3 @@
+## Draft — Workspace Context
+
+!`bash "$HOME/.draft/shared/hooks/inject-context.sh" 2>/dev/null || echo "(Draft context unavailable — run 'draft add openclaw' to reinstall)"`

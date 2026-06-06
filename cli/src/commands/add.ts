@@ -17,7 +17,7 @@
 // All tool config dirs symlink into it. draft update only needs to write to shared/.
 
 import { existsSync, mkdirSync, cpSync, readdirSync, symlinkSync, lstatSync, unlinkSync, rmSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { spawn } from "../utils/exec.ts";
 import { getRepoRoot } from "../utils/config.ts";
 import { writeToolConfig } from "../utils/config.ts";
@@ -29,7 +29,7 @@ const ACTIVE_PROFILE_FILE = `${DRAFT_GLOBAL}/active-profile`;
 const BACKGROUND_INSTALLED = `${DRAFT_GLOBAL}/background`;
 const CLAUDE_DIR = `${HOME}/.claude`;
 
-const SUPPORTED_TOOLS = ["claude-code", "codex", "cursor"];
+const SUPPORTED_TOOLS = ["claude-code", "codex", "cursor", "openclaw"];
 
 export async function runAdd(args: string[]): Promise<void> {
   if (args.includes("--help") || args.length === 0) {
@@ -66,6 +66,9 @@ export async function runAdd(args: string[]): Promise<void> {
     const setupScript = join(pluginRoot, "scripts", "cursor-setup.sh");
     const code = await spawn(["bash", setupScript]);
     process.exit(code);
+  } else if (tool === "openclaw") {
+    const profileName = await resolveOrPromptProfile();
+    await installOpenClaw(profileName);
   }
 }
 
@@ -276,6 +279,112 @@ async function mergeClaudeSettings(pluginRoot: string, workspacePath: string): P
   };
 
   writeFileSync(settingsPath, JSON.stringify(merged, null, 2) + "\n");
+}
+
+// ── OpenClaw install ───────────────────────────────────────────────────────────
+
+async function installOpenClaw(profileName: string): Promise<void> {
+  const openClawDir = `${HOME}/.openclaw`;
+  if (!existsSync(openClawDir)) {
+    console.error(red("OpenClaw not found. Install OpenClaw first: https://openclaw.dev/install"));
+    process.exit(1);
+  }
+
+  const pluginRoot = process.env.DRAFT_PLUGIN_ROOT ?? join(getRepoRoot(), "cli-agent-plugin");
+  console.log(dim(`Using plugin root: ${pluginRoot}`));
+  console.log("");
+
+  // 1. Populate ~/.draft/shared/
+  const populateScript = join(pluginRoot, "scripts", "populate-shared.sh");
+  console.log(dim("Populating ~/.draft/shared/..."));
+  const popCode = await spawn(["bash", populateScript]);
+  if (popCode !== 0) {
+    console.error(red("Failed to populate ~/.draft/shared/ — aborting."));
+    process.exit(3);
+  }
+
+  // 2. Merge openclaw.json (skills paths + subagent entries)
+  const openClawConfigPath = join(openClawDir, "openclaw.json");
+  let ocConfig: Record<string, unknown> = {};
+  if (existsSync(openClawConfigPath)) {
+    try { ocConfig = JSON.parse(readFileSync(openClawConfigPath, "utf8")); } catch { ocConfig = {}; }
+  }
+  const draftSkillsPath = `${DRAFT_GLOBAL}/shared/skills`;
+  const ocSkills = (ocConfig.skills as Record<string, unknown>) ?? {};
+  const ocLoad = (ocSkills.load as Record<string, unknown>) ?? {};
+  const workspacePath = `${DRAFT_GLOBAL}/workspaces/${profileName}`;
+  ocConfig.skills = {
+    ...ocSkills,
+    load: {
+      ...ocLoad,
+      extraDirs: dedup([...((ocLoad.extraDirs as string[]) ?? []), draftSkillsPath]),
+      allowSymlinkTargets: dedup([...((ocLoad.allowSymlinkTargets as string[]) ?? []), draftSkillsPath]),
+    },
+  };
+  const ocAgents = (ocConfig.agents as Record<string, unknown>) ?? {};
+  const ocAgentsList = ((ocAgents.list as Record<string, unknown>[]) ?? []).filter(
+    (a) => !["draft-learner", "draft-researcher"].includes(a.id as string)
+  );
+  ocConfig.agents = {
+    ...ocAgents,
+    list: [
+      ...ocAgentsList,
+      { id: "draft-learner", workspace: workspacePath, skills: ["draft-learn"] },
+      { id: "draft-researcher", workspace: workspacePath, skills: [] },
+    ],
+  };
+  writeFileSync(openClawConfigPath, JSON.stringify(ocConfig, null, 2) + "\n");
+  console.log(`  ${green("✓")} openclaw.json updated`);
+
+  // 3. Inject managed block into AGENTS.md
+  const agentsMd = join(openClawDir, "workspace", "AGENTS.md");
+  const ocTemplateSrc = join(pluginRoot, "openclaw-plugin", "AGENTS.md.template");
+  const ocBlockContent = readFileSync(ocTemplateSrc, "utf8");
+  appendManagedBlock(agentsMd, ocBlockContent);
+  console.log(`  ${green("✓")} ~/.openclaw/workspace/AGENTS.md updated`);
+
+  // 4. Install OpenClaw plugin
+  const openClawPluginDir = join(pluginRoot, "openclaw-plugin");
+  const installCode = await spawn(["openclaw", "plugins", "install", `path:${openClawPluginDir}`]);
+  if (installCode !== 0) {
+    console.warn(yellow("  Warning: openclaw plugin install failed — session hooks not active. Ensure OpenClaw is up to date and retry."));
+  } else {
+    console.log(`  ${green("✓")} OpenClaw plugin installed`);
+  }
+
+  // 5. Register in Draft config
+  writeToolConfig("openclaw", { added_at: new Date().toISOString(), plugin_root: pluginRoot });
+  console.log(`  ${green("✓")} Registered in ~/.draft/config.json`);
+
+  console.log("");
+  console.log(`${bold("Draft added to OpenClaw")} ${dim(`(profile: ${profileName})`)}.`);
+  console.log(`Restart OpenClaw to activate — then run ${cyan("/draft:setup")} to initialize your workspace.`);
+}
+
+// ── Managed block helper ───────────────────────────────────────────────────────
+// Appends or replaces a fenced block bounded by sentinel comments.
+// Idempotent: re-running replaces the existing block rather than appending again.
+
+const MANAGED_BLOCK_BEGIN = "# ── Draft context layer ── BEGIN (managed by Draft — do not edit this block)";
+const MANAGED_BLOCK_END   = "# ── Draft context layer ── END";
+
+function appendManagedBlock(filePath: string, blockContent: string): void {
+  ensureDir(dirname(filePath));
+  const block = `${MANAGED_BLOCK_BEGIN}\n${blockContent.trimEnd()}\n${MANAGED_BLOCK_END}\n`;
+  const existing = existsSync(filePath) ? readFileSync(filePath, "utf8") : "";
+  const beginIdx = existing.indexOf(MANAGED_BLOCK_BEGIN);
+  if (beginIdx !== -1) {
+    const endIdx = existing.indexOf(MANAGED_BLOCK_END, beginIdx);
+    if (endIdx !== -1) {
+      const after = existing.slice(endIdx + MANAGED_BLOCK_END.length).replace(/^\n/, "");
+      writeFileSync(filePath, existing.slice(0, beginIdx) + block + (after ? "\n" + after : ""));
+    } else {
+      writeFileSync(filePath, existing.slice(0, beginIdx) + block);
+    }
+  } else {
+    const sep = existing.length === 0 || existing.endsWith("\n") ? "\n" : "\n\n";
+    writeFileSync(filePath, existing + sep + block);
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
