@@ -946,6 +946,122 @@ button {
   opacity: 0.45;
 }
 
+/* ── Compact nudge — word count pill on dim rows ─────────────────────────────── */
+
+.context-dim__word-count {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 10px;
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+
+.context-dim__word-count--warn {
+  background: rgba(255, 214, 10, 0.14);
+  color: var(--color-status-yellow);
+}
+
+/* ── Compact nudge — content panel banner ────────────────────────────────────── */
+
+.compact-nudge {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  border-left: 2px solid var(--color-status-yellow);
+  background: rgba(255, 214, 10, 0.05);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  animation: compact-nudge-in 160ms ease;
+}
+
+@keyframes compact-nudge-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.compact-nudge__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.compact-nudge__text {
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.compact-nudge__text strong {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.compact-nudge__cmd-label {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+}
+
+.compact-nudge__cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+  max-width: fit-content;
+}
+
+.compact-nudge__cmd:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.compact-nudge__cmd-text {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  color: var(--color-text-secondary);
+}
+
+.compact-nudge__cmd-icon {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.compact-nudge__cmd-copied {
+  font-size: var(--font-size-micro);
+  color: var(--color-status-green);
+  flex-shrink: 0;
+}
+
+.compact-nudge__dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  padding: 2px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 100ms;
+  margin-top: 1px;
+}
+
+.compact-nudge__dismiss:hover {
+  color: var(--color-text-secondary);
+}
+
 /* Markdown typography for rendered context files */
 .context-content__markdown {
   color: var(--color-text-primary);
