@@ -18,7 +18,6 @@ import { Sidebar } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
-import { DaemonStoppedOverlay } from "./components/DaemonStoppedOverlay";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 
@@ -265,8 +264,6 @@ export function App() {
             <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); }} />
           ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
             <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
-          ) : (status?.state === "stopped" && !isRestarting) ? (
-            <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
           ) : (
             <>
               {activeView === "proposals" && (
@@ -274,6 +271,7 @@ export function App() {
                   key={activeProfile}
                   activeProfile={activeProfile}
                   onCountChange={setProposalCount}
+                  daemonStopped={!status || status.state === "stopped"}
                 />
               )}
               {activeView === "context" && (

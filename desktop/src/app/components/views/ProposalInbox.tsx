@@ -1,13 +1,8 @@
 // ProposalInbox.tsx — proposal panel with contextual empty states
 //
-// Shows one of three states, in priority order:
-//   State 1 — No integrations connected (Phase 2: reads secrets.json)
-//   State 2 — Running + integrations, no proposals yet
-//   State 3 — Normal proposal list
-//
-// State 1 detection is deferred to Phase 2 (requires reading secrets.json).
-// The daemon-stopped state is handled upstream in App.tsx (DaemonStoppedOverlay)
-// so this component only renders when the daemon is running.
+// Empty state priority when proposal list is empty:
+//   1 — Draft not running  → DraftStoppedPrompt
+//   2 — Running, no proposals yet → WatchingPrompt
 //
 // Copy rule per DESIGN.md: never use the word "daemon" in UI text.
 
@@ -18,6 +13,16 @@ import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 
 // ── Empty state components ──────────────────────────────────────────────────────
+
+function DraftStoppedPrompt() {
+  return (
+    <div className="empty-state">
+      <div className="empty-state__icon">⬤</div>
+      <p className="empty-state__title">Draft isn't running</p>
+      <p className="empty-state__body">Your context isn't being captured.</p>
+    </div>
+  );
+}
 
 function WatchingPrompt() {
   return (
@@ -38,9 +43,10 @@ type SortOrder = "newest" | "oldest";
 interface ProposalInboxProps {
   activeProfile: string;
   onCountChange: (count: number) => void;
+  daemonStopped?: boolean;
 }
 
-export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxProps) {
+export function ProposalInbox({ activeProfile, onCountChange, daemonStopped = false }: ProposalInboxProps) {
   const [proposals, setProposals] = useState<ProposalSummary[]>([]);
   const [selectedFilename, setSelectedFilename] = useState<string | null>(null);
   const [rawOpen, setRawOpen] = useState(false);
@@ -133,7 +139,9 @@ export function ProposalInbox({ activeProfile, onCountChange }: ProposalInboxPro
       </div>
 
       <div className={`proposals__list${sortedProposals.length > 0 && selected ? " proposals__list--split" : ""}`}>
-        {sortedProposals.length > 0 && selected ? (
+        {sortedProposals.length === 0 && daemonStopped ? (
+          <DraftStoppedPrompt />
+        ) : sortedProposals.length > 0 && selected ? (
           <>
             <ProposalList
               proposals={sortedProposals}
