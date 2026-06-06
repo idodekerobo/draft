@@ -88,6 +88,10 @@ export interface ProposalSummary {
   createdAt: string;
   body: string;
   currentContent: string;
+  /** Full file text including YAML frontmatter — shown by "View raw". */
+  rawContent: string;
+  /** Content of the first context_update — used for diff preview. */
+  content: string;
 }
 
 export interface SessionLaunchConfig {

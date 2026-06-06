@@ -10,6 +10,7 @@ import {
   parseProposal,
   acceptProposal as acceptCoreProposal,
   rejectProposal as rejectCoreProposal,
+  applyProposalLocally,
 } from "draft-core/proposals";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
@@ -196,6 +197,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           createdAt: proposal.createdAt,
           body: proposal.body,
           currentContent: readContextFile(workspace, proposal.dimension),
+          rawContent: proposal.rawContent,
+          content: proposal.content,
         }));
       },
 
@@ -285,6 +288,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           const workspace = getWorkspacePath(getActiveProfile());
           const proposalPath = join(workspace, "proposals", filename);
           const proposal = parseProposal(filename, proposalPath);
+          // Apply context_updates to local workspace files before moving the file.
+          applyProposalLocally(proposal, workspace);
           acceptCoreProposal(proposal, join(workspace, "accepted"));
           return { ok: true };
         } catch (err) {
