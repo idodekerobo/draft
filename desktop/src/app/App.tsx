@@ -13,7 +13,7 @@ import type { DaemonStatus } from "../rpc/schema";
 import { events, rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
 import { StatusBar } from "./components/StatusBar";
-import type { View } from "./types";
+import type { DaemonControlVariant, View } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
@@ -34,6 +34,8 @@ export function App() {
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
   const [isStarting, setIsStarting]     = useState(false);
+  const [isStopping, setIsStopping]     = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [bypassSetup, setBypassSetup]   = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
   // Latch: set true when status first indicates first-run, cleared only by onComplete.
@@ -168,6 +170,45 @@ export function App() {
     }
   }
 
+  // ── Daemon stop ────────────────────────────────────────────────────────────
+  async function handleStopDraft() {
+    setIsStopping(true);
+    try {
+      await rpc.request.stopDaemon();
+      await new Promise<void>((r) => setTimeout(r, 800));
+      await fetchStatus();
+    } catch {
+      // Non-fatal — poll will pick up the new state
+    } finally {
+      setIsStopping(false);
+    }
+  }
+
+  // ── Daemon restart ──────────────────────────────────────────────────────────
+  async function handleRestartDaemon() {
+    setIsRestarting(true);
+    try {
+      await rpc.request.stopDaemon();
+      await new Promise<void>((r) => setTimeout(r, 1_500));
+      await rpc.request.startDaemon();
+
+      const POLL_MS    = 500;
+      const TIMEOUT_MS = 20_000;
+      const deadline   = Date.now() + TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await new Promise<void>((r) => setTimeout(r, POLL_MS));
+        const s = await rpc.request.getStatus();
+        setStatus(s);
+        if (s.state !== "stopped") return;
+      }
+      setStartError("Daemon did not restart. Check ~/.draft/background/logs/daemon-error.log");
+    } catch {
+      setStartError("Failed to restart Draft.");
+    } finally {
+      setIsRestarting(false);
+    }
+  }
+
   // ── Profile switch ─────────────────────────────────────────────────────────
   async function handleSwitchProfile(profile: string) {
     try {
@@ -187,6 +228,15 @@ export function App() {
     track("view_navigated", { view });
   }
 
+  // ── Derived daemon control variant ────────────────────────────────────────
+  const daemonVariant: DaemonControlVariant =
+    isRestarting                           ? "restarting" :
+    isStarting                             ? "starting"   :
+    isStopping                             ? "stopping"   :
+    !status || status.state === "stopped"  ? "stopped"    :
+    status.state === "degraded"            ? "degraded"   :
+    "running";
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app">
@@ -201,6 +251,10 @@ export function App() {
           activeProfile={activeProfile}
           profiles={profiles}
           onSwitchProfile={handleSwitchProfile}
+          daemonVariant={daemonVariant}
+          onStartDaemon={handleStartDraft}
+          onStopDaemon={handleStopDraft}
+          onRestartDaemon={handleRestartDaemon}
         />
 
         <main className="content">
@@ -211,7 +265,7 @@ export function App() {
             <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); }} />
           ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
             <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
-          ) : status?.state === "stopped" ? (
+          ) : (status?.state === "stopped" && !isRestarting) ? (
             <DaemonStoppedOverlay onStart={handleStartDraft} isStarting={isStarting} />
           ) : (
             <>

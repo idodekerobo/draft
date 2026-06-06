@@ -4,30 +4,15 @@
 //   Green  = running + last capture < 30min ago
 //   Yellow = running + last capture 30min–2hr ago, OR daemon degraded
 //   Red    = daemon stopped, OR last capture > 2hr ago, OR never synced
+//
+// Status line format (sidebar daemon control owns start/stop action):
+//   Running  — "N connected"        (dot speaks for running, count is unique signal)
+//   Degraded — "degraded · Xh ago"  (age makes the yellow state actionable)
+//   Stopped  — dot only             (sidebar button handles the CTA)
 
 import type { DaemonStatus } from "../../rpc/schema";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-type DotVariant = "running" | "degraded" | "stopped";
-
-function getDotVariant(status: DaemonStatus | null): DotVariant {
-  if (!status || status.state === "stopped") return "stopped";
-  if (status.state === "degraded") return "degraded";
-  if (!status.lastSync) return "stopped"; // running but never synced → red
-
-  const diffMins = (Date.now() - new Date(status.lastSync).getTime()) / 60_000;
-  if (diffMins < 30)  return "running";
-  if (diffMins < 120) return "degraded";
-  return "stopped";
-}
-
-function getStatusText(status: DaemonStatus | null): string {
-  if (!status) return "Connecting…";
-  if (status.state === "stopped")  return "not running";
-  if (status.state === "degraded") return "degraded";
-  return "running";
-}
 
 function getConnectedCount(status: DaemonStatus | null): number {
   if (!status?.integrations) return 0;
@@ -38,6 +23,20 @@ function getConnectedCount(status: DaemonStatus | null): number {
   ].filter(Boolean).length;
 }
 
+function getStatusLine(status: DaemonStatus | null, connectedCount: number): string | null {
+  if (!status) return "Connecting…";
+  if (status.state === "stopped") return null;
+  if (status.state === "degraded") {
+    if (!status.lastSync) return "degraded";
+    const diffMins = (Date.now() - new Date(status.lastSync).getTime()) / 60_000;
+    if (diffMins >= 60) return `degraded · ${Math.floor(diffMins / 60)}h ago`;
+    return `degraded · ${Math.round(diffMins)}m ago`;
+  }
+  // running
+  if (connectedCount > 0) return `${connectedCount} connected`;
+  return null;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 interface StatusBarProps {
@@ -45,23 +44,14 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ status }: StatusBarProps) {
-  const dotVariant     = getDotVariant(status);
-  const statusText     = getStatusText(status);
   const connectedCount = getConnectedCount(status);
+  const statusLine     = getStatusLine(status, connectedCount);
 
   return (
     <header className="status-bar electrobun-webkit-app-region-drag">
       <div className="status-bar__left">
-        <span className={`status-bar__dot status-bar__dot--${dotVariant}`} />
-        <span className="status-bar__text">{statusText}</span>
-
-        {connectedCount > 0 && (
-          <>
-            <span className="status-bar__sep">·</span>
-            <span className="status-bar__text">
-              {connectedCount} {connectedCount === 1 ? "app" : "apps"} connected
-            </span>
-          </>
+        {statusLine && (
+          <span className="status-bar__text">{statusLine}</span>
         )}
       </div>
     </header>

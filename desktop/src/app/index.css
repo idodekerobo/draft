@@ -1281,7 +1281,7 @@ button {
   flex-shrink: 0;
 }
 
-/* ── Sidebar footer — profile switcher ───────────────────────────────────────── */
+/* ── Sidebar footer — daemon control + profile switcher ─────────────────────── */
 
 .sidebar__footer {
   padding: 8px 10px;
@@ -1289,6 +1289,94 @@ button {
   flex-shrink: 0;
   position: relative;
   z-index: 1;
+}
+
+/* ── Daemon control row ───────────────────────────────────────────────────────── */
+/* Status dot + label + action button. Sits above the profile chip.               */
+
+.daemon-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.daemon-control__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.4s ease;
+}
+
+.daemon-control__dot--running {
+  background: var(--color-status-green);
+  animation: dot-pulse 2.5s ease-in-out infinite;
+}
+
+.daemon-control__dot--degraded {
+  background: var(--color-status-yellow);
+}
+
+.daemon-control__dot--stopped {
+  background: var(--color-status-red);
+}
+
+.daemon-control__dot--loading {
+  background: var(--color-status-yellow);
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+.daemon-control__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.daemon-control__btn {
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 7px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms, color 100ms;
+}
+
+/* Stop — muted at rest, red hint on hover */
+.daemon-control__btn--stop:hover {
+  background: rgba(255, 69, 58, 0.08);
+  border-color: rgba(255, 69, 58, 0.4);
+  color: var(--color-status-red);
+}
+
+/* Restart — same destructive hint as stop */
+.daemon-control__btn--restart:hover {
+  background: rgba(255, 69, 58, 0.08);
+  border-color: rgba(255, 69, 58, 0.4);
+  color: var(--color-status-red);
+}
+
+/* Start — green accent at rest to signal available action */
+.daemon-control__btn--start {
+  border-color: rgba(48, 209, 88, 0.35);
+  color: var(--color-status-green);
+}
+
+.daemon-control__btn--start:hover {
+  background: rgba(48, 209, 88, 0.08);
+  border-color: rgba(48, 209, 88, 0.55);
+  color: var(--color-status-green);
 }
 
 /* ── Settings view ───────────────────────────────────────────────────────────── */

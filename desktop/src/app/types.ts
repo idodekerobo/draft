@@ -4,6 +4,14 @@
 
 export type View = "context" | "proposals" | "settings";
 
+export type DaemonControlVariant =
+  | "running"
+  | "degraded"
+  | "stopped"
+  | "starting"
+  | "stopping"
+  | "restarting";
+
 export type OnboardingStep =
   | "welcome"
   | "profile"
