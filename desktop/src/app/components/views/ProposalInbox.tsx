@@ -212,7 +212,21 @@ function ProposalDetail({
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const diff = diffLines(proposal.currentContent, proposal.body);
+  const diff = (() => {
+    const incoming = proposal.content || proposal.body;
+    if (proposal.action === "overwrite") {
+      return diffLines(proposal.currentContent, incoming);
+    }
+    if (proposal.action === "tension") {
+      // Tensions append to tensions.md — show as pure addition with no context.
+      return [{ added: true, removed: false, value: incoming }];
+    }
+    // append (default): existing content stays, new block is added at the end.
+    const appended = proposal.currentContent
+      ? proposal.currentContent.trimEnd() + "\n\n" + incoming
+      : incoming;
+    return diffLines(proposal.currentContent, appended);
+  })();
 
   return (
     <section className="proposal-detail">
@@ -227,7 +241,7 @@ function ProposalDetail({
 
       <div className="proposal-detail__body">
         {rawOpen ? (
-          <pre className="proposal-raw">{proposal.body || "(empty proposal)"}</pre>
+          <pre className="proposal-raw">{proposal.rawContent || proposal.body || "(empty proposal)"}</pre>
         ) : (
           <pre className="proposal-diff" aria-label="Proposal diff">
             {diff.map((part, index) => (
