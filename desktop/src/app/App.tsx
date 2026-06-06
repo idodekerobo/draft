@@ -190,12 +190,7 @@ export function App() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app">
-      <StatusBar
-        status={status}
-        activeProfile={activeProfile}
-        profiles={profiles}
-        onSwitchProfile={handleSwitchProfile}
-      />
+      <StatusBar status={status} />
 
       <div className="layout">
         <Sidebar
@@ -203,6 +198,9 @@ export function App() {
           onNavigate={handleNavigate}
           proposalCount={proposalCount}
           contextHasNew={contextHasNew}
+          activeProfile={activeProfile}
+          profiles={profiles}
+          onSwitchProfile={handleSwitchProfile}
         />
 
         <main className="content">
