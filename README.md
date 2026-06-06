@@ -1,6 +1,6 @@
 # Draft
 
-Draft keeps your AI agent sessions grounded. It runs in the background, capturing context from your meetings, Slack, and GitHub activity, then injects what your agent needs to know at the start of every session — automatically.
+Draft keeps your team's AI sessions grounded — no more re-explaining your product, priorities, or decisions at the start of every session. It runs in the background, capturing context from your meetings, Slack, and GitHub, then injects it automatically for everyone.
 
 > **Platform:** macOS on Apple Silicon. Intel Mac and Windows support is not available yet.
 
