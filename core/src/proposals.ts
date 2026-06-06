@@ -4,11 +4,17 @@
 // Interactive UI logic (keypress reader, rendering) stays in CLI — only data
 // operations live here so the desktop can reuse them.
 
-import { existsSync, readdirSync, renameSync, statSync, readFileSync, mkdirSync } from "fs";
+import { existsSync, readdirSync, renameSync, statSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { load } from "js-yaml";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+
+export interface ContextUpdate {
+  file: string;
+  action: string;
+  content: string;
+}
 
 export interface Proposal {
   filename: string;
@@ -22,6 +28,12 @@ export interface Proposal {
   synthesizedBy: string;
   summary: string;
   body: string;
+  /** Full file text including YAML frontmatter — for "View raw". */
+  rawContent: string;
+  /** Content of the first context_update — used for diff preview. */
+  content: string;
+  /** All parsed context_updates from the frontmatter. */
+  contextUpdates: ContextUpdate[];
 }
 
 // ── Read ───────────────────────────────────────────────────────────────────────
@@ -53,9 +65,9 @@ export function listProposals(workspacePath: string): Proposal[] {
  * Body is everything after the closing --- of frontmatter.
  */
 export function parseProposal(filename: string, filePath: string): Proposal {
-  let content = "";
+  let fileContent = "";
   try {
-    content = readFileSync(filePath, "utf8");
+    fileContent = readFileSync(filePath, "utf8");
   } catch {
     // unreadable file — return minimal shell
   }
@@ -67,8 +79,9 @@ export function parseProposal(filename: string, filePath: string): Proposal {
   let action = "update";
   let synthesizedBy = "";
   let summary = filename;
+  let contextUpdates: ContextUpdate[] = [];
 
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  const fmMatch = fileContent.match(/^---\n([\s\S]*?)\n---/);
   if (fmMatch) {
     const fm = parseFrontmatter(fmMatch[1] ?? "");
     source = stringField(fm.source) || stringField(fm.input_source) || source;
@@ -78,9 +91,21 @@ export function parseProposal(filename: string, filePath: string): Proposal {
     action = stringField(fm.action) || firstContextUpdateAction(fm) || action;
     synthesizedBy = stringField(fm.synthesized_by) || stringField(fm.synthesizedBy) || synthesizedBy;
     summary = stringField(fm.summary) || summary;
+
+    const updates = fm.context_updates;
+    if (Array.isArray(updates)) {
+      contextUpdates = updates
+        .filter((u): u is Record<string, unknown> => u !== null && typeof u === "object")
+        .map((u) => ({
+          file: stringField(u.file),
+          action: stringField(u.action) || "append",
+          content: stringField(u.content),
+        }))
+        .filter((u) => u.file);
+    }
   }
 
-  const body = fmMatch ? content.slice(fmMatch[0].length).trim() : content.trim();
+  const body = fmMatch ? fileContent.slice(fmMatch[0].length).trim() : fileContent.trim();
   if (summary === filename && dimension !== "unknown") {
     summary = `${action} ${dimension}`;
   }
@@ -97,6 +122,9 @@ export function parseProposal(filename: string, filePath: string): Proposal {
     synthesizedBy,
     summary,
     body,
+    rawContent: fileContent,
+    content: contextUpdates[0]?.content ?? "",
+    contextUpdates,
   };
 }
 
@@ -118,6 +146,37 @@ export function acceptProposal(proposal: Proposal, acceptedDir: string): void {
 export function rejectProposal(proposal: Proposal, rejectedDir: string): void {
   ensureDir(rejectedDir);
   renameSync(proposal.path, join(rejectedDir, proposal.filename));
+}
+
+/**
+ * Apply a proposal's context_updates to the local workspace files.
+ * This is what makes Accept actually do something — without this,
+ * accepting only moves the file to accepted/ with no effect on context.
+ *
+ * Actions:
+ *   append  — appends content to the target context file
+ *   overwrite — overwrites the target context file (curator-triggered compaction only)
+ *   tension — appends to context/tensions.md regardless of the file field
+ */
+export function applyProposalLocally(proposal: Proposal, workspacePath: string): void {
+  for (const update of proposal.contextUpdates) {
+    if (!update.content) continue;
+
+    if (update.action === "tension") {
+      const tensionsPath = join(workspacePath, "context", "tensions.md");
+      ensureDir(join(workspacePath, "context"));
+      appendFileSync(tensionsPath, "\n" + update.content + "\n", "utf8");
+    } else if (update.action === "overwrite") {
+      const targetPath = join(workspacePath, update.file);
+      ensureDir(join(workspacePath, ...update.file.split("/").slice(0, -1)));
+      writeFileSync(targetPath, update.content + "\n", "utf8");
+    } else {
+      // append (default)
+      const targetPath = join(workspacePath, update.file);
+      mkdirSync(join(workspacePath, ...update.file.split("/").slice(0, -1)), { recursive: true });
+      appendFileSync(targetPath, "\n" + update.content + "\n", "utf8");
+    }
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
