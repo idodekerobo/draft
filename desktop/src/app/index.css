@@ -7,11 +7,13 @@
   --color-bg-primary:     #1c1c1e;
   --color-bg-sidebar:     #2c2c2e;
   --color-bg-surface:     #3a3a3c;
+  --color-bg-elevated:    #3a3a3c;
 
   /* Text */
   --color-text-primary:   #ffffff;
   --color-text-secondary: rgba(255, 255, 255, 0.55);
   --color-text-tertiary:  rgba(255, 255, 255, 0.3);
+  --color-text-muted:     rgba(255, 255, 255, 0.3);
 
   /* Accent */
   --color-accent-blue:    #0a84ff;
@@ -226,7 +228,7 @@ button {
 
 .content {
   flex: 1;
-  background: radial-gradient(ellipse 80% 60% at 20% 0%, rgba(42, 42, 52, 0.45) 0%, var(--color-bg-primary) 65%);
+  background: radial-gradient(ellipse 80% 60% at 20% 0%, rgba(42, 42, 52, 0.65) 0%, var(--color-bg-primary) 65%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
