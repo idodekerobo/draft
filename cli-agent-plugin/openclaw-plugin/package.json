@@ -1,0 +1,15 @@
+{
+  "name": "draft-openclaw-plugin",
+  "version": "1.0.0",
+  "description": "Draft context layer plugin for OpenClaw",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@openclaw/plugin-sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

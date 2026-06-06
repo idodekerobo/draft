@@ -1,0 +1,21 @@
+## Draft Context Layer
+
+At the start of each session, read your product workspace context by running:
+
+```bash
+bash "${HOME}/.draft/shared/hooks/inject-context.sh"
+```
+
+The `DRAFT_WORKSPACE` and `DRAFT_PROFILE` environment variables are set by the Draft plugin. If they are not set, read `~/.draft/active-profile` to determine your active profile, then resolve `DRAFT_WORKSPACE=~/.draft/workspaces/<profile>`.
+
+Available Draft slash commands:
+- `/draft:setup` — initialize your workspace
+- `/draft:synthesize` — synthesize session context into proposals
+- `/draft:switch` — activate a different profile
+- `/draft:profiles` — list, create, rename, and delete profiles
+- `/draft:learn` — save a context item directly
+- `/draft:publish-team` — publish local context to the shared team repo
+- `/draft:load-team` — pull the latest team context from the shared repo
+- `/draft:connect` — configure integrations (Granola, Slack, GitHub)
+- `/draft:compact` — compact a context section that has grown too long
+- `/draft:update` — check for and apply Draft updates

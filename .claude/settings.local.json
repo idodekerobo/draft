@@ -18,7 +18,10 @@
       "WebFetch(domain:openai.github.io)",
       "WebFetch(domain:www.google.com)",
       "WebFetch(domain:docs.anthropic.com)",
-      "Skill(plan-eng-review)"
+      "WebFetch(domain:docs.electrobunny.ai)",
+      "WebFetch(domain:bun.com)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "WebFetch(domain:hermes-agent.nousresearch.com)"
     ]
   }
 }

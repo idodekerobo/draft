@@ -40,10 +40,48 @@ print(json.dumps(existing))
 "
 ```
 
-**If already configured:** Tell the user current status (mode, channel count) and ask:
-"Slack is already configured. Want to reconfigure from scratch, or just update channels?"
-- "reconfigure" → continue from Step 1
-- "update channels" → jump to Step 4
+**If already configured:** Tell the user current status (mode, channel count) and use **AskUserQuestion**:
+> "Slack is already configured. What do you want to do?
+> (1) Reconfigure from scratch  (2) Update channels  (3) Disconnect  (4) Cancel"
+
+- Reconfigure → write `connected: false` to integrations.json first (run the snippet below), then continue from Step 1.
+- Update channels → jump to Step 4.
+- Disconnect → run **Disconnect flow** below, then stop.
+- Cancel → stop.
+
+**Disconnect flow:**
+```bash
+python3 - <<'PYEOF'
+import json
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+workspace = Path.home() / '.draft' / 'workspaces' / profile
+
+secrets_path = workspace / 'config' / 'secrets.json'
+if secrets_path.exists():
+    try:
+        s = json.loads(secrets_path.read_text())
+        for key in ['slack_bot_token', 'slack_app_token', 'slack_allowlist_channels', 'slack_capture_mode']:
+            s.pop(key, None)
+        secrets_path.write_text(json.dumps(s, indent=2) + '\n')
+    except: pass
+
+integrations_path = workspace / 'config' / 'integrations.json'
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+integrations['slack'] = {'connected': False}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('slack:disconnected')
+PYEOF
+```
+
+Also kill the capture process if running (same as Step 7b).
+
+Print: `✓ Slack disconnected.`
 
 **If not configured:** Continue to Step 1.
 
@@ -447,6 +485,39 @@ Tell the user: "Restarted the Slack capture process — it will reconnect with y
 
 ---
 
+## Step 7c: Write integrations.json
+
+```bash
+python3 - <<'PYEOF'
+import json
+from datetime import datetime
+from pathlib import Path
+
+profile_file = Path.home() / '.draft' / 'active-profile'
+profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
+integrations_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
+
+integrations = {}
+if integrations_path.exists():
+    try: integrations = json.loads(integrations_path.read_text())
+    except: pass
+
+# Replace SELECTED_CHANNEL_COUNT and TEAM_NAME with actual values from earlier steps
+integrations['slack'] = {
+    'connected': True,
+    'workspace': 'TEAM_NAME',
+    'channels': SELECTED_CHANNEL_COUNT,
+    'last_connected': datetime.utcnow().isoformat() + 'Z',
+}
+integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
+print('integrations.json updated')
+PYEOF
+```
+
+Substitute `TEAM_NAME` with the team name from the `auth.test` response in Step 2, and `SELECTED_CHANNEL_COUNT` with the count of selected channels.
+
+---
+
 ## Step 8: Verify daemon and confirm
 
 Check if the daemon is running — try three detection methods in order:
@@ -454,8 +525,8 @@ Check if the daemon is running — try three detection methods in order:
 ```bash
 DAEMON_STATUS="stopped"
 
-# 1. PID file (written by start.sh / on-session-end.sh)
-DAEMON_PID_FILE="$HOME/.draft/background/draft-daemon.pid"
+# 1. PID file (written by draft-background.ts on startup)
+DAEMON_PID_FILE="$HOME/.draft/background/draft-background.pid"
 if [ -f "$DAEMON_PID_FILE" ] && kill -0 "$(cat "$DAEMON_PID_FILE")" 2>/dev/null; then
     DAEMON_STATUS="running"
 fi
@@ -466,7 +537,7 @@ if [ "$DAEMON_STATUS" = "stopped" ] && launchctl list com.draft.daemon &>/dev/nu
 fi
 
 # 3. Process search (fallback)
-if [ "$DAEMON_STATUS" = "stopped" ] && pgrep -f "draft-daemon.sh" >/dev/null 2>&1; then
+if [ "$DAEMON_STATUS" = "stopped" ] && pgrep -f "draft-background" >/dev/null 2>&1; then
     DAEMON_STATUS="running"
 fi
 

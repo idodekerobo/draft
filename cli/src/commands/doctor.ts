@@ -1,4 +1,4 @@
-// commands/doctor.ts — diagnose configuration and dependency issues
+// commands/doctor — diagnose configuration and dependency issues
 //
 // Checks run in dependency order:
 //   Group 1: Runtime deps (always)
@@ -6,17 +6,12 @@
 //   Group 3: Config (after runtime)
 //   Group 4: Integrations (SKIP if claude CLI failed in Group 1)
 
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync, lstatSync, readFileSync, readdirSync } from "fs";
 import { join } from "path";
-import { capture } from "../utils/exec.ts";
-import { getActiveProfile, getWorkspacePath, readSecrets } from "../utils/config.ts";
-import { green, red, yellow, dim, bold, cyan } from "../utils/output.ts";
-
-const HOME = process.env.HOME!;
-const DRAFT_GLOBAL = `${HOME}/.draft`;
-const BACKGROUND = `${DRAFT_GLOBAL}/background`;
-const PLIST_LABEL = "com.draft.daemon";
-const PLIST_PATH = `${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist`;
+import { capture } from "../utils/exec";
+import { getActiveProfile, getWorkspacePath, readSecrets, DRAFT_ROOT, BACKGROUND_DIR, readDraftConfig } from "../utils/config";
+import { green, red, yellow, dim, bold, cyan } from "../utils/output";
+import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 
 interface CheckResult {
   label: string;
@@ -82,8 +77,8 @@ export async function runDoctor(_args: string[]): Promise<void> {
   }
   printCheck(daemonRunning);
 
-  const logsWritable = checkDir("Log files writable", `${BACKGROUND}/logs`);
-  if (!logsWritable.passed) logsWritable.fix = `mkdir -p ${BACKGROUND}/logs`;
+  const logsWritable = checkDir("Log files writable", `${BACKGROUND_DIR}/logs`);
+  if (!logsWritable.passed) logsWritable.fix = `mkdir -p ${BACKGROUND_DIR}/logs`;
   printCheck(logsWritable);
 
   if (!plistExists.passed || !daemonRegistered.passed || !daemonRunning.passed) allPassed = false;
@@ -91,7 +86,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   // ── Group 3: Config ────────────────────────────────────────────────────────
   console.log(`\n${bold("Config")}`);
 
-  const activeProfileFile = `${DRAFT_GLOBAL}/active-profile`;
+  const activeProfileFile = `${DRAFT_ROOT}/active-profile`;
   const profileReadable = checkFile("active-profile readable", activeProfileFile);
   printCheck(profileReadable);
 
@@ -176,11 +171,11 @@ export async function runDoctor(_args: string[]): Promise<void> {
     const hasSlack = Boolean(secrets.slack_bot_token) && Boolean(secrets.slack_app_token);
     if (hasSlack) {
       // Check if capture process is running
-      const pidFile = `${BACKGROUND}/integrations/slack/capture.pid`;
+      const pidFile = `${BACKGROUND_DIR}/integrations/slack/capture.pid`;
       let slackRunning = false;
       if (existsSync(pidFile)) {
         try {
-          const pid = Bun.fileSync(pidFile).text().trim();
+          const pid = readFileSync(pidFile, "utf8").trim();
           const pidCheck = await capture(["kill", "-0", pid]);
           slackRunning = pidCheck.exitCode === 0;
         } catch {
@@ -199,6 +194,95 @@ export async function runDoctor(_args: string[]): Promise<void> {
       printCheck(slackCheck);
     } else {
       console.log(`  ${dim("◯")}  Slack         ${dim("not configured")}`);
+    }
+  }
+
+  // ── Group 5: Installed tools ───────────────────────────────────────────────
+  console.log(`\n${bold("Installed tools")}`);
+
+  const HOME = process.env.HOME!;
+  const CODEX_HOME = process.env.CODEX_HOME ?? `${HOME}/.codex`;
+  const CURSOR_HOME = process.env.CURSOR_HOME ?? `${HOME}/.cursor`;
+
+  const configResult = readDraftConfig();
+  const config = configResult.ok ? configResult.config : null;
+
+  const TOOL_MARKERS: Record<string, string[]> = {
+    "claude-code": [`${HOME}/.claude/agents`, `${HOME}/.claude/skills`],
+    "codex":       [`${CODEX_HOME}/hooks/draft/inject-context.sh`],
+    "cursor":      [`${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`],
+  };
+
+  const tools = config ? Object.keys(config.tools ?? {}) : [];
+
+  if (tools.length === 0) {
+    console.log(dim("  No tools registered. Run `draft add <tool>` to install."));
+  } else {
+    for (const tool of tools) {
+      const markers = TOOL_MARKERS[tool] ?? [];
+      const markersOk = markers.length === 0 || markers.some(existsSync);
+      const toolCheck: CheckResult = {
+        label: tool,
+        passed: markersOk,
+        detail: markersOk ? undefined : "registered but marker files missing",
+        fix: markersOk ? undefined : `draft add ${tool}`,
+      };
+      printCheck(toolCheck);
+      if (!toolCheck.passed) allPassed = false;
+    }
+  }
+
+  // ── Group 6: Plugin files (symlink health) ────────────────────────────────────
+  console.log(`\n${bold("Plugin files")}`);
+
+  const sharedDir = `${HOME}/.draft/shared`;
+  const sharedDirCheck = checkDir("~/.draft/shared/ present", sharedDir);
+  if (!sharedDirCheck.passed) sharedDirCheck.fix = "Run: draft add <tool>";
+  printCheck(sharedDirCheck);
+  if (!sharedDirCheck.passed) allPassed = false;
+
+  if (sharedDirCheck.passed) {
+    if (tools.includes("claude-code")) {
+      const broken =
+        countBrokenSymlinks(`${HOME}/.claude/skills`) +
+        countBrokenSymlinks(`${HOME}/.claude/agents`);
+      const check: CheckResult = {
+        label: "claude-code symlinks",
+        passed: broken === 0,
+        detail: broken > 0 ? `${broken} broken symlink(s)` : undefined,
+        fix: broken > 0 ? "draft add claude-code" : undefined,
+      };
+      printCheck(check);
+      if (!check.passed) allPassed = false;
+    }
+
+    if (tools.includes("codex")) {
+      const broken = countBrokenSymlinks(`${HOME}/.agents/skills`);
+      const check: CheckResult = {
+        label: "codex symlinks",
+        passed: broken === 0,
+        detail: broken > 0 ? `${broken} broken symlink(s) in ~/.agents/skills/` : undefined,
+        fix: broken > 0 ? "draft add codex" : undefined,
+      };
+      printCheck(check);
+      if (!check.passed) allPassed = false;
+    }
+
+    if (tools.includes("cursor")) {
+      const hookPath = `${CURSOR_HOME}/hooks/draft/cursor-session-start.sh`;
+      const hookBroken = isSymlinkBroken(hookPath);
+      const check: CheckResult = {
+        label: "cursor symlinks",
+        passed: !hookBroken,
+        detail: hookBroken ? "cursor-session-start.sh symlink broken" : undefined,
+        fix: hookBroken ? "draft add cursor" : undefined,
+      };
+      printCheck(check);
+      if (!check.passed) allPassed = false;
+    }
+
+    if (tools.length === 0) {
+      console.log(dim("  No tools registered — symlink checks skipped."));
     }
   }
 
@@ -243,5 +327,36 @@ function printCheck(check: CheckResult): void {
   console.log(`  ${icon}  ${check.label.padEnd(30)}${detail}`);
   if (!check.passed && check.fix) {
     console.log(`     ${dim("→")} ${cyan(check.fix)}`);
+  }
+}
+
+/**
+ * Count symlinks in `dir` whose targets no longer exist (broken symlinks).
+ * Returns 0 if `dir` doesn't exist or can't be read.
+ */
+function countBrokenSymlinks(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  try {
+    return readdirSync(dir).filter((name) => {
+      const full = join(dir, name);
+      try {
+        return lstatSync(full).isSymbolicLink() && !existsSync(full);
+      } catch {
+        return false;
+      }
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Returns true if `filePath` is a symlink whose target no longer exists.
+ */
+function isSymlinkBroken(filePath: string): boolean {
+  try {
+    return lstatSync(filePath).isSymbolicLink() && !existsSync(filePath);
+  } catch {
+    return false;
   }
 }

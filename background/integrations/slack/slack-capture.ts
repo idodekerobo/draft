@@ -2,7 +2,7 @@
 /**
  * slack-capture.ts — Draft Slack Socket Mode capture process
  *
- * Long-running process managed by slack-manager.sh (launched by draft-daemon.sh).
+ * Long-running process managed by slack-manager.sh (launched by draft-background.ts).
  * Connects to Slack via Socket Mode WebSocket — no public URL needed.
  * Writes captured messages to background/integrations/slack/captures/<channel_id>/YYYYMMDD.jsonl
  * Downloads file attachments to background/integrations/slack/captures/<channel_id>/files/

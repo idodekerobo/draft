@@ -9,7 +9,12 @@
     "build": "bun build --compile src/index.ts --outfile ../draft-bin",
     "test": "bun test"
   },
+  "dependencies": {
+    "draft-core": "workspace:*",
+    "js-yaml": "^4.1.0"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/js-yaml": "^4.0.9"
   }
 }

@@ -9,14 +9,16 @@
 #
 # What this does:
 #   1. Creates ~/.draft/personal/ (global layer) and ~/.draft/workspaces/default/ (profile workspace)
-#   2. Installs inject-context.sh to ~/.codex/hooks/draft/
-#   2b. Installs codex-session-end.sh to ~/.codex/hooks/draft/
-#   3. Registers the SessionStart hook in ~/.codex/hooks.json
-#   3b. Registers the Stop hook in ~/.codex/hooks.json
-#   4. Enables the codex_hooks feature flag in ~/.codex/config.toml
-#   5. Installs sub-agent TOML files to ~/.codex/agents/
-#   6. Writes pm-agent instructions to ~/.codex/AGENTS.md
-#   7. Installs draft:setup skill to ~/.agents/skills/ for $draft:setup invocation
+#   2. Populates ~/.draft/shared/ (shared content dir — skills, agents, hooks)
+#   3. Symlinks inject-context.sh + codex-session-end.sh into ~/.codex/hooks/draft/
+#   4. Registers the SessionStart and Stop hooks in ~/.codex/hooks.json
+#   5. Enables the codex_hooks feature flag in ~/.codex/config.toml
+#   6. Copies sub-agent TOML files to ~/.codex/agents/ (TOML format differs — not symlinked)
+#   7. Symlinks ~/.codex/AGENTS.md → ~/.draft/shared/codex-agents.md
+#   8. Symlinks all Draft skills from ~/.draft/shared/skills/ into ~/.agents/skills/
+#
+# Skills and hook scripts are symlinks into ~/.draft/shared/ — a single update
+# to shared/ propagates to Codex automatically (no per-file re-download needed).
 #
 # After running: restart Codex, then run /draft:setup to load your shared context layer.
 
@@ -26,6 +28,8 @@ GITHUB_RAW="https://raw.githubusercontent.com/idodekerobo/draft-cli-plugin/main"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 DRAFT_GLOBAL="$HOME/.draft"
 DRAFT_WORKSPACE="$DRAFT_GLOBAL/workspaces/default"
+SHARED_DIR="$DRAFT_GLOBAL/shared"
+USER_SKILLS_DIR="$HOME/.agents/skills"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -60,6 +64,27 @@ install_file() {
     else
         curl -fsSL "$GITHUB_RAW/$src_rel" -o "$dest"
     fi
+}
+
+# Create a file symlink: target → link.
+# Removes existing regular files (old copy-based installs) before symlinking.
+# ln -sfn handles existing symlinks — always refreshes the target path.
+symlink_file() {
+    local target="$1"
+    local link="$2"
+    mkdir -p "$(dirname "$link")"
+    if [ -e "$link" ] && [ ! -L "$link" ]; then rm -f "$link"; fi
+    ln -sfn "$target" "$link"
+}
+
+# Create a directory symlink: target → link.
+# Removes existing regular directories (old copy-based installs) before symlinking.
+symlink_dir() {
+    local target="$1"
+    local link="$2"
+    mkdir -p "$(dirname "$link")"
+    if [ -d "$link" ] && [ ! -L "$link" ]; then rm -rf "$link"; fi
+    ln -sfn "$target" "$link"
 }
 
 # Require python3
@@ -164,22 +189,27 @@ if [ ! -f "$DRAFT_GLOBAL/active-profile" ]; then
     log "Active profile set to: default"
 fi
 
-# ── 2. Install hook scripts ────────────────────────────────────────────────────
+# ── 2. Populate ~/.draft/shared/ ───────────────────────────────────────────────
+# All skill/agent/hook symlinks point into this directory. One update here
+# propagates to every tool instantly — no per-file re-downloads needed.
 
-log "Installing inject-context hook script..."
+if [ "$USE_LOCAL" = true ]; then
+    log "Populating ~/.draft/shared/ from local repo..."
+    bash "$SCRIPT_DIR/populate-shared.sh"
+else
+    log "Populating ~/.draft/shared/ from GitHub..."
+    USE_LOCAL=false GITHUB_RAW="$GITHUB_RAW" bash <(curl -fsSL "$GITHUB_RAW/scripts/populate-shared.sh")
+fi
+
+# ── 3. Symlink hook scripts into ~/.codex/hooks/draft/ ─────────────────────────
+
+log "Symlinking hook scripts..."
 mkdir -p "$CODEX_HOME/hooks/draft"
-install_file "scripts/inject-context.sh" "$CODEX_HOME/hooks/draft/inject-context.sh"
-chmod +x "$CODEX_HOME/hooks/draft/inject-context.sh"
-log "Hook script installed to $CODEX_HOME/hooks/draft/inject-context.sh"
+symlink_file "$SHARED_DIR/hooks/inject-context.sh"    "$CODEX_HOME/hooks/draft/inject-context.sh"
+symlink_file "$SHARED_DIR/hooks/codex-session-end.sh" "$CODEX_HOME/hooks/draft/codex-session-end.sh"
+log "Hook scripts symlinked to $CODEX_HOME/hooks/draft/"
 
-# ── 2b. Install codex-session-end hook script ──────────────────────────────────
-
-log "Installing codex-session-end hook script..."
-install_file "scripts/codex-session-end.sh" "$CODEX_HOME/hooks/draft/codex-session-end.sh"
-chmod +x "$CODEX_HOME/hooks/draft/codex-session-end.sh"
-log "Hook script installed to $CODEX_HOME/hooks/draft/codex-session-end.sh"
-
-# ── 3. Register SessionStart hook in ~/.codex/hooks.json ──────────────────────
+# ── 4. Register SessionStart hook in ~/.codex/hooks.json ──────────────────────
 
 log "Registering SessionStart hook..."
 
@@ -227,7 +257,7 @@ hooks_path.write_text(json.dumps(data, indent=2) + "\n")
 print("[Draft] Hook registered in ~/.codex/hooks.json")
 PYEOF
 
-# ── 3b. Register Stop hook in ~/.codex/hooks.json ─────────────────────────────
+# ── 4b. Register Stop hook in ~/.codex/hooks.json ─────────────────────────────
 
 log "Registering Stop hook..."
 
@@ -275,7 +305,7 @@ hooks_path.write_text(json.dumps(data, indent=2) + "\n")
 print("[Draft] Stop hook registered in ~/.codex/hooks.json")
 PYEOF
 
-# ── 4. Enable hooks feature flag in ~/.codex/config.toml ──────────────────────
+# ── 5. Enable hooks feature flag in ~/.codex/config.toml ──────────────────────
 
 log "Enabling codex_hooks feature flag..."
 
@@ -304,72 +334,46 @@ else:
     print("[Draft] Added [features] block with codex_hooks = true.")
 PYEOF
 
-# ── 5. Install sub-agent TOML files ───────────────────────────────────────────
+# ── 6. Copy sub-agent TOML files to ~/.codex/agents/ ──────────────────────────
+# TOML files are Codex-specific format and cannot share a source with the
+# markdown agents. Copied from ~/.draft/shared/agents/toml/ (populated above).
 
 log "Installing sub-agent definitions..."
 mkdir -p "$CODEX_HOME/agents"
 
 for agent in draft-researcher draft-executor draft-learner; do
-    install_file ".codex/agents/$agent.toml" "$CODEX_HOME/agents/$agent.toml"
+    cp "$SHARED_DIR/agents/toml/$agent.toml" "$CODEX_HOME/agents/$agent.toml"
     log "  Installed $agent.toml"
 done
 
-# ── 6. Write pm-agent instructions to ~/.codex/AGENTS.md ──────────────────────
+# ── 7. Symlink ~/.codex/AGENTS.md → ~/.draft/shared/codex-agents.md ───────────
 
-log "Writing pm-agent instructions to ~/.codex/AGENTS.md..."
-
-if [ -f "$CODEX_HOME/AGENTS.md" ]; then
-    warn "~/.codex/AGENTS.md already exists — backing up to ~/.codex/AGENTS.md.bak"
+log "Symlinking AGENTS.md..."
+if [ -f "$CODEX_HOME/AGENTS.md" ] && [ ! -L "$CODEX_HOME/AGENTS.md" ]; then
+    warn "~/.codex/AGENTS.md already exists as a regular file — backing up to ~/.codex/AGENTS.md.bak"
     cp "$CODEX_HOME/AGENTS.md" "$CODEX_HOME/AGENTS.md.bak"
 fi
+symlink_file "$SHARED_DIR/codex-agents.md" "$CODEX_HOME/AGENTS.md"
+log "AGENTS.md symlinked to $SHARED_DIR/codex-agents.md"
 
-install_file ".codex/AGENTS.md" "$CODEX_HOME/AGENTS.md"
-log "AGENTS.md written."
-
-# ── 7. Install Draft skill to user-level skills directory ─────────────────────
+# ── 8. Symlink all Draft skills into ~/.agents/skills/ ─────────────────────────
 #
 # Codex loads skills from ~/.agents/skills/ for any repo/directory.
-# Installing here makes $draft:setup available everywhere without plugins.
+# One directory symlink per skill — points into ~/.draft/shared/skills/.
+# All skills are symlinked (not just the subset installed before); stale drift
+# cannot happen because the symlink always resolves to the current shared dir.
 
-USER_SKILLS_DIR="$HOME/.agents/skills"
+log "Symlinking Draft skills to $USER_SKILLS_DIR/..."
+mkdir -p "$USER_SKILLS_DIR"
+for skill_dir in "$SHARED_DIR/skills"/*/; do
+    skill_name="$(basename "$skill_dir")"
+    symlink_dir "$skill_dir" "$USER_SKILLS_DIR/$skill_name"
+    log "  Symlinked $skill_name"
+done
 
-log "Installing draft:setup skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-setup"
-install_file "skills/draft-setup/SKILL.md" "$USER_SKILLS_DIR/draft-setup/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-setup/SKILL.md"
-
-log "Installing draft:learn skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-learn"
-install_file "skills/draft-learn/SKILL.md" "$USER_SKILLS_DIR/draft-learn/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-learn/SKILL.md"
-
-log "Installing draft:setup-collab skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-setup-collab"
-install_file "skills/draft-setup-collab/SKILL.md" "$USER_SKILLS_DIR/draft-setup-collab/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-setup-collab/SKILL.md"
-
-log "Installing draft:publish-team skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-publish-team"
-install_file "skills/draft-publish-team/SKILL.md" "$USER_SKILLS_DIR/draft-publish-team/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-publish-team/SKILL.md"
-
-log "Installing draft:load-team skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-load-team"
-install_file "skills/draft-load-team/SKILL.md" "$USER_SKILLS_DIR/draft-load-team/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-load-team/SKILL.md"
-
-log "Installing draft:switch skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-switch"
-install_file "skills/draft-switch/SKILL.md" "$USER_SKILLS_DIR/draft-switch/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-switch/SKILL.md"
-
-log "Installing draft:profiles skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-profiles"
-install_file "skills/draft-profiles/SKILL.md" "$USER_SKILLS_DIR/draft-profiles/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-profiles/SKILL.md"
-
-# ── 8. Install shared update scripts ──────────────────────────────────────────
-# Installed to ~/.draft/scripts/ — accessible from all platforms (Codex, Cursor, Claude Code).
+# ── 9. Install shared update scripts ──────────────────────────────────────────
+# Installed to ~/.draft/scripts/ — these manage the update process itself and
+# are NOT in ~/.draft/shared/. Always kept current.
 
 log "Installing shared update scripts..."
 mkdir -p "$HOME/.draft/scripts"
@@ -377,13 +381,6 @@ install_file "scripts/draft-update-check.sh" "$HOME/.draft/scripts/draft-update-
 install_file "scripts/draft-update.sh" "$HOME/.draft/scripts/draft-update.sh"
 chmod +x "$HOME/.draft/scripts/"*.sh
 log "  Scripts installed to ~/.draft/scripts/"
-
-# ── 9. Install draft:update skill ─────────────────────────────────────────────
-
-log "Installing draft:update skill..."
-mkdir -p "$USER_SKILLS_DIR/draft-update"
-install_file "skills/draft-update/SKILL.md" "$USER_SKILLS_DIR/draft-update/SKILL.md"
-log "  Skill installed to $USER_SKILLS_DIR/draft-update/SKILL.md"
 
 # ── 10. Record installed version ───────────────────────────────────────────────
 
@@ -395,6 +392,17 @@ else
 fi
 echo "$DRAFT_VERSION" > "$HOME/.draft/version"
 log "  Version $DRAFT_VERSION recorded at ~/.draft/version"
+
+# Register in global config.json — tools.codex entry + plugin_version
+python3 -c "
+import json, pathlib, datetime
+cfg_path = pathlib.Path('$HOME/.draft/config.json')
+cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {'version': '1', 'tools': {}}
+cfg.setdefault('tools', {})['codex'] = {'added_at': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}
+cfg['plugin_version'] = '$DRAFT_VERSION'
+cfg_path.write_text(json.dumps(cfg, indent=2) + '\n')
+" 2>/dev/null || true
+log "  Registered codex in ~/.draft/config.json"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 

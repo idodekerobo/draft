@@ -1,10 +1,16 @@
 #!/bin/bash
 # Draft — Self-update
 #
-# Downloads the latest version from GitHub Releases and updates all installed files.
-# Called by the /draft:update skill after user confirmation.
+# Downloads the latest release tarball from GitHub, extracts it to a temp
+# directory, and runs populate-shared.sh to update ~/.draft/shared/ in place.
+# All tool config dirs symlink into ~/.draft/shared/, so they pick up changes
+# automatically — no per-tool curl loops needed.
 #
-# Safe: never touches ~/.draft/workspace/ (user's context layer data)
+# Called by the /draft:update skill after user confirmation.
+# Safe: never touches ~/.draft/workspaces/ (user's context data).
+#
+# If a release is tagged [hooks-changed], config merges are re-run for each
+# installed tool. Otherwise only the shared content files are updated.
 
 set -euo pipefail
 
@@ -26,20 +32,26 @@ INSTALLED=$(cat "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]' || echo "unknown
 
 log "Fetching latest release info..."
 
-# ── Get latest tag from GitHub Releases API ───────────────────────────────────
+# ── Fetch release metadata ─────────────────────────────────────────────────────
 
-LATEST_TAG=$(curl -fsSL --max-time 10 "$GITHUB_API" 2>/dev/null \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tag_name',''))" \
-    2>/dev/null || echo "")
+RELEASE_JSON=$(curl -fsSL --max-time 10 "$GITHUB_API" 2>/dev/null || echo "")
+
+if [ -z "$RELEASE_JSON" ]; then
+    err "Could not fetch release info from GitHub. Check your connection and try again."
+    exit 1
+fi
+
+LATEST_TAG=$(echo "$RELEASE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tag_name',''))" 2>/dev/null || echo "")
+RELEASE_BODY=$(echo "$RELEASE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('body',''))" 2>/dev/null || echo "")
 
 if [ -z "$LATEST_TAG" ]; then
-    err "Could not fetch latest version from GitHub. Check your connection and try again."
+    err "Could not parse latest version from GitHub API response."
     exit 1
 fi
 
 LATEST="${LATEST_TAG#v}"  # strip leading 'v' if present
 
-# ── Already current? ──────────────────────────────────────────────────────────
+# ── Already current? ───────────────────────────────────────────────────────────
 
 if [ "$INSTALLED" = "$LATEST" ]; then
     log "Already on the latest version (v$INSTALLED). Nothing to do."
@@ -47,80 +59,107 @@ if [ "$INSTALLED" = "$LATEST" ]; then
 fi
 
 echo ""
-log "Updating Draft: v$INSTALLED -> v$LATEST"
+log "Updating Draft: v$INSTALLED → v$LATEST"
 echo ""
 
-GITHUB_RAW="https://raw.githubusercontent.com/idodekerobo/draft-cli-plugin/$LATEST_TAG"
+# ── Download tarball ───────────────────────────────────────────────────────────
 
-# ── Always: update shared scripts ─────────────────────────────────────────────
+TARBALL_URL="https://github.com/idodekerobo/draft-cli-plugin/archive/refs/tags/$LATEST_TAG.tar.gz"
+TMP_TARBALL=$(mktemp /tmp/draft-plugin-XXXXXX.tar.gz)
+TMP_DIR=$(mktemp -d /tmp/draft-plugin-XXXXXX)
 
-log "Updating shared scripts..."
-mkdir -p "$DRAFT_DIR/scripts"
-curl -fsSL "$GITHUB_RAW/scripts/draft-update-check.sh" -o "$DRAFT_DIR/scripts/draft-update-check.sh"
-curl -fsSL "$GITHUB_RAW/scripts/draft-update.sh" -o "$DRAFT_DIR/scripts/draft-update.sh"
-chmod +x "$DRAFT_DIR/scripts/"*.sh
-log "  Shared scripts updated at ~/.draft/scripts/"
+log "Downloading release tarball..."
+if ! curl -fsSL --max-time 60 "$TARBALL_URL" -o "$TMP_TARBALL"; then
+    err "Failed to download tarball from $TARBALL_URL"
+    rm -f "$TMP_TARBALL"
+    exit 1
+fi
 
-# ── Codex: update if installed ────────────────────────────────────────────────
+log "Extracting..."
+tar -xzf "$TMP_TARBALL" -C "$TMP_DIR" --strip-components=1
+rm -f "$TMP_TARBALL"
+
+# ── Populate ~/.draft/shared/ from extracted tarball ──────────────────────────
+# populate-shared.sh auto-detects PLUGIN_ROOT from its own location in the
+# extracted dir. All symlinks from tool config dirs pick up changes immediately.
+
+log "Updating ~/.draft/shared/..."
+bash "$TMP_DIR/scripts/populate-shared.sh"
+
+# ── Update TOML agents for Codex (not symlinked — different format) ────────────
 
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 if [ -f "$CODEX_HOME/agents/draft-researcher.toml" ]; then
-    log "Codex install detected — updating..."
-    curl -fsSL "$GITHUB_RAW/scripts/inject-context.sh" -o "$CODEX_HOME/hooks/draft/inject-context.sh"
-    chmod +x "$CODEX_HOME/hooks/draft/inject-context.sh"
-    for agent in draft-researcher draft-executor draft-learner; do
-        curl -fsSL "$GITHUB_RAW/.codex/agents/$agent.toml" -o "$CODEX_HOME/agents/$agent.toml"
+    log "Updating Codex TOML agents..."
+    for agent in draft-executor draft-learner draft-researcher; do
+        cp "$TMP_DIR/.codex/agents/$agent.toml" "$CODEX_HOME/agents/$agent.toml"
+        log "  Updated $agent.toml"
     done
-    curl -fsSL "$GITHUB_RAW/.codex/AGENTS.md" -o "$CODEX_HOME/AGENTS.md"
-    USER_SKILLS="$HOME/.agents/skills"
-    for skill in draft-setup draft-learn draft-update; do
-        if [ -d "$USER_SKILLS/$skill" ]; then
-            curl -fsSL "$GITHUB_RAW/skills/$skill/SKILL.md" -o "$USER_SKILLS/$skill/SKILL.md"
-            log "  Updated $skill skill."
-        fi
-    done
-    log "  Codex files updated."
 fi
 
-# ── Cursor: update if installed ───────────────────────────────────────────────
+# ── Re-merge configs if hooks schema changed ───────────────────────────────────
+# Only runs when the release notes contain [hooks-changed].
+# Config merges are idempotent but expensive — skip when not needed.
 
-CURSOR_HOME="${CURSOR_HOME:-$HOME/.cursor}"
-if [ -f "$CURSOR_HOME/hooks/draft/cursor-session-start.sh" ]; then
-    log "Cursor install detected — updating..."
-    curl -fsSL "$GITHUB_RAW/scripts/cursor-session-start.sh" \
-        -o "$CURSOR_HOME/hooks/draft/cursor-session-start.sh"
-    chmod +x "$CURSOR_HOME/hooks/draft/cursor-session-start.sh"
-    if [ -f "$CURSOR_HOME/rules/draft-context.mdc" ]; then
-        curl -fsSL "$GITHUB_RAW/.cursor/rules/draft-context.mdc" \
-            -o "$CURSOR_HOME/rules/draft-context.mdc"
+HOOKS_CHANGED=false
+if echo "$RELEASE_BODY" | grep -q "\[hooks-changed\]"; then
+    HOOKS_CHANGED=true
+fi
+
+if [ "$HOOKS_CHANGED" = true ]; then
+    warn "Hooks schema changed in this release — re-merging config files..."
+
+    # Codex hooks.json / config.toml
+    if [ -f "$CODEX_HOME/hooks/draft/inject-context.sh" ]; then
+        log "  Re-running codex config merge..."
+        bash "$TMP_DIR/scripts/codex-setup.sh" 2>/dev/null || \
+            warn "  Codex config merge failed — run \`draft add codex\` manually."
     fi
-    for agent in draft-researcher draft-executor draft-learner; do
-        if [ -f "$CURSOR_HOME/agents/$agent.md" ]; then
-            curl -fsSL "$GITHUB_RAW/agents/$agent.md" -o "$CURSOR_HOME/agents/$agent.md"
-        fi
-    done
-    for skill in draft-setup draft-learn draft-update; do
-        if [ -d "$CURSOR_HOME/skills/$skill" ]; then
-            curl -fsSL "$GITHUB_RAW/skills/$skill/SKILL.md" \
-                -o "$CURSOR_HOME/skills/$skill/SKILL.md"
-        fi
-        if [ -d "$HOME/.agents/skills/$skill" ]; then
-            curl -fsSL "$GITHUB_RAW/skills/$skill/SKILL.md" \
-                -o "$HOME/.agents/skills/$skill/SKILL.md"
-        fi
-    done
-    log "  Cursor files updated."
+
+    # Cursor hooks.json
+    CURSOR_HOME="${CURSOR_HOME:-$HOME/.cursor}"
+    if [ -f "$CURSOR_HOME/hooks/draft/cursor-session-start.sh" ]; then
+        log "  Re-running cursor config merge..."
+        bash "$TMP_DIR/scripts/cursor-setup.sh" 2>/dev/null || \
+            warn "  Cursor config merge failed — run \`draft add cursor\` manually."
+    fi
 fi
 
-# ── Claude Code note ──────────────────────────────────────────────────────────
+# ── Update shared update scripts ───────────────────────────────────────────────
+# These live at ~/.draft/scripts/ (not ~/.draft/shared/) and manage the update
+# process itself — always update them so this script self-updates.
 
-warn "Claude Code: agent/skill files are managed by Anthropic's plugin system."
-warn "  They will update when the latest plugin version is processed by the marketplace."
+log "Updating shared scripts..."
+mkdir -p "$DRAFT_DIR/scripts"
+cp "$TMP_DIR/scripts/draft-update-check.sh" "$DRAFT_DIR/scripts/draft-update-check.sh"
+cp "$TMP_DIR/scripts/draft-update.sh" "$DRAFT_DIR/scripts/draft-update.sh"
+chmod +x "$DRAFT_DIR/scripts/"*.sh
+log "  Shared scripts updated at ~/.draft/scripts/"
 
-# ── Record new version and reset cache ───────────────────────────────────────
+# ── Clean up temp dir ──────────────────────────────────────────────────────────
+
+rm -rf "$TMP_DIR"
+
+# ── Record new version ─────────────────────────────────────────────────────────
+
+CHECKED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 echo "$LATEST" > "$VERSION_FILE"
 echo "UP_TO_DATE $LATEST" > "$LAST_CHECK_FILE"
+
+python3 -c "
+import json, pathlib
+cfg_path = pathlib.Path('$DRAFT_DIR/config.json')
+cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {'version': '1', 'tools': {}}
+cfg['plugin_version'] = '$LATEST'
+cfg['last_update_check'] = {
+    'status': 'UP_TO_DATE',
+    'installed_version': '$LATEST',
+    'latest_version': '$LATEST',
+    'checked_at': '$CHECKED_AT',
+}
+cfg_path.write_text(json.dumps(cfg, indent=2) + '\n')
+" 2>/dev/null || true
 
 echo ""
 log "Draft updated to v$LATEST."

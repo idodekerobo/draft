@@ -16,7 +16,7 @@
 #     "reason":          "prompt_input_exit"
 #   }
 #
-# This script never waits for synthesis. Synthesis is handled async by draft-daemon.sh.
+# This script never waits for synthesis. Synthesis is handled async by draft-background.ts.
 # If the daemon is not installed (pending/ doesn't exist), this is a no-op.
 
 # ── Read stdin immediately ─────────────────────────────────────────────────────

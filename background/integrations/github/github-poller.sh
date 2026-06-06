@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # github-poller.sh — polls GitHub for merged PRs, releases, and open PRs
-# Called by draft-daemon.sh on DRAFT_GITHUB_POLL interval (default: 1 hour)
+# Called by draft-background.ts on DRAFT_GITHUB_POLL interval (default: 1 hour)
 set -uo pipefail
 
 DRAFT_BACKGROUND="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -1,33 +1,16 @@
 // commands/daemon.ts — start, stop, status, logs
 
-import { spawn, capture } from "../utils/exec.ts";
-import { getActiveProfile, getWorkspacePath, readSecrets } from "../utils/config.ts";
-import { bold, dim, dot, green, red, yellow, cyan } from "../utils/output.ts";
-
-const HOME = process.env.HOME!;
-const BACKGROUND = `${HOME}/.draft/background`;
-const LOG_FILE = `${BACKGROUND}/logs/daemon.log`;
-const ERR_LOG_FILE = `${BACKGROUND}/logs/daemon-error.log`;
-const PLIST_LABEL = "com.draft.daemon";
+import { spawn, capture } from "../utils/exec";
+import { getActiveProfile, getWorkspacePath, readSecrets, BACKGROUND_DIR } from "../utils/config";
+import { bold, dim, dot, green, red, yellow, cyan } from "../utils/output";
+import { PLIST_LABEL, DAEMON_LOG, DAEMON_ERR_LOG, getDaemonStatus } from "draft-core/status";
 
 // ── status ─────────────────────────────────────────────────────────────────────
 
 export async function runStatus(_args: string[]): Promise<void> {
   // 1. Check LaunchAgent status
-  const launchResult = await capture(["launchctl", "list", PLIST_LABEL]);
-  const isRegistered = launchResult.exitCode === 0;
-
-  let pid: string | null = null;
-  let lastExit: string | null = null;
-  if (isRegistered) {
-    const pidMatch = launchResult.stdout.match(/"PID"\s*=\s*(\d+)/);
-    const exitMatch = launchResult.stdout.match(/"LastExitStatus"\s*=\s*(\d+)/);
-    pid = pidMatch?.[1] ?? null;
-    lastExit = exitMatch?.[1] ?? null;
-  }
-
-  const isRunning = isRegistered && pid !== null;
-  const daemonState = isRunning ? "running" : (isRegistered ? "degraded" : "stopped");
+  const { state: daemonState, pid, lastExit, isRegistered } = await getDaemonStatus();
+  const isRunning = daemonState === "running";
 
   // 2. Profile + workspace
   const profile = getActiveProfile();
@@ -86,7 +69,7 @@ export async function runStatus(_args: string[]): Promise<void> {
 // ── start ──────────────────────────────────────────────────────────────────────
 
 export async function runStart(_args: string[]): Promise<void> {
-  const result = await capture(["bash", `${BACKGROUND}/start.sh`]);
+  const result = await capture(["bash", `${BACKGROUND_DIR}/start.sh`]);
   if (result.exitCode !== 0) {
     console.error(red("Failed to start daemon."));
     console.error(dim(result.stderr || result.stdout));
@@ -98,7 +81,7 @@ export async function runStart(_args: string[]): Promise<void> {
 // ── stop ───────────────────────────────────────────────────────────────────────
 
 export async function runStop(_args: string[]): Promise<void> {
-  const result = await capture(["bash", `${BACKGROUND}/stop.sh`]);
+  const result = await capture(["bash", `${BACKGROUND_DIR}/stop.sh`]);
   if (result.exitCode !== 0) {
     console.error(red("Failed to stop daemon."));
     console.error(dim(result.stderr || result.stdout));
@@ -120,7 +103,7 @@ export async function runLogs(args: string[]): Promise<void> {
     process.exit(0);
   }
 
-  const logFile = errorsOnly ? ERR_LOG_FILE : LOG_FILE;
+  const logFile = errorsOnly ? DAEMON_ERR_LOG : DAEMON_LOG;
 
   if (follow) {
     const code = await spawn(["tail", "-f", logFile]);

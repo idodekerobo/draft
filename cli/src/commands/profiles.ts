@@ -1,13 +1,9 @@
-// commands/profiles.ts — draft profiles [list|create|rename|delete]
+// commands/profiles — draft profiles [list|create|rename|delete]
 
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
-import { getActiveProfile } from "../utils/config.ts";
-import { green, red, yellow, dim, cyan, bold } from "../utils/output.ts";
-
-const HOME = process.env.HOME!;
-const DRAFT_GLOBAL = `${HOME}/.draft`;
-const WORKSPACES_DIR = `${DRAFT_GLOBAL}/workspaces`;
+import { getActiveProfile, WORKSPACES_DIR, ACTIVE_PROFILE_FILE } from "../utils/config";
+import { green, red, yellow, dim, cyan, bold } from "../utils/output";
 
 const WORKSPACE_DIRS = [
   "context",
@@ -140,7 +136,7 @@ async function renameProfile(args: string[]): Promise<void> {
   // Update active-profile if it was the renamed one
   const active = getActiveProfile();
   if (active === oldName) {
-    writeFileSync(`${DRAFT_GLOBAL}/active-profile`, newName, "utf8");
+    writeFileSync(ACTIVE_PROFILE_FILE, newName, "utf8");
     console.log(`${green("✓")} Renamed '${oldName}' → '${newName}' and updated active profile.`);
   } else {
     console.log(`${green("✓")} Renamed '${oldName}' → '${newName}'.`);

@@ -2,24 +2,19 @@
 //
 // Reads proposals once at startup (no file-watching).
 // Keypress: [a]ccept  [r]eject  [s]kip  [q]uit
+// Data logic (Proposal type, listProposals, parseProposal, acceptProposal, rejectProposal)
+// lives in draft-core/proposals so the desktop UI can reuse it.
 
-import { existsSync, readdirSync, renameSync, statSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { capture } from "../utils/exec.ts";
-import { getActiveProfile, getWorkspacePath } from "../utils/config.ts";
-import { green, red, yellow, dim, cyan, bold } from "../utils/output.ts";
-
-const BACKGROUND = `${process.env.HOME}/.draft/background`;
-
-interface Proposal {
-  filename: string;
-  path: string;
-  mtime: number;
-  source: string;
-  createdAt: string;
-  summary: string;
-  body: string;
-}
+import { capture } from "../utils/exec";
+import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR } from "../utils/config";
+import { green, red, yellow, dim, cyan, bold } from "../utils/output";
+import {
+  type Proposal,
+  listProposals,
+  acceptProposal,
+  rejectProposal,
+} from "draft-core/proposals";
 
 export async function runProposals(args: string[]): Promise<void> {
   if (args.includes("--help")) {
@@ -31,27 +26,16 @@ export async function runProposals(args: string[]): Promise<void> {
 
   const profile = getActiveProfile();
   const workspace = getWorkspacePath(profile);
-  const proposalsDir = join(workspace, "proposals");
   const acceptedDir = join(workspace, "accepted");
   const rejectedDir = join(workspace, "rejected");
 
-  if (!existsSync(proposalsDir)) {
+  // Scan once at startup (oldest first) — listProposals from draft-core/proposals
+  const proposals = listProposals(workspace);
+
+  if (proposals.length === 0) {
     console.log(dim("No pending proposals."));
     process.exit(0);
   }
-
-  // Scan once at startup (oldest first)
-  const files = readdirSync(proposalsDir)
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => ({ name: f, path: join(proposalsDir, f), mtime: statSync(join(proposalsDir, f)).mtimeMs }))
-    .sort((a, b) => a.mtime - b.mtime);
-
-  if (files.length === 0) {
-    console.log(dim("No pending proposals."));
-    process.exit(0);
-  }
-
-  const proposals: Proposal[] = files.map((f) => parseProposal(f.name, f.path));
 
   console.log("");
   console.log(`${bold(String(proposals.length))} pending proposal(s). Keys: ${cyan("[a]ccept")}  ${red("[r]eject")}  ${dim("[s]kip")}  ${dim("[q]uit")}`);
@@ -69,18 +53,17 @@ export async function runProposals(args: string[]): Promise<void> {
     }
 
     if (key === "a") {
-      ensureDir(acceptedDir);
-      const dest = join(acceptedDir, proposal.filename);
-      renameSync(proposal.path, dest);
+      acceptProposal(proposal, acceptedDir);
 
       // Attempt immediate commit
       const ghResult = await capture(["gh", "api", "user", "--jq", ".login"]);
       const ghUsername = ghResult.exitCode === 0 ? ghResult.stdout.trim() : "";
 
       if (ghUsername) {
-        const commitScript = join(BACKGROUND, "commit-to-team-context.sh");
+        const commitScript = join(BACKGROUND_DIR, "commit-to-team-context.sh");
+        const acceptedPath = join(acceptedDir, proposal.filename);
         const result = await capture(
-          ["bash", commitScript, dest, getWorkspacePath(), ghUsername],
+          ["bash", commitScript, acceptedPath, getWorkspacePath(), ghUsername],
           { timeoutMs: 60_000 }
         );
         if (result.exitCode === 0) {
@@ -92,8 +75,7 @@ export async function runProposals(args: string[]): Promise<void> {
         console.log(`\n${green("[✓]")} Accepted locally. ${dim("(gh not authenticated — run `draft publish` to push)")}`);
       }
     } else if (key === "r") {
-      ensureDir(rejectedDir);
-      renameSync(proposal.path, join(rejectedDir, proposal.filename));
+      rejectProposal(proposal, rejectedDir);
       console.log(`\n${red("[✗]")} Rejected.`);
     } else {
       // skip
@@ -103,46 +85,6 @@ export async function runProposals(args: string[]): Promise<void> {
   }
 
   console.log(dim("All proposals reviewed."));
-}
-
-// ── Proposal parsing ───────────────────────────────────────────────────────────
-
-function parseProposal(filename: string, filePath: string): Proposal {
-  let content = "";
-  try {
-    content = readFileSync(filePath, "utf8");
-  } catch {
-    // ignore
-  }
-
-  // Extract YAML frontmatter between first two ---
-  let source = "unknown";
-  let createdAt = "";
-  let summary = filename;
-
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  if (fmMatch) {
-    const fm = fmMatch[1];
-    const sourceMatch = fm.match(/^source:\s*(.+)$/m);
-    const dateMatch = fm.match(/^created_at:\s*(.+)$/m);
-    const summaryMatch = fm.match(/^summary:\s*(.+)$/m);
-    if (sourceMatch) source = sourceMatch[1].trim();
-    if (dateMatch) createdAt = dateMatch[1].trim();
-    if (summaryMatch) summary = summaryMatch[1].trim();
-  }
-
-  // Body is everything after the frontmatter
-  const body = fmMatch ? content.slice(fmMatch[0].length).trim() : content.trim();
-
-  return {
-    filename,
-    path: filePath,
-    mtime: statSync(filePath).mtimeMs,
-    source,
-    createdAt,
-    summary,
-    body,
-  };
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────────
@@ -201,10 +143,3 @@ function readKey(): Promise<string> {
   });
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-}

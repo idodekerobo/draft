@@ -165,6 +165,11 @@ if [ -f "$SOURCE_PATH/config/collaboration.json" ]; then
     cp "$SOURCE_PATH/config/collaboration.json" "$WORKSPACE/config/collaboration.json"
 fi
 
+# Copy CHANGES.jsonl so the desktop can compute deltas without re-fetching from remote.
+if [ -f "$SOURCE_PATH/CHANGES.jsonl" ]; then
+    cp "$SOURCE_PATH/CHANGES.jsonl" "$WORKSPACE/CHANGES.jsonl"
+fi
+
 # ── Write loaded notification ──────────────────────────────────────────────────
 # inject-context.sh reads this and instructs the model to surface it to the user.
 mkdir -p "$WORKSPACE/notifications"
@@ -187,6 +192,15 @@ else:
     d = {}
 
 d['last_loaded'] = '$NEW_TS'
+
+# Write lastLoadCursor so the desktop knows which CHANGES.jsonl lines the hook already applied.
+changes_path = '$WORKSPACE/CHANGES.jsonl'
+if os.path.exists(changes_path):
+    try:
+        with open(changes_path) as f:
+            d['lastLoadCursor'] = sum(1 for line in f if line.strip())
+    except Exception:
+        pass
 
 os.makedirs(os.path.dirname(config_path), exist_ok=True)
 with open(config_path, 'w') as f:
