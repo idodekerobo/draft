@@ -128,6 +128,7 @@ fetch_file "scripts/inject-context.sh"         "$SHARED/hooks/inject-context.sh"
 fetch_file "scripts/codex-session-end.sh"      "$SHARED/hooks/codex-session-end.sh"
 fetch_file "scripts/cursor-session-start.sh"   "$SHARED/hooks/cursor-session-start.sh"
 fetch_file "scripts/openclaw-session-end.sh"   "$SHARED/hooks/openclaw-session-end.sh"
+fetch_file "scripts/hermes-session-end.sh"     "$SHARED/hooks/hermes-session-end.sh"
 chmod +x "$SHARED/hooks/"*.sh
 echo "[Draft]   hooks → $SHARED/hooks/"
 

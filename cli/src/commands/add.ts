@@ -29,7 +29,7 @@ const ACTIVE_PROFILE_FILE = `${DRAFT_GLOBAL}/active-profile`;
 const BACKGROUND_INSTALLED = `${DRAFT_GLOBAL}/background`;
 const CLAUDE_DIR = `${HOME}/.claude`;
 
-const SUPPORTED_TOOLS = ["claude-code", "codex", "cursor", "openclaw"];
+const SUPPORTED_TOOLS = ["claude-code", "codex", "cursor", "openclaw", "hermes"];
 
 export async function runAdd(args: string[]): Promise<void> {
   if (args.includes("--help") || args.length === 0) {
@@ -69,6 +69,9 @@ export async function runAdd(args: string[]): Promise<void> {
   } else if (tool === "openclaw") {
     const profileName = await resolveOrPromptProfile();
     await installOpenClaw(profileName);
+  } else if (tool === "hermes") {
+    const profileName = await resolveOrPromptProfile();
+    await installHermes(profileName);
   }
 }
 
@@ -359,6 +362,69 @@ async function installOpenClaw(profileName: string): Promise<void> {
   console.log("");
   console.log(`${bold("Draft added to OpenClaw")} ${dim(`(profile: ${profileName})`)}.`);
   console.log(`Restart OpenClaw to activate — then run ${cyan("/draft:setup")} to initialize your workspace.`);
+}
+
+// ── Hermes install ─────────────────────────────────────────────────────────────
+
+async function installHermes(profileName: string): Promise<void> {
+  const hermesDir = `${HOME}/.hermes`;
+  if (!existsSync(hermesDir)) {
+    console.error(red("Hermes not found. Install Hermes first: https://hermes.dev/install"));
+    process.exit(1);
+  }
+
+  const hermesConfigPath = join(hermesDir, "config.yaml");
+  if (!existsSync(hermesConfigPath)) {
+    console.error(red("Hermes config not found. Install Hermes and run it once before running draft add hermes."));
+    process.exit(1);
+  }
+
+  const pluginRoot = process.env.DRAFT_PLUGIN_ROOT ?? join(getRepoRoot(), "cli-agent-plugin");
+  console.log(dim(`Using plugin root: ${pluginRoot}`));
+  console.log("");
+
+  // 1. Populate ~/.draft/shared/
+  const populateScript = join(pluginRoot, "scripts", "populate-shared.sh");
+  console.log(dim("Populating ~/.draft/shared/..."));
+  const popCode = await spawn(["bash", populateScript]);
+  if (popCode !== 0) {
+    console.error(red("Failed to populate ~/.draft/shared/ — aborting."));
+    process.exit(3);
+  }
+
+  // 2. Merge ~/.hermes/config.yaml (skills.external_dirs)
+  // Dynamic import — only fails when this function runs, not on other `draft add` commands.
+  const yaml = await import("js-yaml");
+  const rawYaml = readFileSync(hermesConfigPath, "utf8");
+  const hermesConfigData = ((yaml.load(rawYaml) as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  const draftSkillsPath = `${DRAFT_GLOBAL}/shared/skills`;
+  const hSkills = (hermesConfigData.skills as Record<string, unknown>) ?? {};
+  const externalDirs = ((hSkills.external_dirs as string[]) ?? []);
+  hermesConfigData.skills = { ...hSkills, external_dirs: dedup([...externalDirs, draftSkillsPath]) };
+  writeFileSync(hermesConfigPath, yaml.dump(hermesConfigData));
+  console.log(`  ${green("✓")} ~/.hermes/config.yaml updated`);
+
+  // 3. Inject managed block into SOUL.md
+  const soulMd = join(hermesDir, "SOUL.md");
+  const hermesTemplateSrc = join(pluginRoot, "hermes-plugin", "SOUL.md.template");
+  const hermesBlockContent = readFileSync(hermesTemplateSrc, "utf8");
+  appendManagedBlock(soulMd, hermesBlockContent);
+  console.log(`  ${green("✓")} ~/.hermes/SOUL.md updated`);
+
+  // 4. Copy hermes-plugin/ → ~/.hermes/plugins/draft/
+  const hermesDraftPlugin = join(hermesDir, "plugins", "draft");
+  const hermesPluginSrc = join(pluginRoot, "hermes-plugin");
+  ensureDir(join(hermesDir, "plugins"));
+  cpSync(hermesPluginSrc, hermesDraftPlugin, { recursive: true });
+  console.log(`  ${green("✓")} Hermes plugin installed at ~/.hermes/plugins/draft/`);
+
+  // 5. Register in Draft config
+  writeToolConfig("hermes", { added_at: new Date().toISOString(), plugin_root: pluginRoot });
+  console.log(`  ${green("✓")} Registered in ~/.draft/config.json`);
+
+  console.log("");
+  console.log(`${bold("Draft added to Hermes")} ${dim(`(profile: ${profileName})`)}.`);
+  console.log(`Restart Hermes to activate — then run ${cyan("/draft:setup")} to initialize your workspace.`);
 }
 
 // ── Managed block helper ───────────────────────────────────────────────────────
