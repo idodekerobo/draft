@@ -1,36 +1,34 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "#";
-const STORAGE_KEY = "draft_demo";
-
-const GITHUB_URL = "https://github.com/idodekerobo/draft-cli-plugin";
+const GITHUB_URL = "https://github.com/idodekerobo/draft";
+const DOWNLOAD_URL =
+  "https://github.com/idodekerobo/draft/releases/download/v0.1.0/stable-macos-arm64-Draft.dmg";
 
 const BULLETS = [
   {
-    label: "Install.",
-    text: "One command: claude plugin install draft. Free, open source, no sign-up.",
+    label: "Capture.",
+    text: "Meetings, Slack threads, and GitHub activity synthesized into context automatically.",
   },
   {
-    label: "Setup.",
-    text: "Run /setup once. Draft interviews you and builds your structured PM brain.",
+    label: "Review.",
+    text: "A proposals inbox where you control what gets added to your shared context.",
   },
   {
-    label: "Load.",
-    text: "Every session opens with your full product context — automatically.",
+    label: "Inject.",
+    text: "Every Claude Code, Codex, or Cursor session opens with your full context loaded.",
   },
   {
-    label: "Think.",
-    text: "PRDs, strategy reviews, tradeoffs. Draft already knows your product.",
+    label: "Sync.",
+    text: "Publish context to a repo your team controls. Everyone starts grounded.",
   },
 ];
 
 export default function DemoHeroLeft() {
   const ph = usePostHog();
-  const ctaText = "Install the plugin"
+  const downloadCta = "Download for macOS";
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -67,7 +65,7 @@ export default function DemoHeroLeft() {
             textTransform: "uppercase",
           }}
         >
-          For PM-Builders · Open Source
+          macOS · Apple Silicon · Free & Open Source
         </span>
       </div>
 
@@ -81,19 +79,14 @@ export default function DemoHeroLeft() {
           lineHeight: 1.0,
           letterSpacing: "-0.03em",
           color: "var(--color-primary)",
-          marginBottom: "1.25rem",
           margin: "0 0 1.25rem 0",
         }}
       >
-        The PM brain
+        Your team&rsquo;s agent
         <br />
-        <span
-          style={{
-            color: "var(--color-accent)",
-            fontStyle: "italic",
-          }}
-        >
-          behind Claude Code.
+        sessions,{" "}
+        <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
+          always grounded.
         </span>
       </h1>
 
@@ -106,12 +99,12 @@ export default function DemoHeroLeft() {
           color: "var(--color-muted)",
           lineHeight: 1.7,
           marginBottom: "2rem",
-          maxWidth: "380px",
+          maxWidth: "400px",
         }}
       >
-        Draft gives Claude Code a persistent PM brain. Run{" "}
-        <span style={{ fontFamily: "var(--font-mono)", color: "var(--color-accent)", fontSize: "0.9em" }}>/setup</span>{" "}
-        once — every session starts with your full product context, loaded automatically.
+        Draft runs in the background, capturing context from your meetings,
+        Slack, and GitHub — then injects it automatically at the start of every
+        agent session. No re-explaining. No copy-pasting.
       </p>
 
       {/* Bullets */}
@@ -125,10 +118,7 @@ export default function DemoHeroLeft() {
         }}
       >
         {BULLETS.map((b, i) => (
-          <div
-            key={i}
-            style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}
-          >
+          <div key={i} style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
             <span
               style={{
                 fontFamily: "var(--font-display)",
@@ -138,7 +128,7 @@ export default function DemoHeroLeft() {
                 color: "var(--color-accent)",
                 flexShrink: 0,
                 marginTop: "1px",
-                minWidth: "52px",
+                minWidth: "60px",
               }}
             >
               {b.label}
@@ -157,16 +147,16 @@ export default function DemoHeroLeft() {
         ))}
       </div>
 
-      {/* CTA */}
+      {/* CTAs */}
       <div
         className="animate-fade-up delay-500"
         style={{ display: "flex", flexDirection: "column", gap: "0.625rem", alignItems: "flex-start" }}
       >
         <a
-          href={GITHUB_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { cta_location: 'hero', cta_text: ctaText })}
+          href={DOWNLOAD_URL}
+          onClick={() =>
+            ph?.capture(EVENTS.CTA_CLICKED, { cta_location: "hero", cta_text: downloadCta })
+          }
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -195,17 +185,13 @@ export default function DemoHeroLeft() {
             el.style.boxShadow = "none";
           }}
         >
-          {ctaText}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M3 8h10M9 4l4 4-4 4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+          {/* Apple icon */}
+          <svg width="13" height="13" viewBox="0 0 814 1000" fill="currentColor" aria-hidden="true">
+            <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.1 269-317.1 71 0 130.5 46.4 175 46.4 42.5 0 109.2-49.9 190.5-49.9zm-174.9-41.6c-31.1-36.9-53.3-88.1-53.3-139.3 0-7.1.6-14.3 1.9-20.1 50.6 1.9 110.4 33.7 147.1 75.8 28.5 32.4 55.1 83.6 55.1 135.5 0 7.8-1.3 15.5-1.9 18.1-3.2.6-8.4 1.3-13.6 1.3-45.4 0-102.5-30.4-135.3-71.3z"/>
           </svg>
+          {downloadCta}
         </a>
+
         <span
           style={{
             fontFamily: "var(--font-mono)",
