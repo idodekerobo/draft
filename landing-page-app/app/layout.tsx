@@ -25,21 +25,22 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://draftai.us"),
-  title: "Draft — AI Product Manager for Builders",
+  title: "Draft — Context layer for your team's AI sessions",
   description:
-    "Scale yourself, not your headcount. Draft is the AI product manager that helps solo PMs and founders write better specs, think through strategy, and orchestrate your dev workflow.",
+    "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start. No re-explaining. No copy-pasting.",
   openGraph: {
-    title: "Draft — AI Product Manager for Builders",
+    title: "Draft — Context layer for your team's AI sessions",
     description:
-      "Scale yourself, not your headcount. Draft helps solo PMs and founders write better specs, think through strategy, and orchestrate your entire dev workflow.",
+      "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start. No re-explaining. No copy-pasting.",
     url: "https://draftai.us",
-    siteName: "Draft AI",
-    images: [{ url: "/og-image.png", width: 1200, height: 630 }],
+    siteName: "Draft",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    images: ["/og-image.png"],
+    title: "Draft — Context layer for your team's AI sessions",
+    description:
+      "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start.",
   },
 };
 
