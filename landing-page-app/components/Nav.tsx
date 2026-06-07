@@ -5,16 +5,15 @@ import Link from "next/link";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "#";
-const GITHUB_URL = "https://github.com/idodekerobo/draft-cli-plugin";
-const STORAGE_KEY = "draft_demo";
+const GITHUB_URL = "https://github.com/idodekerobo/draft";
+const DOWNLOAD_URL =
+  "https://github.com/idodekerobo/draft/releases/download/v0.1.0/stable-macos-arm64-Draft.dmg";
 
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const ph = usePostHog();
-  const installCta = "Install Plugin"
-  const signInCta = "Sign in"
+  const downloadCta = "Download for macOS";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -31,9 +30,7 @@ export default function Nav() {
         right: 0,
         zIndex: 100,
         transition: "background 0.3s ease, border-color 0.3s ease",
-        background: scrolled
-          ? "var(--color-nav-bg)"
-          : "transparent",
+        background: scrolled ? "var(--color-nav-bg)" : "transparent",
         borderBottom: `1px solid ${scrolled ? "var(--color-border-md)" : "transparent"}`,
         backdropFilter: scrolled ? "blur(16px)" : "none",
       }}
@@ -65,13 +62,9 @@ export default function Nav() {
           </span>
         </Link>
 
-        {/* Desktop Nav Links */}
+        {/* Desktop Nav */}
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "2.5rem",
-          }}
+          style={{ display: "flex", alignItems: "center", gap: "2.5rem" }}
           className="hidden-mobile"
         >
           {[
@@ -100,19 +93,39 @@ export default function Nav() {
             </a>
           ))}
 
-          <a
-            href={`${APP_URL}/auth/sign-in`}
-            onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { cta_location: 'nav', cta_text: signInCta })}
-            style={{ display: "none" }}
-          >
-            {signInCta}
-          </a>
-
+          {/* GitHub icon link */}
           <a
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { cta_location: 'nav', cta_text: installCta })}
+            title="View on GitHub — Open Source"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              color: "var(--color-muted)",
+              transition: "color 0.2s",
+              opacity: 0.7,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--color-primary)";
+              (e.currentTarget as HTMLElement).style.opacity = "1";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--color-muted)";
+              (e.currentTarget as HTMLElement).style.opacity = "0.7";
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+            </svg>
+          </a>
+
+          {/* Download CTA */}
+          <a
+            href={DOWNLOAD_URL}
+            onClick={() =>
+              ph?.capture(EVENTS.CTA_CLICKED, { cta_location: "nav", cta_text: downloadCta })
+            }
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -129,18 +142,19 @@ export default function Nav() {
               letterSpacing: "0.01em",
             }}
             onMouseEnter={(e) => {
-              (e.target as HTMLElement).style.opacity = "0.9";
-              (e.target as HTMLElement).style.transform = "translateY(-1px)";
+              (e.currentTarget as HTMLElement).style.opacity = "0.9";
+              (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
             }}
             onMouseLeave={(e) => {
-              (e.target as HTMLElement).style.opacity = "1";
-              (e.target as HTMLElement).style.transform = "translateY(0)";
+              (e.currentTarget as HTMLElement).style.opacity = "1";
+              (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
             }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+            {/* Apple icon */}
+            <svg width="13" height="13" viewBox="0 0 814 1000" fill="currentColor" aria-hidden="true">
+              <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.1 269-317.1 71 0 130.5 46.4 175 46.4 42.5 0 109.2-49.9 190.5-49.9zm-174.9-41.6c-31.1-36.9-53.3-88.1-53.3-139.3 0-7.1.6-14.3 1.9-20.1 50.6 1.9 110.4 33.7 147.1 75.8 28.5 32.4 55.1 83.6 55.1 135.5 0 7.8-1.3 15.5-1.9 18.1-3.2.6-8.4 1.3-13.6 1.3-45.4 0-102.5-30.4-135.3-71.3z"/>
             </svg>
-            {installCta}
+            {downloadCta}
           </a>
         </div>
 
@@ -202,16 +216,15 @@ export default function Nav() {
             gap: "1.25rem",
           }}
         >
-          {[{ label: "Features", href: "#features" }, { label: "How it works", href: "#how-it-works" }].map(({ label, href }) => (
+          {[
+            { label: "Features", href: "#features" },
+            { label: "How it works", href: "#how-it-works" },
+          ].map(({ label, href }) => (
             <a
               key={label}
               href={href}
               onClick={() => setMenuOpen(false)}
-              style={{
-                color: "var(--color-muted)",
-                textDecoration: "none",
-                fontSize: "1rem",
-              }}
+              style={{ color: "var(--color-muted)", textDecoration: "none", fontSize: "1rem" }}
             >
               {label}
             </a>
@@ -220,7 +233,25 @@ export default function Nav() {
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { cta_location: 'nav_mobile', cta_text: installCta })}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              color: "var(--color-muted)",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+            </svg>
+            View on GitHub
+          </a>
+          <a
+            href={DOWNLOAD_URL}
+            onClick={() =>
+              ph?.capture(EVENTS.CTA_CLICKED, { cta_location: "nav_mobile", cta_text: downloadCta })
+            }
             style={{
               display: "inline-block",
               padding: "0.75rem 1.5rem",
@@ -232,7 +263,7 @@ export default function Nav() {
               textAlign: "center",
             }}
           >
-            {installCta}
+            {downloadCta}
           </a>
         </div>
       )}
