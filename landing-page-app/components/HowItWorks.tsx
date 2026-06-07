@@ -5,24 +5,27 @@ import { useEffect, useRef } from "react";
 const steps = [
   {
     step: "01",
-    title: "Install the plugin",
-    body: "Two commands from your terminal. Works on Claude Code and Codex CLI. Free, open source, no sign-up required.",
-    code: [
-      "/plugin marketplace add idodekerobo/draft-cli-plugin",
-      "/plugin install draft",
-    ],
+    title: "Install Draft",
+    body: "Download the macOS desktop app. It installs as a tray icon, registers as a LaunchAgent (starts at login), and wires the plugin into your agent tools automatically.",
+    tag: "Desktop app · CLI · Plugin",
   },
   {
     step: "02",
-    title: "Run /setup",
-    body: "Draft walks you through a short interview — what you're building, your priorities, your role. Takes 5 minutes. Writes structured context files to your workspace.",
-    code: ["/draft:setup"],
+    title: "Run /draft:setup",
+    body: "A short interview — what you're building, your priorities, your team. Takes 5 minutes. Writes structured context files to your workspace.",
+    tag: "One-time setup",
   },
   {
     step: "03",
-    title: "Build with context",
-    body: "Every session now opens with your full PM brain loaded. Ask Draft anything — it already knows your product, your roadmap, and what you decided last week.",
-    code: null,
+    title: "Connect your tools",
+    body: "Link Granola, Slack, and GitHub. The daemon starts capturing meeting notes, threads, and PR activity on a schedule — no manual effort.",
+    tag: "Granola · Slack · GitHub",
+  },
+  {
+    step: "04",
+    title: "Review & publish",
+    body: "Proposed context updates land in your inbox. Accept what's relevant. Publish to a GitHub repo your team pulls from — everyone's sessions start grounded.",
+    tag: "Proposals inbox · Team sync",
   },
 ];
 
@@ -59,12 +62,7 @@ export default function HowItWorks() {
       {/* Header */}
       <div
         className="reveal"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.75rem",
-          marginBottom: "1rem",
-        }}
+        style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}
       >
         <span className="accent-rule" style={{ width: "2rem" }} />
         <span
@@ -90,134 +88,143 @@ export default function HowItWorks() {
           lineHeight: 1.1,
           color: "var(--color-primary)",
           marginBottom: "5rem",
-          maxWidth: "480px",
+          maxWidth: "520px",
         }}
       >
         Install once.
         <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
-          {" "}Always loaded.
+          {" "}Your team stays grounded.
         </span>
       </h2>
 
-      {/* Steps — horizontal timeline */}
+      {/* Steps — 2×2 grid */}
       <div
         style={{
-          position: "relative",
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(2, 1fr)",
           gap: "0",
         }}
+        className="how-it-works-grid"
       >
-        {/* Connecting line */}
-        <div
-          style={{
-            position: "absolute",
-            top: "20px",
-            left: "10%",
-            right: "10%",
-            height: "1px",
-            background:
-              "linear-gradient(90deg, transparent, var(--color-border) 20%, var(--color-border) 80%, transparent)",
-            pointerEvents: "none",
-          }}
-        />
-
-        {steps.map((s, i) => (
-          <div
-            key={s.step}
-            className={`reveal reveal-delay-${i + 1}`}
-            style={{
-              padding: "0 2rem 0 0",
-              position: "relative",
-            }}
-          >
-            {/* Step dot */}
+        {steps.map((s, i) => {
+          const isLeft = i % 2 === 0;
+          const isTop = i < 2;
+          return (
             <div
+              key={s.step}
+              className={`reveal reveal-delay-${i + 1}`}
               style={{
-                width: "40px",
-                height: "40px",
-                borderRadius: "50%",
-                border: `1px solid ${i === 0 ? "var(--color-accent)" : "var(--color-border-md)"}`,
-                background: i === 0 ? "rgba(200,148,59,0.1)" : "var(--color-bg)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: "2rem",
+                padding: "2.5rem",
+                borderRight: isLeft ? "1px solid var(--color-border)" : "none",
+                borderBottom: isTop ? "1px solid var(--color-border)" : "none",
                 position: "relative",
-                zIndex: 1,
               }}
             >
-              <span
+              {/* Step dot */}
+              <div
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.65rem",
-                  color: i === 0 ? "var(--color-accent)" : "var(--color-muted)",
-                  letterSpacing: "0.04em",
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "50%",
+                  border: `1px solid ${i === 0 ? "var(--color-accent)" : "var(--color-border-md)"}`,
+                  background: i === 0 ? "rgba(200,148,59,0.1)" : "var(--color-bg)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: "1.75rem",
                 }}
               >
-                {s.step}
-              </span>
-            </div>
-
-            <h3
-              style={{
-                fontFamily: "var(--font-display)",
-                fontSize: "1.2rem",
-                fontWeight: 500,
-                letterSpacing: "-0.02em",
-                color: "var(--color-primary)",
-                marginBottom: "0.75rem",
-                lineHeight: 1.3,
-              }}
-            >
-              {s.title}
-            </h3>
-
-            <p
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "0.875rem",
-                color: "var(--color-muted)",
-                lineHeight: 1.7,
-                marginBottom: s.code ? "0.875rem" : 0,
-              }}
-            >
-              {s.body}
-            </p>
-
-            {s.code && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                {s.code.map((cmd) => (
-                  <div
-                    key={cmd}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "0.4rem",
-                      padding: "0.3rem 0.7rem",
-                      background: "rgba(200,148,59,0.07)",
-                      border: "1px solid rgba(200,148,59,0.2)",
-                      borderRadius: "6px",
-                    }}
-                  >
-                    <span style={{ color: "var(--color-accent)", opacity: 0.6, fontSize: "0.6rem" }}>$</span>
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "0.7rem",
-                        color: "var(--color-accent)",
-                        letterSpacing: "0.02em",
-                      }}
-                    >
-                      {cmd}
-                    </span>
-                  </div>
-                ))}
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "0.65rem",
+                    color: i === 0 ? "var(--color-accent)" : "var(--color-muted)",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  {s.step}
+                </span>
               </div>
-            )}
-          </div>
-        ))}
+
+              <h3
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "1.25rem",
+                  fontWeight: 500,
+                  letterSpacing: "-0.02em",
+                  color: "var(--color-primary)",
+                  marginBottom: "0.75rem",
+                  lineHeight: 1.3,
+                }}
+              >
+                {s.title}
+              </h3>
+
+              <p
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: "0.875rem",
+                  color: "var(--color-muted)",
+                  lineHeight: 1.7,
+                  marginBottom: "1.25rem",
+                }}
+              >
+                {s.body}
+              </p>
+
+              {/* Tag */}
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  padding: "0.25rem 0.65rem",
+                  background: "rgba(200,148,59,0.06)",
+                  border: "1px solid rgba(200,148,59,0.18)",
+                  borderRadius: "100px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "4px",
+                    height: "4px",
+                    borderRadius: "50%",
+                    background: "var(--color-accent)",
+                    display: "inline-block",
+                    opacity: 0.6,
+                  }}
+                />
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "0.6rem",
+                    color: "var(--color-accent)",
+                    letterSpacing: "0.05em",
+                    opacity: 0.8,
+                  }}
+                >
+                  {s.tag}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .how-it-works-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .how-it-works-grid > div {
+            border-right: none !important;
+            border-bottom: 1px solid var(--color-border) !important;
+          }
+          .how-it-works-grid > div:last-child {
+            border-bottom: none !important;
+          }
+        }
+      `}</style>
     </section>
   );
 }

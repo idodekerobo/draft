@@ -6,9 +6,9 @@ const features = [
   {
     number: "01",
     title: "Context, always loaded",
-    headline: "Stop re-explaining what you're building.",
-    body: "Run /setup once. Draft interviews you and builds your structured PM brain — company context, roadmap, priorities, decisions. Every Claude Code session opens with it loaded automatically.",
-    detail: "/setup · Product memory · Session context · Auto-loaded",
+    headline: "No more re-explaining your product.",
+    body: "Run /draft:setup once. Every Claude Code, Codex, or Cursor session opens with your full workspace context — product, priorities, decisions — injected automatically before the first message. No copy-pasting. No briefing.",
+    detail: "Desktop app · CLI · Plugin · Works on session start",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <rect x="4" y="6" width="20" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/>
@@ -20,31 +20,32 @@ const features = [
   },
   {
     number: "02",
-    title: "PM commands, built in",
-    headline: "A full PM toolkit, one command away.",
-    body: "Ask Draft to write a PRD, review your strategy, stress-test priorities, or surface what's stale. It already knows your product — grounded answers land in seconds, not meetings.",
-    detail: "PRDs · Strategy reviews · Priority calls · Tradeoff analysis",
+    title: "Stays current, automatically",
+    headline: "Context that keeps up with you.",
+    body: "Connect Granola, Slack, and GitHub. The Draft daemon runs in the background on a schedule, synthesizing new meeting notes, threads, and PR activity into proposed context updates. Review in the inbox — accept what matters.",
+    detail: "Granola · Slack · GitHub · Background daemon · Proposals inbox",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <path d="M14 4C8.477 4 4 8.477 4 14s4.477 10 10 10 10-4.477 10-10S19.523 4 14 4z" stroke="currentColor" strokeWidth="1.5"/>
+        <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5"/>
         <path d="M14 9v5l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M8 5.5l-2-2M20 5.5l2-2" stroke="var(--color-accent)" strokeWidth="1.2" strokeLinecap="round"/>
+        <path d="M5 14a9 9 0 0 1 9-9" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 2"/>
+        <path d="M8.5 5.5 L6 4 L5.5 7" stroke="var(--color-accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
   },
   {
     number: "03",
-    title: "No more context rot",
-    headline: "Claude always knows what just happened.",
-    body: "Context files go stale. You ship something, change direction, drop a bet — and Claude is still reasoning from a version of your product that no longer exists. Draft logs every meaningful change in an append-only ledger. The latest decisions load in every session automatically, even when your full context files haven't been touched in weeks.",
-    detail: "Append-only log · Decision ledger · Temporal drift solved · Always current",
+    title: "Your team, in sync",
+    headline: "Everyone starts from the same page.",
+    body: "Publish your accepted context to a GitHub repo your team controls. Teammates pull updates — their sessions start from the same grounded context you set. One curator. Whole team briefed. No Notion pages to maintain.",
+    detail: "GitHub sync · Shared context · Multi-profile · Team collaboration",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <path d="M6 14a8 8 0 0 1 8-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M22 14a8 8 0 0 1-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M14 6l-3-3 3-3" stroke="var(--color-accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-        <path d="M14 22l3 3-3 3" stroke="var(--color-accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-        <circle cx="14" cy="14" r="2.5" fill="var(--color-accent)" opacity="0.3" stroke="var(--color-accent)" strokeWidth="1.2"/>
+        <circle cx="8" cy="14" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+        <circle cx="20" cy="14" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+        <circle cx="14" cy="7" r="3.5" stroke="var(--color-accent)" strokeWidth="1.5"/>
+        <path d="M11.5 14H16.5" stroke="var(--color-border-md)" strokeWidth="1.2" strokeDasharray="2 1.5"/>
+        <path d="M10.5 11.5L14 9.5M17.5 11.5L14 9.5" stroke="var(--color-border-md)" strokeWidth="1.2" strokeDasharray="2 1.5"/>
       </svg>
     ),
   },
@@ -66,7 +67,6 @@ export default function Features() {
       },
       { threshold: 0.05 }
     );
-
     if (sectionRef.current) observer.observe(sectionRef.current);
     return () => observer.disconnect();
   }, []);
@@ -108,12 +108,7 @@ export default function Features() {
         {/* Header */}
         <div
           className="reveal"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.75rem",
-            marginBottom: "1rem",
-          }}
+          style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}
         >
           <span className="accent-rule" style={{ width: "2rem" }} />
           <span
@@ -148,10 +143,13 @@ export default function Features() {
               letterSpacing: "-0.025em",
               lineHeight: 1.1,
               color: "var(--color-primary)",
-              maxWidth: "400px",
+              maxWidth: "420px",
             }}
           >
-            One install. Permanent context.
+            A context layer for{" "}
+            <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
+              the whole team.
+            </span>
           </h2>
 
           <p
@@ -164,11 +162,11 @@ export default function Features() {
               maxWidth: "340px",
             }}
           >
-            Three things Draft does — and does well. No bloat, no integrations required.
+            Three things Draft does — and does well. Install once, it runs in the background from that point on.
           </p>
         </div>
 
-        {/* Feature cards — 2x2 grid */}
+        {/* Feature cards */}
         <div
           style={{
             display: "grid",
