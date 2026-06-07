@@ -25,11 +25,11 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://draftai.us"),
-  title: "Draft — Context layer for your team's AI sessions",
+  title: "Draft — Collaborative context layer for your team's AI sessions",
   description:
     "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start. No re-explaining. No copy-pasting.",
   openGraph: {
-    title: "Draft — Context layer for your team's AI sessions",
+    title: "Draft — Collaborative context layer for your team's AI sessions",
     description:
       "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start. No re-explaining. No copy-pasting.",
     url: "https://draftai.us",
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Draft — Context layer for your team's AI sessions",
+    title: "Draft — Collaborative context layer for your team's AI sessions",
     description:
       "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start.",
   },
