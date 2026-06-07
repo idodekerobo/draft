@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "#";
-
 export default function Footer() {
   return (
     <footer
@@ -48,7 +46,7 @@ export default function Footer() {
               lineHeight: 1.6,
             }}
           >
-            AI product manager for solo PMs and founders who move fast.
+            A context layer that keeps your team's AI sessions grounded.
           </p>
         </div>
 
@@ -75,7 +73,6 @@ export default function Footer() {
             </span>
             {[
               { label: "Features", href: "#features" },
-              { label: "Integrations", href: "#integrations" },
               { label: "How it works", href: "#how-it-works" },
             ].map((l) => (
               <a
@@ -100,44 +97,6 @@ export default function Footer() {
             ))}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.6rem",
-                color: "var(--color-faint)",
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                marginBottom: "0.25rem",
-              }}
-            >
-              Account
-            </span>
-            {[
-              { label: "Sign in", href: `${APP_URL}/auth/sign-in` },
-              { label: "Get started", href: `${APP_URL}/onboarding` },
-            ].map((l) => (
-              <a
-                key={l.label}
-                href={l.href}
-                style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: "0.8rem",
-                  color: "var(--color-muted)",
-                  textDecoration: "none",
-                  transition: "color 0.2s",
-                }}
-                onMouseEnter={(e) =>
-                  ((e.target as HTMLElement).style.color = "var(--color-primary)")
-                }
-                onMouseLeave={(e) =>
-                  ((e.target as HTMLElement).style.color = "var(--color-muted)")
-                }
-              >
-                {l.label}
-              </a>
-            ))}
-          </div>
         </div>
       </div>
 
