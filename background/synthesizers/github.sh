@@ -132,7 +132,7 @@ trap _cleanup EXIT
 cat > "$PROMPT_FILE" <<PROMPT
 # Draft Synthesis Task — GitHub Activity
 
-You are a context synthesis agent for Draft. Your job is to extract PM-relevant signal from recent GitHub activity and propose updates to the team's workspace context.
+You are a context synthesis agent for Draft. Your job is to extract relevant signal from recent GitHub activity and propose updates to the team's workspace context.
 
 ## Team member profiles (GitHub username -> display name)
 $TEAM_PROFILES_MAP
@@ -147,7 +147,7 @@ $CONTEXT_FILES_LIST
 
 ## Your task
 
-Read the existing workspace context files to understand what's already captured. Then synthesize the GitHub activity above into context updates — focusing on what a PM or engineering manager would care about.
+Read the existing workspace context files to understand what's already captured. Then synthesize the GitHub activity above into context updates — focusing on what a product lead or engineering manager would care about.
 
 **Signal that matters:**
 - What shipped (merged PRs, releases) — who built it, what it does
@@ -189,7 +189,7 @@ context_updates:
 [markdown summary of what was captured and why]
 \`\`\`
 
-If there is genuinely nothing PM-relevant to capture, write:
+If there is genuinely nothing relevant to capture, write:
 \`\`\`
 ---
 input_source: github
@@ -199,7 +199,7 @@ profile: $PROFILE
 context_updates: []
 ---
 
-No PM-relevant GitHub activity to capture.
+No relevant GitHub activity to capture.
 \`\`\`
 PROMPT
 

@@ -223,7 +223,7 @@ Draft uses an orchestrator + three sub-agents pattern. The draft-agent is the ma
 | `draft-executor` | Need to DO something — writes PRDs, decision docs, updates files |
 | `draft-learner` | Need to REMEMBER something — updates context files, logs decisions |
 
-Most requests follow: `draft-researcher` gathers context → `draft-executor` acts → `draft-learner` saves. You can also invoke `draft-learner` directly — run `/draft:learn` anytime to capture a decision, scope change, or anything worth remembering outside of a full PM session.
+Most requests follow: `draft-researcher` gathers context → `draft-executor` acts → `draft-learner` saves. You can also invoke `draft-learner` directly — run `/draft:learn` anytime to capture a decision, scope change, or anything worth remembering outside of a full session.
 
 ---
 
@@ -390,7 +390,7 @@ There are two layers of context loaded at session start:
 **1. Agent system prompt — static**
 
 The draft-agent's instructions define:
-- PM role and orchestration behavior
+- Role and orchestration behavior
 - Delegation rules and when to use each sub-agent
 - Document writing flow and template selection
 - Context staleness policy (7-day / 21-day)

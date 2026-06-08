@@ -256,7 +256,7 @@ print('has_content' if has_content else 'empty')
 
 Before asking Q1, deliver this orientation. Keep it warm but brief — don't pad it.
 
-> "Welcome to Draft — your AI-powered PM co-pilot.
+> "Welcome to Draft — the collaborative context layer.
 >
 > A few things to know before we start:
 >
@@ -376,7 +376,7 @@ If **no**: Continue to Q6 normally. No config files created.
 ### Q6 — Hardest problem
 
 Use the **AskUserQuestion** tool to ask:
-> "What's the hardest PM problem you're dealing with right now?"
+> "What's the hardest problem you're dealing with right now?"
 
 This is the most important question. Let them answer fully — don't rush or redirect. Listen for the actual underlying tension.
 

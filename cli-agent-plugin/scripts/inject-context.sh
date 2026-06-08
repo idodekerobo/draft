@@ -222,7 +222,7 @@ fi
 
 # ── Update notification ────────────────────────────────────────────────────────
 # Read cached check result from config.json, fall back to flat file.
-# If an upgrade is available, inject a notice so pm-agent surfaces it to the user.
+# If an upgrade is available, inject a notice so Draft Agent surfaces it to the user.
 
 UPDATE_STATUS=""
 OLD_VER=""

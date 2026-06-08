@@ -10,7 +10,7 @@
 #
 # Usage: bash commit-to-team-context.sh <staging_file> <workspace> <gh_username>
 #   staging_file — .md file from proposals/ (YAML frontmatter + markdown body)
-#   workspace    — path to Draft workspace (e.g. ~/.draft/workspaces/draft-pm-agent)
+#   workspace    — path to Draft workspace (e.g. ~/.draft/workspaces/<workspace_name>)
 #   gh_username  — GitHub username of the curator (for CHANGES.jsonl)
 
 set -uo pipefail
