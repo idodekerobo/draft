@@ -70,10 +70,12 @@ export default function Nav() {
           {[
             { label: "Features", href: "#features" },
             { label: "How it works", href: "#how-it-works" },
+            { label: "Docs", href: "https://docs.draftai.us", external: true },
           ].map((link) => (
             <a
               key={link.label}
               href={link.href}
+              {...("external" in link && link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "0.875rem",
@@ -219,11 +221,13 @@ export default function Nav() {
           {[
             { label: "Features", href: "#features" },
             { label: "How it works", href: "#how-it-works" },
-          ].map(({ label, href }) => (
+            { label: "Docs", href: "https://docs.draftai.us", external: true },
+          ].map(({ label, href, ...rest }) => (
             <a
               key={label}
               href={href}
               onClick={() => setMenuOpen(false)}
+              {...("external" in rest && rest.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               style={{ color: "var(--color-muted)", textDecoration: "none", fontSize: "1rem" }}
             >
               {label}
