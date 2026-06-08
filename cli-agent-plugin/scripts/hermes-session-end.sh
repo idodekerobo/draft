@@ -2,7 +2,9 @@
 # Draft — Hermes session-end hook
 #
 # Called by the Hermes plugin at session end:
-#   bash hermes-session-end.sh <session_id> <transcript_path>
+#   bash hermes-session-end.sh <session_id>
+#
+# transcript_path is derived from session_id: ~/.hermes/sessions/session_<id>.json
 #
 # Writes/updates a pending synthesis record for this session.
 # The daemon reads pending files and synthesizes on its 60-min polling cycle.
@@ -15,7 +17,7 @@ PENDING_DIR="${DRAFT_GLOBAL}/pending"
 mkdir -p "$PENDING_DIR"
 
 session_id="${1:-}"
-transcript_path="${2:-}"
+transcript_path="${DRAFT_GLOBAL}/sessions/session_${session_id}.json"
 
 if [ -z "$session_id" ]; then
     exit 0

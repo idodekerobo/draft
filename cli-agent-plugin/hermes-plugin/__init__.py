@@ -31,11 +31,9 @@ def on_session_start(event):
     subprocess.Popen(["draft", "start"], capture_output=True)
 
 
-def on_session_end(event):
+def on_session_end(session_id="", **kwargs):
     script = Path.home() / ".draft" / "shared" / "hooks" / "hermes-session-end.sh"
-    session_id = getattr(event, "session_id", "") or ""
-    transcript_path = getattr(event, "transcript_path", "") or ""
     subprocess.Popen(
-        ["bash", str(script), session_id, transcript_path],
+        ["bash", str(script), session_id],
         capture_output=True,
     )
