@@ -70,13 +70,17 @@ const TOOL_PREREQS: Partial<Record<InstallableTool, { label: string; url: string
     label: "Codex CLI",
     url: "https://developers.openai.com/codex/cli",
   },
+  cursor: {
+    label: "Cursor",
+    url: "https://cursor.com/get-started",
+  },
   openclaw: {
     label: "OpenClaw CLI",
-    url: "https://openclaw.dev/install",
+    url: "https://docs.openclaw.ai/",
   },
   hermes: {
     label: "Hermes CLI",
-    url: "https://hermes.dev/install",
+    url: "https://hermes-agent.nousresearch.com/docs/getting-started/quickstart",
   },
 };
 
