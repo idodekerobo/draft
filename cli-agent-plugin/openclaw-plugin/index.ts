@@ -51,7 +51,7 @@ export default definePluginEntry({
     // Session end: write a pending record → daemon synthesizes on next poll cycle.
     api.on("session_end", async (event) => {
       const script = join(SHARED_HOOKS, "openclaw-session-end.sh");
-      spawn("bash", [script, event.sessionId, event.sessionFile ?? ""], {
+      spawn("bash", [script, event.sessionId, event.sessionFile ?? "", event.reason ?? "unknown"], {
         detached: true,
         stdio: "ignore",
       }).unref();
