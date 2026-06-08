@@ -3,6 +3,6 @@
   "name": "Draft",
   "description": "Draft context layer — injects workspace context at session start and stages proposals at session end",
   "version": "1.0.0",
-  "contracts": [],
-  "activation": { "always": true }
+  "contracts": {},
+  "activation": { "onStartup": true }
 }

@@ -1,4 +1,4 @@
-import { definePluginEntry } from "@openclaw/plugin-sdk";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { execSync, spawn } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -32,25 +32,26 @@ export default definePluginEntry({
 
     // Session start: inject fresh workspace context into the first model turn.
     // Also ensures the Draft daemon is running (idempotent).
-    api.on("session_start", async ({ reason }: { reason?: string }) => {
-      if (reason === "new" || reason === "restart") {
-        try {
-          const context = execSync(`bash "${join(SHARED_HOOKS, "inject-context.sh")}"`, {
-            encoding: "utf8",
-          });
-          await api.enqueueNextTurnInjection(context);
-        } catch {
-          // inject-context.sh failing must not block the session
+    api.on("session_start", async (event, ctx) => {
+      const sessionKey = ctx.sessionKey ?? event.sessionKey ?? event.sessionId;
+      try {
+        const context = execSync(`bash "${join(SHARED_HOOKS, "inject-context.sh")}"`, {
+          encoding: "utf8",
+        });
+        if (sessionKey) {
+          await api.session.workflow.enqueueNextTurnInjection({ sessionKey, text: context });
         }
-        // Start daemon if not already running (draft start is idempotent)
-        spawn("draft", ["start"], { detached: true, stdio: "ignore" }).unref();
+      } catch {
+        // inject-context.sh failing must not block the session
       }
+      // Start daemon if not already running (draft start is idempotent)
+      spawn("draft", ["start"], { detached: true, stdio: "ignore" }).unref();
     });
 
     // Session end: write a pending record → daemon synthesizes on next poll cycle.
-    api.on("session_end", async ({ sessionId, transcriptPath }: { sessionId?: string; transcriptPath?: string }) => {
+    api.on("session_end", async (event) => {
       const script = join(SHARED_HOOKS, "openclaw-session-end.sh");
-      spawn("bash", [script, sessionId ?? "", transcriptPath ?? ""], {
+      spawn("bash", [script, event.sessionId, event.sessionFile ?? ""], {
         detached: true,
         stdio: "ignore",
       }).unref();
