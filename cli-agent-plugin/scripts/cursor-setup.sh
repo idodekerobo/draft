@@ -98,7 +98,7 @@ symlink_dir() {
 CLAUDE_CODE_INSTALLED=false
 CODEX_INSTALLED=false
 
-if [ -f "$HOME/.claude/agents/pm-agent.md" ]; then
+if [ -f "$HOME/.claude/agents/draft-agent.md" ]; then
     CLAUDE_CODE_INSTALLED=true
 fi
 
