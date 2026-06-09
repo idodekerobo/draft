@@ -101,8 +101,8 @@ done <<< "$RECONSTRUCTED_FILES"
 # ── Build context dimension summaries ──────────────────────────────────
 
 CONTEXT_DIMS_CONTENT=""
-for dim in priorities product team company; do
-    INDEX_FILE="$DRAFT_WORKSPACE/context/${dim}/index.md"
+while IFS= read -r INDEX_FILE; do
+    dim=$(basename "$(dirname "$INDEX_FILE")")
     if [ -f "$INDEX_FILE" ]; then
         DESC=$(extract_description "$INDEX_FILE")
         CONTEXT_DIMS_CONTENT="${CONTEXT_DIMS_CONTENT}
@@ -111,7 +111,7 @@ ${DESC}
 Full file (read if needed): ${INDEX_FILE}
 "
     fi
-done
+done < <(find "$DRAFT_WORKSPACE/context" -maxdepth 2 -name "index.md" | sort)
 
 # ── Read tensions.md ─────────────────────────────────────────────────────────
 
