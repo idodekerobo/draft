@@ -19,7 +19,7 @@ export default definePluginEntry({
   name: "Draft",
   description: "Draft context layer — injects workspace context and stages synthesis proposals",
   register: (api) => {
-    // Inject DRAFT_WORKSPACE and friends into every tool execution environment.
+    // Inject DRAFT_WORKSPACE and feeds into every tool execution environment.
     // Reads active-profile at runtime so profile switches take effect without reinstalling.
     api.on("resolve_exec_env", async () => {
       const profile = readActiveProfile();

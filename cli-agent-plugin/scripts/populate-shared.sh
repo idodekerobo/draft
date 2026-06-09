@@ -72,7 +72,9 @@ else
     # Remote: download each skill's SKILL.md individually.
     # Flat skills:
     for skill in \
+        draft-add-dimension \
         draft-compact \
+        draft-import \
         draft-learn \
         draft-load-team \
         draft-profiles \

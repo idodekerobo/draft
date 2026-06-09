@@ -14,6 +14,8 @@ import { runCompletion } from "./commands/completion.ts";
 import { runUninstall } from "./commands/uninstall.ts";
 import { runUpdate } from "./commands/update.ts";
 import { runPoll } from "./commands/poll.ts";
+import { runDimension } from "./commands/dimension.ts";
+import { runImport } from "./commands/import.ts";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -70,6 +72,12 @@ if (!command || command === "--help" || command === "-h") {
       break;
     case "poll":
       await runPoll(rest);
+      break;
+    case "dimension":
+      await runDimension(rest);
+      break;
+    case "import":
+      await runImport(rest);
       break;
     default:
       console.error(red(`Unknown command: ${command}`));

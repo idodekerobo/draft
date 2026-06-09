@@ -182,6 +182,24 @@ else:
         except Exception:
             pass
 " 2>/dev/null || echo "Run /draft:setup to initialize your shared context layer."
+python3 -c "
+import os
+from pathlib import Path
+ws = os.environ.get('DRAFT_WORKSPACE', os.path.expanduser('~/.draft/workspaces/default'))
+ctx = Path(ws) / 'context'
+if ctx.is_dir():
+    uninitialized = [
+        d.name for d in sorted(ctx.iterdir())
+        if d.is_dir() and not d.name.startswith('.') and not (d / 'index.md').exists()
+    ]
+    if uninitialized:
+        print('## Uninitialized dimensions')
+        print('These folders exist but have no index.md — Draft cannot load them:')
+        for name in uninitialized:
+            print(f'  - {name}/')
+        print('Run \`/draft:add-dimension <name>\` or \`draft dimension add <name>\` to scaffold each one.')
+        print()
+" 2>/dev/null
 if ! _section_disabled "priorities"; then
     echo ""
     echo "## Current priorities"

@@ -19,7 +19,9 @@
     "skills/draft-publish-team/SKILL.md",
     "skills/draft-load-team/SKILL.md",
     "skills/draft-switch/SKILL.md",
-    "skills/draft-profiles/SKILL.md"
+    "skills/draft-profiles/SKILL.md",
+    "skills/draft-add-dimension/SKILL.md",
+    "skills/draft-import/SKILL.md"
   ],
   "agents": [
     "agents/draft-researcher.md",
