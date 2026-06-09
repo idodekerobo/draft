@@ -22,6 +22,10 @@
 
 # misc
 .DS_Store
+
+# generated from assets/ during build
+/app/opengraph-image.png
+/app/icon.png
 *.pem
 
 # debug
