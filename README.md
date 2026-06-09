@@ -2,6 +2,8 @@
 
 Draft keeps your team's AI sessions grounded, so there's no more re-explaining your product, priorities, or decisions at the start of every session. It runs in the background, capturing context from your meetings, Slack, and GitHub, then injects it automatically for everyone.
 
+Visit [draftai.us](https://draftai.us) to download the app. See below to run from source.
+
 > **Platform:** macOS on Apple Silicon. Intel Mac and Windows support is not available yet.
 
 ![Draft Screenshot](assets/onboarding-screenshot.png)
@@ -214,16 +216,18 @@ This uses your local `gh` credentials and the separate-clone pattern — the Dra
 ## Key CLI commands
 
 ```bash
-draft --help                  # full command reference
-draft init                    # set up a new workspace
-draft status                  # show daemon status + active profile
-draft proposals               # review pending proposals
-draft publish                 # accept + push context to team repo
-draft profiles                # list profiles
-draft switch <profile>        # activate a named profile
-draft add <tool>              # install plugin into claude-code | codex | cursor
-draft daemon start|stop       # control the background daemon
-draft connect                 # configure integrations
+draft --help                        # full command reference
+draft init                          # set up a new workspace
+draft status                        # show daemon status + active profile
+draft proposals                     # review pending proposals
+draft publish                       # accept + push context to team repo
+draft profiles                      # list profiles
+draft switch <profile>              # activate a named profile
+draft add <tool>                    # install plugin into claude-code | codex | cursor
+draft daemon start|stop             # control the background daemon
+draft connect                       # configure integrations
+draft dimension list|add <name>     # manage context dimensions
+draft import <source>               # import context from local dir or GitHub repo
 ```
 
 ---
