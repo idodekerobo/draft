@@ -123,6 +123,25 @@ Deleting the active profile requires `--force`. Consider switching to another pr
 
 ---
 
+## Dimension management
+
+### `draft dimension`
+
+Manage context dimensions in the active workspace.
+
+```bash
+draft dimension list              # list all dimensions and their status
+draft dimension add <name>        # scaffold a new dimension
+```
+
+`draft dimension list` shows all subdirectories of `context/`, marking each as initialized (has an `index.md`) or uninitialized (folder exists but no `index.md`).
+
+`draft dimension add <name>` creates `context/<name>/index.md` with a blank frontmatter template and `context/<name>/log/`. Safe to run on an existing folder — only adds missing files, never overwrites. Dimension names may only contain lowercase letters, numbers, and hyphens.
+
+Equivalent skill: `/draft:add-dimension <name>` (AI-powered — also seeds initial context).
+
+---
+
 ## Proposals
 
 ### `draft proposals`
@@ -167,6 +186,28 @@ draft load
 ```
 
 Does a shallow clone of the team repo, reads the change log since your last load cursor, and applies teammates' accepted updates to your local workspace. This is also run automatically at every session start via a `SessionStart` hook (with a 30-second timeout so it never blocks a session).
+
+---
+
+## Import
+
+### `draft import`
+
+Import markdown content from a local directory or private GitHub repo into your workspace as a reviewable proposal.
+
+```bash
+draft import ~/notes                    # import from local directory
+draft import owner/private-repo         # import from GitHub repo
+draft import ~/notes --preview          # preview without writing
+```
+
+Files are mapped to Draft dimensions using directory name and filename heuristics (e.g. a `product/` subdirectory maps to the `product` dimension). Files that don't map to any known dimension are listed as unmapped in the proposal.
+
+For GitHub repos, requires `gh` CLI to be authenticated (`gh auth login`). The repo is cloned to a temp directory, read, and deleted — nothing persists outside your workspace.
+
+The import is always staged as a proposal — run `draft proposals` to review and accept or reject before any context files are changed.
+
+Equivalent skill: `/draft:import <source>` (AI-powered — uses judgment for dimension mapping instead of heuristics).
 
 ---
 
