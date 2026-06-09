@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prebuild": "mkdir -p public && cp ../assets/icon.png app/icon.png && cp ../assets/og-image.png public/og-image.png",
+    "prebuild": "mkdir -p public && cp ../assets/icon.png app/icon.png && cp ../assets/og-image.jpg public/og-image.jpg",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
