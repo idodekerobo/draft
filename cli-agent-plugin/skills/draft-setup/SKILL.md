@@ -296,13 +296,48 @@ Before asking Q1, deliver this orientation. Keep it warm but brief — don't pad
 >
 > Let's load your shared context workspace. This takes about 3–5 minutes."
 
-Then proceed directly to Q1 — no gap, no extra preamble.
+Then ask Q0.5 before moving to the interview.
+
+---
+
+## Q0.5 — Existing source (ask before Q1)
+
+Use the **AskUserQuestion** tool to ask:
+> "Do you have existing notes, a docs folder, or a GitHub repo with product context? If so, I can import from there to bootstrap setup — saves a lot of typing.
+> (Paste a local path like `~/notes` or a repo like `owner/repo`, or press enter to skip.)"
+
+**If they provide a source:** delegate to `@draft-researcher` before continuing.
+
+Give `@draft-researcher` this prompt:
+
+> "Read all markdown files under `<source>` and return a structured summary. For each file, identify which Draft dimension it most likely belongs to (product, company, team, priorities, decisions, research — or 'unmapped'). Return a JSON-like summary with one block per dimension:
+>
+> ```
+> DIMENSION: product
+> CONFIDENCE: high | medium | low
+> SUMMARY: <2-5 sentences synthesizing key facts — product name, what it does, target user, key bets>
+>
+> DIMENSION: team
+> CONFIDENCE: high | medium | low
+> SUMMARY: <team size, structure, who does what>
+> ...
+> ```
+>
+> For GitHub repos (`owner/repo` format): clone first using `gh repo clone <repo> $(mktemp -d /tmp/draft-import-XXXXXX) -- --depth 1 --quiet`, read the files, then delete the temp dir with `rm -rf`.
+>
+> Do NOT return raw file contents — summaries only. Mark confidence high if the file clearly addresses that dimension, medium if inferred, low if speculative."
+
+Store `@draft-researcher`'s output as **import_context** — you will use it throughout the interview.
+
+**If they skip (press enter or say no):** set **import_context** to empty and proceed to Q1 normally.
 
 ---
 
 ## The interview
 
 Ask questions **one at a time**. Wait for the full answer before asking the next. Adapt each question to what you've already heard — skip or merge questions if the user already answered them.
+
+**If import_context exists:** before asking each question, check whether the import already provides a confident answer for that dimension. If confidence is `high`, skip the question and briefly acknowledge what you already know: *"Got your product context from the import — just a couple of gaps to fill."* If confidence is `medium`, ask a shorter targeted follow-up rather than the full question. Only ask the full question when confidence is `low` or the dimension is absent from the import.
 
 If the user says **"skip"** at any point, stop the interview immediately and say: "No problem — run `/draft:setup` anytime you're ready to load your shared context workspace."
 
@@ -388,7 +423,11 @@ Once all answers are in (or the user says they're done), do the following in ord
 
 ### 1. Synthesize
 
-Do not pass raw answers to @draft-learner. Before writing, derive:
+Do not pass raw answers to @draft-learner. Before writing, derive a merged synthesis from both sources:
+
+**If import_context exists:** treat researcher summaries as the baseline. Interview answers take precedence where they conflict or add detail — the user's own words are more authoritative than inferred file content.
+
+Derive the following for each dimension, combining import_context + interview answers:
 
 - **company:** name, what they do, business model (B2B/B2C/marketplace/etc.), stage, funding if mentioned
 - **product:** product name, problem it solves, target user (specific, not vague), how users find it today, key bets or hypotheses
@@ -397,15 +436,30 @@ Do not pass raw answers to @draft-learner. Before writing, derive:
 - **priorities:** current milestone or sprint goal, the single most important thing, open questions or blockers
 - **memory/vocabulary:** domain-specific terms they used, working preferences, goals they named
 
-### 2. Call @draft-learner
+If import_context provided a `high`-confidence summary for a dimension and no interview answer contradicts it, use the summary directly — no need to re-derive from scratch.
+
+### 2. Confirm dimensions
+
+Before writing files, tell the user what will be created and give them a chance to customize:
+
+> "I'll create context areas for: **company, product, team, priorities**.
+> Want to rename any or add custom ones? (e.g. `research`, `decisions`, `legal`)
+> Press enter to continue with defaults."
+
+Wait for their response. If they want changes, adjust the dimension list. If they press enter or say nothing, use the defaults.
+
+Pass the confirmed dimension list to @draft-learner in the next step.
+
+### 3. Call @draft-learner
 
 Pass the synthesized content as a single, structured message. Instruct @draft-learner to write:
 
-**Context files** (under `$DRAFT_WORKSPACE/context/`):
-- `$DRAFT_WORKSPACE/context/company/index.md`
-- `$DRAFT_WORKSPACE/context/product/index.md`
-- `$DRAFT_WORKSPACE/context/team/index.md`
-- `$DRAFT_WORKSPACE/context/priorities/index.md`
+**Context files** (under `$DRAFT_WORKSPACE/context/`) — write only the dimensions confirmed in step 2:
+- `$DRAFT_WORKSPACE/context/company/index.md` (if confirmed)
+- `$DRAFT_WORKSPACE/context/product/index.md` (if confirmed)
+- `$DRAFT_WORKSPACE/context/team/index.md` (if confirmed)
+- `$DRAFT_WORKSPACE/context/priorities/index.md` (if confirmed)
+- Any additional custom dimensions the user requested (e.g. `$DRAFT_WORKSPACE/context/research/index.md`)
 
 **Personal files** (under `~/.draft/personal/` — global layer, NOT inside `$DRAFT_WORKSPACE`):
 - `~/.draft/personal/user/index.md`
@@ -421,7 +475,7 @@ For `priorities/index.md`, also include the full body content.
 
 Do NOT write log entries during /setup — this is the initial state.
 
-### 3. Confirm
+### 4. Confirm
 
 After @draft-learner writes the files, confirm to the user:
 
@@ -429,7 +483,7 @@ After @draft-learner writes the files, confirm to the user:
 - One-line summary of what's in each
 - Invite corrections: "Does that capture it right? Say 'update [company/product/team/priorities/user]' to fix anything."
 
-### 4. Ask the first real question
+### 5. Ask the first real question
 
 End with one sharp, specific question grounded in what you just learned. Base it on the hardest problem they named in Q6, or the most interesting tension you noticed.
 
@@ -437,7 +491,16 @@ End with one sharp, specific question grounded in what you just learned. Base it
 
 ## Re-run flow
 
-If context files already have content, show a one-line description per dimension (read from frontmatter), then use the **AskUserQuestion** tool to ask:
+If context files already have content, show a one-line description per dimension (read from frontmatter), then:
+
+**Check for uninitialized dimensions.** Scan `$DRAFT_WORKSPACE/context/` for subdirectories that exist but have no `index.md`. If any are found, mention them:
+
+> "I also see these folders with no context index: `research/`, `decisions/` (etc.)
+> Want me to scaffold them so Draft can load them? (y/n)"
+
+If yes: for each confirmed folder, call @draft-learner to create `context/<name>/index.md` with the standard frontmatter template and create `context/<name>/log/`.
+
+Then use the **AskUserQuestion** tool to ask:
 > "Your shared context workspace already has context. Want to do a full refresh, or just tell me what's changed?"
 
 - **Full refresh**: run the interview from Q1, overwrite all context files
