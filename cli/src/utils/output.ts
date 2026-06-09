@@ -43,6 +43,8 @@ export function printHelp(): void {
     ["load",                "Pull team context from shared repo"],
     ["logs",                "Tail daemon logs (--follow, --errors)"],
     ["poll <integration>",  "Trigger an on-demand poll (github, granola, slack)"],
+    ["dimension",           "Manage context dimensions (list, add)"],
+    ["import <source>",     "Import context from a local directory or GitHub repo"],
     ["proposals",           "Review and approve/reject AI-generated context updates"],
     ["doctor",              "Diagnose configuration and dependency issues"],
     ["completion",          "Generate shell tab completion script"],
