@@ -15,7 +15,7 @@ export default {
   app: {
     name: "Draft",
     identifier: "us.draftai.draft-desktop",
-    version: "0.1.0",
+    version: "0.2.0",
   },
   runtime: {
     exitOnLastWindowClosed: false,
