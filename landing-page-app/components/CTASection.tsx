@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 const DOWNLOAD_URL =
-  "https://github.com/idodekerobo/draft/releases/download/v0.1.0/stable-macos-arm64-Draft.dmg";
+  "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
 const GITHUB_URL = "https://github.com/idodekerobo/draft";
 
 export default function CTASection() {

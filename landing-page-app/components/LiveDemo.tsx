@@ -5,7 +5,7 @@ import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 
 const DOWNLOAD_URL =
-  "https://github.com/idodekerobo/draft/releases/download/v0.1.0/stable-macos-arm64-Draft.dmg";
+  "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
 
 const CONTEXT_FILES = [
   "workspace/product/index.md",
