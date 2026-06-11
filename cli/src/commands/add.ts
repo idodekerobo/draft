@@ -258,10 +258,11 @@ async function mergeClaudeSettings(pluginRoot: string, workspacePath: string): P
       CLAUDE_PLUGIN_ROOT: pluginRoot,
     },
 
-    // Session hooks from hooks.json
+    // Session hooks from hooks.json — substitute ${CLAUDE_PLUGIN_ROOT} with the
+    // resolved path so settings.json
     hooks: {
       ...(existing.hooks ?? {}),
-      ...pluginHooks.hooks,
+      ...JSON.parse(JSON.stringify(pluginHooks.hooks).replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot)),
     },
 
     // Permissions — merge allow list without duplicates
