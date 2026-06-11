@@ -154,9 +154,7 @@ export default function DemoHeroLeft() {
       >
         <a
           href={DOWNLOAD_URL}
-          onClick={() =>
-            ph?.capture(EVENTS.CTA_CLICKED, { cta_location: "hero", cta_text: downloadCta })
-          }
+          onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "hero" })}
           style={{
             display: "inline-flex",
             alignItems: "center",

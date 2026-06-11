@@ -10,6 +10,13 @@ export const EVENTS = {
 
   // CTA interactions
   CTA_CLICKED: 'cta_clicked',
+  DOWNLOAD_CLICKED: 'download_clicked',
+  GITHUB_CLICKED: 'github_clicked',
+  DOCS_CLICKED: 'docs_clicked',
+
+  // Nav
+  NAV_LINK_CLICKED: 'nav_link_clicked',
+  NAV_MENU_TOGGLED: 'nav_menu_toggled',
 
   // Demo flow
   DEMO_STARTED: 'demo_started',

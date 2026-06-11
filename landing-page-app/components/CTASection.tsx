@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePostHog } from "posthog-js/react";
+import { EVENTS } from "@/lib/analytics";
 
 const DOWNLOAD_URL =
   "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
@@ -8,6 +10,7 @@ const GITHUB_URL = "https://github.com/idodekerobo/draft";
 
 export default function CTASection() {
   const sectionRef = useRef<HTMLDivElement>(null);
+  const ph = usePostHog();
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -129,6 +132,7 @@ export default function CTASection() {
         >
           <a
             href={DOWNLOAD_URL}
+            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "cta_section" })}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -167,6 +171,7 @@ export default function CTASection() {
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => ph?.capture(EVENTS.GITHUB_CLICKED, { source: "cta_section" })}
             style={{
               display: "inline-flex",
               alignItems: "center",

@@ -76,6 +76,11 @@ export default function Nav() {
               key={link.label}
               href={link.href}
               {...("external" in link && link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              onClick={() =>
+                link.label === "Docs"
+                  ? ph?.capture(EVENTS.DOCS_CLICKED, { source: "nav" })
+                  : ph?.capture(EVENTS.NAV_LINK_CLICKED, { source: "nav", label: link.label })
+              }
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "0.875rem",
@@ -101,6 +106,7 @@ export default function Nav() {
             target="_blank"
             rel="noopener noreferrer"
             title="View on GitHub — Open Source"
+            onClick={() => ph?.capture(EVENTS.GITHUB_CLICKED, { source: "nav" })}
             style={{
               display: "flex",
               alignItems: "center",
@@ -125,9 +131,7 @@ export default function Nav() {
           {/* Download CTA */}
           <a
             href={DOWNLOAD_URL}
-            onClick={() =>
-              ph?.capture(EVENTS.CTA_CLICKED, { cta_location: "nav", cta_text: downloadCta })
-            }
+            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "nav" })}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -162,7 +166,11 @@ export default function Nav() {
 
         {/* Mobile menu button */}
         <button
-          onClick={() => setMenuOpen(!menuOpen)}
+          onClick={() => {
+            const next = !menuOpen;
+            setMenuOpen(next);
+            ph?.capture(EVENTS.NAV_MENU_TOGGLED, { action: next ? "open" : "close" });
+          }}
           style={{
             display: "none",
             background: "none",
@@ -226,7 +234,12 @@ export default function Nav() {
             <a
               key={label}
               href={href}
-              onClick={() => setMenuOpen(false)}
+              onClick={() => {
+                setMenuOpen(false);
+                label === "Docs"
+                  ? ph?.capture(EVENTS.DOCS_CLICKED, { source: "nav_mobile" })
+                  : ph?.capture(EVENTS.NAV_LINK_CLICKED, { source: "nav_mobile", label });
+              }}
               {...("external" in rest && rest.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               style={{ color: "var(--color-muted)", textDecoration: "none", fontSize: "1rem" }}
             >
@@ -237,6 +250,7 @@ export default function Nav() {
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => ph?.capture(EVENTS.GITHUB_CLICKED, { source: "nav_mobile" })}
             style={{
               display: "flex",
               alignItems: "center",
@@ -253,9 +267,7 @@ export default function Nav() {
           </a>
           <a
             href={DOWNLOAD_URL}
-            onClick={() =>
-              ph?.capture(EVENTS.CTA_CLICKED, { cta_location: "nav_mobile", cta_text: downloadCta })
-            }
+            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "nav_mobile" })}
             style={{
               display: "inline-block",
               padding: "0.75rem 1.5rem",
