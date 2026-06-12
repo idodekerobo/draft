@@ -5,9 +5,9 @@ import { useEffect, useRef } from "react";
 const features = [
   {
     number: "01",
-    title: "Context, always loaded",
-    headline: "No more re-explaining your product.",
-    body: "Run /draft:setup once. Every Claude Code, Codex, or Cursor session opens with your full workspace context — product, priorities, decisions — injected automatically before the first message. No copy-pasting. No briefing.",
+    title: "Portable workspace",
+    headline: "Your context, everywhere you build.",
+    body: "Run /draft:setup once. Your workspace — product context, priorities, decisions — loads automatically in every Claude Code, Codex, or Cursor session. One source of truth. No copy-pasting. No briefing before every session.",
     detail: "Desktop app · CLI · Plugin · Works on session start",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -20,24 +20,9 @@ const features = [
   },
   {
     number: "02",
-    title: "Stays current, automatically",
-    headline: "Context that keeps up with you.",
-    body: "Connect Granola, Slack, and GitHub. The Draft daemon runs in the background on a schedule, synthesizing new meeting notes, threads, and PR activity into proposed context updates. Review in the inbox — accept what matters.",
-    detail: "Granola · Slack · GitHub · Background daemon · Proposals inbox",
-    icon: (
-      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M14 9v5l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-        <path d="M5 14a9 9 0 0 1 9-9" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 2"/>
-        <path d="M8.5 5.5 L6 4 L5.5 7" stroke="var(--color-accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-      </svg>
-    ),
-  },
-  {
-    number: "03",
     title: "Your team, in sync",
     headline: "Everyone starts from the same page.",
-    body: "Publish your accepted context to a GitHub repo your team controls. Teammates pull updates — their sessions start from the same grounded context you set. One curator. Whole team briefed. No Notion pages to maintain.",
+    body: "Publish your accepted context to a GitHub repo your team controls. Teammates pull updates — their sessions start from the same grounded workspace you maintain. One curator. Whole team briefed. No Notion pages to maintain.",
     detail: "GitHub sync · Shared context · Multi-profile · Team collaboration",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -46,6 +31,21 @@ const features = [
         <circle cx="14" cy="7" r="3.5" stroke="var(--color-accent)" strokeWidth="1.5"/>
         <path d="M11.5 14H16.5" stroke="var(--color-border-md)" strokeWidth="1.2" strokeDasharray="2 1.5"/>
         <path d="M10.5 11.5L14 9.5M17.5 11.5L14 9.5" stroke="var(--color-border-md)" strokeWidth="1.2" strokeDasharray="2 1.5"/>
+      </svg>
+    ),
+  },
+  {
+    number: "03",
+    title: "Stays current, automatically",
+    headline: "Context that keeps up with you.",
+    body: "Connect Granola, Slack, and GitHub. The Draft daemon runs in the background on a schedule, synthesizing new meeting notes, threads, and PR activity into proposed workspace updates. Review in the inbox — accept what matters.",
+    detail: "Granola · Slack · GitHub · Background daemon · Proposals inbox",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M14 9v5l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M5 14a9 9 0 0 1 9-9" stroke="var(--color-accent)" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 2"/>
+        <path d="M8.5 5.5 L6 4 L5.5 7" stroke="var(--color-accent)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
   },
@@ -162,7 +162,7 @@ export default function Features() {
               maxWidth: "340px",
             }}
           >
-            Three things Draft does — and does well. Install once, it runs in the background from that point on.
+            Your workspace. Your team. Your tools — all in sync. Install once.
           </p>
         </div>
 
