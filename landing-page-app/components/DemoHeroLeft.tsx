@@ -103,8 +103,8 @@ export default function DemoHeroLeft() {
         }}
       >
         Draft gives you a persistent workspace — product context, priorities,
-        and decisions that load automatically in every Claude Code, Codex, or
-        Cursor session. Use it solo, or share it with your whole team.
+        and decisions that load automatically across every agent session. Use it
+        solo, or share it with your whole team.
       </p>
 
       {/* Bullets */}
