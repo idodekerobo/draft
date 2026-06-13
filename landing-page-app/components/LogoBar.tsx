@@ -42,8 +42,8 @@ const TRUST_ITEMS = [
         <path d="M2 12l10 5 10-5"/>
       </svg>
     ),
-    label: "Claude Code · Codex · Cursor",
-    detail: "Multi-agent",
+    label: "Claude Code · Codex · Cursor · OpenClaw · Hermes",
+    detail: "Works across agent harnesses",
     href: null,
   },
 ];

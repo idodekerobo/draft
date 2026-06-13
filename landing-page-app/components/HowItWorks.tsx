@@ -12,7 +12,7 @@ const steps = [
   {
     step: "02",
     title: "Run /draft:setup",
-    body: "A short interview — what you're building, your priorities, your team. Takes 5 minutes. Writes structured context files to your workspace.",
+    body: "A short interview — what you're building, your priorities, your team. Takes 5 minutes. Writes structured context files to your workspace. This is your workspace — the source of truth that loads in every session.",
     tag: "One-time setup",
   },
   {
@@ -93,7 +93,7 @@ export default function HowItWorks() {
       >
         Install once.
         <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
-          {" "}Your team stays grounded.
+          {" "}Your workspace, everywhere.
         </span>
       </h2>
 

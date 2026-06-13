@@ -9,20 +9,20 @@ const DOWNLOAD_URL =
 
 const BULLETS = [
   {
-    label: "Capture.",
-    text: "Meetings, Slack threads, and GitHub activity synthesized into context automatically.",
-  },
-  {
-    label: "Review.",
-    text: "A proposals inbox where you control what gets added to your shared context.",
-  },
-  {
-    label: "Inject.",
-    text: "Every Claude Code, Codex, or Cursor session opens with your full context loaded.",
+    label: "Workspace.",
+    text: "Your product context, priorities, and decisions organized in one structured place.",
   },
   {
     label: "Sync.",
-    text: "Publish context to a repo your team controls. Everyone starts grounded.",
+    text: "Publish to a repo and share with teammates — everyone's sessions start from the same context.",
+  },
+  {
+    label: "Capture.",
+    text: "Meetings, Slack threads, and GitHub activity synthesized into proposed updates automatically.",
+  },
+  {
+    label: "Review.",
+    text: "A proposals inbox where you control what gets added to your workspace.",
   },
 ];
 
@@ -82,12 +82,12 @@ export default function DemoHeroLeft() {
           margin: "0 0 1.25rem 0",
         }}
       >
-        Your team&rsquo;s agent
-        <br />
-        sessions,{" "}
+        Your{" "}
         <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
-          always grounded.
+          agent
         </span>
+        <br />
+        workspace.
       </h1>
 
       {/* Subhead */}
@@ -102,9 +102,9 @@ export default function DemoHeroLeft() {
           maxWidth: "400px",
         }}
       >
-        Draft runs in the background, capturing context from your meetings,
-        Slack, and GitHub — then injects it automatically at the start of every
-        agent session. No re-explaining. No copy-pasting.
+        Draft gives you a persistent workspace — product context, priorities,
+        and decisions that load automatically across every agent session. Use it
+        solo, or share it with your whole team.
       </p>
 
       {/* Bullets */}
