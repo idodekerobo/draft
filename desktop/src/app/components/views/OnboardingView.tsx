@@ -209,6 +209,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
     try {
       const result = await rpc.request.switchProfile({ profile: name });
       if (result.ok) {
+        track("profile_actioned", { action: "selected" });
         setStep("intelligence-tools");
       } else {
         setProfileError(result.error ?? "Switch failed.");
@@ -228,6 +229,7 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
     try {
       const result = await rpc.request.createProfile({ name: trimmed });
       if (result.ok) {
+        track("profile_actioned", { action: "created" });
         setStep("intelligence-tools");
       } else {
         setProfileError(result.error ?? "Create failed.");
@@ -547,7 +549,10 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
             {showContinue && (
               <button
                 className="onboarding__skip"
-                onClick={() => setStep("inputs")}
+                onClick={() => {
+                  track("install_skipped", { tools: [...selected] });
+                  setStep("inputs");
+                }}
               >
                 Continue anyway
               </button>
