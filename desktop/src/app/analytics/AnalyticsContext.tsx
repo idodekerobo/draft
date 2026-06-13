@@ -1,7 +1,7 @@
 // desktop/src/app/analytics/AnalyticsContext.tsx
 // PostHog is never imported outside this file — it is the single SDK boundary.
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import posthog from "posthog-js";
 import type { AnalyticsConfig } from "../../rpc/schema";
 import type { AnalyticsEvent } from "./events";
@@ -30,21 +30,26 @@ const AnalyticsContext = createContext<AnalyticsContextValue>({
 export function AnalyticsProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [config, setConfig] = useState<AnalyticsConfig | null>(null);
+  const pendingRef = useRef<Array<{ event: string; props: Record<string, unknown> }>>([]);
 
   useEffect(() => {
     async function init() {
       const cfg = await rpc.request.getAnalyticsConfig();
       setConfig(cfg);
-      if (cfg.consent !== "opted_in") return;
-      _initPostHog(cfg);
-      setReady(true);
+      if (!cfg.posthog_key) return;
+      const alreadyOptedIn = cfg.consent === "opted_in";
+      _initPostHog(cfg, !alreadyOptedIn);
+      if (alreadyOptedIn) setReady(true);
     }
     void init();
   }, []);
 
   const track = useCallback(
     (event: string, props: Record<string, unknown>) => {
-      if (!ready) return;
+      if (!ready) {
+        pendingRef.current.push({ event, props });
+        return;
+      }
       posthog.capture(event, props);
     },
     [ready]
@@ -55,13 +60,17 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       const patch = { consent: granted ? ("opted_in" as const) : ("opted_out" as const) };
       await rpc.request.setAnalyticsConfig(patch);
       setConfig((prev) => (prev ? { ...prev, ...patch } : null));
-      if (granted && !ready) {
-        const cfg = await rpc.request.getAnalyticsConfig();
-        _initPostHog(cfg);
+      if (granted) {
+        posthog.opt_in_capturing();
+        pendingRef.current.forEach(({ event, props }) => posthog.capture(event, props));
+        pendingRef.current = [];
         setReady(true);
+      } else {
+        posthog.opt_out_capturing();
+        pendingRef.current = [];
       }
     },
-    [ready]
+    []
   );
 
   const setReplayEnabled = useCallback(
@@ -86,7 +95,7 @@ export function useAnalytics() {
 
 // ── Internal ─────────────────────────────────────────────────────────────────
 
-function _initPostHog(cfg: AnalyticsConfig) {
+function _initPostHog(cfg: AnalyticsConfig, optOutByDefault: boolean) {
   if (!cfg.posthog_key) return; // OSS builds or missing build-config.json — silently skip
   posthog.init(cfg.posthog_key, {
     api_host: cfg.posthog_host ?? "https://us.i.posthog.com",
@@ -96,6 +105,7 @@ function _initPostHog(cfg: AnalyticsConfig) {
     disable_session_recording: !cfg.replay_enabled,
     session_recording: { maskTextSelector: '*', maskAllInputs: true },
     persistence: "localStorage",
+    opt_out_capturing_by_default: optOutByDefault,
   });
   posthog.identify(cfg.anonymous_id); // stable anon UUID — never an email or name
 }
