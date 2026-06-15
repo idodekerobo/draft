@@ -153,6 +153,18 @@ export interface LocalConfig {
   disabledContextSections: string[];
 }
 
+export interface UpdateInfo {
+  version: string;
+  updateAvailable: boolean;
+  updateReady: boolean;
+  error?: string;
+}
+
+export interface AppVersionInfo {
+  version: string;
+  channel: string;
+}
+
 export interface AnalyticsConfig {
   consent: "pending" | "opted_in" | "opted_out";
   replay_enabled: boolean;
@@ -324,12 +336,20 @@ export type AppRPCType = {
 
       /** Patch analytics config (consent, replay_enabled, etc.) in ~/.draft/config.json. */
       setAnalyticsConfig: { params: Partial<AnalyticsConfig>; response: ActionResult };
+
+      /** Apply a staged update — quits + relaunches. Only valid when updateReady is true. */
+      applyUpdate: { params: void; response: ActionResult };
+
+      /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
+      getAppVersion: { params: void; response: AppVersionInfo };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
       sendNotification: { title: string; subtitle?: string; body?: string };
       /** Renderer asks Bun to open a URL in the system browser. */
       openUrl: { url: string };
+      /** Renderer asks bun to start an update check. Result arrives via webview messages. */
+      requestUpdateCheck: Record<string, never>;
     };
   }>;
 
@@ -361,6 +381,18 @@ export type AppRPCType = {
 
       /** Bun asks renderer to re-fetch status immediately (e.g. after a menu start/stop action). */
       requestStatusRefresh: Record<string, never>;
+
+      /** Bun started an update check. */
+      updateCheckStarted: Record<string, never>;
+
+      /** Update downloaded and staged — ready to apply. */
+      updateAvailable: { version: string };
+
+      /** Update check completed — already on latest version. */
+      updateNotAvailable: Record<string, never>;
+
+      /** Update check or download failed. */
+      updateCheckFailed: { error: string };
     };
   }>;
 };

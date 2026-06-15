@@ -7,13 +7,14 @@
 //   Input Sources       — which integrations are connected; disconnect action
 //   System              — Start on login, Enable notifications
 //   Privacy             — interaction recording opt-out
+//   Updates             — current version, check for updates
 //
 // Connected apps data (getConnectedApps) and settings (getLocalConfig) are
 // loaded in parallel on mount and on every profile switch.
 
 import { useEffect, useState } from "react";
-import type { ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
-import { rpc } from "../../rpc";
+import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
+import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -263,6 +264,9 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
+  const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
+  const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
+  const [pendingVersion, setPendingVersion] = useState<string | null>(null);
 
   const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
 
@@ -276,14 +280,36 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
       rpc.request.getLocalConfig(),
       rpc.request.getConnectedApps(),
       rpc.request.getContextSections(),
+      rpc.request.getAppVersion(),
     ])
-      .then(([config, connectedApps, contextSections]) => {
+      .then(([config, connectedApps, contextSections, appVersion]) => {
         setSettings(config);
         setApps(connectedApps);
         setSections(contextSections);
+        setVersionInfo(appVersion);
       })
       .catch(() => setLoadError("Failed to load settings."));
   }, [activeProfile]);
+
+  // ── Update events ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const unsubs = [
+      events.on("updateCheckStarted", () => setUpdateCheckState("checking")),
+      events.on("updateAvailable", ({ version }) => {
+        setPendingVersion(version);
+        setUpdateCheckState("available");
+      }),
+      events.on("updateNotAvailable", () => {
+        setUpdateCheckState("up-to-date");
+        setTimeout(() => setUpdateCheckState("idle"), 3_000);
+      }),
+      events.on("updateCheckFailed", () => {
+        setUpdateCheckState("failed");
+        setTimeout(() => setUpdateCheckState("idle"), 5_000);
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
 
   // ── Save error auto-dismiss ────────────────────────────────────────────────
   useEffect(() => {
@@ -387,6 +413,12 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
     return () => { clearInterval(id); clearTimeout(timeout); };
   }, [connectingGitHub]);
 
+  // ── Check for updates ──────────────────────────────────────────────────────
+  function handleCheckForUpdates() {
+    setUpdateCheckState("checking");
+    rpc.send.requestUpdateCheck({});
+  }
+
   // ── Loading / error states ─────────────────────────────────────────────────
   if (loadError) {
     return (
@@ -405,6 +437,14 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
       </div>
     );
   }
+
+  // ── Derived update desc ────────────────────────────────────────────────────
+  const updateDesc =
+    updateCheckState === "checking"   ? "Checking for updates…"                          :
+    updateCheckState === "available"  ? `Version ${pendingVersion ?? ""} is ready to install` :
+    updateCheckState === "up-to-date" ? "You're up to date"                               :
+    updateCheckState === "failed"     ? "Could not check for updates"                     :
+    versionInfo && versionInfo.channel !== "dev" ? `${versionInfo.channel} channel`       : "";
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -546,6 +586,37 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
             </div>
           </section>
         )}
+
+        {/* ── Updates ─────────────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Updates</h2>
+          <div className="settings__rows">
+            <div className="settings__row">
+              <div className="settings__row-content">
+                <span className="settings__row-label">
+                  {versionInfo ? `Draft ${versionInfo.version}` : "Draft"}
+                </span>
+                <span className="settings__row-desc">{updateDesc}</span>
+              </div>
+              {updateCheckState === "available" ? (
+                <button
+                  className="app-row__connect"
+                  onClick={() => void rpc.request.applyUpdate()}
+                >
+                  Restart & Update
+                </button>
+              ) : (
+                <button
+                  className="app-row__connect"
+                  onClick={handleCheckForUpdates}
+                  disabled={updateCheckState === "checking"}
+                >
+                  {updateCheckState === "checking" ? "Checking…" : "Check for Updates"}
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
 
       </div>
 

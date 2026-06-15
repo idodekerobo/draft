@@ -44,6 +44,10 @@ export function App() {
   // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
   // Cleared when the user navigates to the Context tab.
   const [contextHasNew, setContextHasNew] = useState(false);
+  const [updateReady, setUpdateReady]       = useState(false);
+  const [updateVersion, setUpdateVersion]   = useState<string | null>(null);
+  const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
+  const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   useEffect(() => {
     if (status?.appState?.userState === "no-profile") setOnboardingActive(true);
@@ -133,6 +137,40 @@ export function App() {
     const id = setTimeout(() => setStartError(null), 4_000);
     return () => clearTimeout(id);
   }, [startError]);
+
+  // ── Update events ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const unsubs = [
+      events.on("updateAvailable", ({ version }) => {
+        setUpdateVersion(version);
+        setUpdateReady(true);
+      }),
+      events.on("updateNotAvailable", () => {
+        setUpdateToast({ type: "success", msg: "Draft is up to date" });
+      }),
+      events.on("updateCheckFailed", ({ error }) => {
+        setUpdateToast({ type: "error", msg: error });
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
+  useEffect(() => {
+    if (!updateToast) return;
+    const id = setTimeout(() => setUpdateToast(null), 3_500);
+    return () => clearTimeout(id);
+  }, [updateToast]);
+
+  async function handleApplyUpdate() {
+    setIsApplyingUpdate(true);
+    try {
+      await rpc.request.applyUpdate();
+      // App restarts — this line is usually not reached.
+    } catch {
+      setUpdateToast({ type: "error", msg: "Failed to apply update. Try again." });
+      setIsApplyingUpdate(false);
+    }
+  }
 
 
 
@@ -285,6 +323,24 @@ export function App() {
           )}
         </main>
       </div>
+      {updateReady && updateVersion && (
+        <div className="update-banner" role="status">
+          <span>Draft {updateVersion} is ready to install</span>
+          <button
+            className="update-banner__btn"
+            onClick={() => void handleApplyUpdate()}
+            disabled={isApplyingUpdate}
+          >
+            {isApplyingUpdate ? "Restarting…" : "Restart & Update"}
+          </button>
+        </div>
+      )}
+      {updateToast && (
+        <div className={`toast toast--${updateToast.type}`} role={updateToast.type === "error" ? "alert" : "status"}>
+          <span>{updateToast.msg}</span>
+          <button className="toast__dismiss" onClick={() => setUpdateToast(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       {startError && (
         <div className="toast toast--error" role="alert">
           <span>{startError}</span>

@@ -20,6 +20,10 @@ type EventMap = {
   badgeUpdate: { profile: string; count: number };
   profileChanged: { profile: string };
   requestStatusRefresh: Record<string, never>;
+  updateCheckStarted: Record<string, never>;
+  updateAvailable: { version: string };
+  updateNotAvailable: Record<string, never>;
+  updateCheckFailed: { error: string };
 };
 
 // Internal listener type — erased at call sites; external API remains typed.
@@ -66,9 +70,12 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       // TODO: Phase 2: update badge count in nav
       badgeUpdate: (data) => events.emit("badgeUpdate", data),
 
-      // TODO: Phase 1: active profile changed via desktop or CLI
       profileChanged: (data) => events.emit("profileChanged", data),
       requestStatusRefresh: (data) => events.emit("requestStatusRefresh", data),
+      updateCheckStarted: (data) => events.emit("updateCheckStarted", data),
+      updateAvailable: (data) => events.emit("updateAvailable", data),
+      updateNotAvailable: (data) => events.emit("updateNotAvailable", data),
+      updateCheckFailed: (data) => events.emit("updateCheckFailed", data),
     },
   },
 });

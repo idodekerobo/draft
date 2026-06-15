@@ -42,6 +42,8 @@ function setAppMenu(daemonRunning: boolean) {
   ApplicationMenu.setApplicationMenu([
     {
       submenu: [
+        { label: "Check for Updates", action: "check-for-updates" },
+        { type: "separator" },
         daemonRunning
           ? { label: "Stop Draft",  action: "stop-draft"  }
           : { label: "Start Draft", action: "start-draft" },
@@ -69,6 +71,11 @@ setAppMenu(true);
 
 Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
+
+  if (action === "check-for-updates") {
+    try { rpc.send.updateCheckStarted({}); } catch {}
+    void checkAndDownloadUpdate(false);
+  }
 
   if (action === "stop-draft") {
     capture(["launchctl", "unload", PLIST_PATH])
@@ -703,6 +710,27 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return result;
       },
 
+      applyUpdate: async () => {
+        try {
+          if (!Electrobun.Updater.updateInfo()?.updateReady) {
+            return { ok: false, error: "No update is staged." };
+          }
+          await Electrobun.Updater.applyUpdate();
+          return { ok: true }; // unreachable — app restarts
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Apply failed." };
+        }
+      },
+
+      getAppVersion: async () => {
+        try {
+          const info = await Electrobun.Updater.getLocalInfo();
+          return { version: info.version, channel: info.channel };
+        } catch {
+          return { version: "dev", channel: "dev" };
+        }
+      },
+
       getAnalyticsConfig: async () => {
         const result = readDraftConfig();
         const config: import("draft-core/config").DraftConfig = result.ok ? result.config : { version: "1", tools: {} };
@@ -739,9 +767,34 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       openUrl: ({ url }) => {
         Bun.spawn(["open", url], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       },
+      requestUpdateCheck: () => {
+        void checkAndDownloadUpdate(false);
+      },
     },
   },
 });
+
+// ── Update helpers ─────────────────────────────────────────────────────────────
+
+async function checkAndDownloadUpdate(silent: boolean) {
+  try {
+    const info = await Electrobun.Updater.checkForUpdate();
+    if (!info.updateAvailable) {
+      if (!silent) try { rpc.send.updateNotAvailable({}); } catch {}
+      return;
+    }
+    await Electrobun.Updater.downloadUpdate();
+    const ready = Electrobun.Updater.updateInfo()?.updateReady ?? false;
+    if (ready) {
+      try { rpc.send.updateAvailable({ version: info.version }); } catch {}
+    }
+  } catch (err) {
+    if (!silent) {
+      const error = err instanceof Error ? err.message : "Update check failed.";
+      try { rpc.send.updateCheckFailed({ error }); } catch {}
+    }
+  }
+}
 
 // Assign after rpc is constructed so rpc.send is available in the closures,
 // but before any handler or watcher fires.
@@ -849,4 +902,7 @@ setTimeout(async () => {
       try { rpc.send.profileChanged({ profile }); } catch {}
     },
   });
+
+  // Silent update check on launch — pushes updateAvailable if a new version is ready.
+  void checkAndDownloadUpdate(true);
 }, 500);
