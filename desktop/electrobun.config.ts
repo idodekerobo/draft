@@ -17,6 +17,9 @@ export default {
     identifier: "us.draftai.draft-desktop",
     version: "0.2.1",
   },
+  release: {
+    baseUrl: "https://github.com/idodekerobo/draft/releases/latest/download",
+  },
   runtime: {
     exitOnLastWindowClosed: false,
   },
