@@ -3,12 +3,13 @@
   "version": "0.0.1",
   "private": true,
   "exports": {
-    "./config":    "./src/config.ts",
-    "./exec":      "./src/exec.ts",
-    "./status":    "./src/status.ts",
-    "./heartbeat": "./src/heartbeat.ts",
-    "./appState":  "./src/appState.ts",
-    "./proposals": "./src/proposals.ts"
+    "./config":      "./src/config.ts",
+    "./exec":        "./src/exec.ts",
+    "./status":      "./src/status.ts",
+    "./heartbeat":   "./src/heartbeat.ts",
+    "./appState":    "./src/appState.ts",
+    "./proposals":   "./src/proposals.ts",
+    "./db/activity": "./src/db/activity.ts"
   },
   "scripts": {
     "test": "bun test"
