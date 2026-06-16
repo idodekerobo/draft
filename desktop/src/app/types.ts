@@ -2,7 +2,7 @@
 //
 // These are domain types that multiple parts of the app reference.
 
-export type View = "context" | "proposals" | "settings";
+export type View = "context" | "proposals" | "activity" | "settings";
 
 export type DaemonControlVariant =
   | "running"

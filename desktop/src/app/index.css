@@ -2787,3 +2787,159 @@ button {
   from { opacity: 0; transform: scale(0.975) translateY(4px); }
   to   { opacity: 1; transform: scale(1)     translateY(0);   }
 }
+
+/* ── Activity view ────────────────────────────────────────────────────────────── */
+
+.activity {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.activity__header {
+  height: 40px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.activity__title {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.activity__body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity__error {
+  padding: 10px 20px;
+  font-size: var(--font-size-micro);
+  color: var(--color-status-red);
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.activity__loading {
+  padding: 20px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.activity__list {
+  flex: 1;
+}
+
+/* ── Activity run row ─────────────────────────────────────────────────────────── */
+
+.activity-run {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.activity-run__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms;
+}
+
+.activity-run__row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.activity-run--expanded .activity-run__row {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.activity-run__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.activity-run__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.activity-run__primary {
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-run__meta {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-run__chevron {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  line-height: 1;
+  transition: color 80ms;
+}
+
+.activity-run__row:hover .activity-run__chevron {
+  color: var(--color-text-secondary);
+}
+
+/* ── Accordion detail ─────────────────────────────────────────────────────────── */
+
+.activity-run__detail {
+  background: var(--color-bg-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 10px 14px 10px 31px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.activity-run__detail-row {
+  display: flex;
+  gap: 12px;
+  font-size: var(--font-size-secondary);
+  min-width: 0;
+}
+
+.activity-run__detail-label {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  width: 70px;
+}
+
+.activity-run__detail-value {
+  color: var(--color-text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -18,6 +18,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
+import { ActivityView } from "./components/views/ActivityView";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 
@@ -318,6 +319,9 @@ export function App() {
                   activeProfile={activeProfile}
                   onNewChanges={setContextHasNew}
                 />
+              )}
+              {activeView === "activity" && (
+                <ActivityView key={activeProfile} />
               )}
             </>
           )}
