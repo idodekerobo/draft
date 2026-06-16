@@ -13,9 +13,10 @@ import {
   rejectProposal as rejectCoreProposal,
   applyProposalLocally,
 } from "draft-core/proposals";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
+import { getBundledDaemonBinPath } from "./main/bundlePath";
 import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
 import { runInstall } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
@@ -789,6 +790,48 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   },
 });
 
+// ── Daemon binary sync ─────────────────────────────────────────────────────────
+
+async function syncDaemonBinary(): Promise<void> {
+  const bundledBin = getBundledDaemonBinPath();
+  if (!bundledBin || !existsSync(bundledBin)) return; // dev mode or missing binary
+
+  const sidecarPath  = `${BACKGROUND_DIR}/.daemon-version`;
+  const installedBin = `${BACKGROUND_DIR}/draft-background-bin`;
+
+  let appVersion: string;
+  try {
+    const info = await Electrobun.Updater.getLocalInfo();
+    appVersion = info.version;
+  } catch {
+    return; // can't determine version — skip to avoid unnecessary copies
+  }
+
+  const installedVersion = existsSync(sidecarPath)
+    ? readFileSync(sidecarPath, "utf8").trim()
+    : null;
+
+  if (installedVersion === appVersion) return; // already up to date
+
+  try {
+    copyFileSync(bundledBin, installedBin);
+    chmodSync(installedBin, 0o755);
+    writeFileSync(sidecarPath, appVersion, "utf8");
+    console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
+  } catch (err) {
+    console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
+    return;
+  }
+
+  // Restart the daemon so it picks up the new binary immediately.
+  // launchctl kickstart forces a restart of a running agent.
+  try {
+    await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/com.draft.daemon`]);
+  } catch {
+    // Non-fatal: daemon will use the new binary on next natural restart (keepalive).
+  }
+}
+
 // ── Update helpers ─────────────────────────────────────────────────────────────
 
 async function checkAndDownloadUpdate(silent: boolean) {
@@ -887,6 +930,8 @@ tray.on("tray-clicked", (e) => {
 // webview.messages once the dom-ready event is wired.
 
 setTimeout(async () => {
+  await syncDaemonBinary(); // must run before daemon status poll
+
   try {
     const status  = await getDaemonStatus();
     const profile = getActiveProfile();

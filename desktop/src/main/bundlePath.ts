@@ -70,3 +70,13 @@ export function getBundledTmuxPath(): string | null {
   const appPath = execPath.slice(0, idx + ".app".length);
   return join(appPath, "Contents", "MacOS", "tmux");
 }
+
+/** Path to bundled daemon binary (Contents/MacOS/draft-background-bin). Returns null in dev mode. */
+export function getBundledDaemonBinPath(): string | null {
+  const execPath = process.execPath;
+  const marker = ".app/Contents/MacOS/";
+  const idx = execPath.indexOf(marker);
+  if (idx === -1) return null;
+  const appPath = execPath.slice(0, idx + ".app".length);
+  return join(appPath, "Contents", "MacOS", "draft-background-bin");
+}
