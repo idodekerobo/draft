@@ -198,3 +198,16 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
 
   return { status: 'success', proposalsGenerated };
 }
+
+// ── CLI entrypoint ─────────────────────────────────────────────────────────────
+if (import.meta.main) {
+  void (async () => {
+    const jobPath = process.argv[2];
+    if (!jobPath) {
+      console.error('Usage: bun synthesize.ts <job-path>');
+      process.exit(1);
+    }
+    const result = await synthesize(jobPath);
+    process.exit(result.status === 'failed' || result.status === 'timeout' ? 1 : 0);
+  })();
+}

@@ -45,7 +45,6 @@ _SCRIPTS=(
     "start.sh"
     "stop.sh"
     "uninstall.sh"
-    "synthesize.sh"
     "commit-to-team-context.sh"
     "load-team.sh"
 )
