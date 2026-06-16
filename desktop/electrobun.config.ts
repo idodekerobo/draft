@@ -19,6 +19,7 @@ export default {
   },
   release: {
     baseUrl: "https://github.com/idodekerobo/draft/releases/latest/download",
+    generatePatch: false,
   },
   runtime: {
     exitOnLastWindowClosed: false,
