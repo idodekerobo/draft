@@ -792,6 +792,39 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
 // ── Daemon binary sync ─────────────────────────────────────────────────────────
 
+function daemonPlistContent(binPath: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${binPath}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>${process.env.HOME ?? ""}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${BACKGROUND_DIR}/logs/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>${BACKGROUND_DIR}/logs/daemon-error.log</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
+`;
+}
+
 async function syncDaemonBinary(): Promise<void> {
   const bundledBin = getBundledDaemonBinPath();
   if (!bundledBin || !existsSync(bundledBin)) return; // dev mode or missing binary
@@ -811,20 +844,43 @@ async function syncDaemonBinary(): Promise<void> {
     ? readFileSync(sidecarPath, "utf8").trim()
     : null;
 
-  if (installedVersion === appVersion) return; // already up to date
+  const binaryNeedsUpdate = installedVersion !== appVersion;
 
-  try {
-    copyFileSync(bundledBin, installedBin);
-    chmodSync(installedBin, 0o755);
-    writeFileSync(sidecarPath, appVersion, "utf8");
-    console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
-  } catch (err) {
-    console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
+  // Plist migration: existing users have a plist pointing at the old bash daemon.
+  // Detect by checking for "draft-daemon.sh" in the plist content.
+  const plistContent     = existsSync(PLIST_PATH) ? readFileSync(PLIST_PATH, "utf8") : "";
+  const plistNeedsMigration = plistContent.includes("draft-daemon.sh");
+
+  if (!binaryNeedsUpdate && !plistNeedsMigration) return; // nothing to do
+
+  if (binaryNeedsUpdate) {
+    try {
+      copyFileSync(bundledBin, installedBin);
+      chmodSync(installedBin, 0o755);
+      writeFileSync(sidecarPath, appVersion, "utf8");
+      console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
+    } catch (err) {
+      console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
+  }
+
+  if (plistNeedsMigration) {
+    // Rewrite the plist to point at the TypeScript daemon binary, then reload so
+    // launchd picks up the new ProgramArguments (kickstart alone won't do this).
+    try {
+      writeFileSync(PLIST_PATH, daemonPlistContent(installedBin), "utf8");
+      await capture(["launchctl", "unload", PLIST_PATH]);
+      await capture(["launchctl", "load",   PLIST_PATH]);
+      await capture(["launchctl", "start",  PLIST_LABEL]);
+      console.log("[draft-desktop] daemon plist migrated to draft-background-bin");
+    } catch (err) {
+      console.warn(`[draft-desktop] daemon plist migration failed: ${err instanceof Error ? err.message : err}`);
+    }
     return;
   }
 
-  // Restart the daemon so it picks up the new binary immediately.
-  // launchctl kickstart forces a restart of a running agent.
+  // Plist already correct — just restart the running daemon with the new binary.
   try {
     await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/com.draft.daemon`]);
   } catch {
