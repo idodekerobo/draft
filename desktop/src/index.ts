@@ -5,6 +5,7 @@ import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
+import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
   listProposals,
   parseProposal,
@@ -757,6 +758,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Write failed." };
+        }
+      },
+
+      getActivityRuns: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        try {
+          const db = openActivityDb(workspace);
+          const runs = queryRuns(db, 50);
+          db.close();
+          return runs;
+        } catch {
+          return [];
         }
       },
     },
