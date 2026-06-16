@@ -578,7 +578,7 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
                 <Toggle
                   checked={analyticsConfig.replay_enabled}
                   onChange={(v) => {
-                    if (v) track("replay_consent_granted", {});
+                    if (v) track("analytics_consent_granted", {});
                     void setReplayEnabled(v);
                   }}
                 />

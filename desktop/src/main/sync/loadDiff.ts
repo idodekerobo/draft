@@ -63,8 +63,8 @@ function toDiffEntry(line: ChangesLine): DiffEntry {
   let dimension = line.dimension ?? "";
   if (!dimension && Array.isArray(line.files) && line.files.length > 0) {
     // "context/product/index.md" → "product"
-    const parts = line.files[0].split("/");
-    dimension = parts.length >= 2 ? parts[1] : parts[0];
+    const parts = line.files[0]!.split("/");
+    dimension = parts.length >= 2 ? parts[1]! : parts[0]!;
   }
 
   // Human-readable action label
