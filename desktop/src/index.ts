@@ -188,6 +188,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           "claude-code": toolList.includes("claude-code"),
           codex:         toolList.includes("codex"),
           cursor:        toolList.includes("cursor"),
+          openclaw:      toolList.includes("openclaw"),
+          hermes:        toolList.includes("hermes"),
         };
 
         return { ...daemonStatus, profile, lastSync, appState, integrations, installedTools };

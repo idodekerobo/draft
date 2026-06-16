@@ -17,7 +17,7 @@ export const DRAFT_CONFIG_FILE   = `${DRAFT_ROOT}/config.json`;
 
 // ── Global config schema ────────────────────────────────────────────────────────
 
-export type InstalledTool = "claude-code" | "codex" | "cursor";
+export type InstalledTool = "claude-code" | "codex" | "cursor" | "openclaw" | "hermes";
 
 export interface ToolEntry {
   /** ISO 8601 timestamp. "migrated" for auto-detected legacy installs. */
