@@ -1,17 +1,17 @@
 // background/synthesize.ts — Draft synthesis router
 //
 // Reads a job file, checks eligibility, delegates to the source adapter bash script,
-// handles timeout, and writes output to proposals/.
+// handles timeout, writes output to proposals/, and records the run in activity.db.
 // Job file cleanup (unlinkSync/renameSync) is the caller's responsibility.
-// DB writes are added in T3 after the core/src/db/ module exists.
 
+import { openActivityDb, insertRun, type ActivityRun } from 'draft-core/db/activity';
 import { BACKGROUND_DIR, getWorkspacePath } from 'draft-core/config';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync } from 'fs';
-import { join } from 'path';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync } from 'fs';
+import { basename, join } from 'path';
 
 export interface SynthesizeResult {
   status: 'success' | 'failed' | 'skipped' | 'timeout';
-  proposalsGenerated: number; // always 0 in T1; real counting added in T3
+  proposalsGenerated: number;
   errorMsg?: string;
   skipReason?: string;
 }
@@ -33,26 +33,61 @@ function slog(level: 'info' | 'warn' | 'error', msg: string) {
   try { appendFileSync(LOG_PATH, line); } catch {}
 }
 
+function countProposalFiles(stagingDir: string): number {
+  try {
+    return readdirSync(stagingDir, { withFileTypes: true })
+      .filter(e => e.isFile() && e.name.endsWith('.md'))
+      .length;
+  } catch {
+    return 0; // ENOENT or unreadable — treat as empty
+  }
+}
+
+function writeActivityRow(workspace: string, run: ActivityRun): void {
+  try {
+    mkdirSync(workspace, { recursive: true });
+    const db = openActivityDb(workspace);
+    insertRun(db, run);
+    db.close();
+  } catch (e) {
+    slog('warn', `synthesize: failed to write activity row: ${e}`);
+  }
+}
+
 export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
+  const startedAt = new Date().toISOString();
+  const startTime = Date.now();
+  // Job UUID from filename — used as row id so duplicate job runs are idempotent
+  const jobId = basename(jobPath).replace(/^job-/, '').replace(/\.json$/, '');
+
   // ── Parse job ──────────────────────────────────────────────────────────────
   let job: Job;
   try {
     job = JSON.parse(await Bun.file(jobPath).text()) as Job;
   } catch {
+    // Can't determine profile — no DB write
     return { status: 'failed', proposalsGenerated: 0, errorMsg: 'invalid job JSON' };
   }
 
   const profile      = job.profile    ?? 'default';
-  const sessionId    = job.session_id ?? 'unknown';
+  const sessionId    = job.session_id ?? null;
   const reason       = job.reason     ?? 'unknown';
   const source       = job.source     ?? 'claude-code-session';
-  const sessionShort = sessionId.slice(0, 8);
+  const cwd          = job.cwd        ?? null;
+  const sessionShort = sessionId ? sessionId.slice(0, 8) : 'unknown';
+  const workspace    = getWorkspacePath(profile);
 
   // ── Skip non-clean exits ───────────────────────────────────────────────────
   // reason != 'prompt_input_exit' means crash, force-kill, or other abnormal exit.
   // Transcript may be incomplete — skip synthesis to avoid noise.
   if (reason !== 'prompt_input_exit') {
     slog('info', `synthesize: skipping job (reason=${reason} session=${sessionShort} profile=${profile})`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd,
+      startedAt, endedAt: new Date().toISOString(), status: 'skipped',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: reason, errorMsg: null,
+    });
     return { status: 'skipped', proposalsGenerated: 0, skipReason: reason };
   }
 
@@ -63,8 +98,18 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   if (!existsSync(adapterScript)) {
     const msg = `source adapter not found: ${adapterScript} (session=${sessionShort})`;
     slog('error', `synthesize: ${msg}`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd,
+      startedAt, endedAt: new Date().toISOString(), status: 'failed',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: null, errorMsg: msg,
+    });
     return { status: 'failed', proposalsGenerated: 0, errorMsg: msg };
   }
+
+  // ── Count proposals before spawn (ENOENT-safe) ────────────────────────────
+  const stagingDir  = join(workspace, 'proposals');
+  const countBefore = countProposalFiles(stagingDir);
 
   // ── Spawn adapter with 300s timeout ───────────────────────────────────────
   mkdirSync(LOGS_DIR, { recursive: true });
@@ -95,28 +140,41 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
 
   if (timedOut) {
     slog('error', `synthesize: timeout after 300s (session=${sessionShort})`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd,
+      startedAt, endedAt: new Date().toISOString(), status: 'timeout',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: null, errorMsg: 'timed out after 300s',
+    });
     return { status: 'timeout', proposalsGenerated: 0, errorMsg: 'timed out after 300s' };
   }
 
   if (exitCode !== 0) {
-    slog('error', `synthesize: adapter exited ${exitCode} (session=${sessionShort})`);
-    return { status: 'failed', proposalsGenerated: 0, errorMsg: `adapter exited ${exitCode}` };
+    const errorMsg = `adapter exited ${exitCode}`;
+    slog('error', `synthesize: ${errorMsg} (session=${sessionShort})`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd,
+      startedAt, endedAt: new Date().toISOString(), status: 'failed',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: null, errorMsg,
+    });
+    return { status: 'failed', proposalsGenerated: 0, errorMsg };
   }
 
   // ── Validate output ────────────────────────────────────────────────────────
-  if (!stdoutText.trim()) {
-    slog('warn', `synthesize: empty output from adapter (session=${sessionShort}) — nothing to stage`);
-    return { status: 'success', proposalsGenerated: 0 };
-  }
-
-  if (stdoutText.includes('context_updates: []')) {
-    slog('info', `synthesize: no team-relevant updates found (session=${sessionShort})`);
+  if (!stdoutText.trim() || stdoutText.includes('context_updates: []')) {
+    const why = !stdoutText.trim() ? 'empty output' : 'no team-relevant updates';
+    slog('info', `synthesize: ${why} (session=${sessionShort}) — nothing to stage`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd,
+      startedAt, endedAt: new Date().toISOString(), status: 'success',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: null, errorMsg: null,
+    });
     return { status: 'success', proposalsGenerated: 0 };
   }
 
   // ── Write to proposals/ ────────────────────────────────────────────────────
-  const workspace  = getWorkspacePath(profile);
-  const stagingDir = join(workspace, 'proposals');
   mkdirSync(join(stagingDir, 'accepted'), { recursive: true });
   mkdirSync(join(stagingDir, 'rejected'), { recursive: true });
 
@@ -129,5 +187,14 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   await Bun.write(stagingFile, stdoutText);
   slog('info', `synthesize: staged at ${stagingFile} (session=${sessionShort} profile=${profile})`);
 
-  return { status: 'success', proposalsGenerated: 0 };
+  // ── Record success row ─────────────────────────────────────────────────────
+  const proposalsGenerated = Math.max(0, countProposalFiles(stagingDir) - countBefore);
+  writeActivityRow(workspace, {
+    id: jobId, profile, source, sessionId, cwd,
+    startedAt, endedAt: new Date().toISOString(), status: 'success',
+    durationMs: Date.now() - startTime,
+    proposalsGenerated, skipReason: null, errorMsg: null,
+  });
+
+  return { status: 'success', proposalsGenerated };
 }
