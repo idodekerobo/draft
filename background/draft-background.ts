@@ -9,6 +9,7 @@
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, unlinkSync, renameSync, writeFileSync } from 'fs';
+import { synthesize } from './synthesize';
 
 const DRAFT_BACKGROUND = BACKGROUND_DIR;
 
@@ -123,27 +124,17 @@ async function processJob(jobPath: string) {
   const sessionId = String(job.session_id ?? 'unknown');
   log('info', `job ${jobName}: profile=${profile} session_id=${sessionId}`);
 
-  // Phase 1: route to synthesize.sh → proposals/ → curator approves → GitHub
-  const synthesize = `${DRAFT_BACKGROUND}/synthesize.sh`;
-  if (existsSync(synthesize)) {
-    const proc = Bun.spawn(['bash', synthesize, jobPath], {
-      stdin: 'ignore', stdout: 'pipe', stderr: 'pipe',
-    });
-    const code = await proc.exited;
-    const jobSource = String(job.source ?? 'session');
-    if (code === 0) {
-      unlinkSync(jobPath);
-      log('info', `job ${jobName} complete`);
-      phTrack('daemon_synthesis_completed', { source: jobSource });
-    } else {
-      log('error', `synthesize.sh failed for ${jobName} — quarantining to failed/`);
-      renameSync(jobPath, `${DRAFT_FAILED}/${jobName}`);
-      phTrack('daemon_synthesis_failed', { source: jobSource });
-    }
-  } else {
-    // synthesize.sh not installed — phase-0 fallback
-    log('warn', 'synthesize.sh not found — phase-0 fallback');
+  // Route to synthesize.ts module (replaced synthesize.sh)
+  const jobSource = String(job.source ?? 'claude-code-session');
+  const result = await synthesize(jobPath);
+  if (result.status === 'success' || result.status === 'skipped') {
     unlinkSync(jobPath);
+    log('info', `job ${jobName} complete (${result.status})`);
+    phTrack('daemon_synthesis_completed', { source: jobSource, status: result.status });
+  } else {
+    log('error', `synthesize ${result.status} for ${jobName} — quarantining to failed/`);
+    renameSync(jobPath, `${DRAFT_FAILED}/${jobName}`);
+    phTrack('daemon_synthesis_failed', { source: jobSource, status: result.status });
   }
 }
 
