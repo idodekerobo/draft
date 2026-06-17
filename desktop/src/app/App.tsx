@@ -328,14 +328,20 @@ export function App() {
         </main>
       </div>
       {updateReady && updateVersion && (
-        <div className="update-banner" role="status">
-          <span>Draft {updateVersion} is ready to install</span>
+        <div className="update-pill" role="status">
+          <span className="update-pill__text">New update available</span>
           <button
-            className="update-banner__btn"
+            className="update-pill__later"
+            onClick={() => setUpdateReady(false)}
+          >
+            Later
+          </button>
+          <button
+            className="update-pill__cta"
             onClick={() => void handleApplyUpdate()}
             disabled={isApplyingUpdate}
           >
-            {isApplyingUpdate ? "Restarting…" : "Restart & Update"}
+            {isApplyingUpdate ? "Installing…" : "Install Now"}
           </button>
         </div>
       )}

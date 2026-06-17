@@ -703,49 +703,74 @@ button {
   to   { opacity: 1; transform: translateX(-50%) translateY(0);   }
 }
 
-/* ── Update banner ────────────────────────────────────────────────────────────── */
-/* Persistent bar anchored to the bottom of the window when an update is staged.  */
+/* ── Update pill ──────────────────────────────────────────────────────────────── */
+/* Compact bottom-left notification when an update is staged.                     */
 
-.update-banner {
+.update-pill {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 12px;
+  left: 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  background: var(--color-accent-blue);
-  color: #fff;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  background: var(--color-bg-sidebar);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-secondary);
   z-index: 1500;
-  animation: update-banner-in 200ms ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  animation: update-pill-in 200ms ease;
 }
 
-.update-banner__btn {
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+.update-pill__text {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.update-pill__later {
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-secondary);
+  font-family: var(--font-ui);
+  padding: 0;
+  cursor: pointer;
+  transition: color 100ms;
+  white-space: nowrap;
+}
+
+.update-pill__later:hover {
+  color: var(--color-text-secondary);
+}
+
+.update-pill__cta {
+  background: var(--color-accent-blue);
+  border: none;
   border-radius: var(--radius-sm);
   color: #fff;
   font-size: var(--font-size-secondary);
-  padding: 4px 12px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  padding: 5px 12px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 120ms ease;
+  transition: opacity 120ms;
+  white-space: nowrap;
 }
 
-.update-banner__btn:hover {
-  background: rgba(255, 255, 255, 0.28);
+.update-pill__cta:hover {
+  opacity: 0.85;
 }
 
-.update-banner__btn:disabled {
+.update-pill__cta:disabled {
   opacity: 0.6;
   cursor: default;
 }
 
-@keyframes update-banner-in {
-  from { opacity: 0; transform: translateY(100%); }
-  to   { opacity: 1; transform: translateY(0);    }
+@keyframes update-pill-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
 }
 
 /* ── Context viewer ──────────────────────────────────────────────────────────── */
