@@ -33,6 +33,33 @@ const DOT_COLOR: Record<ActivityRun["status"], string> = {
   timeout: "var(--color-status-red)",
 };
 
+const SKIP_REASON_LABELS: Record<string, string> = {
+  other:                        "Session ended early",
+  clear:                        "Session cleared",
+  resume:                       "Session resumed",
+  logout:                       "User logged out",
+  bypass_permissions_disabled:  "Permissions mode changed",
+  unknown:                      "Session ended unexpectedly",
+};
+
+const ERROR_LABELS: Record<string, string> = {
+  "invalid job JSON":           "Invalid session data",
+  "timed out after 300s":       "Synthesis timed out",
+};
+
+function friendlySkipReason(raw: string | null): string {
+  if (!raw) return "Session skipped";
+  return SKIP_REASON_LABELS[raw] ?? "Session skipped";
+}
+
+function friendlyError(raw: string | null): string {
+  if (!raw) return "Something went wrong";
+  if (ERROR_LABELS[raw]) return ERROR_LABELS[raw];
+  if (raw.startsWith("adapter exited")) return "Synthesis failed";
+  if (raw.startsWith("source adapter not found")) return "Synthesis not configured";
+  return "Something went wrong";
+}
+
 // ── Empty state ────────────────────────────────────────────────────────────────
 
 function ActivityEmptyPrompt() {
@@ -57,12 +84,12 @@ function ActivityRunDetail({ run }: { run: ActivityRun }) {
     if (run.durationMs !== null) rows.push({ label: "Duration", value: formatDuration(run.durationMs) });
     rows.push({ label: "Proposals", value: String(run.proposalsGenerated) });
   } else if (run.status === "skipped") {
-    if (run.skipReason) rows.push({ label: "Reason", value: run.skipReason });
+    rows.push({ label: "Reason", value: friendlySkipReason(run.skipReason) });
   } else if (run.status === "failed") {
     if (run.durationMs !== null) rows.push({ label: "Duration", value: formatDuration(run.durationMs) });
-    if (run.errorMsg) rows.push({ label: "Error", value: run.errorMsg });
+    rows.push({ label: "Error", value: friendlyError(run.errorMsg) });
   } else if (run.status === "timeout") {
-    rows.push({ label: "Duration", value: "timed out after 300s" });
+    rows.push({ label: "Error", value: friendlyError("timed out after 300s") });
   }
 
   if (run.sessionId) rows.push({ label: "Session", value: run.sessionId });
@@ -99,12 +126,11 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
       : `${run.proposalsGenerated} proposals`;
     metaLine = [ts, dur, prop].filter(Boolean).join(" · ");
   } else if (run.status === "skipped") {
-    metaLine = run.skipReason ? `${ts} · ${run.skipReason}` : ts;
+    metaLine = `${ts} · ${friendlySkipReason(run.skipReason)}`;
   } else if (run.status === "failed") {
-    metaLine = run.errorMsg ? `${ts} · ${run.errorMsg}` : ts;
+    metaLine = `${ts} · ${friendlyError(run.errorMsg)}`;
   } else {
-    // timeout
-    metaLine = `${ts} · timed out`;
+    metaLine = `${ts} · ${friendlyError("timed out after 300s")}`;
   }
 
   return (
