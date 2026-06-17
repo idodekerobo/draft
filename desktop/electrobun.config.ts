@@ -15,7 +15,7 @@ export default {
   app: {
     name: "Draft",
     identifier: "us.draftai.draft-desktop",
-    version: "0.2.1",
+    version: "0.3.0",
   },
   release: {
     baseUrl: "https://github.com/idodekerobo/draft/releases/latest/download",
