@@ -337,39 +337,36 @@ export function OnboardingView({ onComplete }: OnboardingViewProps) {
       {step === "welcome" && (
         <div className="onboarding__body">
           <p className="onboarding__step-indicator">Step {stepNum} of {TOTAL_STEPS}</p>
-          <h1 className="onboarding__title">Draft keeps your AI agent sessions grounded.</h1>
+          <h1 className="onboarding__title">Your workspace. Your team. Always in sync.</h1>
           <p className="onboarding__desc">
-            Works with Claude Code, Codex, and Cursor. Draft runs quietly in the
-            background, capturing context from your meetings, Slack, and coding
-            sessions — then injects what your agent needs to know at the start of
-            every session.
+            Draft gives you a persistent workspace — product context, priorities,
+            and decisions that load automatically across every agent session. Use
+            it solo, or share it with your whole team.
           </p>
 
           <div className="onboarding__arch">
             <div className="onboarding__arch-row">
-              <span className="onboarding__arch-label">Desktop app</span>
-              <span className="onboarding__arch-desc">Background capture, proposals, context browser</span>
+              <span className="onboarding__arch-label">Workspace</span>
+              <span className="onboarding__arch-desc">Your product context, priorities, and decisions in one place</span>
             </div>
             <div className="onboarding__arch-row">
-              <span className="onboarding__arch-label">CLI (draft)</span>
-              <span className="onboarding__arch-desc">Full terminal control — every desktop feature, as commands</span>
+              <span className="onboarding__arch-label">Sync</span>
+              <span className="onboarding__arch-desc">Publish to a repo — everyone's sessions start from the same content</span>
             </div>
             <div className="onboarding__arch-row">
-              <span className="onboarding__arch-label">Plugin</span>
-              <span className="onboarding__arch-desc">Injected into Claude Code, Codex, and Cursor at session start</span>
+              <span className="onboarding__arch-label">Capture</span>
+              <span className="onboarding__arch-desc">Meetings, Slack, and GitHub activity synthesized into proposals</span>
+            </div>
+            <div className="onboarding__arch-row">
+              <span className="onboarding__arch-label">Review</span>
+              <span className="onboarding__arch-desc">A proposals inbox — you control what gets added to your workspace</span>
             </div>
           </div>
 
           <p className="onboarding__hint">
-            All three work together.
-            <br/>
-            Draft captures and synthesizes context in the
-            background; the plugin injects it when each agent session starts.
-            <br/>
-            You can run and control Draft entirely from the terminal if you prefer.
-            <br/>
-            <br/>
-            <b>Works solo or share and collaborate on context with your whole team.</b>
+            Works with Claude Code, Codex, and Cursor. Install once — your full
+            team context loads at the start of every session, for every agent,
+            every teammate.
           </p>
 
           <button
