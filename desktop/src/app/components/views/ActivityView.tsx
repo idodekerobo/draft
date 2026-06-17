@@ -72,36 +72,45 @@ function ActivityEmptyPrompt() {
   );
 }
 
+// ── Status summary helpers ─────────────────────────────────────────────────────
+
+const STATUS_BADGE_LABEL: Record<ActivityRun["status"], string> = {
+  success: "Success",
+  skipped: "Skipped",
+  failed:  "Failed",
+  timeout: "Failed",
+};
+
+function statusDescription(run: ActivityRun): string | null {
+  if (run.status === "success") {
+    if (run.proposalsGenerated === 0) return "No updates found";
+    return run.proposalsGenerated === 1
+      ? "Synthesized 1 proposal"
+      : `Synthesized ${run.proposalsGenerated} proposals`;
+  }
+  if (run.status === "skipped") return friendlySkipReason(run.skipReason);
+  if (run.status === "timeout") return "Synthesis timed out";
+  return friendlyError(run.errorMsg);
+}
+
 // ── Accordion detail ───────────────────────────────────────────────────────────
 
 function ActivityRunDetail({ run }: { run: ActivityRun }) {
-  const rows: { label: string; value: string }[] = [];
-
-  rows.push({ label: "Source", value: run.source });
-  if (run.cwd) rows.push({ label: "Directory", value: run.cwd });
-
-  if (run.status === "success") {
-    if (run.durationMs !== null) rows.push({ label: "Duration", value: formatDuration(run.durationMs) });
-    rows.push({ label: "Proposals", value: String(run.proposalsGenerated) });
-  } else if (run.status === "skipped") {
-    rows.push({ label: "Reason", value: friendlySkipReason(run.skipReason) });
-  } else if (run.status === "failed") {
-    if (run.durationMs !== null) rows.push({ label: "Duration", value: formatDuration(run.durationMs) });
-    rows.push({ label: "Error", value: friendlyError(run.errorMsg) });
-  } else if (run.status === "timeout") {
-    rows.push({ label: "Error", value: friendlyError("timed out after 300s") });
-  }
-
-  if (run.sessionId) rows.push({ label: "Session", value: run.sessionId });
+  const description = statusDescription(run);
 
   return (
     <div className="activity-run__detail">
-      {rows.map(({ label, value }) => (
-        <div key={label} className="activity-run__detail-row">
-          <span className="activity-run__detail-label">{label}</span>
-          <span className="activity-run__detail-value">{value}</span>
-        </div>
-      ))}
+      <div className="activity-run__detail-top">
+        <span className={`activity-run__badge activity-run__badge--${run.status}`}>
+          {STATUS_BADGE_LABEL[run.status]}
+        </span>
+        {description && (
+          <span className="activity-run__detail-desc">{description}</span>
+        )}
+      </div>
+      {run.cwd && (
+        <span className="activity-run__project-path">{run.cwd}</span>
+      )}
     </div>
   );
 }

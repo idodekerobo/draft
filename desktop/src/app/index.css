@@ -2946,30 +2946,57 @@ button {
 /* ── Accordion detail ─────────────────────────────────────────────────────────── */
 
 .activity-run__detail {
-  background: var(--color-bg-surface);
   border-top: 1px solid var(--color-border);
-  padding: 10px 14px 10px 31px;
+  padding: 8px 14px 10px 31px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.activity-run__detail-row {
+.activity-run__detail-top {
   display: flex;
-  gap: 12px;
-  font-size: var(--font-size-secondary);
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
-.activity-run__detail-label {
-  color: var(--color-text-secondary);
+.activity-run__badge {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
-  width: 70px;
+  letter-spacing: 0.01em;
 }
 
-.activity-run__detail-value {
-  color: var(--color-text-primary);
-  min-width: 0;
+.activity-run__badge--success {
+  color: var(--color-status-green);
+  background: rgba(48, 209, 88, 0.12);
+}
+
+.activity-run__badge--skipped {
+  color: var(--color-status-yellow);
+  background: rgba(255, 214, 10, 0.10);
+}
+
+.activity-run__badge--failed,
+.activity-run__badge--timeout {
+  color: var(--color-status-red);
+  background: rgba(255, 69, 58, 0.12);
+}
+
+.activity-run__detail-desc {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-run__project-path {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
