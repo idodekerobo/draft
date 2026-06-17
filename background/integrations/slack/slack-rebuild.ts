@@ -129,11 +129,11 @@ function groupByThread(messages: SlackMessage[]): { threads: Thread[]; standalon
     if (sorted.length > 1 || hasReplies) {
       threads.push({ thread_ts, messages: sorted });
     } else {
-      standalone.push(sorted[0]);
+      standalone.push(sorted[0]!);
     }
   }
 
-  threads.sort((a, b) => a.messages[0].ts.localeCompare(b.messages[0].ts));
+  threads.sort((a, b) => a.messages[0]!.ts.localeCompare(b.messages[0]!.ts));
   standalone.sort((a, b) => a.ts.localeCompare(b.ts));
 
   return { threads, standalone };
@@ -207,8 +207,8 @@ function main(): void {
 
   const participantIds = [...new Set(messages.map(m => m.user_id))];
   const participants   = participantIds.map(id => resolveDisplayName(id, users)).join(', ');
-  const earliest = messages[0];
-  const latest   = messages[messages.length - 1];
+  const earliest = messages[0]!;
+  const latest   = messages[messages.length - 1]!;
   const period   = `${tsToDate(earliest.ts)} ${tsToTime(earliest.ts)} → ${tsToDate(latest.ts)} ${tsToTime(latest.ts)}`;
 
   const sections: string[] = [
@@ -231,7 +231,7 @@ function main(): void {
 
   // Render all root messages in chronological order; nest replies inline
   const roots: SlackMessage[] = [
-    ...threads.map(t => t.messages[0]),
+    ...threads.map(t => t.messages[0]).filter((m): m is SlackMessage => m !== undefined),
     ...standalone,
   ].sort((a, b) => a.ts.localeCompare(b.ts));
 
