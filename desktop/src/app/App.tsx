@@ -18,6 +18,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
+import { ActivityView } from "./components/views/ActivityView";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 
@@ -319,19 +320,28 @@ export function App() {
                   onNewChanges={setContextHasNew}
                 />
               )}
+              {activeView === "activity" && (
+                <ActivityView key={activeProfile} />
+              )}
             </>
           )}
         </main>
       </div>
       {updateReady && updateVersion && (
-        <div className="update-banner" role="status">
-          <span>Draft {updateVersion} is ready to install</span>
+        <div className="update-pill" role="status">
+          <span className="update-pill__text">New update available</span>
           <button
-            className="update-banner__btn"
+            className="update-pill__later"
+            onClick={() => setUpdateReady(false)}
+          >
+            Later
+          </button>
+          <button
+            className="update-pill__cta"
             onClick={() => void handleApplyUpdate()}
             disabled={isApplyingUpdate}
           >
-            {isApplyingUpdate ? "Restarting…" : "Restart & Update"}
+            {isApplyingUpdate ? "Installing…" : "Install Now"}
           </button>
         </div>
       )}

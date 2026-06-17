@@ -390,7 +390,8 @@ function parseFrontmatter(content: string): FrontmatterResult {
   if (!match) return { body: content };
 
   const raw = match[1];
-  const body = match[2];
+  if (!raw) return { body: content };
+  const body = match[2] ?? "";
   const fields: Record<string, string> = {};
 
   for (const line of raw.split("\n")) {

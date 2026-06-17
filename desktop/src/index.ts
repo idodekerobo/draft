@@ -5,6 +5,7 @@ import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
+import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
   listProposals,
   parseProposal,
@@ -12,9 +13,10 @@ import {
   rejectProposal as rejectCoreProposal,
   applyProposalLocally,
 } from "draft-core/proposals";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
+import { getBundledDaemonBinPath } from "./main/bundlePath";
 import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
 import { runInstall } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
@@ -187,6 +189,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           "claude-code": toolList.includes("claude-code"),
           codex:         toolList.includes("codex"),
           cursor:        toolList.includes("cursor"),
+          openclaw:      toolList.includes("openclaw"),
+          hermes:        toolList.includes("hermes"),
         };
 
         return { ...daemonStatus, profile, lastSync, appState, integrations, installedTools };
@@ -759,6 +763,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: err instanceof Error ? err.message : "Write failed." };
         }
       },
+
+      getActivityRuns: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        try {
+          const db = openActivityDb(workspace);
+          const runs = queryRuns(db, 50);
+          db.close();
+          return runs;
+        } catch {
+          return [];
+        }
+      },
     },
     messages: {
       sendNotification: ({ title, subtitle, body }) => {
@@ -773,6 +789,104 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
     },
   },
 });
+
+// ── Daemon binary sync ─────────────────────────────────────────────────────────
+
+function daemonPlistContent(binPath: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${binPath}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>${process.env.HOME ?? ""}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${BACKGROUND_DIR}/logs/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>${BACKGROUND_DIR}/logs/daemon-error.log</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
+`;
+}
+
+async function syncDaemonBinary(): Promise<void> {
+  const bundledBin = getBundledDaemonBinPath();
+  if (!bundledBin || !existsSync(bundledBin)) return; // dev mode or missing binary
+
+  const sidecarPath  = `${BACKGROUND_DIR}/.daemon-version`;
+  const installedBin = `${BACKGROUND_DIR}/draft-background-bin`;
+
+  let appVersion: string;
+  try {
+    const info = await Electrobun.Updater.getLocalInfo();
+    appVersion = info.version;
+  } catch {
+    return; // can't determine version — skip to avoid unnecessary copies
+  }
+
+  const installedVersion = existsSync(sidecarPath)
+    ? readFileSync(sidecarPath, "utf8").trim()
+    : null;
+
+  const binaryNeedsUpdate = installedVersion !== appVersion;
+
+  // Plist migration: existing users have a plist pointing at the old bash daemon.
+  // Detect by checking for "draft-daemon.sh" in the plist content.
+  const plistContent     = existsSync(PLIST_PATH) ? readFileSync(PLIST_PATH, "utf8") : "";
+  const plistNeedsMigration = plistContent.includes("draft-daemon.sh");
+
+  if (!binaryNeedsUpdate && !plistNeedsMigration) return; // nothing to do
+
+  if (binaryNeedsUpdate) {
+    try {
+      copyFileSync(bundledBin, installedBin);
+      chmodSync(installedBin, 0o755);
+      writeFileSync(sidecarPath, appVersion, "utf8");
+      console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
+    } catch (err) {
+      console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
+  }
+
+  if (plistNeedsMigration) {
+    // Rewrite the plist to point at the TypeScript daemon binary, then reload so
+    // launchd picks up the new ProgramArguments (kickstart alone won't do this).
+    try {
+      writeFileSync(PLIST_PATH, daemonPlistContent(installedBin), "utf8");
+      await capture(["launchctl", "unload", PLIST_PATH]);
+      await capture(["launchctl", "load",   PLIST_PATH]);
+      await capture(["launchctl", "start",  PLIST_LABEL]);
+      console.log("[draft-desktop] daemon plist migrated to draft-background-bin");
+    } catch (err) {
+      console.warn(`[draft-desktop] daemon plist migration failed: ${err instanceof Error ? err.message : err}`);
+    }
+    return;
+  }
+
+  // Plist already correct — just restart the running daemon with the new binary.
+  try {
+    await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/com.draft.daemon`]);
+  } catch {
+    // Non-fatal: daemon will use the new binary on next natural restart (keepalive).
+  }
+}
 
 // ── Update helpers ─────────────────────────────────────────────────────────────
 
@@ -872,6 +986,8 @@ tray.on("tray-clicked", (e) => {
 // webview.messages once the dom-ready event is wired.
 
 setTimeout(async () => {
+  await syncDaemonBinary(); // must run before daemon status poll
+
   try {
     const status  = await getDaemonStatus();
     const profile = getActiveProfile();

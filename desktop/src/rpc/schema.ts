@@ -18,6 +18,21 @@ import type { RPCSchema } from "electrobun/bun";
 
 export type DaemonState = "running" | "stopped" | "degraded";
 
+export interface ActivityRun {
+  id: string;
+  profile: string;
+  source: string;
+  sessionId: string | null;
+  cwd: string | null;
+  startedAt: string;        // ISO 8601
+  endedAt: string | null;
+  status: "success" | "failed" | "skipped" | "timeout";
+  durationMs: number | null;
+  proposalsGenerated: number;
+  skipReason: string | null;
+  errorMsg: string | null;
+}
+
 export interface IntegrationStatus {
   granola: boolean;
   slack: boolean;
@@ -342,6 +357,9 @@ export type AppRPCType = {
 
       /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
       getAppVersion: { params: void; response: AppVersionInfo };
+
+      /** List the last 50 activity runs for the active profile. */
+      getActivityRuns: { params: void; response: ActivityRun[] };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
@@ -393,6 +411,9 @@ export type AppRPCType = {
 
       /** Update check or download failed. */
       updateCheckFailed: { error: string };
+
+      /** Synthesis job completed — renderer should re-fetch activity runs. Reserved for sentinel file watcher (TODO-3); not emitted in v1. */
+      runComplete: { profile: string; source: string; status: string; proposalsGenerated: number };
     };
   }>;
 };

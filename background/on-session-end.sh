@@ -48,7 +48,7 @@ fi
 # ── Build job payload ──────────────────────────────────────────────────────────
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-JOB_JSON="{\"profile\":\"${DRAFT_ACTIVE_PROFILE}\",\"session_id\":\"${SESSION_ID}\",\"transcript_path\":\"${TRANSCRIPT_PATH}\",\"cwd\":\"${CWD}\",\"reason\":\"${REASON}\",\"timestamp\":\"${TIMESTAMP}\"}"
+JOB_JSON="{\"profile\":\"${DRAFT_ACTIVE_PROFILE}\",\"session_id\":\"${SESSION_ID}\",\"transcript_path\":\"${TRANSCRIPT_PATH}\",\"cwd\":\"${CWD}\",\"reason\":\"${REASON}\",\"source\":\"claude-code-session\",\"timestamp\":\"${TIMESTAMP}\"}"
 
 # ── Atomic write ───────────────────────────────────────────────────────────────
 # uuidgen for unique filename — safe for simultaneous session closes.

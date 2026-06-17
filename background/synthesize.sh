@@ -43,13 +43,15 @@ print(d.get('profile', 'default'))
 
 SESSION_SHORT="${SESSION_ID:0:8}"
 
-# ── Skip non-clean exits ───────────────────────────────────────────────────────
-# reason != "prompt_input_exit" means crash, force-kill, or other abnormal exit.
-# Transcript may be incomplete — skip synthesis to avoid noise.
-if [ "$REASON" != "prompt_input_exit" ]; then
-    _log "info" "synthesize: skipping job (reason=$REASON session=$SESSION_SHORT profile=$PROFILE)"
-    exit 0
-fi
+# ── Skip exits that indicate broken/missing transcripts ───────────────────────
+# 'other' (Ctrl+C) and 'prompt_input_exit' (clean exit) both have usable
+# transcripts. Skip only reasons where synthesis would produce noise.
+case "$REASON" in
+    clear|resume|logout|bypass_permissions_disabled)
+        _log "info" "synthesize: skipping job (reason=$REASON session=$SESSION_SHORT profile=$PROFILE)"
+        exit 0
+        ;;
+esac
 
 _log "info" "synthesize: starting (session=$SESSION_SHORT profile=$PROFILE)"
 
