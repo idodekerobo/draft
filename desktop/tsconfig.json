@@ -25,5 +25,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "exclude": ["assets", "build", "node_modules"]
 }
