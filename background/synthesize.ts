@@ -77,10 +77,11 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   const sessionShort = sessionId ? sessionId.slice(0, 8) : 'unknown';
   const workspace    = getWorkspacePath(profile);
 
-  // ── Skip non-clean exits ───────────────────────────────────────────────────
-  // reason != 'prompt_input_exit' means crash, force-kill, or other abnormal exit.
-  // Transcript may be incomplete — skip synthesis to avoid noise.
-  if (reason !== 'prompt_input_exit') {
+  // ── Skip exits that indicate broken/missing transcripts ─────────────────────
+  // 'other' (Ctrl+C) and 'prompt_input_exit' (clean exit) both have usable
+  // transcripts. Skip only reasons where synthesis would produce noise.
+  const SKIP_REASONS = new Set(['clear', 'resume', 'logout', 'bypass_permissions_disabled']);
+  if (SKIP_REASONS.has(reason)) {
     slog('info', `synthesize: skipping job (reason=${reason} session=${sessionShort} profile=${profile})`);
     writeActivityRow(workspace, {
       id: jobId, profile, source, sessionId, cwd,
