@@ -122,7 +122,7 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
           <span className="activity-run__primary">{primaryLine}</span>
           <span className="activity-run__meta">{metaLine}</span>
         </span>
-        <span className="activity-run__chevron">{expanded ? "▾" : "›"}</span>
+        <span className={`activity-run__chevron${expanded ? " activity-run__chevron--expanded" : ""}`}>▶</span>
       </button>
       {expanded && <ActivityRunDetail run={run} />}
     </div>

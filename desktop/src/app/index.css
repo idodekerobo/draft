@@ -953,8 +953,9 @@ button {
 
 .context-group-section__arrow {
   flex-shrink: 0;
-  font-size: 8px;
+  font-size: 13px;
   color: var(--color-text-tertiary);
+  opacity: 0.45;
   transition: transform 180ms ease;
 }
 
@@ -2901,11 +2902,16 @@ button {
 }
 
 .activity-run__chevron {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
   line-height: 1;
-  transition: color 80ms;
+  display: inline-block;
+  transition: transform 200ms ease, color 80ms;
+}
+
+.activity-run__chevron--expanded {
+  transform: rotate(90deg);
 }
 
 .activity-run__row:hover .activity-run__chevron {
