@@ -76,14 +76,25 @@ Future: capture pane content, write question to `~/.draft/background/pending-que
 poll for answer file, send answer via send-keys, resume. Python rewrite recommended
 for this — TmuxSession class + ClaudeCodeAdapter class.
 
+## Hook suppression contract
+
+Any intelligence adapter that launches a Claude Code (or other agent) session with
+Draft hooks enabled **must** export `DRAFT_SUPPRESS_SESSION_END_HOOK=1` in the
+agent's environment before launching. This prevents the synthesis session from
+recursively enqueuing new jobs via `on-session-end.sh` when it exits.
+
+`claude-code.sh` sets this in the generated launch script. Future adapters that
+spawn agent sessions must do the same.
+
 ## Adding a new intelligence adapter
 
 1. Create `intelligence/<name>.sh`
 2. Accept `$1` = prompt_file, `$2` = output_file
 3. Execute the model with the prompt
-4. Write synthesis output to `$2`
-5. Exit 0 on success, exit 1 on failure
-6. Log to stderr
+4. **Export `DRAFT_SUPPRESS_SESSION_END_HOOK=1`** if the model runs inside a session that has Draft hooks
+5. Write synthesis output to `$2`
+6. Exit 0 on success, exit 1 on failure
+7. Log to stderr
 
 Note on Codex: `codex exec --full-auto` may run headlessly without tmux.
 Validate before building `intelligence/codex.sh`.

@@ -22,6 +22,13 @@
 # ── Read stdin immediately ─────────────────────────────────────────────────────
 HOOK_INPUT=$(cat)
 
+# ── Suppress hook for Draft-internal synthesis sessions ────────────────────────
+# intelligence/claude-code.sh exports this so synthesis Claude sessions don't
+# recursively enqueue new jobs when they exit.
+if [ "${DRAFT_SUPPRESS_SESSION_END_HOOK:-}" = "1" ]; then
+    exit 0
+fi
+
 DRAFT_GLOBAL="$HOME/.draft"
 DRAFT_BACKGROUND="$DRAFT_GLOBAL/background"
 DRAFT_PENDING="$DRAFT_BACKGROUND/pending"

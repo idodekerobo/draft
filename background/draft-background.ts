@@ -206,12 +206,19 @@ setInterval(() => {
 // ── Main poll loop ────────────────────────────────────────────────────────────
 
 let loopCount = 0;
+let tickInProgress = false;
 
 async function tick() {
   await writeHeartbeat();
-  await processPendingJobs();
-  loopCount++;
-  if (loopCount % 1000 === 0) await trimLog();
+  if (tickInProgress) return;
+  tickInProgress = true;
+  try {
+    await processPendingJobs();
+    loopCount++;
+    if (loopCount % 1000 === 0) await trimLog();
+  } finally {
+    tickInProgress = false;
+  }
 }
 
 setInterval(tick, PENDING_POLL_MS);

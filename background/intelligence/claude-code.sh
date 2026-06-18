@@ -62,6 +62,8 @@ LAUNCH_SCRIPT=$(mktemp /tmp/draft-launch-XXXXXX)
 cat > "$LAUNCH_SCRIPT" <<LAUNCH
 #!/bin/bash
 # Draft synthesis launch — spawned by daemon
+# Suppress Draft's SessionEnd hook so this synthesis session doesn't enqueue another job
+export DRAFT_SUPPRESS_SESSION_END_HOOK=1
 cd "\${DRAFT_WORKSPACE:-$DRAFT_WORKSPACE}"
 exec claude --dangerously-skip-permissions
 LAUNCH
