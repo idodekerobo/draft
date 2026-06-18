@@ -74,7 +74,7 @@ CURRENT_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Enumerates all context/*/index.md files — not just the standard four.
 # Teams may add custom dimensions (e.g. context/customers/, context/decisions/).
 CONTEXT_FILES_LIST=$(find "${DRAFT_WORKSPACE}/context" -maxdepth 2 -name "index.md" 2>/dev/null | sort | sed 's/^/   - /')
-CONTEXT_DIMS=$(find "${DRAFT_WORKSPACE}/context" -maxdepth 2 -name "index.md" 2>/dev/null | sort | while IFS= read -r f; do basename "$(dirname "$f")"; done | paste -sd ', ')
+CONTEXT_DIMS=$(find "${DRAFT_WORKSPACE}/context" -maxdepth 2 -name "index.md" 2>/dev/null | sort | while IFS= read -r f; do basename "$(dirname "$f")"; done | paste -sd ',')
 if [ -z "$CONTEXT_FILES_LIST" ]; then
     CONTEXT_FILES_LIST="   (no context files found — workspace may not be initialized)"
     CONTEXT_DIMS="(none found)"
