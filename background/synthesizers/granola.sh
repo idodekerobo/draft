@@ -94,7 +94,7 @@ if [ -z "$CONTEXT_FILES_LIST" ]; then
 fi
 
 # ── Build prompt + call intelligence ──────────────────────────────────────────
-PROMPT_FILE=$(mktemp /tmp/draft-granola-prompt-XXXXXX.txt)
+PROMPT_FILE=$(mktemp /tmp/draft-granola-prompt-XXXXXX)
 # Output file must live inside the workspace — Claude Code's Write tool restricts
 # writes to paths within the CWD (~/.draft/workspaces/<profile>/) even with
 # --dangerously-skip-permissions. /tmp/ is outside that boundary.

@@ -122,7 +122,7 @@ PYEOF
 )
 
 # ── Build prompt ──────────────────────────────────────────────────────────────
-PROMPT_FILE=$(mktemp /tmp/draft-github-prompt-XXXXXX.txt)
+PROMPT_FILE=$(mktemp /tmp/draft-github-prompt-XXXXXX)
 mkdir -p "$DRAFT_WORKSPACE/tmp"
 OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/github-synthesis-XXXXXX")
 

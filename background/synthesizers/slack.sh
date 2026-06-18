@@ -81,7 +81,7 @@ fi
 # ── Discover context files dynamically ────────────────────────────────────────
 
 CONTEXT_FILES_LIST=$(find "${DRAFT_WORKSPACE}/context" -maxdepth 2 -name "index.md" 2>/dev/null | sort | sed 's/^/   - /')
-CONTEXT_DIMS=$(find "${DRAFT_WORKSPACE}/context" -maxdepth 2 -name "index.md" 2>/dev/null | sort | while IFS= read -r f; do basename "$(dirname "$f")"; done | paste -sd ', ')
+CONTEXT_DIMS=$(find "${DRAFT_WORKSPACE}/context" -maxdepth 2 -name "index.md" 2>/dev/null | sort | while IFS= read -r f; do basename "$(dirname "$f")"; done | paste -sd ',')
 if [ -z "$CONTEXT_FILES_LIST" ]; then
     CONTEXT_FILES_LIST="   (no context files found)"
     CONTEXT_DIMS="(none found)"
@@ -192,7 +192,7 @@ fi
 
 # ── Create temp files ─────────────────────────────────────────────────────────
 
-PROMPT_FILE=$(mktemp /tmp/draft-slack-prompt-XXXXXX.txt)
+PROMPT_FILE=$(mktemp /tmp/draft-slack-prompt-XXXXXX)
 OUTPUT_FILE=$(mktemp /tmp/draft-slack-synthesis-XXXXXX)
 
 _cleanup() {

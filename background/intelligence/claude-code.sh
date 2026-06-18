@@ -57,7 +57,7 @@ TMUX_SESSION="draft-synth-$$-$(date +%s)"
 
 # ── Write launch script ────────────────────────────────────────────────────────
 # Writing to a script file avoids send-keys quoting/escaping issues.
-LAUNCH_SCRIPT=$(mktemp /tmp/draft-launch-XXXXXX.sh)
+LAUNCH_SCRIPT=$(mktemp /tmp/draft-launch-XXXXXX)
 
 cat > "$LAUNCH_SCRIPT" <<LAUNCH
 #!/bin/bash
@@ -115,9 +115,19 @@ _log "startup complete, sending synthesis task"
 # Short message pointing Claude to the prompt file. Avoids long send-keys strings.
 # Claude will use its Read tool to load the instructions, then follow them.
 TASK_MSG="Read the synthesis instructions at '${PROMPT_FILE}' and follow them exactly. Write your output to '${OUTPUT_FILE}'. Do not ask questions or seek clarification — if anything is ambiguous, omit it."
-tmux send-keys -t "$TMUX_SESSION" "$TASK_MSG" Enter
+tmux send-keys -t "$TMUX_SESSION" -l "$TASK_MSG"
+sleep 0.5
+tmux send-keys -t "$TMUX_SESSION" Enter
 
 _log "task sent, monitoring for completion..."
+
+# Checkpoint: capture pane 3s after submit to verify Claude started processing
+sleep 3
+CHECKPOINT=$(tmux capture-pane -t "$TMUX_SESSION" -p -S -10 2>/dev/null || echo "")
+_log "post-submit checkpoint (3s):"
+echo "$CHECKPOINT" | tail -8 | while IFS= read -r line; do
+    _log "  pane: $line"
+done
 
 # ── Poll for completion ────────────────────────────────────────────────────────
 # Success condition: '❯' in last 5 pane lines (Claude at input prompt) AND

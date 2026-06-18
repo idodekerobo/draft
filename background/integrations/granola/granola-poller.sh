@@ -137,7 +137,7 @@ PYEOF
 # ── Build context payload for synthesizer ─────────────────────────────────────
 # Write a context file for the synthesizer rather than a job file.
 # Granola synthesis is time-triggered, not event-triggered — no session job exists.
-CONTEXT_FILE=$(mktemp /tmp/draft-granola-context-XXXXXX.json)
+CONTEXT_FILE=$(mktemp /tmp/draft-granola-context-XXXXXX)
 trap 'rm -f "$CONTEXT_FILE"' EXIT
 
 CURRENT_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -167,7 +167,7 @@ with open("$CONTEXT_FILE", "w") as f:
 PYEOF
 
 # ── Call synthesizer ───────────────────────────────────────────────────────────
-SYNTH_OUTPUT=$(mktemp /tmp/draft-granola-output-XXXXXX.md)
+SYNTH_OUTPUT=$(mktemp /tmp/draft-granola-output-XXXXXX)
 trap 'rm -f "$CONTEXT_FILE" "$SYNTH_OUTPUT"' EXIT
 
 bash "$SYNTHESIZER" "$CONTEXT_FILE" > "$SYNTH_OUTPUT" 2>>"$DRAFT_LOGS/daemon.log"
