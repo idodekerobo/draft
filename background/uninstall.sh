@@ -10,12 +10,13 @@
 PLIST_LABEL="com.draft.daemon"
 PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 DRAFT_BACKGROUND="$HOME/.draft/background"
+_UID=$(id -u)
+_SERVICE_TARGET="gui/${_UID}/${PLIST_LABEL}"
 
 echo "[Draft Daemon] Uninstalling..."
 
 # Stop the daemon if running
-if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
-    launchctl unload "$PLIST_PATH" 2>/dev/null || true
+if launchctl bootout "$_SERVICE_TARGET" 2>/dev/null; then
     echo "[Draft Daemon] Daemon stopped"
 else
     echo "[Draft Daemon] Daemon was not running"

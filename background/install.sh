@@ -240,20 +240,23 @@ echo ""
 echo "[Draft Daemon] LaunchAgent plist written to $PLIST_PATH"
 
 # ── 5. Load the LaunchAgent ────────────────────────────────────────────────────
-# Unload first if already running (idempotent).
-if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
-    echo "[Draft Daemon] Stopping existing daemon instance..."
-    launchctl unload "$PLIST_PATH" 2>/dev/null || true
-    sleep 1
-fi
+# Use modern launchctl API (bootout/bootstrap/kickstart) for idempotent lifecycle.
+_UID=$(id -u)
+_SERVICE_TARGET="gui/${_UID}/${PLIST_LABEL}"
 
-launchctl load "$PLIST_PATH"
-echo "[Draft Daemon] LaunchAgent loaded"
+# Remove existing registration (ignore "not bootstrapped" error)
+launchctl bootout "$_SERVICE_TARGET" 2>/dev/null || true
+sleep 1
+
+# Register and start
+launchctl bootstrap "gui/${_UID}" "$PLIST_PATH"
+launchctl kickstart -k "$_SERVICE_TARGET"
+echo "[Draft Daemon] LaunchAgent registered and started"
 
 # ── 6. Verify ─────────────────────────────────────────────────────────────────
 sleep 2
 echo ""
-if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
+if launchctl print "$_SERVICE_TARGET" &>/dev/null 2>&1; then
     echo "[Draft Daemon] Installation complete — daemon is running"
     echo ""
     echo "  Check status:   draft status"
