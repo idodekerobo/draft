@@ -16,10 +16,11 @@ const DRAFT_BACKGROUND = BACKGROUND_DIR;
 // Paths — mirrors config.sh exports
 const ACTIVE_PROFILE  = getActiveProfile();
 const DRAFT_WORKSPACE = getWorkspacePath(ACTIVE_PROFILE);
-const DRAFT_PENDING   = `${DRAFT_BACKGROUND}/pending`;
-const DRAFT_FAILED    = `${DRAFT_BACKGROUND}/failed`;
-const DRAFT_LOGS      = `${DRAFT_BACKGROUND}/logs`;
-const STATE_DIR       = `${DRAFT_BACKGROUND}/state`;
+const DRAFT_PENDING    = `${DRAFT_BACKGROUND}/pending`;
+const DRAFT_PROCESSING = `${DRAFT_BACKGROUND}/processing`;
+const DRAFT_FAILED     = `${DRAFT_BACKGROUND}/failed`;
+const DRAFT_LOGS       = `${DRAFT_BACKGROUND}/logs`;
+const STATE_DIR        = `${DRAFT_BACKGROUND}/state`;
 
 // Polling intervals — env var overrides with same defaults as config.sh
 const PENDING_POLL_MS   = parseInt(process.env.DRAFT_PENDING_POLL   ?? '5')     * 1000;
@@ -29,10 +30,11 @@ const SLACK_ANALYSIS_MS = parseInt(process.env.DRAFT_SLACK_ANALYSIS ?? '14400') 
 const GITHUB_POLL_MS    = parseInt(process.env.DRAFT_GITHUB_POLL    ?? '3600')  * 1000;
 
 // Ensure runtime directories exist (mkdirSync before openSync below)
-mkdirSync(DRAFT_PENDING, { recursive: true });
-mkdirSync(DRAFT_FAILED,  { recursive: true });
-mkdirSync(DRAFT_LOGS,    { recursive: true });
-mkdirSync(STATE_DIR,     { recursive: true });
+mkdirSync(DRAFT_PENDING,    { recursive: true });
+mkdirSync(DRAFT_PROCESSING, { recursive: true });
+mkdirSync(DRAFT_FAILED,     { recursive: true });
+mkdirSync(DRAFT_LOGS,       { recursive: true });
+mkdirSync(STATE_DIR,        { recursive: true });
 
 // ── Analytics ────────────────────────────────────────────────────────────────
 // Key baked in at compile time via prebuild.sh --define; falls back to env in dev mode.
@@ -108,15 +110,22 @@ async function processJob(jobPath: string) {
   const jobName = jobPath.split('/').pop()!;
   log('info', `processing job: ${jobName}`);
 
+  // Move to processing/ immediately so the next poll tick doesn't re-pick it
+  const processingPath = `${DRAFT_PROCESSING}/${jobName}`;
+  try {
+    renameSync(jobPath, processingPath);
+  } catch {
+    // Another tick already moved it — skip
+    return;
+  }
+
   // Validate JSON — malformed files go to failed/
   let job: Record<string, unknown>;
   try {
-    job = JSON.parse(await Bun.file(jobPath).text());
+    job = JSON.parse(await Bun.file(processingPath).text());
   } catch {
     log('error', `invalid JSON in ${jobName} — quarantining to failed/`);
-    const content = await Bun.file(jobPath).text();
-    await Bun.write(`${DRAFT_FAILED}/${jobName}`, content);
-    unlinkSync(jobPath);
+    renameSync(processingPath, `${DRAFT_FAILED}/${jobName}`);
     return;
   }
 
@@ -126,14 +135,14 @@ async function processJob(jobPath: string) {
 
   // Route to synthesize.ts module (replaced synthesize.sh)
   const jobSource = String(job.source ?? 'claude-code-session');
-  const result = await synthesize(jobPath);
+  const result = await synthesize(processingPath);
   if (result.status === 'success' || result.status === 'skipped') {
-    unlinkSync(jobPath);
+    try { unlinkSync(processingPath); } catch {}
     log('info', `job ${jobName} complete (${result.status})`);
     phTrack('daemon_synthesis_completed', { source: jobSource, status: result.status });
   } else {
     log('error', `synthesize ${result.status} for ${jobName} — quarantining to failed/`);
-    renameSync(jobPath, `${DRAFT_FAILED}/${jobName}`);
+    try { renameSync(processingPath, `${DRAFT_FAILED}/${jobName}`); } catch {}
     phTrack('daemon_synthesis_failed', { source: jobSource, status: result.status });
   }
 }
