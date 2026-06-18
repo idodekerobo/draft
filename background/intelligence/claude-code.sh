@@ -57,7 +57,7 @@ TMUX_SESSION="draft-synth-$$-$(date +%s)"
 
 # ── Write launch script ────────────────────────────────────────────────────────
 # Writing to a script file avoids send-keys quoting/escaping issues.
-LAUNCH_SCRIPT=$(mktemp /tmp/draft-launch-XXXXXX.sh)
+LAUNCH_SCRIPT=$(mktemp /tmp/draft-launch-XXXXXX)
 
 cat > "$LAUNCH_SCRIPT" <<LAUNCH
 #!/bin/bash

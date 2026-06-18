@@ -58,9 +58,9 @@ TRANSCRIPT_SIZE=$(wc -c < "$TRANSCRIPT_PATH" | tr -d ' ')
 _log "transcript: $TRANSCRIPT_PATH ($TRANSCRIPT_SIZE bytes)"
 
 # ── Create temp files ──────────────────────────────────────────────────────────
-PROMPT_FILE=$(mktemp /tmp/draft-prompt-XXXXXX.txt)
+PROMPT_FILE=$(mktemp /tmp/draft-prompt-XXXXXX)
 mkdir -p "$DRAFT_WORKSPACE/tmp"
-OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/synthesis-XXXXXX.md")
+OUTPUT_FILE=$(mktemp "$DRAFT_WORKSPACE/tmp/synthesis-XXXXXX")
 
 _cleanup() {
     rm -f "$PROMPT_FILE" "$OUTPUT_FILE"

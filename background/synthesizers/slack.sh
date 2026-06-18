@@ -192,7 +192,7 @@ fi
 
 # ── Create temp files ─────────────────────────────────────────────────────────
 
-PROMPT_FILE=$(mktemp /tmp/draft-slack-prompt-XXXXXX.txt)
+PROMPT_FILE=$(mktemp /tmp/draft-slack-prompt-XXXXXX)
 OUTPUT_FILE=$(mktemp /tmp/draft-slack-synthesis-XXXXXX)
 
 _cleanup() {

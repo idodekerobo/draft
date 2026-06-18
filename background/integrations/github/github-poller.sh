@@ -77,7 +77,7 @@ _log "info" "starting poll (last_polled=${LAST_POLLED_AT:-never}, repos=${DRAFT_
 CURRENT_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ── Fetch GitHub activity ─────────────────────────────────────────────────────
-CONTEXT_FILE=$(mktemp /tmp/draft-github-context-XXXXXX.json)
+CONTEXT_FILE=$(mktemp /tmp/draft-github-context-XXXXXX)
 trap 'rm -f "$CONTEXT_FILE"' EXIT
 
 # Build per-repo data using gh CLI
@@ -196,7 +196,7 @@ PYEOF
 fi
 
 # ── Call synthesizer ──────────────────────────────────────────────────────────
-SYNTH_OUTPUT=$(mktemp /tmp/draft-github-output-XXXXXX.md)
+SYNTH_OUTPUT=$(mktemp /tmp/draft-github-output-XXXXXX)
 trap 'rm -f "$CONTEXT_FILE" "$SYNTH_OUTPUT"' EXIT
 
 if ! bash "$SYNTHESIZER" "$CONTEXT_FILE" > "$SYNTH_OUTPUT"; then

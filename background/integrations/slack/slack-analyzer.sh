@@ -109,7 +109,7 @@ fi
 
 # ── Build context file for synthesizer ────────────────────────────────────────
 
-CONTEXT_FILE=$(mktemp /tmp/draft-slack-context-XXXXXX.json)
+CONTEXT_FILE=$(mktemp /tmp/draft-slack-context-XXXXXX)
 trap 'rm -f "$CONTEXT_FILE"' EXIT
 
 python3 - <<PYEOF
@@ -133,7 +133,7 @@ PYEOF
 
 # ── Call synthesizer ───────────────────────────────────────────────────────────
 
-SYNTH_OUTPUT=$(mktemp /tmp/draft-slack-output-XXXXXX.md)
+SYNTH_OUTPUT=$(mktemp /tmp/draft-slack-output-XXXXXX)
 trap 'rm -f "$CONTEXT_FILE" "$SYNTH_OUTPUT"' EXIT
 
 bash "$SYNTHESIZER" "$CONTEXT_FILE" > "$SYNTH_OUTPUT" 2>> "$DRAFT_LOGS/daemon.log"
