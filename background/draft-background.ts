@@ -8,7 +8,7 @@
 
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
-import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, unlinkSync, renameSync, writeFileSync } from 'fs';
+import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
 
 const DRAFT_BACKGROUND = BACKGROUND_DIR;
@@ -154,12 +154,46 @@ async function processPendingJobs() {
   for (const f of files) await processJob(`${DRAFT_PENDING}/${f}`);
 }
 
-// ── PID sentinel ─────────────────────────────────────────────────────────────
-// Written on start, deleted on stop. Used by checkHeartbeat() in core/src/heartbeat.ts
-// as a fast no-subprocess heuristic for daemon alive/dead detection.
+// ── Singleton guard ──────────────────────────────────────────────────────────
+// Prevents multiple daemon processes from running simultaneously (e.g. launchd
+// restarts, desktop app relaunches, manual starts).
 
 const PID_FILE = `${DRAFT_BACKGROUND}/draft-background.pid`;
+
+function isPidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+if (existsSync(PID_FILE)) {
+  try {
+    const existingPid = parseInt(readFileSync(PID_FILE, 'utf8').trim(), 10);
+    if (existingPid && existingPid !== process.pid && isPidAlive(existingPid)) {
+      log('info', `daemon already running (pid=${existingPid}) — exiting`);
+      process.exit(0);
+    }
+  } catch { /* stale or unreadable — proceed to replace */ }
+}
+
 writeFileSync(PID_FILE, String(process.pid));
+
+// ── Recover stale processing jobs ────────────────────────────────────────────
+// On startup, any files in processing/ are from a previous daemon that died
+// mid-synthesis. Move them to failed/ so they don't get stuck forever.
+
+try {
+  const staleFiles = readdirSync(DRAFT_PROCESSING).filter(f => f.endsWith('.json'));
+  for (const f of staleFiles) {
+    const src = `${DRAFT_PROCESSING}/${f}`;
+    let dst = `${DRAFT_FAILED}/${f}`;
+    if (existsSync(dst)) {
+      dst = `${DRAFT_FAILED}/${f.replace('.json', '')}-stale-${Date.now()}.json`;
+    }
+    try {
+      renameSync(src, dst);
+      log('warn', `stale processing job found on startup — quarantined: ${f}`);
+    } catch { /* race with another process — ignore */ }
+  }
+} catch { /* ENOENT or unreadable — fine */ }
 
 // ── Startup log (before arming timers — matches bash daemon ordering) ─────────
 
@@ -206,12 +240,19 @@ setInterval(() => {
 // ── Main poll loop ────────────────────────────────────────────────────────────
 
 let loopCount = 0;
+let tickInProgress = false;
 
 async function tick() {
   await writeHeartbeat();
-  await processPendingJobs();
-  loopCount++;
-  if (loopCount % 1000 === 0) await trimLog();
+  if (tickInProgress) return;
+  tickInProgress = true;
+  try {
+    await processPendingJobs();
+    loopCount++;
+    if (loopCount % 1000 === 0) await trimLog();
+  } finally {
+    tickInProgress = false;
+  }
 }
 
 setInterval(tick, PENDING_POLL_MS);

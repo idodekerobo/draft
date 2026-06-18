@@ -80,7 +80,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "stop-draft") {
-    capture(["launchctl", "unload", PLIST_PATH])
+    capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`])
       .then(() => {
         setTimeout(refreshAppMenu, 500);
         try { rpc.send.requestStatusRefresh({}); } catch {}
@@ -289,7 +289,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       stopDaemon: async () => {
-        const result = await capture(["launchctl", "unload", PLIST_PATH]);
+        const result = await capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`]);
         refreshAppMenu().catch(() => {});
         return { ok: result.exitCode === 0, error: result.stderr || undefined };
       },
@@ -870,9 +870,9 @@ async function syncDaemonBinary(): Promise<void> {
     // launchd picks up the new ProgramArguments (kickstart alone won't do this).
     try {
       writeFileSync(PLIST_PATH, daemonPlistContent(installedBin), "utf8");
-      await capture(["launchctl", "unload", PLIST_PATH]);
-      await capture(["launchctl", "load",   PLIST_PATH]);
-      await capture(["launchctl", "start",  PLIST_LABEL]);
+      await capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`]).catch(() => {});
+      await capture(["launchctl", "bootstrap", `gui/${process.getuid!()}`, PLIST_PATH]);
+      await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/${PLIST_LABEL}`]);
       console.log("[draft-desktop] daemon plist migrated to draft-background-bin");
     } catch (err) {
       console.warn(`[draft-desktop] daemon plist migration failed: ${err instanceof Error ? err.message : err}`);
@@ -953,7 +953,7 @@ tray.on("tray-clicked", (e) => {
   }
 
   if (action === "tray-stop-draft") {
-    capture(["launchctl", "unload", PLIST_PATH])
+    capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`])
       .then(() => {
         setTimeout(refreshTrayMenu, 500);
         setTimeout(refreshAppMenu, 500);
