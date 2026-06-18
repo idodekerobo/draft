@@ -57,11 +57,24 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 JOB_JSON="{\"profile\":\"${DRAFT_ACTIVE_PROFILE}\",\"session_id\":\"${SESSION_ID}\",\"transcript_path\":\"${TRANSCRIPT_PATH}\",\"cwd\":\"${CWD}\",\"reason\":\"${REASON}\",\"source\":\"claude-code-session\",\"timestamp\":\"${TIMESTAMP}\"}"
 
+# ── Deduplicate by session_id ──────────────────────────────────────────────────
+# Use session_id as filename when available so the same session can't enqueue twice.
+# Fall back to uuidgen for unknown/missing session_ids.
+if [ "$SESSION_ID" != "unknown" ] && [ -n "$SESSION_ID" ]; then
+    JOB_NAME="job-${SESSION_ID}.json"
+    # Check all queue states — if this session already has a job, skip
+    if [ -f "$DRAFT_PENDING/$JOB_NAME" ] || \
+       [ -f "$DRAFT_BACKGROUND/processing/$JOB_NAME" ] || \
+       [ -f "$DRAFT_BACKGROUND/failed/$JOB_NAME" ]; then
+        exit 0
+    fi
+else
+    JOB_NAME="job-$(uuidgen 2>/dev/null || printf '%04x%04x%04x%04x' $RANDOM $RANDOM $RANDOM $RANDOM).json"
+fi
+
 # ── Atomic write ───────────────────────────────────────────────────────────────
-# uuidgen for unique filename — safe for simultaneous session closes.
 # Write to .tmp first, then rename — daemon never reads a partial file.
-JOB_ID=$(uuidgen 2>/dev/null || printf '%04x%04x%04x%04x' $RANDOM $RANDOM $RANDOM $RANDOM)
-JOB_FILE="$DRAFT_PENDING/job-${JOB_ID}.json"
+JOB_FILE="$DRAFT_PENDING/$JOB_NAME"
 TMPFILE=$(mktemp "$DRAFT_PENDING/.tmp.XXXXXX")
 printf '%s\n' "$JOB_JSON" > "$TMPFILE"
 mv "$TMPFILE" "$JOB_FILE"

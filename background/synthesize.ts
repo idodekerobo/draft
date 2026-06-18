@@ -22,6 +22,7 @@ interface Job {
   profile?: string;
   source?: string;
   cwd?: string;
+  transcript_path?: string;
 }
 
 const LOGS_DIR   = `${BACKGROUND_DIR}/logs`;
@@ -90,6 +91,24 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
       proposalsGenerated: 0, skipReason: reason, errorMsg: null,
     });
     return { status: 'skipped', proposalsGenerated: 0, skipReason: reason };
+  }
+
+  // ── Skip missing transcripts before spawning the expensive adapter ─────────
+  // Session-source jobs require a transcript file. Check early to avoid launching
+  // a Claude session that will immediately fail.
+  if (source === 'claude-code-session') {
+    const transcriptPath = job.transcript_path;
+    if (!transcriptPath || !existsSync(transcriptPath)) {
+      const why = !transcriptPath ? 'missing_transcript_path' : 'missing_transcript';
+      slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
+      writeActivityRow(workspace, {
+        id: jobId, profile, source, sessionId, cwd,
+        startedAt, endedAt: new Date().toISOString(), status: 'skipped',
+        durationMs: Date.now() - startTime,
+        proposalsGenerated: 0, skipReason: why, errorMsg: null,
+      });
+      return { status: 'skipped', proposalsGenerated: 0, skipReason: why };
+    }
   }
 
   slog('info', `synthesize: starting (session=${sessionShort} profile=${profile})`);
