@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { PostHogProvider } from "@/lib/PostHogProvider";
+import CrispChat from "@/components/CrispChat";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -57,6 +58,7 @@ export default function RootLayout({
         <PostHogProvider>
           {children}
         </PostHogProvider>
+        <CrispChat />
       </body>
     </html>
   );
