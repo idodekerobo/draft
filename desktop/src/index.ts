@@ -16,7 +16,7 @@ import {
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
-import { getBundledDaemonBinPath } from "./main/bundlePath";
+import { getBundledDaemonBinPath, getBundledPluginDir } from "./main/bundlePath";
 import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
 import { runInstall } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
@@ -825,49 +825,61 @@ function daemonPlistContent(binPath: string): string {
 `;
 }
 
-async function syncDaemonBinary(): Promise<void> {
-  const bundledBin = getBundledDaemonBinPath();
-  if (!bundledBin || !existsSync(bundledBin)) return; // dev mode or missing binary
-
-  const sidecarPath  = `${BACKGROUND_DIR}/.daemon-version`;
-  const installedBin = `${BACKGROUND_DIR}/draft-background-bin`;
-
+async function syncBundledAssets(): Promise<void> {
   let appVersion: string;
   try {
     const info = await Electrobun.Updater.getLocalInfo();
     appVersion = info.version;
   } catch {
-    return; // can't determine version — skip to avoid unnecessary copies
+    return;
   }
 
+  const sidecarPath = `${BACKGROUND_DIR}/.app-version`;
   const installedVersion = existsSync(sidecarPath)
     ? readFileSync(sidecarPath, "utf8").trim()
     : null;
 
-  const binaryNeedsUpdate = installedVersion !== appVersion;
-
   // Plist migration: existing users have a plist pointing at the old bash daemon.
-  // Detect by checking for "draft-daemon.sh" in the plist content.
-  const plistContent     = existsSync(PLIST_PATH) ? readFileSync(PLIST_PATH, "utf8") : "";
+  const plistContent = existsSync(PLIST_PATH) ? readFileSync(PLIST_PATH, "utf8") : "";
   const plistNeedsMigration = plistContent.includes("draft-daemon.sh");
 
-  if (!binaryNeedsUpdate && !plistNeedsMigration) return; // nothing to do
+  if (installedVersion === appVersion && !plistNeedsMigration) return;
 
-  if (binaryNeedsUpdate) {
+  // ── Daemon binary ───────────────────────────────────────────────────────────
+  const bundledBin = getBundledDaemonBinPath();
+  const installedBin = `${BACKGROUND_DIR}/draft-background-bin`;
+
+  if (bundledBin && existsSync(bundledBin)) {
     try {
       copyFileSync(bundledBin, installedBin);
       chmodSync(installedBin, 0o755);
-      writeFileSync(sidecarPath, appVersion, "utf8");
       console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
     } catch (err) {
       console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
-      return;
     }
   }
 
+  // ── Plugin content (skills, agents, hooks) ──────────────────────────────────
+  const pluginDir = getBundledPluginDir();
+  const populateScript = join(pluginDir, "scripts", "populate-shared.sh");
+
+  if (existsSync(populateScript)) {
+    try {
+      const result = await capture(["bash", populateScript], {
+        env: { PLUGIN_ROOT: pluginDir, USE_LOCAL: "true" },
+      });
+      if (result.exitCode === 0) {
+        console.log(`[draft-desktop] plugin content synced to ${appVersion}`);
+      } else {
+        console.warn(`[draft-desktop] plugin sync failed (exit ${result.exitCode}): ${result.stderr.slice(0, 200)}`);
+      }
+    } catch (err) {
+      console.warn(`[draft-desktop] plugin sync failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // ── Plist migration ─────────────────────────────────────────────────────────
   if (plistNeedsMigration) {
-    // Rewrite the plist to point at the TypeScript daemon binary, then reload so
-    // launchd picks up the new ProgramArguments (kickstart alone won't do this).
     try {
       writeFileSync(PLIST_PATH, daemonPlistContent(installedBin), "utf8");
       await capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`]).catch(() => {});
@@ -877,15 +889,16 @@ async function syncDaemonBinary(): Promise<void> {
     } catch (err) {
       console.warn(`[draft-desktop] daemon plist migration failed: ${err instanceof Error ? err.message : err}`);
     }
-    return;
+  } else if (bundledBin && existsSync(bundledBin)) {
+    try {
+      await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/com.draft.daemon`]);
+    } catch {
+      // Non-fatal: daemon will use the new binary on next natural restart (keepalive).
+    }
   }
 
-  // Plist already correct — just restart the running daemon with the new binary.
-  try {
-    await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/com.draft.daemon`]);
-  } catch {
-    // Non-fatal: daemon will use the new binary on next natural restart (keepalive).
-  }
+  // Write sidecar last — if any step above threw, we'll retry on next launch.
+  writeFileSync(sidecarPath, appVersion, "utf8");
 }
 
 // ── Update helpers ─────────────────────────────────────────────────────────────
@@ -986,7 +999,7 @@ tray.on("tray-clicked", (e) => {
 // webview.messages once the dom-ready event is wired.
 
 setTimeout(async () => {
-  await syncDaemonBinary(); // must run before daemon status poll
+  await syncBundledAssets(); // must run before daemon status poll
 
   try {
     const status  = await getDaemonStatus();
