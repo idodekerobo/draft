@@ -45,6 +45,7 @@ _SCRIPTS=(
     "start.sh"
     "stop.sh"
     "uninstall.sh"
+    "install.sh"
     "commit-to-team-context.sh"
     "load-team.sh"
 )
@@ -52,7 +53,9 @@ _SCRIPTS=(
 _MISSING=()
 for script in "${_SCRIPTS[@]}"; do
     if [ -f "$SCRIPT_DIR/$script" ]; then
-        cp "$SCRIPT_DIR/$script" "$DRAFT_BACKGROUND/$script"
+        if [ "$SCRIPT_DIR/$script" != "$DRAFT_BACKGROUND/$script" ]; then
+            cp "$SCRIPT_DIR/$script" "$DRAFT_BACKGROUND/$script"
+        fi
         chmod +x "$DRAFT_BACKGROUND/$script"
     else
         _MISSING+=("$script")
@@ -71,10 +74,14 @@ fi
 # removed at build time so it doesn't fail notarization). Fall back to SCRIPT_DIR for dev
 # mode or when re-running install.sh from ~/.draft/background/ after first install.
 _BIN_SRC=""
-_MACOS_BIN="$(cd "$SCRIPT_DIR/../../../MacOS" 2>/dev/null && pwd 2>/dev/null)/draft-background-bin"
-if [ -f "$_MACOS_BIN" ]; then
-    _BIN_SRC="$_MACOS_BIN"
-elif [ -f "$SCRIPT_DIR/draft-background-bin" ]; then
+_MACOS_DIR=""
+if _MACOS_DIR=$(cd "$SCRIPT_DIR/../../../MacOS" 2>/dev/null && pwd 2>/dev/null); then
+    _MACOS_BIN="$_MACOS_DIR/draft-background-bin"
+    if [ -f "$_MACOS_BIN" ]; then
+        _BIN_SRC="$_MACOS_BIN"
+    fi
+fi
+if [ -z "$_BIN_SRC" ] && [ -f "$SCRIPT_DIR/draft-background-bin" ]; then
     _BIN_SRC="$SCRIPT_DIR/draft-background-bin"
 fi
 
