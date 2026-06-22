@@ -13,10 +13,14 @@ import {
   rejectProposal as rejectCoreProposal,
   applyProposalLocally,
 } from "draft-core/proposals";
-import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, chmodSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
-import { getBundledDaemonBinPath, getBundledPluginDir } from "./main/bundlePath";
+import {
+  getBundledBackgroundDir,
+  getBundledDaemonBinPath,
+  getBundledPluginDir,
+} from "./main/bundlePath";
 import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
 import { runInstall } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
@@ -856,6 +860,66 @@ async function syncBundledAssets(): Promise<void> {
       console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
     } catch (err) {
       console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // ── Daemon runtime scripts ─────────────────────────────────────────────────
+  // The compiled daemon delegates session synthesis to shell adapters under
+  // ~/.draft/background. Keep that runtime in lockstep with the binary while
+  // preserving user-generated queues, state, logs, and Slack captures.
+  const backgroundDir = getBundledBackgroundDir();
+  const runtimeFiles = [
+    "commit-to-team-context.sh",
+    "config.sh",
+    "install.sh",
+    "load-team.sh",
+    "on-session-end.sh",
+    "start.sh",
+    "status.sh",
+    "stop.sh",
+    "synthesize.sh",
+    "uninstall.sh",
+  ];
+  const runtimeDirectories = ["intelligence", "integrations", "synthesizers"];
+
+  if (existsSync(backgroundDir)) {
+    try {
+      for (const relativePath of runtimeFiles) {
+        const source = join(backgroundDir, relativePath);
+        if (!existsSync(source)) continue;
+        copyFileSync(source, join(BACKGROUND_DIR, relativePath));
+        if (relativePath.endsWith(".sh")) chmodSync(join(BACKGROUND_DIR, relativePath), 0o755);
+      }
+
+      for (const relativeDir of runtimeDirectories) {
+        const sourceDir = join(backgroundDir, relativeDir);
+        if (!existsSync(sourceDir)) continue;
+        mkdirSync(join(BACKGROUND_DIR, relativeDir), { recursive: true });
+        for (const entry of readdirSync(sourceDir)) {
+          // Capture files are user data, not bundled daemon code.
+          if (relativeDir === "integrations" && entry === "slack") {
+            const slackSourceDir = join(sourceDir, entry);
+            const slackTargetDir = join(BACKGROUND_DIR, relativeDir, entry);
+            mkdirSync(slackTargetDir, { recursive: true });
+            for (const slackEntry of readdirSync(slackSourceDir)) {
+              if (slackEntry === "captures") continue;
+              cpSync(join(slackSourceDir, slackEntry), join(slackTargetDir, slackEntry), {
+                recursive: true,
+                force: true,
+              });
+            }
+            continue;
+          }
+          cpSync(join(sourceDir, entry), join(BACKGROUND_DIR, relativeDir, entry), {
+            recursive: true,
+            force: true,
+          });
+        }
+      }
+      console.log(`[draft-desktop] daemon runtime synced to ${appVersion}`);
+    } catch (err) {
+      console.warn(`[draft-desktop] daemon runtime sync failed: ${err instanceof Error ? err.message : err}`);
+      return;
     }
   }
 
