@@ -8,7 +8,8 @@ try {
   _buildCfg = JSON.parse(raw) as { posthog_key?: string; api_host?: string };
 } catch { /* no build-config.json — OSS build */ }
 
-const _phKey  = JSON.stringify(_buildCfg.posthog_key ?? "");
+const isDev   = process.argv.includes("dev");
+const _phKey  = JSON.stringify(isDev ? "" : (_buildCfg.posthog_key ?? ""));
 const _phHost = JSON.stringify(_buildCfg.api_host    ?? "https://us.i.posthog.com");
 
 export default {
