@@ -307,7 +307,7 @@ PYEOF
 
 # ── 5. Enable hooks feature flag in ~/.codex/config.toml ──────────────────────
 
-log "Enabling codex_hooks feature flag..."
+log "Enabling hooks feature flag..."
 
 python3 - <<PYEOF
 import re
@@ -316,22 +316,27 @@ from pathlib import Path
 config_path = Path("$CODEX_HOME/config.toml")
 content = config_path.read_text() if config_path.exists() else ""
 
+# Migrate deprecated codex_hooks → hooks
 if "codex_hooks" in content:
-    print("[Draft] codex_hooks already set — skipping.")
+    content = content.replace("codex_hooks", "hooks")
+    config_path.write_text(content)
+    print("[Draft] Migrated codex_hooks → hooks in config.toml.")
+elif "hooks = true" in content:
+    print("[Draft] hooks already set — skipping.")
 elif "[features]" in content:
     content = re.sub(
         r'(\[features\][^\[]*)',
-        r'\1codex_hooks = true\n',
+        r'\1hooks = true\n',
         content,
         count=1,
         flags=re.DOTALL
     )
     config_path.write_text(content)
-    print("[Draft] Added codex_hooks = true to existing [features] block.")
+    print("[Draft] Added hooks = true to existing [features] block.")
 else:
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(content + "\n[features]\ncodex_hooks = true\n")
-    print("[Draft] Added [features] block with codex_hooks = true.")
+    config_path.write_text(content + "\n[features]\nhooks = true\n")
+    print("[Draft] Added [features] block with hooks = true.")
 PYEOF
 
 # ── 6. Copy sub-agent TOML files to ~/.codex/agents/ ──────────────────────────

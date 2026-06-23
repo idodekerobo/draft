@@ -10,7 +10,7 @@
 #   5. Removes the draft:setup skill from ~/.agents/skills/setup/
 #
 # Does NOT touch ~/.draft/workspace/ (your shared context layer data stays intact)
-# Does NOT remove codex_hooks = true from config.toml (harmless Codex feature flag)
+# Does NOT remove hooks = true from config.toml (harmless Codex feature flag)
 
 set -euo pipefail
 
@@ -218,5 +218,5 @@ echo "    ~/.agents/skills/draft-learn/  (\$draft-learn skill)"
 echo ""
 echo "  What was kept:"
 echo "    ~/.draft/workspace/  (your shared context layer data is untouched)"
-echo "    ~/.codex/config.toml (left codex_hooks in place)"
+echo "    ~/.codex/config.toml (left hooks in place)"
 echo ""
