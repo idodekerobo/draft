@@ -1,3 +1,11 @@
+---
+name: draft-connect-granola
+description: >
+  Set up Granola integration for the Draft daemon. Guides the user through
+  connecting Granola via MCP (OAuth) or REST API token. Writes config/secrets.json
+  and config/integrations.json.
+---
+
 # /draft:connect granola — Granola Integration Setup
 
 Invoked by `draft-connect/SKILL.md` when the user runs `/draft:connect granola`.

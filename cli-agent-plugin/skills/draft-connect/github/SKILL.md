@@ -1,3 +1,11 @@
+---
+name: draft-connect-github
+description: >
+  Set up GitHub integration for the Draft daemon. Configures repo monitoring
+  and team member mapping using the gh CLI. Writes config/github.json and
+  config/integrations.json.
+---
+
 # /draft:connect github
 
 Connect GitHub to the Draft daemon. The daemon will poll configured repositories hourly for merged PRs, new releases, and open PRs — then synthesize them into workspace context proposals automatically.
