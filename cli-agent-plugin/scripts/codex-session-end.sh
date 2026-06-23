@@ -55,11 +55,12 @@ python3 - <<PYEOF
 import json
 from pathlib import Path
 
+last_val = "$last_synthesized_at"
 data = {
     "session_id": "$session_id",
     "transcript_path": "$transcript_path",
     "updated_at": $now,
-    "last_synthesized_at": $last_synthesized_at
+    "last_synthesized_at": None if last_val == "null" else int(last_val)
 }
 
 Path("$pending_file").write_text(json.dumps(data, indent=2) + "\n")
