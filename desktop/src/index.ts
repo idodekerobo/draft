@@ -36,6 +36,7 @@ import {
   startActiveProfileWatch,
   stopActiveProfileWatch,
 } from "./main/watchers/activeProfile";
+import { startSkillWatch, stopSkillWatch } from "./main/watchers/skills";
 import type { AppRPCType } from "./rpc/schema";
 
 // Key + host baked in at build time via electrobun.config.ts define → process.env.
@@ -111,6 +112,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
     stopHeartbeatWatch();
     stopProposalWatch();
     stopActiveProfileWatch();
+    stopSkillWatch();
     process.exit(0);
   }
 });
@@ -1135,6 +1137,7 @@ tray.on("tray-clicked", (e) => {
     stopHeartbeatWatch();
     stopProposalWatch();
     stopActiveProfileWatch();
+    stopSkillWatch();
     process.exit(0);
   }
 });
@@ -1168,6 +1171,11 @@ setTimeout(async () => {
   // 500ms delay ensures app is fully initialised before the initial mtime check.
   startHeartbeatWatch();
   startProposalWatch(getActiveProfile(), watcherHandlers);
+  startSkillWatch({
+    onSkillsChanged: (count) => {
+      try { rpc.send.skillsChanged({ count }); } catch {}
+    },
+  });
 
   // Watch ~/.draft/active-profile for CLI-driven profile switches (e.g. `draft switch`).
   startActiveProfileWatch({

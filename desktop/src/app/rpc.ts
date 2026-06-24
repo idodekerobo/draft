@@ -15,6 +15,7 @@ import type { AppRPCType } from "../rpc/schema";
 
 type EventMap = {
   proposalAdded: { profile: string; source: string; count: number };
+  skillsChanged: { count: number };
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
   badgeUpdate: { profile: string; count: number };
@@ -60,6 +61,8 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
     messages: {
       // TODO: Phase 2: new proposal arrived from daemon
       proposalAdded: (data) => events.emit("proposalAdded", data),
+
+      skillsChanged: (data) => events.emit("skillsChanged", data),
 
       // TODO: Phase 2: heartbeat went stale — daemon stopped
       daemonStopped: (data) => events.emit("daemonStopped", data),

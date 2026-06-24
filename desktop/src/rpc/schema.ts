@@ -411,6 +411,9 @@ export type AppRPCType = {
       /** New proposal(s) arrived from the daemon. */
       proposalAdded: { profile: string; source: string; count: number };
 
+      /** A newly installed skill was made available to the other agent. */
+      skillsChanged: { count: number };
+
       /** Daemon heartbeat went stale — daemon has stopped. Phase 1. */
       daemonStopped: Record<string, never>;
 
