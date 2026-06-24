@@ -76,7 +76,7 @@ function log(level: 'info' | 'warn' | 'error', msg: string) {
 
 function reconcileSkills() {
   try {
-    const result = createSymlinks(scanSkillDirectories());
+    const result = createSymlinks(scanSkillDirectories().skills);
     if (result.created.length > 0) log('info', `skills: synced ${result.created.length} cross-agent link(s)`);
     if (result.errors.length > 0) log('warn', `skills: ${result.errors.length} sync error(s)`);
   } catch {

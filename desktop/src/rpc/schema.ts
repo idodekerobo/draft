@@ -135,8 +135,22 @@ export interface ScannedSkillEntry {
   tokenCount: number;
 }
 
+export interface ScanDirError {
+  dir: string;
+  agent: "claude-code" | "codex";
+  message: string;
+}
+
+export interface ScannedMCPEntry {
+  name: string;
+  agent: "claude-code" | "codex";
+  config: Record<string, unknown>;
+}
+
 export interface ScanSkillsResult {
   skills: ScannedSkillEntry[];
+  scanErrors?: ScanDirError[];
+  mcpServers?: ScannedMCPEntry[];
 }
 
 export type HeadlessSetupPhase = "starting" | "running" | "writing" | "complete" | "error";

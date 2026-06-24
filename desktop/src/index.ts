@@ -2,7 +2,7 @@
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
-import { createSymlinks, scanSkillDirectories } from "draft-core/scanner";
+import { createSymlinks, scanSkillDirectories, scanMCPConnections } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, writeSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
@@ -722,16 +722,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       scanSkills: async () => {
-        const skills = scanSkillDirectories();
+        const { skills, errors } = scanSkillDirectories();
+        const mcpServers = scanMCPConnections();
         return {
           skills: skills.map(({ name, agent, dirPath, tokenCount }) => ({ name, agent, dirPath, tokenCount })),
+          scanErrors: errors,
+          mcpServers: mcpServers.map(({ name, agent, config }) => ({ name, agent, config })),
         };
       },
 
       importSkills: async ({ skills }) => {
-        // Re-scan and only import entries that still match the discovered skill.
-        // The renderer must not be able to create symlinks to arbitrary paths.
-        const available = scanSkillDirectories();
+        const { skills: available } = scanSkillDirectories();
         const selected = skills.flatMap((requested) => {
           const match = available.find((skill) =>
             skill.name === requested.name

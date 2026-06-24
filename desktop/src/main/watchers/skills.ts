@@ -35,7 +35,7 @@ function currentSkills(options?: SkillWatchOptions): ScannedSkill[] {
   return scanSkillDirectories({
     claudeSkillsDir: options?.claudeSkillsDir,
     codexSkillsDir: options?.codexSkillsDir,
-  });
+  }).skills;
 }
 
 export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWatchOptions): void {

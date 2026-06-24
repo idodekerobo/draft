@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
 import { join } from "path";
 import {
   scanSkillDirectories,
+  scanAll,
   isDraftManaged,
   scanMCPConnections,
   createSymlinks,
@@ -24,18 +25,15 @@ describe("scanSkillDirectories", () => {
     const codexDir = join(TMP, "codex-skills");
     const draftDir = join(TMP, "draft");
 
-    // Claude skill
     mkdirSync(join(claudeDir, "browse"), { recursive: true });
     writeFileSync(join(claudeDir, "browse", "SKILL.md"), "# Browse skill");
 
-    // Codex skill
     mkdirSync(join(codexDir, "research"), { recursive: true });
     writeFileSync(join(codexDir, "research", "SKILL.md"), "# Research skill");
 
-    const skills = scanSkillDirectories({
+    const { skills } = scanSkillDirectories({
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
-      manifestPath: join(TMP, "skill-manifest.json"),
       draftDir,
     });
 
@@ -51,25 +49,25 @@ describe("scanSkillDirectories", () => {
     expect(research!.agent).toBe("codex");
   });
 
-  it("returns empty array for missing dirs", () => {
-    const skills = scanSkillDirectories({
+  it("returns empty for missing dirs", () => {
+    const { skills, errors } = scanSkillDirectories({
       claudeSkillsDir: join(TMP, "nonexistent-claude"),
       codexSkillsDir: join(TMP, "nonexistent-codex"),
       draftDir: join(TMP, "draft"),
     });
     expect(skills).toEqual([]);
+    expect(errors).toEqual([]);
   });
 
-  it("returns empty array for empty dirs", () => {
+  it("returns empty for empty dirs", () => {
     const claudeDir = join(TMP, "claude-skills-empty");
     const codexDir = join(TMP, "codex-skills-empty");
     mkdirSync(claudeDir, { recursive: true });
     mkdirSync(codexDir, { recursive: true });
 
-    const skills = scanSkillDirectories({
+    const { skills } = scanSkillDirectories({
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
-      manifestPath: join(TMP, "skill-manifest.json"),
       draftDir: join(TMP, "draft"),
     });
     expect(skills).toEqual([]);
@@ -78,36 +76,32 @@ describe("scanSkillDirectories", () => {
   it("calculates token count correctly (content length / 4, ceiling)", () => {
     const claudeDir = join(TMP, "claude-tokens");
     mkdirSync(join(claudeDir, "myskill"), { recursive: true });
-    // 10 chars → ceil(10/4) = 3
     writeFileSync(join(claudeDir, "myskill", "a.md"), "1234567890");
-    // 7 chars → total 17 → ceil(17/4) = 5
     writeFileSync(join(claudeDir, "myskill", "b.md"), "1234567");
 
-    const skills = scanSkillDirectories({
+    const { skills } = scanSkillDirectories({
       claudeSkillsDir: claudeDir,
       codexSkillsDir: join(TMP, "no-codex"),
       draftDir: join(TMP, "draft"),
     });
 
     expect(skills.length).toBe(1);
-    expect(skills[0].tokenCount).toBe(Math.ceil(17 / 4)); // 5
+    expect(skills[0].tokenCount).toBe(Math.ceil(17 / 4));
   });
 
   it("skips Draft-managed symlinks", () => {
     const claudeDir = join(TMP, "claude-skills-draft");
     const draftDir = join(TMP, "draft");
 
-    // Real skill
     mkdirSync(join(claudeDir, "real-skill"), { recursive: true });
     writeFileSync(join(claudeDir, "real-skill", "SKILL.md"), "# Real");
 
-    // Draft-managed skill (symlink into draftDir)
     const draftSkillSource = join(draftDir, "skills", "draft-skill");
     mkdirSync(draftSkillSource, { recursive: true });
     writeFileSync(join(draftSkillSource, "SKILL.md"), "# Draft managed");
     symlinkSync(draftSkillSource, join(claudeDir, "draft-skill"));
 
-    const skills = scanSkillDirectories({
+    const { skills } = scanSkillDirectories({
       claudeSkillsDir: claudeDir,
       codexSkillsDir: join(TMP, "no-codex"),
       draftDir,
@@ -201,6 +195,101 @@ describe("scanMCPConnections", () => {
     writeFileSync(configPath, JSON.stringify({ someOtherKey: true }));
     const connections = scanMCPConnections({ claudeConfigPath: configPath });
     expect(connections).toEqual([]);
+  });
+
+  it("parses Codex config.toml with mcp_servers sections", () => {
+    const codexConfig = join(TMP, "config.toml");
+    writeFileSync(codexConfig, `
+model = "gpt-5.5"
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+enabled = true
+
+[mcp_servers.context7.env]
+MY_VAR = "my_value"
+
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
+startup_timeout_sec = 20
+
+[projects."/some/path"]
+trust_level = "trusted"
+`);
+
+    const connections = scanMCPConnections({
+      claudeConfigPath: join(TMP, "nonexistent.json"),
+      codexConfigPath: codexConfig,
+    });
+
+    expect(connections.length).toBe(2);
+
+    const ctx7 = connections.find((c) => c.name === "context7");
+    expect(ctx7).toBeDefined();
+    expect(ctx7!.agent).toBe("codex");
+    expect(ctx7!.config.command).toBe("npx");
+    expect(ctx7!.config.args).toEqual(["-y", "@upstash/context7-mcp"]);
+    expect(ctx7!.config.enabled).toBe(true);
+    expect(ctx7!.config.env).toEqual({ MY_VAR: "my_value" });
+
+    const figma = connections.find((c) => c.name === "figma");
+    expect(figma).toBeDefined();
+    expect(figma!.agent).toBe("codex");
+    expect(figma!.config.url).toBe("https://mcp.figma.com/mcp");
+    expect(figma!.config.startup_timeout_sec).toBe(20);
+  });
+
+  it("combines Claude and Codex MCP servers", () => {
+    const claudeConfig = join(TMP, "claude-combined.json");
+    writeFileSync(claudeConfig, JSON.stringify({ mcpServers: { "my-server": { command: "node" } } }));
+
+    const codexConfig = join(TMP, "codex-combined.toml");
+    writeFileSync(codexConfig, `[mcp_servers.codex-server]\ncommand = "python"\n`);
+
+    const connections = scanMCPConnections({ claudeConfigPath: claudeConfig, codexConfigPath: codexConfig });
+    expect(connections.length).toBe(2);
+    expect(connections.find((c) => c.agent === "claude-code")).toBeDefined();
+    expect(connections.find((c) => c.agent === "codex")).toBeDefined();
+  });
+
+  it("handles inline tables in Codex config", () => {
+    const codexConfig = join(TMP, "codex-inline.toml");
+    writeFileSync(codexConfig, `[mcp_servers.chrome]\nurl = "http://localhost:3000/mcp"\nhttp_headers = { "X-Region" = "us-east-1" }\n`);
+
+    const connections = scanMCPConnections({
+      claudeConfigPath: join(TMP, "nonexistent.json"),
+      codexConfigPath: codexConfig,
+    });
+
+    expect(connections.length).toBe(1);
+    expect(connections[0].config.http_headers).toEqual({ "X-Region": "us-east-1" });
+  });
+});
+
+// ── scanAll ───────────────────────────────────────────────────────────────────
+
+describe("scanAll", () => {
+  it("returns skills, MCP servers, and errors in one call", () => {
+    const claudeDir = join(TMP, "all-claude-skills");
+    mkdirSync(join(claudeDir, "browse"), { recursive: true });
+    writeFileSync(join(claudeDir, "browse", "SKILL.md"), "# Browse");
+
+    const claudeConfig = join(TMP, "all-claude.json");
+    writeFileSync(claudeConfig, JSON.stringify({ mcpServers: { "srv": { command: "node" } } }));
+
+    const result = scanAll({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: join(TMP, "no-codex"),
+      draftDir: join(TMP, "draft"),
+      claudeConfigPath: claudeConfig,
+      codexConfigPath: join(TMP, "no-codex-config.toml"),
+    });
+
+    expect(result.skills.length).toBe(1);
+    expect(result.mcpServers.length).toBe(1);
+    expect(result.errors).toEqual([]);
   });
 });
 
