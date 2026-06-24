@@ -2036,6 +2036,20 @@ button {
 .onboarding__import-footer { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-top: 14px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .onboarding__scan-loading { width: 100%; min-height: 160px; padding: 16px 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .onboarding__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.onboarding__skill-row--focused { outline: 2px solid var(--color-accent-blue); outline-offset: -2px; }
+.onboarding__skill-row--mcp { cursor: default; opacity: 0.7; }
+.onboarding__warning { color: var(--color-status-yellow); font-size: var(--font-size-secondary); padding: 4px 0; }
+.onboarding__scan-warnings { width: 100%; padding-bottom: 8px; }
+.onboarding__scan-error { width: 100%; padding: 16px 0; }
+.onboarding__mcp-section { width: 100%; border-top: 1px solid var(--color-border); margin-top: 8px; padding-top: 4px; }
+
+@keyframes skeleton-pulse { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.3; } }
+.onboarding__skeleton { width: 100%; padding: 8px 0; }
+.onboarding__skeleton-row { display: flex; align-items: center; gap: 8px; height: 44px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.onboarding__skeleton-check { width: 16px; height: 16px; border-radius: 3px; background: var(--color-bg-surface); animation: skeleton-pulse 1.2s ease-in-out infinite; flex-shrink: 0; }
+.onboarding__skeleton-name { flex: 1; height: 14px; border-radius: 3px; background: var(--color-bg-surface); animation: skeleton-pulse 1.2s ease-in-out infinite; animation-delay: 0.1s; }
+.onboarding__skeleton-badge { width: 40px; height: 10px; border-radius: 3px; background: var(--color-bg-surface); animation: skeleton-pulse 1.2s ease-in-out infinite; animation-delay: 0.2s; }
+.onboarding__skeleton-tokens { width: 60px; height: 10px; border-radius: 3px; background: var(--color-bg-surface); animation: skeleton-pulse 1.2s ease-in-out infinite; animation-delay: 0.3s; }
 
 .onboarding__integration-list { width: 100%; border-top: 1px solid var(--color-border); }
 .onboarding__integration-card { border-bottom: 1px solid var(--color-border); }

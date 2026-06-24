@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ScannedSkillEntry } from "../../../../rpc/schema";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ScannedSkillEntry, ScanDirError, ScannedMCPEntry } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 
 interface ScanImportStepProps {
@@ -16,26 +16,77 @@ const AGENT_LABELS: Record<Agent, string> = {
   codex: "Codex",
 };
 
+// ── ErrorBoundary ─────────────────────────────────────────────────────────────
+
+interface ErrorBoundaryState { error: Error | null }
+
+class ScanErrorBoundary extends Component<{ children: ReactNode; onSkip: () => void; onRetry: () => void }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="onboarding__scan-error">
+          <p className="onboarding__error">Could not scan skill directories. Check file permissions.</p>
+          <div className="onboarding__actions" style={{ marginTop: 12 }}>
+            <button className="onboarding__skip" onClick={() => { this.setState({ error: null }); this.props.onRetry(); }}>Retry</button>
+            <button className="empty-state__cta onboarding__cta" onClick={this.props.onSkip}>Skip</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── Skeleton loader ───────────────────────────────────────────────────────────
+
+function SkeletonRows() {
+  return (
+    <div className="onboarding__skeleton" aria-busy="true" aria-label="Scanning skill directories">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="onboarding__skeleton-row">
+          <span className="onboarding__skeleton-check" />
+          <span className="onboarding__skeleton-name" />
+          <span className="onboarding__skeleton-badge" />
+          <span className="onboarding__skeleton-tokens" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImportStepProps) {
   const [skills, setSkills] = useState<ScannedSkillEntry[] | null>(null);
+  const [mcpServers, setMcpServers] = useState<ScannedMCPEntry[]>([]);
+  const [scanErrors, setScanErrors] = useState<ScanDirError[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Record<Agent, boolean>>({ "claude-code": true, codex: false });
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [focusIndex, setFocusIndex] = useState(-1);
+  const listRef = useRef<HTMLDivElement>(null);
+  const retryKey = useRef(0);
 
   const keyFor = (skill: ScannedSkillEntry) => `${skill.agent}:${skill.dirPath}`;
 
   async function loadSkills() {
     setSkills(null);
     setError(null);
+    setScanErrors([]);
+    setMcpServers([]);
     try {
       const result = await rpc.request.scanSkills();
-      if (result.skills.length === 0) {
+      if (result.skills.length === 0 && (!result.mcpServers || result.mcpServers.length === 0)) {
         onNext();
         return;
       }
       setSkills(result.skills);
+      setMcpServers(result.mcpServers ?? []);
+      setScanErrors(result.scanErrors ?? []);
       setSelected(new Set(result.skills.map(keyFor)));
     } catch {
       setError("Could not scan skill directories. Check file permissions.");
@@ -54,6 +105,11 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
       ),
     }));
   }, [query, skills]);
+
+  const flatVisibleSkills = useMemo(
+    () => grouped.flatMap(({ agent, skills: s }) => expanded[agent] ? s : []),
+    [grouped, expanded],
+  );
 
   function toggle(skill: ScannedSkillEntry) {
     const key = keyFor(skill);
@@ -74,6 +130,26 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
       return next;
     });
   }
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (flatVisibleSkills.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusIndex((i) => Math.min(i + 1, flatVisibleSkills.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === " " && focusIndex >= 0 && focusIndex < flatVisibleSkills.length) {
+      e.preventDefault();
+      toggle(flatVisibleSkills[focusIndex]);
+    }
+  }, [flatVisibleSkills, focusIndex]);
+
+  useEffect(() => {
+    if (focusIndex < 0) return;
+    const rows = listRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+    rows?.[focusIndex]?.focus();
+  }, [focusIndex]);
 
   async function importSelected() {
     const selectedSkills = (skills ?? []).filter((skill) => selected.has(keyFor(skill)));
@@ -108,67 +184,97 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
         {isLoading ? "Scanning your agent tools…" : `Draft found ${total} skill${total === 1 ? "" : "s"} across your agent tools. Review and select the ones to import.`}
       </p>
 
-      {isLoading && <div className="onboarding__scan-loading" aria-live="polite">Scanning skill directories…</div>}
-      {error && <p className="onboarding__error">{error}</p>}
+      <ScanErrorBoundary key={retryKey.current} onSkip={onNext} onRetry={() => { retryKey.current++; void loadSkills(); }}>
+        {isLoading && <SkeletonRows />}
+        {error && <p className="onboarding__error">{error}</p>}
 
-      {!isLoading && skills && skills.length > 0 && (
-        <>
-          <input
-            className="onboarding__search-input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter skills…"
-            aria-label="Filter skills"
-          />
-          <p className="onboarding__sr-only" aria-live="polite">{grouped.reduce((count, group) => count + group.skills.length, 0)} skills match your filter.</p>
-          <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true">
-            {grouped.map(({ agent, skills: sectionSkills }) => {
-              const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(keyFor(skill)));
-              return (
-                <section key={agent} className="onboarding__collapsible-section" role="group" aria-label={AGENT_LABELS[agent]}>
-                  <div className="onboarding__collapsible-header">
-                    <button className="onboarding__collapsible-toggle" onClick={() => setExpanded((state) => ({ ...state, [agent]: !state[agent] }))} aria-expanded={expanded[agent]}>
-                      {expanded[agent] ? "▼" : "▶"} <span>{AGENT_LABELS[agent].toUpperCase()} ({sectionSkills.length})</span>
-                    </button>
-                    {sectionSkills.length > 0 && <span className="onboarding__collapsible-actions">
-                      <button onClick={() => selectSection(sectionSkills, true)}>Select all</button>
-                      <button onClick={() => selectSection(sectionSkills, false)} disabled={!allSelected && sectionSkills.every((skill) => !selected.has(keyFor(skill)))}>Deselect all</button>
-                    </span>}
-                  </div>
-                  {expanded[agent] && sectionSkills.map((skill) => {
-                    const isSelected = selected.has(keyFor(skill));
-                    return <button key={keyFor(skill)} className="onboarding__skill-row" onClick={() => toggle(skill)} role="option" aria-selected={isSelected}>
-                      <span className="onboarding__skill-check" aria-hidden="true">{isSelected ? "✓" : ""}</span>
-                      <span className="onboarding__skill-name">{skill.name}</span>
-                      <span className="onboarding__skill-badge">{agent === "claude-code" ? "Claude" : "Codex"}</span>
-                      <span className="onboarding__skill-tokens">~{skill.tokenCount} tokens</span>
-                    </button>;
-                  })}
-                </section>
-              );
-            })}
+        {scanErrors.length > 0 && (
+          <div className="onboarding__scan-warnings">
+            {scanErrors.map((err) => (
+              <p key={err.dir} className="onboarding__warning">
+                Could not read {AGENT_LABELS[err.agent]} skills directory. Some skills may be missing.
+              </p>
+            ))}
           </div>
-          <div className="onboarding__import-footer">
-            <span>{selected.size} of {total} selected</span>
-            <div className="onboarding__actions">
-              <button className="onboarding__skip" onClick={onNext} disabled={importing}>Skip</button>
-              <button className="empty-state__cta onboarding__cta" onClick={() => void importSelected()} disabled={importing || selected.size === 0}>
-                {importing ? "Importing…" : "Import selected"}
-              </button>
+        )}
+
+        {!isLoading && skills && skills.length > 0 && (
+          <>
+            <input
+              className="onboarding__search-input"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter skills…"
+              aria-label="Filter skills"
+            />
+            <p className="onboarding__sr-only" aria-live="polite">{grouped.reduce((count, group) => count + group.skills.length, 0)} skills match your filter.</p>
+            <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true" ref={listRef} onKeyDown={handleKeyDown} tabIndex={0}>
+              {grouped.map(({ agent, skills: sectionSkills }) => {
+                const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(keyFor(skill)));
+                return (
+                  <section key={agent} className="onboarding__collapsible-section" role="group" aria-label={AGENT_LABELS[agent]}>
+                    <div className="onboarding__collapsible-header">
+                      <button className="onboarding__collapsible-toggle" onClick={() => setExpanded((state) => ({ ...state, [agent]: !state[agent] }))} aria-expanded={expanded[agent]}>
+                        {expanded[agent] ? "▼" : "▶"} <span>{AGENT_LABELS[agent].toUpperCase()} ({sectionSkills.length})</span>
+                      </button>
+                      {sectionSkills.length > 0 && <span className="onboarding__collapsible-actions">
+                        <button onClick={() => selectSection(sectionSkills, true)}>Select all</button>
+                        <button onClick={() => selectSection(sectionSkills, false)} disabled={!allSelected && sectionSkills.every((skill) => !selected.has(keyFor(skill)))}>Deselect all</button>
+                      </span>}
+                    </div>
+                    {expanded[agent] && sectionSkills.map((skill) => {
+                      const isSelected = selected.has(keyFor(skill));
+                      const flatIdx = flatVisibleSkills.indexOf(skill);
+                      return <button key={keyFor(skill)} className={`onboarding__skill-row${flatIdx === focusIndex ? " onboarding__skill-row--focused" : ""}`} onClick={() => toggle(skill)} role="option" aria-selected={isSelected} tabIndex={-1}>
+                        <span className="onboarding__skill-check" aria-hidden="true">{isSelected ? "✓" : ""}</span>
+                        <span className="onboarding__skill-name">{skill.name}</span>
+                        <span className="onboarding__skill-badge">{agent === "claude-code" ? "Claude" : "Codex"}</span>
+                        <span className="onboarding__skill-tokens">~{skill.tokenCount} tokens</span>
+                      </button>;
+                    })}
+                  </section>
+                );
+              })}
             </div>
-          </div>
-        </>
-      )}
 
-      {!isLoading && skills?.length === 0 && (
-        <>
-          <p className="onboarding__hint">No third-party skills found. You can install skills in Claude Code or Codex and Draft will detect them.</p>
-          <div className="onboarding__actions" style={{ marginTop: 20 }}>
-            {error && <button className="onboarding__skip" onClick={() => void loadSkills()}>Retry</button>}
-            <button className="empty-state__cta onboarding__cta" onClick={onNext}>Continue</button>
-          </div>
-        </>
-      )}
+            {mcpServers.length > 0 && (
+              <div className="onboarding__mcp-section">
+                <div className="onboarding__collapsible-header">
+                  <span className="onboarding__collapsible-toggle" style={{ cursor: "default" }}>
+                    MCP SERVERS ({mcpServers.length})
+                  </span>
+                </div>
+                {mcpServers.map((server) => (
+                  <div key={`${server.agent}:${server.name}`} className="onboarding__skill-row onboarding__skill-row--mcp">
+                    <span className="onboarding__skill-name">{server.name}</span>
+                    <span className="onboarding__skill-badge">{server.agent === "claude-code" ? "Claude" : "Codex"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="onboarding__import-footer">
+              <span>{selected.size} of {total} selected</span>
+              <div className="onboarding__actions">
+                <button className="onboarding__skip" onClick={onNext} disabled={importing}>Skip</button>
+                <button className="empty-state__cta onboarding__cta" onClick={() => void importSelected()} disabled={importing || selected.size === 0}>
+                  {importing ? "Importing…" : "Import selected"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {!isLoading && skills?.length === 0 && (
+          <>
+            <p className="onboarding__hint">No third-party skills found. You can install skills in Claude Code or Codex and Draft will detect them.</p>
+            <div className="onboarding__actions" style={{ marginTop: 20 }}>
+              {error && <button className="onboarding__skip" onClick={() => void loadSkills()}>Retry</button>}
+              <button className="empty-state__cta onboarding__cta" onClick={onNext}>Continue</button>
+            </div>
+          </>
+        )}
+      </ScanErrorBoundary>
     </div>
   );
 }
