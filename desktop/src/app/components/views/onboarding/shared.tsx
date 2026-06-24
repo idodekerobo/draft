@@ -295,7 +295,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
       {(error || !phase) && !noRunnersInstalled && <div className="onboarding__manual-fallback">
         {error && <button className="empty-state__cta onboarding__cta" onClick={() => void start(lastMode)}>Try again</button>}
         <p>Prefer to have an agent interview you? Open {selectedRunner === "claude" ? "Claude Code" : "Codex"} and run:</p>
-        <CopyableCmd cmd="/draft-setup" />
+        <CopyableCmd cmd={selectedRunner === "codex" ? "@draft-setup" : "/draft-setup"} />
       </div>}
     </>
   );
