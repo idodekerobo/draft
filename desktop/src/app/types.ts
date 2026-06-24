@@ -16,7 +16,10 @@ export type OnboardingStep =
   | "welcome"
   | "profile"
   | "intelligence-tools"
-  | "inputs"
+  | "scan-import"        // new — T2
+  | "inputs"             // keep for now, T3 will add "integrations"
+  | "integrations"       // new — T3
   | "collab"
   | "consent"
+  | "headless-setup"     // new — T6
   | "complete";

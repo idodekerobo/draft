@@ -9,6 +9,7 @@
     "./heartbeat":   "./src/heartbeat.ts",
     "./appState":    "./src/appState.ts",
     "./proposals":   "./src/proposals.ts",
+    "./scanner":     "./src/scanner.ts",
     "./db/activity": "./src/db/activity.ts"
   },
   "scripts": {
