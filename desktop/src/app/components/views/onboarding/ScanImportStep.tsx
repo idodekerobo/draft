@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ScannedSkillEntry, ScanDirError, ScannedMCPEntry } from "../../../../rpc/schema";
+import type { ScannedSkillEntry, ScanDirError } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { ScanSkillRow, CollapsibleSection } from "./shared";
 
@@ -61,7 +61,6 @@ function SkeletonRows() {
 
 export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImportStepProps) {
   const [skills, setSkills] = useState<ScannedSkillEntry[] | null>(null);
-  const [mcpServers, setMcpServers] = useState<ScannedMCPEntry[]>([]);
   const [scanErrors, setScanErrors] = useState<ScanDirError[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Record<Agent, boolean>>({ "claude-code": true, codex: false });
@@ -78,15 +77,13 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
     setSkills(null);
     setError(null);
     setScanErrors([]);
-    setMcpServers([]);
     try {
       const result = await rpc.request.scanSkills();
-      if (result.skills.length === 0 && (!result.mcpServers || result.mcpServers.length === 0)) {
+      if (result.skills.length === 0) {
         onNext();
         return;
       }
       setSkills(result.skills);
-      setMcpServers(result.mcpServers ?? []);
       setScanErrors(result.scanErrors ?? []);
       setSelected(new Set(result.skills.map(keyFor)));
     } catch {
@@ -246,26 +243,6 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
                 );
               })}
             </div>
-
-            {mcpServers.length > 0 && (
-              <div className="onboarding__mcp-section">
-                <div className="onboarding__collapsible-header">
-                  <span className="onboarding__collapsible-toggle" style={{ cursor: "default" }}>
-                    MCP SERVERS ({mcpServers.length})
-                  </span>
-                </div>
-                {mcpServers.map((server) => (
-                  <div key={`${server.agent}:${server.name}`} className="onboarding__skill-row onboarding__skill-row--mcp">
-                    <span className="onboarding__skill-name">{server.name}</span>
-                    <span className="onboarding__mcp-meta">
-                      <span className="onboarding__status-dot onboarding__status-dot--green" />
-                      <span className="onboarding__skill-badge">{server.agent === "claude-code" ? "Claude" : "Codex"}</span>
-                    </span>
-                  </div>
-                ))}
-                <p className="onboarding__mcp-hint">MCP servers are displayed for reference. Draft does not sync MCP configurations.</p>
-              </div>
-            )}
 
             <div className="onboarding__import-footer">
               <span>{selected.size} of {total} selected</span>

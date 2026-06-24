@@ -140,8 +140,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
       <h1 className="onboarding__title">Connect your sources</h1>
       <p className="onboarding__desc">
         {allConnected
-          ? "All integrations are connected."
-          : "Select which integrations to set up now. You can add more later in Settings."}
+          ? "All integrations are connected. Draft will check them for updates and synthesize new context automatically."
+          : "Draft routinely checks connected integrations — meeting notes, channel activity, repository changes — and synthesizes updates into your workspace. Select which to set up now."}
       </p>
       {error && <p className="onboarding__error">{error}</p>}
 
