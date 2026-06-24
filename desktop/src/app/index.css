@@ -2000,6 +2000,8 @@ button {
 
 .onboarding__body--wide {
   max-width: 700px;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 .onboarding__search-input {
@@ -2017,13 +2019,14 @@ button {
 .onboarding__skill-list-header { display: flex; justify-content: space-between; padding: 6px 0 2px; color: var(--color-text-tertiary); font-size: var(--font-size-micro); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .onboarding__skill-list {
   width: 100%;
-  max-height: 400px;
+  min-height: 0;
+  flex: 1 1 0;
   overflow-y: auto;
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
 }
 
-.onboarding__collapsible-header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; z-index: 2; background: var(--color-bg-primary); border-bottom: 1px solid var(--color-border); }
+.onboarding__collapsible-header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 2; background: var(--color-bg-primary); border-bottom: 1px solid var(--color-border); }
 .onboarding__collapsible-toggle, .onboarding__collapsible-actions button { border: 0; background: transparent; color: var(--color-text-tertiary); font-family: var(--font-ui); cursor: pointer; }
 .onboarding__collapsible-toggle { padding: 8px 0; font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.08em; }
 .onboarding__collapsible-actions { display: flex; gap: 8px; }
@@ -2077,6 +2080,10 @@ button {
 .onboarding__mode-picker button { border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 7px 9px; background: transparent; color: var(--color-text-secondary); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; }
 .onboarding__mode-picker .onboarding__mode--selected { border-color: var(--color-accent-blue); color: var(--color-text-primary); }
 .onboarding__mode-switch { border: 0; background: transparent; color: var(--color-accent-blue); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; padding: 0; text-decoration: underline; }
+.onboarding__integration-label { color: var(--color-text-primary); font-size: var(--font-size-secondary); font-weight: 600; margin-top: 10px; }
+.onboarding__integration-hint { color: var(--color-text-tertiary); font-size: var(--font-size-micro); line-height: 1.5; margin-bottom: 4px; }
+.onboarding__integration-hint strong { color: var(--color-text-secondary); }
+.onboarding__integration-hint code { font-family: var(--font-mono); font-size: 11px; background: var(--color-bg-surface); padding: 1px 4px; border-radius: 3px; }
 .onboarding__integration-validation { color: var(--color-status-yellow); font-size: var(--font-size-secondary); margin: 0; }
 .onboarding__status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
 .onboarding__status-dot--green { background: var(--color-status-green); }

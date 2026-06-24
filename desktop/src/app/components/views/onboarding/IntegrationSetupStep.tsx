@@ -168,13 +168,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
         <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="2 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
           <p className="onboarding__integration-step-indicator">Step {slackStep} of 2</p>
           {slackStep === 1 && <>
-            <p className="onboarding__integration-help">Draft will open the Slack app creation page with permissions pre-filled. On that page:</p>
-            <ol className="onboarding__integration-steps">
-              <li>Review the manifest and click <strong>Create</strong></li>
-              <li>Go to <strong>OAuth &amp; Permissions</strong> → <strong>Install to Workspace</strong> → <strong>Allow</strong></li>
-              <li>Copy the <strong>Bot User OAuth Token</strong> (starts with xoxb-)</li>
-              <li>Go to <strong>Basic Information</strong> → <strong>App-Level Tokens</strong> → <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong> → copy the token (starts with xapp-)</li>
-            </ol>
+            <p className="onboarding__integration-help">Draft creates a read-only Slack app in your workspace to capture channel activity. You'll pick the workspace, create the app, then copy two tokens back here.</p>
             <button className="empty-state__cta onboarding__cta" onClick={async () => {
               const result = await rpc.request.getSlackManifestUrl();
               if (result.ok && result.url) {
@@ -184,15 +178,23 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
                 setError(result.error ?? "Could not load manifest. Create the app manually.");
               }
               setSlackStep(2);
-            }}>Open Slack app setup</button>
+            }}>Create Slack app</button>
           </>}
           {slackStep === 2 && <>
-            <p className="onboarding__integration-help">Paste both tokens from the Slack app you just created.</p>
-            <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="Bot token (xoxb-...)" aria-label="Slack bot token" />
+            <p className="onboarding__integration-help">In the browser window that just opened:</p>
+            <ol className="onboarding__integration-steps">
+              <li>Pick your workspace and click <strong>Next</strong> → review the manifest → <strong>Create</strong></li>
+              <li>In the sidebar, go to <strong>OAuth &amp; Permissions</strong> → click <strong>Install to Workspace</strong> → <strong>Allow</strong></li>
+            </ol>
+            <p className="onboarding__integration-label">Bot token</p>
+            <p className="onboarding__integration-hint">Found in <strong>OAuth &amp; Permissions</strong> → under <strong>OAuth Tokens</strong></p>
+            <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="xoxb-..." aria-label="Slack bot token" />
             {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
               <p className="onboarding__integration-validation">Bot tokens start with xoxb-.</p>
             )}
-            <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="App-level token (xapp-...)" aria-label="Slack app-level token" />
+            <p className="onboarding__integration-label">App-level token</p>
+            <p className="onboarding__integration-hint">Found in <strong>Basic Information</strong> → under <strong>App-Level Tokens</strong> → click <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong></p>
+            <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="xapp-..." aria-label="Slack app-level token" />
             {appToken.length > 0 && !appToken.startsWith("xapp-") && (
               <p className="onboarding__integration-validation">App-level tokens start with xapp-.</p>
             )}
