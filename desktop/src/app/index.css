@@ -2066,6 +2066,10 @@ button {
 .onboarding__mode-picker { display: flex; gap: 8px; }
 .onboarding__mode-picker button { border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 7px 9px; background: transparent; color: var(--color-text-secondary); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; }
 .onboarding__mode-picker .onboarding__mode--selected { border-color: var(--color-accent-blue); color: var(--color-text-primary); }
+.onboarding__mode-switch { border: 0; background: transparent; color: var(--color-accent-blue); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; padding: 0; text-decoration: underline; }
+.onboarding__integration-validation { color: var(--color-status-yellow); font-size: var(--font-size-secondary); margin: 0; }
+.onboarding__status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.onboarding__status-dot--green { background: var(--color-status-green); }
 
 .onboarding__setup-options { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .onboarding__setup-option { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--color-border); background: transparent; color: var(--color-text-primary); font-family: var(--font-ui); text-align: left; cursor: pointer; }

@@ -55,6 +55,11 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
     return () => { clearInterval(interval); clearTimeout(timeout); };
   }, [connectingGitHub, track]);
 
+  const allConnected = connections
+    && connections.granola.connected
+    && connections.slack.connected
+    && connections.github.connected;
+
   function toggle(name: IntegrationName, detail?: IntegrationDetail) {
     if (detail?.connected) return;
     setError(null);
@@ -69,14 +74,19 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
         ? await rpc.request.connectGranolaMCP()
         : await rpc.request.connectGranolaAPI({ apiKey: granolaKey });
       if (!result.ok) {
-        setError(result.error ?? "Could not connect Granola.");
+        const msg = granolaMode === "mcp"
+          ? "MCP registration failed. Try API key instead."
+          : "Invalid token. Check Settings → API → Personal access token in Granola.";
+        setError(result.error ?? msg);
         return;
       }
       track("integration_connected", { source: "granola" });
       await loadConnections();
       setExpanded(null);
     } catch {
-      setError("Could not connect Granola. Try again.");
+      setError(granolaMode === "mcp"
+        ? "MCP registration failed. Try API key instead."
+        : "Could not connect Granola. Try again.");
     } finally {
       setSaving(null);
     }
@@ -88,7 +98,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
     try {
       const result = await rpc.request.connectSlack({ botToken, appToken });
       if (!result.ok) {
-        setError(result.error ?? "Could not connect Slack.");
+        setError(result.error ?? "Could not connect Slack. Check bot permissions.");
         return;
       }
       track("integration_connected", { source: "slack" });
@@ -127,7 +137,11 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
       <h1 className="onboarding__title">Connect your sources</h1>
-      <p className="onboarding__desc">Select which integrations to set up now. You can add more later in Settings.</p>
+      <p className="onboarding__desc">
+        {allConnected
+          ? "All integrations are connected."
+          : "Select which integrations to set up now. You can add more later in Settings."}
+      </p>
       {error && <p className="onboarding__error">{error}</p>}
 
       <div className="onboarding__integration-list">
@@ -142,6 +156,9 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
           ) : (
             <input className="onboarding__integration-input" type="password" value={granolaKey} onChange={(event) => setGranolaKey(event.target.value)} placeholder="Granola API key" aria-label="Granola API key" />
           )}
+          {error && saving === null && expanded === "granola" && granolaMode === "mcp" && (
+            <button className="onboarding__mode-switch" onClick={() => setGranolaMode("api")}>Try API key instead</button>
+          )}
           <button className="empty-state__cta onboarding__cta" onClick={() => void connectGranola()} disabled={saving === "granola" || (granolaMode === "api" && !granolaKey.trim())}>
             {saving === "granola" ? "Connecting…" : "Connect Granola"}
           </button>
@@ -155,10 +172,16 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
           </>}
           {slackStep === 2 && <>
             <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="Bot token (xoxb-...)" aria-label="Slack bot token" />
+            {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
+              <p className="onboarding__integration-validation">Invalid token format. Bot tokens start with xoxb-.</p>
+            )}
             <button className="empty-state__cta onboarding__cta" onClick={() => setSlackStep(3)} disabled={!botToken.startsWith("xoxb-")}>Continue</button>
           </>}
           {slackStep === 3 && <>
             <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="App token (xapp-...)" aria-label="Slack app token" />
+            {appToken.length > 0 && !appToken.startsWith("xapp-") && (
+              <p className="onboarding__integration-validation">Invalid token format. App tokens start with xapp-.</p>
+            )}
             <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || !appToken.startsWith("xapp-")}> {saving === "slack" ? "Connecting…" : "Connect Slack"}</button>
           </>}
         </IntegrationCard>
@@ -168,7 +191,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
 
       <div className="onboarding__actions" style={{ marginTop: 20 }}>
         <button className="empty-state__cta onboarding__cta" onClick={onNext}>Continue</button>
-        <button className="onboarding__skip" onClick={onNext}>Skip all</button>
+        {!allConnected && <button className="onboarding__skip" onClick={onNext}>Skip all</button>}
       </div>
     </div>
   );
@@ -187,11 +210,14 @@ function IntegrationCard({ name, title, description, hint, detail, expanded, onT
 }) {
   const connected = detail?.connected ?? false;
   return (
-    <section className="onboarding__integration-card">
+    <section className="onboarding__integration-card" aria-expanded={expanded}>
       <button className="onboarding__integration-header" onClick={onToggle} aria-expanded={expanded} disabled={connected}>
         <span className="onboarding__integration-title"><span>{title}</span><small>{description}</small></span>
         <span className="onboarding__integration-status">
-          {connected ? <span className="onboarding__integration-badge onboarding__integration-badge--connected">Connected</span> : <><small>{hint}</small>{action ?? (expanded ? "▲" : "▼")}</>}
+          {connected
+            ? <><span className="onboarding__status-dot onboarding__status-dot--green" />
+                <span className="onboarding__integration-badge onboarding__integration-badge--connected">Connected</span></>
+            : <><small>{hint}</small>{action ?? (expanded ? "▲" : "▼")}</>}
         </span>
       </button>
       {!connected && expanded && <div className="onboarding__integration-content">{children}</div>}
