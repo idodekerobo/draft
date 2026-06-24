@@ -98,7 +98,11 @@ function parseSkillFrontmatter(content: string): { description: string } {
   if (end === -1) return { description: "" };
   const frontmatter = content.slice(3, end);
   const match = frontmatter.match(/^description:\s*(.+)$/m);
-  return { description: match?.[1]?.trim() ?? "" };
+  let desc = match?.[1]?.trim() ?? "";
+  if ((desc.startsWith('"') && desc.endsWith('"')) || (desc.startsWith("'") && desc.endsWith("'"))) {
+    desc = desc.slice(1, -1);
+  }
+  return { description: desc };
 }
 
 // ── scanSkillDirectories ───────────────────────────────────────────────────────

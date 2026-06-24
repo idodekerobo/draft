@@ -2014,7 +2014,7 @@ button {
   font: inherit;
 }
 
-.onboarding__skill-list-header { display: flex; justify-content: space-between; padding: 4px 0; color: var(--color-text-tertiary); font-size: var(--font-size-micro); text-transform: uppercase; letter-spacing: 0.06em; }
+.onboarding__skill-list-header { display: flex; justify-content: space-between; padding: 6px 0 2px; color: var(--color-text-tertiary); font-size: var(--font-size-micro); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .onboarding__skill-list {
   width: 100%;
   max-height: 400px;
@@ -2024,7 +2024,8 @@ button {
 }
 
 .onboarding__collapsible-section { width: 100%; }
-.onboarding__collapsible-header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 1; background: var(--color-bg-primary); }
+.onboarding__collapsible-header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 2; background: var(--color-bg-primary); border-bottom: 1px solid var(--color-border); }
+.onboarding__collapsible-section:nth-child(2) > .onboarding__collapsible-header { top: 36px; }
 .onboarding__collapsible-toggle, .onboarding__collapsible-actions button { border: 0; background: transparent; color: var(--color-text-tertiary); font-family: var(--font-ui); cursor: pointer; }
 .onboarding__collapsible-toggle { padding: 8px 0; font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.08em; }
 .onboarding__collapsible-actions { display: flex; gap: 8px; }
@@ -2037,7 +2038,9 @@ button {
 .onboarding__skill-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 14px var(--font-mono); }
 .onboarding__skill-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-tertiary); font-size: var(--font-size-micro); }
 .onboarding__skill-badge { color: var(--color-text-tertiary); font-size: 10px; text-transform: uppercase; }
-.onboarding__skill-tokens { color: var(--color-text-tertiary); font-size: var(--font-size-micro); white-space: nowrap; flex-shrink: 0; cursor: help; }
+.onboarding__skill-tokens { color: var(--color-text-tertiary); font-size: var(--font-size-micro); white-space: nowrap; flex-shrink: 0; cursor: help; position: relative; }
+.onboarding__skill-tokens[data-tooltip]::after { content: attr(data-tooltip); position: absolute; right: 0; bottom: calc(100% + 6px); padding: 6px 10px; border-radius: var(--radius-sm); background: var(--color-bg-elevated); border: 1px solid var(--color-border-strong); color: var(--color-text-secondary); font-size: var(--font-size-micro); line-height: 1.5; white-space: pre-line; width: max-content; max-width: 280px; pointer-events: none; opacity: 0; transition: opacity 120ms ease; z-index: 10; }
+.onboarding__skill-tokens[data-tooltip]:hover::after { opacity: 1; }
 .onboarding__import-footer { display: flex; align-items: center; justify-content: space-between; width: 100%; padding-top: 14px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .onboarding__scan-loading { width: 100%; min-height: 160px; padding: 16px 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .onboarding__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }

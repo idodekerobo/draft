@@ -49,7 +49,7 @@ export function ScanSkillRow({ name, description, descriptionTokenCount, tokenCo
         <span className="onboarding__skill-name">{name}</span>
         {description && <span className="onboarding__skill-desc">{description}</span>}
       </span>
-      <span className="onboarding__skill-tokens" title={`Description: ~${formatTokens(descriptionTokenCount)} tokens (always loaded)\nFull skill: ~${formatTokens(tokenCount)} tokens (loaded on invocation)`}>
+      <span className="onboarding__skill-tokens" data-tooltip={`Description: ~${formatTokens(descriptionTokenCount)} tokens (always loaded)\nFull skill: ~${formatTokens(tokenCount)} tokens (loaded on invocation)`}>
         ~{formatTokens(tokenCount)}
       </span>
     </button>
