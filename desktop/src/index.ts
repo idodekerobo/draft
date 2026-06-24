@@ -62,7 +62,17 @@ function setAppMenu(daemonRunning: boolean) {
     },
     {
       label: "Edit",
-      submenu: [{ role: "copy" }],
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "pasteAndMatchStyle" },
+        { role: "delete" },
+        { role: "selectAll" },
+      ],
     },
   ]);
 }
