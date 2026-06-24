@@ -376,8 +376,11 @@ export type AppRPCType = {
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
-      /** Start a non-interactive Claude Code session to create the active profile's context. */
-      runHeadlessSetup: { params: { mode: "scratch" | "import"; folderPath?: string }; response: ActionResult };
+      /** Start a non-interactive CLI session to create the active profile's context. */
+      runHeadlessSetup: { params: { mode: "scratch" | "import"; folderPath?: string; runner?: "claude" | "codex" }; response: ActionResult };
+
+      /** Detect which CLI runners are installed. */
+      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
 
       /**
        * Run inject-context.sh and return the full text that would be injected

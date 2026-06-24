@@ -815,10 +815,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      runHeadlessSetup: async ({ mode, folderPath }) => {
-        const cli = await capture(["which", "claude"]);
+      getAvailableRunners: async () => {
+        const [claude, codex] = await Promise.all([
+          capture(["which", "claude"]).then((r) => r.exitCode === 0),
+          capture(["which", "codex"]).then((r) => r.exitCode === 0),
+        ]);
+        return { runners: [{ name: "claude" as const, installed: claude }, { name: "codex" as const, installed: codex }] };
+      },
+
+      runHeadlessSetup: async ({ mode, folderPath, runner }) => {
+        const selectedRunner = runner ?? "claude";
+        const cli = await capture(["which", selectedRunner]);
         if (cli.exitCode !== 0) {
-          return { ok: false, error: "Claude Code CLI not found. Install it first or run /draft-setup manually." };
+          return { ok: false, error: `${selectedRunner === "claude" ? "Claude Code" : "Codex"} CLI not found. Install it first or run /draft-setup manually.` };
         }
 
         const workspace = getWorkspacePath(getActiveProfile());
@@ -852,16 +861,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         mkdirSync(tmpDir, { recursive: true });
         writeFileSync(promptPath, prompt, "utf8");
 
+        const cliCmd = selectedRunner === "codex" ? ["codex", "-q", "--prompt-file", promptPath] : ["claude", "-p", "-"];
         let proc: ReturnType<typeof Bun.spawn>;
         try {
-          proc = Bun.spawn(["claude", "-p", "-"], {
-            stdin: Bun.file(promptPath),
+          proc = Bun.spawn(cliCmd, {
+            stdin: selectedRunner === "codex" ? undefined : Bun.file(promptPath),
             stdout: "pipe",
             stderr: "pipe",
           });
         } catch (err) {
           try { unlinkSync(promptPath); } catch {}
-          return { ok: false, error: err instanceof Error ? err.message : "Could not start Claude Code." };
+          return { ok: false, error: err instanceof Error ? err.message : `Could not start ${selectedRunner === "claude" ? "Claude Code" : "Codex"}.` };
         }
 
         try { rpc.send.headlessProgress({ phase: "starting", label: "Starting Claude Code…" }); } catch {}
@@ -885,12 +895,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
               try { rpc.send.headlessProgress({ phase: "complete", label: "Context setup complete." }); } catch {}
             } else {
               const normalized = stderr.toLowerCase();
-              const label = normalized.includes("auth") || normalized.includes("login")
-                ? "Your Claude Code session expired. Sign in and try again."
-                : normalized.includes("rate") || normalized.includes("429")
-                  ? "Rate limited. Wait a moment and try again."
-                  : "Context setup failed. Try again or use the manual fallback.";
-              try { rpc.send.headlessProgress({ phase: "error", label, error: stderr || `Claude exited with code ${exitCode}.` }); } catch {}
+              let label: string;
+              if (normalized.includes("auth") || normalized.includes("login")) {
+                label = "Your session expired. Sign in and try again.";
+              } else if (normalized.includes("rate") || normalized.includes("429")) {
+                label = "Rate limited. Wait a moment and try again.";
+              } else if (normalized.includes("token") || normalized.includes("context length") || normalized.includes("too long")) {
+                label = "Too much content to process at once. Try with a smaller folder.";
+              } else if (normalized.includes("network") || normalized.includes("connect") || normalized.includes("econnrefused") || normalized.includes("dns")) {
+                label = "Network error. Check your connection and try again.";
+              } else {
+                label = "Something went wrong. You can retry or set up context manually.";
+              }
+              try { rpc.send.headlessProgress({ phase: "error", label, error: stderr || `Exited with code ${exitCode}.` }); } catch {}
             }
           } finally {
             try { unlinkSync(promptPath); } catch {}
