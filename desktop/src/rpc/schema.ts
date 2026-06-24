@@ -128,6 +128,17 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface ScannedSkillEntry {
+  name: string;
+  agent: "claude-code" | "codex";
+  dirPath: string;
+  tokenCount: number;
+}
+
+export interface ScanSkillsResult {
+  skills: ScannedSkillEntry[];
+}
+
 export interface ProfileDetail {
   name: string;
   hasContext: boolean;
@@ -330,6 +341,12 @@ export type AppRPCType = {
 
       /** First-launch install: extract binary, symlink to PATH, run `draft add` for each tool. */
       runInstall: { params: { tools: InstallableTool[] }; response: InstallResult };
+
+      /** Scan Claude Code and Codex skill directories for skills Draft does not manage. */
+      scanSkills: { params: void; response: ScanSkillsResult };
+
+      /** Create cross-agent symlinks for the selected scanned skills. */
+      importSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { created: number; skipped: number } };
 
       /**
        * Run inject-context.sh and return the full text that would be injected

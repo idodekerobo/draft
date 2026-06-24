@@ -22,25 +22,27 @@ import { InputsStep } from "./InputsStep";
 import { CollabStep } from "./CollabStep";
 import { ConsentStep } from "./ConsentStep";
 import { CompleteStep } from "./CompleteStep";
+import { ScanImportStep } from "./ScanImportStep";
 
 const STEP_NUMBER: Record<OnboardingStep, number> = {
   welcome:     1,
   profile:     2,
   "intelligence-tools": 3,
-  "scan-import": 0,      // future — not used yet
-  inputs:      4,
+  "scan-import": 4,
+  inputs:      5,
   integrations: 0,       // future — not used yet
-  collab:      5,
-  consent:     6,
+  collab:      6,
+  consent:     7,
   "headless-setup": 0,   // future — not used yet
-  complete:    7,
+  complete:    8,
 };
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 const PREV_STEP: Partial<Record<OnboardingStep, OnboardingStep>> = {
   profile:       "welcome",
   "intelligence-tools": "profile",
-  inputs:        "intelligence-tools",
+  "scan-import": "intelligence-tools",
+  inputs:        "scan-import",
   collab:        "inputs",
   consent:       "collab",
   complete:      "consent",
@@ -197,7 +199,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
         for (const tool of selected) track("tool_installed", { tool });
         setInstallError(null);
         setSteps([]);
-        setStep("inputs");
+        setStep("scan-import");
       } else {
         const failedStep = result.steps.find((s) => !s.ok);
         for (const tool of selected) {
@@ -301,7 +303,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           prereqTools={prereqTools}
           onSkip={() => {
             track("install_skipped", { tools: [...selected] });
-            setStep("inputs");
+            setStep("scan-import");
           }}
         />
       )}
@@ -315,6 +317,14 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           githubError={githubError}
           handleConnectGitHub={handleConnectGitHub}
           onNext={() => setStep("collab")}
+        />
+      )}
+      {step === "scan-import" && (
+        <ScanImportStep
+          stepNum={stepNum}
+          totalSteps={TOTAL_STEPS}
+          onBack={handleBack}
+          onNext={() => setStep("inputs")}
         />
       )}
       {step === "collab" && (

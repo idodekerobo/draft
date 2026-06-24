@@ -2,6 +2,7 @@
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
+import { createSymlinks, scanSkillDirectories } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
@@ -716,6 +717,34 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const result = await runInstall(tools);
         console.log(`[rpc] runInstall returned — ok: ${result.ok}, steps: ${result.steps.length}`);
         return result;
+      },
+
+      scanSkills: async () => {
+        const skills = scanSkillDirectories();
+        return {
+          skills: skills.map(({ name, agent, dirPath, tokenCount }) => ({ name, agent, dirPath, tokenCount })),
+        };
+      },
+
+      importSkills: async ({ skills }) => {
+        // Re-scan and only import entries that still match the discovered skill.
+        // The renderer must not be able to create symlinks to arbitrary paths.
+        const available = scanSkillDirectories();
+        const selected = skills.flatMap((requested) => {
+          const match = available.find((skill) =>
+            skill.name === requested.name
+            && skill.agent === requested.agent
+            && skill.dirPath === requested.dirPath,
+          );
+          return match ? [match] : [];
+        });
+        const result = createSymlinks(selected);
+        return {
+          ok: result.errors.length === 0,
+          created: result.created.length,
+          skipped: result.skipped.length,
+          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
+        };
       },
 
       applyUpdate: async () => {
