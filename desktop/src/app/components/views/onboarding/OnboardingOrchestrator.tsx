@@ -1,13 +1,13 @@
 // OnboardingOrchestrator.tsx — state + handler hub for the onboarding wizard
 //
-// Seven steps:
+// At most seven active steps:
 //   1. Welcome  — what Draft is, three-component architecture
 //   2. Profile  — create / pick workspace (BEFORE install — install needs active-profile)
 //   3. Install  — tool selection + install (calls runInstall RPC)
+//   4. Scan + import — skipped when no third-party skills exist
 //   5. Integrations — connect Granola, Slack, and GitHub inline
-//   5. Collab   — team collaboration awareness — skippable
-//   6. Consent  — analytics opt-in/out (embedded inline, replaces post-onboarding modal)
-//   7. Done     — /draft-setup CTA + tray/background note + Start Draft
+//   6. Context setup — optional headless setup with manual fallback
+//   7. Finalize — analytics consent and daemon start
 
 import { useState, useEffect, useRef } from "react";
 import type { InstallableTool, InstallStep, ProfileDetail } from "../../../../rpc/schema";
@@ -19,35 +19,13 @@ import { WelcomeStep } from "./WelcomeStep";
 import { ProfileStep } from "./ProfileStep";
 import { ToolSelectionStep } from "./ToolSelectionStep";
 import { IntegrationSetupStep } from "./IntegrationSetupStep";
-import { CollabStep } from "./CollabStep";
-import { ConsentStep } from "./ConsentStep";
 import { CompleteStep } from "./CompleteStep";
 import { ScanImportStep } from "./ScanImportStep";
 import { HeadlessSetupStep } from "./HeadlessSetupStep";
 
-const STEP_NUMBER: Record<OnboardingStep, number> = {
-  welcome:     1,
-  profile:     2,
-  "intelligence-tools": 3,
-  "scan-import": 4,
-  integrations: 5,
-  collab:      6,
-  "headless-setup": 7,
-  consent:     8,
-  complete:    9,
-};
-const TOTAL_STEPS = 9;
-
-const PREV_STEP: Partial<Record<OnboardingStep, OnboardingStep>> = {
-  profile:       "welcome",
-  "intelligence-tools": "profile",
-  "scan-import": "intelligence-tools",
-  integrations:  "scan-import",
-  collab:        "integrations",
-  "headless-setup": "collab",
-  consent:       "headless-setup",
-  complete:      "consent",
-};
+const BASE_STEPS: OnboardingStep[] = [
+  "welcome", "profile", "intelligence-tools", "integrations", "headless-setup", "complete",
+];
 
 interface OnboardingOrchestratorProps {
   onComplete: () => void;
@@ -62,6 +40,8 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   const [isStarting, setIsStarting]   = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
+  const [consentAnswered, setConsentAnswered] = useState(false);
+  const [hasScannableSkills, setHasScannableSkills] = useState<boolean | null>(null);
 
   const { track, setConsent, setReplayEnabled } = useAnalytics();
   const completedRef = useRef(false);
@@ -72,6 +52,17 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   useEffect(() => {
     track("onboarding_step_viewed", { step });
   }, [step]);
+
+  useEffect(() => {
+    rpc.request.scanSkills()
+      .then((result) => setHasScannableSkills(result.skills.length > 0))
+      // Preserve the step on scan failure so it can show its retry/skip UI.
+      .catch(() => setHasScannableSkills(true));
+  }, []);
+
+  const activeSteps: OnboardingStep[] = hasScannableSkills === false && step !== "scan-import"
+    ? BASE_STEPS
+    : ["welcome", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "complete"];
 
   // Fire abandoned if component unmounts before completion
   useEffect(() => {
@@ -167,7 +158,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
         for (const tool of selected) track("tool_installed", { tool });
         setInstallError(null);
         setSteps([]);
-        setStep("scan-import");
+        goNext();
       } else {
         const failedStep = result.steps.find((s) => !s.ok);
         for (const tool of selected) {
@@ -193,7 +184,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       if (granted) track("analytics_consent_granted", {});
     } finally {
       setConsentSaving(false);
-      setStep("complete");
+      setConsentAnswered(true);
     }
   }
 
@@ -209,26 +200,32 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
     }
   }
 
-  function handleBack() {
-    const prev = PREV_STEP[step];
-    if (prev) setStep(prev);
+  function goNext() {
+    const next = activeSteps[activeSteps.indexOf(step) + 1];
+    if (next) setStep(next);
   }
 
-  const stepNum = STEP_NUMBER[step];
+  function handleBack() {
+    const previous = activeSteps[activeSteps.indexOf(step) - 1];
+    if (previous) setStep(previous);
+  }
+
+  const stepNum = activeSteps.indexOf(step) + 1;
+  const totalSteps = activeSteps.length;
 
   return (
     <div className="onboarding">
       {step === "welcome" && (
         <WelcomeStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
-          onNext={() => setStep("profile")}
+          totalSteps={totalSteps}
+          onNext={goNext}
         />
       )}
       {step === "profile" && (
         <ProfileStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
+          totalSteps={totalSteps}
           onBack={handleBack}
           profileList={profileList}
           profilesLoaded={profilesLoaded}
@@ -243,7 +240,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       {step === "intelligence-tools" && (
         <ToolSelectionStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
+          totalSteps={totalSteps}
           onBack={handleBack}
           selected={selected}
           toggleTool={toggleTool}
@@ -255,58 +252,44 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           prereqTools={prereqTools}
           onSkip={() => {
             track("install_skipped", { tools: [...selected] });
-            setStep("scan-import");
+            goNext();
           }}
         />
       )}
       {step === "integrations" && (
         <IntegrationSetupStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
+          totalSteps={totalSteps}
           onBack={handleBack}
-          onNext={() => setStep("collab")}
+          onNext={goNext}
         />
       )}
       {step === "scan-import" && (
         <ScanImportStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
+          totalSteps={totalSteps}
           onBack={handleBack}
-          onNext={() => setStep("integrations")}
-        />
-      )}
-      {step === "collab" && (
-        <CollabStep
-          stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
-          onBack={handleBack}
-          onNext={() => setStep("headless-setup")}
+          onNext={goNext}
         />
       )}
       {step === "headless-setup" && (
         <HeadlessSetupStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
+          totalSteps={totalSteps}
           onBack={handleBack}
-          onNext={() => setStep("consent")}
-        />
-      )}
-      {step === "consent" && (
-        <ConsentStep
-          stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
-          onBack={handleBack}
-          consentSaving={consentSaving}
-          handleConsent={handleConsent}
+          onNext={goNext}
         />
       )}
       {step === "complete" && (
         <CompleteStep
           stepNum={stepNum}
-          totalSteps={TOTAL_STEPS}
+          totalSteps={totalSteps}
           onBack={handleBack}
           isStarting={isStarting}
           handleStart={handleStart}
+          consentAnswered={consentAnswered}
+          consentSaving={consentSaving}
+          handleConsent={handleConsent}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-// CompleteStep.tsx — step 7: /draft-setup CTA + tray/background note + Start Draft
+// CompleteStep.tsx — final consent + daemon start screen
 
 interface CompleteStepProps {
   stepNum: number;
@@ -6,6 +6,9 @@ interface CompleteStepProps {
   onBack: () => void;
   isStarting: boolean;
   handleStart: () => void;
+  consentAnswered: boolean;
+  consentSaving: boolean;
+  handleConsent: (granted: boolean) => void;
 }
 
 export function CompleteStep({
@@ -14,7 +17,27 @@ export function CompleteStep({
   onBack,
   isStarting,
   handleStart,
+  consentAnswered,
+  consentSaving,
+  handleConsent,
 }: CompleteStepProps) {
+  if (!consentAnswered) {
+    return (
+      <div className="onboarding__body">
+        <div className="onboarding__nav">
+          <button className="onboarding__back" onClick={onBack}>← Back</button>
+          <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
+        </div>
+        <h1 className="onboarding__title">Help us improve Draft?</h1>
+        <p className="onboarding__desc">Share anonymous usage data so we can see where people get stuck and what’s working.</p>
+        <p className="onboarding__hint">We never collect prompts, conversations, context-file contents, file names, or paths.</p>
+        <div className="onboarding__actions" style={{ marginTop: 20 }}>
+          <button className="empty-state__cta onboarding__cta" onClick={() => void handleConsent(true)} disabled={consentSaving}>Yes, help improve Draft</button>
+          <button className="onboarding__skip" onClick={() => void handleConsent(false)} disabled={consentSaving}>No thanks</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="onboarding__body">
       <div className="onboarding__nav">
@@ -25,13 +48,11 @@ export function CompleteStep({
 
       <div className="onboarding__education">
         <div className="onboarding__education-text">
-          <strong>Load your product context</strong>
+          <strong>Context setup</strong>
           <span>
-            Open Claude Code or Codex and run{" "}
+            If you skipped setup, open Claude Code or Codex and run{" "}
             <code className="onboarding__code">/draft-setup</code>
-            {" "}— a 3–5 minute interview. After that, every session starts knowing
-            your product, team, and current priorities. You'll never have to
-            re-explain your product to an agent again.
+            {" "}any time. Otherwise, you can refine the context Draft just created as your product evolves.
           </span>
         </div>
       </div>
