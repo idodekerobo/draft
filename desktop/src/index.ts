@@ -912,7 +912,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           if (!urlMatch) {
             return { ok: false, error: "Enter a valid GitHub URL (e.g. https://github.com/owner/repo)." };
           }
-          importSummary = `GitHub repository: ${githubUrl.trim()}\nClone this repo, read its README and top-level structure, and use that as context for the workspace.`;
+          importSummary = `GitHub repository: ${githubUrl.trim()}\nClone this repo into a temp directory, read its README and top-level structure, and use that as context for the workspace. Use \`gh repo clone\` first (handles private repos via authenticated GitHub CLI). If gh is not installed or fails, fall back to \`git clone --depth 1\`. Delete the temp clone when done.`;
         }
 
         const integrations = readIntegrations(workspace);
