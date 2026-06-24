@@ -186,17 +186,17 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
               <li>Pick your workspace and click <strong>Next</strong> → review the manifest → <strong>Create</strong></li>
               <li>In the sidebar, go to <strong>OAuth &amp; Permissions</strong> → click <strong>Install to Workspace</strong> → <strong>Allow</strong></li>
             </ol>
-            <p className="onboarding__integration-label">Bot token</p>
-            <p className="onboarding__integration-hint">Found in <strong>OAuth &amp; Permissions</strong> → under <strong>OAuth Tokens</strong></p>
-            <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="xoxb-..." aria-label="Slack bot token" />
-            {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
-              <p className="onboarding__integration-validation">Bot tokens start with xoxb-.</p>
-            )}
             <p className="onboarding__integration-label">App-level token</p>
             <p className="onboarding__integration-hint">Found in <strong>Basic Information</strong> → under <strong>App-Level Tokens</strong> → click <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong></p>
             <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="xapp-..." aria-label="Slack app-level token" />
             {appToken.length > 0 && !appToken.startsWith("xapp-") && (
               <p className="onboarding__integration-validation">App-level tokens start with xapp-.</p>
+            )}
+            <p className="onboarding__integration-label">Bot token</p>
+            <p className="onboarding__integration-hint">Found in <strong>OAuth &amp; Permissions</strong> → under <strong>OAuth Tokens</strong></p>
+            <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="xoxb-..." aria-label="Slack bot token" />
+            {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
+              <p className="onboarding__integration-validation">Bot tokens start with xoxb-.</p>
             )}
             <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || !botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
               {saving === "slack" ? "Connecting…" : "Connect Slack"}
