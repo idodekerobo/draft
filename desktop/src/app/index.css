@@ -2000,8 +2000,6 @@ button {
 
 .onboarding__body--wide {
   max-width: 700px;
-  max-height: 100%;
-  overflow: hidden;
 }
 
 .onboarding__search-input {
@@ -2019,8 +2017,7 @@ button {
 .onboarding__skill-list-header { display: flex; justify-content: space-between; padding: 6px 0 2px; color: var(--color-text-tertiary); font-size: var(--font-size-micro); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .onboarding__skill-list {
   width: 100%;
-  min-height: 0;
-  flex: 1 1 0;
+  max-height: 420px;
   overflow-y: auto;
   border-top: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
