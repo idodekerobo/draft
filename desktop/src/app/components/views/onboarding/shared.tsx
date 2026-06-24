@@ -22,9 +22,15 @@ export function CopyableCmd({ cmd }: { cmd: string }) {
 
 // ── ScanSkillRow ──────────────────────────────────────────────────────────────
 
-export function ScanSkillRow({ name, agent, tokenCount, selected, focused, onClick }: {
+function formatTokens(count: number): string {
+  if (count >= 1000) return `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(count);
+}
+
+export function ScanSkillRow({ name, description, descriptionTokenCount, tokenCount, selected, focused, onClick }: {
   name: string;
-  agent: "claude-code" | "codex";
+  description: string;
+  descriptionTokenCount: number;
   tokenCount: number;
   selected: boolean;
   focused?: boolean;
@@ -39,9 +45,13 @@ export function ScanSkillRow({ name, agent, tokenCount, selected, focused, onCli
       tabIndex={-1}
     >
       <span className="onboarding__skill-check" aria-hidden="true">{selected ? "✓" : ""}</span>
-      <span className="onboarding__skill-name">{name}</span>
-      <span className="onboarding__skill-badge">{agent === "claude-code" ? "Claude" : "Codex"}</span>
-      <span className="onboarding__skill-tokens">~{tokenCount} tokens</span>
+      <span className="onboarding__skill-info">
+        <span className="onboarding__skill-name">{name}</span>
+        {description && <span className="onboarding__skill-desc">{description}</span>}
+      </span>
+      <span className="onboarding__skill-tokens" title={`Description: ~${formatTokens(descriptionTokenCount)} tokens (always loaded)\nFull skill: ~${formatTokens(tokenCount)} tokens (loaded on invocation)`}>
+        ~{formatTokens(tokenCount)}
+      </span>
     </button>
   );
 }

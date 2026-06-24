@@ -15,6 +15,8 @@ export interface ScannedSkill {
   agent: "claude-code" | "codex";
   dirPath: string;
   files: string[];
+  description: string;
+  descriptionTokenCount: number;
   tokenCount: number;
 }
 
@@ -88,6 +90,17 @@ export function isDraftManaged(dirPath: string, draftDir?: string): boolean {
   }
 }
 
+// ── Frontmatter parser ────────────────────────────────────────────────────────
+
+function parseSkillFrontmatter(content: string): { description: string } {
+  if (!content.startsWith("---")) return { description: "" };
+  const end = content.indexOf("\n---", 3);
+  if (end === -1) return { description: "" };
+  const frontmatter = content.slice(3, end);
+  const match = frontmatter.match(/^description:\s*(.+)$/m);
+  return { description: match?.[1]?.trim() ?? "" };
+}
+
 // ── scanSkillDirectories ───────────────────────────────────────────────────────
 
 /**
@@ -134,12 +147,22 @@ export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSki
           });
 
           let totalChars = 0;
+          let description = "";
+          let descriptionChars = 0;
           const skillFile = join(fullPath, "SKILL.md");
           try {
-            totalChars = readFileSync(skillFile, "utf8").length;
+            const content = readFileSync(skillFile, "utf8");
+            totalChars = content.length;
+            const parsed = parseSkillFrontmatter(content);
+            description = parsed.description;
+            descriptionChars = parsed.description.length;
           } catch { /* no SKILL.md or unreadable */ }
 
-          skills.push({ name: entry.name, agent, dirPath: fullPath, files, tokenCount: Math.ceil(totalChars / 4) });
+          skills.push({
+            name: entry.name, agent, dirPath: fullPath, files, description,
+            descriptionTokenCount: Math.ceil(descriptionChars / 4),
+            tokenCount: Math.ceil(totalChars / 4),
+          });
         } catch { /* skip dirs we can't read */ }
       }
     } catch (err) {

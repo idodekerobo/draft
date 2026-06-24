@@ -725,7 +725,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const { skills, errors } = scanSkillDirectories();
         const mcpServers = scanMCPConnections();
         return {
-          skills: skills.map(({ name, agent, dirPath, tokenCount }) => ({ name, agent, dirPath, tokenCount })),
+          skills: skills.map(({ name, agent, dirPath, description, descriptionTokenCount, tokenCount }) => ({ name, agent, dirPath, description, descriptionTokenCount, tokenCount })),
           scanErrors: errors,
           mcpServers: mcpServers.map(({ name, agent, config }) => ({ name, agent, config })),
         };

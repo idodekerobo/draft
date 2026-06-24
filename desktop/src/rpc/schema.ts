@@ -132,6 +132,8 @@ export interface ScannedSkillEntry {
   name: string;
   agent: "claude-code" | "codex";
   dirPath: string;
+  description: string;
+  descriptionTokenCount: number;
   tokenCount: number;
 }
 

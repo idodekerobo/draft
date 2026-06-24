@@ -209,6 +209,10 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
               aria-label="Filter skills"
             />
             <p className="onboarding__sr-only" aria-live="polite">{grouped.reduce((count, group) => count + group.skills.length, 0)} skills match your filter.</p>
+            <div className="onboarding__skill-list-header">
+              <span>Skill</span>
+              <span title="Approximate token count for the full SKILL.md file">Tokens</span>
+            </div>
             <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true" ref={listRef} onKeyDown={handleKeyDown} tabIndex={0}>
               {grouped.map(({ agent, skills: sectionSkills }) => {
                 const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(keyFor(skill)));
@@ -229,7 +233,8 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
                       <ScanSkillRow
                         key={keyFor(skill)}
                         name={skill.name}
-                        agent={skill.agent}
+                        description={skill.description ?? ""}
+                        descriptionTokenCount={skill.descriptionTokenCount ?? 0}
                         tokenCount={skill.tokenCount}
                         selected={selected.has(keyFor(skill))}
                         focused={flatVisibleSkills.indexOf(skill) === focusIndex}
