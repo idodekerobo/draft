@@ -76,8 +76,7 @@ describe("scanSkillDirectories", () => {
   it("calculates token count correctly (content length / 4, ceiling)", () => {
     const claudeDir = join(TMP, "claude-tokens");
     mkdirSync(join(claudeDir, "myskill"), { recursive: true });
-    writeFileSync(join(claudeDir, "myskill", "a.md"), "1234567890");
-    writeFileSync(join(claudeDir, "myskill", "b.md"), "1234567");
+    writeFileSync(join(claudeDir, "myskill", "SKILL.md"), "1234567890abcdefg");
 
     const { skills } = scanSkillDirectories({
       claudeSkillsDir: claudeDir,

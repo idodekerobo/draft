@@ -251,9 +251,13 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
                 {mcpServers.map((server) => (
                   <div key={`${server.agent}:${server.name}`} className="onboarding__skill-row onboarding__skill-row--mcp">
                     <span className="onboarding__skill-name">{server.name}</span>
-                    <span className="onboarding__skill-badge">{server.agent === "claude-code" ? "Claude" : "Codex"}</span>
+                    <span className="onboarding__mcp-meta">
+                      <span className="onboarding__status-dot onboarding__status-dot--green" />
+                      <span className="onboarding__skill-badge">{server.agent === "claude-code" ? "Claude" : "Codex"}</span>
+                    </span>
                   </div>
                 ))}
+                <p className="onboarding__mcp-hint">MCP servers are displayed for reference. Draft does not sync MCP configurations.</p>
               </div>
             )}
 

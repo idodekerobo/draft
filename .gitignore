@@ -11,6 +11,9 @@ research/
 __pycache__
 *.py[cod]
 
+.agents/
+demo-videos/
+
 # Next.js
 .next
 

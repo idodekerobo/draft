@@ -4,7 +4,7 @@
 // Scans Claude Code and Codex skill directories, detects Draft-managed skills,
 // creates cross-agent symlinks, and manages a registry file.
 
-import { existsSync, readdirSync, readFileSync, lstatSync, symlinkSync, mkdirSync, writeFileSync, readlinkSync, renameSync } from "fs";
+import { existsSync, readdirSync, readFileSync, lstatSync, statSync, symlinkSync, mkdirSync, writeFileSync, readlinkSync, renameSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
 
@@ -126,7 +126,7 @@ export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSki
           const files = readdirSync(fullPath).filter((f) => {
             try {
               const fPath = join(fullPath, f);
-              const s = lstatSync(fPath);
+              const s = statSync(fPath);
               return s.isFile();
             } catch {
               return false;
@@ -134,12 +134,10 @@ export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSki
           });
 
           let totalChars = 0;
-          for (const f of files) {
-            try {
-              const content = readFileSync(join(fullPath, f), "utf8");
-              totalChars += content.length;
-            } catch { /* skip unreadable files */ }
-          }
+          const skillFile = join(fullPath, "SKILL.md");
+          try {
+            totalChars = readFileSync(skillFile, "utf8").length;
+          } catch { /* no SKILL.md or unreadable */ }
 
           skills.push({ name: entry.name, agent, dirPath: fullPath, files, tokenCount: Math.ceil(totalChars / 4) });
         } catch { /* skip dirs we can't read */ }
