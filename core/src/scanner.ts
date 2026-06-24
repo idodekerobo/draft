@@ -4,7 +4,7 @@
 // Scans Claude Code and Codex skill directories, detects Draft-managed skills,
 // creates cross-agent symlinks, and manages a registry file.
 
-import { existsSync, readdirSync, readFileSync, lstatSync, statSync, symlinkSync, mkdirSync, writeFileSync, readlinkSync, renameSync } from "fs";
+import { existsSync, readdirSync, readFileSync, lstatSync, statSync, symlinkSync, mkdirSync, writeFileSync, readlinkSync, renameSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
 
@@ -39,7 +39,8 @@ const DEFAULT_CLAUDE_SKILLS_DIR = join(homedir(), ".claude", "skills");
 const DEFAULT_CODEX_SKILLS_DIR = join(homedir(), ".codex", "skills");
 const DEFAULT_CLAUDE_CONFIG_PATH = join(homedir(), ".claude.json");
 const DEFAULT_CODEX_CONFIG_PATH = join(homedir(), ".codex", "config.toml");
-const DEFAULT_MANIFEST_PATH = join(DRAFT_DIR, "skill-manifest.json");
+const LEGACY_MANIFEST_PATH = join(DRAFT_DIR, "skill-manifest.json");
+const DEFAULT_MANIFEST_PATH = join(DRAFT_DIR, "shared", "skill-manifest.json");
 
 // ── Options interfaces ─────────────────────────────────────────────────────────
 
@@ -358,8 +359,10 @@ export function createSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
 /** Read Draft-created symlink paths for cleanup. Malformed or missing manifests are empty. */
 export function readSkillManifest(manifestPath?: string): string[] {
   const path = manifestPath ?? DEFAULT_MANIFEST_PATH;
+  const fallback = !manifestPath && !existsSync(path) ? LEGACY_MANIFEST_PATH : null;
+  const readPath = fallback && existsSync(fallback) ? fallback : path;
   try {
-    const raw = readFileSync(path, "utf8");
+    const raw = readFileSync(readPath, "utf8");
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
   } catch {
@@ -372,7 +375,16 @@ export function updateSkillManifest(paths: string[], manifestPath?: string): voi
   const path = manifestPath ?? DEFAULT_MANIFEST_PATH;
   const parentDir = path.slice(0, path.lastIndexOf("/"));
   if (parentDir) mkdirSync(parentDir, { recursive: true });
-  const merged = [...new Set([...readSkillManifest(path), ...paths])];
+
+  let existing = readSkillManifest(path);
+
+  if (!manifestPath && existsSync(LEGACY_MANIFEST_PATH) && LEGACY_MANIFEST_PATH !== path) {
+    const legacy = readSkillManifest(LEGACY_MANIFEST_PATH);
+    existing = [...new Set([...existing, ...legacy])];
+    try { unlinkSync(LEGACY_MANIFEST_PATH); } catch {}
+  }
+
+  const merged = [...new Set([...existing, ...paths])];
   const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + "\n", "utf8");
   renameSync(tmpPath, path);
