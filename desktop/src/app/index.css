@@ -2037,6 +2037,22 @@ button {
 .onboarding__scan-loading { width: 100%; min-height: 160px; padding: 16px 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .onboarding__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
+.onboarding__integration-list { width: 100%; border-top: 1px solid var(--color-border); }
+.onboarding__integration-card { border-bottom: 1px solid var(--color-border); }
+.onboarding__integration-header { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 64px; padding: 12px 0; border: 0; background: transparent; color: var(--color-text-primary); font-family: var(--font-ui); text-align: left; }
+.onboarding__integration-header:not(:disabled) { cursor: pointer; }
+.onboarding__integration-title { display: flex; flex-direction: column; gap: 3px; font-size: var(--font-size-body); }
+.onboarding__integration-title small, .onboarding__integration-status small { color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-weight: 400; }
+.onboarding__integration-status { display: flex; align-items: center; gap: 8px; color: var(--color-text-tertiary); }
+.onboarding__integration-badge { color: var(--color-status-green); font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.onboarding__integration-content { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 0 0 14px; }
+.onboarding__integration-step-indicator { color: var(--color-text-tertiary); font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.onboarding__integration-help { color: var(--color-text-secondary); font-size: var(--font-size-secondary); line-height: 1.5; }
+.onboarding__integration-input { width: 100%; height: 36px; padding: 8px 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg-sidebar); color: var(--color-text-primary); font: var(--font-size-secondary) var(--font-ui); }
+.onboarding__mode-picker { display: flex; gap: 8px; }
+.onboarding__mode-picker button { border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 7px 9px; background: transparent; color: var(--color-text-secondary); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; }
+.onboarding__mode-picker .onboarding__mode--selected { border-color: var(--color-accent-blue); color: var(--color-text-primary); }
+
 .onboarding__step-indicator {
   font-size: var(--font-size-micro);
   font-weight: 600;

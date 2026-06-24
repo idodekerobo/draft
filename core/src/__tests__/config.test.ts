@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { readSecrets, readCollaboration, getActiveProfile, getProfiles, setActiveProfile } from "../config";
+import { readSecrets, writeSecrets, readCollaboration, getActiveProfile, getProfiles, setActiveProfile } from "../config";
 
 const TMP = `/tmp/draft-core-test-${Date.now()}`;
 
@@ -43,6 +43,24 @@ describe("readSecrets", () => {
       expect(result.secrets.granola_mode).toBeUndefined();
       expect(result.secrets.slack_bot_token).toBeUndefined();
       expect(result.secrets.github_connected).toBeUndefined();
+    }
+  });
+
+  it("merges a secrets patch without overwriting other integration credentials", () => {
+    writeFileSync(
+      join(TMP, "config", "secrets.json"),
+      JSON.stringify({ slack_bot_token: "xoxb-existing", slack_app_token: "xapp-existing" }),
+    );
+
+    writeSecrets(TMP, { granola_mode: "api", granola_api_token: "granola-token" });
+
+    const result = readSecrets(TMP);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.secrets.slack_bot_token).toBe("xoxb-existing");
+      expect(result.secrets.slack_app_token).toBe("xapp-existing");
+      expect(result.secrets.granola_mode).toBe("api");
+      expect(result.secrets.granola_api_token).toBe("granola-token");
     }
   });
 });

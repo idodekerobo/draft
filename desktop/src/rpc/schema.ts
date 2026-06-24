@@ -348,6 +348,15 @@ export type AppRPCType = {
       /** Create cross-agent symlinks for the selected scanned skills. */
       importSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { created: number; skipped: number } };
 
+      /** Register Granola's MCP server with Claude Code and persist connection status. */
+      connectGranolaMCP: { params: void; response: ActionResult };
+
+      /** Persist a Granola API key and connection status for the daemon. */
+      connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
+
+      /** Persist Slack bot and app credentials and connection status for the daemon. */
+      connectSlack: { params: { botToken: string; appToken: string }; response: ActionResult };
+
       /**
        * Run inject-context.sh and return the full text that would be injected
        * at session start, plus a rough token estimate (chars / 4).

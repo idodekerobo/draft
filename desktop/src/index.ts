@@ -4,7 +4,7 @@ import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } 
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { createSymlinks, scanSkillDirectories } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, writeSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
@@ -745,6 +745,58 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           skipped: result.skipped.length,
           ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
         };
+      },
+
+      connectGranolaMCP: async () => {
+        const connection = await capture(["claude", "mcp", "add", "granola-mcp", "npx", "granola-mcp-server"]);
+        if (connection.exitCode !== 0) {
+          return { ok: false, error: connection.stderr || connection.stdout || "Could not register the Granola MCP server." };
+        }
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const existing = readIntegrations(workspace);
+          writeSecrets(workspace, { granola_mode: "mcp" });
+          writeIntegrations(workspace, {
+            ...(existing.ok ? existing.integrations : {}),
+            granola: { connected: true, mode: "mcp", last_connected: new Date().toISOString() },
+          });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
+        }
+      },
+
+      connectGranolaAPI: async ({ apiKey }) => {
+        if (!apiKey.trim()) return { ok: false, error: "Enter your Granola API key." };
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const existing = readIntegrations(workspace);
+          writeSecrets(workspace, { granola_mode: "api", granola_api_token: apiKey.trim() });
+          writeIntegrations(workspace, {
+            ...(existing.ok ? existing.integrations : {}),
+            granola: { connected: true, mode: "api", last_connected: new Date().toISOString() },
+          });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
+        }
+      },
+
+      connectSlack: async ({ botToken, appToken }) => {
+        if (!botToken.startsWith("xoxb-")) return { ok: false, error: "Bot tokens start with xoxb-." };
+        if (!appToken.startsWith("xapp-")) return { ok: false, error: "App tokens start with xapp-." };
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const existing = readIntegrations(workspace);
+          writeSecrets(workspace, { slack_bot_token: botToken, slack_app_token: appToken });
+          writeIntegrations(workspace, {
+            ...(existing.ok ? existing.integrations : {}),
+            slack: { connected: true, last_connected: new Date().toISOString() },
+          });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Slack connection." };
+        }
       },
 
       applyUpdate: async () => {

@@ -4,7 +4,7 @@
 //   1. Welcome  — what Draft is, three-component architecture
 //   2. Profile  — create / pick workspace (BEFORE install — install needs active-profile)
 //   3. Install  — tool selection + install (calls runInstall RPC)
-//   4. Inputs   — connect input sources; GitHub connects inline via OAuth
+//   5. Integrations — connect Granola, Slack, and GitHub inline
 //   5. Collab   — team collaboration awareness — skippable
 //   6. Consent  — analytics opt-in/out (embedded inline, replaces post-onboarding modal)
 //   7. Done     — /draft-setup CTA + tray/background note + Start Draft
@@ -18,7 +18,7 @@ import { TOOL_PREREQS } from "./constants";
 import { WelcomeStep } from "./WelcomeStep";
 import { ProfileStep } from "./ProfileStep";
 import { ToolSelectionStep } from "./ToolSelectionStep";
-import { InputsStep } from "./InputsStep";
+import { IntegrationSetupStep } from "./IntegrationSetupStep";
 import { CollabStep } from "./CollabStep";
 import { ConsentStep } from "./ConsentStep";
 import { CompleteStep } from "./CompleteStep";
@@ -29,8 +29,7 @@ const STEP_NUMBER: Record<OnboardingStep, number> = {
   profile:     2,
   "intelligence-tools": 3,
   "scan-import": 4,
-  inputs:      5,
-  integrations: 0,       // future — not used yet
+  integrations: 5,
   collab:      6,
   consent:     7,
   "headless-setup": 0,   // future — not used yet
@@ -42,8 +41,8 @@ const PREV_STEP: Partial<Record<OnboardingStep, OnboardingStep>> = {
   profile:       "welcome",
   "intelligence-tools": "profile",
   "scan-import": "intelligence-tools",
-  inputs:        "scan-import",
-  collab:        "inputs",
+  integrations:  "scan-import",
+  collab:        "integrations",
   consent:       "collab",
   complete:      "consent",
 };
@@ -61,11 +60,6 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   const [isStarting, setIsStarting]   = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
-
-  // GitHub connect state (inputs step)
-  const [connectingGitHub, setConnectingGitHub] = useState(false);
-  const [githubConnected, setGithubConnected]   = useState(false);
-  const [githubError, setGithubError]           = useState<string | null>(null);
 
   const { track, setConsent, setReplayEnabled } = useAnalytics();
   const completedRef = useRef(false);
@@ -108,34 +102,6 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       .then((pl) => { setProfileList(pl.details); setProfilesLoaded(true); })
       .catch(() => setProfilesLoaded(true));
   }, [step]);
-
-  // Load initial GitHub connection status when inputs step becomes active.
-  useEffect(() => {
-    if (step !== "inputs") return;
-    rpc.request.getConnectedApps()
-      .then((apps) => setGithubConnected(apps.integrations.github.connected))
-      .catch(() => {});
-  }, [step]);
-
-  // Poll getConnectedApps while GitHub OAuth is in progress.
-  useEffect(() => {
-    if (!connectingGitHub) return;
-    const id = setInterval(async () => {
-      try {
-        const updated = await rpc.request.getConnectedApps();
-        if (updated.integrations.github.connected) {
-          setGithubConnected(true);
-          setConnectingGitHub(false);
-          track("integration_connected", { source: "github" });
-        }
-      } catch { /* keep polling */ }
-    }, 2_000);
-    const timeout = setTimeout(() => {
-      setConnectingGitHub(false);
-      setGithubError("GitHub sign-in timed out. Try again.");
-    }, 5 * 60 * 1_000);
-    return () => { clearInterval(id); clearTimeout(timeout); };
-  }, [connectingGitHub]);
 
   async function handleSelectProfile(name: string) {
     setSettingProfile(true);
@@ -217,22 +183,6 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
     }
   }
 
-  async function handleConnectGitHub() {
-    setConnectingGitHub(true);
-    setGithubError(null);
-    try {
-      const result = await rpc.request.connectGitHub();
-      if (!result.ok) {
-        setGithubError(result.error ?? "GitHub connect failed.");
-        setConnectingGitHub(false);
-      }
-      // On ok:true the OAuth browser flow is open — polling effect takes over.
-    } catch {
-      setGithubError("GitHub connect failed.");
-      setConnectingGitHub(false);
-    }
-  }
-
   async function handleConsent(granted: boolean) {
     setConsentSaving(true);
     try {
@@ -307,15 +257,11 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           }}
         />
       )}
-      {step === "inputs" && (
-        <InputsStep
+      {step === "integrations" && (
+        <IntegrationSetupStep
           stepNum={stepNum}
           totalSteps={TOTAL_STEPS}
           onBack={handleBack}
-          connectingGitHub={connectingGitHub}
-          githubConnected={githubConnected}
-          githubError={githubError}
-          handleConnectGitHub={handleConnectGitHub}
           onNext={() => setStep("collab")}
         />
       )}
@@ -324,7 +270,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           stepNum={stepNum}
           totalSteps={TOTAL_STEPS}
           onBack={handleBack}
-          onNext={() => setStep("inputs")}
+          onNext={() => setStep("integrations")}
         />
       )}
       {step === "collab" && (
