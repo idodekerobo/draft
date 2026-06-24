@@ -23,6 +23,7 @@ import { CollabStep } from "./CollabStep";
 import { ConsentStep } from "./ConsentStep";
 import { CompleteStep } from "./CompleteStep";
 import { ScanImportStep } from "./ScanImportStep";
+import { HeadlessSetupStep } from "./HeadlessSetupStep";
 
 const STEP_NUMBER: Record<OnboardingStep, number> = {
   welcome:     1,
@@ -31,11 +32,11 @@ const STEP_NUMBER: Record<OnboardingStep, number> = {
   "scan-import": 4,
   integrations: 5,
   collab:      6,
-  consent:     7,
-  "headless-setup": 0,   // future — not used yet
-  complete:    8,
+  "headless-setup": 7,
+  consent:     8,
+  complete:    9,
 };
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 
 const PREV_STEP: Partial<Record<OnboardingStep, OnboardingStep>> = {
   profile:       "welcome",
@@ -43,7 +44,8 @@ const PREV_STEP: Partial<Record<OnboardingStep, OnboardingStep>> = {
   "scan-import": "intelligence-tools",
   integrations:  "scan-import",
   collab:        "integrations",
-  consent:       "collab",
+  "headless-setup": "collab",
+  consent:       "headless-setup",
   complete:      "consent",
 };
 
@@ -275,6 +277,14 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       )}
       {step === "collab" && (
         <CollabStep
+          stepNum={stepNum}
+          totalSteps={TOTAL_STEPS}
+          onBack={handleBack}
+          onNext={() => setStep("headless-setup")}
+        />
+      )}
+      {step === "headless-setup" && (
+        <HeadlessSetupStep
           stepNum={stepNum}
           totalSteps={TOTAL_STEPS}
           onBack={handleBack}

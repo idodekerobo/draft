@@ -139,6 +139,8 @@ export interface ScanSkillsResult {
   skills: ScannedSkillEntry[];
 }
 
+export type HeadlessSetupPhase = "starting" | "running" | "writing" | "complete" | "error";
+
 export interface ProfileDetail {
   name: string;
   hasContext: boolean;
@@ -357,6 +359,12 @@ export type AppRPCType = {
       /** Persist Slack bot and app credentials and connection status for the daemon. */
       connectSlack: { params: { botToken: string; appToken: string }; response: ActionResult };
 
+      /** Open the native folder picker for an optional local-context import. */
+      selectSetupFolder: { params: void; response: { folderPath: string | null } };
+
+      /** Start a non-interactive Claude Code session to create the active profile's context. */
+      runHeadlessSetup: { params: { mode: "scratch" | "import"; folderPath?: string }; response: ActionResult };
+
       /**
        * Run inject-context.sh and return the full text that would be injected
        * at session start, plus a rough token estimate (chars / 4).
@@ -413,6 +421,9 @@ export type AppRPCType = {
 
       /** A newly installed skill was made available to the other agent. */
       skillsChanged: { count: number };
+
+      /** Status update from the headless context-setup process. */
+      headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
 
       /** Daemon heartbeat went stale — daemon has stopped. Phase 1. */
       daemonStopped: Record<string, never>;

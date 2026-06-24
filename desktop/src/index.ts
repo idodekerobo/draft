@@ -4,7 +4,7 @@ import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } 
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { createSymlinks, scanSkillDirectories } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, writeSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, writeSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
@@ -14,7 +14,7 @@ import {
   rejectProposal as rejectCoreProposal,
   applyProposalLocally,
 } from "draft-core/proposals";
-import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
@@ -799,6 +799,104 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Slack connection." };
         }
+      },
+
+      selectSetupFolder: async () => {
+        try {
+          const [folderPath] = await Utils.openFileDialog({
+            canChooseFiles: false,
+            canChooseDirectory: true,
+            allowsMultipleSelection: false,
+          });
+          return { folderPath: folderPath || null };
+        } catch {
+          return { folderPath: null };
+        }
+      },
+
+      runHeadlessSetup: async ({ mode, folderPath }) => {
+        const cli = await capture(["which", "claude"]);
+        if (cli.exitCode !== 0) {
+          return { ok: false, error: "Claude Code CLI not found. Install it first or run /draft-setup manually." };
+        }
+
+        const workspace = getWorkspacePath(getActiveProfile());
+        let importSummary = "No local folder was selected.";
+        if (mode === "import") {
+          if (!folderPath || !existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+            return { ok: false, error: "Choose a valid local folder to import." };
+          }
+          try {
+            const entries = readdirSync(folderPath, { recursive: true, withFileTypes: true })
+              .filter((entry) => entry.isFile())
+              .slice(0, 100)
+              .map((entry) => entry.name);
+            importSummary = `Local folder: ${folderPath}\nFiles (first ${entries.length}):\n${entries.map((entry) => `- ${entry}`).join("\n")}`;
+          } catch {
+            return { ok: false, error: "Could not read the selected folder." };
+          }
+        }
+
+        const integrations = readIntegrations(workspace);
+        const prompt = [
+          "You are running Draft's non-interactive context setup.",
+          `Write the shared context workspace directly to: ${workspace}`,
+          `Installed tools: ${getInstalledTools().join(", ") || "none"}`,
+          `Connected integrations: ${integrations.ok ? Object.entries(integrations.integrations).filter(([, entry]) => entry.connected).map(([name]) => name).join(", ") || "none" : "none"}`,
+          importSummary,
+          "Create or update concise context files for company, product, team, and priorities. Do not ask questions. Make conservative assumptions and mark them [ASSUMED]. Do not read or output secrets.",
+        ].join("\n\n");
+        const tmpDir = join(DRAFT_ROOT, "tmp");
+        const promptPath = join(tmpDir, `headless-setup-${Date.now()}.md`);
+        mkdirSync(tmpDir, { recursive: true });
+        writeFileSync(promptPath, prompt, "utf8");
+
+        let proc: ReturnType<typeof Bun.spawn>;
+        try {
+          proc = Bun.spawn(["claude", "-p", "-"], {
+            stdin: Bun.file(promptPath),
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+        } catch (err) {
+          try { unlinkSync(promptPath); } catch {}
+          return { ok: false, error: err instanceof Error ? err.message : "Could not start Claude Code." };
+        }
+
+        try { rpc.send.headlessProgress({ phase: "starting", label: "Starting Claude Code…" }); } catch {}
+        const writingTimer = setTimeout(() => {
+          try { rpc.send.headlessProgress({ phase: "writing", label: "Writing workspace files…" }); } catch {}
+        }, 10_000);
+        const timeoutTimer = setTimeout(() => {
+          proc.kill();
+          try { rpc.send.headlessProgress({ phase: "error", label: "Context setup is taking too long.", error: "timeout" }); } catch {}
+        }, 120_000);
+
+        void (async () => {
+          try {
+            const [exitCode, stderr] = await Promise.all([
+              proc.exited,
+              new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
+            ]);
+            clearTimeout(writingTimer);
+            clearTimeout(timeoutTimer);
+            if (exitCode === 0) {
+              try { rpc.send.headlessProgress({ phase: "complete", label: "Context setup complete." }); } catch {}
+            } else {
+              const normalized = stderr.toLowerCase();
+              const label = normalized.includes("auth") || normalized.includes("login")
+                ? "Your Claude Code session expired. Sign in and try again."
+                : normalized.includes("rate") || normalized.includes("429")
+                  ? "Rate limited. Wait a moment and try again."
+                  : "Context setup failed. Try again or use the manual fallback.";
+              try { rpc.send.headlessProgress({ phase: "error", label, error: stderr || `Claude exited with code ${exitCode}.` }); } catch {}
+            }
+          } finally {
+            try { unlinkSync(promptPath); } catch {}
+          }
+        })();
+        try { rpc.send.headlessProgress({ phase: "running", label: "Setting up context…" }); } catch {}
+        return { ok: true };
       },
 
       applyUpdate: async () => {
