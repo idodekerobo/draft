@@ -1029,6 +1029,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       openUrl: ({ url }) => {
         Bun.spawn(["open", url], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
       },
+      openWorkspaceInFinder: () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        Bun.spawn(["open", workspace], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      },
       requestUpdateCheck: () => {
         void checkAndDownloadUpdate(false);
       },

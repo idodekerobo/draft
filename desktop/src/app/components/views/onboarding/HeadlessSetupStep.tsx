@@ -81,7 +81,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
       <h1 className="onboarding__title">Set up your context</h1>
-      <p className="onboarding__desc">Draft can create a starting context workspace without sending you to a terminal.</p>
+      <p className="onboarding__desc">{running || phase === "complete" ? "Draft is creating starting context in your workspace." : "Draft can create a starting context workspace without sending you to a terminal."}</p>
 
       {noRunnersInstalled && (
         <div className="onboarding__manual-fallback">
@@ -151,7 +151,10 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
       {phase === "complete" && <>
         <p className="onboarding__headless-success">{label}</p>
         {files.length > 0 && <p className="onboarding__hint">Created or updated: {files.slice(0, 4).map((file) => file.label).join(", ")}{files.length > 4 ? ", and more" : ""}.</p>}
-        <button className="empty-state__cta onboarding__cta" style={{ marginTop: 20 }} onClick={onNext}>Looks good</button>
+        <div className="onboarding__actions" style={{ marginTop: 20 }}>
+          <button className="onboarding__skip" onClick={() => rpc.send.openWorkspaceInFinder()}>Open in Finder</button>
+          <button className="empty-state__cta onboarding__cta" onClick={onNext}>Looks good</button>
+        </div>
       </>}
 
       {(error || !phase) && !noRunnersInstalled && <div className="onboarding__manual-fallback">

@@ -425,6 +425,8 @@ export type AppRPCType = {
       sendNotification: { title: string; subtitle?: string; body?: string };
       /** Renderer asks Bun to open a URL in the system browser. */
       openUrl: { url: string };
+      /** Open the active workspace folder in Finder. */
+      openWorkspaceInFinder: Record<string, never>;
       /** Renderer asks bun to start an update check. Result arrives via webview messages. */
       requestUpdateCheck: Record<string, never>;
     };
