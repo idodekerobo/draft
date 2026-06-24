@@ -6,10 +6,9 @@ import {
   isDraftManaged,
   scanMCPConnections,
   createSymlinks,
-  readRegistry,
-  writeRegistry,
+  readSkillManifest,
+  updateSkillManifest,
   type ScannedSkill,
-  type SkillRegistry,
 } from "../scanner";
 
 const TMP = `/tmp/draft-core-scanner-${Date.now()}`;
@@ -36,6 +35,7 @@ describe("scanSkillDirectories", () => {
     const skills = scanSkillDirectories({
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
+      manifestPath: join(TMP, "skill-manifest.json"),
       draftDir,
     });
 
@@ -69,6 +69,7 @@ describe("scanSkillDirectories", () => {
     const skills = scanSkillDirectories({
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
+      manifestPath: join(TMP, "skill-manifest.json"),
       draftDir: join(TMP, "draft"),
     });
     expect(skills).toEqual([]);
@@ -228,6 +229,7 @@ describe("createSymlinks", () => {
     const result = createSymlinks(skills, {
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
+      manifestPath: join(TMP, "skill-manifest.json"),
     });
 
     expect(result.created.length).toBe(1);
@@ -311,6 +313,7 @@ describe("createSymlinks", () => {
     ], {
       claudeSkillsDir: claudeDir,
       codexSkillsDir: join(invalidCodexParent, "skills"),
+      manifestPath: join(TMP, "skill-manifest.json"),
     });
 
     expect(result.created).toEqual([]);
@@ -320,45 +323,20 @@ describe("createSymlinks", () => {
   });
 });
 
-// ── readRegistry / writeRegistry ───────────────────────────────────────────────
+// ── skill manifest ────────────────────────────────────────────────────────────
 
-describe("readRegistry / writeRegistry", () => {
-  it("round-trips correctly", () => {
-    const registryPath = join(TMP, "state", "registry.json");
-
-    const registry: SkillRegistry = {
-      skills: [
-        {
-          name: "browse",
-          agent: "claude-code",
-          dirPath: "/home/user/.claude/skills/browse",
-          files: ["SKILL.md"],
-          tokenCount: 50,
-        },
-      ],
-      mcpConnections: [
-        {
-          name: "my-server",
-          agent: "claude-code",
-          config: { command: "node" },
-        },
-      ],
-      lastScan: "2026-06-23T12:00:00Z",
-    };
-
-    writeRegistry(registry, registryPath);
-    const loaded = readRegistry(registryPath);
-
-    expect(loaded).not.toBeNull();
-    expect(loaded!.skills.length).toBe(1);
-    expect(loaded!.skills[0].name).toBe("browse");
-    expect(loaded!.mcpConnections.length).toBe(1);
-    expect(loaded!.mcpConnections[0].name).toBe("my-server");
-    expect(loaded!.lastScan).toBe("2026-06-23T12:00:00Z");
+describe("skill manifest", () => {
+  it("merges and deduplicates Draft-created symlink paths", () => {
+    const manifestPath = join(TMP, "skill-manifest.json");
+    updateSkillManifest(["/tmp/codex/a"], manifestPath);
+    updateSkillManifest(["/tmp/codex/a", "/tmp/claude/b"], manifestPath);
+    expect(readSkillManifest(manifestPath)).toEqual(["/tmp/codex/a", "/tmp/claude/b"]);
   });
 
-  it("readRegistry returns null when file absent", () => {
-    const result = readRegistry(join(TMP, "nonexistent", "registry.json"));
-    expect(result).toBeNull();
+  it("returns an empty manifest when the file is absent or malformed", () => {
+    const manifestPath = join(TMP, "missing.json");
+    expect(readSkillManifest(manifestPath)).toEqual([]);
+    writeFileSync(manifestPath, "not json");
+    expect(readSkillManifest(manifestPath)).toEqual([]);
   });
 });

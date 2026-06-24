@@ -8,6 +8,7 @@
 
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
+import { createSymlinks, scanSkillDirectories } from 'draft-core/scanner';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
 
@@ -28,6 +29,7 @@ const GRANOLA_POLL_MS   = parseInt(process.env.DRAFT_GRANOLA_POLL   ?? '900')   
 const SLACK_MANAGER_MS  = 60_000;
 const SLACK_ANALYSIS_MS = parseInt(process.env.DRAFT_SLACK_ANALYSIS ?? '14400') * 1000;
 const GITHUB_POLL_MS    = parseInt(process.env.DRAFT_GITHUB_POLL    ?? '3600')  * 1000;
+const SKILL_SYNC_MS      = 5 * 60 * 1000;
 
 // Ensure runtime directories exist (mkdirSync before openSync below)
 mkdirSync(DRAFT_PENDING,    { recursive: true });
@@ -70,6 +72,16 @@ const logFd = openSync(LOG_PATH, 'a');
 function log(level: 'info' | 'warn' | 'error', msg: string) {
   const line = JSON.stringify({ ts: new Date().toISOString(), level, msg }) + '\n';
   appendFileSync(LOG_PATH, line);
+}
+
+function reconcileSkills() {
+  try {
+    const result = createSymlinks(scanSkillDirectories());
+    if (result.created.length > 0) log('info', `skills: synced ${result.created.length} cross-agent link(s)`);
+    if (result.errors.length > 0) log('warn', `skills: ${result.errors.length} sync error(s)`);
+  } catch {
+    log('warn', 'skills: scan reconciliation failed');
+  }
 }
 
 async function trimLog() {
@@ -199,6 +211,7 @@ try {
 
 log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
 phTrack('daemon_started');
+reconcileSkills();
 
 // ── Integration pollers (interval-based) ─────────────────────────────────────
 // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
@@ -236,6 +249,10 @@ setInterval(() => {
   log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
   Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
 }, GITHUB_POLL_MS);
+
+// Skills are user-owned files; reconcile separately from synthesis so they keep
+// syncing while the desktop app is closed.
+setInterval(reconcileSkills, SKILL_SYNC_MS);
 
 // ── Main poll loop ────────────────────────────────────────────────────────────
 

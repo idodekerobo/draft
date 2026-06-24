@@ -4,9 +4,7 @@ import { existsSync, watch } from "fs";
 import { homedir } from "os";
 import {
   createSymlinks,
-  scanMCPConnections,
   scanSkillDirectories,
-  writeRegistry,
   type ScannedSkill,
 } from "draft-core/scanner";
 
@@ -20,7 +18,7 @@ export interface SkillWatchHandlers {
 export interface SkillWatchOptions {
   claudeSkillsDir?: string;
   codexSkillsDir?: string;
-  registryPath?: string;
+  manifestPath?: string;
 }
 
 let watchers: Array<ReturnType<typeof watch>> = [];
@@ -40,21 +38,11 @@ function currentSkills(options?: SkillWatchOptions): ScannedSkill[] {
   });
 }
 
-function writeCurrentRegistry(skills: ScannedSkill[], options?: SkillWatchOptions): void {
-  writeRegistry({
-    skills,
-    mcpConnections: scanMCPConnections(),
-    lastScan: new Date().toISOString(),
-  }, options?.registryPath);
-}
-
 export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWatchOptions): void {
   if (started) return;
   started = true;
 
-  const initialSkills = currentSkills(options);
-  knownSkills = new Set(initialSkills.map(keyFor));
-  writeCurrentRegistry(initialSkills, options);
+  knownSkills.clear();
 
   const skillDirs = [
     options?.claudeSkillsDir ?? `${homedir()}/.claude/skills`,
@@ -66,23 +54,17 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
     const skills = currentSkills(options);
     const additions = skills.filter((skill) => !knownSkills.has(keyFor(skill)));
     if (additions.length === 0) {
-      const nextKnownSkills = new Set(skills.map(keyFor));
-      const changed = nextKnownSkills.size !== knownSkills.size
-        || [...nextKnownSkills].some((key) => !knownSkills.has(key));
-      if (changed) {
-        knownSkills = nextKnownSkills;
-        writeCurrentRegistry(skills, options);
-      }
+      knownSkills = new Set(skills.map(keyFor));
       return;
     }
 
     const result = createSymlinks(additions, {
       claudeSkillsDir: options?.claudeSkillsDir,
       codexSkillsDir: options?.codexSkillsDir,
+      manifestPath: options?.manifestPath,
     });
     const refreshedSkills = currentSkills(options);
     knownSkills = new Set(refreshedSkills.map(keyFor));
-    writeCurrentRegistry(refreshedSkills, options);
 
     if (result.created.length > 0) handlers.onSkillsChanged(result.created.length);
   };
@@ -98,6 +80,8 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
       // A missing permission must not prevent the other agent directory from watching.
     }
   }
+
+  reconcile();
 
   // fs.watch can miss events on networked, sandboxed, or newly-created paths.
   // Reconcile at a low frequency so portability never depends on a single OS API.
