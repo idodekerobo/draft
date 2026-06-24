@@ -222,6 +222,18 @@ export function readSecrets(workspacePath: string): SecretsResult {
   }
 }
 
+/**
+ * Merge a credentials patch into the profile's secrets file.
+ * This preserves credentials for integrations configured separately.
+ */
+export function writeSecrets(workspacePath: string, patch: Partial<Secrets>): void {
+  const secretsPath = join(workspacePath, "config", "secrets.json");
+  const existing = readSecrets(workspacePath);
+  const secrets = { ...(existing.ok ? existing.secrets : {}), ...patch };
+  mkdirSync(join(workspacePath, "config"), { recursive: true });
+  writeFileSync(secretsPath, JSON.stringify(secrets, null, 2) + "\n", "utf8");
+}
+
 // ── Profile list ───────────────────────────────────────────────────────────────
 
 export interface ProfileDetail {

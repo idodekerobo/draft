@@ -128,6 +128,36 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface ScannedSkillEntry {
+  name: string;
+  agent: "claude-code" | "codex";
+  dirPath: string;
+  description: string;
+  descriptionTokenCount: number;
+  tokenCount: number;
+  synced?: boolean;
+}
+
+export interface ScanDirError {
+  dir: string;
+  agent: "claude-code" | "codex";
+  message: string;
+}
+
+export interface ScannedMCPEntry {
+  name: string;
+  agent: "claude-code" | "codex";
+  config: Record<string, unknown>;
+}
+
+export interface ScanSkillsResult {
+  skills: ScannedSkillEntry[];
+  scanErrors?: ScanDirError[];
+  mcpServers?: ScannedMCPEntry[];
+}
+
+export type HeadlessSetupPhase = "starting" | "running" | "writing" | "complete" | "error";
+
 export interface ProfileDetail {
   name: string;
   hasContext: boolean;
@@ -287,6 +317,9 @@ export type AppRPCType = {
       /** Start the background daemon via launchctl. */
       startDaemon: { params: void; response: ActionResult };
 
+      /** Start the cross-agent skill watcher. Called after onboarding completes. */
+      startSkillWatcher: { params: void; response: void };
+
       /** Stop the background daemon via launchctl. */
       stopDaemon: { params: void; response: ActionResult };
 
@@ -331,6 +364,36 @@ export type AppRPCType = {
       /** First-launch install: extract binary, symlink to PATH, run `draft add` for each tool. */
       runInstall: { params: { tools: InstallableTool[] }; response: InstallResult };
 
+      /** Scan Claude Code and Codex skill directories for skills Draft does not manage. */
+      scanSkills: { params: void; response: ScanSkillsResult };
+
+      /** Create cross-agent symlinks for the selected scanned skills. */
+      importSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { created: number; skipped: number } };
+
+      /** Remove cross-agent symlinks for the given skills. */
+      removeSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { removed: number } };
+
+      /** Register Granola's MCP server with Claude Code and persist connection status. */
+      connectGranolaMCP: { params: void; response: ActionResult };
+
+      /** Persist a Granola API key and connection status for the daemon. */
+      connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
+
+      /** Build and return the Slack app creation URL with the manifest pre-filled. */
+      getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };
+
+      /** Persist Slack bot and app credentials and connection status for the daemon. */
+      connectSlack: { params: { botToken: string; appToken: string }; response: ActionResult };
+
+      /** Open the native folder picker for an optional local-context import. */
+      selectSetupFolder: { params: void; response: { folderPath: string | null } };
+
+      /** Start a non-interactive CLI session to create the active profile's context. */
+      runHeadlessSetup: { params: { mode: "scratch" | "import" | "github"; folderPath?: string; githubUrl?: string; runner?: "claude" | "codex" }; response: ActionResult };
+
+      /** Detect which CLI runners are installed. */
+      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
+
       /**
        * Run inject-context.sh and return the full text that would be injected
        * at session start, plus a rough token estimate (chars / 4).
@@ -366,6 +429,8 @@ export type AppRPCType = {
       sendNotification: { title: string; subtitle?: string; body?: string };
       /** Renderer asks Bun to open a URL in the system browser. */
       openUrl: { url: string };
+      /** Open the active workspace folder in Finder. */
+      openWorkspaceInFinder: Record<string, never>;
       /** Renderer asks bun to start an update check. Result arrives via webview messages. */
       requestUpdateCheck: Record<string, never>;
     };
@@ -384,6 +449,12 @@ export type AppRPCType = {
     messages: {
       /** New proposal(s) arrived from the daemon. */
       proposalAdded: { profile: string; source: string; count: number };
+
+      /** A newly installed skill was made available to the other agent. */
+      skillsChanged: { count: number };
+
+      /** Status update from the headless context-setup process. */
+      headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
 
       /** Daemon heartbeat went stale — daemon has stopped. Phase 1. */
       daemonStopped: Record<string, never>;

@@ -7,7 +7,7 @@
 // from this file for request calls.
 
 import { Electroview } from "electrobun/view";
-import type { AppRPCType } from "../rpc/schema";
+import type { AppRPCType, HeadlessSetupPhase } from "../rpc/schema";
 
 // ── Event bus for webview push messages ────────────────────────────────────────
 // TODO: components subscribe to these events to react to bun-initiated
@@ -15,6 +15,8 @@ import type { AppRPCType } from "../rpc/schema";
 
 type EventMap = {
   proposalAdded: { profile: string; source: string; count: number };
+  skillsChanged: { count: number };
+  headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
   badgeUpdate: { profile: string; count: number };
@@ -60,6 +62,10 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
     messages: {
       // TODO: Phase 2: new proposal arrived from daemon
       proposalAdded: (data) => events.emit("proposalAdded", data),
+
+      skillsChanged: (data) => events.emit("skillsChanged", data),
+
+      headlessProgress: (data) => events.emit("headlessProgress", data),
 
       // TODO: Phase 2: heartbeat went stale — daemon stopped
       daemonStopped: (data) => events.emit("daemonStopped", data),

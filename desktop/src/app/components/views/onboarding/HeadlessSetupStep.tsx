@@ -1,0 +1,22 @@
+import { HeadlessSetupPanel } from "./shared";
+
+interface HeadlessSetupStepProps {
+  stepNum: number;
+  totalSteps: number;
+  onBack: () => void;
+  onNext: () => void;
+}
+
+export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: HeadlessSetupStepProps) {
+  return (
+    <div className="onboarding__body onboarding__body--wide">
+      <div className="onboarding__nav">
+        <button className="onboarding__back" onClick={onBack}>← Back</button>
+        <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
+      </div>
+      <h1 className="onboarding__title">Set up your context</h1>
+      <p className="onboarding__desc">Draft can create a starting context workspace without sending you to a terminal.</p>
+      <HeadlessSetupPanel onComplete={onNext} onSkip={onNext} />
+    </div>
+  );
+}

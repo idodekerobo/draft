@@ -2,14 +2,13 @@
 //
 // Shown when appState.userState === "no-context":
 // A profile is active but its workspace has no context files yet.
-// Options: run /draft-setup in the current workspace, switch to a ready workspace,
+// Options: run headless context setup, switch to a ready workspace,
 // create a new workspace, or bypass to the app.
 
 import { useState, useEffect } from "react";
 import { rpc } from "../../rpc";
 import type { ProfileDetail } from "../../../rpc/schema";
-
-const SETUP_COMMAND = "/draft-setup";
+import { HeadlessSetupPanel } from "./onboarding/shared";
 
 interface SetupIncompleteViewProps {
   onComplete: () => void;
@@ -23,7 +22,6 @@ export function SetupIncompleteView({ onComplete }: SetupIncompleteViewProps) {
   const [newName, setNewName]     = useState("");
   const [creating, setCreating]   = useState(false);
   const [error, setError]         = useState<string | null>(null);
-  const [copied, setCopied]       = useState(false);
 
   useEffect(() => {
     rpc.request.getProfiles().then((pl) => {
@@ -69,28 +67,22 @@ export function SetupIncompleteView({ onComplete }: SetupIncompleteViewProps) {
     }
   }
 
-  function handleCopy() {
-    navigator.clipboard.writeText(SETUP_COMMAND).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
   const otherProfiles = profiles.filter((p) => p.name !== active);
 
   return (
     <div className="setup-incomplete">
       <div className="setup-incomplete__body">
         <div className="setup-incomplete__icon">◎</div>
-        <p className="setup-incomplete__title">Almost ready</p>
+        <p className="setup-incomplete__title">Set up your context</p>
         <p className="setup-incomplete__desc">
           Workspace <code className="onboarding__code">{active || "…"}</code> has
-          no context yet. Open Claude Code and run{" "}
-          <code className="onboarding__code">{SETUP_COMMAND}</code> to populate it.
+          no context yet. Set it up below or switch to a ready workspace.
         </p>
-        <button className="empty-state__cta setup-incomplete__copy" onClick={handleCopy}>
-          {copied ? "Copied" : "Copy command"}
-        </button>
+
+        <HeadlessSetupPanel
+          onComplete={onComplete}
+          completeLabel="Done"
+        />
 
         {otherProfiles.length > 0 && (
           <>
