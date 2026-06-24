@@ -375,6 +375,9 @@ export type AppRPCType = {
       /** Persist a Granola API key and connection status for the daemon. */
       connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
 
+      /** Build and return the Slack app creation URL with the manifest pre-filled. */
+      getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };
+
       /** Persist Slack bot and app credentials and connection status for the daemon. */
       connectSlack: { params: { botToken: string; appToken: string }; response: ActionResult };
 

@@ -19,7 +19,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
   const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
   const [granolaKey, setGranolaKey] = useState("");
-  const [slackStep, setSlackStep] = useState(1);
+  const [slackStep, setSlackStep] = useState<1 | 2>(1);
   const [botToken, setBotToken] = useState("");
   const [appToken, setAppToken] = useState("");
   const [saving, setSaving] = useState<IntegrationName | null>(null);
@@ -165,25 +165,40 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
           </button>
         </IntegrationSetupCard>
 
-        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps · includes browser setup" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
-          <p className="onboarding__integration-step-indicator">Step {slackStep} of 3</p>
+        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="2 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
+          <p className="onboarding__integration-step-indicator">Step {slackStep} of 2</p>
           {slackStep === 1 && <>
-            <p className="onboarding__integration-help">Create or select a Slack app, enable Socket Mode, and copy its credentials.</p>
-            <button className="empty-state__cta onboarding__cta" onClick={() => { rpc.send.openUrl({ url: "https://api.slack.com/apps" }); setSlackStep(2); }}>Open Slack app setup</button>
+            <p className="onboarding__integration-help">Draft will open the Slack app creation page with permissions pre-filled. On that page:</p>
+            <ol className="onboarding__integration-steps">
+              <li>Review the manifest and click <strong>Create</strong></li>
+              <li>Go to <strong>OAuth &amp; Permissions</strong> → <strong>Install to Workspace</strong> → <strong>Allow</strong></li>
+              <li>Copy the <strong>Bot User OAuth Token</strong> (starts with xoxb-)</li>
+              <li>Go to <strong>Basic Information</strong> → <strong>App-Level Tokens</strong> → <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong> → copy the token (starts with xapp-)</li>
+            </ol>
+            <button className="empty-state__cta onboarding__cta" onClick={async () => {
+              const result = await rpc.request.getSlackManifestUrl();
+              if (result.ok && result.url) {
+                rpc.send.openUrl({ url: result.url });
+              } else {
+                rpc.send.openUrl({ url: "https://api.slack.com/apps" });
+                setError(result.error ?? "Could not load manifest. Create the app manually.");
+              }
+              setSlackStep(2);
+            }}>Open Slack app setup</button>
           </>}
           {slackStep === 2 && <>
+            <p className="onboarding__integration-help">Paste both tokens from the Slack app you just created.</p>
             <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="Bot token (xoxb-...)" aria-label="Slack bot token" />
             {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
-              <p className="onboarding__integration-validation">Invalid token format. Bot tokens start with xoxb-.</p>
+              <p className="onboarding__integration-validation">Bot tokens start with xoxb-.</p>
             )}
-            <button className="empty-state__cta onboarding__cta" onClick={() => setSlackStep(3)} disabled={!botToken.startsWith("xoxb-")}>Continue</button>
-          </>}
-          {slackStep === 3 && <>
-            <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="App token (xapp-...)" aria-label="Slack app token" />
+            <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="App-level token (xapp-...)" aria-label="Slack app-level token" />
             {appToken.length > 0 && !appToken.startsWith("xapp-") && (
-              <p className="onboarding__integration-validation">Invalid token format. App tokens start with xapp-.</p>
+              <p className="onboarding__integration-validation">App-level tokens start with xapp-.</p>
             )}
-            <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || !appToken.startsWith("xapp-")}> {saving === "slack" ? "Connecting…" : "Connect Slack"}</button>
+            <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || !botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
+              {saving === "slack" ? "Connecting…" : "Connect Slack"}
+            </button>
           </>}
         </IntegrationSetupCard>
 

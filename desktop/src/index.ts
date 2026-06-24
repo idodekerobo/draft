@@ -793,6 +793,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      getSlackManifestUrl: async () => {
+        const manifestPath = join(BACKGROUND_DIR, "integrations", "slack", "manifest.json");
+        try {
+          const raw = readFileSync(manifestPath, "utf8");
+          const manifest = JSON.parse(raw);
+          const encoded = encodeURIComponent(JSON.stringify(manifest));
+          return { ok: true, url: `https://api.slack.com/apps?new_app=1&manifest_json=${encoded}` };
+        } catch {
+          return { ok: false, error: "Could not read Slack manifest. Reinstall Draft or create the app manually at https://api.slack.com/apps." };
+        }
+      },
+
       connectSlack: async ({ botToken, appToken }) => {
         if (!botToken.startsWith("xoxb-")) return { ok: false, error: "Bot tokens start with xoxb-." };
         if (!appToken.startsWith("xapp-")) return { ok: false, error: "App tokens start with xapp-." };
