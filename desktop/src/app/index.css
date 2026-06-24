@@ -1999,7 +1999,7 @@ button {
 }
 
 .onboarding__body--wide {
-  max-width: 700px;
+  max-width: 800px;
 }
 
 .onboarding__search-input {
@@ -2067,7 +2067,7 @@ button {
 .onboarding__integration-title small, .onboarding__integration-status small { color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-weight: 400; }
 .onboarding__integration-status { display: flex; align-items: center; gap: 8px; color: var(--color-text-tertiary); }
 .onboarding__integration-badge { color: var(--color-status-green); font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.onboarding__integration-content { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 0 0 14px; }
+.onboarding__integration-content { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 0 2px 14px; }
 .onboarding__integration-step-indicator { color: var(--color-text-tertiary); font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 .onboarding__integration-help { color: var(--color-text-secondary); font-size: var(--font-size-secondary); line-height: 1.5; }
 .onboarding__integration-steps { color: var(--color-text-secondary); font-size: var(--font-size-secondary); line-height: 1.7; padding-left: 18px; }
