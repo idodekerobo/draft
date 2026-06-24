@@ -759,9 +759,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       connectGranolaMCP: async () => {
-        const connection = await capture(["claude", "mcp", "add", "granola-mcp", "npx", "granola-mcp-server"]);
-        if (connection.exitCode !== 0) {
-          return { ok: false, error: connection.stderr || connection.stdout || "Could not register the Granola MCP server." };
+        const check = await capture(["claude", "mcp", "list"]);
+        const alreadyRegistered = check.exitCode === 0 && check.stdout.toLowerCase().includes("granola");
+        if (!alreadyRegistered) {
+          const connection = await capture(["claude", "mcp", "add", "granola-mcp", "npx", "granola-mcp-server"]);
+          if (connection.exitCode !== 0) {
+            return { ok: false, error: connection.stderr || connection.stdout || "Could not register the Granola MCP server." };
+          }
         }
         try {
           const workspace = getWorkspacePath(getActiveProfile());
