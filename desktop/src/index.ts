@@ -750,6 +750,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         };
       },
 
+      startSkillWatcher: async () => {
+        startSkillWatch({
+          onSkillsChanged: (count) => {
+            try { rpc.send.skillsChanged({ count }); } catch {}
+          },
+        });
+      },
+
       connectGranolaMCP: async () => {
         const connection = await capture(["claude", "mcp", "add", "granola-mcp", "npx", "granola-mcp-server"]);
         if (connection.exitCode !== 0) {
@@ -1287,11 +1295,18 @@ setTimeout(async () => {
   // 500ms delay ensures app is fully initialised before the initial mtime check.
   startHeartbeatWatch();
   startProposalWatch(getActiveProfile(), watcherHandlers);
-  startSkillWatch({
-    onSkillsChanged: (count) => {
-      try { rpc.send.skillsChanged({ count }); } catch {}
-    },
-  });
+
+  // Skill watcher auto-syncs skills between agents. Defer during onboarding so the
+  // scan-import step controls which skills get synced. For returning users, start
+  // immediately.
+  const appState = getAppState();
+  if (appState.userState !== "no-profile") {
+    startSkillWatch({
+      onSkillsChanged: (count) => {
+        try { rpc.send.skillsChanged({ count }); } catch {}
+      },
+    });
+  }
 
   // Watch ~/.draft/active-profile for CLI-driven profile switches (e.g. `draft switch`).
   startActiveProfileWatch({

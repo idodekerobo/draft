@@ -314,6 +314,9 @@ export type AppRPCType = {
       /** Start the background daemon via launchctl. */
       startDaemon: { params: void; response: ActionResult };
 
+      /** Start the cross-agent skill watcher. Called after onboarding completes. */
+      startSkillWatcher: { params: void; response: void };
+
       /** Stop the background daemon via launchctl. */
       stopDaemon: { params: void; response: ActionResult };
 

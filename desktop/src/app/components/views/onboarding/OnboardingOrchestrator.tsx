@@ -194,6 +194,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
     track("onboarding_completed", { tools_selected: [...selected] });
     try {
       await rpc.request.startDaemon();
+      await rpc.request.startSkillWatcher();
     } finally {
       setIsStarting(false);
       onComplete();

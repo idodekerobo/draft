@@ -9,7 +9,7 @@ import {
 } from "draft-core/scanner";
 
 const DEBOUNCE_MS = 300;
-const FALLBACK_POLL_MS = 1_000;
+const FALLBACK_POLL_MS = 120_000;
 
 export interface SkillWatchHandlers {
   onSkillsChanged: (count: number) => void;
