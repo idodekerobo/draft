@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
+import { SkillSyncSection } from "./settings/SkillSyncSection";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -502,6 +503,9 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
             </div>
           </section>
         )}
+
+        {/* ── Skills ─────────────────────────────────────────────────────── */}
+        <SkillSyncSection onError={(msg) => setSaveError(msg)} />
 
         {/* ── Intelligence Tools ─────────────────────────────────────────── */}
         <section className="settings__section">

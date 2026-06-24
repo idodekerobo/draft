@@ -1673,6 +1673,26 @@ button {
   padding: 0 20px 8px;
 }
 
+.settings__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 20px;
+  margin-bottom: 8px;
+}
+
+.settings__section-header .settings__section-label {
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.settings__section-action {
+  padding: 3px 10px;
+  font-size: var(--font-size-micro);
+  height: auto;
+  min-height: unset;
+}
+
 .settings__rows {
   border-top: 1px solid var(--color-border);
 }
@@ -1896,6 +1916,51 @@ button {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ── Skill sync (Settings) ──────────────────────────────────────────────────── */
+
+.skill-sync__list {
+  max-height: 450px;
+  overflow-y: auto;
+}
+
+.skill-agent-group__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 20px;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  text-align: left;
+}
+
+.skill-agent-group__header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.skill-agent-group__toggle {
+  font-size: 9px;
+  color: var(--color-text-tertiary);
+  width: 12px;
+}
+
+.skill-agent-group__label {
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skill-agent-group__count {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+}
+
 
 /* ── Toggle (iOS-style pill) ─────────────────────────────────────────────────── */
 
