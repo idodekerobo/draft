@@ -1,6 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ScannedSkillEntry, ScanDirError, ScannedMCPEntry } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
+import { ScanSkillRow, CollapsibleSection } from "./shared";
 
 interface ScanImportStepProps {
   stepNum: number;
@@ -211,28 +212,31 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
             <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true" ref={listRef} onKeyDown={handleKeyDown} tabIndex={0}>
               {grouped.map(({ agent, skills: sectionSkills }) => {
                 const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(keyFor(skill)));
+                const noneSelected = sectionSkills.every((skill) => !selected.has(keyFor(skill)));
                 return (
-                  <section key={agent} className="onboarding__collapsible-section" role="group" aria-label={AGENT_LABELS[agent]}>
-                    <div className="onboarding__collapsible-header">
-                      <button className="onboarding__collapsible-toggle" onClick={() => setExpanded((state) => ({ ...state, [agent]: !state[agent] }))} aria-expanded={expanded[agent]}>
-                        {expanded[agent] ? "▼" : "▶"} <span>{AGENT_LABELS[agent].toUpperCase()} ({sectionSkills.length})</span>
-                      </button>
-                      {sectionSkills.length > 0 && <span className="onboarding__collapsible-actions">
-                        <button onClick={() => selectSection(sectionSkills, true)}>Select all</button>
-                        <button onClick={() => selectSection(sectionSkills, false)} disabled={!allSelected && sectionSkills.every((skill) => !selected.has(keyFor(skill)))}>Deselect all</button>
-                      </span>}
-                    </div>
-                    {expanded[agent] && sectionSkills.map((skill) => {
-                      const isSelected = selected.has(keyFor(skill));
-                      const flatIdx = flatVisibleSkills.indexOf(skill);
-                      return <button key={keyFor(skill)} className={`onboarding__skill-row${flatIdx === focusIndex ? " onboarding__skill-row--focused" : ""}`} onClick={() => toggle(skill)} role="option" aria-selected={isSelected} tabIndex={-1}>
-                        <span className="onboarding__skill-check" aria-hidden="true">{isSelected ? "✓" : ""}</span>
-                        <span className="onboarding__skill-name">{skill.name}</span>
-                        <span className="onboarding__skill-badge">{agent === "claude-code" ? "Claude" : "Codex"}</span>
-                        <span className="onboarding__skill-tokens">~{skill.tokenCount} tokens</span>
-                      </button>;
-                    })}
-                  </section>
+                  <CollapsibleSection
+                    key={agent}
+                    label={AGENT_LABELS[agent]}
+                    count={sectionSkills.length}
+                    expanded={expanded[agent]}
+                    onToggle={() => setExpanded((state) => ({ ...state, [agent]: !state[agent] }))}
+                    onSelectAll={() => selectSection(sectionSkills, true)}
+                    onDeselectAll={() => selectSection(sectionSkills, false)}
+                    allSelected={allSelected}
+                    noneSelected={noneSelected}
+                  >
+                    {sectionSkills.map((skill) => (
+                      <ScanSkillRow
+                        key={keyFor(skill)}
+                        name={skill.name}
+                        agent={skill.agent}
+                        tokenCount={skill.tokenCount}
+                        selected={selected.has(keyFor(skill))}
+                        focused={flatVisibleSkills.indexOf(skill) === focusIndex}
+                        onClick={() => toggle(skill)}
+                      />
+                    ))}
+                  </CollapsibleSection>
                 );
               })}
             </div>

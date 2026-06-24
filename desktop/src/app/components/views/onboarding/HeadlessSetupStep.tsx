@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ContextFileEntry, HeadlessSetupPhase } from "../../../../rpc/schema";
 import { events, rpc } from "../../../rpc";
-import { CopyableCmd } from "./shared";
+import { CopyableCmd, HeadlessProgress } from "./shared";
 
 interface HeadlessSetupStepProps {
   stepNum: number;
@@ -114,7 +114,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
         </div>
       </>}
 
-      {running && <div className="onboarding__headless-progress" aria-live="polite"><span className="onboarding__spinner" /><span>{label}</span></div>}
+      {running && <HeadlessProgress label={label} />}
 
       {error && !running && (
         <div className="onboarding__error-block">

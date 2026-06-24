@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import type { ConnectedAppsStatus, IntegrationDetail } from "../../../../rpc/schema";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
 import { rpc } from "../../../rpc";
+import { IntegrationSetupCard } from "./shared";
 
 interface IntegrationSetupStepProps {
   stepNum: number;
@@ -145,7 +146,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
       {error && <p className="onboarding__error">{error}</p>}
 
       <div className="onboarding__integration-list">
-        <IntegrationCard name="granola" title="Granola" description="Import your meeting notes" hint="1 step" detail={granola} expanded={expanded === "granola"} onToggle={() => toggle("granola", granola)}>
+        <IntegrationSetupCard title="Granola" description="Import your meeting notes" hint="1 step" connected={granola?.connected ?? false} expanded={expanded === "granola"} onToggle={() => toggle("granola", granola)}>
           <p className="onboarding__integration-step-indicator">Connection method</p>
           <div className="onboarding__mode-picker">
             <button className={granolaMode === "mcp" ? "onboarding__mode--selected" : ""} onClick={() => setGranolaMode("mcp")}>MCP (recommended)</button>
@@ -162,9 +163,9 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
           <button className="empty-state__cta onboarding__cta" onClick={() => void connectGranola()} disabled={saving === "granola" || (granolaMode === "api" && !granolaKey.trim())}>
             {saving === "granola" ? "Connecting…" : "Connect Granola"}
           </button>
-        </IntegrationCard>
+        </IntegrationSetupCard>
 
-        <IntegrationCard name="slack" title="Slack" description="Capture channel activity for team context" hint="3 steps · includes browser setup" detail={slack} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
+        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps · includes browser setup" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
           <p className="onboarding__integration-step-indicator">Step {slackStep} of 3</p>
           {slackStep === 1 && <>
             <p className="onboarding__integration-help">Create or select a Slack app, enable Socket Mode, and copy its credentials.</p>
@@ -184,9 +185,9 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
             )}
             <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || !appToken.startsWith("xapp-")}> {saving === "slack" ? "Connecting…" : "Connect Slack"}</button>
           </>}
-        </IntegrationCard>
+        </IntegrationSetupCard>
 
-        <IntegrationCard name="github" title="GitHub" description="Track repositories and pull requests" hint="1 step" detail={github} expanded={false} onToggle={() => void connectGitHub()} action={connectingGitHub ? "Waiting…" : "Connect"} />
+        <IntegrationSetupCard title="GitHub" description="Track repositories and pull requests" hint="1 step" connected={github?.connected ?? false} expanded={false} onToggle={() => void connectGitHub()} action={connectingGitHub ? "Waiting…" : "Connect"} />
       </div>
 
       <div className="onboarding__actions" style={{ marginTop: 20 }}>
@@ -194,33 +195,5 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
         {!allConnected && <button className="onboarding__skip" onClick={onNext}>Skip all</button>}
       </div>
     </div>
-  );
-}
-
-function IntegrationCard({ name, title, description, hint, detail, expanded, onToggle, children, action }: {
-  name: IntegrationName;
-  title: string;
-  description: string;
-  hint: string;
-  detail?: IntegrationDetail;
-  expanded: boolean;
-  onToggle: () => void;
-  children?: ReactNode;
-  action?: string;
-}) {
-  const connected = detail?.connected ?? false;
-  return (
-    <section className="onboarding__integration-card" aria-expanded={expanded}>
-      <button className="onboarding__integration-header" onClick={onToggle} aria-expanded={expanded} disabled={connected}>
-        <span className="onboarding__integration-title"><span>{title}</span><small>{description}</small></span>
-        <span className="onboarding__integration-status">
-          {connected
-            ? <><span className="onboarding__status-dot onboarding__status-dot--green" />
-                <span className="onboarding__integration-badge onboarding__integration-badge--connected">Connected</span></>
-            : <><small>{hint}</small>{action ?? (expanded ? "▲" : "▼")}</>}
-        </span>
-      </button>
-      {!connected && expanded && <div className="onboarding__integration-content">{children}</div>}
-    </section>
   );
 }
