@@ -857,7 +857,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return { runners: [{ name: "claude" as const, installed: claude }, { name: "codex" as const, installed: codex }] };
       },
 
-      runHeadlessSetup: async ({ mode, folderPath, runner }) => {
+      runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner }) => {
         const selectedRunner = runner ?? "claude";
         const cli = await capture(["which", selectedRunner]);
         if (cli.exitCode !== 0) {
@@ -879,6 +879,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           } catch {
             return { ok: false, error: "Could not read the selected folder." };
           }
+        } else if (mode === "github") {
+          if (!githubUrl?.trim()) {
+            return { ok: false, error: "Paste a GitHub repository URL." };
+          }
+          const urlMatch = githubUrl.trim().match(/github\.com\/([^/]+\/[^/]+)/);
+          if (!urlMatch) {
+            return { ok: false, error: "Enter a valid GitHub URL (e.g. https://github.com/owner/repo)." };
+          }
+          importSummary = `GitHub repository: ${githubUrl.trim()}\nClone this repo, read its README and top-level structure, and use that as context for the workspace.`;
         }
 
         const integrations = readIntegrations(workspace);

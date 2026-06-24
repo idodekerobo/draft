@@ -385,7 +385,7 @@ export type AppRPCType = {
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
       /** Start a non-interactive CLI session to create the active profile's context. */
-      runHeadlessSetup: { params: { mode: "scratch" | "import"; folderPath?: string; runner?: "claude" | "codex" }; response: ActionResult };
+      runHeadlessSetup: { params: { mode: "scratch" | "import" | "github"; folderPath?: string; githubUrl?: string; runner?: "claude" | "codex" }; response: ActionResult };
 
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };

@@ -63,7 +63,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
   const [skills, setSkills] = useState<ScannedSkillEntry[] | null>(null);
   const [scanErrors, setScanErrors] = useState<ScanDirError[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Record<Agent, boolean>>({ "claude-code": true, codex: false });
+  const [expanded, setExpanded] = useState<Record<Agent, boolean>>({ "claude-code": false, codex: false });
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);

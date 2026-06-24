@@ -18,8 +18,9 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [folderPath, setFolderPath] = useState<string | null>(null);
+  const [githubUrl, setGithubUrl] = useState("");
   const [files, setFiles] = useState<ContextFileEntry[]>([]);
-  const [lastMode, setLastMode] = useState<"scratch" | "import">("scratch");
+  const [lastMode, setLastMode] = useState<"scratch" | "import" | "github">("scratch");
   const [showDetail, setShowDetail] = useState(false);
 
   const [availableRunners, setAvailableRunners] = useState<Runner[]>([]);
@@ -52,7 +53,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
     setFolderPath(result.folderPath);
   }
 
-  async function start(mode: "scratch" | "import") {
+  async function start(mode: "scratch" | "import" | "github") {
     setLastMode(mode);
     setError(null);
     setErrorDetail(null);
@@ -62,6 +63,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
       mode,
       runner: selectedRunner,
       ...(mode === "import" ? { folderPath: folderPath ?? undefined } : {}),
+      ...(mode === "github" ? { githubUrl: githubUrl.trim() || undefined } : {}),
     });
     if (!result.ok) {
       setPhase("error");
@@ -111,6 +113,22 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
             <strong>Import a local folder</strong><span>{folderPath ?? "Choose a folder so Draft can use its file list as context."}</span>
           </button>
           {folderPath && <button className="empty-state__cta onboarding__cta" onClick={() => void start("import")}>Set up from this folder</button>}
+          <div className="onboarding__setup-option onboarding__setup-option--github">
+            <strong>Import from GitHub</strong>
+            <span>Paste a repo URL so Draft can use it as context.</span>
+            <input
+              className="onboarding__integration-input"
+              type="url"
+              value={githubUrl}
+              onChange={(event) => setGithubUrl(event.target.value)}
+              placeholder="https://github.com/owner/repo"
+              aria-label="GitHub repository URL"
+              onClick={(event) => event.stopPropagation()}
+            />
+            {githubUrl.trim() && (
+              <button className="empty-state__cta onboarding__cta" onClick={() => void start("github")}>Set up from this repo</button>
+            )}
+          </div>
         </div>
       </>}
 
