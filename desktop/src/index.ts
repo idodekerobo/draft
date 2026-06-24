@@ -929,11 +929,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         mkdirSync(tmpDir, { recursive: true });
         writeFileSync(promptPath, prompt, "utf8");
 
-        const cliCmd = selectedRunner === "codex" ? ["codex", "-q", "--prompt-file", promptPath] : ["claude", "-p", "-"];
+        const cliCmd = selectedRunner === "codex" ? ["codex", "exec", "--skip-git-repo-check", "-"] : ["claude", "-p", "-"];
         let proc: ReturnType<typeof Bun.spawn>;
         try {
           proc = Bun.spawn(cliCmd, {
-            stdin: selectedRunner === "codex" ? undefined : Bun.file(promptPath),
+            stdin: Bun.file(promptPath),
             stdout: "pipe",
             stderr: "pipe",
           });
