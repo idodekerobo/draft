@@ -58,7 +58,7 @@ export function ScanSkillRow({ name, description, descriptionTokenCount, tokenCo
 
 // ── CollapsibleSection ────────────────────────────────────────────────────────
 
-export function CollapsibleSection({ label, count, expanded, onToggle, onSelectAll, onDeselectAll, allSelected, noneSelected, children }: {
+export function CollapsibleSection({ label, count, expanded, onToggle, onSelectAll, onDeselectAll, allSelected, noneSelected, stickyIndex, children }: {
   label: string;
   count: number;
   expanded: boolean;
@@ -67,11 +67,13 @@ export function CollapsibleSection({ label, count, expanded, onToggle, onSelectA
   onDeselectAll?: () => void;
   allSelected?: boolean;
   noneSelected?: boolean;
+  stickyIndex?: number;
   children?: ReactNode;
 }) {
+  const top = (stickyIndex ?? 0) * 36;
   return (
-    <section className="onboarding__collapsible-section" role="group" aria-label={label}>
-      <div className="onboarding__collapsible-header">
+    <>
+      <div className="onboarding__collapsible-header" role="group" aria-label={label} style={{ top }}>
         <button className="onboarding__collapsible-toggle" onClick={onToggle} aria-expanded={expanded}>
           {expanded ? "▼" : "▶"} <span>{label.toUpperCase()} ({count})</span>
         </button>
@@ -83,7 +85,7 @@ export function CollapsibleSection({ label, count, expanded, onToggle, onSelectA
         )}
       </div>
       {expanded && children}
-    </section>
+    </>
   );
 }
 

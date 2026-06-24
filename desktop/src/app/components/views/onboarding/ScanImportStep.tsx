@@ -214,7 +214,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
               <span title="Approximate token count for the full SKILL.md file">Tokens</span>
             </div>
             <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true" ref={listRef} onKeyDown={handleKeyDown} tabIndex={0}>
-              {grouped.map(({ agent, skills: sectionSkills }) => {
+              {grouped.map(({ agent, skills: sectionSkills }, groupIndex) => {
                 const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(keyFor(skill)));
                 const noneSelected = sectionSkills.every((skill) => !selected.has(keyFor(skill)));
                 return (
@@ -222,6 +222,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
                     key={agent}
                     label={AGENT_LABELS[agent]}
                     count={sectionSkills.length}
+                    stickyIndex={groupIndex}
                     expanded={expanded[agent]}
                     onToggle={() => setExpanded((state) => ({ ...state, [agent]: !state[agent] }))}
                     onSelectAll={() => selectSection(sectionSkills, true)}

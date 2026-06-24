@@ -2023,9 +2023,7 @@ button {
   border-bottom: 1px solid var(--color-border);
 }
 
-.onboarding__collapsible-section { width: 100%; }
-.onboarding__collapsible-header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; z-index: 2; background: var(--color-bg-primary); border-bottom: 1px solid var(--color-border); }
-.onboarding__collapsible-section:nth-child(2) > .onboarding__collapsible-header { top: 36px; }
+.onboarding__collapsible-header { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; z-index: 2; background: var(--color-bg-primary); border-bottom: 1px solid var(--color-border); }
 .onboarding__collapsible-toggle, .onboarding__collapsible-actions button { border: 0; background: transparent; color: var(--color-text-tertiary); font-family: var(--font-ui); cursor: pointer; }
 .onboarding__collapsible-toggle { padding: 8px 0; font-size: var(--font-size-micro); font-weight: 600; letter-spacing: 0.08em; }
 .onboarding__collapsible-actions { display: flex; gap: 8px; }
