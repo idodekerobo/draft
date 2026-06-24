@@ -1,6 +1,7 @@
 // shared.tsx — shared UI components for onboarding steps
 
 import { useState, type ReactNode } from "react";
+import { formatTokens } from "../../shared/skills";
 
 // ── CopyableCmd ───────────────────────────────────────────────────────────────
 
@@ -21,11 +22,6 @@ export function CopyableCmd({ cmd }: { cmd: string }) {
 }
 
 // ── ScanSkillRow ──────────────────────────────────────────────────────────────
-
-function formatTokens(count: number): string {
-  if (count >= 1000) return `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-  return String(count);
-}
 
 export function ScanSkillRow({ name, description, descriptionTokenCount, tokenCount, selected, focused, onClick }: {
   name: string;

@@ -2,10 +2,11 @@
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
-import { createSymlinks, scanSkillDirectories, scanMCPConnections } from "draft-core/scanner";
+import { createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections, readSkillManifest } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, writeSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
+import { homedir } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
   listProposals,
@@ -734,8 +735,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       scanSkills: async () => {
         const { skills, errors } = scanSkillDirectories();
         const mcpServers = scanMCPConnections();
+        const manifest = new Set(readSkillManifest());
         return {
-          skills: skills.map(({ name, agent, dirPath, description, descriptionTokenCount, tokenCount }) => ({ name, agent, dirPath, description, descriptionTokenCount, tokenCount })),
+          skills: skills.map(({ name, agent, dirPath, description, descriptionTokenCount, tokenCount }) => {
+            const oppositeDir = agent === "claude-code"
+              ? `${homedir()}/.codex/skills/${name}`
+              : `${homedir()}/.claude/skills/${name}`;
+            return { name, agent, dirPath, description, descriptionTokenCount, tokenCount, synced: manifest.has(oppositeDir) };
+          }),
           scanErrors: errors,
           mcpServers: mcpServers.map(({ name, agent, config }) => ({ name, agent, config })),
         };
@@ -756,6 +763,24 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           ok: result.errors.length === 0,
           created: result.created.length,
           skipped: result.skipped.length,
+          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
+        };
+      },
+
+      removeSkills: async ({ skills }) => {
+        const { skills: available } = scanSkillDirectories();
+        const selected = skills.flatMap((requested) => {
+          const match = available.find((skill) =>
+            skill.name === requested.name
+            && skill.agent === requested.agent
+            && skill.dirPath === requested.dirPath,
+          );
+          return match ? [match] : [];
+        });
+        const result = removeSymlinks(selected);
+        return {
+          ok: result.errors.length === 0,
+          removed: result.removed.length,
           ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
         };
       },

@@ -354,6 +354,52 @@ export function createSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
   return result;
 }
 
+// ── removeSymlinks ────────────────────────────────────────────────────────────
+
+export interface RemoveSymlinksResult {
+  removed: string[];
+  notFound: string[];
+  errors: string[];
+}
+
+export function removeSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts): RemoveSymlinksResult {
+  const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
+  const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
+
+  const result: RemoveSymlinksResult = { removed: [], notFound: [], errors: [] };
+
+  for (const skill of skills) {
+    const targetDir = skill.agent === "claude-code" ? codexDir : claudeDir;
+    const linkPath = join(targetDir, skill.name);
+
+    try {
+      if (!existsSync(linkPath)) {
+        result.notFound.push(linkPath);
+        continue;
+      }
+      const stat = lstatSync(linkPath);
+      if (!stat.isSymbolicLink()) {
+        result.errors.push(`${linkPath}: not a symlink — refusing to delete`);
+        continue;
+      }
+      unlinkSync(linkPath);
+      result.removed.push(linkPath);
+    } catch (err) {
+      result.errors.push(`${linkPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (result.removed.length > 0) {
+    try {
+      pruneSkillManifest(result.removed, opts?.manifestPath);
+    } catch (err) {
+      result.errors.push(`skill manifest: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return result;
+}
+
 // ── Skill manifest ────────────────────────────────────────────────────────────
 
 /** Read Draft-created symlink paths for cleanup. Malformed or missing manifests are empty. */
@@ -387,5 +433,19 @@ export function updateSkillManifest(paths: string[], manifestPath?: string): voi
   const merged = [...new Set([...existing, ...paths])];
   const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + "\n", "utf8");
+  renameSync(tmpPath, path);
+}
+
+/** Remove paths from the skill manifest after symlinks are deleted. */
+export function pruneSkillManifest(removedPaths: string[], manifestPath?: string): void {
+  const path = manifestPath ?? DEFAULT_MANIFEST_PATH;
+  const existing = readSkillManifest(path);
+  const removeSet = new Set(removedPaths);
+  const pruned = existing.filter((entry) => !removeSet.has(entry));
+  if (pruned.length === existing.length) return;
+  const parentDir = path.slice(0, path.lastIndexOf("/"));
+  if (parentDir) mkdirSync(parentDir, { recursive: true });
+  const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(pruned, null, 2) + "\n", "utf8");
   renameSync(tmpPath, path);
 }

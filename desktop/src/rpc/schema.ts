@@ -135,6 +135,7 @@ export interface ScannedSkillEntry {
   description: string;
   descriptionTokenCount: number;
   tokenCount: number;
+  synced?: boolean;
 }
 
 export interface ScanDirError {
@@ -368,6 +369,9 @@ export type AppRPCType = {
 
       /** Create cross-agent symlinks for the selected scanned skills. */
       importSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { created: number; skipped: number } };
+
+      /** Remove cross-agent symlinks for the given skills. */
+      removeSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { removed: number } };
 
       /** Register Granola's MCP server with Claude Code and persist connection status. */
       connectGranolaMCP: { params: void; response: ActionResult };

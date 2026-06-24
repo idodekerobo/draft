@@ -2,6 +2,7 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type Reac
 import type { ScannedSkillEntry, ScanDirError } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { ScanSkillRow, CollapsibleSection } from "./shared";
+import { AGENT_LABELS, skillKey, type Agent } from "../../shared/skills";
 
 interface ScanImportStepProps {
   stepNum: number;
@@ -9,13 +10,6 @@ interface ScanImportStepProps {
   onBack: () => void;
   onNext: () => void;
 }
-
-type Agent = ScannedSkillEntry["agent"];
-
-const AGENT_LABELS: Record<Agent, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-};
 
 // ── ErrorBoundary ─────────────────────────────────────────────────────────────
 
@@ -71,8 +65,6 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
   const listRef = useRef<HTMLDivElement>(null);
   const retryKey = useRef(0);
 
-  const keyFor = (skill: ScannedSkillEntry) => `${skill.agent}:${skill.dirPath}`;
-
   async function loadSkills() {
     setSkills(null);
     setError(null);
@@ -85,7 +77,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
       }
       setSkills(result.skills);
       setScanErrors(result.scanErrors ?? []);
-      setSelected(new Set(result.skills.map(keyFor)));
+      setSelected(new Set(result.skills.map(skillKey)));
     } catch {
       setError("Could not scan skill directories. Check file permissions.");
       setSkills([]);
@@ -110,7 +102,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
   );
 
   function toggle(skill: ScannedSkillEntry) {
-    const key = keyFor(skill);
+    const key = skillKey(skill);
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key); else next.add(key);
@@ -122,7 +114,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
     setSelected((current) => {
       const next = new Set(current);
       for (const skill of sectionSkills) {
-        const key = keyFor(skill);
+        const key = skillKey(skill);
         if (shouldSelect) next.add(key); else next.delete(key);
       }
       return next;
@@ -139,7 +131,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
       setFocusIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === " " && focusIndex >= 0 && focusIndex < flatVisibleSkills.length) {
       e.preventDefault();
-      toggle(flatVisibleSkills[focusIndex]);
+      toggle(flatVisibleSkills[focusIndex]!);
     }
   }, [flatVisibleSkills, focusIndex]);
 
@@ -150,7 +142,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
   }, [focusIndex]);
 
   async function importSelected() {
-    const selectedSkills = (skills ?? []).filter((skill) => selected.has(keyFor(skill)));
+    const selectedSkills = (skills ?? []).filter((skill) => selected.has(skillKey(skill)));
     if (selectedSkills.length === 0) return onNext();
     setImporting(true);
     setError(null);
@@ -212,8 +204,8 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
             </div>
             <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true" ref={listRef} onKeyDown={handleKeyDown} tabIndex={0}>
               {grouped.map(({ agent, skills: sectionSkills }, groupIndex) => {
-                const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(keyFor(skill)));
-                const noneSelected = sectionSkills.every((skill) => !selected.has(keyFor(skill)));
+                const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(skillKey(skill)));
+                const noneSelected = sectionSkills.every((skill) => !selected.has(skillKey(skill)));
                 return (
                   <CollapsibleSection
                     key={agent}
@@ -229,12 +221,12 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
                   >
                     {sectionSkills.map((skill) => (
                       <ScanSkillRow
-                        key={keyFor(skill)}
+                        key={skillKey(skill)}
                         name={skill.name}
                         description={skill.description ?? ""}
                         descriptionTokenCount={skill.descriptionTokenCount ?? 0}
                         tokenCount={skill.tokenCount}
-                        selected={selected.has(keyFor(skill))}
+                        selected={selected.has(skillKey(skill))}
                         focused={flatVisibleSkills.indexOf(skill) === focusIndex}
                         onClick={() => toggle(skill)}
                       />
