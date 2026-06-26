@@ -15,7 +15,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
       <h1 className="onboarding__title">Set up your context</h1>
-      <p className="onboarding__desc">Draft can create a starting context workspace without sending you to a terminal.</p>
+      <p className="onboarding__desc">Draft is bootstrapping your workspace context.</p>
       <HeadlessSetupPanel onComplete={onNext} onSkip={onNext} />
     </div>
   );
