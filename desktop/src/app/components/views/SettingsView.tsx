@@ -264,9 +264,10 @@ function InputSourceRow({
 
 interface SettingsViewProps {
   activeProfile: string;
+  onOpenFeedback?: () => void;
 }
 
-export function SettingsView({ activeProfile }: SettingsViewProps) {
+export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProps) {
   const [settings, setSettings]           = useState<LocalConfig | null>(null);
   const [apps, setApps]                   = useState<ConnectedAppsStatus | null>(null);
   const [sections, setSections]           = useState<ContextSection[]>([]);
@@ -284,6 +285,7 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
+  const [calUrl, setCalUrl]                = useState<string>("");
 
   const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
 
@@ -298,12 +300,14 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
       rpc.request.getConnectedApps(),
       rpc.request.getContextSections(),
       rpc.request.getAppVersion(),
+      rpc.request.getCrispConfig(),
     ])
-      .then(([config, connectedApps, contextSections, appVersion]) => {
+      .then(([config, connectedApps, contextSections, appVersion, crispConfig]) => {
         setSettings(config);
         setApps(connectedApps);
         setSections(contextSections);
         setVersionInfo(appVersion);
+        setCalUrl(crispConfig.cal_url);
       })
       .catch(() => setLoadError("Failed to load settings."));
   }, [activeProfile]);
@@ -763,6 +767,31 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
             </div>
           </div>
         </section>
+
+        {/* ── Feedback ────────────────────────────────────────────────────── */}
+        {onOpenFeedback && (
+          <section className="settings__section settings__section--feedback">
+            <div className="feedback-row">
+              <div className="feedback-row__text">
+                <span className="feedback-row__label">Share Feedback</span>
+                <span className="feedback-row__desc">Questions, bugs, or ideas — we read everything.</span>
+              </div>
+              <div className="feedback-row__actions">
+                {calUrl && (
+                  <button
+                    className="feedback-row__btn"
+                    onClick={() => rpc.send.openUrl({ url: calUrl })}
+                  >
+                    Book a Call
+                  </button>
+                )}
+                <button className="feedback-row__btn feedback-row__btn--primary" onClick={onOpenFeedback}>
+                  Open Chat
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
       </div>
 

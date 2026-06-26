@@ -21,6 +21,7 @@ import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
+import { SupportPanel } from "./components/SupportPanel";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
 const STATUS_POLL_MS = 5_000;
@@ -49,6 +50,7 @@ export function App() {
   const [updateVersion, setUpdateVersion]   = useState<string | null>(null);
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [supportOpen, setSupportOpen] = useState(false);
 
   useEffect(() => {
     if (status?.appState?.userState === "no-profile") setOnboardingActive(true);
@@ -298,7 +300,7 @@ export function App() {
         <main className="content">
           {/* Settings is always reachable regardless of install/daemon state. */}
           {activeView === "settings" ? (
-            <SettingsView key={activeProfile} activeProfile={activeProfile} />
+            <SettingsView key={activeProfile} activeProfile={activeProfile} onOpenFeedback={() => setSupportOpen(true)} />
           ) : (onboardingActive || status?.appState?.userState === "no-profile") ? (
             <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); }} />
           ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
@@ -357,6 +359,7 @@ export function App() {
           <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
+      <SupportPanel isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
     </div>
   );
 }
