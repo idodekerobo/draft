@@ -77,8 +77,11 @@ export function CollapsibleSection({ label, count, expanded, onToggle, onSelectA
         </button>
         {count > 0 && onSelectAll && onDeselectAll && (
           <span className="onboarding__collapsible-actions">
-            <button onClick={onSelectAll} disabled={allSelected}>Select all</button>
-            <button onClick={onDeselectAll} disabled={noneSelected}>Deselect all</button>
+            <button
+              onClick={allSelected ? onDeselectAll : onSelectAll}
+            >
+              {allSelected ? "Deselect all" : "Select all"}
+            </button>
           </span>
         )}
       </div>

@@ -3,20 +3,31 @@
   "version": "0.0.1",
   "private": true,
   "exports": {
-    "./config":      "./src/config.ts",
-    "./exec":        "./src/exec.ts",
-    "./status":      "./src/status.ts",
-    "./heartbeat":   "./src/heartbeat.ts",
-    "./appState":    "./src/appState.ts",
-    "./proposals":   "./src/proposals.ts",
-    "./scanner":     "./src/scanner.ts",
-    "./db/activity": "./src/db/activity.ts"
+    "./config":               "./src/config.ts",
+    "./exec":                 "./src/exec.ts",
+    "./status":               "./src/status.ts",
+    "./heartbeat":            "./src/heartbeat.ts",
+    "./appState":             "./src/appState.ts",
+    "./proposals":            "./src/proposals.ts",
+    "./scanner":              "./src/scanner.ts",
+    "./db/activity":          "./src/db/activity.ts",
+    "./agents/headless":      "./src/agents/headless.ts",
+    "./agents/prompts/setup": "./src/agents/prompts/setup.ts",
+    "./integrations/granola": "./src/integrations/granola.ts",
+    "./integrations/slack":   "./src/integrations/slack.ts",
+    "./integrations/github":  "./src/integrations/github.ts",
+    "./agents/mcp":           "./src/agents/mcp.ts",
+    "./sync/atomic-write":    "./src/sync/atomic-write.ts",
+    "./sync/manifest":        "./src/sync/manifest.ts",
+    "./sync/mcp-sync":        "./src/sync/mcp-sync.ts",
+    "./secrets":              "./src/secrets.ts"
   },
   "scripts": {
     "test": "bun test"
   },
   "dependencies": {
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "smol-toml": "^1.7.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

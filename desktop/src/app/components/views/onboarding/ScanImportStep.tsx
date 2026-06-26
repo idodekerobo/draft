@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ScannedSkillEntry, ScanDirError } from "../../../../rpc/schema";
+import type { PendingMcpEntry, ScannedSkillEntry, ScanDirError } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { ScanSkillRow, CollapsibleSection } from "./shared";
 import { AGENT_LABELS, skillKey, type Agent } from "../../shared/skills";
@@ -51,33 +51,86 @@ function SkeletonRows() {
   );
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function displayMcpUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname + (u.pathname !== "/" ? u.pathname : "");
+  } catch {
+    return url;
+  }
+}
+
+// ── McpRow ────────────────────────────────────────────────────────────────────
+
+function McpRow({ mcp, selected, onClick }: {
+  mcp: PendingMcpEntry;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="onboarding__skill-row"
+      role="option"
+      aria-selected={selected}
+      onClick={onClick}
+    >
+      <span className="onboarding__skill-check">{selected ? "✓" : ""}</span>
+      <span className="onboarding__skill-info">
+        <span className="onboarding__skill-name" style={{ fontFamily: "var(--font-ui)" }}>
+          {mcp.name}
+        </span>
+        <span className="onboarding__skill-badge">
+          {AGENT_LABELS[mcp.source_agent]} · {displayMcpUrl(mcp.canonical.url)}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImportStepProps) {
-  const [skills, setSkills] = useState<ScannedSkillEntry[] | null>(null);
-  const [scanErrors, setScanErrors] = useState<ScanDirError[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Record<Agent, boolean>>({ "claude-code": false, codex: false });
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [focusIndex, setFocusIndex] = useState(-1);
-  const listRef = useRef<HTMLDivElement>(null);
-  const retryKey = useRef(0);
+  // Skills state
+  const [skills, setSkills]         = useState<ScannedSkillEntry[] | null>(null);
+  const [scanErrors, setScanErrors]  = useState<ScanDirError[]>([]);
+  const [selected, setSelected]      = useState<Set<string>>(new Set());
+  const [expanded, setExpanded]      = useState<Record<Agent, boolean>>({ "claude-code": false, codex: false });
+  const [query, setQuery]            = useState("");
+  const [focusIndex, setFocusIndex]  = useState(-1);
+  const listRef                      = useRef<HTMLDivElement>(null);
+  const retryKey                     = useRef(0);
+
+  // MCP state
+  const [pendingMcps, setPendingMcps]     = useState<PendingMcpEntry[]>([]);
+  const [selectedMcps, setSelectedMcps]   = useState<Set<string>>(new Set());
+
+  // Shared async state
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  // ── Load ───────────────────────────────────────────────────────────────────
 
   async function loadSkills() {
     setSkills(null);
     setError(null);
     setScanErrors([]);
     try {
-      const result = await rpc.request.scanSkills();
-      if (result.skills.length === 0) {
+      const [skillsResult, mcpResult] = await Promise.all([
+        rpc.request.scanSkills(),
+        rpc.request.getMcpPending(),
+      ]);
+      if (skillsResult.skills.length === 0 && mcpResult.pending.length === 0) {
         onNext();
         return;
       }
-      setSkills(result.skills);
-      setScanErrors(result.scanErrors ?? []);
-      setSelected(new Set(result.skills.map(skillKey)));
+      setSkills(skillsResult.skills);
+      setScanErrors(skillsResult.scanErrors ?? []);
+      setSelected(new Set(skillsResult.skills.map(skillKey)));
+      const sorted = [...mcpResult.pending].sort((a, b) => a.name.localeCompare(b.name));
+      setPendingMcps(sorted);
+      setSelectedMcps(new Set(sorted.map((m) => m.id)));
     } catch {
       setError("Could not scan skill directories. Check file permissions.");
       setSkills([]);
@@ -85,6 +138,71 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
   }
 
   useEffect(() => { void loadSkills(); }, []);
+
+  // ── Sync actions ───────────────────────────────────────────────────────────
+
+  async function syncSelected() {
+    setSyncing(true);
+    setError(null);
+    try {
+      const selectedSkills = (skills ?? []).filter((s) => selected.has(skillKey(s)));
+      const selectedMcpList = pendingMcps.filter((m) => selectedMcps.has(m.id));
+
+      const [skillResult, mcpResult] = await Promise.all([
+        selectedSkills.length > 0
+          ? rpc.request.importSkills({ skills: selectedSkills })
+          : Promise.resolve({ ok: true as const }),
+        selectedMcpList.length > 0
+          ? rpc.request.approveMcps({ mcps: selectedMcpList })
+          : Promise.resolve({ ok: true as const }),
+      ]);
+
+      if (!skillResult.ok) {
+        setError((skillResult as { ok: false; error?: string }).error ?? "Some skills could not be imported. Try again or skip.");
+        return;
+      }
+      if (!mcpResult.ok) {
+        setError((mcpResult as { ok: false; error?: string }).error ?? "Some MCP servers could not be synced. Try again or skip.");
+        return;
+      }
+      onNext();
+    } catch {
+      setError("Could not complete sync. Try again or skip this step.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function syncAll() {
+    setSyncing(true);
+    setError(null);
+    try {
+      const [skillResult, mcpResult] = await Promise.all([
+        (skills ?? []).length > 0
+          ? rpc.request.importSkills({ skills: skills ?? [] })
+          : Promise.resolve({ ok: true as const }),
+        pendingMcps.length > 0
+          ? rpc.request.approveMcps({ mcps: pendingMcps })
+          : Promise.resolve({ ok: true as const }),
+      ]);
+
+      if (!skillResult.ok) {
+        setError((skillResult as { ok: false; error?: string }).error ?? "Some skills could not be imported. Try again or skip.");
+        return;
+      }
+      if (!mcpResult.ok) {
+        setError((mcpResult as { ok: false; error?: string }).error ?? "Some MCP servers could not be synced. Try again or skip.");
+        return;
+      }
+      onNext();
+    } catch {
+      setError("Could not complete sync. Try again or skip this step.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // ── Skills helpers ─────────────────────────────────────────────────────────
 
   const grouped = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -121,6 +239,14 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
     });
   }
 
+  function toggleMcp(id: string) {
+    setSelectedMcps((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (flatVisibleSkills.length === 0) return;
     if (e.key === "ArrowDown") {
@@ -141,27 +267,21 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
     rows?.[focusIndex]?.focus();
   }, [focusIndex]);
 
-  async function importSelected() {
-    const selectedSkills = (skills ?? []).filter((skill) => selected.has(skillKey(skill)));
-    if (selectedSkills.length === 0) return onNext();
-    setImporting(true);
-    setError(null);
-    try {
-      const result = await rpc.request.importSkills({ skills: selectedSkills });
-      if (!result.ok) {
-        setError(result.error ?? "Some skills could not be imported. Try again or skip this step.");
-        return;
-      }
-      onNext();
-    } catch {
-      setError("Could not import the selected skills. Try again or skip this step.");
-    } finally {
-      setImporting(false);
-    }
-  }
+  // ── Derived ────────────────────────────────────────────────────────────────
 
   const total = skills?.length ?? 0;
   const isLoading = skills === null && error === null;
+  const hasSelection = selected.size > 0 || selectedMcps.size > 0;
+  const allMcpsSelected = pendingMcps.length > 0 && pendingMcps.every((m) => selectedMcps.has(m.id));
+
+  function selectionLabel(): string {
+    const parts: string[] = [];
+    if (total > 0) parts.push(`${selected.size}/${total} skills`);
+    if (pendingMcps.length > 0) parts.push(`${selectedMcps.size}/${pendingMcps.length} MCP server${pendingMcps.length !== 1 ? "s" : ""}`);
+    return parts.join(" · ");
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="onboarding__body onboarding__body--wide">
@@ -169,9 +289,12 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
         <button className="onboarding__back" onClick={onBack}>← Back</button>
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
-      <h1 className="onboarding__title">Your existing skills</h1>
+      <h1 className="onboarding__title">Your existing tools</h1>
       <p className="onboarding__desc">
-        {isLoading ? "Scanning your agent tools…" : `Draft found ${total} skill${total === 1 ? "" : "s"} across your agent tools. Review and select the ones to import.`}
+        {isLoading
+          ? "Scanning your agent tools…"
+          : `Draft found ${total} skill${total === 1 ? "" : "s"}${pendingMcps.length > 0 ? ` and ${pendingMcps.length} MCP server${pendingMcps.length !== 1 ? "s" : ""}` : ""} across your agent tools. Select what to import.`
+        }
       </p>
 
       <ScanErrorBoundary key={retryKey.current} onSkip={onNext} onRetry={() => { retryKey.current++; void loadSkills(); }}>
@@ -188,6 +311,7 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
           </div>
         )}
 
+        {/* ── Skills ─────────────────────────────────────────────────────── */}
         {!isLoading && skills && skills.length > 0 && (
           <>
             <input
@@ -197,12 +321,21 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
               placeholder="Filter skills…"
               aria-label="Filter skills"
             />
-            <p className="onboarding__sr-only" aria-live="polite">{grouped.reduce((count, group) => count + group.skills.length, 0)} skills match your filter.</p>
+            <p className="onboarding__sr-only" aria-live="polite">
+              {grouped.reduce((count, group) => count + group.skills.length, 0)} skills match your filter.
+            </p>
             <div className="onboarding__skill-list-header">
               <span>Skill</span>
               <span title="Approximate token count for the full SKILL.md file">Tokens</span>
             </div>
-            <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true" ref={listRef} onKeyDown={handleKeyDown} tabIndex={0}>
+            <div
+              className="onboarding__skill-list"
+              role="listbox"
+              aria-multiselectable="true"
+              ref={listRef}
+              onKeyDown={handleKeyDown}
+              tabIndex={0}
+            >
               {grouped.map(({ agent, skills: sectionSkills }, groupIndex) => {
                 const allSelected = sectionSkills.length > 0 && sectionSkills.every((skill) => selected.has(skillKey(skill)));
                 const noneSelected = sectionSkills.every((skill) => !selected.has(skillKey(skill)));
@@ -235,27 +368,75 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
                 );
               })}
             </div>
-
-            <div className="onboarding__import-footer">
-              <span>{selected.size} of {total} selected</span>
-              <div className="onboarding__actions">
-                <button className="onboarding__skip" onClick={onNext} disabled={importing}>Skip</button>
-                <button className="empty-state__cta onboarding__cta" onClick={() => void importSelected()} disabled={importing || selected.size === 0}>
-                  {importing ? "Importing…" : "Import selected"}
-                </button>
-              </div>
-            </div>
           </>
         )}
 
         {!isLoading && skills?.length === 0 && (
-          <>
-            <p className="onboarding__hint">No third-party skills found. You can install skills in Claude Code or Codex and Draft will detect them.</p>
-            <div className="onboarding__actions" style={{ marginTop: 20 }}>
-              {error && <button className="onboarding__skip" onClick={() => void loadSkills()}>Retry</button>}
-              <button className="empty-state__cta onboarding__cta" onClick={onNext}>Continue</button>
+          <p className="onboarding__hint">
+            No third-party skills found. You can install skills in Claude Code or Codex and Draft will detect them.
+          </p>
+        )}
+
+        {/* ── MCP Servers ─────────────────────────────────────────────────── */}
+        {!isLoading && pendingMcps.length > 0 && (
+          <div className="onboarding__mcp-section">
+            <div className="onboarding__skill-list-header">
+              <span>MCP Servers</span>
+              <button
+                className="onboarding__mcp-select-toggle"
+                onClick={() =>
+                  allMcpsSelected
+                    ? setSelectedMcps(new Set())
+                    : setSelectedMcps(new Set(pendingMcps.map((m) => m.id)))
+                }
+              >
+                {allMcpsSelected ? "Deselect all" : "Select all"}
+              </button>
             </div>
-          </>
+            <div className="onboarding__skill-list" role="listbox" aria-multiselectable="true">
+              {pendingMcps.map((mcp) => (
+                <McpRow
+                  key={mcp.id}
+                  mcp={mcp}
+                  selected={selectedMcps.has(mcp.id)}
+                  onClick={() => toggleMcp(mcp.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Unified footer ───────────────────────────────────────────────── */}
+        {!isLoading && (total > 0 || pendingMcps.length > 0) && (
+          <div className="onboarding__import-footer">
+            <span>{selectionLabel()}</span>
+            <div className="onboarding__actions">
+              <button className="onboarding__skip" onClick={onNext} disabled={syncing}>
+                Skip
+              </button>
+              <button
+                className="onboarding__cta-secondary"
+                onClick={() => void syncAll()}
+                disabled={syncing}
+              >
+                {syncing ? "Syncing…" : "Sync all"}
+              </button>
+              <button
+                className="empty-state__cta onboarding__cta"
+                onClick={() => void syncSelected()}
+                disabled={syncing || !hasSelection}
+              >
+                {syncing ? "Syncing…" : "Sync selected"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* No-skills + no-MCPs fallback Continue (shouldn't normally render since loadSkills auto-advances) */}
+        {!isLoading && total === 0 && pendingMcps.length === 0 && (
+          <div className="onboarding__actions" style={{ marginTop: 20 }}>
+            <button className="empty-state__cta onboarding__cta" onClick={onNext}>Continue</button>
+          </div>
         )}
       </ScanErrorBoundary>
     </div>

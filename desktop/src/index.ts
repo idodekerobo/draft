@@ -2,10 +2,19 @@
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
-import { createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections, readSkillManifest } from "draft-core/scanner";
+import {
+  createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
+  detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
+  type PendingSkillEntry, type SameNameConflict,
+} from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, writeSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
+import { spawnHeadlessAgent } from "draft-core/agents/headless";
+import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
+import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
+import { buildSlackManifestUrl, validateSlackTokenFormat, writeSlackConfig } from "draft-core/integrations/slack";
+import { connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import { homedir } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
@@ -38,6 +47,16 @@ import {
   stopActiveProfileWatch,
 } from "./main/watchers/activeProfile";
 import { startSkillWatch, stopSkillWatch } from "./main/watchers/skills";
+import { startMcpWatch, stopMcpWatch } from "./main/watchers/mcps";
+import {
+  detectMcpPending,
+  approveMcps as approveMcpsCore,
+} from "draft-core/sync/mcp-sync";
+import {
+  readMcpManifest,
+  writeMcpManifest,
+  tombstoneMcp,
+} from "draft-core/sync/manifest";
 import type { AppRPCType } from "./rpc/schema";
 
 // Key + host baked in at build time via electrobun.config.ts define → process.env.
@@ -607,53 +626,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       connectGitHub: async () => {
-        // Fast path: gh already authenticated — just mark connected in integrations.json.
-        const authCheck = await capture(["gh", "auth", "status"]);
-        if (authCheck.exitCode === 0) {
-          try {
-            const workspace = getWorkspacePath(getActiveProfile());
-            const result    = readIntegrations(workspace);
-            const current   = result.ok ? result.integrations : {};
-            writeIntegrations(workspace, {
-              ...current,
-              github: { ...(current.github ?? {}), connected: true, last_connected: new Date().toISOString() },
-            });
-            return { ok: true };
-          } catch (err) {
-            return { ok: false, error: err instanceof Error ? err.message : "Failed to save GitHub connection." };
-          }
-        }
-
-        // Slow path: open browser OAuth flow. Fire-and-forget — return immediately
-        // so the renderer doesn't wait on a 30s+ user interaction.
-        // Background promise writes integrations.json when gh exits cleanly.
-        let proc: ReturnType<typeof Bun.spawn>;
-        try {
-          proc = Bun.spawn(["gh", "auth", "login", "--web"], {
-            stdin: "ignore",
-            stdout: "pipe",
-            stderr: "pipe",
-          });
-        } catch {
-          return { ok: false, error: "gh CLI not found. Install it with: brew install gh" };
-        }
-
-        // Background: when OAuth completes, persist the connection.
-        proc.exited.then((code) => {
-          if (code !== 0) return;
-          try {
-            const workspace = getWorkspacePath(getActiveProfile());
-            const result    = readIntegrations(workspace);
-            const current   = result.ok ? result.integrations : {};
-            writeIntegrations(workspace, {
-              ...current,
-              github: { ...(current.github ?? {}), connected: true, last_connected: new Date().toISOString() },
-            });
-          } catch { /* non-fatal */ }
-        }).catch(() => {});
-
-        // Renderer should poll getConnectedApps until github.connected === true.
-        return { ok: true };
+        const workspace = getWorkspacePath(getActiveProfile());
+        // Renderer polls getConnectedApps until github.connected === true.
+        return connectGitHubCore({ workspace });
       },
 
       getSessionPreview: async () => {
@@ -735,13 +710,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       scanSkills: async () => {
         const { skills, errors } = scanSkillDirectories();
         const mcpServers = scanMCPConnections();
-        const manifest = new Set(readSkillManifest());
+        const manifest = readSkillManifest();
         return {
           skills: skills.map(({ name, agent, dirPath, description, descriptionTokenCount, tokenCount }) => {
-            const oppositeDir = agent === "claude-code"
-              ? `${homedir()}/.codex/skills/${name}`
-              : `${homedir()}/.claude/skills/${name}`;
-            return { name, agent, dirPath, description, descriptionTokenCount, tokenCount, synced: manifest.has(oppositeDir) };
+            const entry = manifest.skills[`${agent}:${name}`];
+            const synced = entry?.status === "approved" && Object.keys(entry.synced_to ?? {}).length > 0;
+            return { name, agent, dirPath, description, descriptionTokenCount, tokenCount, synced };
           }),
           scanErrors: errors,
           mcpServers: mcpServers.map(({ name, agent, config }) => ({ name, agent, config })),
@@ -787,29 +761,138 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       startSkillWatcher: async () => {
         startSkillWatch({
+          onSkillsPending: (pending) => {
+            try { rpc.send.skillsPendingApproval({ pending }); } catch {}
+          },
+          onSkillsConflict: (conflicts) => {
+            try { rpc.send.skillsConflict({ conflicts }); } catch {}
+          },
           onSkillsChanged: (count) => {
             try { rpc.send.skillsChanged({ count }); } catch {}
           },
+          onReconciled: (_result) => {},
         });
       },
 
-      connectGranolaMCP: async () => {
-        const check = await capture(["claude", "mcp", "list"]);
-        const alreadyRegistered = check.exitCode === 0 && check.stdout.toLowerCase().includes("granola");
-        if (!alreadyRegistered) {
-          const connection = await capture(["claude", "mcp", "add", "granola-mcp", "npx", "granola-mcp-server"]);
-          if (connection.exitCode !== 0) {
-            return { ok: false, error: connection.stderr || connection.stdout || "Could not register the Granola MCP server." };
+      getSkillsPending: async () => {
+        return detectPending();
+      },
+
+      approveSkills: async ({ skills }) => {
+        const scannedSkills = skills.map((p: PendingSkillEntry) => ({
+          name: p.name,
+          agent: p.source_agent,
+          dirPath: p.source_path,
+          files: [],
+          description: p.description,
+          descriptionTokenCount: 0,
+          tokenCount: p.tokenCount,
+        }));
+        const result = createSymlinks(scannedSkills);
+        return {
+          ok: result.errors.length === 0,
+          created: result.created.length,
+          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
+        };
+      },
+
+      resolveSkillConflict: async ({ conflict, resolution }: { conflict: SameNameConflict; resolution: { action: string; authoritative_agent?: string } }) => {
+        if (resolution.action === "keep-local") {
+          // Mark both entries in the manifest as conflict/skipped — no symlinks
+          try {
+            const manifest = readSkillManifest();
+            const now = new Date().toISOString();
+            // Record the conflict as resolved with no sync
+            manifest.name_conflicts[conflict.name] = {
+              agents: ["claude-code", "codex"],
+              resolved: true,
+              authoritative_agent: null,
+            };
+            writeSkillManifest(manifest);
+            return { ok: true };
+          } catch (err) {
+            return { ok: false, error: err instanceof Error ? err.message : "Could not update manifest." };
           }
         }
+
+        if (resolution.action === "use-source" && resolution.authoritative_agent) {
+          const authAgent = resolution.authoritative_agent as "claude-code" | "codex";
+          const sourcePath = conflict[authAgent].path;
+          const targetAgent: "claude-code" | "codex" = authAgent === "claude-code" ? "codex" : "claude-code";
+
+          const skill = {
+            name: conflict.name,
+            agent: authAgent,
+            dirPath: sourcePath,
+            files: [],
+            description: "",
+            descriptionTokenCount: 0,
+            tokenCount: 0,
+          };
+
+          const result = createSymlinks([skill]);
+          if (result.errors.length > 0) {
+            return { ok: false, error: result.errors.join("\n") };
+          }
+          if (result.conflicts.length > 0) {
+            return {
+              ok: false,
+              error: `Cannot sync: a different entry already exists at the target. Rename or remove ~/.${targetAgent === "codex" ? "codex" : "claude"}/skills/${conflict.name} first.`,
+            };
+          }
+          return { ok: true };
+        }
+
+        return { ok: false, error: "Unknown resolution action." };
+      },
+
+      getMcpPending: async () => {
+        return detectMcpPending();
+      },
+
+      approveMcps: async ({ mcps }) => {
         try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const existing = readIntegrations(workspace);
-          writeSecrets(workspace, { granola_mode: "mcp" });
-          writeIntegrations(workspace, {
-            ...(existing.ok ? existing.integrations : {}),
-            granola: { connected: true, mode: "mcp", last_connected: new Date().toISOString() },
-          });
+          await approveMcpsCore(mcps);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to approve MCPs." };
+        }
+      },
+
+      resolveMcpConflict: async ({ name, authoritative_agent }) => {
+        try {
+          const manifest = readMcpManifest();
+          manifest.name_conflicts[name] = {
+            agents: ["claude-code", "codex"],
+            resolved: true,
+            authoritative_agent,
+          };
+          writeMcpManifest(manifest);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to resolve conflict." };
+        }
+      },
+
+      removeMcp: async ({ id }) => {
+        try {
+          tombstoneMcp(id);
+          // Reconcile will handle removing from target configs on next watcher cycle
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to remove MCP." };
+        }
+      },
+
+      getMcpManifest: async () => {
+        return readMcpManifest();
+      },
+
+      connectGranolaMCP: async () => {
+        const reg = await registerGranolaMCP();
+        if (!reg.ok) return reg;
+        try {
+          writeGranolaConfig(getWorkspacePath(getActiveProfile()), "mcp");
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
@@ -819,42 +902,20 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       connectGranolaAPI: async ({ apiKey }) => {
         if (!apiKey.trim()) return { ok: false, error: "Enter your Granola API key." };
         try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const existing = readIntegrations(workspace);
-          writeSecrets(workspace, { granola_mode: "api", granola_api_token: apiKey.trim() });
-          writeIntegrations(workspace, {
-            ...(existing.ok ? existing.integrations : {}),
-            granola: { connected: true, mode: "api", last_connected: new Date().toISOString() },
-          });
+          writeGranolaConfig(getWorkspacePath(getActiveProfile()), "api", apiKey.trim());
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
         }
       },
 
-      getSlackManifestUrl: async () => {
-        const manifestPath = join(BACKGROUND_DIR, "integrations", "slack", "manifest.json");
-        try {
-          const raw = readFileSync(manifestPath, "utf8");
-          const manifest = JSON.parse(raw);
-          const encoded = encodeURIComponent(JSON.stringify(manifest));
-          return { ok: true, url: `https://api.slack.com/apps?new_app=1&manifest_json=${encoded}` };
-        } catch {
-          return { ok: false, error: "Could not read Slack manifest. Reinstall Draft or create the app manually at https://api.slack.com/apps." };
-        }
-      },
+      getSlackManifestUrl: async () => buildSlackManifestUrl(),
 
       connectSlack: async ({ botToken, appToken }) => {
-        if (!botToken.startsWith("xoxb-")) return { ok: false, error: "Bot tokens start with xoxb-." };
-        if (!appToken.startsWith("xapp-")) return { ok: false, error: "App tokens start with xapp-." };
+        const fmt = validateSlackTokenFormat(botToken, appToken);
+        if (!fmt.ok) return fmt;
         try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const existing = readIntegrations(workspace);
-          writeSecrets(workspace, { slack_bot_token: botToken, slack_app_token: appToken });
-          writeIntegrations(workspace, {
-            ...(existing.ok ? existing.integrations : {}),
-            slack: { connected: true, last_connected: new Date().toISOString() },
-          });
+          writeSlackConfig({ workspace: getWorkspacePath(getActiveProfile()), botToken, appToken });
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Slack connection." };
@@ -883,14 +944,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner }) => {
-        const selectedRunner = runner ?? "claude";
-        const cli = await capture(["which", selectedRunner]);
-        if (cli.exitCode !== 0) {
-          return { ok: false, error: `${selectedRunner === "claude" ? "Claude Code" : "Codex"} CLI not found. Install it first or run /draft-setup manually.` };
-        }
-
         const workspace = getWorkspacePath(getActiveProfile());
-        let importSummary = "No local folder was selected.";
+
+        let importSummary: string | undefined;
         if (mode === "import") {
           if (!folderPath || !existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
             return { ok: false, error: "Choose a valid local folder to import." };
@@ -905,84 +961,32 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             return { ok: false, error: "Could not read the selected folder." };
           }
         } else if (mode === "github") {
-          if (!githubUrl?.trim()) {
-            return { ok: false, error: "Paste a GitHub repository URL." };
-          }
-          const urlMatch = githubUrl.trim().match(/github\.com\/([^/]+\/[^/]+)/);
-          if (!urlMatch) {
+          if (!githubUrl?.trim()) return { ok: false, error: "Paste a GitHub repository URL." };
+          if (!githubUrl.trim().match(/github\.com\/([^/]+\/[^/]+)/)) {
             return { ok: false, error: "Enter a valid GitHub URL (e.g. https://github.com/owner/repo)." };
           }
           importSummary = `GitHub repository: ${githubUrl.trim()}\nClone this repo into a temp directory, read its README and top-level structure, and use that as context for the workspace. Use \`gh repo clone\` first (handles private repos via authenticated GitHub CLI). If gh is not installed or fails, fall back to \`git clone --depth 1\`. Delete the temp clone when done.`;
         }
 
         const integrations = readIntegrations(workspace);
-        const prompt = [
-          "You are running Draft's non-interactive context setup.",
-          `Write the shared context workspace directly to: ${workspace}`,
-          `Installed tools: ${getInstalledTools().join(", ") || "none"}`,
-          `Connected integrations: ${integrations.ok ? Object.entries(integrations.integrations).filter(([, entry]) => entry.connected).map(([name]) => name).join(", ") || "none" : "none"}`,
+        const connectedIntegrations = integrations.ok
+          ? Object.entries(integrations.integrations)
+              .filter(([, entry]) => entry.connected)
+              .map(([name]) => name)
+          : [];
+
+        const prompt = buildHeadlessSetupPrompt({
+          workspace,
+          installedTools: getInstalledTools(),
+          connectedIntegrations,
           importSummary,
-          "Create or update concise context files for company, product, team, and priorities. Do not ask questions. Make conservative assumptions and mark them [ASSUMED]. Do not read or output secrets.",
-        ].join("\n\n");
-        const tmpDir = join(DRAFT_ROOT, "tmp");
-        const promptPath = join(tmpDir, `headless-setup-${Date.now()}.md`);
-        mkdirSync(tmpDir, { recursive: true });
-        writeFileSync(promptPath, prompt, "utf8");
+        });
 
-        const cliCmd = selectedRunner === "codex" ? ["codex", "exec", "--skip-git-repo-check", "-"] : ["claude", "-p", "-"];
-        let proc: ReturnType<typeof Bun.spawn>;
-        try {
-          proc = Bun.spawn(cliCmd, {
-            stdin: Bun.file(promptPath),
-            stdout: "pipe",
-            stderr: "pipe",
-          });
-        } catch (err) {
-          try { unlinkSync(promptPath); } catch {}
-          return { ok: false, error: err instanceof Error ? err.message : `Could not start ${selectedRunner === "claude" ? "Claude Code" : "Codex"}.` };
-        }
-
-        try { rpc.send.headlessProgress({ phase: "starting", label: "Starting Claude Code…" }); } catch {}
-        const writingTimer = setTimeout(() => {
-          try { rpc.send.headlessProgress({ phase: "writing", label: "Writing workspace files…" }); } catch {}
-        }, 10_000);
-        const timeoutTimer = setTimeout(() => {
-          proc.kill();
-          try { rpc.send.headlessProgress({ phase: "error", label: "Context setup is taking too long.", error: "timeout" }); } catch {}
-        }, 120_000);
-
-        void (async () => {
-          try {
-            const [exitCode, stderr] = await Promise.all([
-              proc.exited,
-              new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
-            ]);
-            clearTimeout(writingTimer);
-            clearTimeout(timeoutTimer);
-            if (exitCode === 0) {
-              try { rpc.send.headlessProgress({ phase: "complete", label: "Context setup complete." }); } catch {}
-            } else {
-              const normalized = stderr.toLowerCase();
-              let label: string;
-              if (normalized.includes("auth") || normalized.includes("login")) {
-                label = "Your session expired. Sign in and try again.";
-              } else if (normalized.includes("rate") || normalized.includes("429")) {
-                label = "Rate limited. Wait a moment and try again.";
-              } else if (normalized.includes("token") || normalized.includes("context length") || normalized.includes("too long")) {
-                label = "Too much content to process at once. Try with a smaller folder.";
-              } else if (normalized.includes("network") || normalized.includes("connect") || normalized.includes("econnrefused") || normalized.includes("dns")) {
-                label = "Network error. Check your connection and try again.";
-              } else {
-                label = "Something went wrong. You can retry or set up context manually.";
-              }
-              try { rpc.send.headlessProgress({ phase: "error", label, error: stderr || `Exited with code ${exitCode}.` }); } catch {}
-            }
-          } finally {
-            try { unlinkSync(promptPath); } catch {}
-          }
-        })();
-        try { rpc.send.headlessProgress({ phase: "running", label: "Setting up context…" }); } catch {}
-        return { ok: true };
+        return spawnHeadlessAgent({
+          runner: runner ?? "claude",
+          prompt,
+          onProgress: (p) => { try { rpc.send.headlessProgress(p); } catch {} },
+        });
       },
 
       applyUpdate: async () => {
@@ -1326,6 +1330,7 @@ tray.on("tray-clicked", (e) => {
     stopProposalWatch();
     stopActiveProfileWatch();
     stopSkillWatch();
+    stopMcpWatch();
     process.exit(0);
   }
 });
@@ -1360,15 +1365,37 @@ setTimeout(async () => {
   startHeartbeatWatch();
   startProposalWatch(getActiveProfile(), watcherHandlers);
 
-  // Skill watcher auto-syncs skills between agents. Defer during onboarding so the
-  // scan-import step controls which skills get synced. For returning users, start
-  // immediately.
+  // Skill and MCP watchers auto-sync between agents. Defer during onboarding so the
+  // scan-import step controls what gets synced. For returning users, start immediately.
   const appState = getAppState();
   if (appState.userState !== "no-profile") {
     startSkillWatch({
+      onSkillsPending: (pending) => {
+        try { rpc.send.skillsPendingApproval({ pending }); } catch {}
+      },
+      onSkillsConflict: (conflicts) => {
+        try { rpc.send.skillsConflict({ conflicts }); } catch {}
+      },
       onSkillsChanged: (count) => {
         try { rpc.send.skillsChanged({ count }); } catch {}
       },
+      onReconciled: (_result) => {
+        // Reconcile result logged internally; no UI action needed unless repaired > 0
+        // (onSkillsChanged is called separately when repaired.length > 0)
+      },
+    });
+
+    startMcpWatch({
+      onMcpsPending: (pending) => {
+        try { rpc.send.mcpsPendingApproval({ pending }); } catch {}
+      },
+      onMcpsConflict: (conflicts) => {
+        try { rpc.send.mcpsConflict({ conflicts }); } catch {}
+      },
+      onMcpsDrifted: (drifted) => {
+        try { rpc.send.mcpsDrifted({ drifted }); } catch {}
+      },
+      onReconciled: (_result) => {},
     });
   }
 

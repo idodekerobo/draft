@@ -17,6 +17,7 @@ import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTo
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { SkillSyncSection } from "./settings/SkillSyncSection";
+import { McpSyncSection } from "./settings/McpSyncSection";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -506,6 +507,9 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
         <SkillSyncSection onError={(msg) => setSaveError(msg)} />
+
+        {/* ── MCP Servers ─────────────────────────────────────────────────── */}
+        <McpSyncSection onError={(msg) => setSaveError(msg)} />
 
         {/* ── Intelligence Tools ─────────────────────────────────────────── */}
         <section className="settings__section">
