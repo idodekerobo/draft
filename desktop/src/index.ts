@@ -59,10 +59,11 @@ import {
 } from "draft-core/sync/manifest";
 import type { AppRPCType } from "./rpc/schema";
 
-// Key + host baked in at build time via electrobun.config.ts define → process.env.
-// Falls back to empty string for OSS builds (no build-config.json) → phTrack no-ops.
-const _phKey  = process.env.DRAFT_PH_KEY  ?? "";
-const _phHost = process.env.DRAFT_PH_HOST ?? "https://us.i.posthog.com";
+// Keys baked in at build time via electrobun.config.ts define → process.env.
+// Falls back to empty string for OSS builds (no build-config.json).
+const _phKey          = process.env.DRAFT_PH_KEY           ?? "";
+const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.posthog.com";
+const _crispWebsiteId = process.env.DRAFT_CRISP_WEBSITE_ID ?? "";
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
@@ -1008,6 +1009,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch {
           return { version: "dev", channel: "dev" };
         }
+      },
+
+      getCrispConfig: async () => {
+        return { website_id: _crispWebsiteId };
       },
 
       getAnalyticsConfig: async () => {

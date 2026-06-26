@@ -1,4 +1,5 @@
 {
   "posthog_key": "",
-  "api_host": "https://us.i.posthog.com"
+  "api_host": "https://us.i.posthog.com",
+  "crisp_website_id": ""
 }

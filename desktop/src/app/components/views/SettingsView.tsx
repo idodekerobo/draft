@@ -264,9 +264,10 @@ function InputSourceRow({
 
 interface SettingsViewProps {
   activeProfile: string;
+  onOpenFeedback?: () => void;
 }
 
-export function SettingsView({ activeProfile }: SettingsViewProps) {
+export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProps) {
   const [settings, setSettings]           = useState<LocalConfig | null>(null);
   const [apps, setApps]                   = useState<ConnectedAppsStatus | null>(null);
   const [sections, setSections]           = useState<ContextSection[]>([]);
@@ -763,6 +764,21 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
             </div>
           </div>
         </section>
+
+        {/* ── Feedback ────────────────────────────────────────────────────── */}
+        {onOpenFeedback && (
+          <section className="settings__section settings__section--feedback">
+            <div className="feedback-row">
+              <div className="feedback-row__text">
+                <span className="feedback-row__label">Share Feedback</span>
+                <span className="feedback-row__desc">Questions, bugs, or ideas — we read everything.</span>
+              </div>
+              <button className="feedback-row__btn" onClick={onOpenFeedback}>
+                Open Chat
+              </button>
+            </div>
+          </section>
+        )}
 
       </div>
 
