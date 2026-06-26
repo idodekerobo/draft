@@ -8,7 +8,7 @@
 
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
-import { createSymlinks, scanSkillDirectories } from 'draft-core/scanner';
+import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
 
@@ -76,11 +76,17 @@ function log(level: 'info' | 'warn' | 'error', msg: string) {
 
 function reconcileSkills() {
   try {
-    const result = createSymlinks(scanSkillDirectories().skills);
-    if (result.created.length > 0) log('info', `skills: synced ${result.created.length} cross-agent link(s)`);
-    if (result.errors.length > 0) log('warn', `skills: ${result.errors.length} sync error(s)`);
+    const reconciled = reconcileSkillManifest();
+    if (reconciled.repaired.length > 0) log('info', `skills: repaired ${reconciled.repaired.length} symlink(s)`);
+    if (reconciled.tombstoned.length > 0) log('info', `skills: tombstoned ${reconciled.tombstoned.length} removed skill(s)`);
+    if (reconciled.orphaned.length > 0) log('warn', `skills: ${reconciled.orphaned.length} symlink(s) with missing source — open Draft to review`);
+    if (reconciled.conflicts.length > 0) log('warn', `skills: ${reconciled.conflicts.length} symlink conflict(s) — open Draft to resolve`);
+
+    const { pending, conflicts } = detectPending();
+    if (pending.length > 0) log('info', `skills: ${pending.length} new skill(s) pending approval — open Draft to sync`);
+    if (conflicts.length > 0) log('warn', `skills: ${conflicts.length} same-name conflict(s) — open Draft to resolve`);
   } catch {
-    log('warn', 'skills: scan reconciliation failed');
+    log('warn', 'skills: reconciliation failed');
   }
 }
 

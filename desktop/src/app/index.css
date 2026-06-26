@@ -1920,7 +1920,13 @@ button {
 /* ── Skill sync (Settings) ──────────────────────────────────────────────────── */
 
 .skill-sync__list {
-  max-height: 450px;
+  /* No longer a scroll container — sections manage their own scroll */
+}
+
+/* Scrollable items area within each expanded section.
+   Bounded so expanding 59 items never pushes sibling section headers off-screen. */
+.skill-sync__section-items {
+  max-height: 280px;
   overflow-y: auto;
 }
 
@@ -1932,9 +1938,14 @@ button {
   padding: 10px 20px;
   border: none;
   border-bottom: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--color-bg-primary);
   cursor: pointer;
   text-align: left;
+  /* Sticky within settings__body (the page scroll), not an inner container.
+     Keeps section headers visible as you scroll through their expanded items. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .skill-agent-group__header:hover {
@@ -1961,6 +1972,118 @@ button {
   margin-left: auto;
 }
 
+/* ── Skill sync filter ───────────────────────────────────────────────────────── */
+
+.skill-sync__filter-bar {
+  position: relative;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.skill-sync__filter-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 28px 0 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-secondary);
+  outline: none;
+  transition: border-color 120ms, background 120ms;
+}
+
+.skill-sync__filter-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.skill-sync__filter-input:focus {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.skill-sync__filter-clear {
+  position: absolute;
+  right: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 50%;
+  transition: color 120ms, background 120ms;
+}
+
+.skill-sync__filter-clear:hover {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Skill row animations ────────────────────────────────────────────────────── */
+
+@keyframes skill-row-enter {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes skill-row-exit-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    max-height: 120px;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-10px);
+    max-height: 0;
+  }
+}
+
+@keyframes skill-row-exit-right {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    max-height: 120px;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(10px);
+    max-height: 0;
+  }
+}
+
+.skill-row-anim {
+  overflow: hidden;
+}
+
+.skill-row-anim--enter {
+  animation: skill-row-enter 220ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.skill-row-anim--exit-left {
+  animation: skill-row-exit-left 260ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+
+.skill-row-anim--exit-right {
+  animation: skill-row-exit-right 260ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
 
 /* ── Toggle (iOS-style pill) ─────────────────────────────────────────────────── */
 

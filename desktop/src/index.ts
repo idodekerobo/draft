@@ -2,7 +2,11 @@
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
-import { createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections, readSkillManifest } from "draft-core/scanner";
+import {
+  createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
+  detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
+  type PendingSkillEntry, type SameNameConflict,
+} from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { capture } from "draft-core/exec";
@@ -696,13 +700,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       scanSkills: async () => {
         const { skills, errors } = scanSkillDirectories();
         const mcpServers = scanMCPConnections();
-        const manifest = new Set(readSkillManifest());
+        const manifest = readSkillManifest();
         return {
           skills: skills.map(({ name, agent, dirPath, description, descriptionTokenCount, tokenCount }) => {
-            const oppositeDir = agent === "claude-code"
-              ? `${homedir()}/.codex/skills/${name}`
-              : `${homedir()}/.claude/skills/${name}`;
-            return { name, agent, dirPath, description, descriptionTokenCount, tokenCount, synced: manifest.has(oppositeDir) };
+            const entry = manifest.skills[`${agent}:${name}`];
+            const synced = entry?.status === "approved" && Object.keys(entry.synced_to ?? {}).length > 0;
+            return { name, agent, dirPath, description, descriptionTokenCount, tokenCount, synced };
           }),
           scanErrors: errors,
           mcpServers: mcpServers.map(({ name, agent, config }) => ({ name, agent, config })),
@@ -748,10 +751,89 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       startSkillWatcher: async () => {
         startSkillWatch({
+          onSkillsPending: (pending) => {
+            try { rpc.send.skillsPendingApproval({ pending }); } catch {}
+          },
+          onSkillsConflict: (conflicts) => {
+            try { rpc.send.skillsConflict({ conflicts }); } catch {}
+          },
           onSkillsChanged: (count) => {
             try { rpc.send.skillsChanged({ count }); } catch {}
           },
+          onReconciled: (_result) => {},
         });
+      },
+
+      getSkillsPending: async () => {
+        return detectPending();
+      },
+
+      approveSkills: async ({ skills }) => {
+        const scannedSkills = skills.map((p: PendingSkillEntry) => ({
+          name: p.name,
+          agent: p.source_agent,
+          dirPath: p.source_path,
+          files: [],
+          description: p.description,
+          descriptionTokenCount: 0,
+          tokenCount: p.tokenCount,
+        }));
+        const result = createSymlinks(scannedSkills);
+        return {
+          ok: result.errors.length === 0,
+          created: result.created.length,
+          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
+        };
+      },
+
+      resolveSkillConflict: async ({ conflict, resolution }: { conflict: SameNameConflict; resolution: { action: string; authoritative_agent?: string } }) => {
+        if (resolution.action === "keep-local") {
+          // Mark both entries in the manifest as conflict/skipped — no symlinks
+          try {
+            const manifest = readSkillManifest();
+            const now = new Date().toISOString();
+            // Record the conflict as resolved with no sync
+            manifest.name_conflicts[conflict.name] = {
+              agents: ["claude-code", "codex"],
+              resolved: true,
+              authoritative_agent: null,
+            };
+            writeSkillManifest(manifest);
+            return { ok: true };
+          } catch (err) {
+            return { ok: false, error: err instanceof Error ? err.message : "Could not update manifest." };
+          }
+        }
+
+        if (resolution.action === "use-source" && resolution.authoritative_agent) {
+          const authAgent = resolution.authoritative_agent as "claude-code" | "codex";
+          const sourcePath = conflict[authAgent].path;
+          const targetAgent: "claude-code" | "codex" = authAgent === "claude-code" ? "codex" : "claude-code";
+
+          const skill = {
+            name: conflict.name,
+            agent: authAgent,
+            dirPath: sourcePath,
+            files: [],
+            description: "",
+            descriptionTokenCount: 0,
+            tokenCount: 0,
+          };
+
+          const result = createSymlinks([skill]);
+          if (result.errors.length > 0) {
+            return { ok: false, error: result.errors.join("\n") };
+          }
+          if (result.conflicts.length > 0) {
+            return {
+              ok: false,
+              error: `Cannot sync: a different entry already exists at the target. Rename or remove ~/.${targetAgent === "codex" ? "codex" : "claude"}/skills/${conflict.name} first.`,
+            };
+          }
+          return { ok: true };
+        }
+
+        return { ok: false, error: "Unknown resolution action." };
       },
 
       connectGranolaMCP: async () => {
@@ -1236,8 +1318,18 @@ setTimeout(async () => {
   const appState = getAppState();
   if (appState.userState !== "no-profile") {
     startSkillWatch({
+      onSkillsPending: (pending) => {
+        try { rpc.send.skillsPendingApproval({ pending }); } catch {}
+      },
+      onSkillsConflict: (conflicts) => {
+        try { rpc.send.skillsConflict({ conflicts }); } catch {}
+      },
       onSkillsChanged: (count) => {
         try { rpc.send.skillsChanged({ count }); } catch {}
+      },
+      onReconciled: (_result) => {
+        // Reconcile result logged internally; no UI action needed unless repaired > 0
+        // (onSkillsChanged is called separately when repaired.length > 0)
       },
     });
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { writeFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
-import { join } from "path";
+import { writeFileSync, readFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
+import { join, resolve } from "path";
 import {
   scanSkillDirectories,
   scanAll,
@@ -8,8 +8,12 @@ import {
   scanMCPConnections,
   createSymlinks,
   readSkillManifest,
-  updateSkillManifest,
+  writeSkillManifest,
+  hashSkillDir,
+  detectPending,
+  reconcileSkillManifest,
   type ScannedSkill,
+  type SkillManifest,
 } from "../scanner";
 
 const TMP = `/tmp/draft-core-scanner-${Date.now()}`;
@@ -310,6 +314,8 @@ describe("createSymlinks", () => {
         agent: "claude-code",
         dirPath: skillSource,
         files: ["SKILL.md"],
+        description: "",
+        descriptionTokenCount: 0,
         tokenCount: 3,
       },
     ];
@@ -324,6 +330,7 @@ describe("createSymlinks", () => {
     expect(result.created[0]).toBe(join(codexDir, "my-skill"));
     expect(result.skipped).toEqual([]);
     expect(result.errors).toEqual([]);
+    expect(result.conflicts).toEqual([]);
   });
 
   it("symlinks codex skills into claude dir", () => {
@@ -339,6 +346,8 @@ describe("createSymlinks", () => {
         agent: "codex",
         dirPath: skillSource,
         files: [],
+        description: "",
+        descriptionTokenCount: 0,
         tokenCount: 0,
       },
     ];
@@ -352,14 +361,50 @@ describe("createSymlinks", () => {
     expect(result.created[0]).toBe(join(claudeDir, "codex-skill"));
   });
 
-  it("skips when target already exists (idempotent)", () => {
+  it("skips when a correct symlink already exists at the target (idempotent)", () => {
     const claudeDir = join(TMP, "claude-idem");
     const codexDir = join(TMP, "codex-idem");
 
     const skillSource = join(TMP, "idem-source");
     mkdirSync(skillSource, { recursive: true });
 
-    // Pre-create the target
+    // Pre-create the target as a symlink pointing to the same source
+    mkdirSync(codexDir, { recursive: true });
+    symlinkSync(resolve(skillSource), join(codexDir, "my-skill"));
+
+    const skills: ScannedSkill[] = [
+      {
+        name: "my-skill",
+        agent: "claude-code",
+        dirPath: skillSource,
+        files: [],
+        description: "",
+        descriptionTokenCount: 0,
+        tokenCount: 0,
+      },
+    ];
+
+    const result = createSymlinks(skills, {
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      manifestPath: join(TMP, "skill-manifest-idem.json"),
+    });
+
+    expect(result.created).toEqual([]);
+    expect(result.skipped.length).toBe(1);
+    expect(result.skipped[0]).toBe(join(codexDir, "my-skill"));
+    expect(result.errors).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("surfaces a conflict when a real directory already exists at the target", () => {
+    const claudeDir = join(TMP, "claude-conflict");
+    const codexDir = join(TMP, "codex-conflict");
+
+    const skillSource = join(TMP, "conflict-source");
+    mkdirSync(skillSource, { recursive: true });
+
+    // Pre-create the target as a real directory (not a symlink)
     mkdirSync(join(codexDir, "my-skill"), { recursive: true });
 
     const skills: ScannedSkill[] = [
@@ -368,6 +413,8 @@ describe("createSymlinks", () => {
         agent: "claude-code",
         dirPath: skillSource,
         files: [],
+        description: "",
+        descriptionTokenCount: 0,
         tokenCount: 0,
       },
     ];
@@ -375,12 +422,15 @@ describe("createSymlinks", () => {
     const result = createSymlinks(skills, {
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
+      manifestPath: join(TMP, "skill-manifest-conflict.json"),
     });
 
     expect(result.created).toEqual([]);
-    expect(result.skipped.length).toBe(1);
-    expect(result.skipped[0]).toBe(join(codexDir, "my-skill"));
+    expect(result.skipped).toEqual([]);
     expect(result.errors).toEqual([]);
+    expect(result.conflicts.length).toBe(1);
+    expect(result.conflicts[0].linkPath).toBe(join(codexDir, "my-skill"));
+    expect(result.conflicts[0].actual).toBeNull(); // real dir, not a symlink
   });
 
   it("reports errors when it cannot create the destination directory", () => {
@@ -396,12 +446,14 @@ describe("createSymlinks", () => {
         agent: "claude-code",
         dirPath: skillSource,
         files: [],
+        description: "",
+        descriptionTokenCount: 0,
         tokenCount: 0,
       },
     ], {
       claudeSkillsDir: claudeDir,
       codexSkillsDir: join(invalidCodexParent, "skills"),
-      manifestPath: join(TMP, "skill-manifest.json"),
+      manifestPath: join(TMP, "skill-manifest-error.json"),
     });
 
     expect(result.created).toEqual([]);
@@ -414,17 +466,292 @@ describe("createSymlinks", () => {
 // ── skill manifest ────────────────────────────────────────────────────────────
 
 describe("skill manifest", () => {
-  it("merges and deduplicates Draft-created symlink paths", () => {
-    const manifestPath = join(TMP, "skill-manifest.json");
-    updateSkillManifest(["/tmp/codex/a"], manifestPath);
-    updateSkillManifest(["/tmp/codex/a", "/tmp/claude/b"], manifestPath);
-    expect(readSkillManifest(manifestPath)).toEqual(["/tmp/codex/a", "/tmp/claude/b"]);
+  it("returns an empty manifest when the file is absent or malformed", () => {
+    expect(readSkillManifest(join(TMP, "missing.json"))).toEqual({ version: 4, schema_version: 4, min_reader_version: 1, skills: {}, name_conflicts: {} });
+    writeFileSync(join(TMP, "bad.json"), "not json");
+    expect(readSkillManifest(join(TMP, "bad.json"))).toEqual({ version: 4, schema_version: 4, min_reader_version: 1, skills: {}, name_conflicts: {} });
   });
 
-  it("returns an empty manifest when the file is absent or malformed", () => {
-    const manifestPath = join(TMP, "missing.json");
-    expect(readSkillManifest(manifestPath)).toEqual([]);
-    writeFileSync(manifestPath, "not json");
-    expect(readSkillManifest(manifestPath)).toEqual([]);
+  it("round-trips a manifest through writeSkillManifest and readSkillManifest", () => {
+    const manifestPath = join(TMP, "skill-manifest.json");
+    const manifest: SkillManifest = {
+      version: 4, schema_version: 4, min_reader_version: 1,
+      skills: {
+        "claude-code:browse": {
+          id: "claude-code:browse", name: "browse", source_agent: "claude-code",
+          source_path: "/fake/browse", skill_dir_hash: "sha256:abc",
+          added_at: "2026-01-01T00:00:00.000Z", approved_at: "2026-01-01T00:00:00.000Z",
+          status: "approved", synced_to: { codex: { target_name: "browse", symlink_path: "/fake/codex/browse", synced_at: "2026-01-01T00:00:00.000Z" } },
+          removed_at: null,
+        },
+      },
+      name_conflicts: {},
+    };
+    writeSkillManifest(manifest, manifestPath);
+    expect(readSkillManifest(manifestPath)).toEqual(manifest);
+  });
+});
+
+// ── hashSkillDir ──────────────────────────────────────────────────────────────
+
+describe("hashSkillDir", () => {
+  it("returns a sha256: prefixed string for a directory with files", () => {
+    const dir = join(TMP, "hash-dir");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"), "# Test skill");
+
+    const hash = hashSkillDir(dir);
+    expect(hash).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("returns sha256:empty for an empty directory", () => {
+    const dir = join(TMP, "empty-hash-dir");
+    mkdirSync(dir, { recursive: true });
+    expect(hashSkillDir(dir)).toBe("sha256:empty");
+  });
+
+  it("returns sha256:empty for a nonexistent directory", () => {
+    expect(hashSkillDir(join(TMP, "does-not-exist"))).toBe("sha256:empty");
+  });
+
+  it("produces different hashes for directories with different content", () => {
+    const dir1 = join(TMP, "hash-dir1");
+    const dir2 = join(TMP, "hash-dir2");
+    mkdirSync(dir1, { recursive: true });
+    mkdirSync(dir2, { recursive: true });
+    writeFileSync(join(dir1, "SKILL.md"), "# Skill A");
+    writeFileSync(join(dir2, "SKILL.md"), "# Skill B");
+
+    expect(hashSkillDir(dir1)).not.toBe(hashSkillDir(dir2));
+  });
+
+  it("produces the same hash for directories with identical content", () => {
+    const dir1 = join(TMP, "hash-same1");
+    const dir2 = join(TMP, "hash-same2");
+    mkdirSync(dir1, { recursive: true });
+    mkdirSync(dir2, { recursive: true });
+    writeFileSync(join(dir1, "SKILL.md"), "# Identical");
+    writeFileSync(join(dir2, "SKILL.md"), "# Identical");
+
+    expect(hashSkillDir(dir1)).toBe(hashSkillDir(dir2));
+  });
+});
+
+// ── detectPending ─────────────────────────────────────────────────────────────
+
+describe("detectPending", () => {
+  it("returns a pending entry for a new real-directory skill not in manifest", () => {
+    const claudeDir = join(TMP, "pending-claude");
+    const codexDir = join(TMP, "pending-codex");
+    const manifestPath = join(TMP, "pending-manifest.json");
+
+    mkdirSync(join(claudeDir, "my-skill"), { recursive: true });
+    writeFileSync(join(claudeDir, "my-skill", "SKILL.md"), "# My skill");
+
+    const { pending, conflicts } = detectPending({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      draftDir: join(TMP, "draft"),
+      manifestPath,
+    });
+
+    expect(pending.length).toBe(1);
+    expect(pending[0].name).toBe("my-skill");
+    expect(pending[0].source_agent).toBe("claude-code");
+    expect(conflicts).toEqual([]);
+  });
+
+  it("returns a conflict when both agents have a real directory with the same name", () => {
+    const claudeDir = join(TMP, "conflict-claude");
+    const codexDir = join(TMP, "conflict-codex");
+    const manifestPath = join(TMP, "conflict-manifest.json");
+
+    mkdirSync(join(claudeDir, "shared-skill"), { recursive: true });
+    writeFileSync(join(claudeDir, "shared-skill", "SKILL.md"), "# Claude version");
+
+    mkdirSync(join(codexDir, "shared-skill"), { recursive: true });
+    writeFileSync(join(codexDir, "shared-skill", "SKILL.md"), "# Codex version");
+
+    const { pending, conflicts } = detectPending({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      draftDir: join(TMP, "draft"),
+      manifestPath,
+    });
+
+    expect(conflicts.length).toBe(1);
+    expect(conflicts[0].name).toBe("shared-skill");
+    expect(pending).toEqual([]);
+  });
+
+  it("skips skills already present in the v4 manifest", () => {
+    const claudeDir = join(TMP, "tracked-claude");
+    const codexDir = join(TMP, "tracked-codex");
+    const manifestPath = join(TMP, "tracked-manifest.json");
+
+    const skillDir = join(claudeDir, "tracked-skill");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# Tracked");
+
+    // Write a v4 manifest that already tracks this skill
+    const manifest = {
+      version: 4,
+      schema_version: 4,
+      min_reader_version: 1,
+      skills: {
+        "claude-code:tracked-skill": {
+          id: "claude-code:tracked-skill",
+          name: "tracked-skill",
+          source_agent: "claude-code",
+          source_path: skillDir,
+          skill_dir_hash: "sha256:abc",
+          added_at: new Date().toISOString(),
+          approved_at: new Date().toISOString(),
+          status: "approved",
+          synced_to: {},
+          removed_at: null,
+        },
+      },
+      name_conflicts: {},
+    };
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const { pending, conflicts } = detectPending({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      draftDir: join(TMP, "draft"),
+      manifestPath,
+    });
+
+    expect(pending).toEqual([]);
+    expect(conflicts).toEqual([]);
+  });
+
+  it("ignores symlinks (only flags real directories as pending)", () => {
+    const claudeDir = join(TMP, "sym-claude");
+    const codexDir = join(TMP, "sym-codex");
+    const manifestPath = join(TMP, "sym-manifest.json");
+
+    const realSkill = join(TMP, "real-skill-source");
+    mkdirSync(realSkill, { recursive: true });
+    writeFileSync(join(realSkill, "SKILL.md"), "# Real");
+
+    // Create a symlink in claude skills (not a real dir)
+    mkdirSync(claudeDir, { recursive: true });
+    symlinkSync(resolve(realSkill), join(claudeDir, "sym-skill"));
+
+    const { pending, conflicts } = detectPending({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      draftDir: join(TMP, "draft"),
+      manifestPath,
+    });
+
+    // Symlinks should not be flagged as pending
+    expect(pending).toEqual([]);
+    expect(conflicts).toEqual([]);
+  });
+});
+
+// ── reconcileSkillManifest ────────────────────────────────────────────────────
+
+describe("reconcileSkillManifest", () => {
+  it("repairs a missing symlink when the source still exists", () => {
+    const claudeDir = join(TMP, "reconcile-claude");
+    const codexDir = join(TMP, "reconcile-codex");
+    const manifestPath = join(TMP, "reconcile-manifest.json");
+
+    const skillDir = join(claudeDir, "my-skill");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "# My skill");
+    mkdirSync(codexDir, { recursive: true });
+
+    const expectedSymlink = join(codexDir, "my-skill");
+    const manifest = {
+      version: 4,
+      schema_version: 4,
+      min_reader_version: 1,
+      skills: {
+        "claude-code:my-skill": {
+          id: "claude-code:my-skill",
+          name: "my-skill",
+          source_agent: "claude-code",
+          source_path: skillDir,
+          skill_dir_hash: "sha256:abc",
+          added_at: new Date().toISOString(),
+          approved_at: new Date().toISOString(),
+          status: "approved",
+          synced_to: {
+            codex: {
+              target_name: "my-skill",
+              symlink_path: expectedSymlink,
+              synced_at: new Date().toISOString(),
+            },
+          },
+          removed_at: null,
+        },
+      },
+      name_conflicts: {},
+    };
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const result = reconcileSkillManifest({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      draftDir: join(TMP, "draft"),
+      manifestPath,
+    });
+
+    expect(result.repaired).toContain(expectedSymlink);
+    expect(result.tombstoned).toEqual([]);
+  });
+
+  it("tombstones an entry when both source and symlink are gone", () => {
+    const claudeDir = join(TMP, "tombstone-claude");
+    const codexDir = join(TMP, "tombstone-codex");
+    const manifestPath = join(TMP, "tombstone-manifest.json");
+
+    // Neither source nor symlink exist on disk
+    const manifest = {
+      version: 4,
+      schema_version: 4,
+      min_reader_version: 1,
+      skills: {
+        "claude-code:gone-skill": {
+          id: "claude-code:gone-skill",
+          name: "gone-skill",
+          source_agent: "claude-code",
+          source_path: join(claudeDir, "gone-skill"),
+          skill_dir_hash: "sha256:abc",
+          added_at: new Date().toISOString(),
+          approved_at: new Date().toISOString(),
+          status: "approved",
+          synced_to: {
+            codex: {
+              target_name: "gone-skill",
+              symlink_path: join(codexDir, "gone-skill"),
+              synced_at: new Date().toISOString(),
+            },
+          },
+          removed_at: null,
+        },
+      },
+      name_conflicts: {},
+    };
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const result = reconcileSkillManifest({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: codexDir,
+      draftDir: join(TMP, "draft"),
+      manifestPath,
+    });
+
+    expect(result.tombstoned).toContain("claude-code:gone-skill");
+    expect(result.repaired).toEqual([]);
+
+    // Manifest should reflect the tombstone
+    const updated = JSON.parse(readFileSync(manifestPath, "utf8") as string);
+    expect(updated.skills["claude-code:gone-skill"].removed_at).not.toBeNull();
   });
 });

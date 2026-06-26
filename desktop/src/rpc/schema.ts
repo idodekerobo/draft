@@ -156,6 +156,29 @@ export interface ScanSkillsResult {
   mcpServers?: ScannedMCPEntry[];
 }
 
+/** A skill that was detected as a new real directory not yet in the manifest. */
+export interface PendingSkillEntry {
+  id: string;
+  name: string;
+  source_agent: "claude-code" | "codex";
+  source_path: string;
+  skill_dir_hash: string;
+  description: string;
+  tokenCount: number;
+}
+
+/** Both agents have a real directory with the same skill name — needs user resolution. */
+export interface SameNameConflict {
+  name: string;
+  "claude-code": { path: string; skill_dir_hash: string };
+  codex: { path: string; skill_dir_hash: string };
+}
+
+/** User's decision for resolving a same-name skill conflict. */
+export type ConflictResolution =
+  | { action: "use-source"; authoritative_agent: "claude-code" | "codex" }
+  | { action: "keep-local" };
+
 export type HeadlessSetupPhase = "starting" | "running" | "writing" | "complete" | "error";
 
 export interface ProfileDetail {
@@ -373,6 +396,15 @@ export type AppRPCType = {
       /** Remove cross-agent symlinks for the given skills. */
       removeSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { removed: number } };
 
+      /** Return all skills pending approval and any same-name conflicts. */
+      getSkillsPending: { params: void; response: { pending: PendingSkillEntry[]; conflicts: SameNameConflict[] } };
+
+      /** Approve pending skills — create their cross-agent symlinks and mark them approved in the manifest. */
+      approveSkills: { params: { skills: PendingSkillEntry[] }; response: ActionResult & { created: number } };
+
+      /** Resolve a same-name conflict by picking an authoritative agent or keeping both local. */
+      resolveSkillConflict: { params: { conflict: SameNameConflict; resolution: ConflictResolution }; response: ActionResult };
+
       /** Register Granola's MCP server with Claude Code and persist connection status. */
       connectGranolaMCP: { params: void; response: ActionResult };
 
@@ -452,6 +484,12 @@ export type AppRPCType = {
 
       /** A newly installed skill was made available to the other agent. */
       skillsChanged: { count: number };
+
+      /** New skills were detected and are waiting for user approval in Settings > Skills. */
+      skillsPendingApproval: { pending: PendingSkillEntry[] };
+
+      /** Same-name skill conflict detected — both agents have a real directory with the same name. */
+      skillsConflict: { conflicts: SameNameConflict[] };
 
       /** Status update from the headless context-setup process. */
       headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
