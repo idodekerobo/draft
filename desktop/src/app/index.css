@@ -2238,6 +2238,12 @@ button {
 .onboarding__mcp-section { width: 100%; border-top: 1px solid var(--color-border); margin-top: 8px; padding-top: 4px; }
 .onboarding__mcp-meta { display: flex; align-items: center; gap: 6px; }
 .onboarding__mcp-hint { color: var(--color-text-tertiary); font-size: var(--font-size-micro); padding: 6px 0 2px; }
+.onboarding__mcp-header { display: flex; flex-direction: column; gap: 2px; padding: 12px 0 6px; }
+.onboarding__mcp-title { font-size: var(--font-size-body); font-weight: 600; color: var(--color-text-primary); letter-spacing: 0; }
+.onboarding__mcp-desc { font-size: var(--font-size-secondary); color: var(--color-text-secondary); }
+.onboarding__mcp-list { width: 100%; border-top: 1px solid var(--color-border); }
+.onboarding__mcp-synced { color: var(--color-status-green); font-size: var(--font-size-secondary); }
+.onboarding__mcp-select-toggle { background: transparent; border: none; color: var(--color-accent-blue); font-size: var(--font-size-secondary); font-family: var(--font-ui); cursor: pointer; padding: 0; }
 
 @keyframes skeleton-pulse { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.3; } }
 .onboarding__skeleton { width: 100%; padding: 8px 0; }
@@ -2327,6 +2333,23 @@ button {
   /* Inherits .empty-state__cta — just reset margin */
   margin-top: 0;
 }
+
+.onboarding__cta-secondary {
+  height: 30px;
+  padding: 0 14px;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.onboarding__cta-secondary:hover  { opacity: 0.85; }
+.onboarding__cta-secondary:active { opacity: 0.7; }
+.onboarding__cta-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Prerequisite callout ────────────────────────────────────────────────────── */
 /* Shown when a CLI-dependent tool is selected. Left-accent, terminal-flavored.  */
