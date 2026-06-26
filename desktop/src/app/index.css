@@ -3465,8 +3465,14 @@ button {
   line-height: 1.4;
 }
 
-.feedback-row__btn {
+.feedback-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.feedback-row__btn {
   height: 30px;
   padding: 0 14px;
   background: transparent;
@@ -3476,7 +3482,7 @@ button {
   font-size: var(--font-size-secondary);
   font-family: var(--font-ui);
   cursor: pointer;
-  transition: background 120ms, border-color 120ms, color 120ms;
+  transition: background 120ms, border-color 120ms, color 120ms, opacity 120ms;
   white-space: nowrap;
 }
 
@@ -3484,6 +3490,20 @@ button {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.22);
   color: var(--color-text-primary);
+}
+
+.feedback-row__btn--primary {
+  background: var(--color-accent-blue);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 500;
+}
+
+.feedback-row__btn--primary:hover {
+  background: var(--color-accent-blue);
+  border-color: transparent;
+  color: #fff;
+  opacity: 0.85;
 }
 
 /* ── Support panel ────────────────────────────────────────────────────────────── */
