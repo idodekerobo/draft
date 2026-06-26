@@ -1930,6 +1930,84 @@ button {
   cursor: default;
 }
 
+.app-row--source {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.app-row__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.app-row__connect-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 0 2px 16px;
+}
+
+.app-row__panel-label,
+.app-row__field-label {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.app-row__panel-help,
+.app-row__validation {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-secondary);
+  line-height: 1.5;
+}
+
+.app-row__validation {
+  color: var(--color-status-yellow);
+}
+
+.app-row__mode-picker {
+  display: flex;
+  gap: 8px;
+}
+
+.app-row__mode-picker button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: var(--font-size-secondary) var(--font-ui);
+  cursor: pointer;
+}
+
+.app-row__mode-picker .app-row__mode--selected {
+  border-color: var(--color-accent-blue);
+  color: var(--color-text-primary);
+}
+
+.app-row__input {
+  width: min(100%, 420px);
+  height: 32px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sidebar);
+  color: var(--color-text-primary);
+  font: var(--font-size-secondary) var(--font-ui);
+}
+
+.app-row__panel-action {
+  height: 28px;
+}
+
 /* ── Skill sync (Settings) ──────────────────────────────────────────────────── */
 
 .skill-sync__list {

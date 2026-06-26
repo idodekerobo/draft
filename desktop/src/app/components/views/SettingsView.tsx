@@ -13,6 +13,7 @@
 // loaded in parallel on mount and on every profile switch.
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
@@ -171,29 +172,28 @@ const SOURCE_LABELS: Record<string, string> = {
   github:  "GitHub",
 };
 
-// Hint shown below the meta line when a source is not connected.
-const SOURCE_CONNECT_HINT: Record<string, string> = {
-  granola: "Run /draft-connect granola in Claude Code or Codex",
-  slack:   "Run /draft-connect slack in Claude Code or Codex",
-  github:  "",
-};
-
 interface InputSourceRowProps {
   sourceKey: "granola" | "slack" | "github";
   detail: IntegrationDetail;
   onDisconnect: () => void;
+  onToggleConnect: () => void;
   onConnectGitHub: () => void;
   isDisconnecting: boolean;
+  isExpanded: boolean;
   isConnectingGitHub: boolean;
+  children?: ReactNode;
 }
 
 function InputSourceRow({
   sourceKey,
   detail,
   onDisconnect,
+  onToggleConnect,
   onConnectGitHub,
   isDisconnecting,
+  isExpanded,
   isConnectingGitHub,
+  children,
 }: InputSourceRowProps) {
   const isGitHub = sourceKey === "github";
   const isPending = isGitHub && isConnectingGitHub;
@@ -212,42 +212,50 @@ function InputSourceRow({
   }
 
   return (
-    <div className="app-row">
-      <div className="app-row__left">
-        <span className={`app-row__status-dot${detail.connected ? " app-row__status-dot--on" : isPending ? " app-row__status-dot--pending" : ""}`} />
-        <div className="app-row__text">
-          <span className="app-row__name">{SOURCE_LABELS[sourceKey] ?? sourceKey}</span>
-          <span className="app-row__meta">
-            {isPending ? "Complete sign-in in your browser…" : buildMeta()}
-          </span>
-          {!detail.connected && !isPending && (
-            <span className="app-row__hint">{SOURCE_CONNECT_HINT[sourceKey]}</span>
+    <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
+      <div className="app-row__main">
+        <div className="app-row__left">
+          <span className={`app-row__status-dot${detail.connected ? " app-row__status-dot--on" : isPending ? " app-row__status-dot--pending" : ""}`} />
+          <div className="app-row__text">
+            <span className="app-row__name">{SOURCE_LABELS[sourceKey] ?? sourceKey}</span>
+            <span className="app-row__meta">
+              {isPending ? "Complete sign-in in your browser…" : buildMeta()}
+            </span>
+          </div>
+        </div>
+
+        <div className="app-row__right">
+          {detail.connected ? (
+            <>
+              <button
+                className="app-row__disconnect"
+                onClick={onDisconnect}
+                disabled={isDisconnecting}
+              >
+                {isDisconnecting ? "Disconnecting…" : "Disconnect"}
+              </button>
+              <span className="app-row__disconnect-note">Takes effect on next daemon cycle</span>
+            </>
+          ) : isGitHub ? (
+            <button
+              className="app-row__connect"
+              onClick={onConnectGitHub}
+              disabled={isPending}
+            >
+              {isPending ? "Waiting…" : "Connect"}
+            </button>
+          ) : (
+            <button
+              className="app-row__connect"
+              onClick={onToggleConnect}
+            >
+              {isExpanded ? "Close" : "Connect"}
+            </button>
           )}
         </div>
       </div>
 
-      <div className="app-row__right">
-        {detail.connected ? (
-          <>
-            <button
-              className="app-row__disconnect"
-              onClick={onDisconnect}
-              disabled={isDisconnecting}
-            >
-              {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
-            <span className="app-row__disconnect-note">Takes effect on next daemon cycle</span>
-          </>
-        ) : isGitHub ? (
-          <button
-            className="app-row__connect"
-            onClick={onConnectGitHub}
-            disabled={isPending}
-          >
-            {isPending ? "Waiting…" : "Connect"}
-          </button>
-        ) : null}
-      </div>
+      {!detail.connected && isExpanded && children}
     </div>
   );
 }
@@ -266,6 +274,13 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
+  const [expandedSource, setExpandedSource] = useState<"granola" | "slack" | null>(null);
+  const [connectingSource, setConnectingSource] = useState<"granola" | "slack" | null>(null);
+  const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
+  const [granolaKey, setGranolaKey] = useState("");
+  const [slackStep, setSlackStep] = useState<1 | 2>(1);
+  const [botToken, setBotToken] = useState("");
+  const [appToken, setAppToken] = useState("");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
@@ -370,10 +385,80 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
 
   // ── Tool install (from Settings) ───────────────────────────────────────────
   async function handleToolInstalled() {
+    await refreshConnectedApps();
+  }
+
+  async function refreshConnectedApps() {
     try {
       const updated = await rpc.request.getConnectedApps();
       setApps(updated);
     } catch { /* non-fatal */ }
+  }
+
+  async function handleConnectGranola() {
+    setConnectingSource("granola");
+    setSaveError(null);
+    try {
+      const result = granolaMode === "mcp"
+        ? await rpc.request.connectGranolaMCP()
+        : await rpc.request.connectGranolaAPI({ apiKey: granolaKey });
+      if (!result.ok) {
+        const fallback = granolaMode === "mcp"
+          ? "MCP registration failed. Try API key instead."
+          : "Invalid token. Check Settings → API → Personal access token in Granola.";
+        setSaveError(result.error ?? fallback);
+        return;
+      }
+      track("integration_connected", { source: "granola" });
+      await refreshConnectedApps();
+      setExpandedSource(null);
+      setGranolaKey("");
+    } catch {
+      setSaveError(granolaMode === "mcp"
+        ? "MCP registration failed. Try API key instead."
+        : "Could not connect Granola. Try again.");
+    } finally {
+      setConnectingSource(null);
+    }
+  }
+
+  async function handleOpenSlackManifest() {
+    try {
+      const result = await rpc.request.getSlackManifestUrl();
+      if (result.ok && result.url) {
+        rpc.send.openUrl({ url: result.url });
+      } else {
+        rpc.send.openUrl({ url: "https://api.slack.com/apps" });
+        setSaveError(result.error ?? "Could not load manifest. Create the app manually.");
+      }
+      setSlackStep(2);
+    } catch {
+      rpc.send.openUrl({ url: "https://api.slack.com/apps" });
+      setSaveError("Could not load manifest. Create the app manually.");
+      setSlackStep(2);
+    }
+  }
+
+  async function handleConnectSlack() {
+    setConnectingSource("slack");
+    setSaveError(null);
+    try {
+      const result = await rpc.request.connectSlack({ botToken, appToken });
+      if (!result.ok) {
+        setSaveError(result.error ?? "Could not connect Slack. Check bot permissions.");
+        return;
+      }
+      track("integration_connected", { source: "slack" });
+      await refreshConnectedApps();
+      setExpandedSource(null);
+      setSlackStep(1);
+      setBotToken("");
+      setAppToken("");
+    } catch {
+      setSaveError("Could not connect Slack. Try again.");
+    } finally {
+      setConnectingSource(null);
+    }
   }
 
   // ── GitHub connect ─────────────────────────────────────────────────────────
@@ -531,10 +616,63 @@ export function SettingsView({ activeProfile }: SettingsViewProps) {
                 sourceKey={key}
                 detail={apps.integrations[key]}
                 onDisconnect={() => void handleDisconnect(key)}
+                onToggleConnect={() => {
+                  if (key !== "github") {
+                    setExpandedSource((current) => current === key ? null : key);
+                  }
+                }}
                 onConnectGitHub={() => void handleConnectGitHub()}
                 isDisconnecting={disconnecting === key}
+                isExpanded={expandedSource === key}
                 isConnectingGitHub={connectingGitHub}
-              />
+              >
+                {key === "granola" && (
+                  <div className="app-row__connect-panel">
+                    <span className="app-row__panel-label">Connection method</span>
+                    <div className="app-row__mode-picker">
+                      <button className={granolaMode === "mcp" ? "app-row__mode--selected" : ""} onClick={() => setGranolaMode("mcp")}>MCP</button>
+                      <button className={granolaMode === "api" ? "app-row__mode--selected" : ""} onClick={() => setGranolaMode("api")}>API key</button>
+                    </div>
+                    {granolaMode === "mcp" ? (
+                      <span className="app-row__panel-help">Register Granola with Claude Code automatically. Authenticate in Claude Code on your next session.</span>
+                    ) : (
+                      <input className="app-row__input" type="password" value={granolaKey} onChange={(event) => setGranolaKey(event.target.value)} placeholder="Granola API key" aria-label="Granola API key" />
+                    )}
+                    <button className="app-row__connect app-row__panel-action" onClick={() => void handleConnectGranola()} disabled={connectingSource === "granola" || (granolaMode === "api" && !granolaKey.trim())}>
+                      {connectingSource === "granola" ? "Connecting…" : "Connect Granola"}
+                    </button>
+                  </div>
+                )}
+
+                {key === "slack" && (
+                  <div className="app-row__connect-panel">
+                    <span className="app-row__panel-label">Step {slackStep} of 2</span>
+                    {slackStep === 1 ? (
+                      <>
+                        <span className="app-row__panel-help">Create a read-only Slack app, then paste the generated tokens back here.</span>
+                        <button className="app-row__connect app-row__panel-action" onClick={() => void handleOpenSlackManifest()}>Create Slack app</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="app-row__panel-help">Install the app to your workspace, then copy the app-level token and bot token.</span>
+                        <label className="app-row__field-label" htmlFor="settings-slack-app-token">App-level token</label>
+                        <input id="settings-slack-app-token" className="app-row__input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="xapp-..." />
+                        {appToken.length > 0 && !appToken.startsWith("xapp-") && (
+                          <span className="app-row__validation">App-level tokens start with xapp-.</span>
+                        )}
+                        <label className="app-row__field-label" htmlFor="settings-slack-bot-token">Bot token</label>
+                        <input id="settings-slack-bot-token" className="app-row__input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="xoxb-..." />
+                        {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
+                          <span className="app-row__validation">Bot tokens start with xoxb-.</span>
+                        )}
+                        <button className="app-row__connect app-row__panel-action" onClick={() => void handleConnectSlack()} disabled={connectingSource === "slack" || !botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
+                          {connectingSource === "slack" ? "Connecting…" : "Connect Slack"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </InputSourceRow>
             ))}
           </div>
         </section>
