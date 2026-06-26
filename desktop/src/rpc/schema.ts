@@ -179,6 +179,78 @@ export type ConflictResolution =
   | { action: "use-source"; authoritative_agent: "claude-code" | "codex" }
   | { action: "keep-local" };
 
+// ── MCP sync types ─────────────────────────────────────────────────────────────
+
+export interface CanonicalMcp {
+  type: "http";
+  url: string;
+  headers?: Record<string, {
+    value_env?: string;
+    value_literal?: string;
+    secret: boolean;
+  }>;
+  disabled?: boolean;
+}
+
+export interface McpManifestSyncEntry {
+  synced_at: string;
+  target_name: string;
+}
+
+export interface McpManifestEntry {
+  id: string;
+  name: string;
+  source_agent: "claude-code" | "codex";
+  sync_canonical: CanonicalMcp;
+  sync_canonical_hash: string;
+  source_snapshot: { original_config: Record<string, unknown> };
+  env_var_mapping: Record<string, string>;
+  synced_to: Partial<Record<"claude-code" | "codex", McpManifestSyncEntry>>;
+  removed_at: string | null;
+}
+
+export interface McpManifest {
+  version: 4;
+  schema_version: 4;
+  mcps: Record<string, McpManifestEntry>;
+  name_conflicts: Record<string, {
+    agents: Array<"claude-code" | "codex">;
+    resolved: boolean;
+    authoritative_agent: "claude-code" | "codex" | null;
+  }>;
+}
+
+export interface PendingMcpEntry {
+  id: string;
+  name: string;
+  source_agent: "claude-code" | "codex";
+  config: Record<string, unknown>;
+  canonical: CanonicalMcp;
+  conflict?: boolean;
+}
+
+export interface McpConflict {
+  name: string;
+  "claude-code": { config: Record<string, unknown>; canonical: CanonicalMcp };
+  codex: { config: Record<string, unknown>; canonical: CanonicalMcp };
+}
+
+export interface McpDriftEntry {
+  id: string;
+  name: string;
+  source_agent: "claude-code" | "codex";
+  target_agent: "claude-code" | "codex";
+  expected: CanonicalMcp;
+  observed: Record<string, unknown>;
+}
+
+export interface McpReconcileResult {
+  resynced: string[];
+  tombstoned: string[];
+  drifted: McpDriftEntry[];
+  errors: string[];
+}
+
 export type HeadlessSetupPhase = "starting" | "running" | "writing" | "complete" | "error";
 
 export interface ProfileDetail {
@@ -405,6 +477,21 @@ export type AppRPCType = {
       /** Resolve a same-name conflict by picking an authoritative agent or keeping both local. */
       resolveSkillConflict: { params: { conflict: SameNameConflict; resolution: ConflictResolution }; response: ActionResult };
 
+      /** Return all MCP entries pending approval and any same-name conflicts. */
+      getMcpPending: { params: void; response: { pending: PendingMcpEntry[]; conflicts: McpConflict[] } };
+
+      /** Approve pending MCPs — write manifest entries and sync to target agent config. */
+      approveMcps: { params: { mcps: PendingMcpEntry[] }; response: ActionResult };
+
+      /** Resolve an MCP name conflict by picking one agent as authoritative. */
+      resolveMcpConflict: { params: { name: string; authoritative_agent: "claude-code" | "codex" }; response: ActionResult };
+
+      /** Remove a Draft-managed MCP from the manifest and both agent configs. */
+      removeMcp: { params: { id: string }; response: ActionResult };
+
+      /** Return the full MCP manifest. */
+      getMcpManifest: { params: void; response: McpManifest };
+
       /** Register Granola's MCP server with Claude Code and persist connection status. */
       connectGranolaMCP: { params: void; response: ActionResult };
 
@@ -484,6 +571,15 @@ export type AppRPCType = {
 
       /** A newly installed skill was made available to the other agent. */
       skillsChanged: { count: number };
+
+      /** New MCPs were detected and are waiting for user approval in Settings > MCPs. */
+      mcpsPendingApproval: { pending: PendingMcpEntry[] };
+
+      /** Same-name MCP conflict detected — both agents have an entry with the same name. */
+      mcpsConflict: { conflicts: McpConflict[] };
+
+      /** Approved MCPs drifted from their canonical form in a target agent. */
+      mcpsDrifted: { drifted: McpDriftEntry[] };
 
       /** New skills were detected and are waiting for user approval in Settings > Skills. */
       skillsPendingApproval: { pending: PendingSkillEntry[] };

@@ -47,6 +47,16 @@ import {
   stopActiveProfileWatch,
 } from "./main/watchers/activeProfile";
 import { startSkillWatch, stopSkillWatch } from "./main/watchers/skills";
+import { startMcpWatch, stopMcpWatch } from "./main/watchers/mcps";
+import {
+  detectMcpPending,
+  approveMcps as approveMcpsCore,
+} from "draft-core/sync/mcp-sync";
+import {
+  readMcpManifest,
+  writeMcpManifest,
+  tombstoneMcp,
+} from "draft-core/sync/manifest";
 import type { AppRPCType } from "./rpc/schema";
 
 // Key + host baked in at build time via electrobun.config.ts define → process.env.
@@ -836,6 +846,48 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return { ok: false, error: "Unknown resolution action." };
       },
 
+      getMcpPending: async () => {
+        return detectMcpPending();
+      },
+
+      approveMcps: async ({ mcps }) => {
+        try {
+          await approveMcpsCore(mcps);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to approve MCPs." };
+        }
+      },
+
+      resolveMcpConflict: async ({ name, authoritative_agent }) => {
+        try {
+          const manifest = readMcpManifest();
+          manifest.name_conflicts[name] = {
+            agents: ["claude-code", "codex"],
+            resolved: true,
+            authoritative_agent,
+          };
+          writeMcpManifest(manifest);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to resolve conflict." };
+        }
+      },
+
+      removeMcp: async ({ id }) => {
+        try {
+          tombstoneMcp(id);
+          // Reconcile will handle removing from target configs on next watcher cycle
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to remove MCP." };
+        }
+      },
+
+      getMcpManifest: async () => {
+        return readMcpManifest();
+      },
+
       connectGranolaMCP: async () => {
         const reg = await registerGranolaMCP();
         if (!reg.ok) return reg;
@@ -1278,6 +1330,7 @@ tray.on("tray-clicked", (e) => {
     stopProposalWatch();
     stopActiveProfileWatch();
     stopSkillWatch();
+    stopMcpWatch();
     process.exit(0);
   }
 });
@@ -1312,9 +1365,8 @@ setTimeout(async () => {
   startHeartbeatWatch();
   startProposalWatch(getActiveProfile(), watcherHandlers);
 
-  // Skill watcher auto-syncs skills between agents. Defer during onboarding so the
-  // scan-import step controls which skills get synced. For returning users, start
-  // immediately.
+  // Skill and MCP watchers auto-sync between agents. Defer during onboarding so the
+  // scan-import step controls what gets synced. For returning users, start immediately.
   const appState = getAppState();
   if (appState.userState !== "no-profile") {
     startSkillWatch({
@@ -1331,6 +1383,19 @@ setTimeout(async () => {
         // Reconcile result logged internally; no UI action needed unless repaired > 0
         // (onSkillsChanged is called separately when repaired.length > 0)
       },
+    });
+
+    startMcpWatch({
+      onMcpsPending: (pending) => {
+        try { rpc.send.mcpsPendingApproval({ pending }); } catch {}
+      },
+      onMcpsConflict: (conflicts) => {
+        try { rpc.send.mcpsConflict({ conflicts }); } catch {}
+      },
+      onMcpsDrifted: (drifted) => {
+        try { rpc.send.mcpsDrifted({ drifted }); } catch {}
+      },
+      onReconciled: (_result) => {},
     });
   }
 
