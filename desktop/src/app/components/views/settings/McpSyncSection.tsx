@@ -335,7 +335,7 @@ export function McpSyncSection({ onError }: McpSyncSectionProps) {
   const isEmpty = !isLoading && pending.length === 0 && conflicts.length === 0 && syncedMcps.length === 0;
 
   return (
-    <section className="settings__section">
+    <section className="settings__section settings__section--tool-sync settings__section--mcp-sync">
       <div className="settings__section-header">
         <h2 className="settings__section-label">Sync MCP Servers</h2>
         <button

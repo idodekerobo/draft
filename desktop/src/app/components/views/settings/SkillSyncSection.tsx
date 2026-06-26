@@ -379,7 +379,7 @@ export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
   const isEmpty = !isLoading && (skills ?? []).length === 0 && pending.length === 0 && conflicts.length === 0;
 
   return (
-    <section className="settings__section">
+    <section className="settings__section settings__section--tool-sync">
       <div className="settings__section-header">
         <h2 className="settings__section-label">Sync Skills</h2>
         <button
