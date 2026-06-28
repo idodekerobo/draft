@@ -938,9 +938,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getAvailableRunners: async () => {
+        const extendedPath = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin";
         const [claude, codex] = await Promise.all([
-          capture(["which", "claude"]).then((r) => r.exitCode === 0),
-          capture(["which", "codex"]).then((r) => r.exitCode === 0),
+          capture(["which", "claude"], { env: { PATH: extendedPath } }).then((r) => r.exitCode === 0),
+          capture(["which", "codex"],  { env: { PATH: extendedPath } }).then((r) => r.exitCode === 0),
         ]);
         return { runners: [{ name: "claude" as const, installed: claude }, { name: "codex" as const, installed: codex }] };
       },
