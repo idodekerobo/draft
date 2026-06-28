@@ -9,6 +9,7 @@ import {
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "draft-core/exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
@@ -1366,6 +1367,8 @@ setTimeout(async () => {
   if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
     setNotificationsEnabled(false);
   }
+
+  await runMigrations();
 
   // Start heartbeat staleness watcher.
   // 500ms delay ensures app is fully initialised before the initial mtime check.

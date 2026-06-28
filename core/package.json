@@ -20,7 +20,8 @@
     "./sync/atomic-write":    "./src/sync/atomic-write.ts",
     "./sync/manifest":        "./src/sync/manifest.ts",
     "./sync/mcp-sync":        "./src/sync/mcp-sync.ts",
-    "./secrets":              "./src/secrets.ts"
+    "./secrets":              "./src/secrets.ts",
+    "./migrations/runner":    "./src/migrations/runner.ts"
   },
   "scripts": {
     "test": "bun test"

@@ -47,6 +47,7 @@ export interface DraftConfig {
   tools: Partial<Record<InstalledTool, ToolEntry>>;
   last_update_check?: UpdateCheckEntry;
   analytics?: AnalyticsConfig;
+  last_migration?: number;
 }
 
 /**
