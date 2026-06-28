@@ -218,8 +218,10 @@ try {
 
 log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
 phTrack('daemon_started');
-await runMigrations();
-reconcileSkills();
+void (async () => {
+  await runMigrations();
+  reconcileSkills();
+})();
 
 // ── Integration pollers (interval-based) ─────────────────────────────────────
 // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
