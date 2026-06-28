@@ -61,7 +61,7 @@ export async function spawnHeadlessAgent(
   opts: SpawnHeadlessAgentOpts,
 ): Promise<SpawnHeadlessAgentResult> {
   const runner = opts.runner ?? "claude";
-  const timeoutMs = opts.timeoutMs ?? 120_000;
+  const timeoutMs = opts.timeoutMs ?? 1_500_000;
   const notify = opts.onProgress ?? (() => {});
   const runnerName = runner === "claude" ? "Claude Code" : "Codex";
 
