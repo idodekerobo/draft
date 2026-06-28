@@ -54,19 +54,32 @@ for subdir in [
 
 Write \`context/<dim>/index.md\` for each of: company, product, team, priorities.
 
-Each file must use this exact frontmatter format:
+Each file must have two parts:
+
+1. **Frontmatter \`description\`** — the most important facts for this dimension, written concisely. This is loaded into the agent's context every session, so include what matters most — not everything, but nothing trivial either.
+2. **Markdown body** — the full detailed record for this dimension. More context, history, open questions, supporting detail. This is what gets rendered in the UI and read when deeper context is needed.
+
+Use this exact structure:
 
 \`\`\`
 ---
 name: <dim>
 description: >
-  <2–10 sentences, specific and factual. This field is loaded every session — write it like a briefing note.>
+  <Most important facts about this dimension, concise. Loaded into agent context every session.>
 last_updated: <today's date YYYY-MM-DD>
 source: /headless-setup
 ---
+
+# <Dim>
+
+<Full detailed content. Use headers and bullet points. More than the description — this is the complete picture.>
 \`\`\`
 
-For \`priorities/index.md\`, also include a full body section with active TODOs and strategic goals derived from the source context.
+Body content by dimension:
+- **company**: name, what they build, business model, stage, target market, key constraints
+- **product**: product name, problem it solves, target user, key features, current state, open hypotheses
+- **team**: who's on the team, roles, structure, how decisions get made
+- **priorities**: active TODOs, current sprint goal, blockers, what success looks like
 
 ## Rules
 
