@@ -2337,6 +2337,8 @@ button {
 .onboarding__mcp-desc { font-size: var(--font-size-secondary); color: var(--color-text-secondary); }
 .onboarding__mcp-list { width: 100%; border-top: 1px solid var(--color-border); }
 .onboarding__mcp-synced { color: var(--color-status-green); font-size: var(--font-size-secondary); }
+.onboarding__synced-notice { font-size: var(--font-size-micro); color: var(--color-text-tertiary); margin: -2px 0 10px; }
+.onboarding__synced-count { color: var(--color-status-green); font-weight: 600; }
 .onboarding__mcp-select-toggle { background: transparent; border: none; color: var(--color-accent-blue); font-size: var(--font-size-secondary); font-family: var(--font-ui); cursor: pointer; padding: 0; }
 
 @keyframes skeleton-pulse { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.3; } }

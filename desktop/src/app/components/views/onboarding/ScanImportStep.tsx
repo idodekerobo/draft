@@ -106,6 +106,10 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
   const [pendingMcps, setPendingMcps]     = useState<PendingMcpEntry[]>([]);
   const [selectedMcps, setSelectedMcps]   = useState<Set<string>>(new Set());
 
+  // Already-synced counts (shown as context to the user)
+  const [syncedCounts, setSyncedCounts] = useState<{ "claude-code": number; codex: number } | null>(null);
+  const [syncedMcpCounts, setSyncedMcpCounts] = useState<{ "claude-code": number; codex: number } | null>(null);
+
   // Shared async state
   const [syncing, setSyncing] = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -117,17 +121,33 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
     setError(null);
     setScanErrors([]);
     try {
-      const [skillsResult, mcpResult] = await Promise.all([
+      const [skillsResult, mcpResult, mcpManifest] = await Promise.all([
         rpc.request.scanSkills(),
         rpc.request.getMcpPending(),
+        rpc.request.getMcpManifest(),
       ]);
-      if (skillsResult.skills.length === 0 && mcpResult.pending.length === 0) {
+      const unsyncedSkills = skillsResult.skills.filter((s) => !s.synced);
+      const alreadySynced = skillsResult.skills.filter((s) => s.synced);
+      if (alreadySynced.length > 0) {
+        setSyncedCounts({
+          "claude-code": alreadySynced.filter((s) => s.agent === "claude-code").length,
+          codex: alreadySynced.filter((s) => s.agent === "codex").length,
+        });
+      }
+      const activeMcps = Object.values(mcpManifest.mcps).filter((e) => !e.removed_at);
+      if (activeMcps.length > 0) {
+        setSyncedMcpCounts({
+          "claude-code": activeMcps.filter((e) => e.source_agent === "claude-code").length,
+          codex: activeMcps.filter((e) => e.source_agent === "codex").length,
+        });
+      }
+      if (unsyncedSkills.length === 0 && mcpResult.pending.length === 0) {
         onNext();
         return;
       }
-      setSkills(skillsResult.skills);
+      setSkills(unsyncedSkills);
       setScanErrors(skillsResult.scanErrors ?? []);
-      setSelected(new Set(skillsResult.skills.map(skillKey)));
+      setSelected(new Set(unsyncedSkills.map(skillKey)));
       const sorted = [...mcpResult.pending].sort((a, b) => a.name.localeCompare(b.name));
       setPendingMcps(sorted);
       setSelectedMcps(new Set(sorted.map((m) => m.id)));
@@ -296,6 +316,26 @@ export function ScanImportStep({ stepNum, totalSteps, onBack, onNext }: ScanImpo
           : `Draft found ${total} skill${total === 1 ? "" : "s"}${pendingMcps.length > 0 ? ` and ${pendingMcps.length} MCP server${pendingMcps.length !== 1 ? "s" : ""}` : ""} across your agent tools. Select what to import.`
         }
       </p>
+      {(syncedCounts || syncedMcpCounts) && (
+        <p className="onboarding__synced-notice">
+          {"Already syncing "}
+          {syncedCounts && syncedCounts["claude-code"] > 0 && (
+            <><span className="onboarding__synced-count">{syncedCounts["claude-code"]}</span>{" skills from Claude Code"}</>
+          )}
+          {syncedCounts && syncedCounts["claude-code"] > 0 && syncedCounts.codex > 0 && " · "}
+          {syncedCounts && syncedCounts.codex > 0 && (
+            <><span className="onboarding__synced-count">{syncedCounts.codex}</span>{" skills from Codex"}</>
+          )}
+          {(syncedCounts && (syncedCounts["claude-code"] > 0 || syncedCounts.codex > 0)) && syncedMcpCounts && (syncedMcpCounts["claude-code"] > 0 || syncedMcpCounts.codex > 0) && " · "}
+          {syncedMcpCounts && syncedMcpCounts["claude-code"] > 0 && (
+            <><span className="onboarding__synced-count">{syncedMcpCounts["claude-code"]}</span>{" MCP servers from Claude Code"}</>
+          )}
+          {syncedMcpCounts && syncedMcpCounts["claude-code"] > 0 && syncedMcpCounts.codex > 0 && " · "}
+          {syncedMcpCounts && syncedMcpCounts.codex > 0 && (
+            <><span className="onboarding__synced-count">{syncedMcpCounts.codex}</span>{" MCP servers from Codex"}</>
+          )}
+        </p>
+      )}
 
       <ScanErrorBoundary key={retryKey.current} onSkip={onNext} onRetry={() => { retryKey.current++; void loadSkills(); }}>
         {isLoading && <SkeletonRows />}
