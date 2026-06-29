@@ -25,6 +25,13 @@ const DRAFT_FAILED     = `${DRAFT_BACKGROUND}/failed`;
 const DRAFT_LOGS       = `${DRAFT_BACKGROUND}/logs`;
 const STATE_DIR        = `${DRAFT_BACKGROUND}/state`;
 
+// Per-profile local config — read once at startup
+const _localCfgResult = readLocalConfig(DRAFT_WORKSPACE);
+const _localCfg       = _localCfgResult.ok ? _localCfgResult.config : {};
+const CODEX_SCAN_ENABLED       = _localCfg.codexScanIntervalMinutes !== null;
+const CODEX_SCAN_INTERVAL_MS   = (_localCfg.codexScanIntervalMinutes ?? 360) * 60_000;
+const CLAUDE_CODE_SYNTHESIS_ON = _localCfg.claudeCodeSynthesis ?? true;
+
 // Polling intervals — env var overrides with same defaults as config.sh
 const PENDING_POLL_MS   = parseInt(process.env.DRAFT_PENDING_POLL   ?? '5')     * 1000;
 const GRANOLA_POLL_MS   = parseInt(process.env.DRAFT_GRANOLA_POLL   ?? '900')   * 1000;
@@ -208,6 +215,14 @@ async function processJob(jobPath: string) {
 
   // Route to synthesize.ts module (replaced synthesize.sh)
   const jobSource = String(job.source ?? 'claude-code-session');
+
+  // Drop Claude Code session jobs if synthesis is disabled in settings
+  if (jobSource === 'claude-code-session' && !CLAUDE_CODE_SYNTHESIS_ON) {
+    log('info', `job ${jobName}: claude-code synthesis disabled — dropping`);
+    try { unlinkSync(processingPath); } catch {}
+    return;
+  }
+
   const result = await synthesize(processingPath);
   if (result.status === 'success' || result.status === 'skipped') {
     if (jobSource === 'github' && result.status === 'success') {
@@ -329,6 +344,31 @@ setInterval(() => {
     : ['bash', script];
   Bun.spawn(cmd, { stdin: 'ignore', stdout: logFd, stderr: logFd });
 }, GITHUB_POLL_MS);
+
+// Codex session scanner
+function runCodexScan() {
+  const jsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.js`;
+  const tsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.ts`;
+  const shScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.sh`;
+  const script = existsSync(jsScript) ? jsScript : existsSync(tsScript) ? tsScript : shScript;
+  if (!existsSync(script)) return;
+  log('info', `codex: starting scan (interval=${CODEX_SCAN_INTERVAL_MS / 60_000}m)`);
+  const cmd = script.endsWith('.sh') ? ['bash', script] : ['bun', 'run', script];
+  Bun.spawn(cmd, {
+    stdin: 'ignore',
+    stdout: logFd,
+    stderr: logFd,
+    env: {
+      ...process.env,
+      DRAFT_CODEX_SCAN_INTERVAL_MS: String(CODEX_SCAN_INTERVAL_MS),
+    },
+  });
+}
+
+if (CODEX_SCAN_ENABLED) {
+  setInterval(runCodexScan, CODEX_SCAN_INTERVAL_MS);
+  runCodexScan(); // immediate first scan on startup
+}
 
 // Skills are user-owned files; reconcile separately from synthesis so they keep
 // syncing while the desktop app is closed.
