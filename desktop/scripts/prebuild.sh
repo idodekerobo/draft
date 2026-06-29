@@ -31,6 +31,57 @@ log "Copying background/..."
 cp -r "$REPO_ROOT/background/." "$ASSETS_DIR/background/"
 log "  Done"
 
+# Bundle entrypoints that run after installation, outside the monorepo. Raw
+# TypeScript there cannot resolve workspace packages such as draft-core.
+log "Bundling Codex runtime entrypoints..."
+bun build \
+  --target=bun \
+  --outfile "$ASSETS_DIR/background/integrations/codex/codex-scanner.js" \
+  "$REPO_ROOT/background/integrations/codex/codex-scanner.ts"
+bun build \
+  --target=bun \
+  --outfile "$ASSETS_DIR/background/synthesizers/codex-session.js" \
+  "$REPO_ROOT/background/synthesizers/codex-session.ts"
+bun build \
+  --target=bun \
+  --outfile "$ASSETS_DIR/background/intelligence/codex.js" \
+  "$REPO_ROOT/background/intelligence/codex.ts"
+
+# Smoke-test the staged bundles from a HOME with no monorepo node_modules.
+SMOKE_HOME=$(mktemp -d)
+trap 'rm -rf "$SMOKE_HOME"' EXIT
+
+# Scanner exits 0 normally (no sessions dir = nothing to scan), so we can't use
+# exit status to detect failure. Capture output and check for module errors only.
+set +e
+scanner_output=$(HOME="$SMOKE_HOME" bun run \
+  "$ASSETS_DIR/background/integrations/codex/codex-scanner.js" 2>&1)
+set -e
+if [[ "$scanner_output" == *"Cannot find module"* ]]; then
+  echo "[prebuild] ERROR: scanner smoke test failed" >&2
+  echo "$scanner_output" >&2
+  exit 1
+fi
+
+# Synthesizer and intelligence adapter both require args and exit non-zero without
+# them — so a clean exit (status 0) or a module error both indicate failure.
+for runtime_entry in \
+  "$ASSETS_DIR/background/synthesizers/codex-session.js" \
+  "$ASSETS_DIR/background/intelligence/codex.js"; do
+  set +e
+  smoke_output=$(HOME="$SMOKE_HOME" bun run "$runtime_entry" 2>&1)
+  smoke_status=$?
+  set -e
+  if [ "$smoke_status" -eq 0 ] || [[ "$smoke_output" == *"Cannot find module"* ]]; then
+    echo "[prebuild] ERROR: runtime smoke test failed for $runtime_entry" >&2
+    echo "$smoke_output" >&2
+    exit 1
+  fi
+done
+rm -rf "$SMOKE_HOME"
+trap - EXIT
+log "  Done"
+
 # ── 2. Copy plugin assets ──────────────────────────────────────────────────────
 
 log "Copying cli-agent-plugin/..."
