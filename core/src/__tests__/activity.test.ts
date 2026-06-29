@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync } from "fs";
+import { join } from "path";
 import { openActivityDb, insertRun, queryRuns } from "../db/activity";
 import type { ActivityRun } from "../db/activity";
 
@@ -19,6 +21,7 @@ function makeRun(overrides: Partial<ActivityRun> = {}): ActivityRun {
     proposalsGenerated: 1,
     skipReason: null,
     errorMsg: null,
+    transcriptPath: null,
     ...overrides,
   };
 }
@@ -42,6 +45,36 @@ describe("openActivityDb", () => {
     db1.close();
     const db2 = openActivityDb(TMP);
     db2.close();
+  });
+
+  it("adds transcript_path to a legacy runs table", () => {
+    mkdirSync(TMP, { recursive: true });
+    const legacyDb = new Database(join(TMP, "activity.db"), { create: true });
+    legacyDb.exec(`
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        profile TEXT NOT NULL,
+        source TEXT NOT NULL,
+        session_id TEXT,
+        cwd TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL,
+        duration_ms INTEGER,
+        proposals_generated INTEGER DEFAULT 0,
+        skip_reason TEXT,
+        error_msg TEXT
+      );
+    `);
+    legacyDb.close();
+
+    const db = openActivityDb(TMP);
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
+    expect(columns.some(({ name }) => name === "transcript_path")).toBe(true);
+    const run = makeRun({ transcriptPath: "/tmp/session.jsonl" });
+    insertRun(db, run);
+    expect(queryRuns(db)[0].transcriptPath).toBe("/tmp/session.jsonl");
+    db.close();
   });
 });
 
@@ -87,7 +120,13 @@ describe("insertRun + queryRuns", () => {
   it("maps snake_case columns to camelCase fields", () => {
     mkdirSync(TMP, { recursive: true });
     const db = openActivityDb(TMP);
-    const run = makeRun({ status: "skipped", skipReason: "abrupt_exit", durationMs: null, endedAt: null });
+    const run = makeRun({
+      status: "skipped",
+      skipReason: "abrupt_exit",
+      durationMs: null,
+      endedAt: null,
+      transcriptPath: "/tmp/session.jsonl",
+    });
     insertRun(db, run);
     const [row] = queryRuns(db);
     expect(row.sessionId).toBe(run.sessionId);
@@ -95,6 +134,7 @@ describe("insertRun + queryRuns", () => {
     expect(row.durationMs).toBeNull();
     expect(row.skipReason).toBe("abrupt_exit");
     expect(row.errorMsg).toBeNull();
+    expect(row.transcriptPath).toBe("/tmp/session.jsonl");
     db.close();
   });
 });

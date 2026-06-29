@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS runs (
   duration_ms         INTEGER,
   proposals_generated INTEGER DEFAULT 0,
   skip_reason         TEXT,
-  error_msg           TEXT
+  error_msg           TEXT,
+  transcript_path     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_profile_started ON runs(profile, started_at DESC);
 `;
