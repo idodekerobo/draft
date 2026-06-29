@@ -1,12 +1,15 @@
 // desktop/src/main/watchers/skills.ts — cross-agent skill watcher with approval gate
 
-import { existsSync, watch } from "fs";
+import { existsSync, mkdirSync, readdirSync, lstatSync, watch } from "fs";
 import { homedir } from "os";
+import { join, dirname } from "path";
 import {
   detectPending,
   reconcileSkillManifest,
   hashSkillDir,
   scanSkillDirectories,
+  installTeamSkills,
+  uninstallTeamSkill,
   type PendingSkillEntry,
   type SameNameConflict,
   type ReconcileResult,
@@ -23,30 +26,107 @@ export interface SkillWatchHandlers {
   /** Fired when symlinks are created after approval (for UI badge count). */
   onSkillsChanged: (count: number) => void;
   onReconciled: (result: ReconcileResult) => void;
+  /** Fired when team skills are installed from the workspace. */
+  onTeamSkillsChanged?: (count: number) => void;
 }
 
 export interface SkillWatchOptions {
   claudeSkillsDir?: string;
   codexSkillsDir?: string;
   manifestPath?: string;
+  /** Active profile name — used to watch workspace/skills/ and install team skills. */
+  activeProfile?: string;
+  workspacesDir?: string;
 }
 
 let watchers: Array<ReturnType<typeof watch>> = [];
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 let started = false;
+let currentHandlers: SkillWatchHandlers | null = null;
+let currentOptions: SkillWatchOptions | undefined;
 
 // Track known skills by compound key + their directory hash (for rename detection)
 let knownSkillKeys = new Set<string>();
 let knownHashes = new Map<string, string>(); // "agent:dirPath" → skill_dir_hash
 
+// Track known workspace skills by name (for team skill change detection)
+let knownWorkspaceSkillNames = new Set<string>();
+
 function skillKey(skill: ScannedSkill): string {
   return `${skill.agent}:${skill.dirPath}`;
+}
+
+function getWorkspaceSkillsDir(options?: SkillWatchOptions): string | null {
+  if (!options?.activeProfile) return null;
+  const wsDir = options.workspacesDir ?? `${homedir()}/.draft/workspaces`;
+  return join(wsDir, options.activeProfile, "skills");
+}
+
+function scanWorkspaceSkillNames(workspaceSkillsDir: string): Set<string> {
+  const names = new Set<string>();
+  try {
+    const entries = readdirSync(workspaceSkillsDir);
+    for (const name of entries) {
+      try {
+        const stat = lstatSync(join(workspaceSkillsDir, name));
+        if (stat.isDirectory()) names.add(name);
+      } catch { /* skip */ }
+    }
+  } catch { /* dir missing or unreadable */ }
+  return names;
+}
+
+function handleWorkspaceSkillsChange(handlers: SkillWatchHandlers, options?: SkillWatchOptions): void {
+  const wsSkillsDir = getWorkspaceSkillsDir(options);
+  if (!wsSkillsDir || !options?.activeProfile) return;
+
+  const currentNames = scanWorkspaceSkillNames(wsSkillsDir);
+
+  // Detect newly added workspace skills
+  const addedNames = [...currentNames].filter((n) => !knownWorkspaceSkillNames.has(n));
+  // Detect removed workspace skills
+  const removedNames = [...knownWorkspaceSkillNames].filter((n) => !currentNames.has(n));
+
+  knownWorkspaceSkillNames = currentNames;
+
+  if (addedNames.length > 0) {
+    const inputs = addedNames.map((name) => ({
+      name,
+      sourcePath: join(wsSkillsDir, name),
+    }));
+    try {
+      const result = installTeamSkills(inputs, options.activeProfile!, {
+        claudeSkillsDir: options.claudeSkillsDir,
+        codexSkillsDir: options.codexSkillsDir,
+        manifestPath: options.manifestPath,
+      });
+      if (result.installed.length > 0) {
+        handlers.onSkillsChanged(result.installed.length);
+        handlers.onTeamSkillsChanged?.(result.installed.length);
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  if (removedNames.length > 0 && options.activeProfile) {
+    try {
+      for (const name of removedNames) {
+        uninstallTeamSkill(options.activeProfile, name, {
+          claudeSkillsDir: options.claudeSkillsDir,
+          codexSkillsDir: options.codexSkillsDir,
+          manifestPath: options.manifestPath,
+        });
+      }
+      handlers.onSkillsChanged(removedNames.length);
+    } catch { /* non-fatal */ }
+  }
 }
 
 export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWatchOptions): void {
   if (started) return;
   started = true;
+  currentHandlers = handlers;
+  currentOptions = options;
 
   knownSkillKeys.clear();
   knownHashes.clear();
@@ -63,6 +143,25 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
       handlers.onSkillsChanged(reconcileResult.repaired.length);
     }
   } catch { /* reconcile failure must not prevent watcher from starting */ }
+
+  // Install any team skills from workspace that aren't yet in both agents
+  const wsSkillsDir = getWorkspaceSkillsDir(options);
+  if (wsSkillsDir && options?.activeProfile) {
+    knownWorkspaceSkillNames = scanWorkspaceSkillNames(wsSkillsDir);
+    if (knownWorkspaceSkillNames.size > 0) {
+      const inputs = [...knownWorkspaceSkillNames].map((name) => ({
+        name,
+        sourcePath: join(wsSkillsDir, name),
+      }));
+      try {
+        installTeamSkills(inputs, options.activeProfile, {
+          claudeSkillsDir: options.claudeSkillsDir,
+          codexSkillsDir: options.codexSkillsDir,
+          manifestPath: options.manifestPath,
+        });
+      } catch { /* non-fatal */ }
+    }
+  }
 
   // Populate initial known state
   const initialSkills = scanSkillDirectories({
@@ -143,6 +242,29 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
     }
   }
 
+  // Watch the workspace directory (parent of skills/) rather than skills/ directly.
+  // draft load uses rmSync+cpSync which deletes and recreates skills/ with a new inode,
+  // breaking any watcher placed on the old skills/ directory.
+  if (wsSkillsDir) {
+    const workspaceDir = dirname(wsSkillsDir);
+    try {
+      mkdirSync(workspaceDir, { recursive: true });
+    } catch { /* non-fatal */ }
+    if (existsSync(workspaceDir)) {
+      try {
+        watchers.push(watch(workspaceDir, { persistent: false }, (_event, filename) => {
+          if (filename && filename !== "skills") return;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            debounceTimer = null;
+            handleWorkspaceSkillsChange(handlers, options);
+            reconcile();
+          }, DEBOUNCE_MS);
+        }));
+      } catch { /* non-fatal */ }
+    }
+  }
+
   // Run an initial pending check after startup reconcile
   try {
     const { pending, conflicts } = detectPending({
@@ -157,7 +279,11 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
   // Fallback poll: fs.watch can miss events on networked or sandboxed paths
   fallbackTimer = setInterval(() => {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(reconcile, DEBOUNCE_MS);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      if (wsSkillsDir) handleWorkspaceSkillsChange(handlers, options);
+      reconcile();
+    }, DEBOUNCE_MS);
   }, FALLBACK_POLL_MS);
 }
 
@@ -170,5 +296,20 @@ export function stopSkillWatch(): void {
   fallbackTimer = null;
   knownSkillKeys.clear();
   knownHashes.clear();
+  knownWorkspaceSkillNames.clear();
+  currentHandlers = null;
+  currentOptions = undefined;
   started = false;
+}
+
+/**
+ * Restart the skill watcher with a new active profile.
+ * Called from the switchProfile RPC handler after profile switch completes.
+ */
+export function restartSkillWatchWithProfile(newProfile: string): void {
+  if (!currentHandlers) return;
+  const handlers = currentHandlers;
+  const options = { ...currentOptions, activeProfile: newProfile };
+  stopSkillWatch();
+  startSkillWatch(handlers, options);
 }
