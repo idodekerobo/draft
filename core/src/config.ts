@@ -111,6 +111,7 @@ export function getInstalledTools(): InstalledTool[] {
 // ── Secrets schema ─────────────────────────────────────────────────────────────
 
 export interface Secrets {
+  github_connected?: boolean;
   granola_mode?: "mcp" | "api";
   granola_api_token?: string;
   slack_bot_token?: string;
@@ -348,6 +349,16 @@ export interface LocalConfig {
   last_published?: string;
   lastLoadCursor?: number;
   disabledContextSections?: string[];
+  team_assets?: {
+    baseline?: {
+      skills_hash: string;
+      mcp_hash: string;
+    };
+    last_remote?: {
+      skills_hash: string;
+      mcp_hash: string;
+    };
+  };
 }
 
 export type LocalConfigResult =
