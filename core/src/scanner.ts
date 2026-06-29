@@ -8,6 +8,7 @@ import { createHash } from "crypto";
 import {
   existsSync, readdirSync, readFileSync, lstatSync, statSync, symlinkSync,
   mkdirSync, writeFileSync, readlinkSync, renameSync, unlinkSync, realpathSync,
+  cpSync, rmSync,
 } from "fs";
 import { join, resolve, dirname } from "path";
 import { homedir } from "os";
@@ -64,6 +65,11 @@ export interface SkillManifestEntry {
   status: "pending" | "approved" | "conflict" | "tombstoned";
   synced_to: Partial<Record<Agent, SkillManifestSyncEntry>>;
   removed_at: string | null;
+  /** Whether this entry was created by the user locally or shared via the team workspace. */
+  source: "user" | "team";
+  profile?: string;
+  install_state?: "installed" | "pending-secrets" | "conflict";
+  conflict_reason?: string;
 }
 
 export interface SkillManifest {
@@ -440,7 +446,14 @@ export function readSkillManifest(manifestPath?: string): SkillManifest {
   try {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw);
-    if (parsed?.schema_version === 4) return parsed as SkillManifest;
+    if (parsed?.schema_version === 4) {
+      const manifest = parsed as SkillManifest;
+      // Normalize: entries written before the source field was added default to "user"
+      for (const entry of Object.values(manifest.skills)) {
+        if (!entry.source) entry.source = "user";
+      }
+      return manifest;
+    }
   } catch { /* missing or malformed */ }
   return emptyManifest();
 }
@@ -543,12 +556,40 @@ export function reconcileSkillManifest(opts?: ScanSkillOpts & { manifestPath?: s
   const updated: SkillManifest = { ...manifest, skills: { ...manifest.skills } };
   let dirty = false;
 
+  // Clean up stale .draft-backup dirs left by interrupted promoteSkillToTeam
+  const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
+  const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
+  for (const dir of [claudeDir, codexDir]) {
+    try {
+      const entries = readdirSync(dir);
+      for (const name of entries) {
+        if (name.endsWith(".draft-backup")) {
+          const backupPath = join(dir, name);
+          // Only clean up if the corresponding symlink was successfully created
+          const originalName = name.slice(0, -".draft-backup".length);
+          const originalPath = join(dir, originalName);
+          try {
+            const stat = lstatSync(originalPath);
+            if (stat.isSymbolicLink()) {
+              rmSync(backupPath, { recursive: true, force: true });
+            }
+          } catch { /* original path doesn't exist — leave backup for manual inspection */ }
+        }
+      }
+    } catch { /* dir doesn't exist or can't be read */ }
+  }
+
   for (const [id, entry] of Object.entries(manifest.skills)) {
     if (entry.removed_at !== null) continue; // tombstoned — skip
     if (entry.status !== "approved") continue; // only reconcile approved entries
 
     const sourceExists = (() => {
-      try { const s = lstatSync(entry.source_path); return !s.isSymbolicLink() && s.isDirectory(); }
+      // Team skills: source_path is a real dir in the workspace (symlinks are allowed targets)
+      // User skills: source_path must be a real directory (not a symlink)
+      try {
+        const s = lstatSync(entry.source_path);
+        return entry.source === "team" ? s.isDirectory() : (!s.isSymbolicLink() && s.isDirectory());
+      }
       catch { return false; }
     })();
 
@@ -665,6 +706,7 @@ export function createSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
           },
         },
         removed_at: null,
+        source: existing?.source ?? "user",
       };
       result.created.push(linkPath);
     } catch (e: unknown) {
@@ -760,3 +802,445 @@ export function removeSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
   return result;
 }
 
+// ── Team skill management ─────────────────────────────────────────────────────
+
+export interface TeamSkillInput {
+  name: string;
+  sourcePath: string;
+}
+
+export interface InstallTeamSkillsOpts {
+  claudeSkillsDir?: string;
+  codexSkillsDir?: string;
+  manifestPath?: string;
+}
+
+export interface InstallTeamSkillsResult {
+  installed: string[];
+  skipped: string[];
+  errors: string[];
+  conflicts: Array<{ name: string; reason: "personal-name-collision" | "target-modified" }>;
+}
+
+/**
+ * Install team skills from workspace into both agent skill directories as symlinks.
+ * No approval gate — these were placed in the workspace intentionally by the curator.
+ * Writes manifest entries with source: "team", both synced_to populated.
+ */
+export function installTeamSkills(
+  skills: TeamSkillInput[],
+  profile: string,
+  opts?: InstallTeamSkillsOpts,
+): InstallTeamSkillsResult {
+  const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
+  const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
+  const manifestPath = opts?.manifestPath ?? DEFAULT_MANIFEST_PATH;
+
+  const result: InstallTeamSkillsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  const manifest = readSkillManifest(manifestPath);
+  const now = new Date().toISOString();
+  let dirty = false;
+
+  for (const { name, sourcePath } of skills) {
+    const absoluteSource = resolve(sourcePath);
+    const claudeLinkPath = join(claudeDir, name);
+    const codexLinkPath = join(codexDir, name);
+    const id = `team:${profile}:${name}`;
+
+    if (!existsSync(join(absoluteSource, "SKILL.md"))) {
+      result.errors.push(`${name}: source skill has no SKILL.md`);
+      continue;
+    }
+
+    const inspectTarget = (linkPath: string): "missing" | "owned" | "conflict" => {
+      try {
+        const stat = lstatSync(linkPath);
+        if (!stat.isSymbolicLink()) return "conflict";
+        const actual = realpathSync(resolve(dirname(linkPath), readlinkSync(linkPath)));
+        return actual === realpathSync(absoluteSource) ? "owned" : "conflict";
+      } catch (e) {
+        return (e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "conflict";
+      }
+    };
+
+    const claudeState = inspectTarget(claudeLinkPath);
+    const codexState = inspectTarget(codexLinkPath);
+    if (claudeState === "conflict" || codexState === "conflict") {
+      const conflictingPaths = [
+        ...(claudeState === "conflict" ? [claudeLinkPath] : []),
+        ...(codexState === "conflict" ? [codexLinkPath] : []),
+      ];
+      result.skipped.push(...conflictingPaths);
+      result.conflicts.push({ name, reason: "personal-name-collision" });
+      manifest.skills[id] = {
+        id,
+        name,
+        source_agent: "claude-code",
+        source_path: absoluteSource,
+        skill_dir_hash: hashSkillDir(absoluteSource),
+        added_at: manifest.skills[id]?.added_at ?? now,
+        approved_at: now,
+        status: "conflict",
+        synced_to: manifest.skills[id]?.synced_to ?? {},
+        removed_at: null,
+        source: "team",
+        profile,
+        install_state: "conflict",
+        conflict_reason: "personal-name-collision",
+      };
+      dirty = true;
+      continue;
+    }
+
+    const created: string[] = [];
+    try {
+      mkdirSync(claudeDir, { recursive: true });
+      mkdirSync(codexDir, { recursive: true });
+      if (claudeState === "missing") {
+        symlinkSync(absoluteSource, claudeLinkPath);
+        created.push(claudeLinkPath);
+      }
+      if (codexState === "missing") {
+        symlinkSync(absoluteSource, codexLinkPath);
+        created.push(codexLinkPath);
+      }
+      result.installed.push(name);
+      manifest.skills[id] = {
+        id,
+        name,
+        source_agent: "claude-code",
+        source_path: absoluteSource,
+        skill_dir_hash: hashSkillDir(absoluteSource),
+        added_at: manifest.skills[id]?.added_at ?? now,
+        approved_at: now,
+        status: "approved",
+        synced_to: {
+          "claude-code": { target_name: name, symlink_path: claudeLinkPath, synced_at: now },
+          codex: { target_name: name, symlink_path: codexLinkPath, synced_at: now },
+        },
+        removed_at: null,
+        source: "team",
+        profile,
+        install_state: "installed",
+      };
+      dirty = true;
+    } catch (e) {
+      for (const path of created) {
+        try { unlinkSync(path); } catch { /* rollback best effort */ }
+      }
+      result.errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (dirty) {
+    try { writeSkillManifest(manifest, manifestPath); } catch (e) {
+      result.errors.push(`skill manifest: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Uninstall all team skills belonging to a given profile:
+ * removes symlinks from both agent directories and tombstones manifest entries.
+ */
+export function uninstallTeamSkills(profile: string, opts?: InstallTeamSkillsOpts): InstallTeamSkillsResult {
+  return uninstallTeamSkillEntries(profile, undefined, opts);
+}
+
+export function uninstallTeamSkill(
+  profile: string,
+  name: string,
+  opts?: InstallTeamSkillsOpts,
+): InstallTeamSkillsResult {
+  return uninstallTeamSkillEntries(profile, name, opts);
+}
+
+function uninstallTeamSkillEntries(
+  profile: string,
+  name: string | undefined,
+  opts?: InstallTeamSkillsOpts,
+): InstallTeamSkillsResult {
+  const manifestPath = opts?.manifestPath ?? DEFAULT_MANIFEST_PATH;
+  const manifest = readSkillManifest(manifestPath);
+  const result: InstallTeamSkillsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  let dirty = false;
+
+  const prefix = `team:${profile}:`;
+
+  for (const [id, entry] of Object.entries(manifest.skills)) {
+    if (!id.startsWith(prefix)) continue;
+    if (name !== undefined && entry.name !== name) continue;
+    if (entry.removed_at !== null) continue;
+
+    for (const syncEntry of Object.values(entry.synced_to)) {
+      const { symlink_path } = syncEntry as SkillManifestSyncEntry;
+      try {
+        const stat = lstatSync(symlink_path);
+        if (!stat.isSymbolicLink()) {
+          result.conflicts.push({ name: entry.name, reason: "target-modified" });
+          continue;
+        }
+        const actual = realpathSync(resolve(dirname(symlink_path), readlinkSync(symlink_path)));
+        const expected = realpathSync(entry.source_path);
+        if (actual !== expected) {
+          result.conflicts.push({ name: entry.name, reason: "target-modified" });
+          continue;
+        }
+        unlinkSync(symlink_path);
+        result.skipped.push(symlink_path);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+          result.errors.push(`${symlink_path}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+
+    manifest.skills[id] = {
+      ...entry,
+      status: "tombstoned",
+      removed_at: new Date().toISOString(),
+    };
+    dirty = true;
+  }
+
+  if (dirty) {
+    try { writeSkillManifest(manifest, manifestPath); } catch (e) {
+      result.errors.push(`skill manifest: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return result;
+}
+
+export interface PromoteSkillToTeamOpts {
+  claudeSkillsDir?: string;
+  codexSkillsDir?: string;
+  manifestPath?: string;
+}
+
+/**
+ * Promote a user-owned skill to the team workspace (Flow A).
+ *
+ * Safe rename-then-symlink sequence:
+ *   1. Copy source dir → workspace skills/<name>/ (in a tmp dir first)
+ *   2. Verify SKILL.md present in copy
+ *   3. Atomic rename copy into final workspace path
+ *   4. Rename original source dir to .draft-backup (reversible)
+ *   5. Create symlink at original source path → workspace path
+ *   6. On failure at step 5: restore backup (no data loss)
+ *   7. On success: update Codex symlink, delete backup
+ *
+ * Stale .draft-backup dirs from crashes are cleaned by reconcileSkillManifest on restart.
+ */
+export function promoteSkillToTeam(
+  skillId: string,
+  workspacePath: string,
+  profile: string,
+  opts?: PromoteSkillToTeamOpts,
+): { ok: boolean; error?: string } {
+  const manifestPath = opts?.manifestPath ?? DEFAULT_MANIFEST_PATH;
+  const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
+  const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
+
+  const manifest = readSkillManifest(manifestPath);
+  const entry = manifest.skills[skillId];
+
+  if (!entry) return { ok: false, error: `Skill not found: ${skillId}` };
+  if (entry.source === "team") return { ok: false, error: "Skill is already a team skill." };
+  if (entry.status !== "approved") return { ok: false, error: "Skill must be approved before promoting to team." };
+
+  const name = entry.name;
+  const sourcePath = entry.source_path;
+  const teamSkillsDir = join(workspacePath, "skills");
+  const finalWorkspacePath = join(teamSkillsDir, name);
+  const tmpPath = join(teamSkillsDir, `.draft-promoting-${name}-${Date.now()}`);
+  const backupPath = `${sourcePath}.draft-backup`;
+  const otherAgent: Agent = entry.source_agent === "claude-code" ? "codex" : "claude-code";
+  const otherPath = entry.synced_to[otherAgent]?.symlink_path
+    ?? join(otherAgent === "claude-code" ? claudeDir : codexDir, name);
+
+  // Fail fast if workspace destination already exists
+  if (existsSync(finalWorkspacePath)) {
+    return { ok: false, error: `Team skill already exists at ${finalWorkspacePath}` };
+  }
+  if (existsSync(otherPath)) {
+    try {
+      const stat = lstatSync(otherPath);
+      const actual = stat.isSymbolicLink()
+        ? realpathSync(resolve(dirname(otherPath), readlinkSync(otherPath)))
+        : null;
+      if (actual !== realpathSync(sourcePath)) {
+        return { ok: false, error: `Personal skill collision at ${otherPath}` };
+      }
+    } catch (e) {
+      return { ok: false, error: `Cannot inspect ${otherPath}: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  }
+
+  try {
+    mkdirSync(teamSkillsDir, { recursive: true });
+
+    // Step 1: Copy to temp location in workspace
+    cpSync(sourcePath, tmpPath, { recursive: true });
+
+    // Step 2: Sanity check
+    if (!existsSync(join(tmpPath, "SKILL.md"))) {
+      rmSync(tmpPath, { recursive: true, force: true });
+      return { ok: false, error: "Source skill dir has no SKILL.md — refusing to promote." };
+    }
+
+    // Step 3: Atomic rename into final workspace path
+    renameSync(tmpPath, finalWorkspacePath);
+
+    // Step 4: Rename original to backup
+    renameSync(sourcePath, backupPath);
+
+    // Step 5: Symlink original path → workspace
+    try {
+      symlinkSync(resolve(finalWorkspacePath), sourcePath);
+    } catch (e) {
+      // Recovery: restore backup
+      try { renameSync(backupPath, sourcePath); } catch { /* best effort */ }
+      try { rmSync(finalWorkspacePath, { recursive: true, force: true }); } catch { /* best effort */ }
+      return { ok: false, error: `Failed to create symlink: ${e instanceof Error ? e.message : String(e)}` };
+    }
+
+    // Step 6: Update the cross-agent symlink to workspace path
+    try {
+      if (existsSync(otherPath)) {
+        const stat = lstatSync(otherPath);
+        if (stat.isSymbolicLink()) unlinkSync(otherPath);
+      }
+      mkdirSync(dirname(otherPath), { recursive: true });
+      symlinkSync(resolve(finalWorkspacePath), otherPath);
+    } catch (e) {
+      try { unlinkSync(sourcePath); } catch { /* best effort */ }
+      try { renameSync(backupPath, sourcePath); } catch { /* best effort */ }
+      try {
+        if (!existsSync(otherPath)) symlinkSync(resolve(sourcePath), otherPath);
+      } catch { /* best effort */ }
+      try { rmSync(finalWorkspacePath, { recursive: true, force: true }); } catch { /* best effort */ }
+      return { ok: false, error: `Failed to update cross-agent symlink: ${e instanceof Error ? e.message : String(e)}` };
+    }
+
+    // Update manifest entry
+    const now = new Date().toISOString();
+    const newId = `team:${profile}:${name}`;
+    delete manifest.skills[skillId];
+    manifest.skills[newId] = {
+      ...entry,
+      id: newId,
+      source_path: resolve(finalWorkspacePath),
+      synced_to: {
+        [entry.source_agent]: { target_name: name, symlink_path: sourcePath, synced_at: now },
+        [otherAgent]: { target_name: name, symlink_path: otherPath, synced_at: now },
+      },
+      source: "team",
+      profile,
+      install_state: "installed",
+    };
+    writeSkillManifest(manifest, manifestPath);
+    try { rmSync(backupPath, { recursive: true, force: true }); } catch { /* best effort */ }
+
+    return { ok: true };
+  } catch (e) {
+    try { if (existsSync(tmpPath)) rmSync(tmpPath, { recursive: true, force: true }); } catch { /* best effort */ }
+    if (existsSync(backupPath)) {
+      try { if (lstatSync(sourcePath).isSymbolicLink()) unlinkSync(sourcePath); } catch { /* best effort */ }
+      try { renameSync(backupPath, sourcePath); } catch { /* best effort */ }
+      try {
+        if (existsSync(otherPath) && lstatSync(otherPath).isSymbolicLink()) unlinkSync(otherPath);
+        symlinkSync(resolve(sourcePath), otherPath);
+      } catch { /* best effort */ }
+      try { rmSync(finalWorkspacePath, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Demote a team-shared skill back to user-owned (Flow A reversal).
+ *
+ * Reverses promoteSkillToTeam:
+ *   1. Remove the symlink at the claude-code skills path
+ *   2. Copy the workspace dir back to that path (real directory again)
+ *   3. Delete the workspace copy
+ *   4. Re-point the codex symlink to the restored claude-code path
+ *   5. Revert the manifest entry to user-scoped
+ */
+export function demoteSkillFromTeam(
+  skillId: string,
+  opts?: PromoteSkillToTeamOpts,
+): { ok: boolean; error?: string } {
+  const manifest = readSkillManifest(opts?.manifestPath);
+  const entry = manifest.skills[skillId];
+
+  if (!entry) return { ok: false, error: `Skill not found: ${skillId}` };
+  if (entry.source !== "team") return { ok: false, error: "Skill is not a team skill." };
+
+  const name = entry.name;
+  const workspaceSkillPath = entry.source_path;
+  const sourceSyncEntry = entry.synced_to[entry.source_agent];
+  const otherAgent: Agent = entry.source_agent === "claude-code" ? "codex" : "claude-code";
+  const otherSyncEntry = entry.synced_to[otherAgent];
+
+  if (!sourceSyncEntry) {
+    return { ok: false, error: `No ${entry.source_agent} sync entry — cannot determine original path.` };
+  }
+
+  const personalPath = sourceSyncEntry.symlink_path;
+  const otherPath = otherSyncEntry?.symlink_path;
+
+  try {
+    // Step 1: Remove the symlink at the claude-code path
+    try {
+      const s = lstatSync(personalPath);
+      if (!s.isSymbolicLink() ||
+          realpathSync(resolve(dirname(personalPath), readlinkSync(personalPath))) !== realpathSync(workspaceSkillPath)) {
+        return { ok: false, error: `Personal replacement at ${personalPath} is not owned by Draft.` };
+      }
+      unlinkSync(personalPath);
+    } catch { /* already gone — continue */ }
+
+    // Step 2: Copy workspace dir back to original claude-code path
+    cpSync(workspaceSkillPath, personalPath, { recursive: true });
+
+    // Step 3: Remove workspace copy
+    rmSync(workspaceSkillPath, { recursive: true, force: true });
+
+    // Step 4: Re-point codex symlink to the restored claude-code path
+    if (otherPath) {
+      try {
+        const cs = lstatSync(otherPath);
+        if (cs.isSymbolicLink() &&
+            resolve(dirname(otherPath), readlinkSync(otherPath)) === resolve(workspaceSkillPath)) {
+          unlinkSync(otherPath);
+        }
+      } catch { /* already gone */ }
+      try { symlinkSync(resolve(personalPath), otherPath); } catch { /* non-fatal */ }
+    }
+
+    // Step 5: Revert manifest entry to user-scoped
+    const newId = `${entry.source_agent}:${name}`;
+    const now = new Date().toISOString();
+    delete manifest.skills[skillId];
+    manifest.skills[newId] = {
+      ...entry,
+      id: newId,
+      source_path: personalPath,
+      source: "user",
+      profile: undefined,
+      install_state: undefined,
+      conflict_reason: undefined,
+      synced_to: otherPath
+        ? { [otherAgent]: { target_name: name, symlink_path: otherPath, synced_at: now } }
+        : {},
+    };
+    writeSkillManifest(manifest, opts?.manifestPath);
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

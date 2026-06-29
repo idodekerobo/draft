@@ -10,6 +10,12 @@
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+// Directories where user-installed tools live (npm globals, Homebrew, /usr/local/bin).
+// macOS GUI apps inherit a stripped PATH that excludes all of these.
+// Pass this as `env: { PATH: GUI_PATH }` in any capture() or Bun.spawn() call
+// that needs to find a user-installed binary (claude, codex, etc.).
+export const GUI_PATH = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin";
+
 /**
  * spawn: passthrough stdio. stdout/stderr stream directly to the terminal.
  * Use when you want the user to see live output (start, stop, logs --follow).
