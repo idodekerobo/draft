@@ -21,7 +21,8 @@
       "WebFetch(domain:docs.electrobunny.ai)",
       "WebFetch(domain:bun.com)",
       "WebFetch(domain:docs.openclaw.ai)",
-      "WebFetch(domain:hermes-agent.nousresearch.com)"
+      "WebFetch(domain:hermes-agent.nousresearch.com)",
+      "Skill(browse)"
     ]
   }
 }

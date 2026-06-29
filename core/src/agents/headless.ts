@@ -7,9 +7,11 @@
 // with { ok: false } before any async work starts.
 
 import { join } from "path";
-import { mkdirSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, appendFileSync, unlinkSync, readdirSync } from "fs";
 import { capture } from "../exec";
 import { DRAFT_ROOT } from "../config";
+
+const HEADLESS_LOG_DIR = join(DRAFT_ROOT, "logs", "headless");
 
 export type HeadlessPhase = "starting" | "running" | "writing" | "complete" | "error";
 
@@ -32,31 +34,67 @@ export type SpawnHeadlessAgentResult =
   | { ok: true }
   | { ok: false; error: string };
 
+async function resolveRunnerBin(name: string): Promise<string | null> {
+  const HOME = process.env.HOME ?? "";
+  const knownPaths = [
+    `${HOME}/.local/bin/${name}`,
+    `/usr/local/bin/${name}`,
+    `/opt/homebrew/bin/${name}`,
+    `${HOME}/.npm-global/bin/${name}`,
+  ];
+  for (const p of knownPaths) {
+    if (existsSync(p)) return p;
+  }
+  const nvmDir = `${HOME}/.nvm/versions/node`;
+  if (existsSync(nvmDir)) {
+    try {
+      for (const v of readdirSync(nvmDir).reverse()) {
+        const p = `${nvmDir}/${v}/bin/${name}`;
+        if (existsSync(p)) return p;
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export async function spawnHeadlessAgent(
   opts: SpawnHeadlessAgentOpts,
 ): Promise<SpawnHeadlessAgentResult> {
   const runner = opts.runner ?? "claude";
-  const timeoutMs = opts.timeoutMs ?? 120_000;
+  const timeoutMs = opts.timeoutMs ?? 1_500_000;
   const notify = opts.onProgress ?? (() => {});
   const runnerName = runner === "claude" ? "Claude Code" : "Codex";
 
-  const which = await capture(["which", runner]);
-  if (which.exitCode !== 0) {
+  const runnerBin = await resolveRunnerBin(runner);
+  if (!runnerBin) {
     return { ok: false, error: `${runnerName} CLI not found. Install it first or run /draft-setup manually.` };
   }
 
+  const ts = Date.now();
   const tmpDir = join(DRAFT_ROOT, "tmp");
-  const promptPath = join(tmpDir, `headless-${Date.now()}.md`);
+  const promptPath = join(tmpDir, `headless-${ts}.md`);
+  const logPath = join(HEADLESS_LOG_DIR, `context-bootstrap-${ts}.log`);
+
   try {
     mkdirSync(tmpDir, { recursive: true });
+    mkdirSync(HEADLESS_LOG_DIR, { recursive: true });
     writeFileSync(promptPath, opts.prompt, "utf8");
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Could not write prompt file." };
   }
 
+  function log(line: string) {
+    try { appendFileSync(logPath, line + "\n"); } catch {}
+  }
+
+  log(`[${new Date(ts).toISOString()}] runner=${runner} bin=${runnerBin}`);
+  log(`--- prompt ---`);
+  log(opts.prompt);
+  log(`--- output ---`);
+
   const cliCmd = runner === "codex"
-    ? ["codex", "exec", "--skip-git-repo-check", "-"]
-    : ["claude", "-p", "-"];
+    ? [runnerBin, "exec", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "-"]
+    : [runnerBin, "-p", "--dangerously-skip-permissions", "-"];
 
   let proc: ReturnType<typeof Bun.spawn>;
   try {
@@ -67,7 +105,9 @@ export async function spawnHeadlessAgent(
     });
   } catch (err) {
     try { unlinkSync(promptPath); } catch {}
-    return { ok: false, error: err instanceof Error ? err.message : `Could not start ${runnerName}.` };
+    const msg = err instanceof Error ? err.message : `Could not start ${runnerName}.`;
+    log(`[spawn error] ${msg}`);
+    return { ok: false, error: msg };
   }
 
   notify({ phase: "starting", label: `Starting ${runnerName}…` });
@@ -78,17 +118,23 @@ export async function spawnHeadlessAgent(
 
   const timeoutTimer = setTimeout(() => {
     proc.kill();
+    log(`[timeout] killed after ${timeoutMs}ms`);
     notify({ phase: "error", label: "Context setup is taking too long.", error: "timeout" });
   }, timeoutMs);
 
   void (async () => {
     try {
-      const [exitCode, stderr] = await Promise.all([
+      const [exitCode, stdout, stderr] = await Promise.all([
         proc.exited,
+        new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
         new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
       ]);
       clearTimeout(writingTimer);
       clearTimeout(timeoutTimer);
+
+      if (stdout) log(stdout);
+      if (stderr)  log(`--- stderr ---\n${stderr}`);
+      log(`--- exit ${exitCode} ---`);
 
       if (exitCode === 0) {
         notify({ phase: "complete", label: "Context setup complete." });

@@ -153,7 +153,7 @@ describe("acceptProposal", () => {
   it("throws when source file does not exist", () => {
     const ghost = { filename: "ghost.md", path: "/nonexistent/ghost.md", mtime: 0,
       source: "unknown", createdAt: "", timestamp: "", dimension: "unknown", action: "update",
-      synthesizedBy: "", summary: "", body: "" };
+      synthesizedBy: "", summary: "", body: "", rawContent: "", content: "", contextUpdates: [] };
     expect(() => acceptProposal(ghost, ACCEPTED_DIR)).toThrow();
   });
 });

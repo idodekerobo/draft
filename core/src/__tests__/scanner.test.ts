@@ -482,7 +482,7 @@ describe("skill manifest", () => {
           source_path: "/fake/browse", skill_dir_hash: "sha256:abc",
           added_at: "2026-01-01T00:00:00.000Z", approved_at: "2026-01-01T00:00:00.000Z",
           status: "approved", synced_to: { codex: { target_name: "browse", symlink_path: "/fake/codex/browse", synced_at: "2026-01-01T00:00:00.000Z" } },
-          removed_at: null,
+          removed_at: null, source: "user",
         },
       },
       name_conflicts: {},
@@ -681,6 +681,7 @@ describe("reconcileSkillManifest", () => {
           added_at: new Date().toISOString(),
           approved_at: new Date().toISOString(),
           status: "approved",
+          source: "user",
           synced_to: {
             codex: {
               target_name: "my-skill",

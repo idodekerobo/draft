@@ -127,6 +127,70 @@ Connect integrations from inside Claude Code:
 
 ---
 
+## Team skills & MCP servers
+
+In addition to context files, Draft can sync **skills** (custom Claude Code/Codex prompt libraries) and **MCP servers** (tools) across your team via the same git repo.
+
+### How team skills work
+
+A **team skill** is `$DRAFT_WORKSPACE/skills/<name>/SKILL.md`. The active
+profile's skills are symlinked into Claude Code (`~/.claude/skills/`) and Codex
+(`~/.codex/skills/`). Switching profiles removes only symlinks owned by the old
+profile and installs the new profile's set.
+
+**Two flows for adding team skills:**
+
+**Flow A — Promote an existing skill** (desktop): In Settings → Sync Skills, any synced skill has a "Share with team" button (visible when collaboration is configured). Clicking it moves the skill directory into the workspace and creates symlinks at the original paths so nothing breaks in the current session.
+
+**Flow B — Write directly to workspace** (power users): Drop a `SKILL.md`-containing directory into `~/.draft/workspaces/<profile>/skills/` directly. The desktop watcher detects it and installs the symlinks immediately. The skill appears in Settings with a "Team" badge.
+
+Anything under the profile's `skills/` directory is team-owned. A personal
+skill with the same name is preserved and the team skill is reported as
+conflicted. Any teammate may remove a team skill locally; publish that change
+to propagate the removal.
+
+### Publishing team skills
+
+Team skills are included automatically when you run `draft publish`. Direct
+workspace edits are unpublished team changes, so `draft load` will not
+overwrite them. Publish them, move local-only assets out of the profile, or
+explicitly run `draft load --discard-team-assets`.
+
+### Team MCP servers (sharing tools, not secrets)
+
+Team MCPs work similarly, with one important distinction: **API keys are never shared**. The workspace `config/mcp.json` stores only the server URL and header structure (using `value_env` references). Each teammate supplies their own credentials.
+
+**Flow A — Promote an existing MCP** (desktop): In Settings → Sync MCP Servers, any synced MCP has a "Share with team" button. It writes the server's canonical config (without the literal token) to the workspace `config/mcp.json`.
+
+**Flow B — Write to workspace** (power users): Edit
+`$DRAFT_WORKSPACE/config/mcp.json` directly using the versioned workspace
+manifest. Invalid or unsafe manifests are rejected before load or profile
+activation mutates state.
+
+### What teammates see after `load-team`
+
+When a teammate runs `draft load`:
+
+1. Team skills are copied to their workspace and symlinked to both agents automatically.
+2. Team MCPs are copied to their workspace. If they already have the required API key(s) in their local `secrets.json`, the MCP is installed immediately. If not, a **credential prompt** appears in Settings → Sync MCP Servers.
+
+Credentials live in the active profile's `config/secrets.json`, may differ
+between profiles, and are never pushed. Once the final required value is saved,
+the MCP installs into both agents. A personal MCP with the same name is
+preserved and blocks only that team MCP.
+
+### Profile switches and team skills
+
+When you switch profiles (via the desktop or `draft switch`), Draft automatically:
+1. Uninstalls team skills/MCPs from the old profile (removes symlinks)
+2. Installs team skills/MCPs from the new profile (creates symlinks, prompts for missing credentials)
+
+Missing credentials or name conflicts produce a partial activation rather than
+rolling the profile back. Restart active Claude Code and Codex sessions after a
+switch. Claude Code and Codex are the initial supported installation targets.
+
+---
+
 ## Team load mode
 
 By default, Draft auto-applies the latest shared context at session start ("shared repo always wins"). If you prefer to review team context changes before they apply, you can change this in **Settings → Session Context → Team Load Mode**.

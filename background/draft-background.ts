@@ -8,6 +8,7 @@
 
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
+import { runMigrations } from 'draft-core/migrations/runner';
 import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
@@ -217,7 +218,10 @@ try {
 
 log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
 phTrack('daemon_started');
-reconcileSkills();
+void (async () => {
+  await runMigrations();
+  reconcileSkills();
+})();
 
 // ── Integration pollers (interval-based) ─────────────────────────────────────
 // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.

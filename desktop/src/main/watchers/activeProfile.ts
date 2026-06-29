@@ -5,7 +5,7 @@ import { dirname } from "path";
 import { ACTIVE_PROFILE_FILE, getActiveProfile } from "draft-core/config";
 
 interface ActiveProfileWatchHandlers {
-  onProfileChanged: (profile: string) => void;
+  onProfileChanged: (profile: string, previousProfile: string) => void;
 }
 
 let activeProfileWatcher: ReturnType<typeof watch> | null = null;
@@ -20,8 +20,9 @@ export function startActiveProfileWatch(handlers: ActiveProfileWatchHandlers): v
       if (filename !== "active-profile") return;
       const nextProfile = getActiveProfile();
       if (nextProfile === lastProfile) return;
+      const previousProfile = lastProfile;
       lastProfile = nextProfile;
-      handlers.onProfileChanged(nextProfile);
+      handlers.onProfileChanged(nextProfile, previousProfile);
     });
   } catch {
     // Non-fatal — desktop-driven switches still restart watchers directly.
@@ -32,4 +33,3 @@ export function stopActiveProfileWatch(): void {
   activeProfileWatcher?.close();
   activeProfileWatcher = null;
 }
-

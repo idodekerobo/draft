@@ -465,13 +465,31 @@ Pass the synthesized content as a single, structured message. Instruct @draft-le
 - `~/.draft/personal/user/index.md`
 - `~/.draft/personal/memory.md`
 
-Each index file must have complete frontmatter:
-- `name`: dimension name
-- `description`: 2–10 sentences, specific and factual
-- `last_updated`: today's date (YYYY-MM-DD)
-- `source: /setup interview`
+Each index file must have two parts:
 
-For `priorities/index.md`, also include the full body content.
+1. **Frontmatter `description`** — the most important facts for this dimension, written concisely. This is loaded into the agent's context every session, so include what matters most — not everything, but nothing trivial either.
+2. **Markdown body** — the full detailed record for this dimension. More context, history, open questions, supporting detail. This is what gets rendered in the UI and read when deeper context is needed.
+
+Structure:
+```
+---
+name: <dim>
+description: >
+  <Most important facts about this dimension, concise. Loaded into agent context every session.>
+last_updated: <today's date YYYY-MM-DD>
+source: /setup interview
+---
+
+# <Dim>
+
+<Full detailed content. Use headers and bullet points. More than the description — this is the complete picture.>
+```
+
+Body content by dimension:
+- **company**: name, what they build, business model, stage, target market, key constraints
+- **product**: product name, problem it solves, target user, key features, current state, open hypotheses
+- **team**: who's on the team, roles, structure, how decisions get made
+- **priorities**: active TODOs, current sprint goal, blockers, what success looks like
 
 Do NOT write log entries during /setup — this is the initial state.
 
@@ -514,4 +532,4 @@ Then use the **AskUserQuestion** tool to ask:
 - No preamble before questions ("Great answer!" / "Thanks for sharing" = never)
 - Adapt — skip questions already answered, merge where natural
 - Synthesize before writing — derived context beats transcribed answers
-- The description field in frontmatter is loaded every session — write it like a briefing note, not a data dump
+- The `description` field is loaded into agent context every session — put the most important facts there, concisely. Full detail belongs in the markdown body.

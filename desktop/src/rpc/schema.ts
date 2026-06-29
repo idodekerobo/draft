@@ -207,6 +207,10 @@ export interface McpManifestEntry {
   env_var_mapping: Record<string, string>;
   synced_to: Partial<Record<"claude-code" | "codex", McpManifestSyncEntry>>;
   removed_at: string | null;
+  /** "user" = local personal MCP, "team" = shared via workspace. */
+  source: "user" | "team";
+  /** For team MCPs: env var names the local user must supply before install. */
+  pending_secrets?: string[];
 }
 
 export interface McpManifest {
@@ -381,6 +385,23 @@ export interface ContextFileEntry {
   groupLabel: string;
 }
 
+// ── Team sync types ────────────────────────────────────────────────────────────
+
+/** Installed team skill entry — a slim view of the manifest for UI display. */
+export interface TeamSkillEntry {
+  id: string;
+  name: string;
+  profile: string;
+  source_path: string;
+}
+
+/** A team MCP that is waiting for the user to supply missing API credentials. */
+export interface PendingCredentialMcp {
+  name: string;
+  url: string;
+  required_secrets: string[];
+}
+
 // ── RPC schema ─────────────────────────────────────────────────────────────────
 
 export type AppRPCType = {
@@ -545,6 +566,27 @@ export type AppRPCType = {
 
       /** List the last 50 activity runs for the active profile. */
       getActivityRuns: { params: void; response: ActivityRun[] };
+
+      /** Return all team skills installed for the active profile. */
+      getTeamSkillsInstalled: { params: void; response: { skills: TeamSkillEntry[] } };
+
+      /** Promote a user-owned skill to the team workspace (Flow A). */
+      promoteSkillToTeam: { params: { skillId: string }; response: ActionResult };
+
+      /** Promote a user-owned MCP to the team workspace (Flow A). */
+      promoteMcpToTeam: { params: { mcpId: string }; response: ActionResult };
+
+      /** Demote a team-shared skill back to personal (Flow A reversal). */
+      demoteSkillFromTeam: { params: { skillId: string }; response: ActionResult };
+
+      /** Demote a team-shared MCP back to personal (Flow A reversal). */
+      demoteMcpFromTeam: { params: { mcpId: string }; response: ActionResult };
+
+      /** Supply a missing secret for a team MCP in pending-credentials state. */
+      setMcpSecret: { params: { name: string; envVar: string; value: string }; response: ActionResult & { nowInstalled: boolean } };
+
+      /** Check if team collaboration is configured for the active profile. */
+      getCollabConfigured: { params: void; response: { configured: boolean } };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
@@ -574,6 +616,9 @@ export type AppRPCType = {
 
       /** A newly installed skill was made available to the other agent. */
       skillsChanged: { count: number };
+
+      /** Team MCPs were installed or removed (e.g. after draft load). */
+      mcpsChanged: { count: number };
 
       /** New MCPs were detected and are waiting for user approval in Settings > MCPs. */
       mcpsPendingApproval: { pending: PendingMcpEntry[] };
@@ -622,6 +667,9 @@ export type AppRPCType = {
 
       /** Synthesis job completed — renderer should re-fetch activity runs. Reserved for sentinel file watcher (TODO-3); not emitted in v1. */
       runComplete: { profile: string; source: string; status: string; proposalsGenerated: number };
+
+      /** One or more team MCPs are missing credentials after profile switch or load-team. */
+      mcpsPendingCredentials: { mcps: PendingCredentialMcp[] };
     };
   }>;
 };

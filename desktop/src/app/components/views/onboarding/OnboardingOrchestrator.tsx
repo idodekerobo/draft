@@ -1,13 +1,14 @@
 // OnboardingOrchestrator.tsx — state + handler hub for the onboarding wizard
 //
-// At most seven active steps:
+// At most eight active steps:
 //   1. Welcome  — what Draft is, three-component architecture
 //   2. Profile  — create / pick workspace (BEFORE install — install needs active-profile)
 //   3. Install  — tool selection + install (calls runInstall RPC)
 //   4. Scan + import — skipped when no third-party skills exist
 //   5. Integrations — connect Granola, Slack, and GitHub inline
 //   6. Context setup — optional headless setup with manual fallback
-//   7. Finalize — analytics consent and daemon start
+//   7. Collab — team collaboration awareness
+//   8. Finalize — analytics consent and daemon start
 
 import { useState, useEffect, useRef } from "react";
 import type { InstallableTool, InstallStep, ProfileDetail } from "../../../../rpc/schema";
@@ -22,9 +23,10 @@ import { IntegrationSetupStep } from "./IntegrationSetupStep";
 import { CompleteStep } from "./CompleteStep";
 import { ScanImportStep } from "./ScanImportStep";
 import { HeadlessSetupStep } from "./HeadlessSetupStep";
+import { CollabStep } from "./CollabStep";
 
 const BASE_STEPS: OnboardingStep[] = [
-  "welcome", "profile", "intelligence-tools", "integrations", "headless-setup", "complete",
+  "welcome", "profile", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
 ];
 
 interface OnboardingOrchestratorProps {
@@ -62,7 +64,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
 
   const activeSteps: OnboardingStep[] = hasScannableSkills === false && step !== "scan-import"
     ? BASE_STEPS
-    : ["welcome", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "complete"];
+    : ["welcome", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "collab", "complete"];
 
   // Fire abandoned if component unmounts before completion
   useEffect(() => {
@@ -275,6 +277,14 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       )}
       {step === "headless-setup" && (
         <HeadlessSetupStep
+          stepNum={stepNum}
+          totalSteps={totalSteps}
+          onBack={handleBack}
+          onNext={goNext}
+        />
+      )}
+      {step === "collab" && (
+        <CollabStep
           stepNum={stepNum}
           totalSteps={totalSteps}
           onBack={handleBack}

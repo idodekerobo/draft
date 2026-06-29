@@ -33,6 +33,13 @@ export interface McpManifestEntry {
   env_var_mapping: Record<string, string>;
   synced_to: Partial<Record<Agent, McpManifestSyncEntry>>;
   removed_at: string | null;
+  /** Whether this entry was created by the user locally or shared via the team workspace. */
+  source: "user" | "team";
+  profile?: string;
+  install_state?: "installed" | "pending-secrets" | "conflict";
+  conflict_reason?: string;
+  /** For team MCPs: env var names the teammate must supply before the MCP can be installed. */
+  pending_secrets?: string[];
 }
 
 export interface McpManifest {
@@ -69,7 +76,14 @@ export function readMcpManifest(manifestPath?: string): McpManifest {
   try {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw);
-    if (parsed?.schema_version === 4 && parsed?.mcps) return parsed as McpManifest;
+    if (parsed?.schema_version === 4 && parsed?.mcps) {
+      const manifest = parsed as McpManifest;
+      // Normalize: entries written before the source field was added default to "user"
+      for (const entry of Object.values(manifest.mcps)) {
+        if (!entry.source) entry.source = "user";
+      }
+      return manifest;
+    }
   } catch { /* missing or malformed */ }
   return emptyMcpManifest();
 }

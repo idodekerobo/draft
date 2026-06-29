@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir, getBundledBunPath, getBundledTmuxPath } from "./bundlePath";
-import { capture } from "draft-core/exec";
+import { capture } from "../exec";
 
 const LOG_FILE = `${process.env.HOME}/.draft/logs/desktop-installer.log`;
 
