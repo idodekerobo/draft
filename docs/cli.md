@@ -98,12 +98,18 @@ See [Agent plugins](./agent-plugins.md) for full details on each tool.
 
 ### `draft switch <name>`
 
-Activates a named workspace profile. Takes effect on the next Claude Code session restart (because `~/.claude/settings.json` is read at startup).
+Validates and activates a named workspace profile, removes team assets owned by
+the old profile, and installs the new profile's team skills and MCP servers into
+Claude Code and Codex.
 
 ```bash
 draft switch acme
-draft switch personal
+draft switch acme --json
 ```
+
+Missing MCP credentials and personal-name collisions produce a successful
+partial activation: the profile becomes active, unaffected assets install, and
+personal assets are preserved. Restart active agent sessions after switching.
 
 ### `draft profiles`
 
@@ -169,23 +175,43 @@ If `gh` is authenticated and a team repo is configured, accepted proposals are i
 
 ### `draft publish`
 
-Pushes all accepted proposals to the team's shared GitHub repo.
+Publishes accepted proposals, current context, profile-owned `skills/`, and
+`config/mcp.json` in one repository transaction. Deletions are included.
 
 ```bash
 draft publish
+draft publish --json
 ```
 
-Requires collaboration to be configured (`/draft:setup-collab`) and `gh` to be authenticated. Commits each accepted proposal file and removes it from `accepted/` on success. On partial failure, stops and prints which file failed — run `draft publish` again to retry.
+Requires collaboration to be configured and `gh` to be authenticated.
+`config/secrets.json` and `config/local.json` are never copied. Accepted files,
+publish timestamps, and team-asset baselines are updated only after the push
+succeeds.
 
 ### `draft load`
 
-Pulls the latest team context from the shared GitHub repo.
+Pulls the latest team context and profile-owned assets from the shared GitHub
+repo, mirrors additions and deletions into the active profile, then installs the
+active team assets.
 
 ```bash
 draft load
+draft load --json
+draft load --discard-team-assets
 ```
 
-Does a shallow clone of the team repo, reads the change log since your last load cursor, and applies teammates' accepted updates to your local workspace. This is also run automatically at every session start via a `SessionStart` hook (with a 30-second timeout so it never blocks a session).
+Load stops if profile-owned assets differ from the last published/loaded
+baseline. Publish those edits first, or explicitly discard them with
+`--discard-team-assets`. Personal Claude Code and Codex assets never block load
+and win name collisions.
+
+SessionStart runs `draft load --session-start`. This mode never prompts, never
+discards unpublished assets, writes a notification for skipped or partial
+loads, and does not block agent startup.
+
+Team MCP credentials are stored per profile in `config/secrets.json` and are
+never published. Missing credentials leave the MCP pending while the rest of
+the profile remains usable.
 
 ---
 
