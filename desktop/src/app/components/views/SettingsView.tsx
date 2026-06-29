@@ -273,6 +273,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [sections, setSections]           = useState<ContextSection[]>([]);
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
+  const [saveNotice, setSaveNotice]       = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [expandedSource, setExpandedSource] = useState<"granola" | "slack" | null>(null);
@@ -338,6 +339,13 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     const id = setTimeout(() => setSaveError(null), 3_000);
     return () => clearTimeout(id);
   }, [saveError]);
+
+  // ── Save notice auto-dismiss ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!saveNotice) return;
+    const id = setTimeout(() => setSaveNotice(null), 3_000);
+    return () => clearTimeout(id);
+  }, [saveNotice]);
 
   // ── Settings patch ─────────────────────────────────────────────────────────
   async function patch(update: Partial<LocalConfig>) {
@@ -595,10 +603,10 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         )}
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
-        <SkillSyncSection onError={(msg) => setSaveError(msg)} />
+        <SkillSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
 
         {/* ── MCP Servers ─────────────────────────────────────────────────── */}
-        <McpSyncSection onError={(msg) => setSaveError(msg)} />
+        <McpSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
 
         {/* ── Intelligence Tools ─────────────────────────────────────────── */}
         <section className="settings__section">
@@ -797,6 +805,9 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
 
       {saveError && (
         <div className="settings__save-error" role="alert">{saveError}</div>
+      )}
+      {saveNotice && (
+        <div className="settings__save-notice" role="status">{saveNotice}</div>
       )}
     </div>
   );

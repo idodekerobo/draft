@@ -1762,6 +1762,15 @@ button {
   animation: toast-in 150ms ease;
 }
 
+.settings__save-notice {
+  flex-shrink: 0;
+  padding: 8px 20px;
+  font-size: var(--font-size-secondary);
+  color: #30d158;
+  border-top: 1px solid var(--color-border);
+  animation: toast-in 150ms ease;
+}
+
 /* ── Connected app rows ──────────────────────────────────────────────────────── */
 /* Used in Intelligence Tools and Input Sources sections of Settings.            */
 
@@ -1808,10 +1817,34 @@ button {
   min-width: 0;
 }
 
+.app-row__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .app-row__name {
   font-size: var(--font-size-body);
   color: var(--color-text-primary);
   line-height: 1.3;
+}
+
+/* Stripe-style status pill badge — mirrors activity-run__badge */
+.app-row__badge {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.app-row__badge--team {
+  color: #30d158;
+  background: rgba(48, 209, 88, 0.12);
 }
 
 .app-row__meta {
@@ -1933,6 +1966,13 @@ button {
 .app-row--source {
   flex-direction: column;
   align-items: stretch;
+}
+
+.app-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .app-row__main {

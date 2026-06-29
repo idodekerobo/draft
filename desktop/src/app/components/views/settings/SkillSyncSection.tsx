@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ScannedSkillEntry, ScanDirError, PendingSkillEntry, SameNameConflict } from "../../../../rpc/schema";
-import { rpc } from "../../../rpc";
+import type { ScannedSkillEntry, ScanDirError, PendingSkillEntry, SameNameConflict, TeamSkillEntry } from "../../../../rpc/schema";
+import { rpc, events } from "../../../rpc";
 import { AGENT_LABELS, formatTokens, skillKey } from "../../shared/skills";
 
 interface SkillSyncSectionProps {
   onError: (message: string) => void;
+  onNotice: (message: string) => void;
 }
 
 // ── PendingGroup ──────────────────────────────────────────────────────────────
@@ -114,35 +115,42 @@ function PendingGroup({ pending, onApprove, approving, exitingIds }: {
 }
 
 // ── SyncedGroup ───────────────────────────────────────────────────────────────
-// Shows all approved/synced skills in one flat list with Remove buttons.
-// Replaces the per-agent (Claude Code / Codex) dropdowns.
+// Shows all approved/synced skills in one flat list.
+// User skills get a Remove button and (when collab configured) a "Share with team" button.
+// Team skills get a "Team" badge pill and no Remove button.
 
-function SyncedGroup({ skills, onRemove, removingKey, exitingKeys }: {
+function SyncedGroup({ skills, teamSkills, onRemove, onPromote, onDemote, removingKey, promotingId, demotingId, exitingKeys, collabConfigured }: {
   skills: ScannedSkillEntry[];
+  teamSkills: TeamSkillEntry[];
   onRemove: (skill: ScannedSkillEntry) => void;
+  onPromote: (skillId: string) => void;
+  onDemote: (skillId: string) => void;
   removingKey: string | null;
+  promotingId: string | null;
+  demotingId: string | null;
   exitingKeys: Set<string>;
+  collabConfigured: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
-  // Track keys from the previous render to detect genuinely new items.
-  // Items already present when the group expands get no enter animation —
-  // only items that appear after the group is already open do.
   const prevKeysRef = useRef<Set<string>>(new Set());
 
-  if (skills.length === 0) return null;
+  const totalCount = skills.length + teamSkills.length;
+  if (totalCount === 0) return null;
 
   const normalizedQuery = query.trim().toLowerCase();
-  const filtered = normalizedQuery
+  const filteredUser = normalizedQuery
     ? skills.filter((s) => s.name.toLowerCase().includes(normalizedQuery))
     : skills;
+  const filteredTeam = normalizedQuery
+    ? teamSkills.filter((s) => s.name.toLowerCase().includes(normalizedQuery))
+    : teamSkills;
 
   const currentKeys = new Set(skills.map(skillKey));
   const newlyAddedKeys = prevKeysRef.current.size > 0
     ? new Set([...currentKeys].filter((k) => !prevKeysRef.current.has(k)))
     : new Set<string>();
 
-  // Keep prevKeys in sync after every render
   useEffect(() => { prevKeysRef.current = new Set(skills.map(skillKey)); });
 
   return (
@@ -154,7 +162,7 @@ function SyncedGroup({ skills, onRemove, removingKey, exitingKeys }: {
       >
         <span className="skill-agent-group__toggle">{expanded ? "▼" : "▶"}</span>
         <span className="skill-agent-group__label">Synced skills</span>
-        <span className="skill-agent-group__count">{skills.length} synced</span>
+        <span className="skill-agent-group__count">{totalCount} synced</span>
       </button>
       {expanded && (
         <>
@@ -171,10 +179,36 @@ function SyncedGroup({ skills, onRemove, removingKey, exitingKeys }: {
             )}
           </div>
           <div className="skill-sync__section-items">
-            {filtered.map((skill) => {
+            {/* Team skills — pill badge + Remove from team button */}
+            {filteredTeam.map((skill) => (
+              <div key={skill.id} className="app-row">
+                <div className="app-row__left">
+                  <span className="app-row__status-dot app-row__status-dot--on" />
+                  <div className="app-row__text">
+                    <div className="app-row__name-row">
+                      <span className="app-row__name">{skill.name}</span>
+                      <span className="app-row__badge app-row__badge--team">Team</span>
+                    </div>
+                    <span className="app-row__hint">{skill.source_path}</span>
+                  </div>
+                </div>
+                <div className="app-row__actions">
+                  <button
+                    className="app-row__disconnect"
+                    onClick={() => onDemote(skill.id)}
+                    disabled={demotingId === skill.id}
+                  >
+                    {demotingId === skill.id ? "Removing…" : "Remove from team"}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {/* User skills — Remove button + optional "Share with team" */}
+            {filteredUser.map((skill) => {
               const key = skillKey(skill);
               const isExiting = exitingKeys.has(key);
               const isNew = newlyAddedKeys.has(key);
+              const manifestId = `${skill.agent}:${skill.name}`;
               return (
                 <div
                   key={key}
@@ -193,18 +227,29 @@ function SyncedGroup({ skills, onRemove, removingKey, exitingKeys }: {
                         )}
                       </div>
                     </div>
-                    <button
-                      className="app-row__disconnect"
-                      onClick={() => onRemove(skill)}
-                      disabled={removingKey === key || isExiting}
-                    >
-                      {removingKey === key ? "Removing…" : "Remove"}
-                    </button>
+                    <div className="app-row__actions">
+                      {collabConfigured && (
+                        <button
+                          className="app-row__connect app-row__connect--secondary"
+                          onClick={() => onPromote(manifestId)}
+                          disabled={promotingId === manifestId || isExiting}
+                        >
+                          {promotingId === manifestId ? "Sharing…" : "Share with team"}
+                        </button>
+                      )}
+                      <button
+                        className="app-row__disconnect"
+                        onClick={() => onRemove(skill)}
+                        disabled={removingKey === key || isExiting}
+                      >
+                        {removingKey === key ? "Removing…" : "Remove"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
             })}
-            {filtered.length === 0 && (
+            {filteredUser.length === 0 && filteredTeam.length === 0 && (
               <div className="app-row">
                 <span className="app-row__meta" style={{ padding: "0 20px" }}>No skills match &ldquo;{query}&rdquo;</span>
               </div>
@@ -288,11 +333,15 @@ function ConflictGroup({ conflict, onResolve, resolving }: {
 
 const ANIM_DURATION_MS = 260;
 
-export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
+export function SkillSyncSection({ onError, onNotice }: SkillSyncSectionProps) {
   const [skills, setSkills] = useState<ScannedSkillEntry[] | null>(null);
+  const [teamSkills, setTeamSkills] = useState<TeamSkillEntry[]>([]);
   const [scanErrors, setScanErrors] = useState<ScanDirError[]>([]);
   const [scanning, setScanning] = useState(false);
   const [removingKey, setRemovingKey] = useState<string | null>(null);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [demotingId, setDemotingId]   = useState<string | null>(null);
+  const [collabConfigured, setCollabConfigured] = useState(false);
 
   const [pending, setPending] = useState<PendingSkillEntry[]>([]);
   const [conflicts, setConflicts] = useState<SameNameConflict[]>([]);
@@ -305,14 +354,18 @@ export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
   async function scan() {
     setScanning(true);
     try {
-      const [skillsResult, pendingResult] = await Promise.all([
+      const [skillsResult, pendingResult, teamResult, collabResult] = await Promise.all([
         rpc.request.scanSkills(),
         rpc.request.getSkillsPending(),
+        rpc.request.getTeamSkillsInstalled(),
+        rpc.request.getCollabConfigured(),
       ]);
       setSkills([...skillsResult.skills].sort((a, b) => a.name.localeCompare(b.name)));
       setScanErrors(skillsResult.scanErrors ?? []);
       setPending([...pendingResult.pending].sort((a, b) => a.name.localeCompare(b.name)));
       setConflicts(pendingResult.conflicts);
+      setTeamSkills([...teamResult.skills].sort((a, b) => a.name.localeCompare(b.name)));
+      setCollabConfigured(collabResult.configured);
     } catch {
       onError("Could not scan skill directories.");
       setSkills([]);
@@ -322,6 +375,9 @@ export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
   }
 
   useEffect(() => { void scan(); }, []);
+
+  // Re-scan when the main process reports skills changed (e.g. after draft load).
+  useEffect(() => events.on("skillsChanged", () => { void scan(); }), []);
 
   async function handleRemove(skill: ScannedSkillEntry) {
     const key = skillKey(skill);
@@ -337,6 +393,33 @@ export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
     } finally {
       setRemovingKey(null);
       setExitingSyncedKeys(new Set());
+    }
+  }
+
+  async function handlePromote(skillId: string) {
+    setPromotingId(skillId);
+    try {
+      const result = await rpc.request.promoteSkillToTeam({ skillId });
+      if (!result.ok) { onError(result.error ?? "Could not share skill with team."); return; }
+      await scan();
+    } catch {
+      onError("Failed to share skill with team.");
+    } finally {
+      setPromotingId(null);
+    }
+  }
+
+  async function handleDemote(skillId: string) {
+    setDemotingId(skillId);
+    try {
+      const result = await rpc.request.demoteSkillFromTeam({ skillId });
+      if (!result.ok) { onError(result.error ?? "Could not remove skill from team."); return; }
+      await scan();
+      onNotice("Removed from your team context. Run /draft-publish-team to push the change to your team.");
+    } catch {
+      onError("Failed to remove skill from team.");
+    } finally {
+      setDemotingId(null);
     }
   }
 
@@ -376,7 +459,8 @@ export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
 
   const syncedSkills = useMemo(() => (skills ?? []).filter((s) => s.synced), [skills]);
   const isLoading = skills === null;
-  const isEmpty = !isLoading && (skills ?? []).length === 0 && pending.length === 0 && conflicts.length === 0;
+  const hasSynced = syncedSkills.length > 0 || teamSkills.length > 0;
+  const isEmpty = !isLoading && (skills ?? []).length === 0 && pending.length === 0 && conflicts.length === 0 && teamSkills.length === 0;
 
   return (
     <section className="settings__section settings__section--tool-sync">
@@ -431,12 +515,18 @@ export function SkillSyncSection({ onError }: SkillSyncSectionProps) {
           />
         ))}
 
-        {!isLoading && syncedSkills.length > 0 && (
+        {!isLoading && hasSynced && (
           <SyncedGroup
             skills={syncedSkills}
+            teamSkills={teamSkills}
             onRemove={handleRemove}
+            onPromote={handlePromote}
+            onDemote={handleDemote}
             removingKey={removingKey}
+            promotingId={promotingId}
+            demotingId={demotingId}
             exitingKeys={exitingSyncedKeys}
+            collabConfigured={collabConfigured}
           />
         )}
 
