@@ -221,6 +221,32 @@ function InputSourceRow({
             <span className="app-row__meta">
               {isPending ? "Complete sign-in in your browser…" : buildMeta()}
             </span>
+            {isGitHub && detail.connected && (
+              <>
+                <span className="app-row__hint">
+                  Tracks merged PRs, releases, and open PRs · polls hourly
+                </span>
+                {detail.ghCliStatus === "not_found" && (
+                  <span className="app-row__warning">
+                    gh CLI not installed — GitHub sync is paused.{" "}
+                    <button
+                      className="app-row__link-btn"
+                      onClick={() => rpc.send.openUrl({ url: "https://cli.github.com/" })}
+                    >
+                      Install at cli.github.com
+                    </button>
+                    {" "}and GitHub sync will resume automatically.
+                  </span>
+                )}
+                {detail.ghCliStatus === "not_authenticated" && (
+                  <span className="app-row__warning">
+                    gh CLI not authenticated — run{" "}
+                    <code className="app-row__code">gh auth login</code>
+                    {" "}in your terminal. GitHub sync will resume automatically.
+                  </span>
+                )}
+              </>
+            )}
           </div>
         </div>
 

@@ -17,6 +17,7 @@ export interface SynthesizeResult {
 }
 
 interface Job {
+  job_id?: string;
   session_id?: string;
   reason?: string;
   profile?: string;
@@ -59,7 +60,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   const startedAt = new Date().toISOString();
   const startTime = Date.now();
   // Job UUID from filename — used as row id so duplicate job runs are idempotent
-  const jobId = basename(jobPath).replace(/^job-/, '').replace(/\.json$/, '');
+  const fallbackJobId = basename(jobPath).replace(/^job-/, '').replace(/\.json$/, '');
 
   // ── Parse job ──────────────────────────────────────────────────────────────
   let job: Job;
@@ -70,13 +71,14 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
     return { status: 'failed', proposalsGenerated: 0, errorMsg: 'invalid job JSON' };
   }
 
-  const profile      = job.profile    ?? 'default';
-  const sessionId    = job.session_id ?? null;
-  const reason       = job.reason     ?? 'unknown';
-  const source       = job.source     ?? 'claude-code-session';
-  const cwd          = job.cwd        ?? null;
-  const sessionShort = sessionId ? sessionId.slice(0, 8) : 'unknown';
-  const workspace    = getWorkspacePath(profile);
+  const profile        = job.profile         ?? 'default';
+  const jobId          = job.job_id          ?? fallbackJobId;
+  const sessionId      = job.session_id      ?? null;
+  const reason         = job.reason          ?? 'unknown';
+  const source         = job.source          ?? 'claude-code-session';
+  const cwd            = job.cwd             ?? null;
+  const sessionShort   = sessionId ? sessionId.slice(0, 8) : 'unknown';
+  const workspace      = getWorkspacePath(profile);
 
   // ── Skip exits that indicate broken/missing transcripts ─────────────────────
   // 'other' (Ctrl+C) and 'prompt_input_exit' (clean exit) both have usable
@@ -113,19 +115,31 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
 
   slog('info', `synthesize: starting (session=${sessionShort} profile=${profile})`);
 
-  // ── Resolve adapter script ─────────────────────────────────────────────────
-  const adapterScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.sh`);
+  // ── Resolve adapter script (bundled .js, then source .ts, then .sh) ───────
+  const jsScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.js`);
+  const tsScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.ts`);
+  const shScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.sh`);
+  const adapterScript = existsSync(jsScript)
+    ? jsScript
+    : existsSync(tsScript)
+      ? tsScript
+      : shScript;
+
   if (!existsSync(adapterScript)) {
-    const msg = `source adapter not found: ${adapterScript} (session=${sessionShort})`;
+    const msg = `source adapter not found for "${source}" (tried .js, .ts, and .sh; session=${sessionShort})`;
     slog('error', `synthesize: ${msg}`);
     writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd,
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'failed',
       durationMs: Date.now() - startTime,
       proposalsGenerated: 0, skipReason: null, errorMsg: msg,
     });
     return { status: 'failed', proposalsGenerated: 0, errorMsg: msg };
   }
+
+  const adapterCmd = adapterScript.endsWith('.sh')
+    ? ['bash', adapterScript, jobPath]
+    : ['bun', 'run', adapterScript, jobPath];
 
   // ── Count proposals before spawn (ENOENT-safe) ────────────────────────────
   const stagingDir  = join(workspace, 'proposals');
@@ -135,7 +149,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   mkdirSync(LOGS_DIR, { recursive: true });
   const logFd = openSync(LOG_PATH, 'a');
 
-  const proc = Bun.spawn(['bash', adapterScript, jobPath], {
+  const proc = Bun.spawn(adapterCmd, {
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: logFd,
@@ -202,7 +216,12 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   const now = new Date();
   const ts  = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
               `T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
-  const stagingFile = join(stagingDir, `${ts}-${sessionShort}.md`);
+  const nonSessionSuffix = `${source}-${jobId}`
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'job';
+  const proposalSuffix = sessionId ? sessionShort : nonSessionSuffix;
+  const stagingFile = join(stagingDir, `${ts}-${proposalSuffix}.md`);
 
   await Bun.write(stagingFile, stdoutText);
   slog('info', `synthesize: staged at ${stagingFile} (session=${sessionShort} profile=${profile})`);

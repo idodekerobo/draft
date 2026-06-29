@@ -34,7 +34,7 @@ export type SpawnHeadlessAgentResult =
   | { ok: true }
   | { ok: false; error: string };
 
-async function resolveRunnerBin(name: string): Promise<string | null> {
+export async function resolveRunnerBin(name: string): Promise<string | null> {
   const HOME = process.env.HOME ?? "";
   const knownPaths = [
     `${HOME}/.local/bin/${name}`,

@@ -351,6 +351,8 @@ export interface IntegrationDetail {
   channels: number | null;
   /** GitHub: list of watched repos. Empty for other sources. */
   repos: string[];
+  /** GitHub only: local gh CLI availability/authentication. Null for other sources. */
+  ghCliStatus: "ok" | "not_found" | "not_authenticated" | null;
 }
 
 export interface ConnectedAppsStatus {

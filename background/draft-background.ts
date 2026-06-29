@@ -7,9 +7,10 @@
 // stdout/stderr are captured by LaunchAgent to logs/daemon.log / logs/daemon-error.log
 
 import { PostHog } from 'posthog-node';
-import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, ensureAnalyticsConfig } from 'draft-core/config';
+import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, readLocalConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { runMigrations } from 'draft-core/migrations/runner';
 import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
+import { atomicPatch } from 'draft-core/sync/atomic-write';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
 
@@ -73,6 +74,59 @@ const logFd = openSync(LOG_PATH, 'a');
 function log(level: 'info' | 'warn' | 'error', msg: string) {
   const line = JSON.stringify({ ts: new Date().toISOString(), level, msg }) + '\n';
   appendFileSync(LOG_PATH, line);
+}
+
+const MAX_GITHUB_PROCESSED_ITEMS = 1_000;
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+async function acknowledgeGitHubJob(job: Record<string, unknown>): Promise<void> {
+  const context = job.github_context && typeof job.github_context === 'object'
+    ? job.github_context as Record<string, unknown>
+    : {};
+  const newPrIds = stringArray(context.new_pr_ids);
+  const newReleaseTags = stringArray(context.new_release_tags);
+  const jobTimestamp = typeof job.timestamp === 'string'
+    ? job.timestamp
+    : typeof context.timestamp === 'string'
+      ? context.timestamp
+      : null;
+  const advanceWatermark = context.advance_watermark !== false;
+  const statePath = `${STATE_DIR}/github.json`;
+
+  await atomicPatch(statePath, (raw) => {
+    let state: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') state = parsed as Record<string, unknown>;
+    } catch {}
+
+    const processedPrIds = [...new Set([
+      ...stringArray(state.processed_pr_ids),
+      ...newPrIds,
+    ])].slice(-MAX_GITHUB_PROCESSED_ITEMS);
+    const processedReleaseTags = [...new Set([
+      ...stringArray(state.processed_release_tags),
+      ...newReleaseTags,
+    ])].slice(-MAX_GITHUB_PROCESSED_ITEMS);
+    const currentWatermark = typeof state.last_polled_at === 'string'
+      ? state.last_polled_at
+      : null;
+    const lastPolledAt = advanceWatermark && jobTimestamp
+      ? (!currentWatermark || jobTimestamp > currentWatermark ? jobTimestamp : currentWatermark)
+      : currentWatermark;
+
+    return `${JSON.stringify({
+      ...state,
+      last_polled_at: lastPolledAt,
+      processed_pr_ids: processedPrIds,
+      processed_release_tags: processedReleaseTags,
+    }, null, 2)}\n`;
+  });
 }
 
 function reconcileSkills() {
@@ -156,6 +210,17 @@ async function processJob(jobPath: string) {
   const jobSource = String(job.source ?? 'claude-code-session');
   const result = await synthesize(processingPath);
   if (result.status === 'success' || result.status === 'skipped') {
+    if (jobSource === 'github' && result.status === 'success') {
+      try {
+        await acknowledgeGitHubJob(job);
+        log('info', `job ${jobName}: GitHub state acknowledged`);
+      } catch (error) {
+        log('error', `job ${jobName}: GitHub state acknowledgment failed: ${error}`);
+        try { renameSync(processingPath, `${DRAFT_FAILED}/${jobName}`); } catch {}
+        phTrack('daemon_synthesis_failed', { source: jobSource, status: 'ack_failed' });
+        return;
+      }
+    }
     try { unlinkSync(processingPath); } catch {}
     log('info', `job ${jobName} complete (${result.status})`);
     phTrack('daemon_synthesis_completed', { source: jobSource, status: result.status });
@@ -254,10 +319,15 @@ setInterval(() => {
 // GitHub poller
 setInterval(() => {
   const ghConfig = `${DRAFT_WORKSPACE}/config/github.json`;
-  const script   = `${DRAFT_BACKGROUND}/integrations/github/github-poller.sh`;
+  const tsScript = `${DRAFT_BACKGROUND}/integrations/github/github-poller.ts`;
+  const shScript = `${DRAFT_BACKGROUND}/integrations/github/github-poller.sh`;
+  const script   = existsSync(tsScript) ? tsScript : shScript;
   if (!existsSync(ghConfig) || !existsSync(script)) return;
   log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
-  Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+  const cmd = script.endsWith('.ts')
+    ? ['bun', 'run', script]
+    : ['bash', script];
+  Bun.spawn(cmd, { stdin: 'ignore', stdout: logFd, stderr: logFd });
 }, GITHUB_POLL_MS);
 
 // Skills are user-owned files; reconcile separately from synthesis so they keep

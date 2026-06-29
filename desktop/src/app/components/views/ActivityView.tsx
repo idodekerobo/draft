@@ -33,6 +33,18 @@ const DOT_COLOR: Record<ActivityRun["status"], string> = {
   timeout: "var(--color-status-red)",
 };
 
+const SOURCE_LABELS: Record<string, string> = {
+  "claude-code-session": "Claude Code",
+  "codex-session":       "Codex",
+  "granola":             "Granola",
+  "slack":               "Slack",
+  "github":              "GitHub",
+};
+
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source;
+}
+
 const SKIP_REASON_LABELS: Record<string, string> = {
   other:                        "Session ended early",
   clear:                        "Session cleared",
@@ -122,8 +134,8 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
 
   const primaryRight = cwdShort(run.cwd);
   const primaryLine = primaryRight
-    ? `${run.source} · ${primaryRight}`
-    : run.source;
+    ? `${sourceLabel(run.source)} · ${primaryRight}`
+    : sourceLabel(run.source);
 
   let metaLine: string;
   const ts = formatTimestamp(run.startedAt);

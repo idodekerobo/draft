@@ -11,6 +11,17 @@
 
 import { capture } from "../exec";
 import { writeIntegrations, readIntegrations } from "../config";
+import { resolveRunnerBin } from "../agents/headless";
+
+export type GhCliStatus = "ok" | "not_found" | "not_authenticated";
+
+export async function checkGhCli(): Promise<GhCliStatus> {
+  const ghBin = await resolveRunnerBin("gh");
+  if (!ghBin) return "not_found";
+
+  const authCheck = await capture([ghBin, "auth", "status"]);
+  return authCheck.exitCode === 0 ? "ok" : "not_authenticated";
+}
 
 export type GitHubConnectResult =
   | { ok: true }
@@ -24,9 +35,13 @@ export interface ConnectGitHubOpts {
 
 export async function connectGitHub(opts: ConnectGitHubOpts): Promise<GitHubConnectResult> {
   const { workspace, onComplete } = opts;
+  const ghBin = await resolveRunnerBin("gh");
+  if (!ghBin) {
+    return { ok: false, error: "gh CLI not found. Install it with: brew install gh" };
+  }
 
   // Fast path: gh already authenticated.
-  const authCheck = await capture(["gh", "auth", "status"]);
+  const authCheck = await capture([ghBin, "auth", "status"]);
   if (authCheck.exitCode === 0) {
     try {
       writeGitHubConnected(workspace);
@@ -41,7 +56,7 @@ export async function connectGitHub(opts: ConnectGitHubOpts): Promise<GitHubConn
   // Background promise writes integrations.json when gh exits cleanly.
   let proc: ReturnType<typeof Bun.spawn>;
   try {
-    proc = Bun.spawn(["gh", "auth", "login", "--web"], {
+    proc = Bun.spawn([ghBin, "auth", "login", "--web"], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
