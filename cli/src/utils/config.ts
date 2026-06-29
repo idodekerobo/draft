@@ -34,6 +34,10 @@ export {
   writeDraftConfig,
   writeToolConfig,
   getInstalledTools,
+  type LocalConfig,
+  type LocalConfigResult,
+  readLocalConfig,
+  writeLocalConfig,
 } from "draft-core/config";
 
 // ── CLI-specific: repo root detection ─────────────────────────────────────────

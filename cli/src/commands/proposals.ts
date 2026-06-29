@@ -6,13 +6,13 @@
 // lives in draft-core/proposals so the desktop UI can reuse it.
 
 import { join } from "path";
-import { capture } from "../utils/exec";
-import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR } from "../utils/config";
-import { green, red, yellow, dim, cyan, bold } from "../utils/output";
+import { getActiveProfile, getWorkspacePath } from "../utils/config";
+import { green, red, dim, cyan, bold } from "../utils/output";
 import {
   type Proposal,
   listProposals,
   acceptProposal,
+  applyProposalLocally,
   rejectProposal,
 } from "draft-core/proposals";
 
@@ -53,27 +53,9 @@ export async function runProposals(args: string[]): Promise<void> {
     }
 
     if (key === "a") {
+      applyProposalLocally(proposal, workspace);
       acceptProposal(proposal, acceptedDir);
-
-      // Attempt immediate commit
-      const ghResult = await capture(["gh", "api", "user", "--jq", ".login"]);
-      const ghUsername = ghResult.exitCode === 0 ? ghResult.stdout.trim() : "";
-
-      if (ghUsername) {
-        const commitScript = join(BACKGROUND_DIR, "commit-to-team-context.sh");
-        const acceptedPath = join(acceptedDir, proposal.filename);
-        const result = await capture(
-          ["bash", commitScript, acceptedPath, getWorkspacePath(), ghUsername],
-          { timeoutMs: 60_000 }
-        );
-        if (result.exitCode === 0) {
-          console.log(`\n${green("[✓]")} Accepted and pushed.`);
-        } else {
-          console.log(`\n${green("[✓]")} Accepted locally. ${yellow("⚠")}  Push failed — run ${cyan("draft publish")} when ready.`);
-        }
-      } else {
-        console.log(`\n${green("[✓]")} Accepted locally. ${dim("(gh not authenticated — run `draft publish` to push)")}`);
-      }
+      console.log(`\n${green("[✓]")} Accepted locally. ${dim("Run `draft publish` to publish context and team assets together.")}`);
     } else if (key === "r") {
       rejectProposal(proposal, rejectedDir);
       console.log(`\n${red("[✗]")} Rejected.`);
@@ -142,4 +124,3 @@ function readKey(): Promise<string> {
     process.stdin.once("data", handler);
   });
 }
-
