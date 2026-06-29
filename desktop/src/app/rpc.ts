@@ -16,6 +16,7 @@ import type { AppRPCType, HeadlessSetupPhase } from "../rpc/schema";
 type EventMap = {
   proposalAdded: { profile: string; source: string; count: number };
   skillsChanged: { count: number };
+  mcpsChanged: { count: number };
   headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
@@ -64,6 +65,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       proposalAdded: (data) => events.emit("proposalAdded", data),
 
       skillsChanged: (data) => events.emit("skillsChanged", data),
+      mcpsChanged: (data) => events.emit("mcpsChanged", data),
 
       headlessProgress: (data) => events.emit("headlessProgress", data),
 

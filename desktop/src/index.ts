@@ -5,12 +5,13 @@ import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import {
   createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
   detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
+  promoteSkillToTeam, demoteSkillFromTeam,
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
-import { capture } from "draft-core/exec";
+import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
@@ -47,17 +48,22 @@ import {
   startActiveProfileWatch,
   stopActiveProfileWatch,
 } from "./main/watchers/activeProfile";
-import { startSkillWatch, stopSkillWatch } from "./main/watchers/skills";
-import { startMcpWatch, stopMcpWatch } from "./main/watchers/mcps";
+import { startSkillWatch, stopSkillWatch, restartSkillWatchWithProfile } from "./main/watchers/skills";
+import { startMcpWatch, stopMcpWatch, restartMcpWatchWithProfile } from "./main/watchers/mcps";
 import {
   detectMcpPending,
   approveMcps as approveMcpsCore,
+  promoteMcpToTeam,
+  demoteMcpFromTeam,
+  setTeamMcpSecret,
 } from "draft-core/sync/mcp-sync";
 import {
   readMcpManifest,
   writeMcpManifest,
   tombstoneMcp,
 } from "draft-core/sync/manifest";
+import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
+import { switchProfileAssets } from "draft-core/sync/team-assets";
 import type { AppRPCType } from "./rpc/schema";
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
@@ -66,6 +72,42 @@ const _phKey          = process.env.DRAFT_PH_KEY           ?? "";
 const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.posthog.com";
 const _crispWebsiteId = process.env.DRAFT_CRISP_WEBSITE_ID ?? "";
 const _calUrl         = process.env.DRAFT_CAL_URL          ?? "";
+
+// ── Runner detection ──────────────────────────────────────────────────────────
+//
+// macOS GUI apps get a stripped PATH. We cannot use `which` or shell resolution
+// reliably — ~/.local/bin and nvm paths are typically set in .zshrc (interactive
+// shells only), not .zprofile (login shells). Instead we check known installation
+// paths directly with existsSync, which works regardless of shell configuration.
+
+async function findRunnerBin(name: string): Promise<string | null> {
+  const HOME = process.env.HOME ?? "";
+
+  // Check known installation paths — no PATH or subprocess needed.
+  const knownPaths = [
+    `${HOME}/.local/bin/${name}`,          // official Claude Code installer default
+    `/usr/local/bin/${name}`,              // npm global with default prefix
+    `/opt/homebrew/bin/${name}`,           // Homebrew-managed
+    `${HOME}/.npm-global/bin/${name}`,     // custom npm prefix
+  ];
+  for (const p of knownPaths) {
+    if (existsSync(p)) return p;
+  }
+
+  // Fallback: nvm — scan installed node versions for the binary.
+  const nvmDir = `${HOME}/.nvm/versions/node`;
+  if (existsSync(nvmDir)) {
+    try {
+      const versions = (await import("fs")).readdirSync(nvmDir);
+      for (const v of versions.reverse()) { // newest first
+        const p = `${nvmDir}/${v}/bin/${name}`;
+        if (existsSync(p)) return p;
+      }
+    } catch {}
+  }
+
+  return null;
+}
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
@@ -256,13 +298,31 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getProfiles: async () => getProfiles(),
 
       switchProfile: async ({ profile }) => {
-        const result = setActiveProfile(profile);
-        if (!result.ok) {
-          return { ok: false, error: result.reason };
+        const oldProfile = getActiveProfile();
+        try {
+          const result = await switchProfileAssets(oldProfile, profile);
+          const newWorkspacePath = getWorkspacePath(profile);
+          const wsManifest = readWorkspaceMcpManifest(newWorkspacePath);
+          if (result.missingSecrets.length > 0) {
+            try {
+              rpc.send.mcpsPendingCredentials({
+                mcps: result.missingSecrets.map(({ name, requiredSecrets }) => {
+                  const entry = wsManifest.servers.find((server) => server.name === name);
+                  return { name, url: entry?.canonical.url ?? "", required_secrets: requiredSecrets };
+                }),
+              });
+            } catch {}
+          }
+
+          restartProposalWatch(profile, watcherHandlers);
+          restartSkillWatchWithProfile(profile);
+          restartMcpWatchWithProfile(profile);
+
+          try { rpc.send.profileChanged({ profile }); } catch {}
+          return { ok: true, active: profile };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
         }
-        restartProposalWatch(result.active, watcherHandlers);
-        try { rpc.send.profileChanged({ profile: result.active }); } catch {}
-        return { ok: true, active: result.active };
       },
 
       createProfile: async ({ name }) => {
@@ -763,6 +823,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       startSkillWatcher: async () => {
+        const profile = getActiveProfile();
         startSkillWatch({
           onSkillsPending: (pending) => {
             try { rpc.send.skillsPendingApproval({ pending }); } catch {}
@@ -774,7 +835,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             try { rpc.send.skillsChanged({ count }); } catch {}
           },
           onReconciled: (_result) => {},
-        });
+        }, { activeProfile: profile });
       },
 
       getSkillsPending: async () => {
@@ -939,12 +1000,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getAvailableRunners: async () => {
-        const extendedPath = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin";
-        const [claude, codex] = await Promise.all([
-          capture(["which", "claude"], { env: { PATH: extendedPath } }).then((r) => r.exitCode === 0),
-          capture(["which", "codex"],  { env: { PATH: extendedPath } }).then((r) => r.exitCode === 0),
+        const [claudePath, codexPath] = await Promise.all([
+          findRunnerBin("claude"),
+          findRunnerBin("codex"),
         ]);
-        return { runners: [{ name: "claude" as const, installed: claude }, { name: "codex" as const, installed: codex }] };
+        return {
+          runners: [
+            { name: "claude" as const, installed: claudePath !== null },
+            { name: "codex" as const, installed: codexPath !== null },
+          ],
+        };
       },
 
       runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner }) => {
@@ -1056,6 +1121,67 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return runs;
         } catch {
           return [];
+        }
+      },
+
+      getTeamSkillsInstalled: async () => {
+        const profile = getActiveProfile();
+        const manifest = readSkillManifest();
+        const prefix = `team:${profile}:`;
+        const skills = Object.entries(manifest.skills)
+          .filter(([id, entry]) => id.startsWith(prefix) && entry.removed_at === null)
+          .map(([id, entry]) => ({
+            id,
+            name: entry.name,
+            profile,
+            source_path: entry.source_path,
+          }));
+        return { skills };
+      },
+
+      promoteSkillToTeam: async ({ skillId }) => {
+        const profile = getActiveProfile();
+        const workspacePath = getWorkspacePath(profile);
+        const result = promoteSkillToTeam(skillId, workspacePath, profile);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+
+      promoteMcpToTeam: async ({ mcpId }) => {
+        const profile = getActiveProfile();
+        const workspacePath = getWorkspacePath(profile);
+        const result = promoteMcpToTeam(mcpId, workspacePath, profile);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+
+      demoteSkillFromTeam: async ({ skillId }) => {
+        const result = demoteSkillFromTeam(skillId);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+
+      demoteMcpFromTeam: async ({ mcpId }) => {
+        const profile = getActiveProfile();
+        const workspacePath = getWorkspacePath(profile);
+        const result = demoteMcpFromTeam(mcpId, workspacePath);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+
+      setMcpSecret: async ({ name, envVar, value }) => {
+        const profile = getActiveProfile();
+        const result = await setTeamMcpSecret(name, profile, envVar, value);
+        if (!result.ok) return { ok: false, error: result.error, nowInstalled: false };
+        return { ok: true, nowInstalled: result.nowInstalled };
+      },
+
+      getCollabConfigured: async () => {
+        const profile = getActiveProfile();
+        const workspacePath = getWorkspacePath(profile);
+        const collabPath = join(workspacePath, "config", "collaboration.json");
+        try {
+          const raw = readFileSync(collabPath, "utf8");
+          const parsed = JSON.parse(raw);
+          return { configured: parsed?.mode === "github" };
+        } catch {
+          return { configured: false };
         }
       },
     },
@@ -1393,7 +1519,7 @@ setTimeout(async () => {
         // Reconcile result logged internally; no UI action needed unless repaired > 0
         // (onSkillsChanged is called separately when repaired.length > 0)
       },
-    });
+    }, { activeProfile: getActiveProfile() });
 
     startMcpWatch({
       onMcpsPending: (pending) => {
@@ -1406,14 +1532,27 @@ setTimeout(async () => {
         try { rpc.send.mcpsDrifted({ drifted }); } catch {}
       },
       onReconciled: (_result) => {},
-    });
+      onMcpsPendingCredentials: (mcps) => {
+        try { rpc.send.mcpsPendingCredentials({ mcps }); } catch {}
+      },
+      onTeamMcpsChanged: (count) => {
+        try { rpc.send.mcpsChanged({ count }); } catch {}
+      },
+    }, { activeProfile: getActiveProfile() });
   }
 
   // Watch ~/.draft/active-profile for CLI-driven profile switches (e.g. `draft switch`).
   startActiveProfileWatch({
-    onProfileChanged: (profile) => {
-      restartProposalWatch(profile, watcherHandlers);
-      try { rpc.send.profileChanged({ profile }); } catch {}
+    onProfileChanged: (profile, previousProfile) => {
+      void switchProfileAssets(previousProfile, profile).catch(() => {
+        // The CLI may already have completed the idempotent lifecycle. Watchers
+        // still need to follow the active profile if a later rescan is required.
+      }).finally(() => {
+        restartProposalWatch(profile, watcherHandlers);
+        restartSkillWatchWithProfile(profile);
+        restartMcpWatchWithProfile(profile);
+        try { rpc.send.profileChanged({ profile }); } catch {}
+      });
     },
   });
 
