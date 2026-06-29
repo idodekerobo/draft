@@ -52,6 +52,9 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   logout:                       "User logged out",
   bypass_permissions_disabled:  "Permissions mode changed",
   unknown:                      "Session ended unexpectedly",
+  missing_transcript_path:      "Transcript path missing",
+  missing_transcript:           "Transcript file not found",
+  transcript_changed:           "Transcript still changing",
 };
 
 const ERROR_LABELS: Record<string, string> = {
@@ -122,6 +125,9 @@ function ActivityRunDetail({ run }: { run: ActivityRun }) {
       </div>
       {run.cwd && (
         <span className="activity-run__project-path">{run.cwd}</span>
+      )}
+      {run.transcriptPath && (
+        <span className="activity-run__project-path activity-run__transcript-path">{run.transcriptPath}</span>
       )}
     </div>
   );

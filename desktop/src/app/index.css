@@ -1751,6 +1751,102 @@ button {
   max-width: 420px;
 }
 
+.settings__row-control-stack {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.settings__interval-input {
+  width: 52px;
+  padding: 3px 6px;
+  background: var(--color-surface-raised, #2a2a2a);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.1));
+  border-radius: 5px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  text-align: center;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.settings__interval-input::-webkit-inner-spin-button,
+.settings__interval-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+/* ── Custom interval unit dropdown ───────────────────────────────────────────── */
+
+.settings__interval-unit-wrapper {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.settings__interval-unit-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  background: var(--color-surface-raised, #2a2a2a);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.1));
+  border-radius: 5px;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: inherit;
+}
+
+.settings__interval-unit-btn:hover {
+  border-color: rgba(255,255,255,0.22);
+  background: color-mix(in srgb, var(--color-surface-raised, #2a2a2a) 85%, white 15%);
+}
+
+.settings__interval-unit-chevron {
+  color: var(--color-text-secondary, rgba(255,255,255,0.45));
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.settings__interval-unit-chevron--open {
+  transform: rotate(180deg);
+}
+
+.settings__interval-unit-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  margin: 0;
+  padding: 3px 0;
+  list-style: none;
+  background: color-mix(in srgb, var(--color-surface-raised, #2a2a2a) 80%, white 20%);
+  border: 1px solid var(--color-border, rgba(255,255,255,0.1));
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  z-index: 100;
+}
+
+.settings__interval-unit-option {
+  padding: 5px 10px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.settings__interval-unit-option:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.settings__interval-unit-option--selected {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
 /* ── Save error toast (inline at bottom of settings panel) ───────────────────── */
 
 .settings__save-error {
@@ -1858,6 +1954,37 @@ button {
   color: var(--color-text-tertiary);
   line-height: 1.4;
   margin-top: 1px;
+}
+
+.app-row__warning {
+  font-size: 12px;
+  color: var(--color-status-yellow);
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
+.app-row__link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent-blue);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.app-row__link-btn:hover {
+  opacity: 0.8;
+}
+
+.app-row__code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 /* Copyable CLI command chip */

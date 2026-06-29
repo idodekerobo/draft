@@ -31,6 +31,7 @@ export interface ActivityRun {
   proposalsGenerated: number;
   skipReason: string | null;
   errorMsg: string | null;
+  transcriptPath: string | null;
 }
 
 export interface IntegrationStatus {
@@ -295,6 +296,8 @@ export interface LocalConfig {
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
   disabledContextSections: string[];
+  codexScanIntervalMinutes: number | null;
+  claudeCodeSynthesis: boolean;
 }
 
 export interface UpdateInfo {

@@ -619,7 +619,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   const [dismissedDims, setDismissedDims] = useState<Set<string>>(new Set());
 
   // ── Sync state ───────────────────────────────────────────────────────────────
-  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [] });
+  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true });
   const [collabConfigured, setCollabConfigured] = useState(false);
   const [lastLoaded, setLastLoaded] = useState<string | null>(null);
   const [localEntries, setLocalEntries] = useState<LoadDiffEntry[]>([]);

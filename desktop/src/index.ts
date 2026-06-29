@@ -447,10 +447,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const result = readLocalConfig(workspace);
         const c = result.ok ? result.config : {};
         return {
-          teamLoadMode:             c.teamLoadMode             ?? "auto",
-          launchOnLogin:            c.launchOnLogin            ?? false,
-          notificationsEnabled:     c.notificationsEnabled     ?? true,
-          disabledContextSections:  c.disabledContextSections  ?? [],
+          teamLoadMode:              c.teamLoadMode              ?? "auto",
+          launchOnLogin:             c.launchOnLogin             ?? false,
+          notificationsEnabled:      c.notificationsEnabled      ?? true,
+          disabledContextSections:   c.disabledContextSections   ?? [],
+          codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
+          claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
         };
       },
 
