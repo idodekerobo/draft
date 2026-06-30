@@ -16,7 +16,7 @@ import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, writeSlackConfig } from "draft-core/integrations/slack";
-import { connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
+import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import { homedir } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import {
@@ -64,7 +64,7 @@ import {
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { switchProfileAssets } from "draft-core/sync/team-assets";
-import type { AppRPCType } from "./rpc/schema";
+import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
 // Falls back to empty string for OSS builds (no build-config.json).
@@ -447,10 +447,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const result = readLocalConfig(workspace);
         const c = result.ok ? result.config : {};
         return {
-          teamLoadMode:             c.teamLoadMode             ?? "auto",
-          launchOnLogin:            c.launchOnLogin            ?? false,
-          notificationsEnabled:     c.notificationsEnabled     ?? true,
-          disabledContextSections:  c.disabledContextSections  ?? [],
+          teamLoadMode:              c.teamLoadMode              ?? "auto",
+          launchOnLogin:             c.launchOnLogin             ?? false,
+          notificationsEnabled:      c.notificationsEnabled      ?? true,
+          disabledContextSections:   c.disabledContextSections   ?? [],
+          codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
+          claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
         };
       },
 
@@ -645,7 +647,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
 
-        function integrationDetail(key: "granola" | "slack" | "github") {
+        function integrationDetail(key: "granola" | "slack" | "github"): IntegrationDetail {
           const entry = int[key];
           return {
             connected:     entry?.connected    ?? false,
@@ -653,8 +655,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             mode:          entry?.mode          ?? null,
             channels:      entry?.channels      ?? null,
             repos:         entry?.repos         ?? [],
+            ghCliStatus:    null,
           };
         }
+
+        const githubDetail = integrationDetail("github");
+        githubDetail.ghCliStatus = githubDetail.connected
+          ? await checkGhCli()
+          : null;
 
         return {
           tools: {
@@ -667,7 +675,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           integrations: {
             granola: integrationDetail("granola"),
             slack:   integrationDetail("slack"),
-            github:  integrationDetail("github"),
+            github:  githubDetail,
           },
         };
       },
@@ -1289,7 +1297,7 @@ async function syncBundledAssets(): Promise<void> {
     "synthesize.sh",
     "uninstall.sh",
   ];
-  const runtimeDirectories = ["intelligence", "integrations", "synthesizers"];
+  const runtimeDirectories = ["intelligence", "integrations", "synthesizers", "node_modules"];
 
   if (existsSync(backgroundDir)) {
     try {

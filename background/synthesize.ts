@@ -6,7 +6,7 @@
 
 import { openActivityDb, insertRun, type ActivityRun } from 'draft-core/db/activity';
 import { BACKGROUND_DIR, getWorkspacePath } from 'draft-core/config';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync } from 'fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, statSync } from 'fs';
 import { basename, join } from 'path';
 
 export interface SynthesizeResult {
@@ -17,12 +17,14 @@ export interface SynthesizeResult {
 }
 
 interface Job {
+  job_id?: string;
   session_id?: string;
   reason?: string;
   profile?: string;
   source?: string;
   cwd?: string;
   transcript_path?: string;
+  transcript_fingerprint?: string;
 }
 
 const LOGS_DIR   = `${BACKGROUND_DIR}/logs`;
@@ -59,7 +61,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   const startedAt = new Date().toISOString();
   const startTime = Date.now();
   // Job UUID from filename — used as row id so duplicate job runs are idempotent
-  const jobId = basename(jobPath).replace(/^job-/, '').replace(/\.json$/, '');
+  const fallbackJobId = basename(jobPath).replace(/^job-/, '').replace(/\.json$/, '');
 
   // ── Parse job ──────────────────────────────────────────────────────────────
   let job: Job;
@@ -70,13 +72,15 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
     return { status: 'failed', proposalsGenerated: 0, errorMsg: 'invalid job JSON' };
   }
 
-  const profile      = job.profile    ?? 'default';
-  const sessionId    = job.session_id ?? null;
-  const reason       = job.reason     ?? 'unknown';
-  const source       = job.source     ?? 'claude-code-session';
-  const cwd          = job.cwd        ?? null;
-  const sessionShort = sessionId ? sessionId.slice(0, 8) : 'unknown';
-  const workspace    = getWorkspacePath(profile);
+  const profile        = job.profile         ?? 'default';
+  const jobId          = job.job_id          ?? fallbackJobId;
+  const sessionId      = job.session_id      ?? null;
+  const reason         = job.reason          ?? 'unknown';
+  const source         = job.source          ?? 'claude-code-session';
+  const cwd            = job.cwd             ?? null;
+  const transcriptPath: string | null = job.transcript_path ?? null;
+  const sessionShort   = sessionId ? sessionId.slice(0, 8) : 'unknown';
+  const workspace      = getWorkspacePath(profile);
 
   // ── Skip exits that indicate broken/missing transcripts ─────────────────────
   // 'other' (Ctrl+C) and 'prompt_input_exit' (clean exit) both have usable
@@ -85,7 +89,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   if (SKIP_REASONS.has(reason)) {
     slog('info', `synthesize: skipping job (reason=${reason} session=${sessionShort} profile=${profile})`);
     writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd,
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'skipped',
       durationMs: Date.now() - startTime,
       proposalsGenerated: 0, skipReason: reason, errorMsg: null,
@@ -96,13 +100,31 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   // ── Skip missing transcripts before spawning the expensive adapter ─────────
   // Session-source jobs require a transcript file. Check early to avoid launching
   // a Claude session that will immediately fail.
-  if (source === 'claude-code-session') {
-    const transcriptPath = job.transcript_path;
+  if (source === 'claude-code-session' || source === 'codex-session') {
     if (!transcriptPath || !existsSync(transcriptPath)) {
       const why = !transcriptPath ? 'missing_transcript_path' : 'missing_transcript';
       slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
       writeActivityRow(workspace, {
-        id: jobId, profile, source, sessionId, cwd,
+        id: jobId, profile, source, sessionId, cwd, transcriptPath,
+        startedAt, endedAt: new Date().toISOString(), status: 'skipped',
+        durationMs: Date.now() - startTime,
+        proposalsGenerated: 0, skipReason: why, errorMsg: null,
+      });
+      return { status: 'skipped', proposalsGenerated: 0, skipReason: why };
+    }
+  }
+
+  // Codex transcripts remain writable while a session is active. A scanner job
+  // carries the fingerprint it observed; if the file changed before processing,
+  // defer it so the scanner can wait for the new version to stabilize.
+  if (source === 'codex-session' && transcriptPath && job.transcript_fingerprint) {
+    const stat = statSync(transcriptPath);
+    const currentFingerprint = `${stat.size}:${Math.trunc(stat.mtimeMs)}`;
+    if (currentFingerprint !== job.transcript_fingerprint) {
+      const why = 'transcript_changed';
+      slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
+      writeActivityRow(workspace, {
+        id: jobId, profile, source, sessionId, cwd, transcriptPath,
         startedAt, endedAt: new Date().toISOString(), status: 'skipped',
         durationMs: Date.now() - startTime,
         proposalsGenerated: 0, skipReason: why, errorMsg: null,
@@ -113,19 +135,31 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
 
   slog('info', `synthesize: starting (session=${sessionShort} profile=${profile})`);
 
-  // ── Resolve adapter script ─────────────────────────────────────────────────
-  const adapterScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.sh`);
+  // ── Resolve adapter script (bundled .js, then source .ts, then .sh) ───────
+  const jsScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.js`);
+  const tsScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.ts`);
+  const shScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.sh`);
+  const adapterScript = existsSync(jsScript)
+    ? jsScript
+    : existsSync(tsScript)
+      ? tsScript
+      : shScript;
+
   if (!existsSync(adapterScript)) {
-    const msg = `source adapter not found: ${adapterScript} (session=${sessionShort})`;
+    const msg = `source adapter not found for "${source}" (tried .js, .ts, and .sh; session=${sessionShort})`;
     slog('error', `synthesize: ${msg}`);
     writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd,
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'failed',
       durationMs: Date.now() - startTime,
       proposalsGenerated: 0, skipReason: null, errorMsg: msg,
     });
     return { status: 'failed', proposalsGenerated: 0, errorMsg: msg };
   }
+
+  const adapterCmd = adapterScript.endsWith('.sh')
+    ? ['bash', adapterScript, jobPath]
+    : ['bun', 'run', adapterScript, jobPath];
 
   // ── Count proposals before spawn (ENOENT-safe) ────────────────────────────
   const stagingDir  = join(workspace, 'proposals');
@@ -135,7 +169,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   mkdirSync(LOGS_DIR, { recursive: true });
   const logFd = openSync(LOG_PATH, 'a');
 
-  const proc = Bun.spawn(['bash', adapterScript, jobPath], {
+  const proc = Bun.spawn(adapterCmd, {
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: logFd,
@@ -161,7 +195,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   if (timedOut) {
     slog('error', `synthesize: timeout after 300s (session=${sessionShort})`);
     writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd,
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'timeout',
       durationMs: Date.now() - startTime,
       proposalsGenerated: 0, skipReason: null, errorMsg: 'timed out after 300s',
@@ -173,7 +207,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
     const errorMsg = `adapter exited ${exitCode}`;
     slog('error', `synthesize: ${errorMsg} (session=${sessionShort})`);
     writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd,
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'failed',
       durationMs: Date.now() - startTime,
       proposalsGenerated: 0, skipReason: null, errorMsg,
@@ -186,7 +220,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
     const why = !stdoutText.trim() ? 'empty output' : 'no team-relevant updates';
     slog('info', `synthesize: ${why} (session=${sessionShort}) — nothing to stage`);
     writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd,
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'success',
       durationMs: Date.now() - startTime,
       proposalsGenerated: 0, skipReason: null, errorMsg: null,
@@ -202,7 +236,12 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   const now = new Date();
   const ts  = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
               `T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
-  const stagingFile = join(stagingDir, `${ts}-${sessionShort}.md`);
+  const nonSessionSuffix = `${source}-${jobId}`
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'job';
+  const proposalSuffix = sessionId ? sessionShort : nonSessionSuffix;
+  const stagingFile = join(stagingDir, `${ts}-${proposalSuffix}.md`);
 
   await Bun.write(stagingFile, stdoutText);
   slog('info', `synthesize: staged at ${stagingFile} (session=${sessionShort} profile=${profile})`);
@@ -210,7 +249,7 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   // ── Record success row ─────────────────────────────────────────────────────
   const proposalsGenerated = Math.max(0, countProposalFiles(stagingDir) - countBefore);
   writeActivityRow(workspace, {
-    id: jobId, profile, source, sessionId, cwd,
+    id: jobId, profile, source, sessionId, cwd, transcriptPath,
     startedAt, endedAt: new Date().toISOString(), status: 'success',
     durationMs: Date.now() - startTime,
     proposalsGenerated, skipReason: null, errorMsg: null,

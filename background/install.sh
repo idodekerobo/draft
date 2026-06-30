@@ -103,6 +103,14 @@ for subdir in "synthesizers" "intelligence"; do
             cp "$script" "$dest"
             chmod +x "$dest"
         done
+        for script in "$SCRIPT_DIR/$subdir"/*.ts; do
+            [ -f "$script" ] || continue
+            cp "$script" "$DRAFT_BACKGROUND/$subdir/$(basename "$script")"
+        done
+        for script in "$SCRIPT_DIR/$subdir"/*.js; do
+            [ -f "$script" ] || continue
+            cp "$script" "$DRAFT_BACKGROUND/$subdir/$(basename "$script")"
+        done
         # Copy README if present
         [ -f "$SCRIPT_DIR/$subdir/README.md" ] && cp "$SCRIPT_DIR/$subdir/README.md" "$DRAFT_BACKGROUND/$subdir/README.md"
         echo "[Draft Daemon] Installed $subdir/ to $DRAFT_BACKGROUND/$subdir"
@@ -124,8 +132,8 @@ for integ_src in "$SCRIPT_DIR/integrations"/*/; do
         cp "$script" "$integ_dst/$(basename "$script")"
         chmod +x "$integ_dst/$(basename "$script")"
     done
-    # Copy TypeScript and config files (bun projects)
-    for f in "$integ_src"*.ts "$integ_src"*.json; do
+    # Copy JavaScript bundles, TypeScript sources, and config files (bun projects)
+    for f in "$integ_src"*.js "$integ_src"*.ts "$integ_src"*.json; do
         [ -f "$f" ] || continue
         cp "$f" "$integ_dst/$(basename "$f")"
     done

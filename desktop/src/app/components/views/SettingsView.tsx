@@ -43,7 +43,83 @@ function shortDate(iso: string | null): string {
   }
 }
 
+// ── Session synthesis helpers ──────────────────────────────────────────────────
+
+function codexIntervalToDisplay(minutes: number): { value: string; unit: "hours" | "minutes" } {
+  if (minutes % 60 === 0) return { value: String(minutes / 60), unit: "hours" };
+  return { value: String(minutes), unit: "minutes" };
+}
+
+function codexDisplayToMinutes(value: string, unit: "hours" | "minutes"): number {
+  const n = Math.max(1, parseInt(value, 10) || 1);
+  return unit === "hours" ? n * 60 : n;
+}
+
 // ── Sub-components: Controls ───────────────────────────────────────────────────
+
+interface IntervalUnitDropdownProps {
+  value: "hours" | "minutes";
+  onChange: (value: "hours" | "minutes") => void;
+}
+
+function IntervalUnitDropdown({ value, onChange }: IntervalUnitDropdownProps) {
+  const [open, setOpen] = useState(false);
+
+  const options: Array<"minutes" | "hours"> = ["minutes", "hours"];
+
+  return (
+    <div
+      className="settings__interval-unit-wrapper"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        className="settings__interval-unit-btn"
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span>{value}</span>
+        <svg
+          className={`settings__interval-unit-chevron${open ? " settings__interval-unit-chevron--open" : ""}`}
+          width="8"
+          height="8"
+          viewBox="0 0 8 8"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="M1 2.5L4 5.5L7 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <ul className="settings__interval-unit-list" role="listbox">
+          {options.map((opt) => (
+            <li
+              key={opt}
+              role="option"
+              aria-selected={opt === value}
+              className={`settings__interval-unit-option${opt === value ? " settings__interval-unit-option--selected" : ""}`}
+              onMouseDown={(e) => {
+                // mousedown fires before blur; prevent blur from closing before click registers
+                e.preventDefault();
+              }}
+              onClick={() => {
+                onChange(opt);
+                setOpen(false);
+              }}
+            >
+              {opt}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 interface ToggleProps {
   checked: boolean;
@@ -221,6 +297,32 @@ function InputSourceRow({
             <span className="app-row__meta">
               {isPending ? "Complete sign-in in your browser…" : buildMeta()}
             </span>
+            {isGitHub && detail.connected && (
+              <>
+                <span className="app-row__hint">
+                  Tracks merged PRs, releases, and open PRs · polls hourly
+                </span>
+                {detail.ghCliStatus === "not_found" && (
+                  <span className="app-row__warning">
+                    gh CLI not installed — GitHub sync is paused.{" "}
+                    <button
+                      className="app-row__link-btn"
+                      onClick={() => rpc.send.openUrl({ url: "https://cli.github.com/" })}
+                    >
+                      Install at cli.github.com
+                    </button>
+                    {" "}and GitHub sync will resume automatically.
+                  </span>
+                )}
+                {detail.ghCliStatus === "not_authenticated" && (
+                  <span className="app-row__warning">
+                    gh CLI not authenticated — run{" "}
+                    <code className="app-row__code">gh auth login</code>
+                    {" "}in your terminal. GitHub sync will resume automatically.
+                  </span>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -622,6 +724,63 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         <section className="settings__section">
           <h2 className="settings__section-label">Input Sources</h2>
           <div className="settings__rows">
+            {/* Claude Code sessions */}
+            <div className="settings__row">
+              <div className="settings__row-content">
+                <span className="settings__row-label">Claude Code sessions</span>
+                <span className="settings__row-desc">Synthesize context from Claude Code sessions</span>
+              </div>
+              <Toggle
+                checked={settings.claudeCodeSynthesis}
+                onChange={(v) => void patch({ claudeCodeSynthesis: v })}
+              />
+            </div>
+
+            {/* Codex sessions */}
+            {(() => {
+              const { value: codexVal, unit: codexUnit } =
+                codexIntervalToDisplay(settings.codexScanIntervalMinutes ?? 360);
+              return (
+                <div className="settings__row">
+                  <div className="settings__row-content">
+                    <span className="settings__row-label">Codex sessions</span>
+                    <span className="settings__row-desc">
+                      {settings.codexScanIntervalMinutes !== null
+                        ? `Scans every ${codexVal} ${codexUnit}`
+                        : "Synthesis disabled"}
+                    </span>
+                  </div>
+                  <div className="settings__row-control-stack">
+                    {settings.codexScanIntervalMinutes !== null && (
+                      <>
+                        <input
+                          className="settings__interval-input"
+                          type="number"
+                          min="1"
+                          value={codexVal}
+                          onChange={(e) => void patch({
+                            codexScanIntervalMinutes: codexDisplayToMinutes(e.target.value, codexUnit),
+                          })}
+                        />
+                        <IntervalUnitDropdown
+                          value={codexUnit}
+                          onChange={(newUnit) => {
+                            void patch({
+                              codexScanIntervalMinutes: codexDisplayToMinutes(codexVal, newUnit),
+                            });
+                          }}
+                        />
+                      </>
+                    )}
+                    <Toggle
+                      checked={settings.codexScanIntervalMinutes !== null}
+                      onChange={(v) => void patch({ codexScanIntervalMinutes: v ? 360 : null })}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
             {(["granola", "slack", "github"] as const).map((key) => (
               <InputSourceRow
                 key={key}

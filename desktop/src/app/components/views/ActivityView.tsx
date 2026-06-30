@@ -33,6 +33,18 @@ const DOT_COLOR: Record<ActivityRun["status"], string> = {
   timeout: "var(--color-status-red)",
 };
 
+const SOURCE_LABELS: Record<string, string> = {
+  "claude-code-session": "Claude Code",
+  "codex-session":       "Codex",
+  "granola":             "Granola",
+  "slack":               "Slack",
+  "github":              "GitHub",
+};
+
+function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source;
+}
+
 const SKIP_REASON_LABELS: Record<string, string> = {
   other:                        "Session ended early",
   clear:                        "Session cleared",
@@ -40,6 +52,9 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   logout:                       "User logged out",
   bypass_permissions_disabled:  "Permissions mode changed",
   unknown:                      "Session ended unexpectedly",
+  missing_transcript_path:      "Transcript path missing",
+  missing_transcript:           "Transcript file not found",
+  transcript_changed:           "Transcript still changing",
 };
 
 const ERROR_LABELS: Record<string, string> = {
@@ -111,6 +126,9 @@ function ActivityRunDetail({ run }: { run: ActivityRun }) {
       {run.cwd && (
         <span className="activity-run__project-path">{run.cwd}</span>
       )}
+      {run.transcriptPath && (
+        <span className="activity-run__project-path activity-run__transcript-path">{run.transcriptPath}</span>
+      )}
     </div>
   );
 }
@@ -122,8 +140,8 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
 
   const primaryRight = cwdShort(run.cwd);
   const primaryLine = primaryRight
-    ? `${run.source} · ${primaryRight}`
-    : run.source;
+    ? `${sourceLabel(run.source)} · ${primaryRight}`
+    : sourceLabel(run.source);
 
   let metaLine: string;
   const ts = formatTimestamp(run.startedAt);

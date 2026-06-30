@@ -349,6 +349,8 @@ export interface LocalConfig {
   last_published?: string;
   lastLoadCursor?: number;
   disabledContextSections?: string[];
+  codexScanIntervalMinutes?: number | null;
+  claudeCodeSynthesis?: boolean;
   team_assets?: {
     baseline?: {
       skills_hash: string;

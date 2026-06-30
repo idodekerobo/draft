@@ -31,6 +31,7 @@ export interface ActivityRun {
   proposalsGenerated: number;
   skipReason: string | null;
   errorMsg: string | null;
+  transcriptPath: string | null;
 }
 
 export interface IntegrationStatus {
@@ -295,6 +296,8 @@ export interface LocalConfig {
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
   disabledContextSections: string[];
+  codexScanIntervalMinutes: number | null;
+  claudeCodeSynthesis: boolean;
 }
 
 export interface UpdateInfo {
@@ -351,6 +354,8 @@ export interface IntegrationDetail {
   channels: number | null;
   /** GitHub: list of watched repos. Empty for other sources. */
   repos: string[];
+  /** GitHub only: local gh CLI availability/authentication. Null for other sources. */
+  ghCliStatus: "ok" | "not_found" | "not_authenticated" | null;
 }
 
 export interface ConnectedAppsStatus {
