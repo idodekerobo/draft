@@ -118,7 +118,6 @@ export function ProposalInbox({ activeProfile, onCountChange, daemonStopped = fa
 
     const source = proposals.find((p) => p.filename === filename)?.source ?? "unknown";
     track("proposal_actioned", { action: kind === "accept" ? "accepted" : "rejected", source });
-    setRawOpen(false);
     await refresh();
   }
 
@@ -148,7 +147,6 @@ export function ProposalInbox({ activeProfile, onCountChange, daemonStopped = fa
               selectedFilename={selected.filename}
               onSelect={(filename) => {
                 setSelectedFilename(filename);
-                setRawOpen(false);
               }}
             />
             <ProposalDetail
