@@ -330,11 +330,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!created.ok) {
           return { ok: false, error: created.reason === "exists" ? `Workspace "${name}" already exists.` : `Invalid name. Use letters, numbers, hyphens, and underscores only.` };
         }
+        const oldProfile = getActiveProfile();
         const activated = setActiveProfile(created.name);
         if (!activated.ok) {
           return { ok: false, error: "Created workspace but could not set it as active." };
         }
+        // Run the full switch lifecycle synchronously (same as switchProfile) so
+        // watchers are updated before profileChanged fires. A new workspace has no
+        // team assets, so switchProfileAssets is a fast no-op for the install side,
+        // but it still uninstalls the old profile's team assets and writes env.sh.
+        try { await switchProfileAssets(oldProfile, activated.active); } catch { /* non-fatal: new profile has no team assets */ }
         restartProposalWatch(activated.active, watcherHandlers);
+        restartSkillWatchWithProfile(activated.active);
+        restartMcpWatchWithProfile(activated.active);
         try { rpc.send.profileChanged({ profile: activated.active }); } catch {}
         return { ok: true, active: activated.active };
       },
