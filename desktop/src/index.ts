@@ -73,6 +73,10 @@ const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.post
 const _crispWebsiteId = process.env.DRAFT_CRISP_WEBSITE_ID ?? "";
 const _calUrl         = process.env.DRAFT_CAL_URL          ?? "";
 
+// Migrations must complete before RPC handlers or watchers can write profile state.
+// On failure, abort startup and preserve the recoverable pre-migration files.
+await runMigrations();
+
 // ── Runner detection ──────────────────────────────────────────────────────────
 //
 // macOS GUI apps get a stripped PATH. We cannot use `which` or shell resolution
@@ -1509,8 +1513,6 @@ setTimeout(async () => {
   if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
     setNotificationsEnabled(false);
   }
-
-  await runMigrations();
 
   // Start heartbeat staleness watcher.
   // 500ms delay ensures app is fully initialised before the initial mtime check.

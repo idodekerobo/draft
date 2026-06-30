@@ -16,6 +16,7 @@ import { runUpdate } from "./commands/update.ts";
 import { runPoll } from "./commands/poll.ts";
 import { runDimension } from "./commands/dimension.ts";
 import { runImport } from "./commands/import.ts";
+import { runMigrations } from "draft-core/migrations/runner";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -27,6 +28,8 @@ if (!command || command === "--help" || command === "-h") {
 }
 
 (async () => {
+  await runMigrations();
+
   switch (command) {
     case "status":
       await runStatus(rest);
@@ -84,4 +87,8 @@ if (!command || command === "--help" || command === "-h") {
       console.error(`Run ${"`draft`"} to see the full command list.`);
       process.exit(1);
   }
-})();
+})().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(red(`Draft could not start safely: ${message}`));
+  process.exitCode = 1;
+});

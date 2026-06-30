@@ -296,114 +296,121 @@ try {
 
 // ── Startup log (before arming timers — matches bash daemon ordering) ─────────
 
-log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
-phTrack('daemon_started');
-void (async () => {
+async function main(): Promise<void> {
   await runMigrations();
+
+  log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
+  phTrack('daemon_started');
   reconcileSkills();
-})();
 
-// ── Integration pollers (interval-based) ─────────────────────────────────────
-// All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
-// stdout/stderr routed to logFd so poller log output lands in daemon.log.
+  // ── Integration pollers (interval-based) ─────────────────────────────────────
+  // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
+  // stdout/stderr routed to logFd so poller log output lands in daemon.log.
 
-// Granola poller
-setInterval(() => {
-  const script = `${DRAFT_BACKGROUND}/integrations/granola/granola-poller.sh`;
-  if (!existsSync(script)) return;
-  const mode = process.env.DRAFT_GRANOLA_MODE ?? 'mcp';
-  log('info', `granola: starting poll (interval=${GRANOLA_POLL_MS / 1000}s mode=${mode})`);
-  Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
-}, GRANOLA_POLL_MS);
+  // Granola poller
+  setInterval(() => {
+    const script = `${DRAFT_BACKGROUND}/integrations/granola/granola-poller.sh`;
+    if (!existsSync(script)) return;
+    const mode = process.env.DRAFT_GRANOLA_MODE ?? 'mcp';
+    log('info', `granola: starting poll (interval=${GRANOLA_POLL_MS / 1000}s mode=${mode})`);
+    Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+  }, GRANOLA_POLL_MS);
 
-// Slack manager (process health check — ensures slack-capture.ts is running if Slack is configured)
-setInterval(() => {
-  const script = `${DRAFT_BACKGROUND}/integrations/slack/slack-manager.sh`;
-  if (!existsSync(script)) return;
-  Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
-}, SLACK_MANAGER_MS);
+  // Slack manager (process health check — ensures slack-capture.ts is running if Slack is configured)
+  setInterval(() => {
+    const script = `${DRAFT_BACKGROUND}/integrations/slack/slack-manager.sh`;
+    if (!existsSync(script)) return;
+    Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+  }, SLACK_MANAGER_MS);
 
-// Slack analyzer (synthesis batch)
-setInterval(() => {
-  const script = `${DRAFT_BACKGROUND}/integrations/slack/slack-analyzer.sh`;
-  if (!existsSync(script)) return;
-  log('info', `slack: starting analysis (interval=${SLACK_ANALYSIS_MS / 1000}s)`);
-  Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
-}, SLACK_ANALYSIS_MS);
+  // Slack analyzer (synthesis batch)
+  setInterval(() => {
+    const script = `${DRAFT_BACKGROUND}/integrations/slack/slack-analyzer.sh`;
+    if (!existsSync(script)) return;
+    log('info', `slack: starting analysis (interval=${SLACK_ANALYSIS_MS / 1000}s)`);
+    Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+  }, SLACK_ANALYSIS_MS);
 
-// GitHub poller
-setInterval(() => {
-  const ghConfig = `${DRAFT_WORKSPACE}/config/github.json`;
-  const script = `${DRAFT_BACKGROUND}/integrations/github/github-poller.ts`;
-  if (!existsSync(ghConfig) || !existsSync(script)) return;
-  log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
-  Bun.spawn(['bun', 'run', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
-}, GITHUB_POLL_MS);
+  // GitHub poller
+  setInterval(() => {
+    const ghConfig = `${DRAFT_WORKSPACE}/config/github.json`;
+    const script = `${DRAFT_BACKGROUND}/integrations/github/github-poller.ts`;
+    if (!existsSync(ghConfig) || !existsSync(script)) return;
+    log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
+    Bun.spawn(['bun', 'run', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+  }, GITHUB_POLL_MS);
 
-// Codex session scanner
-function runCodexScan() {
-  const jsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.js`;
-  const tsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.ts`;
-  const shScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.sh`;
-  const script = existsSync(jsScript) ? jsScript : existsSync(tsScript) ? tsScript : shScript;
-  if (!existsSync(script)) return;
-  log('info', `codex: starting scan (interval=${CODEX_SCAN_INTERVAL_MS / 60_000}m)`);
-  const cmd = script.endsWith('.sh') ? ['bash', script] : ['bun', 'run', script];
-  Bun.spawn(cmd, {
-    stdin: 'ignore',
-    stdout: logFd,
-    stderr: logFd,
-    env: {
-      ...process.env,
-      DRAFT_CODEX_SCAN_INTERVAL_MS: String(CODEX_SCAN_INTERVAL_MS),
-    },
+  // Codex session scanner
+  function runCodexScan() {
+    const jsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.js`;
+    const tsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.ts`;
+    const shScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.sh`;
+    const script = existsSync(jsScript) ? jsScript : existsSync(tsScript) ? tsScript : shScript;
+    if (!existsSync(script)) return;
+    log('info', `codex: starting scan (interval=${CODEX_SCAN_INTERVAL_MS / 60_000}m)`);
+    const cmd = script.endsWith('.sh') ? ['bash', script] : ['bun', 'run', script];
+    Bun.spawn(cmd, {
+      stdin: 'ignore',
+      stdout: logFd,
+      stderr: logFd,
+      env: {
+        ...process.env,
+        DRAFT_CODEX_SCAN_INTERVAL_MS: String(CODEX_SCAN_INTERVAL_MS),
+      },
+    });
+  }
+
+  if (CODEX_SCAN_ENABLED) {
+    setInterval(runCodexScan, CODEX_SCAN_INTERVAL_MS);
+    runCodexScan(); // immediate first scan on startup
+  }
+
+  // Skills are user-owned files; reconcile separately from synthesis so they keep
+  // syncing while the desktop app is closed.
+  setInterval(reconcileSkills, SKILL_SYNC_MS);
+
+  // ── Main poll loop ────────────────────────────────────────────────────────────
+
+  let loopCount = 0;
+  let tickInProgress = false;
+
+  async function tick() {
+    await writeHeartbeat();
+    if (tickInProgress) return;
+    tickInProgress = true;
+    try {
+      await processPendingJobs();
+      loopCount++;
+      if (loopCount % 1000 === 0) await trimLog();
+    } finally {
+      tickInProgress = false;
+    }
+  }
+
+  setInterval(tick, PENDING_POLL_MS);
+  void tick(); // immediate first tick
+
+  // Daily alive ping — independent of poll loop cadence
+  setInterval(() => phTrack('daemon_daily_alive'), 24 * 60 * 60 * 1000);
+
+  // ── Signal handling ───────────────────────────────────────────────────────────
+
+  process.on('SIGTERM', async () => {
+    log('info', 'daemon stopping (SIGTERM)');
+    try { unlinkSync(PID_FILE); } catch { /* already gone */ }
+    await phClient?.shutdown();
+    process.exit(0);
+  });
+  process.on('SIGINT', async () => {
+    log('info', 'daemon stopping (SIGINT)');
+    try { unlinkSync(PID_FILE); } catch { /* already gone */ }
+    await phClient?.shutdown();
+    process.exit(0);
   });
 }
 
-if (CODEX_SCAN_ENABLED) {
-  setInterval(runCodexScan, CODEX_SCAN_INTERVAL_MS);
-  runCodexScan(); // immediate first scan on startup
-}
-
-// Skills are user-owned files; reconcile separately from synthesis so they keep
-// syncing while the desktop app is closed.
-setInterval(reconcileSkills, SKILL_SYNC_MS);
-
-// ── Main poll loop ────────────────────────────────────────────────────────────
-
-let loopCount = 0;
-let tickInProgress = false;
-
-async function tick() {
-  await writeHeartbeat();
-  if (tickInProgress) return;
-  tickInProgress = true;
-  try {
-    await processPendingJobs();
-    loopCount++;
-    if (loopCount % 1000 === 0) await trimLog();
-  } finally {
-    tickInProgress = false;
-  }
-}
-
-setInterval(tick, PENDING_POLL_MS);
-void tick(); // immediate first tick
-
-// Daily alive ping — independent of poll loop cadence
-setInterval(() => phTrack('daemon_daily_alive'), 24 * 60 * 60 * 1000);
-
-// ── Signal handling ───────────────────────────────────────────────────────────
-
-process.on('SIGTERM', async () => {
-  log('info', 'daemon stopping (SIGTERM)');
+void main().catch((error: unknown) => {
+  log('error', `daemon startup failed: ${error instanceof Error ? error.message : String(error)}`);
   try { unlinkSync(PID_FILE); } catch { /* already gone */ }
-  await phClient?.shutdown();
-  process.exit(0);
-});
-process.on('SIGINT', async () => {
-  log('info', 'daemon stopping (SIGINT)');
-  try { unlinkSync(PID_FILE); } catch { /* already gone */ }
-  await phClient?.shutdown();
-  process.exit(0);
+  process.exit(1);
 });
