@@ -1,7 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
-import { readSecrets, writeSecrets, readCollaboration, getActiveProfile, getProfiles, setActiveProfile } from "../config";
+import {
+  readSecrets,
+  writeSecrets,
+  readCollaboration,
+  getActiveProfile,
+  getProfiles,
+  setActiveProfile,
+  getSkillManifestPath,
+  getMcpManifestPath,
+} from "../config";
 
 const TMP = `/tmp/draft-core-test-${Date.now()}`;
 
@@ -107,6 +116,32 @@ describe("getActiveProfile", () => {
     const file = join(FAKE_DRAFT, "active-profile");
     writeFileSync(file, "   \n");
     expect(getActiveProfile({ activeProfileFile: file })).toBe("default");
+  });
+});
+
+describe("workspace-scoped manifest paths", () => {
+  const FAKE_ROOT = `/tmp/draft-core-manifest-paths-${Date.now()}`;
+  const workspacesDir = join(FAKE_ROOT, "workspaces");
+  const activeProfileFile = join(FAKE_ROOT, "active-profile");
+  const opts = { workspacesDir, activeProfileFile };
+
+  afterEach(() => rmSync(FAKE_ROOT, { recursive: true, force: true }));
+
+  it("resolves manifest paths for an explicit profile", () => {
+    expect(getSkillManifestPath("acme", opts))
+      .toBe(join(workspacesDir, "acme", "config", "skill-manifest.json"));
+    expect(getMcpManifestPath("acme", opts))
+      .toBe(join(workspacesDir, "acme", "config", "mcp-manifest.json"));
+  });
+
+  it("resolves manifest paths for the active profile", () => {
+    mkdirSync(FAKE_ROOT, { recursive: true });
+    writeFileSync(activeProfileFile, "personal\n");
+
+    expect(getSkillManifestPath(undefined, opts))
+      .toBe(join(workspacesDir, "personal", "config", "skill-manifest.json"));
+    expect(getMcpManifestPath(undefined, opts))
+      .toBe(join(workspacesDir, "personal", "config", "mcp-manifest.json"));
   });
 });
 

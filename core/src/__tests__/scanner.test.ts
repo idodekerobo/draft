@@ -361,7 +361,7 @@ describe("createSymlinks", () => {
     expect(result.created[0]).toBe(join(claudeDir, "codex-skill"));
   });
 
-  it("skips when a correct symlink already exists at the target (idempotent)", () => {
+  it("records approval in an empty profile manifest when a correct symlink already exists", () => {
     const claudeDir = join(TMP, "claude-idem");
     const codexDir = join(TMP, "codex-idem");
 
@@ -384,10 +384,11 @@ describe("createSymlinks", () => {
       },
     ];
 
+    const manifestPath = join(TMP, "profiles", "acme", "config", "skill-manifest.json");
     const result = createSymlinks(skills, {
       claudeSkillsDir: claudeDir,
       codexSkillsDir: codexDir,
-      manifestPath: join(TMP, "skill-manifest-idem.json"),
+      manifestPath,
     });
 
     expect(result.created).toEqual([]);
@@ -395,6 +396,18 @@ describe("createSymlinks", () => {
     expect(result.skipped[0]).toBe(join(codexDir, "my-skill"));
     expect(result.errors).toEqual([]);
     expect(result.conflicts).toEqual([]);
+
+    const manifest = readSkillManifest(manifestPath);
+    expect(manifest.schema_version).toBe(5);
+    expect(manifest.skills["claude-code:my-skill"]).toMatchObject({
+      id: "claude-code:my-skill",
+      name: "my-skill",
+      kind: "personal",
+      status: "approved",
+      removed_at: null,
+    });
+    expect(manifest.skills["claude-code:my-skill"].synced_to.codex?.symlink_path)
+      .toBe(join(codexDir, "my-skill"));
   });
 
   it("surfaces a conflict when a real directory already exists at the target", () => {
@@ -467,22 +480,47 @@ describe("createSymlinks", () => {
 
 describe("skill manifest", () => {
   it("returns an empty manifest when the file is absent or malformed", () => {
-    expect(readSkillManifest(join(TMP, "missing.json"))).toEqual({ version: 4, schema_version: 4, min_reader_version: 1, skills: {}, name_conflicts: {} });
+    expect(readSkillManifest(join(TMP, "missing.json"))).toEqual({ version: 5, schema_version: 5, min_reader_version: 1, skills: {}, name_conflicts: {} });
     writeFileSync(join(TMP, "bad.json"), "not json");
-    expect(readSkillManifest(join(TMP, "bad.json"))).toEqual({ version: 4, schema_version: 4, min_reader_version: 1, skills: {}, name_conflicts: {} });
+    expect(readSkillManifest(join(TMP, "bad.json"))).toEqual({ version: 5, schema_version: 5, min_reader_version: 1, skills: {}, name_conflicts: {} });
+  });
+
+  it("treats a stale v4 manifest at a workspace-scoped path as empty", () => {
+    const manifestPath = join(TMP, "workspaces", "acme", "config", "skill-manifest.json");
+    mkdirSync(join(manifestPath, ".."), { recursive: true });
+    writeFileSync(manifestPath, JSON.stringify({
+      version: 4,
+      schema_version: 4,
+      min_reader_version: 1,
+      skills: {
+        "claude-code:browse": {
+          id: "claude-code:browse",
+          name: "browse",
+        },
+      },
+      name_conflicts: {},
+    }));
+
+    expect(readSkillManifest(manifestPath)).toEqual({
+      version: 5,
+      schema_version: 5,
+      min_reader_version: 1,
+      skills: {},
+      name_conflicts: {},
+    });
   });
 
   it("round-trips a manifest through writeSkillManifest and readSkillManifest", () => {
     const manifestPath = join(TMP, "skill-manifest.json");
     const manifest: SkillManifest = {
-      version: 4, schema_version: 4, min_reader_version: 1,
+      version: 5, schema_version: 5, min_reader_version: 1,
       skills: {
         "claude-code:browse": {
           id: "claude-code:browse", name: "browse", source_agent: "claude-code",
           source_path: "/fake/browse", skill_dir_hash: "sha256:abc",
           added_at: "2026-01-01T00:00:00.000Z", approved_at: "2026-01-01T00:00:00.000Z",
           status: "approved", synced_to: { codex: { target_name: "browse", symlink_path: "/fake/codex/browse", synced_at: "2026-01-01T00:00:00.000Z" } },
-          removed_at: null, source: "user",
+          removed_at: null, kind: "personal",
         },
       },
       name_conflicts: {},
@@ -584,7 +622,7 @@ describe("detectPending", () => {
     expect(pending).toEqual([]);
   });
 
-  it("skips skills already present in the v4 manifest", () => {
+  it("skips skills already present in the v5 manifest", () => {
     const claudeDir = join(TMP, "tracked-claude");
     const codexDir = join(TMP, "tracked-codex");
     const manifestPath = join(TMP, "tracked-manifest.json");
@@ -593,10 +631,10 @@ describe("detectPending", () => {
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, "SKILL.md"), "# Tracked");
 
-    // Write a v4 manifest that already tracks this skill
+    // Write a v5 manifest that already tracks this skill
     const manifest = {
-      version: 4,
-      schema_version: 4,
+      version: 5,
+      schema_version: 5,
       min_reader_version: 1,
       skills: {
         "claude-code:tracked-skill": {
@@ -610,6 +648,7 @@ describe("detectPending", () => {
           status: "approved",
           synced_to: {},
           removed_at: null,
+          kind: "personal",
         },
       },
       name_conflicts: {},
@@ -668,8 +707,8 @@ describe("reconcileSkillManifest", () => {
 
     const expectedSymlink = join(codexDir, "my-skill");
     const manifest = {
-      version: 4,
-      schema_version: 4,
+      version: 5,
+      schema_version: 5,
       min_reader_version: 1,
       skills: {
         "claude-code:my-skill": {
@@ -681,7 +720,7 @@ describe("reconcileSkillManifest", () => {
           added_at: new Date().toISOString(),
           approved_at: new Date().toISOString(),
           status: "approved",
-          source: "user",
+          kind: "personal",
           synced_to: {
             codex: {
               target_name: "my-skill",
@@ -714,8 +753,8 @@ describe("reconcileSkillManifest", () => {
 
     // Neither source nor symlink exist on disk
     const manifest = {
-      version: 4,
-      schema_version: 4,
+      version: 5,
+      schema_version: 5,
       min_reader_version: 1,
       skills: {
         "claude-code:gone-skill": {
@@ -735,6 +774,7 @@ describe("reconcileSkillManifest", () => {
             },
           },
           removed_at: null,
+          kind: "personal",
         },
       },
       name_conflicts: {},

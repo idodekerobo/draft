@@ -295,7 +295,7 @@ function SyncedMcpGroup({ mcps, onRemove, onPromote, onDemote, removingId, promo
           <div className="skill-sync__section-items">
             {filtered.map((mcp) => {
               const syncTargets = Object.keys(mcp.synced_to) as Array<"claude-code" | "codex">;
-              const isTeam = mcp.source === "team";
+              const isTeam = mcp.kind === "team";
               const hasPendingSecrets = mcp.pending_secrets && mcp.pending_secrets.length > 0;
               return (
                 <div key={mcp.id} className="app-row">

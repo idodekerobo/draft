@@ -1147,9 +1147,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getTeamSkillsInstalled: async () => {
         const profile = getActiveProfile();
         const manifest = readSkillManifest();
-        const prefix = `team:${profile}:`;
         const skills = Object.entries(manifest.skills)
-          .filter(([id, entry]) => id.startsWith(prefix) && entry.removed_at === null)
+          .filter(([, entry]) => entry.kind === "team" && entry.removed_at === null)
           .map(([id, entry]) => ({
             id,
             name: entry.name,

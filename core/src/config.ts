@@ -184,6 +184,14 @@ export function getWorkspacePath(profile?: string, opts?: ProfileOpts): string {
   return `${wsDir}/${active}`;
 }
 
+export function getSkillManifestPath(profile?: string, opts?: ProfileOpts): string {
+  return join(getWorkspacePath(profile, opts), "config", "skill-manifest.json");
+}
+
+export function getMcpManifestPath(profile?: string, opts?: ProfileOpts): string {
+  return join(getWorkspacePath(profile, opts), "config", "mcp-manifest.json");
+}
+
 export type SetActiveProfileResult =
   | { ok: true; active: string }
   | { ok: false; reason: "invalid" | "missing" };

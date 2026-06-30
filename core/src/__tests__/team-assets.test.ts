@@ -17,17 +17,18 @@ const TMP = join("/tmp", `draft-team-assets-${process.pid}`);
 afterEach(() => rmSync(TMP, { recursive: true, force: true }));
 
 function paths(): TeamAssetPaths {
+  const workspacePath = join(TMP, "workspace");
   return {
     workspacesDir: join(TMP, "workspaces"),
     activeProfileFile: join(TMP, "active-profile"),
-    workspacePath: join(TMP, "workspace"),
+    workspacePath,
     claudeSkillsDir: join(TMP, "claude", "skills"),
     codexSkillsDir: join(TMP, "codex", "skills"),
     claudeConfigPath: join(TMP, "claude.json"),
     codexConfigPath: join(TMP, "codex", "config.toml"),
-    skillManifestPath: join(TMP, "state", "skill-manifest.json"),
-    mcpManifestPath: join(TMP, "state", "mcp-manifest.json"),
-    statePath: join(TMP, "workspace", "config"),
+    skillManifestPath: join(workspacePath, "config", "skill-manifest.json"),
+    mcpManifestPath: join(workspacePath, "config", "mcp-manifest.json"),
+    statePath: join(workspacePath, "config"),
     envStatePath: join(TMP, "state"),
   };
 }
@@ -113,7 +114,7 @@ describe("profile team asset lifecycle", () => {
     }]);
     expect(existsSync(paths().claudeConfigPath)).toBe(false);
     expect(existsSync(paths().codexConfigPath)).toBe(false);
-    expect(readMcpManifest(paths().mcpManifestPath).mcps["team:acme:linear"]?.install_state)
+    expect(readMcpManifest(paths().mcpManifestPath).mcps["team:linear"]?.install_state)
       .toBe("pending-secrets");
   });
 
@@ -168,8 +169,6 @@ describe("profile team asset lifecycle", () => {
       codexSkillsDir: common.codexSkillsDir,
       claudeConfigPath: common.claudeConfigPath,
       codexConfigPath: common.codexConfigPath,
-      skillManifestPath: common.skillManifestPath,
-      mcpManifestPath: common.mcpManifestPath,
       envStatePath: common.envStatePath,
     };
     for (const [profile, skill] of [["acme", "review"], ["personal", "notes"]] as const) {
@@ -189,5 +188,13 @@ describe("profile team asset lifecycle", () => {
     expect(readFileSync(common.activeProfileFile, "utf8").trim()).toBe("personal");
     expect(result.removedSkills).toContain("review");
     expect(result.installedSkills).toContain("notes");
+
+    const acmeManifestPath = join(common.workspacesDir, "acme", "config", "skill-manifest.json");
+    const personalManifestPath = join(common.workspacesDir, "personal", "config", "skill-manifest.json");
+    expect(acmeManifestPath).not.toBe(personalManifestPath);
+    expect(JSON.parse(readFileSync(acmeManifestPath, "utf8")).skills["team:review"].removed_at)
+      .not.toBeNull();
+    expect(JSON.parse(readFileSync(personalManifestPath, "utf8")).skills["team:notes"].removed_at)
+      .toBeNull();
   });
 });

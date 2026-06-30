@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync, writeFileSync, renameSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
+import { getMcpManifestPath, getActiveProfile } from "../config";
 
 export type Agent = "claude-code" | "codex";
 
@@ -34,8 +35,7 @@ export interface McpManifestEntry {
   synced_to: Partial<Record<Agent, McpManifestSyncEntry>>;
   removed_at: string | null;
   /** Whether this entry was created by the user locally or shared via the team workspace. */
-  source: "user" | "team";
-  profile?: string;
+  kind: "personal" | "team";
   install_state?: "installed" | "pending-secrets" | "conflict";
   conflict_reason?: string;
   /** For team MCPs: env var names the teammate must supply before the MCP can be installed. */
@@ -43,8 +43,8 @@ export interface McpManifestEntry {
 }
 
 export interface McpManifest {
-  version: 4;
-  schema_version: 4;
+  version: 5;
+  schema_version: 5;
   mcps: Record<string, McpManifestEntry>;
   name_conflicts: Record<string, {
     agents: Agent[];
@@ -53,13 +53,14 @@ export interface McpManifest {
   }>;
 }
 
-const STATE_DIR = join(homedir(), ".draft", "state");
-const DEFAULT_MCP_MANIFEST_PATH = join(STATE_DIR, "mcp-manifest.json");
+function getDefaultMcpManifestPath(): string {
+  return getMcpManifestPath(getActiveProfile());
+}
 
 function emptyMcpManifest(): McpManifest {
   return {
-    version: 4,
-    schema_version: 4,
+    version: 5,
+    schema_version: 5,
     mcps: {},
     name_conflicts: {},
   };
@@ -72,15 +73,15 @@ export function hashCanonical(canonical: CanonicalMcp): string {
 }
 
 export function readMcpManifest(manifestPath?: string): McpManifest {
-  const path = manifestPath ?? DEFAULT_MCP_MANIFEST_PATH;
+  const path = manifestPath ?? getDefaultMcpManifestPath();
   try {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw);
-    if (parsed?.schema_version === 4 && parsed?.mcps) {
+    if (parsed?.schema_version === 5 && parsed?.mcps) {
       const manifest = parsed as McpManifest;
-      // Normalize: entries written before the source field was added default to "user"
+      // Normalize: entries missing the kind field default to "personal"
       for (const entry of Object.values(manifest.mcps)) {
-        if (!entry.source) entry.source = "user";
+        if (!entry.kind) entry.kind = "personal";
       }
       return manifest;
     }
@@ -90,7 +91,7 @@ export function readMcpManifest(manifestPath?: string): McpManifest {
 
 /** Atomic write: tmp → rename. */
 export function writeMcpManifest(manifest: McpManifest, manifestPath?: string): void {
-  const path = manifestPath ?? DEFAULT_MCP_MANIFEST_PATH;
+  const path = manifestPath ?? getDefaultMcpManifestPath();
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmp, JSON.stringify(manifest, null, 2) + "\n", "utf8");

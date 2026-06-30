@@ -218,7 +218,7 @@ export function detectMcpPending(opts?: McpSyncOpts): {
   const allNames = new Set([...Object.keys(claudeMcps), ...Object.keys(codexMcps)]);
   const activeTeamNames = new Set(
     Object.values(manifest.mcps)
-      .filter((entry) => entry.source === "team" && !entry.removed_at)
+      .filter((entry) => entry.kind === "team" && !entry.removed_at)
       .map((entry) => entry.name),
   );
 
@@ -316,7 +316,7 @@ export async function approveMcps(
       env_var_mapping: envVarMapping,
       synced_to: {},
       removed_at: null,
-      source: "user",
+      kind: "personal",
     };
 
     // Write to target agent config
@@ -413,7 +413,7 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
       continue;
     }
 
-    if (entry.source === "team") {
+    if (entry.kind === "team") {
       if (entry.install_state === "conflict") continue;
       const missingSecrets = (entry.pending_secrets ?? []).filter((env) => !secrets[env]);
       if (missingSecrets.length > 0) continue;
@@ -570,7 +570,7 @@ export async function installTeamMcps(
 
   for (const wsEntry of entries) {
     const { name, canonical, required_secrets } = wsEntry;
-    const id = `team:${profile}:${name}`;
+    const id = `team:${name}`;
 
     // Check which secrets are missing
     const missingSecs = required_secrets.filter((envVar) => !secrets[envVar]);
@@ -585,8 +585,7 @@ export async function installTeamMcps(
       env_var_mapping: Object.fromEntries(required_secrets.map((s) => [s, `${name} token`])),
       synced_to: {},
       removed_at: null,
-      source: "team",
-      profile,
+      kind: "team",
       pending_secrets: missingSecs.length > 0 ? missingSecs : undefined,
       install_state: missingSecs.length > 0 ? "pending-secrets" : "installed",
     };
@@ -594,7 +593,7 @@ export async function installTeamMcps(
     const previous = manifest.mcps[id];
     const targetIsOwned = (agent: Agent, observed: Record<string, unknown> | undefined): boolean => {
       if (!observed) return true;
-      if (!previous || previous.removed_at || previous.source !== "team") return false;
+      if (!previous || previous.removed_at || previous.kind !== "team") return false;
       return nativeEntryEquals(agent, observed, previous.sync_canonical, secrets);
     };
     if (!targetIsOwned("claude-code", claudeMcps[name]) || !targetIsOwned("codex", codexMcps[name])) {
@@ -666,10 +665,9 @@ async function uninstallTeamMcpEntries(
   };
   const manifest = readMcpManifest(opts?.manifestPath);
   const secrets = readSecretsJson(opts?.statePath);
-  const prefix = `team:${profile}:`;
 
   for (const [id, entry] of Object.entries(manifest.mcps)) {
-    if (!id.startsWith(prefix)) continue;
+    if (entry.kind !== "team") continue;
     if (name !== undefined && entry.name !== name) continue;
     if (entry.removed_at !== null) continue;
 
@@ -713,7 +711,7 @@ export function promoteMcpToTeam(
   const entry = manifest.mcps[mcpId];
 
   if (!entry) return { ok: false, error: `MCP not found: ${mcpId}` };
-  if (entry.source === "team") return { ok: false, error: "MCP is already a team MCP." };
+  if (entry.kind === "team") return { ok: false, error: "MCP is already a team MCP." };
   if (entry.removed_at) return { ok: false, error: "MCP is tombstoned." };
 
   const wsManifest = readWorkspaceMcpManifest(workspacePath);
@@ -737,13 +735,12 @@ export function promoteMcpToTeam(
   writeWorkspaceMcpManifest(workspacePath, wsManifest);
 
   // Update manifest entry to team-sourced
-  const newId = `team:${profile}:${entry.name}`;
+  const newId = `team:${entry.name}`;
   delete manifest.mcps[mcpId];
   manifest.mcps[newId] = {
     ...entry,
     id: newId,
-    source: "team",
-    profile,
+    kind: "team",
     install_state: "installed",
   };
   writeMcpManifest(manifest, opts?.manifestPath);
@@ -755,7 +752,7 @@ export function promoteMcpToTeam(
  * Demote a team-shared MCP back to user-owned (Flow A reversal).
  *
  * Removes the server from the workspace config/mcp.json and reverts the
- * manifest entry source back to "user" so the item appears as a personal MCP
+ * manifest entry kind back to "personal" so the item appears as a personal MCP
  * again (with Remove + Share with team buttons in the UI).
  */
 export function demoteMcpFromTeam(
@@ -767,7 +764,7 @@ export function demoteMcpFromTeam(
   const entry = manifest.mcps[mcpId];
 
   if (!entry) return { ok: false, error: `MCP not found: ${mcpId}` };
-  if (entry.source !== "team") return { ok: false, error: "MCP is not a team MCP." };
+  if (entry.kind !== "team") return { ok: false, error: "MCP is not a team MCP." };
   if (entry.removed_at) return { ok: false, error: "MCP is tombstoned." };
 
   // Remove from workspace config/mcp.json (the team-shared file)
@@ -781,8 +778,7 @@ export function demoteMcpFromTeam(
   manifest.mcps[newId] = {
     ...entry,
     id: newId,
-    source: "user",
-    profile: undefined,
+    kind: "personal",
     install_state: undefined,
     conflict_reason: undefined,
     pending_secrets: undefined,
@@ -804,7 +800,7 @@ export async function setTeamMcpSecret(
   opts?: McpSyncOpts,
 ): Promise<{ ok: boolean; error?: string; nowInstalled: boolean }> {
   const manifest = readMcpManifest(opts?.manifestPath);
-  const id = `team:${profile}:${mcpName}`;
+  const id = `team:${mcpName}`;
   const entry = manifest.mcps[id];
 
   if (!entry) return { ok: false, error: `Team MCP not found: ${mcpName}`, nowInstalled: false };
