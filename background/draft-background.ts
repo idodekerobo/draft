@@ -334,15 +334,10 @@ setInterval(() => {
 // GitHub poller
 setInterval(() => {
   const ghConfig = `${DRAFT_WORKSPACE}/config/github.json`;
-  const tsScript = `${DRAFT_BACKGROUND}/integrations/github/github-poller.ts`;
-  const shScript = `${DRAFT_BACKGROUND}/integrations/github/github-poller.sh`;
-  const script   = existsSync(tsScript) ? tsScript : shScript;
+  const script = `${DRAFT_BACKGROUND}/integrations/github/github-poller.ts`;
   if (!existsSync(ghConfig) || !existsSync(script)) return;
   log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
-  const cmd = script.endsWith('.ts')
-    ? ['bun', 'run', script]
-    : ['bash', script];
-  Bun.spawn(cmd, { stdin: 'ignore', stdout: logFd, stderr: logFd });
+  Bun.spawn(['bun', 'run', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
 }, GITHUB_POLL_MS);
 
 // Codex session scanner
