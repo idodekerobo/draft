@@ -113,6 +113,26 @@ describe("scanSkillDirectories", () => {
     expect(skills.length).toBe(1);
     expect(skills[0].name).toBe("real-skill");
   });
+
+  it("skips personal cross-agent mirror symlinks (createSymlinks output)", () => {
+    const claudeDir = join(TMP, "claude-skills-mirror");
+    const codexDir = join(TMP, "codex-skills-mirror");
+    const draftDir = join(TMP, "draft");
+
+    mkdirSync(join(claudeDir, "pair-agent"), { recursive: true });
+    writeFileSync(join(claudeDir, "pair-agent", "SKILL.md"), "# Pair agent");
+    mkdirSync(codexDir, { recursive: true });
+
+    // Mirror Draft would create when syncing a personal skill to Codex: a
+    // symlink pointing straight at the Claude Code dir, never through ~/.draft/.
+    symlinkSync(join(claudeDir, "pair-agent"), join(codexDir, "pair-agent"));
+
+    const { skills } = scanSkillDirectories({ claudeSkillsDir: claudeDir, codexSkillsDir: codexDir, draftDir });
+
+    expect(skills.length).toBe(1);
+    expect(skills[0].agent).toBe("claude-code");
+    expect(skills[0].name).toBe("pair-agent");
+  });
 });
 
 // ── isDraftManaged ─────────────────────────────────────────────────────────────
@@ -148,6 +168,31 @@ describe("isDraftManaged", () => {
 
   it("returns false for nonexistent paths", () => {
     expect(isDraftManaged(join(TMP, "does-not-exist"), join(TMP, "draft"))).toBe(false);
+  });
+
+  it("returns true for symlinks pointing into a sibling agent dir", () => {
+    const claudeDir = join(TMP, "sibling-claude");
+    const codexDir = join(TMP, "sibling-codex");
+    mkdirSync(join(claudeDir, "pair-agent"), { recursive: true });
+    mkdirSync(codexDir, { recursive: true });
+
+    const linkPath = join(codexDir, "pair-agent");
+    symlinkSync(join(claudeDir, "pair-agent"), linkPath);
+
+    expect(isDraftManaged(linkPath, join(TMP, "draft"), [claudeDir, codexDir])).toBe(true);
+  });
+
+  it("falls back to the default claude/codex dirs when siblingDirs is omitted", () => {
+    // Without an explicit siblingDirs override, isDraftManaged still only
+    // recognizes ~/.draft/ targets unless the symlink happens to resolve
+    // into the real default skill dirs — verifying the default param wiring
+    // doesn't accidentally widen unrelated paths.
+    const otherDir = join(TMP, "unrelated");
+    mkdirSync(otherDir, { recursive: true });
+    const linkPath = join(TMP, "link-to-unrelated");
+    symlinkSync(otherDir, linkPath);
+
+    expect(isDraftManaged(linkPath, join(TMP, "draft"))).toBe(false);
   });
 });
 

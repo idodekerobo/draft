@@ -154,15 +154,23 @@ export interface CreateSymlinksOpts {
 
 /**
  * Check if a directory path is a symlink whose resolved target starts with
- * the ~/.draft/ directory.
+ * the ~/.draft/ directory (team skills, whose source lives in the workspace),
+ * or with one of the sibling agent skill directories (personal skills that
+ * createSymlinks() mirrors directly between ~/.claude/skills and
+ * ~/.codex/skills — these never pass through ~/.draft/, since the symlink
+ * points straight at the other agent's real directory). Without the second
+ * check, scanSkillDirectories() re-discovers Draft's own cross-agent mirrors
+ * as "new" skills on every scan.
  */
-export function isDraftManaged(dirPath: string, draftDir?: string): boolean {
+export function isDraftManaged(dirPath: string, draftDir?: string, siblingDirs?: string[]): boolean {
   const draft = resolve(draftDir ?? DRAFT_DIR);
+  const siblings = (siblingDirs ?? [DEFAULT_CLAUDE_SKILLS_DIR, DEFAULT_CODEX_SKILLS_DIR]).map((d) => resolve(d));
   try {
     const stat = lstatSync(dirPath);
     if (!stat.isSymbolicLink()) return false;
     const target = resolve(join(dirPath, ".."), readlinkSync(dirPath));
-    return target === draft || target.startsWith(`${draft}/`);
+    if (target === draft || target.startsWith(`${draft}/`)) return true;
+    return siblings.some((dir) => target === dir || target.startsWith(`${dir}/`));
   } catch {
     return false;
   }
@@ -215,13 +223,15 @@ export function hashSkillDir(dirPath: string): string {
 
 /**
  * Scan ~/.claude/skills/ and ~/.codex/skills/ for skill directories.
- * Skips Draft-managed skills (symlinks pointing into ~/.draft/).
+ * Skips Draft-managed skills: symlinks pointing into ~/.draft/ (team skills)
+ * or into the sibling agent's skill directory (personal cross-agent mirrors).
  * Returns metadata for each discovered skill.
  */
 export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSkill[]; errors: ScanDirError[] } {
   const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
   const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
   const draftDir = opts?.draftDir ?? DRAFT_DIR;
+  const siblingDirs = [claudeDir, codexDir];
 
   const skills: ScannedSkill[] = [];
   const errors: ScanDirError[] = [];
@@ -232,7 +242,7 @@ export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSki
       const entries = readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = join(dir, entry.name);
-        if (isDraftManaged(fullPath, draftDir)) continue;
+        if (isDraftManaged(fullPath, draftDir, siblingDirs)) continue;
         if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
         if (entry.isSymbolicLink()) {
           try {
