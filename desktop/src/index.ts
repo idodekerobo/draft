@@ -73,6 +73,10 @@ const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.post
 const _crispWebsiteId = process.env.DRAFT_CRISP_WEBSITE_ID ?? "";
 const _calUrl         = process.env.DRAFT_CAL_URL          ?? "";
 
+// Migrations must complete before RPC handlers or watchers can write profile state.
+// On failure, abort startup and preserve the recoverable pre-migration files.
+await runMigrations();
+
 // ── Runner detection ──────────────────────────────────────────────────────────
 //
 // macOS GUI apps get a stripped PATH. We cannot use `which` or shell resolution
@@ -330,11 +334,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!created.ok) {
           return { ok: false, error: created.reason === "exists" ? `Workspace "${name}" already exists.` : `Invalid name. Use letters, numbers, hyphens, and underscores only.` };
         }
+        const oldProfile = getActiveProfile();
         const activated = setActiveProfile(created.name);
         if (!activated.ok) {
           return { ok: false, error: "Created workspace but could not set it as active." };
         }
+        // Run the full switch lifecycle synchronously (same as switchProfile) so
+        // watchers are updated before profileChanged fires. A new workspace has no
+        // team assets, so switchProfileAssets is a fast no-op for the install side,
+        // but it still uninstalls the old profile's team assets and writes env.sh.
+        try { await switchProfileAssets(oldProfile, activated.active); } catch { /* non-fatal: new profile has no team assets */ }
         restartProposalWatch(activated.active, watcherHandlers);
+        restartSkillWatchWithProfile(activated.active);
+        restartMcpWatchWithProfile(activated.active);
         try { rpc.send.profileChanged({ profile: activated.active }); } catch {}
         return { ok: true, active: activated.active };
       },
@@ -1135,9 +1147,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getTeamSkillsInstalled: async () => {
         const profile = getActiveProfile();
         const manifest = readSkillManifest();
-        const prefix = `team:${profile}:`;
         const skills = Object.entries(manifest.skills)
-          .filter(([id, entry]) => id.startsWith(prefix) && entry.removed_at === null)
+          .filter(([, entry]) => entry.kind === "team" && entry.removed_at === null)
           .map(([id, entry]) => ({
             id,
             name: entry.name,
@@ -1501,8 +1512,6 @@ setTimeout(async () => {
   if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
     setNotificationsEnabled(false);
   }
-
-  await runMigrations();
 
   // Start heartbeat staleness watcher.
   // 500ms delay ensures app is fully initialised before the initial mtime check.

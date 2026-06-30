@@ -208,15 +208,15 @@ export interface McpManifestEntry {
   env_var_mapping: Record<string, string>;
   synced_to: Partial<Record<"claude-code" | "codex", McpManifestSyncEntry>>;
   removed_at: string | null;
-  /** "user" = local personal MCP, "team" = shared via workspace. */
-  source: "user" | "team";
+  /** "personal" = local personal MCP, "team" = shared via workspace. */
+  kind: "personal" | "team";
   /** For team MCPs: env var names the local user must supply before install. */
   pending_secrets?: string[];
 }
 
 export interface McpManifest {
-  version: 4;
-  schema_version: 4;
+  version: 5;
+  schema_version: 5;
   mcps: Record<string, McpManifestEntry>;
   name_conflicts: Record<string, {
     agents: Array<"claude-code" | "codex">;

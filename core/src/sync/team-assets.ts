@@ -93,8 +93,8 @@ function resolvePaths(profile: string, paths?: Partial<TeamAssetPaths>): TeamAss
     codexSkillsDir: paths?.codexSkillsDir ?? join(home, ".codex", "skills"),
     claudeConfigPath: paths?.claudeConfigPath ?? join(home, ".claude.json"),
     codexConfigPath: paths?.codexConfigPath ?? join(home, ".codex", "config.toml"),
-    skillManifestPath: paths?.skillManifestPath ?? join(home, ".draft", "state", "skill-manifest.json"),
-    mcpManifestPath: paths?.mcpManifestPath ?? join(home, ".draft", "state", "mcp-manifest.json"),
+    skillManifestPath: paths?.skillManifestPath ?? join(workspacePath, "config", "skill-manifest.json"),
+    mcpManifestPath: paths?.mcpManifestPath ?? join(workspacePath, "config", "mcp-manifest.json"),
     statePath: paths?.statePath ?? join(workspacePath, "config"),
     envStatePath: paths?.envStatePath ?? join(home, ".draft", "state"),
   };
@@ -218,9 +218,8 @@ export async function uninstallProfileAssets(
   const result = emptyResult(profile);
   const skillManifest = readSkillManifest(resolved.skillManifestPath);
   result.removedSkills.push(...Object.entries(skillManifest.skills)
-    .filter(([id, entry]) => id.startsWith(`team:${profile}:`) && entry.source === "team" && !entry.removed_at)
-    .map(([, entry]) => entry)
-    .map((entry) => entry.name));
+    .filter(([, entry]) => entry.kind === "team" && !entry.removed_at)
+    .map(([, entry]) => entry.name));
   const skills = uninstallTeamSkills(profile, {
     claudeSkillsDir: resolved.claudeSkillsDir,
     codexSkillsDir: resolved.codexSkillsDir,
@@ -232,7 +231,7 @@ export async function uninstallProfileAssets(
   })));
   const mcpManifest = readMcpManifest(resolved.mcpManifestPath);
   result.removedMcps.push(...Object.entries(mcpManifest.mcps)
-    .filter(([id, entry]) => id.startsWith(`team:${profile}:`) && entry.source === "team" && !entry.removed_at)
+    .filter(([, entry]) => entry.kind === "team" && !entry.removed_at)
     .map(([, entry]) => entry.name));
   const mcpResult = await uninstallTeamMcps(profile, mcpOpts(resolved));
   result.errors.push(...mcpResult.errors);
