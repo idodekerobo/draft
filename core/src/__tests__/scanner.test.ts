@@ -166,7 +166,10 @@ describe("scanMCPConnections", () => {
       })
     );
 
-    const connections = scanMCPConnections({ claudeConfigPath: configPath });
+    const connections = scanMCPConnections({
+      claudeConfigPath: configPath,
+      codexConfigPath: join(TMP, "nonexistent-codex.toml"),
+    });
     expect(connections.length).toBe(2);
 
     const myServer = connections.find((c) => c.name === "my-server");
@@ -182,6 +185,7 @@ describe("scanMCPConnections", () => {
   it("returns empty for missing file", () => {
     const connections = scanMCPConnections({
       claudeConfigPath: join(TMP, "nonexistent.json"),
+      codexConfigPath: join(TMP, "nonexistent-codex.toml"),
     });
     expect(connections).toEqual([]);
   });
@@ -189,14 +193,20 @@ describe("scanMCPConnections", () => {
   it("returns empty for malformed JSON", () => {
     const configPath = join(TMP, "bad.json");
     writeFileSync(configPath, "not valid json {{{");
-    const connections = scanMCPConnections({ claudeConfigPath: configPath });
+    const connections = scanMCPConnections({
+      claudeConfigPath: configPath,
+      codexConfigPath: join(TMP, "nonexistent-codex.toml"),
+    });
     expect(connections).toEqual([]);
   });
 
   it("returns empty when mcpServers key is missing", () => {
     const configPath = join(TMP, "no-mcp.json");
     writeFileSync(configPath, JSON.stringify({ someOtherKey: true }));
-    const connections = scanMCPConnections({ claudeConfigPath: configPath });
+    const connections = scanMCPConnections({
+      claudeConfigPath: configPath,
+      codexConfigPath: join(TMP, "nonexistent-codex.toml"),
+    });
     expect(connections).toEqual([]);
   });
 
