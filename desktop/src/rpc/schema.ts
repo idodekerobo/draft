@@ -555,7 +555,7 @@ export type AppRPCType = {
       revealInFinder: { params: { relativePath: string }; response: ActionResult };
 
       /** Return support config baked in at build time. Empty strings for OSS builds. */
-      getCrispConfig: { params: void; response: { website_id: string; cal_url: string } };
+      getCrispConfig: { params: void; response: { website_id: string; cal_url: string; history_endpoint: string; history_secret: string } };
 
       /** Read analytics config from ~/.draft/config.json. Generates anonymous_id on first call. */
       getAnalyticsConfig: { params: void; response: AnalyticsConfig };

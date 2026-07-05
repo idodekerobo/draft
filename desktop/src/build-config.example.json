@@ -2,5 +2,7 @@
   "posthog_key": "",
   "api_host": "https://us.i.posthog.com",
   "crisp_website_id": "",
+  "crisp_history_endpoint": "",
+  "crisp_history_secret": "",
   "cal_url": ""
 }

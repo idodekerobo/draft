@@ -70,8 +70,10 @@ import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
 // Falls back to empty string for OSS builds (no build-config.json).
 const _phKey          = process.env.DRAFT_PH_KEY           ?? "";
 const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.posthog.com";
-const _crispWebsiteId = process.env.DRAFT_CRISP_WEBSITE_ID ?? "";
-const _calUrl         = process.env.DRAFT_CAL_URL          ?? "";
+const _crispWebsiteId      = process.env.DRAFT_CRISP_WEBSITE_ID       ?? "";
+const _crispHistoryUrl     = process.env.DRAFT_CRISP_HISTORY_ENDPOINT  ?? "";
+const _crispHistorySecret  = process.env.DRAFT_CRISP_HISTORY_SECRET    ?? "";
+const _calUrl              = process.env.DRAFT_CAL_URL                 ?? "";
 
 // Migrations must complete before RPC handlers or watchers can write profile state.
 // On failure, abort startup and preserve the recoverable pre-migration files.
@@ -1100,7 +1102,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getCrispConfig: async () => {
-        return { website_id: _crispWebsiteId, cal_url: _calUrl };
+        return {
+          website_id:       _crispWebsiteId,
+          cal_url:          _calUrl,
+          history_endpoint: _crispHistoryUrl,
+          history_secret:   _crispHistorySecret,
+        };
       },
 
       getAnalyticsConfig: async () => {
