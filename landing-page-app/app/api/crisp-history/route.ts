@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   }
 
   const upstream = await fetch(
-    `https://api.crisp.chat/v1/website/${websiteId}/conversation/${body.session_id}/messages/0`,
+    `https://api.crisp.chat/v1/website/${websiteId}/conversation/${body.session_id}/messages`,
     { headers: { Authorization: apiAuth, "X-Crisp-Tier": "plugin" } }
   );
 
