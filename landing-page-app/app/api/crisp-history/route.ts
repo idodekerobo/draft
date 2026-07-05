@@ -31,16 +31,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing session_id" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const websiteId = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ?? "";
-  const apiAuth   = process.env.CRISP_API_AUTH ?? "";
+  const websiteId    = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ?? "";
+  const apiIdentifier = process.env.CRISP_API_IDENTIFIER ?? "";
+  const apiKey        = process.env.CRISP_API_KEY ?? "";
 
-  console.log("[crisp-history] request", { session_id: body.session_id, has_website_id: !!websiteId, has_api_auth: !!apiAuth });
+  console.log("[crisp-history] request", { session_id: body.session_id, has_website_id: !!websiteId, has_identifier: !!apiIdentifier, has_key: !!apiKey });
 
-  if (!websiteId || !apiAuth) {
+  if (!websiteId || !apiIdentifier || !apiKey) {
     console.log("[crisp-history] missing env vars");
     return NextResponse.json({ messages: [] }, { headers: CORS_HEADERS });
   }
 
+  const apiAuth = `Basic ${Buffer.from(`${apiIdentifier}:${apiKey}`).toString("base64")}`;
   const url = `https://api.crisp.chat/v1/website/${websiteId}/conversation/${body.session_id}/messages`;
   console.log("[crisp-history] calling crisp", url);
 
