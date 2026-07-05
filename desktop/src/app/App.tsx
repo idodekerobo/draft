@@ -22,6 +22,7 @@ import { ActivityView } from "./components/views/ActivityView";
 import { OnboardingView } from "./components/views/OnboardingView";
 import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 import { SupportPanel } from "./components/SupportPanel";
+import { useCrispChat } from "./support/useCrispChat";
 
 // ── Polling interval ───────────────────────────────────────────────────────────
 const STATUS_POLL_MS = 5_000;
@@ -50,7 +51,8 @@ export function App() {
   const [updateVersion, setUpdateVersion]   = useState<string | null>(null);
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportOpen, setSupportOpen]           = useState(false);
+  const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
 
   useEffect(() => {
     if (status?.appState?.userState === "no-profile") setOnboardingActive(true);
@@ -295,6 +297,7 @@ export function App() {
           onStartDaemon={handleStartDraft}
           onStopDaemon={handleStopDraft}
           onRestartDaemon={handleRestartDaemon}
+          onOpenFeedback={() => setSupportOpen(true)}
         />
 
         <main className="content">
@@ -359,7 +362,13 @@ export function App() {
           <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
-      <SupportPanel isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
+      <SupportPanel
+        isOpen={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        messages={crispMessages}
+        sendMessage={crispSend}
+        isReady={crispReady}
+      />
     </div>
   );
 }

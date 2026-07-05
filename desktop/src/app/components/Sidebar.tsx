@@ -19,6 +19,7 @@ interface SidebarProps {
   onStartDaemon: () => void;
   onStopDaemon: () => void;
   onRestartDaemon: () => void;
+  onOpenFeedback: () => void;
 }
 
 interface NavItem {
@@ -51,7 +52,7 @@ const DAEMON_CONTROL_CONFIG: Record<DaemonControlVariant, DaemonControlConfig> =
   restarting: { dotClass: "loading",  label: "restarting…",  btnLabel: null,      btnVariant: null      },
 };
 
-export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew, activeProfile, profiles, onSwitchProfile, daemonVariant, onStartDaemon, onStopDaemon, onRestartDaemon }: SidebarProps) {
+export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew, activeProfile, profiles, onSwitchProfile, daemonVariant, onStartDaemon, onStopDaemon, onRestartDaemon, onOpenFeedback }: SidebarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos]   = useState<{ bottom: number; left: number } | null>(null);
   const chipRef     = useRef<HTMLButtonElement>(null);
@@ -134,6 +135,9 @@ export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew, 
       </ul>
 
       <div className="sidebar__footer">
+        <button className="sidebar__feedback" onClick={onOpenFeedback}>
+          Questions & Feedback
+        </button>
         <div className="daemon-control">
           <span className={`daemon-control__dot daemon-control__dot--${cfg.dotClass}`} />
           <span className="daemon-control__label">{cfg.label}</span>

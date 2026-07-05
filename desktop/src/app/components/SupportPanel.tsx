@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { useCrispChat } from "../support/useCrispChat";
+import type { CrispMessage } from "../support/useCrispChat";
 
 interface SupportPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  messages: CrispMessage[];
+  sendMessage: (text: string) => void;
+  isReady: boolean;
 }
 
-export function SupportPanel({ isOpen, onClose }: SupportPanelProps) {
-  const { messages, sendMessage, isReady } = useCrispChat();
-  const [draft, setDraft]                  = useState("");
-  const messagesEndRef                     = useRef<HTMLDivElement>(null);
-  const inputRef                           = useRef<HTMLTextAreaElement>(null);
+export function SupportPanel({ isOpen, onClose, messages, sendMessage, isReady }: SupportPanelProps) {
+  const [draft, setDraft]      = useState("");
+  const messagesEndRef         = useRef<HTMLDivElement>(null);
+  const inputRef               = useRef<HTMLTextAreaElement>(null);
 
   // Scroll to bottom when new messages arrive.
   useEffect(() => {
