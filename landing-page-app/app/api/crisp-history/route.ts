@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   console.log("[crisp-history] calling crisp", url);
 
   const upstream = await fetch(url, {
-    headers: { Authorization: apiAuth, "X-Crisp-Tier": "plugin" },
+    headers: { Authorization: apiAuth, "X-Crisp-Tier": "website" },
   });
 
   const rawBody = await upstream.text();
