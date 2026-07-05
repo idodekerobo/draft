@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin":  "views://app",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
 interface CrispRawMessage {
   fingerprint: number;
   type: string;
@@ -10,21 +16,25 @@ interface CrispRawMessage {
   timestamp: number;
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 export async function POST(req: NextRequest) {
   const secret = process.env.CRISP_HISTORY_SECRET;
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: CORS_HEADERS });
   }
 
   const body = await req.json() as { session_id?: string };
   if (!body.session_id) {
-    return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
+    return NextResponse.json({ error: "Missing session_id" }, { status: 400, headers: CORS_HEADERS });
   }
 
   const websiteId = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ?? "";
   const apiAuth   = process.env.CRISP_API_AUTH ?? "";
   if (!websiteId || !apiAuth) {
-    return NextResponse.json({ messages: [] });
+    return NextResponse.json({ messages: [] }, { headers: CORS_HEADERS });
   }
 
   const upstream = await fetch(
@@ -32,8 +42,8 @@ export async function POST(req: NextRequest) {
     { headers: { Authorization: apiAuth, "X-Crisp-Tier": "plugin" } }
   );
 
-  if (!upstream.ok) return NextResponse.json({ messages: [] });
+  if (!upstream.ok) return NextResponse.json({ messages: [] }, { headers: CORS_HEADERS });
 
   const data = await upstream.json() as { data?: CrispRawMessage[] };
-  return NextResponse.json({ messages: data.data ?? [] });
+  return NextResponse.json({ messages: data.data ?? [] }, { headers: CORS_HEADERS });
 }
