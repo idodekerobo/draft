@@ -33,17 +33,28 @@ export async function POST(req: NextRequest) {
 
   const websiteId = process.env.NEXT_PUBLIC_CRISP_WEBSITE_ID ?? "";
   const apiAuth   = process.env.CRISP_API_AUTH ?? "";
+
+  console.log("[crisp-history] request", { session_id: body.session_id, has_website_id: !!websiteId, has_api_auth: !!apiAuth });
+
   if (!websiteId || !apiAuth) {
+    console.log("[crisp-history] missing env vars");
     return NextResponse.json({ messages: [] }, { headers: CORS_HEADERS });
   }
 
-  const upstream = await fetch(
-    `https://api.crisp.chat/v1/website/${websiteId}/conversation/${body.session_id}/messages`,
-    { headers: { Authorization: apiAuth, "X-Crisp-Tier": "plugin" } }
-  );
+  const url = `https://api.crisp.chat/v1/website/${websiteId}/conversation/${body.session_id}/messages`;
+  console.log("[crisp-history] calling crisp", url);
 
-  if (!upstream.ok) return NextResponse.json({ messages: [] }, { headers: CORS_HEADERS });
+  const upstream = await fetch(url, {
+    headers: { Authorization: apiAuth, "X-Crisp-Tier": "plugin" },
+  });
 
-  const data = await upstream.json() as { data?: CrispRawMessage[] };
+  const rawBody = await upstream.text();
+  console.log("[crisp-history] crisp response", { status: upstream.status, body: rawBody });
+
+  if (!upstream.ok) {
+    return NextResponse.json({ messages: [] }, { headers: CORS_HEADERS });
+  }
+
+  const data = JSON.parse(rawBody) as { data?: CrispRawMessage[] };
   return NextResponse.json({ messages: data.data ?? [] }, { headers: CORS_HEADERS });
 }
