@@ -6,12 +6,12 @@
 //   context-viewer__body — file tree (left) + markdown content (right)
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { marked } from "marked";
-import type { ContextFileEntry, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
+import { diffLines, type Change } from "diff";
+import type { ContextFileEntry, ContextFileVersion, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-
-marked.setOptions({ breaks: true });
+import { ContextEditor, RawEditor } from "./ContextEditor";
+import { HistoryPanel, DiffLines } from "./HistoryPanel";
 
 // ── Compact nudge ─────────────────────────────────────────────────────────────
 
@@ -376,25 +376,23 @@ function ContextTree({
   );
 }
 
-// ── Frontmatter parser ────────────────────────────────────────────────────────
+// ── Frontmatter field parser ────────────────────────────────────────────────────
+// entry.content is always already frontmatter-stripped (by the main process) — the
+// raw block travels separately as entry.frontmatterRaw so it survives round-trip on
+// save. This only extracts display fields (name/last_updated/source) from that block.
 
-interface FrontmatterResult {
+interface FrontmatterFields {
   name?: string;
   last_updated?: string;
   source?: string;
-  body: string;
 }
 
-function parseFrontmatter(content: string): FrontmatterResult {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) return { body: content };
+function parseFrontmatterFields(frontmatterRaw: string): FrontmatterFields {
+  const match = frontmatterRaw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?$/);
+  if (!match?.[1]) return {};
 
-  const raw = match[1];
-  if (!raw) return { body: content };
-  const body = match[2] ?? "";
   const fields: Record<string, string> = {};
-
-  for (const line of raw.split("\n")) {
+  for (const line of match[1].split("\n")) {
     const colon = line.indexOf(":");
     if (colon === -1) continue;
     const key = line.slice(0, colon).trim();
@@ -402,7 +400,7 @@ function parseFrontmatter(content: string): FrontmatterResult {
     if (value && value !== ">") fields[key] = value;
   }
 
-  return { name: fields["name"], last_updated: fields["last_updated"], source: fields["source"], body };
+  return { name: fields["name"], last_updated: fields["last_updated"], source: fields["source"] };
 }
 
 // ── Content panel ─────────────────────────────────────────────────────────────
@@ -411,18 +409,25 @@ function ContextContent({
   entry,
   isDismissed,
   onDismiss,
+  historyOpen,
+  onToggleHistory,
+  onSaved,
 }: {
   entry: ContextFileEntry;
   isDismissed: boolean;
   onDismiss: () => void;
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  onSaved: (relativePath: string, content: string, frontmatterRaw?: string) => void;
 }) {
-  const { name, last_updated, source, body } = parseFrontmatter(entry.content);
+  const { name, last_updated, source } = parseFrontmatterFields(entry.frontmatterRaw);
   const hasMeta = name || last_updated || source;
-  const html = marked.parse(body) as string;
   const containerRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [rawOpen, setRawOpen] = useState(false);
 
-  const wc = wordCount(body);
+  const wc = wordCount(entry.content);
   const showNudge = entry.kind === "dim" && wc > COMPACT_THRESHOLD && !isDismissed;
 
   useEffect(() => {
@@ -458,16 +463,33 @@ function ContextContent({
 
   return (
     <div className="context-content" ref={containerRef}>
-      {hasMeta && (
-        <div className="context-meta-strip">
-          {metaParts.map((part, i) => (
-            <span key={part}>
-              {i > 0 && <span className="context-meta-strip__sep"> · </span>}
-              {part}
-            </span>
-          ))}
+      <div className="context-content__toolbar">
+        {hasMeta && (
+          <div className="context-meta-strip">
+            {metaParts.map((part, i) => (
+              <span key={part}>
+                {i > 0 && <span className="context-meta-strip__sep"> · </span>}
+                {part}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="context-content__toolbar-right">
+          <SaveIndicator status={saveStatus} />
+          <button
+            className={`context-content__history-toggle${rawOpen ? " context-content__history-toggle--active" : ""}`}
+            onClick={() => setRawOpen((prev) => !prev)}
+          >
+            {rawOpen ? "View rendered" : "View raw"}
+          </button>
+          <button
+            className={`context-content__history-toggle${historyOpen ? " context-content__history-toggle--active" : ""}`}
+            onClick={onToggleHistory}
+          >
+            History
+          </button>
         </div>
-      )}
+      </div>
       <div className="context-content__scroll">
         {showNudge && (
           <div className="compact-nudge">
@@ -487,12 +509,122 @@ function ContextContent({
             <button className="compact-nudge__dismiss" onClick={onDismiss} aria-label="Dismiss">✕</button>
           </div>
         )}
-        <div
-          className="context-content__markdown"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        {rawOpen ? (
+          <RawEditor
+            key={entry.relativePath}
+            relativePath={entry.relativePath}
+            initialRawContent={entry.frontmatterRaw + entry.content}
+            onSaveStatusChange={setSaveStatus}
+            onSaved={onSaved}
+          />
+        ) : (
+          <ContextEditor
+            key={entry.relativePath}
+            relativePath={entry.relativePath}
+            initialContent={entry.content}
+            frontmatterRaw={entry.frontmatterRaw}
+            onSaveStatusChange={setSaveStatus}
+            onSaved={onSaved}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+// ── History diff view ───────────────────────────────────────────────────────
+// Renders inline in the main content area (in place of the editor) when a
+// version is selected in the History sidebar — diffed against the previous
+// version in that file's history.
+
+function HistoryDiffView({
+  relativePath,
+  selectedVersionId,
+  onClose,
+}: {
+  relativePath: string;
+  selectedVersionId: string;
+  onClose: () => void;
+}) {
+  const [versions, setVersions] = useState<ContextFileVersion[]>([]);
+  const [diffParts, setDiffParts] = useState<Change[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    rpc.request.getFileHistory({ relativePath }).then((result) => {
+      if (!cancelled) setVersions(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [relativePath]);
+
+  const index = versions.findIndex((v) => v.id === selectedVersionId);
+  const current = index === -1 ? null : versions[index];
+  // versions is ordered newest-first, so the previous edit is the next entry in the list.
+  const previous = index === -1 ? null : (versions[index + 1] ?? null);
+
+  useEffect(() => {
+    if (index === -1) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      previous ? rpc.request.getFileVersionContent({ versionId: previous.id }) : Promise.resolve(null),
+      rpc.request.getFileVersionContent({ versionId: selectedVersionId }),
+    ]).then(([before, after]) => {
+      if (cancelled) return;
+      setDiffParts(diffLines(before?.content ?? "", after?.content ?? ""));
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVersionId, previous?.id, index]);
+
+  return (
+    <div className="context-content">
+      <div className="context-content__toolbar">
+        <div className="context-meta-strip">
+          {current ? `Version from ${relativeTime(current.createdAt)}` : "Version"}
+          {current && !previous && (
+            <>
+              <span className="context-meta-strip__sep"> · </span>
+              initial version
+            </>
+          )}
+        </div>
+        <div className="context-content__toolbar-right">
+          <button className="context-content__history-toggle" onClick={onClose}>
+            Back to editor
+          </button>
+        </div>
+      </div>
+      <div className="context-content__scroll">
+        {loading || !diffParts ? (
+          <div className="history-panel__loading">Loading diff…</div>
+        ) : (
+          <pre className="proposal-diff" aria-label="Version diff">
+            <DiffLines parts={diffParts} />
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Save status indicator ────────────────────────────────────────────────────
+
+type SaveStatus = "idle" | "saving" | "saved";
+
+function SaveIndicator({ status }: { status: SaveStatus }) {
+  if (status === "idle") return null;
+  return (
+    <span className={`context-save-indicator context-save-indicator--${status}`}>
+      <span className="context-save-indicator__dot" />
+      {status === "saving" ? "Saving…" : "Saved"}
+    </span>
   );
 }
 
@@ -618,6 +750,15 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   // ── Compact nudge dismissed dims (per-session) ────────────────────────────────
   const [dismissedDims, setDismissedDims] = useState<Set<string>>(new Set());
 
+  // ── History sidebar ──────────────────────────────────────────────────────────
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+
+  // Clear the selected diff whenever the sidebar closes, so re-opening starts fresh.
+  useEffect(() => {
+    if (!historyOpen) setSelectedVersionId(null);
+  }, [historyOpen]);
+
   // ── Sync state ───────────────────────────────────────────────────────────────
   const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true });
   const [collabConfigured, setCollabConfigured] = useState(false);
@@ -669,6 +810,19 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
         setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0]?.relativePath ?? ""));
       }
     }).catch(() => setFiles([]));
+  }
+
+  // ── Sync a saved edit back into tree state ───────────────────────────────────
+  // Without this, `files` stays frozen at whatever loadFiles() last returned. Switch
+  // away from an edited file and back, and ContextEditor remounts with the stale
+  // pre-edit body as initialContent — silently reverting the save on the next
+  // autosave/blur. See plans/0025 write-path notes on ContextEditor.
+  function handleFileSaved(relativePath: string, content: string, frontmatterRaw?: string) {
+    setFiles((prev) => prev.map((f) => (
+      f.relativePath === relativePath
+        ? { ...f, content, ...(frontmatterRaw !== undefined ? { frontmatterRaw } : {}) }
+        : f
+    )));
   }
 
   // ── Load local diff (option B: check on mount, not on poll) ─────────────────
@@ -775,6 +929,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
 
   function handleSelectDoc(path: string) {
     setSelectedPath(path);
+    setHistoryOpen(false);
     const entry = files.find((f) => f.relativePath === path);
     if (entry) {
       track("context_doc_viewed", { kind: entry.kind, group: entry.group });
@@ -878,10 +1033,31 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
             onContextMenu={handleContextMenu}
           />
           {selectedEntry && (
-            <ContextContent
-              entry={selectedEntry}
-              isDismissed={dismissedDims.has(selectedEntry.group)}
-              onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
+            selectedVersionId ? (
+              <HistoryDiffView
+                key={selectedEntry.relativePath}
+                relativePath={selectedEntry.relativePath}
+                selectedVersionId={selectedVersionId}
+                onClose={() => setSelectedVersionId(null)}
+              />
+            ) : (
+              <ContextContent
+                key={selectedEntry.relativePath}
+                entry={selectedEntry}
+                isDismissed={dismissedDims.has(selectedEntry.group)}
+                onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
+                historyOpen={historyOpen}
+                onToggleHistory={() => setHistoryOpen((prev) => !prev)}
+                onSaved={handleFileSaved}
+              />
+            )
+          )}
+          {historyOpen && selectedEntry && (
+            <HistoryPanel
+              relativePath={selectedEntry.relativePath}
+              selectedVersionId={selectedVersionId}
+              onSelectVersion={setSelectedVersionId}
+              onClose={() => setHistoryOpen(false)}
             />
           )}
         </div>

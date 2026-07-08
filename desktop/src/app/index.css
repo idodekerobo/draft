@@ -1244,6 +1244,294 @@ button {
   text-decoration: underline;
 }
 
+/* ── Editor surface — no browser default focus ring ──────────────────────────── */
+/* Calm affordance per DESIGN.md: the blinking caret signals "editable", not a box. */
+
+.context-content__editor .ProseMirror {
+  outline: none;
+  caret-color: var(--color-accent-blue);
+  min-height: 100%;
+}
+
+.context-content__editor .ProseMirror:focus-visible {
+  outline: none;
+}
+
+.context-content__raw-editor {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  caret-color: var(--color-accent-blue);
+}
+
+/* ── Content toolbar — meta strip + save indicator + history toggle ─────────── */
+
+.context-content__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 28px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.context-content__toolbar .context-meta-strip {
+  padding: 5px 0 6px;
+  border-bottom: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.context-content__toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.context-content__history-toggle {
+  height: 22px;
+  padding: 0 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: color 100ms, background 100ms, border-color 100ms;
+}
+
+.context-content__history-toggle:hover {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.context-content__history-toggle--active {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border-strong);
+}
+
+/* ── Save indicator — quiet, no motion on the text itself ───────────────────── */
+
+.context-save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  animation: context-save-indicator-in 120ms ease;
+}
+
+@keyframes context-save-indicator-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.context-save-indicator__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.context-save-indicator--saving .context-save-indicator__dot {
+  background: var(--color-status-yellow);
+  animation: context-save-indicator-pulse 900ms ease-in-out infinite;
+}
+
+.context-save-indicator--saved {
+  color: var(--color-status-green);
+}
+
+.context-save-indicator--saved .context-save-indicator__dot {
+  background: var(--color-status-green);
+}
+
+@keyframes context-save-indicator-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* ── History sidebar — third column, right of content, newest → oldest ──────── */
+
+.history-panel {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.history-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.history-panel__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+}
+
+.history-panel__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  padding: 2px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 100ms;
+}
+
+.history-panel__close:hover {
+  color: var(--color-text-secondary);
+}
+
+.history-panel__loading,
+.history-panel__empty {
+  padding: 14px;
+  font-size: var(--font-size-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.history-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Newest entry first in DOM order (query is ORDER BY created_at DESC) — no CSS reversal needed. */
+.history-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: background 100ms;
+  min-width: 0;
+}
+
+.history-panel__item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.history-panel__item--selected {
+  background: rgba(255, 255, 255, 0.06);
+  border-left-color: var(--color-accent-blue);
+}
+
+.history-panel__item-time {
+  font-size: var(--font-size-micro);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  min-width: 46px;
+}
+
+.history-panel__badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: var(--color-text-tertiary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.history-panel__badge--team-load {
+  color: var(--color-accent-blue);
+  background: rgba(10, 132, 255, 0.14);
+}
+
+.history-panel__item-author {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+}
+
+.history-panel__pill {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--color-status-green);
+}
+
+.history-panel__divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 14px;
+}
+
+.history-panel__divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.history-panel__divider-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-status-green);
+  white-space: nowrap;
+}
+
+.history-panel__item--published-marker {
+  border-left-color: var(--color-status-green);
+}
+
+/* ── Diff lines — shared by history diff view + proposal detail ─────────────── */
+
+.history-diff__line {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-secondary);
+}
+
+.history-diff__line--added {
+  color: var(--color-status-green);
+  background: rgba(48, 209, 88, 0.08);
+}
+
+.history-diff__line--removed {
+  color: var(--color-status-red);
+  background: rgba(255, 69, 58, 0.08);
+}
+
 /* ── Team sync bar ───────────────────────────────────────────────────────────── */
 /* Full-width strip below the context header. Hidden when collab not configured. */
 
