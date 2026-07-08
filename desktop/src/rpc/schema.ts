@@ -377,6 +377,8 @@ export interface ContextFileEntry {
   relativePath: string;
   label: string;
   content: string;
+  /** Verbatim YAML frontmatter block (including `---` delimiters), or "" if none. Must be re-prepended on save — content is always frontmatter-stripped. */
+  frontmatterRaw: string;
   /**
    * dim       — dimension index.md (has expand arrow for log entries)
    * log       — log/ entry child of a dim (shown when dim is expanded)
@@ -388,6 +390,23 @@ export interface ContextFileEntry {
   group: string;
   /** Human-readable label for the group — used in section headers */
   groupLabel: string;
+}
+
+/**
+ * A single recorded version of a context file, from history.db.
+ * Defined inline (mirrors draft-core/db/types FileVersion) rather than imported,
+ * per this file's convention of staying free of Node/Bun-only modules.
+ */
+export interface ContextFileVersion {
+  id: string;
+  filePath: string;
+  content: string;
+  createdAt: string;
+  source: "human-edit" | "team-load" | "initial";
+  author: string | null;
+  sessionId: string | null;
+  publishedAt: string | null;
+  changesEntryId: string | null;
 }
 
 // ── Team sync types ────────────────────────────────────────────────────────────
@@ -467,6 +486,26 @@ export type AppRPCType = {
 
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
+
+      /**
+       * Write edited content to a context file on disk. Frequent/debounced tier —
+       * does not touch history.db. relativePath is relative to <workspace>/context/.
+       */
+      saveContextFile: { params: { relativePath: string; content: string }; response: ActionResult };
+
+      /**
+       * Record a history.db checkpoint from the file's current on-disk content.
+       * Infrequent tier — call only after saveContextFile resolves (blur/switch/close),
+       * never on an independent timer, so a row is never inserted for content that
+       * isn't actually durable on disk yet.
+       */
+      checkpointContextFile: { params: { relativePath: string }; response: ActionResult };
+
+      /** List version history for a context file, most recent first. */
+      getFileHistory: { params: { relativePath: string }; response: ContextFileVersion[] };
+
+      /** Fetch the full content of a specific historical version. */
+      getFileVersionContent: { params: { versionId: string }; response: { content: string } | null };
 
       /** Rich connection status for all intelligence tools and input sources. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
