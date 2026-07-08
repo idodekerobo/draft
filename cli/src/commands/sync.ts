@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "fs";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { tmpdir } from "os";
 import { dirname, join, relative } from "path";
 import { capture } from "../utils/exec";
@@ -31,6 +31,12 @@ import {
   validateProfileAssets,
   type ProfileAssetResult,
 } from "draft-core/sync/team-assets";
+import {
+  openHistoryDb,
+  insertFileVersion,
+  getLatestUnpublishedVersion,
+  markPublished,
+} from "draft-core/db/history";
 
 interface AssetHashes {
   skills_hash: string;
@@ -161,6 +167,20 @@ function copyPublishedState(workspace: string, repoRoot: string): void {
   mirrorFile(join(workspace, "config", "collaboration.json"), join(repoRoot, "config", "collaboration.json"));
 }
 
+function walkMarkdownFiles(root: string): string[] {
+  const results: string[] = [];
+  const walk = (dir: string) => {
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile() && entry.name.endsWith(".md")) results.push(relative(root, path));
+    }
+  };
+  walk(root);
+  return results;
+}
+
 function countJsonl(path: string): number {
   if (!existsSync(path)) return 0;
   return readFileSync(path, "utf8").split("\n").filter((line) => line.trim()).length;
@@ -253,6 +273,7 @@ export async function runPublish(args: string[]): Promise<void> {
 
     const changesPath = join(cloned.root, "CHANGES.jsonl");
     const change = {
+      id: randomUUID(),
       ts: new Date().toISOString(),
       type: "team-publish",
       author: gh.stdout.trim(),
@@ -275,6 +296,18 @@ export async function runPublish(args: string[]): Promise<void> {
     if (commit.exitCode !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");
     const push = await capture(["git", "-C", cloned.tmp, "push"], { timeoutMs: 60_000 });
     if (push.exitCode !== 0) throw new Error(push.stderr || push.stdout || "git push failed");
+
+    const historyDb = openHistoryDb(workspace);
+    try {
+      for (const relPath of walkMarkdownFiles(join(workspace, "context"))) {
+        const version = getLatestUnpublishedVersion(historyDb, relPath);
+        if (version && !version.publishedAt) {
+          markPublished(historyDb, version.id, change.ts, change.id);
+        }
+      }
+    } finally {
+      historyDb.close();
+    }
 
     const accepted = join(workspace, "accepted");
     let proposals = 0;
@@ -375,6 +408,37 @@ export async function runLoad(args: string[]): Promise<void> {
     mirrorFile(join(cloned.root, "config", "mcp.json"), join(workspace, "config", "mcp.json"));
     mirrorFile(join(cloned.root, "config", "collaboration.json"), join(workspace, "config", "collaboration.json"));
     mirrorFile(join(cloned.root, "CHANGES.jsonl"), join(workspace, "CHANGES.jsonl"));
+
+    const loadedAt = new Date().toISOString();
+    const newContextRoot = join(workspace, "context");
+    const backupContextRoot = join(backup, "context");
+    const historyDb = openHistoryDb(workspace);
+    try {
+      const relPaths = new Set([
+        ...walkMarkdownFiles(newContextRoot),
+        ...walkMarkdownFiles(backupContextRoot),
+      ]);
+      for (const relPath of relPaths) {
+        const newPath = join(newContextRoot, relPath);
+        const oldPath = join(backupContextRoot, relPath);
+        const newContent = existsSync(newPath) ? readFileSync(newPath, "utf8") : null;
+        const oldContent = existsSync(oldPath) ? readFileSync(oldPath, "utf8") : null;
+        if (newContent !== null && newContent !== oldContent) {
+          insertFileVersion(historyDb, {
+            filePath: relPath,
+            content: newContent,
+            createdAt: loadedAt,
+            source: "team-load",
+            author: null,
+            sessionId: null,
+            publishedAt: null,
+            changesEntryId: null,
+          });
+        }
+      }
+    } finally {
+      historyDb.close();
+    }
 
     const result = await installProfileAssets(profile);
     const hashes = hashAssets(workspace);
