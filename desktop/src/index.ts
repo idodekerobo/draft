@@ -17,8 +17,9 @@ import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, writeSlackConfig } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
-import { homedir } from "os";
+import { homedir, userInfo } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
+import { openHistoryDb, insertFileVersion, queryFileVersions, getFileVersion } from "draft-core/db/history";
 import {
   listProposals,
   parseProposal,
@@ -27,7 +28,7 @@ import {
   applyProposalLocally,
 } from "draft-core/proposals";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
   getBundledBackgroundDir,
@@ -502,11 +503,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return capitalize(slug.replace(/[-_]/g, " "));
         }
 
-        function stripFrontmatter(content: string): string {
-          if (!content.startsWith("---")) return content;
+        function splitFrontmatter(content: string): { frontmatterRaw: string; body: string } {
+          if (!content.startsWith("---")) return { frontmatterRaw: "", body: content };
           const end = content.indexOf("\n---", 3);
-          if (end === -1) return content;
-          return content.slice(end + 4).replace(/^\n/, "");
+          if (end === -1) return { frontmatterRaw: "", body: content };
+          const body = content.slice(end + 4).replace(/^\n/, "");
+          return { frontmatterRaw: content.slice(0, content.length - body.length), body };
         }
 
         function logEntryLabel(filename: string): string {
@@ -544,10 +546,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
               // Dimension dir — emit index.md as "dim" entry
               let content = "";
               try { content = readFileSync(indexPath, "utf8"); } catch { /* empty */ }
+              const { frontmatterRaw, body } = splitFrontmatter(content);
               entries.push({
                 relativePath: `${name}/index.md`,
                 label: slugToLabel(name),
-                content: stripFrontmatter(content),
+                content: body,
+                frontmatterRaw,
                 kind: "dim",
                 group: name,
                 groupLabel: slugToLabel(name),
@@ -563,10 +567,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
                   const lfPath = join(logDir, lf);
                   let lfContent = "";
                   try { lfContent = readFileSync(lfPath, "utf8"); } catch { continue; }
+                  const lfSplit = splitFrontmatter(lfContent);
                   entries.push({
                     relativePath: `${name}/log/${lf}`,
                     label: logEntryLabel(lf),
-                    content: stripFrontmatter(lfContent),
+                    content: lfSplit.body,
+                    frontmatterRaw: lfSplit.frontmatterRaw,
                     kind: "log",
                     group: name,
                     groupLabel: slugToLabel(name),
@@ -583,10 +589,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
                 let childContent = "";
                 try { childContent = readFileSync(childPath, "utf8"); } catch { continue; }
                 const childBase = child.replace(/\.md$/, "");
+                const childSplit = splitFrontmatter(childContent);
                 entries.push({
                   relativePath: `${name}/${child}`,
                   label: slugToLabel(childBase),
-                  content: stripFrontmatter(childContent),
+                  content: childSplit.body,
+                  frontmatterRaw: childSplit.frontmatterRaw,
                   kind: "group-child",
                   group: name,
                   groupLabel: slugToLabel(name),
@@ -597,10 +605,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             let fileContent = "";
             try { fileContent = readFileSync(fullPath, "utf8"); } catch { continue; }
             const base = name.replace(/\.md$/, "");
+            const fileSplit = splitFrontmatter(fileContent);
             entries.push({
               relativePath: name,
               label: slugToLabel(base),
-              content: stripFrontmatter(fileContent),
+              content: fileSplit.body,
+              frontmatterRaw: fileSplit.frontmatterRaw,
               kind: "standalone",
               group: base,
               groupLabel: slugToLabel(base),
@@ -782,6 +792,75 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Failed to reveal in Finder." };
+        }
+      },
+
+      saveContextFile: async ({ relativePath, content }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const contextDir = join(workspace, "context");
+          const absPath = resolve(contextDir, relativePath);
+          if (absPath !== resolve(contextDir) && !absPath.startsWith(resolve(contextDir) + "/")) {
+            return { ok: false, error: "Invalid file path." };
+          }
+          writeFileSync(absPath, content, "utf8");
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to save file." };
+        }
+      },
+
+      checkpointContextFile: async ({ relativePath }) => {
+        try {
+          const workspace = getWorkspacePath(getActiveProfile());
+          const contextDir = join(workspace, "context");
+          const absPath = resolve(contextDir, relativePath);
+          if (absPath !== resolve(contextDir) && !absPath.startsWith(resolve(contextDir) + "/")) {
+            return { ok: false, error: "Invalid file path." };
+          }
+          if (!existsSync(absPath)) {
+            return { ok: false, error: "File not found." };
+          }
+          const content = readFileSync(absPath, "utf8");
+          const db = openHistoryDb(workspace);
+          try {
+            insertFileVersion(db, {
+              filePath: relativePath,
+              content,
+              createdAt: new Date().toISOString(),
+              source: "human-edit",
+              author: userInfo().username,
+              sessionId: null,
+              publishedAt: null,
+              changesEntryId: null,
+            });
+          } finally {
+            db.close();
+          }
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to checkpoint file." };
+        }
+      },
+
+      getFileHistory: async ({ relativePath }) => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const db = openHistoryDb(workspace);
+        try {
+          return queryFileVersions(db, relativePath);
+        } finally {
+          db.close();
+        }
+      },
+
+      getFileVersionContent: async ({ versionId }) => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const db = openHistoryDb(workspace);
+        try {
+          const version = getFileVersion(db, versionId);
+          return version ? { content: version.content } : null;
+        } finally {
+          db.close();
         }
       },
 
