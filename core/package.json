@@ -11,6 +11,7 @@
     "./proposals":            "./src/proposals.ts",
     "./scanner":              "./src/scanner.ts",
     "./db/activity":          "./src/db/activity.ts",
+    "./db/history":           "./src/db/history.ts",
     "./agents/headless":      "./src/agents/headless.ts",
     "./agents/prompts/setup": "./src/agents/prompts/setup.ts",
     "./integrations/granola": "./src/integrations/granola.ts",

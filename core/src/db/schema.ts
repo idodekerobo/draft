@@ -16,3 +16,19 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 CREATE INDEX IF NOT EXISTS idx_runs_profile_started ON runs(profile, started_at DESC);
 `;
+
+export const HISTORY_SCHEMA = `
+CREATE TABLE IF NOT EXISTS file_versions (
+  id                TEXT PRIMARY KEY,
+  file_path         TEXT NOT NULL,
+  content           TEXT NOT NULL,
+  created_at        TEXT NOT NULL,
+  source            TEXT NOT NULL,
+  author            TEXT,
+  session_id        TEXT,
+  published_at      TEXT,
+  changes_entry_id  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_file_versions_path_created ON file_versions(file_path, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_file_versions_unpublished ON file_versions(file_path, published_at);
+`;
