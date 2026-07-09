@@ -496,6 +496,11 @@ function ContextContent({
   const [publishStatus, setPublishStatus] = useState<PublishStatus>("idle");
   const [publishError, setPublishError] = useState<string | undefined>(undefined);
   const [publishConfirm, setPublishConfirm] = useState<PublishConfirmState | null>(null);
+  const [collabConfigured, setCollabConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    rpc.request.getCollabConfigured().then((result) => setCollabConfigured(result.configured)).catch(() => setCollabConfigured(false));
+  }, []);
 
   const wc = wordCount(entry.content);
   const showNudge = entry.kind === "dim" && wc > COMPACT_THRESHOLD && !isDismissed;
@@ -532,6 +537,11 @@ function ContextContent({
   ].filter(Boolean) as string[];
 
   async function handlePublish() {
+    if (collabConfigured === false) {
+      setPublishConfirm({ kind: "not-configured" });
+      return;
+    }
+
     await editorRef.current?.flushAndCheckpoint();
 
     const versions = await rpc.request.getFileHistory({ relativePath: entry.relativePath });
@@ -773,13 +783,16 @@ type PublishStatus = "idle" | "publishing" | "published" | "error";
 
 function PublishIndicator({ status, error }: { status: PublishStatus; error?: string }) {
   if (status === "idle") return null;
+  const label = status === "publishing" ? "Publishing…"
+    : status === "published" ? "Published"
+    : `Publish failed: ${error ?? "unknown error"}`;
   return (
     <span
       className={`context-publish-indicator context-publish-indicator--${status}`}
-      title={status === "error" ? error : undefined}
+      title={status === "error" ? label : undefined}
     >
       <span className="context-publish-indicator__dot" />
-      {status === "publishing" ? "Publishing…" : status === "published" ? "Published" : "Publish failed"}
+      <span className="context-publish-indicator__label">{label}</span>
     </span>
   );
 }
@@ -792,7 +805,8 @@ function PublishIndicator({ status, error }: { status: PublishStatus; error?: st
 
 type PublishConfirmState =
   | { kind: "diff"; diffParts: Change[] }
-  | { kind: "nothing-to-publish" };
+  | { kind: "nothing-to-publish" }
+  | { kind: "not-configured" };
 
 function PublishConfirmView({
   state,
@@ -803,12 +817,14 @@ function PublishConfirmView({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const title = state.kind === "diff" ? "Publish preview"
+    : state.kind === "nothing-to-publish" ? "Nothing to publish since last publish"
+    : "Team collaboration not set up";
+
   return (
     <div className="context-content">
       <div className="context-content__toolbar">
-        <div className="context-meta-strip">
-          {state.kind === "nothing-to-publish" ? "Nothing to publish since last publish" : "Publish preview"}
-        </div>
+        <div className="context-meta-strip">{title}</div>
         <div className="context-content__toolbar-right">
           {state.kind === "diff" && (
             <button className="context-content__publish-button" onClick={onConfirm}>
@@ -823,6 +839,11 @@ function PublishConfirmView({
       <div className="context-content__scroll">
         {state.kind === "nothing-to-publish" ? (
           <p className="changelog-panel__empty">This file has no changes since it was last published.</p>
+        ) : state.kind === "not-configured" ? (
+          <p className="changelog-panel__empty">
+            This profile isn't connected to a shared team repository yet. Run the{" "}
+            <code>draft-setup-collab</code> skill inside your agent session to connect one before publishing.
+          </p>
         ) : (
           <pre className="proposal-diff" aria-label="Publish diff">
             <DiffLines parts={state.diffParts} />

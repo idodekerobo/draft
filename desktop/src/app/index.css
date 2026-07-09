@@ -1499,6 +1499,13 @@ button {
   background: var(--color-status-red);
 }
 
+.context-publish-indicator--error .context-publish-indicator__label {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── History sidebar — third column, right of content, newest → oldest ──────── */
 
 .history-panel {
