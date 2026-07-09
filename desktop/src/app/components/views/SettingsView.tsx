@@ -19,6 +19,7 @@ import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { SkillSyncSection } from "./settings/SkillSyncSection";
 import { McpSyncSection } from "./settings/McpSyncSection";
+import { PublishSection } from "./settings/PublishSection";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -703,6 +704,9 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
             </div>
           </section>
         )}
+
+        {/* ── Team Publishing ────────────────────────────────────────────── */}
+        <PublishSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
         <SkillSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />

@@ -298,6 +298,8 @@ export interface LocalConfig {
   disabledContextSections: string[];
   codexScanIntervalMinutes: number | null;
   claudeCodeSynthesis: boolean;
+  /** ISO timestamp of the last full publish to the team repo, or null if never published. */
+  lastPublished: string | null;
 }
 
 export interface UpdateInfo {

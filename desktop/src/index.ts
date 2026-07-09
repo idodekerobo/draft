@@ -479,6 +479,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           disabledContextSections:   c.disabledContextSections   ?? [],
           codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
           claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
+          lastPublished:             c.last_published            ?? null,
         };
       },
 

@@ -986,7 +986,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   }, [historyOpen]);
 
   // ── Sync state ───────────────────────────────────────────────────────────────
-  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true });
+  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true, lastPublished: null });
   const [collabConfigured, setCollabConfigured] = useState(false);
   const [lastLoaded, setLastLoaded] = useState<string | null>(null);
   const [localEntries, setLocalEntries] = useState<LoadDiffEntry[]>([]);
