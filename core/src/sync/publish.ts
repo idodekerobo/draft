@@ -7,6 +7,7 @@
 // validateProfileAssets) and formatting the result for their surface.
 
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -18,7 +19,7 @@ import {
   writeFileSync,
 } from "fs";
 import { createHash, randomUUID } from "crypto";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import { dirname, join, relative, resolve } from "path";
 import { capture as defaultCapture, type CaptureResult } from "../exec";
 import { readCollaboration, readLocalConfig, writeLocalConfig } from "../config";
@@ -27,6 +28,22 @@ import {
   getLatestUnpublishedVersion,
   markPublished,
 } from "../db/history";
+
+// ── logging ─────────────────────────────────────────────────────────────────
+//
+// Every publish attempt (success or failure) is appended here so users can
+// self-diagnose without re-running with a debugger attached. Mirrors the
+// desktop-installer.log convention (desktop/src/main/installer.ts).
+
+const LOG_FILE = join(homedir(), ".draft", "logs", "publish.log");
+
+function log(msg: string): void {
+  const line = `[${new Date().toISOString()}] [publish] ${msg}\n`;
+  try {
+    mkdirSync(dirname(LOG_FILE), { recursive: true });
+    appendFileSync(LOG_FILE, line);
+  } catch { /* non-fatal */ }
+}
 
 type CaptureFn = (
   cmd: string[],
@@ -209,13 +226,16 @@ export async function cloneTeamRepo(
 ): Promise<{ tmp: string; root: string } | { error: string }> {
   const collab = readCollaboration(workspace);
   if (!collab.ok || collab.collab.mode !== "github" || !collab.collab.team_repo_url) {
-    return { error: "No team repo configured. Run /draft:setup-collab first." };
+    log("clone: not configured — no collaboration.json / team_repo_url for this workspace");
+    return { error: "No team repo configured. Run /draft-setup-collab first." };
   }
   const tmp = mkdtempSync(join(tmpdir(), "draft-team-"));
   const cloned = await capture(["git", "clone", "--depth", "1", collab.collab.team_repo_url, tmp], { timeoutMs: 60_000 });
   if (cloned.exitCode !== 0) {
     rmSync(tmp, { recursive: true, force: true });
-    return { error: cloned.stderr.trim() || cloned.stdout.trim() || "Failed to clone team repository." };
+    const error = cloned.stderr.trim() || cloned.stdout.trim() || "Failed to clone team repository.";
+    log(`clone: failed — url=${collab.collab.team_repo_url} error=${error}`);
+    return { error };
   }
   const root = collab.collab.team_repo_subdir && collab.collab.team_repo_subdir !== "root"
     ? join(tmp, collab.collab.team_repo_subdir)
@@ -248,18 +268,25 @@ export async function publishTeamContext(
   const capture = opts?.capture ?? defaultCapture;
   const scoped = !!opts?.paths?.length;
 
+  log(`start — profile=${profile} scoped=${scoped}${scoped ? ` paths=${JSON.stringify(opts!.paths)}` : ""}`);
+
   if (scoped) {
     for (const relPath of opts!.paths!) {
       const error = validateScopedPath(workspace, relPath);
-      if (error) throw new PublishError(error);
+      if (error) {
+        log(`error — ${error}`);
+        throw new PublishError(error);
+      }
     }
   }
 
   const gh = await capture(["gh", "api", "user", "--jq", ".login"]);
   const author = gh.exitCode === 0 ? gh.stdout.trim() : undefined;
+  if (gh.exitCode !== 0) log(`gh auth check failed (exit ${gh.exitCode}) — proceeding without an author`);
 
   const cloned = await cloneTeamRepo(workspace, capture);
   if ("error" in cloned) {
+    log(`error — ${cloned.error}`);
     throw new PublishError(cloned.error);
   }
 
@@ -287,18 +314,35 @@ export async function publishTeamContext(
     const add = scoped
       ? await capture(["git", "-C", cloned.tmp, "add", "--", ...addTargets])
       : await capture(["git", "-C", cloned.tmp, "add", "-A"]);
-    if (add.exitCode !== 0) throw new PublishError(add.stderr || "git add failed");
+    if (add.exitCode !== 0) {
+      const error = add.stderr || "git add failed";
+      log(`error — git add: ${error}`);
+      throw new PublishError(error);
+    }
 
     const status = await capture(["git", "-C", cloned.tmp, "status", "--porcelain"]);
-    if (status.exitCode !== 0) throw new PublishError(status.stderr || "git status failed");
+    if (status.exitCode !== 0) {
+      const error = status.stderr || "git status failed";
+      log(`error — git status: ${error}`);
+      throw new PublishError(error);
+    }
     if (!status.stdout.trim()) {
+      log("nothing to publish — working tree matches remote");
       return { ok: true, published: false, scoped, files: [], proposalsCleared: 0 };
     }
 
     const commit = await capture(["git", "-C", cloned.tmp, "commit", "-m", `draft publish: ${profile}`]);
-    if (commit.exitCode !== 0) throw new PublishError(commit.stderr || commit.stdout || "git commit failed");
+    if (commit.exitCode !== 0) {
+      const error = commit.stderr || commit.stdout || "git commit failed";
+      log(`error — git commit: ${error}`);
+      throw new PublishError(error);
+    }
     const push = await capture(["git", "-C", cloned.tmp, "push"], { timeoutMs: 60_000 });
-    if (push.exitCode !== 0) throw new PublishError(push.stderr || push.stdout || "git push failed");
+    if (push.exitCode !== 0) {
+      const error = push.stderr || push.stdout || "git push failed";
+      log(`error — git push: ${error}`);
+      throw new PublishError(error);
+    }
 
     const historyDb = openHistoryDb(workspace);
     try {
@@ -327,13 +371,21 @@ export async function publishTeamContext(
     writeLocalConfig(workspace, { last_published: new Date().toISOString() });
     writeAssetState(workspace, hashAssets(workspace), "publish");
 
+    const files = scoped ? opts!.paths! : walkMarkdownFiles(join(workspace, "context"));
+    log(`success — files=${files.length} proposalsCleared=${proposalsCleared}`);
+
     return {
       ok: true,
       published: true,
       scoped,
-      files: scoped ? opts!.paths! : walkMarkdownFiles(join(workspace, "context")),
+      files,
       proposalsCleared,
     };
+  } catch (err) {
+    if (!(err instanceof PublishError)) {
+      log(`error — unexpected: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    throw err;
   } finally {
     rmSync(cloned.tmp, { recursive: true, force: true });
   }
