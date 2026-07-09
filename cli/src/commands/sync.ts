@@ -10,12 +10,10 @@ import {
   readdirSync,
   rmSync,
   statSync,
-  unlinkSync,
   writeFileSync,
 } from "fs";
-import { createHash } from "crypto";
 import { tmpdir } from "os";
-import { dirname, join, relative } from "path";
+import { dirname, join } from "path";
 import { capture } from "../utils/exec";
 import {
   getActiveProfile,
@@ -24,23 +22,32 @@ import {
   readLocalConfig,
   writeLocalConfig,
 } from "../utils/config";
-import { green, red, yellow, dim, cyan, bold } from "../utils/output";
+import { green, red, yellow, dim, bold } from "../utils/output";
 import {
   installProfileAssets,
   uninstallProfileAssets,
   validateProfileAssets,
   type ProfileAssetResult,
 } from "draft-core/sync/team-assets";
-
-interface AssetHashes {
-  skills_hash: string;
-  mcp_hash: string;
-}
-
-interface TeamAssetLocalState {
-  baseline?: AssetHashes;
-  last_remote?: AssetHashes;
-}
+import {
+  openHistoryDb,
+  insertFileVersion,
+} from "draft-core/db/history";
+import {
+  publishTeamContext,
+  listUnpublishedContextPaths,
+  cloneTeamRepo,
+  mirrorDirectory,
+  mirrorFile,
+  walkMarkdownFiles,
+  hashAssets,
+  equalHashes,
+  assetsAreNonEmpty,
+  assetState,
+  writeAssetState,
+  PublishError,
+  type AssetHashes,
+} from "draft-core/sync/publish";
 
 interface SyncJsonResult {
   ok: boolean;
@@ -59,106 +66,6 @@ function fail(message: string, json: boolean, code = 1): void {
   if (json) console.log(JSON.stringify({ ok: false, errors: [message] }));
   else console.error(red(message));
   process.exitCode = code;
-}
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  return `{${Object.keys(value as Record<string, unknown>).sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`)
-    .join(",")}}`;
-}
-
-function hashSkills(workspace: string): string {
-  const root = join(workspace, "skills");
-  const hash = createHash("sha256");
-  if (!existsSync(root)) return `sha256:${hash.update("").digest("hex")}`;
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (entry.name === ".DS_Store" || entry.name.startsWith(".draft-")) continue;
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (entry.isFile()) files.push(path);
-    }
-  };
-  walk(root);
-  for (const path of files) {
-    hash.update(relative(root, path));
-    hash.update("\0");
-    hash.update(readFileSync(path));
-    hash.update("\0");
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-function hashMcp(workspace: string): string {
-  const path = join(workspace, "config", "mcp.json");
-  const value = existsSync(path)
-    ? JSON.parse(readFileSync(path, "utf8"))
-    : { version: 1, servers: [] };
-  return `sha256:${createHash("sha256").update(stableJson(value)).digest("hex")}`;
-}
-
-function hashAssets(workspace: string): AssetHashes {
-  return { skills_hash: hashSkills(workspace), mcp_hash: hashMcp(workspace) };
-}
-
-function equalHashes(a?: AssetHashes, b?: AssetHashes): boolean {
-  return !!a && !!b && a.skills_hash === b.skills_hash && a.mcp_hash === b.mcp_hash;
-}
-
-function assetsAreNonEmpty(workspace: string): boolean {
-  const skills = join(workspace, "skills");
-  if (existsSync(skills) && readdirSync(skills).some((name) => !name.startsWith("."))) return true;
-  const mcp = join(workspace, "config", "mcp.json");
-  if (!existsSync(mcp)) return false;
-  try {
-    return (JSON.parse(readFileSync(mcp, "utf8")).servers ?? []).length > 0;
-  } catch {
-    return true;
-  }
-}
-
-function assetState(workspace: string): TeamAssetLocalState {
-  const local = readLocalConfig(workspace);
-  if (!local.ok) return {};
-  return ((local.config as typeof local.config & { team_assets?: TeamAssetLocalState }).team_assets ?? {});
-}
-
-function writeAssetState(workspace: string, hashes: AssetHashes, kind: "load" | "publish"): void {
-  const current = readLocalConfig(workspace);
-  const prior = current.ok
-    ? ((current.config as typeof current.config & { team_assets?: TeamAssetLocalState }).team_assets ?? {})
-    : {};
-  writeLocalConfig(workspace, {
-    team_assets: {
-      ...prior,
-      baseline: hashes,
-      ...(kind === "load" ? { last_remote: hashes } : {}),
-    },
-  });
-}
-
-function mirrorDirectory(source: string, destination: string): void {
-  rmSync(destination, { recursive: true, force: true });
-  if (!existsSync(source)) return;
-  mkdirSync(dirname(destination), { recursive: true });
-  cpSync(source, destination, { recursive: true });
-}
-
-function mirrorFile(source: string, destination: string): void {
-  rmSync(destination, { force: true });
-  if (!existsSync(source)) return;
-  mkdirSync(dirname(destination), { recursive: true });
-  cpSync(source, destination);
-}
-
-function copyPublishedState(workspace: string, repoRoot: string): void {
-  mirrorDirectory(join(workspace, "context"), join(repoRoot, "context"));
-  mirrorDirectory(join(workspace, "skills"), join(repoRoot, "skills"));
-  mirrorFile(join(workspace, "config", "mcp.json"), join(repoRoot, "config", "mcp.json"));
-  mirrorFile(join(workspace, "config", "collaboration.json"), join(repoRoot, "config", "collaboration.json"));
 }
 
 function countJsonl(path: string): number {
@@ -187,41 +94,12 @@ function formatAssets(result: ProfileAssetResult): SyncJsonResult {
   };
 }
 
-function hasUnpublishedContext(workspace: string): boolean {
-  const accepted = join(workspace, "accepted");
-  if (existsSync(accepted) && readdirSync(accepted).some((name) => name.endsWith(".md"))) return true;
-  const local = readLocalConfig(workspace);
-  const lastPublished = local.ok ? local.config.last_published : undefined;
-  const context = join(workspace, "context");
-  if (!existsSync(context)) return false;
-  const cutoff = lastPublished ? Date.parse(lastPublished) : 0;
-  for (const dimension of readdirSync(context, { withFileTypes: true })) {
-    if (!dimension.isDirectory()) continue;
-    const log = join(context, dimension.name, "log");
-    if (!existsSync(log)) continue;
-    for (const entry of readdirSync(log)) {
-      const path = join(log, entry);
-      if (lstatSync(path).isFile() && (!lastPublished || statSync(path).mtimeMs > cutoff)) return true;
-    }
+function collectRepeatedFlag(args: string[], flag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag && args[i + 1] !== undefined) out.push(args[++i]);
   }
-  return false;
-}
-
-async function cloneTeamRepo(workspace: string): Promise<{ tmp: string; root: string } | { error: string }> {
-  const collab = readCollaboration(workspace);
-  if (!collab.ok || collab.collab.mode !== "github" || !collab.collab.team_repo_url) {
-    return { error: "No team repo configured. Run /draft:setup-collab first." };
-  }
-  const tmp = mkdtempSync(join(tmpdir(), "draft-team-"));
-  const cloned = await capture(["git", "clone", "--depth", "1", collab.collab.team_repo_url, tmp], { timeoutMs: 60_000 });
-  if (cloned.exitCode !== 0) {
-    rmSync(tmp, { recursive: true, force: true });
-    return { error: cloned.stderr.trim() || cloned.stdout.trim() || "Failed to clone team repository." };
-  }
-  const root = collab.collab.team_repo_subdir && collab.collab.team_repo_subdir !== "root"
-    ? join(tmp, collab.collab.team_repo_subdir)
-    : tmp;
-  return { tmp, root };
+  return out;
 }
 
 // ── publish ───────────────────────────────────────────────────────────────────
@@ -230,6 +108,17 @@ export async function runPublish(args: string[]): Promise<void> {
   const json = args.includes("--json");
   const profile = getActiveProfile();
   const workspace = getWorkspacePath(profile);
+
+  if (args.includes("--list-changed")) {
+    const paths = listUnpublishedContextPaths(workspace);
+    if (json) console.log(JSON.stringify({ ok: true, profile, paths }));
+    else if (paths.length) console.log(paths.join("\n"));
+    else console.log(dim("Nothing to publish."));
+    return;
+  }
+
+  const paths = collectRepeatedFlag(args, "--path");
+
   const validation = validateProfileAssets(profile);
   if (!validation.ok) {
     fail(`Team assets are invalid: ${validation.errors.map((entry) => entry.message).join("; ")}`, json, 2);
@@ -241,62 +130,17 @@ export async function runPublish(args: string[]): Promise<void> {
     return;
   }
 
-  const cloned = await cloneTeamRepo(workspace);
-  if ("error" in cloned) {
-    fail(cloned.error, json, 2);
-    return;
-  }
-
   try {
-    mkdirSync(cloned.root, { recursive: true });
-    copyPublishedState(workspace, cloned.root);
-
-    const changesPath = join(cloned.root, "CHANGES.jsonl");
-    const change = {
-      ts: new Date().toISOString(),
-      type: "team-publish",
-      author: gh.stdout.trim(),
-      profile,
-      files: ["context/", "skills/", "config/mcp.json"],
-    };
-    writeFileSync(changesPath, (existsSync(changesPath) ? readFileSync(changesPath, "utf8").trimEnd() + "\n" : "") + JSON.stringify(change) + "\n");
-
-    const add = await capture(["git", "-C", cloned.tmp, "add", "-A"]);
-    if (add.exitCode !== 0) throw new Error(add.stderr || "git add failed");
-    const status = await capture(["git", "-C", cloned.tmp, "status", "--porcelain"]);
-    if (status.exitCode !== 0) throw new Error(status.stderr || "git status failed");
-    if (!status.stdout.trim()) {
-      if (json) console.log(JSON.stringify({ ok: true, profile, published: false, errors: [] }));
-      else console.log(dim("Nothing to publish."));
-      return;
-    }
-
-    const commit = await capture(["git", "-C", cloned.tmp, "commit", "-m", `draft publish: ${profile}`]);
-    if (commit.exitCode !== 0) throw new Error(commit.stderr || commit.stdout || "git commit failed");
-    const push = await capture(["git", "-C", cloned.tmp, "push"], { timeoutMs: 60_000 });
-    if (push.exitCode !== 0) throw new Error(push.stderr || push.stdout || "git push failed");
-
-    const accepted = join(workspace, "accepted");
-    let proposals = 0;
-    if (existsSync(accepted)) {
-      for (const name of readdirSync(accepted).filter((entry) => entry.endsWith(".md"))) {
-        unlinkSync(join(accepted, name));
-        proposals++;
-      }
-    }
-    const now = new Date().toISOString();
-    writeLocalConfig(workspace, { last_published: now });
-    writeAssetState(workspace, hashAssets(workspace), "publish");
-
+    const result = await publishTeamContext(workspace, profile, paths.length ? { paths } : undefined);
     if (json) {
-      console.log(JSON.stringify({ ok: true, profile, published: true, proposals, errors: [] }));
+      console.log(JSON.stringify({ ok: true, profile, ...result, errors: [] }));
+    } else if (!result.published) {
+      console.log(dim("Nothing to publish."));
     } else {
-      console.log(`${green("✓")} Published team context and assets${proposals ? ` with ${bold(String(proposals))} proposal(s)` : ""}.`);
+      console.log(`${green("✓")} Published ${result.scoped ? `${bold(String(result.files.length))} file(s)` : "team context and assets"}${result.proposalsCleared ? ` with ${bold(String(result.proposalsCleared))} proposal(s)` : ""}.`);
     }
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error), json, 3);
-  } finally {
-    rmSync(cloned.tmp, { recursive: true, force: true });
+    fail(error instanceof PublishError || error instanceof Error ? error.message : String(error), json, 3);
   }
 }
 
@@ -334,7 +178,7 @@ export async function runLoad(args: string[]): Promise<void> {
     finishFailure("unpublished team asset changes detected. Run `draft publish` or explicitly rerun `draft load --discard-team-assets`.");
     return;
   }
-  if (!discard && hasUnpublishedContext(workspace)) {
+  if (!discard && listUnpublishedContextPaths(workspace).length > 0) {
     finishFailure("unpublished local context changes detected. Run `draft publish` before loading.");
     return;
   }
@@ -375,6 +219,42 @@ export async function runLoad(args: string[]): Promise<void> {
     mirrorFile(join(cloned.root, "config", "mcp.json"), join(workspace, "config", "mcp.json"));
     mirrorFile(join(cloned.root, "config", "collaboration.json"), join(workspace, "config", "collaboration.json"));
     mirrorFile(join(cloned.root, "CHANGES.jsonl"), join(workspace, "CHANGES.jsonl"));
+
+    const loadedAt = new Date().toISOString();
+    const newContextRoot = join(workspace, "context");
+    const backupContextRoot = join(backup, "context");
+    const historyDb = openHistoryDb(workspace);
+    try {
+      const relPaths = new Set([
+        ...walkMarkdownFiles(newContextRoot),
+        ...walkMarkdownFiles(backupContextRoot),
+      ]);
+      for (const relPath of relPaths) {
+        const newPath = join(newContextRoot, relPath);
+        const oldPath = join(backupContextRoot, relPath);
+        const newContent = existsSync(newPath) ? readFileSync(newPath, "utf8") : null;
+        const oldContent = existsSync(oldPath) ? readFileSync(oldPath, "utf8") : null;
+        if (newContent !== null && newContent !== oldContent) {
+          // Content just came from the remote repo, so it IS the current
+          // published state — mark it published at load time. Otherwise every
+          // freshly-loaded file looks "unpublished" (diffs against "", and
+          // trips the load-time "unpublished changes" guard) until the user
+          // edits and republishes it.
+          insertFileVersion(historyDb, {
+            filePath: relPath,
+            content: newContent,
+            createdAt: loadedAt,
+            source: "team-load",
+            author: null,
+            sessionId: null,
+            publishedAt: loadedAt,
+            changesEntryId: null,
+          });
+        }
+      }
+    } finally {
+      historyDb.close();
+    }
 
     const result = await installProfileAssets(profile);
     const hashes = hashAssets(workspace);

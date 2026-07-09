@@ -13,3 +13,15 @@ export interface ActivityRun {
   errorMsg: string | null;
   transcriptPath: string | null;
 }
+
+export interface FileVersion {
+  id: string;
+  filePath: string;         // relative path under context/, e.g. "product/index.md"
+  content: string;          // full markdown snapshot, frontmatter included
+  createdAt: string;        // ISO 8601
+  source: "human-edit" | "team-load" | "initial";
+  author: string | null;
+  sessionId: string | null; // reserved for future CRDT actor attribution
+  publishedAt: string | null;
+  changesEntryId: string | null;
+}

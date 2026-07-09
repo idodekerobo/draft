@@ -11,6 +11,9 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@tiptap/pm": "^3.27.3",
+    "@tiptap/react": "^3.27.3",
+    "@tiptap/starter-kit": "^3.27.3",
     "crisp-sdk-web": "^1.1.2",
     "diff": "^9.0.0",
     "draft-core": "workspace:*",
@@ -18,7 +21,8 @@
     "marked": "^18.0.4",
     "posthog-js": "^1.379.1",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "tiptap-markdown": "^0.9.0"
   },
   "scripts": {
     "start": "electrobun dev",

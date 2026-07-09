@@ -5,9 +5,10 @@
 //   fetchRemoteDiff — shallow-clones the team repo, reads delta from tmpDir (for manual pull + HITL)
 //   applyFromTmpDir — copies context + CHANGES.jsonl from tmpDir → workspace, updates cursor
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync } from "fs";
+import { join, relative } from "path";
 import { getWorkspacePath, getActiveProfile, readLocalConfig, writeLocalConfig, readCollaboration } from "draft-core/config";
+import { openHistoryDb, insertFileVersion } from "draft-core/db/history";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -201,9 +202,48 @@ export function applyFromTmpDir(tmpDir: string, cursorLine: number): { ok: boole
   }
 
   try {
+    // Snapshot pre-copy context/ so we can diff what actually changed, for history rows.
+    const contextRoot = join(workspace, "context");
+    const preCopySnapshot = new Map<string, string>();
+    for (const relPath of walkMarkdownFiles(contextRoot)) {
+      preCopySnapshot.set(relPath, readFileSync(join(contextRoot, relPath), "utf8"));
+    }
+
     // Copy context/
-    mkdirSync(join(workspace, "context"), { recursive: true });
-    cpSync(join(sourcePath, "context"), join(workspace, "context"), { recursive: true });
+    mkdirSync(contextRoot, { recursive: true });
+    cpSync(join(sourcePath, "context"), contextRoot, { recursive: true });
+
+    // Record a history row for every file whose content actually changed —
+    // this is the only write path where content changes outside the editor.
+    const loadedAt = new Date().toISOString();
+    const historyDb = openHistoryDb(workspace);
+    try {
+      const relPaths = new Set([...preCopySnapshot.keys(), ...walkMarkdownFiles(contextRoot)]);
+      for (const relPath of relPaths) {
+        const newPath = join(contextRoot, relPath);
+        const newContent = existsSync(newPath) ? readFileSync(newPath, "utf8") : null;
+        const oldContent = preCopySnapshot.get(relPath) ?? null;
+        if (newContent !== null && newContent !== oldContent) {
+          // Content just came from the remote repo, so it IS the current
+          // published state — mark it published at load time. Otherwise every
+          // freshly-loaded file looks "unpublished" (diffs against "", and
+          // trips the load-time "unpublished changes" guard) until the user
+          // edits and republishes it.
+          insertFileVersion(historyDb, {
+            filePath: relPath,
+            content: newContent,
+            createdAt: loadedAt,
+            source: "team-load",
+            author: null,
+            sessionId: null,
+            publishedAt: loadedAt,
+            changesEntryId: null,
+          });
+        }
+      }
+    } finally {
+      historyDb.close();
+    }
 
     // Copy CHANGES.jsonl if present
     const srcChanges = join(sourcePath, "CHANGES.jsonl");
@@ -227,6 +267,20 @@ export function applyFromTmpDir(tmpDir: string, cursorLine: number): { ok: boole
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function walkMarkdownFiles(root: string): string[] {
+  const results: string[] = [];
+  const walk = (dir: string) => {
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile() && entry.name.endsWith(".md")) results.push(relative(root, path));
+    }
+  };
+  walk(root);
+  return results;
+}
 
 async function makeTmpDir(): Promise<string> {
   const base = `/tmp/draft-load-${Math.random().toString(36).slice(2, 8)}`;

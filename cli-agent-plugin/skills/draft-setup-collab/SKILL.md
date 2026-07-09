@@ -101,12 +101,18 @@ Create the repo:
 gh repo create [username]/[repo-name] --private --description "Draft team context"
 ```
 
-Set: `team_repo_url = github.com/[username]/[repo-name]`, `team_repo_subdir = root`
+Set: `team_repo_url = https://github.com/[username]/[repo-name]`, `team_repo_subdir = root`
 
 **Option B — Existing repo:**
 
 Use the **AskUserQuestion** tool to ask:
-> "Paste the GitHub repo URL (e.g. `github.com/your-org/your-repo`):"
+> "Paste the GitHub repo URL (e.g. `https://github.com/your-org/your-repo`):"
+
+Normalize what they paste before using it anywhere: if it doesn't already start
+with `http://` or `https://`, prepend `https://`; strip a trailing `.git` or `/`.
+This is `team_repo_url` from here on — always the full URL, never a bare
+`github.com/...` path. (A bare host+path works with `gh repo view` but silently
+fails `git clone`, which is how this has broken before.)
 
 Then use the **AskUserQuestion** tool to ask:
 > "Which folder inside that repo should Draft write to? (Press Enter for `.draft`, or type a path like `context` or `/` for root)"
@@ -135,6 +141,12 @@ Proceed to **Step 3**.
 
 Use the **AskUserQuestion** tool to ask:
 > "Paste the GitHub repo URL your teammate shared with you:"
+
+Normalize what they paste before using it anywhere: if it doesn't already start
+with `http://` or `https://`, prepend `https://`; strip a trailing `.git` or `/`.
+This is `team_repo_url` from here on — always the full URL, never a bare
+`github.com/...` path. (A bare host+path works with `gh repo view` but silently
+fails `git clone`, which is how this has broken before.)
 
 Then use the **AskUserQuestion** tool to ask:
 > "Which folder inside that repo does Draft use? (Press Enter for `.draft`, or type the path your teammate set — usually `root` or `.draft`)"
@@ -309,7 +321,7 @@ SEED_CLONE_EXIT=$?
 - If clone fails with "empty repository": initialize the first commit:
   ```bash
   git -C "$DRAFT_SEED" init
-  git -C "$DRAFT_SEED" remote add origin [full_https_team_repo_url]
+  git -C "$DRAFT_SEED" remote add origin [team_repo_url]
   ```
 
 Set the subdir prefix:
@@ -362,12 +374,12 @@ Print:
 ```
 ✓ Collaboration configured.
 
-Repo:     [full team_repo_url]
+Repo:     [team_repo_url]
 Subdir:   [team_repo_subdir]
 Config:   [ACTIVE_WORKSPACE]/config/collaboration.json
 
 Your context is live. Share this with your teammates:
-  Repo URL:         https://[team_repo_url]
+  Repo URL:         [team_repo_url]
   Collaborators:    https://github.com/[org]/[repo]/settings/access
 
 When a teammate runs /draft:setup, they'll be asked if they want to connect
@@ -382,7 +394,7 @@ Print:
 ```
 ✓ Collaboration configured — config saved locally.
 
-Repo:     [full team_repo_url]
+Repo:     [team_repo_url]
 Config:   [ACTIVE_WORKSPACE]/config/collaboration.json
 
 Initial publish failed (see error above). Run /draft:publish-team when ready to push your context.
@@ -394,7 +406,7 @@ Print:
 ```
 ✓ Connected to team repo.
 
-Repo:     [full team_repo_url]
+Repo:     [team_repo_url]
 Subdir:   [team_repo_subdir]
 Config:   [ACTIVE_WORKSPACE]/config/collaboration.json
 

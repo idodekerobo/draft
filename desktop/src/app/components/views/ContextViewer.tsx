@@ -6,12 +6,13 @@
 //   context-viewer__body — file tree (left) + markdown content (right)
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { marked } from "marked";
-import type { ContextFileEntry, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
+import { createPortal } from "react-dom";
+import { diffLines, type Change } from "diff";
+import type { ContextFileEntry, ContextFileVersion, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-
-marked.setOptions({ breaks: true });
+import { ContextEditor, RawEditor, type EditorHandle } from "./ContextEditor";
+import { HistoryPanel, DiffLines } from "./HistoryPanel";
 
 // ── Compact nudge ─────────────────────────────────────────────────────────────
 
@@ -376,25 +377,23 @@ function ContextTree({
   );
 }
 
-// ── Frontmatter parser ────────────────────────────────────────────────────────
+// ── Frontmatter field parser ────────────────────────────────────────────────────
+// entry.content is always already frontmatter-stripped (by the main process) — the
+// raw block travels separately as entry.frontmatterRaw so it survives round-trip on
+// save. This only extracts display fields (name/last_updated/source) from that block.
 
-interface FrontmatterResult {
+interface FrontmatterFields {
   name?: string;
   last_updated?: string;
   source?: string;
-  body: string;
 }
 
-function parseFrontmatter(content: string): FrontmatterResult {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) return { body: content };
+function parseFrontmatterFields(frontmatterRaw: string): FrontmatterFields {
+  const match = frontmatterRaw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?$/);
+  if (!match?.[1]) return {};
 
-  const raw = match[1];
-  if (!raw) return { body: content };
-  const body = match[2] ?? "";
   const fields: Record<string, string> = {};
-
-  for (const line of raw.split("\n")) {
+  for (const line of match[1].split("\n")) {
     const colon = line.indexOf(":");
     if (colon === -1) continue;
     const key = line.slice(0, colon).trim();
@@ -402,7 +401,72 @@ function parseFrontmatter(content: string): FrontmatterResult {
     if (value && value !== ">") fields[key] = value;
   }
 
-  return { name: fields["name"], last_updated: fields["last_updated"], source: fields["source"], body };
+  return { name: fields["name"], last_updated: fields["last_updated"], source: fields["source"] };
+}
+
+// ── Toolbar overflow menu ────────────────────────────────────────────────────
+// Collapses "View raw"/"History"/"Publish file" into a "⋯" dropdown when the
+// container (.context-content) is too narrow to show all of them — see the
+// @container rule in index.css. Both the discrete buttons and this trigger
+// exist in the DOM at all times; CSS decides which set is visible, so there's
+// only one set of click handlers (passed in as `items`).
+
+function ToolbarMenu({ items }: { items: Array<{ label: string; onClick: () => void; active?: boolean }> }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handleMouseDown(e: MouseEvent) {
+      if (!triggerRef.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        className="context-content__toolbar-menu-trigger"
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        ⋯
+      </button>
+      {open && pos && createPortal(
+        <div ref={menuRef} role="menu" className="context-content__toolbar-menu" style={{ top: pos.top, right: pos.right }}>
+          {items.map((item) => (
+            <button
+              key={item.label}
+              role="menuitem"
+              className={`context-content__toolbar-menu__item${item.active ? " context-content__toolbar-menu__item--active" : ""}`}
+              onClick={() => {
+                item.onClick();
+                setOpen(false);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
 }
 
 // ── Content panel ─────────────────────────────────────────────────────────────
@@ -411,18 +475,34 @@ function ContextContent({
   entry,
   isDismissed,
   onDismiss,
+  historyOpen,
+  onToggleHistory,
+  onSaved,
 }: {
   entry: ContextFileEntry;
   isDismissed: boolean;
   onDismiss: () => void;
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  onSaved: (relativePath: string, content: string, frontmatterRaw?: string) => void;
 }) {
-  const { name, last_updated, source, body } = parseFrontmatter(entry.content);
+  const { name, last_updated, source } = parseFrontmatterFields(entry.frontmatterRaw);
   const hasMeta = name || last_updated || source;
-  const html = marked.parse(body) as string;
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<EditorHandle>(null);
   const [copied, setCopied] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [rawOpen, setRawOpen] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<PublishStatus>("idle");
+  const [publishError, setPublishError] = useState<string | undefined>(undefined);
+  const [publishConfirm, setPublishConfirm] = useState<PublishConfirmState | null>(null);
+  const [collabConfigured, setCollabConfigured] = useState<boolean | null>(null);
 
-  const wc = wordCount(body);
+  useEffect(() => {
+    rpc.request.getCollabConfigured().then((result) => setCollabConfigured(result.configured)).catch(() => setCollabConfigured(false));
+  }, []);
+
+  const wc = wordCount(entry.content);
   const showNudge = entry.kind === "dim" && wc > COMPACT_THRESHOLD && !isDismissed;
 
   useEffect(() => {
@@ -456,18 +536,107 @@ function ContextContent({
     source ? `source: ${source}` : undefined,
   ].filter(Boolean) as string[];
 
+  async function handlePublish() {
+    if (collabConfigured === false) {
+      setPublishConfirm({ kind: "not-configured" });
+      return;
+    }
+
+    await editorRef.current?.flushAndCheckpoint();
+
+    const versions = await rpc.request.getFileHistory({ relativePath: entry.relativePath });
+    const lastPublishedIndex = versions.findIndex((v) => v.publishedAt);
+    const lastPublished = lastPublishedIndex === -1 ? null : versions[lastPublishedIndex];
+    const newest = versions[0] ?? null;
+
+    if (lastPublished && newest && lastPublished.id === newest.id) {
+      setPublishConfirm({ kind: "nothing-to-publish" });
+      return;
+    }
+
+    const beforeContent = lastPublished
+      ? (await rpc.request.getFileVersionContent({ versionId: lastPublished.id }))?.content ?? ""
+      : "";
+    const afterContent = newest
+      ? (await rpc.request.getFileVersionContent({ versionId: newest.id }))?.content ?? ""
+      : entry.content;
+
+    if (beforeContent === afterContent) {
+      setPublishConfirm({ kind: "nothing-to-publish" });
+      return;
+    }
+
+    setPublishConfirm({ kind: "diff", diffParts: diffLines(beforeContent, afterContent) });
+  }
+
+  async function confirmPublish() {
+    setPublishConfirm(null);
+    setPublishStatus("publishing");
+    const result = await rpc.request.publishContextFile({ relativePath: entry.relativePath });
+    if (result.ok) {
+      setPublishStatus("published");
+      setTimeout(() => setPublishStatus("idle"), 2500);
+    } else {
+      setPublishError(result.error ?? "Publish failed.");
+      setPublishStatus("error");
+      setTimeout(() => setPublishStatus("idle"), 4000);
+    }
+  }
+
+  if (publishConfirm) {
+    return (
+      <PublishConfirmView
+        state={publishConfirm}
+        onConfirm={confirmPublish}
+        onCancel={() => setPublishConfirm(null)}
+      />
+    );
+  }
+
   return (
     <div className="context-content" ref={containerRef}>
-      {hasMeta && (
-        <div className="context-meta-strip">
-          {metaParts.map((part, i) => (
-            <span key={part}>
-              {i > 0 && <span className="context-meta-strip__sep"> · </span>}
-              {part}
-            </span>
-          ))}
+      <div className="context-content__toolbar">
+        {hasMeta && (
+          <div className="context-meta-strip">
+            {metaParts.map((part, i) => (
+              <span key={part}>
+                {i > 0 && <span className="context-meta-strip__sep"> · </span>}
+                {part}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="context-content__toolbar-right">
+          <SaveIndicator status={saveStatus} />
+          <PublishIndicator status={publishStatus} error={publishError} />
+          <button
+            className={`context-content__history-toggle${rawOpen ? " context-content__history-toggle--active" : ""}`}
+            onClick={() => setRawOpen((prev) => !prev)}
+          >
+            {rawOpen ? "View rendered" : "View raw"}
+          </button>
+          <button
+            className={`context-content__history-toggle${historyOpen ? " context-content__history-toggle--active" : ""}`}
+            onClick={onToggleHistory}
+          >
+            History
+          </button>
+          <button
+            className="context-content__publish-button"
+            onClick={handlePublish}
+            disabled={publishStatus === "publishing"}
+          >
+            Publish file
+          </button>
+          <ToolbarMenu
+            items={[
+              { label: rawOpen ? "View rendered" : "View raw", onClick: () => setRawOpen((prev) => !prev), active: rawOpen },
+              { label: "History", onClick: onToggleHistory, active: historyOpen },
+              { label: "Publish file", onClick: handlePublish, active: publishStatus !== "idle" },
+            ]}
+          />
         </div>
-      )}
+      </div>
       <div className="context-content__scroll">
         {showNudge && (
           <div className="compact-nudge">
@@ -487,10 +656,199 @@ function ContextContent({
             <button className="compact-nudge__dismiss" onClick={onDismiss} aria-label="Dismiss">✕</button>
           </div>
         )}
-        <div
-          className="context-content__markdown"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        {rawOpen ? (
+          <RawEditor
+            key={entry.relativePath}
+            ref={editorRef}
+            relativePath={entry.relativePath}
+            initialRawContent={entry.frontmatterRaw + entry.content}
+            onSaveStatusChange={setSaveStatus}
+            onSaved={onSaved}
+          />
+        ) : (
+          <ContextEditor
+            key={entry.relativePath}
+            ref={editorRef}
+            relativePath={entry.relativePath}
+            initialContent={entry.content}
+            frontmatterRaw={entry.frontmatterRaw}
+            onSaveStatusChange={setSaveStatus}
+            onSaved={onSaved}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── History diff view ───────────────────────────────────────────────────────
+// Renders inline in the main content area (in place of the editor) when a
+// version is selected in the History sidebar — diffed against the previous
+// version in that file's history.
+
+function HistoryDiffView({
+  relativePath,
+  selectedVersionId,
+  onClose,
+}: {
+  relativePath: string;
+  selectedVersionId: string;
+  onClose: () => void;
+}) {
+  const [versions, setVersions] = useState<ContextFileVersion[]>([]);
+  const [diffParts, setDiffParts] = useState<Change[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    rpc.request.getFileHistory({ relativePath }).then((result) => {
+      if (!cancelled) setVersions(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [relativePath]);
+
+  const index = versions.findIndex((v) => v.id === selectedVersionId);
+  const current = index === -1 ? null : versions[index];
+  // versions is ordered newest-first, so the previous edit is the next entry in the list.
+  const previous = index === -1 ? null : (versions[index + 1] ?? null);
+
+  useEffect(() => {
+    if (index === -1) return;
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      previous ? rpc.request.getFileVersionContent({ versionId: previous.id }) : Promise.resolve(null),
+      rpc.request.getFileVersionContent({ versionId: selectedVersionId }),
+    ]).then(([before, after]) => {
+      if (cancelled) return;
+      setDiffParts(diffLines(before?.content ?? "", after?.content ?? ""));
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVersionId, previous?.id, index]);
+
+  return (
+    <div className="context-content">
+      <div className="context-content__toolbar">
+        <div className="context-meta-strip">
+          {current ? `Version from ${relativeTime(current.createdAt)}` : "Version"}
+          {current && !previous && (
+            <>
+              <span className="context-meta-strip__sep"> · </span>
+              initial version
+            </>
+          )}
+        </div>
+        <div className="context-content__toolbar-right">
+          <button className="context-content__history-toggle" onClick={onClose}>
+            Back to editor
+          </button>
+        </div>
+      </div>
+      <div className="context-content__scroll">
+        {loading || !diffParts ? (
+          <div className="history-panel__loading">Loading diff…</div>
+        ) : (
+          <pre className="proposal-diff" aria-label="Version diff">
+            <DiffLines parts={diffParts} />
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Save status indicator ────────────────────────────────────────────────────
+
+type SaveStatus = "idle" | "saving" | "saved";
+
+function SaveIndicator({ status }: { status: SaveStatus }) {
+  if (status === "idle") return null;
+  return (
+    <span className={`context-save-indicator context-save-indicator--${status}`}>
+      <span className="context-save-indicator__dot" />
+      {status === "saving" ? "Saving…" : "Saved"}
+    </span>
+  );
+}
+
+// ── Publish status indicator ─────────────────────────────────────────────────
+
+type PublishStatus = "idle" | "publishing" | "published" | "error";
+
+function PublishIndicator({ status, error }: { status: PublishStatus; error?: string }) {
+  if (status === "idle") return null;
+  const label = status === "publishing" ? "Publishing…"
+    : status === "published" ? "Published"
+    : `Publish failed: ${error ?? "unknown error"}`;
+  return (
+    <span
+      className={`context-publish-indicator context-publish-indicator--${status}`}
+      title={status === "error" ? label : undefined}
+    >
+      <span className="context-publish-indicator__dot" />
+      <span className="context-publish-indicator__label">{label}</span>
+    </span>
+  );
+}
+
+// ── Publish confirm view ─────────────────────────────────────────────────────
+// Renders inline in the main content area (same slot HistoryDiffView uses) when
+// the user clicks "Publish file" — shows a diff of last-published vs. current
+// content before actually publishing, reusing DiffLines/diffLines rather than
+// a new diff engine.
+
+type PublishConfirmState =
+  | { kind: "diff"; diffParts: Change[] }
+  | { kind: "nothing-to-publish" }
+  | { kind: "not-configured" };
+
+function PublishConfirmView({
+  state,
+  onConfirm,
+  onCancel,
+}: {
+  state: PublishConfirmState;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const title = state.kind === "diff" ? "Publish preview"
+    : state.kind === "nothing-to-publish" ? "Nothing to publish since last publish"
+    : "Team collaboration not set up";
+
+  return (
+    <div className="context-content">
+      <div className="context-content__toolbar">
+        <div className="context-meta-strip">{title}</div>
+        <div className="context-content__toolbar-right">
+          {state.kind === "diff" && (
+            <button className="context-content__publish-button" onClick={onConfirm}>
+              Publish
+            </button>
+          )}
+          <button className="context-content__history-toggle" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+      <div className="context-content__scroll">
+        {state.kind === "nothing-to-publish" ? (
+          <p className="changelog-panel__empty">This file has no changes since it was last published.</p>
+        ) : state.kind === "not-configured" ? (
+          <p className="changelog-panel__empty">
+            This profile isn't connected to a shared team repository yet. Run the{" "}
+            <code>draft-setup-collab</code> skill inside your agent session to connect one before publishing.
+          </p>
+        ) : (
+          <pre className="proposal-diff" aria-label="Publish diff">
+            <DiffLines parts={state.diffParts} />
+          </pre>
+        )}
       </div>
     </div>
   );
@@ -618,8 +976,17 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   // ── Compact nudge dismissed dims (per-session) ────────────────────────────────
   const [dismissedDims, setDismissedDims] = useState<Set<string>>(new Set());
 
+  // ── History sidebar ──────────────────────────────────────────────────────────
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+
+  // Clear the selected diff whenever the sidebar closes, so re-opening starts fresh.
+  useEffect(() => {
+    if (!historyOpen) setSelectedVersionId(null);
+  }, [historyOpen]);
+
   // ── Sync state ───────────────────────────────────────────────────────────────
-  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true });
+  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true, lastPublished: null });
   const [collabConfigured, setCollabConfigured] = useState(false);
   const [lastLoaded, setLastLoaded] = useState<string | null>(null);
   const [localEntries, setLocalEntries] = useState<LoadDiffEntry[]>([]);
@@ -669,6 +1036,19 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
         setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0]?.relativePath ?? ""));
       }
     }).catch(() => setFiles([]));
+  }
+
+  // ── Sync a saved edit back into tree state ───────────────────────────────────
+  // Without this, `files` stays frozen at whatever loadFiles() last returned. Switch
+  // away from an edited file and back, and ContextEditor remounts with the stale
+  // pre-edit body as initialContent — silently reverting the save on the next
+  // autosave/blur. See plans/0025 write-path notes on ContextEditor.
+  function handleFileSaved(relativePath: string, content: string, frontmatterRaw?: string) {
+    setFiles((prev) => prev.map((f) => (
+      f.relativePath === relativePath
+        ? { ...f, content, ...(frontmatterRaw !== undefined ? { frontmatterRaw } : {}) }
+        : f
+    )));
   }
 
   // ── Load local diff (option B: check on mount, not on poll) ─────────────────
@@ -775,6 +1155,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
 
   function handleSelectDoc(path: string) {
     setSelectedPath(path);
+    setHistoryOpen(false);
     const entry = files.find((f) => f.relativePath === path);
     if (entry) {
       track("context_doc_viewed", { kind: entry.kind, group: entry.group });
@@ -878,10 +1259,31 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
             onContextMenu={handleContextMenu}
           />
           {selectedEntry && (
-            <ContextContent
-              entry={selectedEntry}
-              isDismissed={dismissedDims.has(selectedEntry.group)}
-              onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
+            selectedVersionId ? (
+              <HistoryDiffView
+                key={selectedEntry.relativePath}
+                relativePath={selectedEntry.relativePath}
+                selectedVersionId={selectedVersionId}
+                onClose={() => setSelectedVersionId(null)}
+              />
+            ) : (
+              <ContextContent
+                key={selectedEntry.relativePath}
+                entry={selectedEntry}
+                isDismissed={dismissedDims.has(selectedEntry.group)}
+                onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
+                historyOpen={historyOpen}
+                onToggleHistory={() => setHistoryOpen((prev) => !prev)}
+                onSaved={handleFileSaved}
+              />
+            )
+          )}
+          {historyOpen && selectedEntry && (
+            <HistoryPanel
+              relativePath={selectedEntry.relativePath}
+              selectedVersionId={selectedVersionId}
+              onSelectVersion={setSelectedVersionId}
+              onClose={() => setHistoryOpen(false)}
             />
           )}
         </div>
