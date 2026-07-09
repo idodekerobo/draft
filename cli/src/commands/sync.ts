@@ -235,6 +235,11 @@ export async function runLoad(args: string[]): Promise<void> {
         const newContent = existsSync(newPath) ? readFileSync(newPath, "utf8") : null;
         const oldContent = existsSync(oldPath) ? readFileSync(oldPath, "utf8") : null;
         if (newContent !== null && newContent !== oldContent) {
+          // Content just came from the remote repo, so it IS the current
+          // published state — mark it published at load time. Otherwise every
+          // freshly-loaded file looks "unpublished" (diffs against "", and
+          // trips the load-time "unpublished changes" guard) until the user
+          // edits and republishes it.
           insertFileVersion(historyDb, {
             filePath: relPath,
             content: newContent,
@@ -242,7 +247,7 @@ export async function runLoad(args: string[]): Promise<void> {
             source: "team-load",
             author: null,
             sessionId: null,
-            publishedAt: null,
+            publishedAt: loadedAt,
             changesEntryId: null,
           });
         }
