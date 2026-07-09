@@ -6,11 +6,12 @@
 //   context-viewer__body — file tree (left) + markdown content (right)
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { diffLines, type Change } from "diff";
 import type { ContextFileEntry, ContextFileVersion, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { ContextEditor, RawEditor } from "./ContextEditor";
+import { ContextEditor, RawEditor, type EditorHandle } from "./ContextEditor";
 import { HistoryPanel, DiffLines } from "./HistoryPanel";
 
 // ── Compact nudge ─────────────────────────────────────────────────────────────
@@ -403,6 +404,71 @@ function parseFrontmatterFields(frontmatterRaw: string): FrontmatterFields {
   return { name: fields["name"], last_updated: fields["last_updated"], source: fields["source"] };
 }
 
+// ── Toolbar overflow menu ────────────────────────────────────────────────────
+// Collapses "View raw"/"History"/"Publish file" into a "⋯" dropdown when the
+// container (.context-content) is too narrow to show all of them — see the
+// @container rule in index.css. Both the discrete buttons and this trigger
+// exist in the DOM at all times; CSS decides which set is visible, so there's
+// only one set of click handlers (passed in as `items`).
+
+function ToolbarMenu({ items }: { items: Array<{ label: string; onClick: () => void; active?: boolean }> }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handleMouseDown(e: MouseEvent) {
+      if (!triggerRef.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        className="context-content__toolbar-menu-trigger"
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        ⋯
+      </button>
+      {open && pos && createPortal(
+        <div ref={menuRef} role="menu" className="context-content__toolbar-menu" style={{ top: pos.top, right: pos.right }}>
+          {items.map((item) => (
+            <button
+              key={item.label}
+              role="menuitem"
+              className={`context-content__toolbar-menu__item${item.active ? " context-content__toolbar-menu__item--active" : ""}`}
+              onClick={() => {
+                item.onClick();
+                setOpen(false);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // ── Content panel ─────────────────────────────────────────────────────────────
 
 function ContextContent({
@@ -423,9 +489,13 @@ function ContextContent({
   const { name, last_updated, source } = parseFrontmatterFields(entry.frontmatterRaw);
   const hasMeta = name || last_updated || source;
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<EditorHandle>(null);
   const [copied, setCopied] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [rawOpen, setRawOpen] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<PublishStatus>("idle");
+  const [publishError, setPublishError] = useState<string | undefined>(undefined);
+  const [publishConfirm, setPublishConfirm] = useState<PublishConfirmState | null>(null);
 
   const wc = wordCount(entry.content);
   const showNudge = entry.kind === "dim" && wc > COMPACT_THRESHOLD && !isDismissed;
@@ -461,6 +531,58 @@ function ContextContent({
     source ? `source: ${source}` : undefined,
   ].filter(Boolean) as string[];
 
+  async function handlePublish() {
+    await editorRef.current?.flushAndCheckpoint();
+
+    const versions = await rpc.request.getFileHistory({ relativePath: entry.relativePath });
+    const lastPublishedIndex = versions.findIndex((v) => v.publishedAt);
+    const lastPublished = lastPublishedIndex === -1 ? null : versions[lastPublishedIndex];
+    const newest = versions[0] ?? null;
+
+    if (lastPublished && newest && lastPublished.id === newest.id) {
+      setPublishConfirm({ kind: "nothing-to-publish" });
+      return;
+    }
+
+    const beforeContent = lastPublished
+      ? (await rpc.request.getFileVersionContent({ versionId: lastPublished.id }))?.content ?? ""
+      : "";
+    const afterContent = newest
+      ? (await rpc.request.getFileVersionContent({ versionId: newest.id }))?.content ?? ""
+      : entry.content;
+
+    if (beforeContent === afterContent) {
+      setPublishConfirm({ kind: "nothing-to-publish" });
+      return;
+    }
+
+    setPublishConfirm({ kind: "diff", diffParts: diffLines(beforeContent, afterContent) });
+  }
+
+  async function confirmPublish() {
+    setPublishConfirm(null);
+    setPublishStatus("publishing");
+    const result = await rpc.request.publishContextFile({ relativePath: entry.relativePath });
+    if (result.ok) {
+      setPublishStatus("published");
+      setTimeout(() => setPublishStatus("idle"), 2500);
+    } else {
+      setPublishError(result.error ?? "Publish failed.");
+      setPublishStatus("error");
+      setTimeout(() => setPublishStatus("idle"), 4000);
+    }
+  }
+
+  if (publishConfirm) {
+    return (
+      <PublishConfirmView
+        state={publishConfirm}
+        onConfirm={confirmPublish}
+        onCancel={() => setPublishConfirm(null)}
+      />
+    );
+  }
+
   return (
     <div className="context-content" ref={containerRef}>
       <div className="context-content__toolbar">
@@ -476,6 +598,7 @@ function ContextContent({
         )}
         <div className="context-content__toolbar-right">
           <SaveIndicator status={saveStatus} />
+          <PublishIndicator status={publishStatus} error={publishError} />
           <button
             className={`context-content__history-toggle${rawOpen ? " context-content__history-toggle--active" : ""}`}
             onClick={() => setRawOpen((prev) => !prev)}
@@ -488,6 +611,20 @@ function ContextContent({
           >
             History
           </button>
+          <button
+            className="context-content__publish-button"
+            onClick={handlePublish}
+            disabled={publishStatus === "publishing"}
+          >
+            Publish file
+          </button>
+          <ToolbarMenu
+            items={[
+              { label: rawOpen ? "View rendered" : "View raw", onClick: () => setRawOpen((prev) => !prev), active: rawOpen },
+              { label: "History", onClick: onToggleHistory, active: historyOpen },
+              { label: "Publish file", onClick: handlePublish, active: publishStatus !== "idle" },
+            ]}
+          />
         </div>
       </div>
       <div className="context-content__scroll">
@@ -512,6 +649,7 @@ function ContextContent({
         {rawOpen ? (
           <RawEditor
             key={entry.relativePath}
+            ref={editorRef}
             relativePath={entry.relativePath}
             initialRawContent={entry.frontmatterRaw + entry.content}
             onSaveStatusChange={setSaveStatus}
@@ -520,6 +658,7 @@ function ContextContent({
         ) : (
           <ContextEditor
             key={entry.relativePath}
+            ref={editorRef}
             relativePath={entry.relativePath}
             initialContent={entry.content}
             frontmatterRaw={entry.frontmatterRaw}
@@ -625,6 +764,72 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
       <span className="context-save-indicator__dot" />
       {status === "saving" ? "Saving…" : "Saved"}
     </span>
+  );
+}
+
+// ── Publish status indicator ─────────────────────────────────────────────────
+
+type PublishStatus = "idle" | "publishing" | "published" | "error";
+
+function PublishIndicator({ status, error }: { status: PublishStatus; error?: string }) {
+  if (status === "idle") return null;
+  return (
+    <span
+      className={`context-publish-indicator context-publish-indicator--${status}`}
+      title={status === "error" ? error : undefined}
+    >
+      <span className="context-publish-indicator__dot" />
+      {status === "publishing" ? "Publishing…" : status === "published" ? "Published" : "Publish failed"}
+    </span>
+  );
+}
+
+// ── Publish confirm view ─────────────────────────────────────────────────────
+// Renders inline in the main content area (same slot HistoryDiffView uses) when
+// the user clicks "Publish file" — shows a diff of last-published vs. current
+// content before actually publishing, reusing DiffLines/diffLines rather than
+// a new diff engine.
+
+type PublishConfirmState =
+  | { kind: "diff"; diffParts: Change[] }
+  | { kind: "nothing-to-publish" };
+
+function PublishConfirmView({
+  state,
+  onConfirm,
+  onCancel,
+}: {
+  state: PublishConfirmState;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="context-content">
+      <div className="context-content__toolbar">
+        <div className="context-meta-strip">
+          {state.kind === "nothing-to-publish" ? "Nothing to publish since last publish" : "Publish preview"}
+        </div>
+        <div className="context-content__toolbar-right">
+          {state.kind === "diff" && (
+            <button className="context-content__publish-button" onClick={onConfirm}>
+              Publish
+            </button>
+          )}
+          <button className="context-content__history-toggle" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+      <div className="context-content__scroll">
+        {state.kind === "nothing-to-publish" ? (
+          <p className="changelog-panel__empty">This file has no changes since it was last published.</p>
+        ) : (
+          <pre className="proposal-diff" aria-label="Publish diff">
+            <DiffLines parts={state.diffParts} />
+          </pre>
+        )}
+      </div>
+    </div>
   );
 }
 

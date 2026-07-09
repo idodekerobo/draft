@@ -1007,6 +1007,8 @@ button {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  container-type: inline-size;
+  container-name: context-content;
 }
 
 .context-content__scroll {
@@ -1323,6 +1325,96 @@ button {
   border-color: var(--color-border-strong);
 }
 
+.context-content__publish-button {
+  height: 22px;
+  padding: 0 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: color 100ms, background 100ms, border-color 100ms;
+}
+
+.context-content__publish-button:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.context-content__publish-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Toolbar overflow menu — responsive collapse via container query ────────── */
+
+.context-content__toolbar-menu-trigger {
+  display: none;
+  height: 22px;
+  width: 22px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  cursor: pointer;
+}
+
+.context-content__toolbar-menu-trigger:hover {
+  color: var(--color-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.context-content__toolbar-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  display: flex;
+  flex-direction: column;
+}
+
+.context-content__toolbar-menu__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
+.context-content__toolbar-menu__item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+}
+
+.context-content__toolbar-menu__item--active {
+  color: var(--color-text-primary);
+}
+
+@container context-content (max-width: 480px) {
+  .context-content__toolbar-right > .context-content__history-toggle,
+  .context-content__toolbar-right > .context-content__publish-button {
+    display: none;
+  }
+  .context-content__toolbar-menu-trigger {
+    display: inline-flex;
+  }
+}
+
 /* ── Save indicator — quiet, no motion on the text itself ───────────────────── */
 
 .context-save-indicator {
@@ -1364,6 +1456,47 @@ button {
 @keyframes context-save-indicator-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.35; }
+}
+
+/* ── Publish indicator — mirrors save indicator, adds an error variant ──────── */
+
+.context-publish-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-size-micro);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  animation: context-save-indicator-in 120ms ease;
+}
+
+.context-publish-indicator__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.context-publish-indicator--publishing .context-publish-indicator__dot {
+  background: var(--color-status-yellow);
+  animation: context-save-indicator-pulse 900ms ease-in-out infinite;
+}
+
+.context-publish-indicator--published {
+  color: var(--color-status-green);
+}
+
+.context-publish-indicator--published .context-publish-indicator__dot {
+  background: var(--color-status-green);
+}
+
+.context-publish-indicator--error {
+  color: var(--color-status-red);
+}
+
+.context-publish-indicator--error .context-publish-indicator__dot {
+  background: var(--color-status-red);
 }
 
 /* ── History sidebar — third column, right of content, newest → oldest ──────── */

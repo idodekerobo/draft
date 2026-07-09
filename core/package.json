@@ -23,6 +23,7 @@
     "./sync/mcp-sync":        "./src/sync/mcp-sync.ts",
     "./sync/workspace-mcp":   "./src/sync/workspace-mcp.ts",
     "./sync/team-assets":     "./src/sync/team-assets.ts",
+    "./sync/publish":         "./src/sync/publish.ts",
     "./secrets":              "./src/secrets.ts",
     "./migrations/runner":    "./src/migrations/runner.ts"
   },

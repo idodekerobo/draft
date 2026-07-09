@@ -10,7 +10,7 @@
 // checkpoint (no main-process beforeExit hook wired up yet) — blur/file-switch and
 // the ~2s autosave bound the amount of unrecorded edit time in that case.
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
@@ -37,6 +37,10 @@ const AUTOSAVE_DEBOUNCE_MS = 2000;
 
 type SaveStatus = "idle" | "saving" | "saved";
 
+export interface EditorHandle {
+  flushAndCheckpoint: () => Promise<void>;
+}
+
 interface ContextEditorProps {
   relativePath: string;
   initialContent: string;
@@ -45,7 +49,7 @@ interface ContextEditorProps {
   onSaved: (relativePath: string, content: string) => void;
 }
 
-export function ContextEditor({ relativePath, initialContent, frontmatterRaw, onSaveStatusChange, onSaved }: ContextEditorProps) {
+export const ContextEditor = forwardRef<EditorHandle, ContextEditorProps>(function ContextEditor({ relativePath, initialContent, frontmatterRaw, onSaveStatusChange, onSaved }, ref) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestMarkdownRef = useRef(initialContent);
@@ -109,6 +113,8 @@ export function ContextEditor({ relativePath, initialContent, frontmatterRaw, on
     dirtyRef.current = false;
   }
 
+  useImperativeHandle(ref, () => ({ flushAndCheckpoint }));
+
   // Unmounts on file switch (parent keys this component by relativePath) — this is
   // the other trigger for a checkpoint besides blur, per the two-tier write path above.
   useEffect(() => {
@@ -121,7 +127,7 @@ export function ContextEditor({ relativePath, initialContent, frontmatterRaw, on
   return (
     <EditorContent editor={editor} className="context-content__markdown context-content__editor" />
   );
-}
+});
 
 // ── RawEditor — plain-text editor over the full file (frontmatter included) ────
 // Same two-tier write path as ContextEditor above, but there's no markdown/frontmatter
@@ -134,7 +140,7 @@ interface RawEditorProps {
   onSaved: (relativePath: string, content: string, frontmatterRaw: string) => void;
 }
 
-export function RawEditor({ relativePath, initialRawContent, onSaveStatusChange, onSaved }: RawEditorProps) {
+export const RawEditor = forwardRef<EditorHandle, RawEditorProps>(function RawEditor({ relativePath, initialRawContent, onSaveStatusChange, onSaved }, ref) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRawRef = useRef(initialRawContent);
@@ -163,6 +169,8 @@ export function RawEditor({ relativePath, initialRawContent, onSaveStatusChange,
     await rpc.request.checkpointContextFile({ relativePath });
     dirtyRef.current = false;
   }
+
+  useImperativeHandle(ref, () => ({ flushAndCheckpoint }));
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const next = e.target.value;
@@ -204,4 +212,4 @@ export function RawEditor({ relativePath, initialRawContent, onSaveStatusChange,
       spellCheck={false}
     />
   );
-}
+});

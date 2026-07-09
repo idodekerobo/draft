@@ -64,8 +64,19 @@ import {
   tombstoneMcp,
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
-import { switchProfileAssets } from "draft-core/sync/team-assets";
+import { switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
+import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
 import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
+
+async function preflightPublish(): Promise<{ ok: true; profile: string; workspace: string } | { ok: false; error: string }> {
+  const profile = getActiveProfile();
+  const workspace = getWorkspacePath(profile);
+  const validation = validateProfileAssets(profile);
+  if (!validation.ok) return { ok: false, error: `Team assets are invalid: ${validation.errors.map((e) => e.message).join("; ")}` };
+  const gh = await capture(["gh", "api", "user", "--jq", ".login"]);
+  if (gh.exitCode !== 0 || !gh.stdout.trim()) return { ok: false, error: "GitHub CLI not authenticated. Run `gh auth login` first." };
+  return { ok: true, profile, workspace };
+}
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
 // Falls back to empty string for OSS builds (no build-config.json).
@@ -863,6 +874,30 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           db.close();
         }
       },
+
+      publishContextFile: async ({ relativePath }) => {
+        const pre = await preflightPublish();
+        if (!pre.ok) return { ok: false, published: false, scoped: true, files: [], error: pre.error };
+        try {
+          const result = await publishTeamContext(pre.workspace, pre.profile, { paths: [relativePath], capture });
+          return { ...result, ok: true };
+        } catch (err) {
+          return { ok: false, published: false, scoped: true, files: [], error: err instanceof Error ? err.message : "Publish failed." };
+        }
+      },
+
+      publishAllContext: async () => {
+        const pre = await preflightPublish();
+        if (!pre.ok) return { ok: false, published: false, scoped: false, files: [], error: pre.error };
+        try {
+          const result = await publishTeamContext(pre.workspace, pre.profile, { capture });
+          return { ...result, ok: true };
+        } catch (err) {
+          return { ok: false, published: false, scoped: false, files: [], error: err instanceof Error ? err.message : "Publish failed." };
+        }
+      },
+
+      getUnpublishedContextPaths: async () => listUnpublishedContextPaths(getWorkspacePath(getActiveProfile())),
 
       runInstall: async ({ tools }) => {
         console.log(`[rpc] runInstall called — tools: ${JSON.stringify(tools)}`);

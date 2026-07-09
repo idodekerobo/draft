@@ -409,6 +409,14 @@ export interface ContextFileVersion {
   changesEntryId: string | null;
 }
 
+export interface PublishResult {
+  ok: boolean;
+  published: boolean;
+  scoped: boolean;
+  files: string[];
+  error?: string;
+}
+
 // ── Team sync types ────────────────────────────────────────────────────────────
 
 /** Installed team skill entry — a slim view of the manifest for UI display. */
@@ -506,6 +514,15 @@ export type AppRPCType = {
 
       /** Fetch the full content of a specific historical version. */
       getFileVersionContent: { params: { versionId: string }; response: { content: string } | null };
+
+      /** Publish a single context file to the team repo (scoped publish). */
+      publishContextFile: { params: { relativePath: string }; response: PublishResult };
+
+      /** Publish all context, skills, and mcp config to the team repo (full publish). */
+      publishAllContext: { params: void; response: PublishResult };
+
+      /** List relative context paths with an unpublished latest version in history.db. */
+      getUnpublishedContextPaths: { params: void; response: string[] };
 
       /** Rich connection status for all intelligence tools and input sources. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
