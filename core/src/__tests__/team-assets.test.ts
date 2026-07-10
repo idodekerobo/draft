@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, u
 import { join, resolve } from "path";
 import {
   installProfileAssets,
+  rebuildEnvSh,
   isProfileSwitchLockHeld,
   releaseProfileSwitchLock,
   switchProfileAssets,
@@ -474,5 +475,49 @@ describe("personal MCP profile-switch lifecycle", () => {
 
     const personalEntry = JSON.parse(readFileSync(personalMcpManifestPath, "utf8")).mcps["codex:b-mcp"];
     expect(personalEntry.removed_at).toBeNull();
+  });
+});
+
+describe("env.sh rebuild covers personal MCP secrets", () => {
+  const secretCanonical: CanonicalMcp = {
+    type: "http",
+    url: "https://mcp.example.com",
+    headers: { Authorization: { value_env: "DRAFT_MCP_PERSONAL_TOKEN", secret: true } },
+  };
+
+  function approvePersonalMcpAndSecret(common: TeamAssetPaths): Promise<unknown> {
+    // The secret lives in the profile-scoped secrets.json here; in production
+    // a personal MCP's secret lives in the global file, which rebuildEnvSh
+    // reaches through readSecretsWithGlobalFallback — the merge itself is
+    // covered in mcp-sync.test.ts, since tests must not write to the real
+    // global ~/.draft/state.
+    mkdirSync(common.statePath, { recursive: true });
+    writeFileSync(join(common.statePath, "secrets.json"), JSON.stringify({
+      DRAFT_MCP_PERSONAL_TOKEN: "personal-secret",
+    }));
+    return installPersonalMcps(
+      [{ id: "codex:linear", name: "linear", source_agent: "codex", canonical: secretCanonical, original_config: {} }],
+      { claudeConfigPath: common.claudeConfigPath, codexConfigPath: common.codexConfigPath, manifestPath: common.mcpManifestPath },
+    );
+  }
+
+  it("installProfileAssets writes env.sh including an approved personal MCP's secret", async () => {
+    const common = paths();
+    await approvePersonalMcpAndSecret(common);
+
+    await installProfileAssets("acme", common);
+
+    const envSh = readFileSync(join(common.envStatePath, "env.sh"), "utf8");
+    expect(envSh).toContain("DRAFT_MCP_PERSONAL_TOKEN");
+  });
+
+  it("a direct rebuildEnvSh after approval picks up the secret without a profile switch", async () => {
+    const common = paths();
+    await approvePersonalMcpAndSecret(common);
+
+    rebuildEnvSh("acme", common);
+
+    const envSh = readFileSync(join(common.envStatePath, "env.sh"), "utf8");
+    expect(envSh).toContain("DRAFT_MCP_PERSONAL_TOKEN");
   });
 });

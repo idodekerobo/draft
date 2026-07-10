@@ -948,16 +948,25 @@ export function installTeamSkills(
   // (approved, but its mirror reassigned) while the live symlink now belongs
   // to two manifest entries.
   const isLivePersonalCollision = (name: string, linkPath: string, targetAgent: Agent): boolean => {
+    const checkEntry = (personalEntry: SkillManifestEntry | undefined): boolean => {
+      if (!personalEntry || personalEntry.kind !== "personal" || personalEntry.status !== "approved" || personalEntry.removed_at !== null) return false;
+      const personalSync = personalEntry.synced_to[targetAgent];
+      if (!personalSync || personalSync.symlink_path !== linkPath) return false;
+      try {
+        return lstatSync(linkPath).isSymbolicLink() && realpathSync(linkPath) === realpathSync(personalEntry.source_path);
+      } catch {
+        return false;
+      }
+    };
+    // Direct id lookup first, then a name scan — the `<agent>:<name>` id
+    // convention isn't structurally guaranteed (same belt-and-suspenders
+    // fallback isLiveTeamCollision uses).
     const sourceAgent: Agent = targetAgent === "claude-code" ? "codex" : "claude-code";
-    const personalEntry = manifest.skills[`${sourceAgent}:${name}`];
-    if (!personalEntry || personalEntry.kind !== "personal" || personalEntry.status !== "approved" || personalEntry.removed_at !== null) return false;
-    const personalSync = personalEntry.synced_to[targetAgent];
-    if (!personalSync || personalSync.symlink_path !== linkPath) return false;
-    try {
-      return lstatSync(linkPath).isSymbolicLink() && realpathSync(linkPath) === realpathSync(personalEntry.source_path);
-    } catch {
-      return false;
+    if (checkEntry(manifest.skills[`${sourceAgent}:${name}`])) return true;
+    for (const entry of Object.values(manifest.skills)) {
+      if (entry.kind === "personal" && entry.name === name && checkEntry(entry)) return true;
     }
+    return false;
   };
 
   for (const { name, sourcePath } of skills) {
