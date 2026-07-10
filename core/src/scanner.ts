@@ -176,6 +176,15 @@ export function isDraftManaged(dirPath: string, draftDir?: string, siblingDirs?:
   }
 }
 
+// ── isBackupDirName ────────────────────────────────────────────────────────────
+
+const BACKUP_DIR_PATTERN = /\.bak$/i;
+
+/** Check if a directory name looks like a backup copy (e.g. "gstack.bak"). */
+export function isBackupDirName(name: string): boolean {
+  return BACKUP_DIR_PATTERN.test(name);
+}
+
 // ── Frontmatter parser ────────────────────────────────────────────────────────
 
 function parseSkillFrontmatter(content: string): { description: string } {
@@ -225,6 +234,9 @@ export function hashSkillDir(dirPath: string): string {
  * Scan ~/.claude/skills/ and ~/.codex/skills/ for skill directories.
  * Skips Draft-managed skills: symlinks pointing into ~/.draft/ (team skills)
  * or into the sibling agent's skill directory (personal cross-agent mirrors).
+ * Also skips backup-style directories (e.g. "*.bak") — stale copies left
+ * behind by manual backups or tool upgrades, which would otherwise be mirrored
+ * to the sibling agent and double-count every nested sub-skill it contains.
  * Returns metadata for each discovered skill.
  */
 export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSkill[]; errors: ScanDirError[] } {
@@ -243,6 +255,7 @@ export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSki
       for (const entry of entries) {
         const fullPath = join(dir, entry.name);
         if (isDraftManaged(fullPath, draftDir, siblingDirs)) continue;
+        if (isBackupDirName(entry.name)) continue;
         if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
         if (entry.isSymbolicLink()) {
           try {

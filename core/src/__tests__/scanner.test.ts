@@ -5,6 +5,7 @@ import {
   scanSkillDirectories,
   scanAll,
   isDraftManaged,
+  isBackupDirName,
   scanMCPConnections,
   createSymlinks,
   readSkillManifest,
@@ -132,6 +133,46 @@ describe("scanSkillDirectories", () => {
     expect(skills.length).toBe(1);
     expect(skills[0].agent).toBe("claude-code");
     expect(skills[0].name).toBe("pair-agent");
+  });
+
+  it("skips directories with a .bak suffix", () => {
+    const claudeDir = join(TMP, "claude-skills-bak");
+    const draftDir = join(TMP, "draft");
+
+    mkdirSync(join(claudeDir, "real-skill"), { recursive: true });
+    writeFileSync(join(claudeDir, "real-skill", "SKILL.md"), "# Real");
+
+    mkdirSync(join(claudeDir, "gstack.bak"), { recursive: true });
+    writeFileSync(join(claudeDir, "gstack.bak", "SKILL.md"), "# Stale backup");
+
+    const { skills } = scanSkillDirectories({
+      claudeSkillsDir: claudeDir,
+      codexSkillsDir: join(TMP, "no-codex"),
+      draftDir,
+    });
+
+    expect(skills.length).toBe(1);
+    expect(skills[0].name).toBe("real-skill");
+  });
+});
+
+// ── isBackupDirName ──────────────────────────────────────────────────────────
+
+describe("isBackupDirName", () => {
+  it("returns true for names with a .bak suffix", () => {
+    expect(isBackupDirName("gstack.bak")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isBackupDirName("Gstack.BAK")).toBe(true);
+  });
+
+  it("returns false for names without a .bak suffix", () => {
+    expect(isBackupDirName("gstack")).toBe(false);
+  });
+
+  it("returns false when .bak appears mid-name, not as a suffix", () => {
+    expect(isBackupDirName("my.bak.skill")).toBe(false);
   });
 });
 
