@@ -3,9 +3,14 @@ import { homedir } from "os";
 import { join } from "path";
 import { DRAFT_ROOT, getWorkspacePath, setActiveProfile } from "../config";
 import {
+  installPersonalSkills,
   installTeamSkills,
   readSkillManifest,
+  uninstallPersonalSkills,
   uninstallTeamSkills,
+  type PersonalSkillInput,
+  type PersonalSkillConflictReason,
+  type SkillManifest,
   type TeamSkillInput,
 } from "../scanner";
 import { readSecretsJson, writeEnvSh } from "../secrets";
@@ -29,7 +34,7 @@ export interface TeamAssetConflict {
   name: string;
   profile: string;
   personalPath?: string;
-  reason: "personal-name-collision" | "target-modified";
+  reason: PersonalSkillConflictReason;
 }
 
 export interface MissingMcpSecrets {
@@ -109,6 +114,20 @@ function discoverWorkspaceSkills(workspacePath: string): TeamSkillInput[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Personal skills have no equivalent source-of-truth directory to rescan on
+ * every install (unlike team skills, rediscovered live from the workspace
+ * skills/ dir) — install-on-switch must read candidates from the profile's
+ * own manifest instead. Only "approved" entries are installed: a "pending"
+ * or "conflict" personal entry must never get silently installed just
+ * because it isn't tombstoned.
+ */
+function personalSkillsFromManifest(manifest: SkillManifest): PersonalSkillInput[] {
+  return Object.values(manifest.skills)
+    .filter((entry) => entry.kind === "personal" && entry.status === "approved" && entry.removed_at === null)
+    .map((entry) => ({ name: entry.name, agent: entry.source_agent, sourcePath: entry.source_path }));
+}
+
 export function validateProfileAssets(
   profile: string,
   paths?: Partial<TeamAssetPaths>,
@@ -185,6 +204,21 @@ export async function installProfileAssets(
     kind: "skill" as const, name: conflict.name, profile, reason: conflict.reason,
   })));
 
+  const personalSkills = installPersonalSkills(
+    personalSkillsFromManifest(readSkillManifest(resolved.skillManifestPath)),
+    profile,
+    {
+      claudeSkillsDir: resolved.claudeSkillsDir,
+      codexSkillsDir: resolved.codexSkillsDir,
+      manifestPath: resolved.skillManifestPath,
+    },
+  );
+  result.installedSkills.push(...personalSkills.installed);
+  result.errors.push(...personalSkills.errors);
+  result.conflicts.push(...personalSkills.conflicts.map((conflict) => ({
+    kind: "skill" as const, name: conflict.name, profile, reason: conflict.reason,
+  })));
+
   const workspaceMcps = readWorkspaceMcpManifest(resolved.workspacePath);
   const mcps = await installTeamMcps(
     workspaceMcps.servers,
@@ -229,6 +263,23 @@ export async function uninstallProfileAssets(
   result.conflicts.push(...skills.conflicts.map((conflict) => ({
     kind: "skill" as const, name: conflict.name, profile, reason: conflict.reason,
   })));
+
+  // Filter matches uninstallPersonalSkills's exact criterion (status==="approved"
+  // && removed_at===null) — a broader `!entry.removed_at` check would also match
+  // pending/conflict personal entries that uninstallPersonalSkills never touches.
+  result.removedSkills.push(...Object.values(skillManifest.skills)
+    .filter((entry) => entry.kind === "personal" && entry.status === "approved" && entry.removed_at === null)
+    .map((entry) => entry.name));
+  const personalUninstall = uninstallPersonalSkills(profile, {
+    claudeSkillsDir: resolved.claudeSkillsDir,
+    codexSkillsDir: resolved.codexSkillsDir,
+    manifestPath: resolved.skillManifestPath,
+  });
+  result.errors.push(...personalUninstall.errors);
+  result.conflicts.push(...personalUninstall.conflicts.map((conflict) => ({
+    kind: "skill" as const, name: conflict.name, profile, reason: conflict.reason,
+  })));
+
   const mcpManifest = readMcpManifest(resolved.mcpManifestPath);
   result.removedMcps.push(...Object.entries(mcpManifest.mcps)
     .filter(([, entry]) => entry.kind === "team" && !entry.removed_at)

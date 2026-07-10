@@ -12,6 +12,7 @@ import {
 } from "../sync/team-assets";
 import { readMcpManifest } from "../sync/manifest";
 import { readAgentMcps } from "../agents/mcp";
+import { installPersonalSkills, readSkillManifest } from "../scanner";
 
 const TMP = join("/tmp", `draft-team-assets-${process.pid}`);
 
@@ -199,6 +200,98 @@ describe("profile team asset lifecycle", () => {
       .toBeNull();
   });
 
+  it("uninstallProfileAssets only reports approved personal entries in removedSkills, not pending/conflict ones", async () => {
+    const common = paths();
+    const manifestPath = common.skillManifestPath;
+    mkdirSync(join(manifestPath, ".."), { recursive: true });
+    const now = new Date().toISOString();
+    writeFileSync(manifestPath, JSON.stringify({
+      version: 5, schema_version: 5, min_reader_version: 1, name_conflicts: {},
+      skills: {
+        "claude-code:approved-skill": {
+          id: "claude-code:approved-skill", name: "approved-skill", source_agent: "claude-code",
+          source_path: join(common.claudeSkillsDir, "approved-skill"), skill_dir_hash: "sha256:test",
+          added_at: now, approved_at: now, status: "approved", synced_to: {}, removed_at: null, kind: "personal",
+        },
+        "claude-code:pending-skill": {
+          id: "claude-code:pending-skill", name: "pending-skill", source_agent: "claude-code",
+          source_path: join(common.claudeSkillsDir, "pending-skill"), skill_dir_hash: "sha256:test",
+          added_at: now, approved_at: null, status: "pending", synced_to: {}, removed_at: null, kind: "personal",
+        },
+        "claude-code:conflict-skill": {
+          id: "claude-code:conflict-skill", name: "conflict-skill", source_agent: "claude-code",
+          source_path: join(common.claudeSkillsDir, "conflict-skill"), skill_dir_hash: "sha256:test",
+          added_at: now, approved_at: now, status: "conflict", synced_to: {}, removed_at: null, kind: "personal",
+        },
+      },
+    }));
+
+    const result = await uninstallProfileAssets("acme", common);
+
+    expect(result.removedSkills).toEqual(["approved-skill"]);
+  });
+});
+
+describe("personal skill profile-switch lifecycle", () => {
+  it("switch A -> B -> A deactivates/reinstalls each profile's personal skills, never tombstoning", async () => {
+    const common = paths();
+    const lifecyclePaths: Partial<TeamAssetPaths> = {
+      workspacesDir: common.workspacesDir,
+      activeProfileFile: common.activeProfileFile,
+      claudeSkillsDir: common.claudeSkillsDir,
+      codexSkillsDir: common.codexSkillsDir,
+      claudeConfigPath: common.claudeConfigPath,
+      codexConfigPath: common.codexConfigPath,
+      envStatePath: common.envStatePath,
+    };
+    mkdirSync(join(common.activeProfileFile, ".."), { recursive: true });
+    writeFileSync(common.activeProfileFile, "acme\n");
+
+    const sourceA = join(common.workspacesDir, "acme", "personal-skills", "a-skill");
+    const sourceB = join(common.workspacesDir, "personal", "personal-skills", "b-skill");
+    mkdirSync(sourceA, { recursive: true });
+    mkdirSync(sourceB, { recursive: true });
+
+    const acmeManifestPath = join(common.workspacesDir, "acme", "config", "skill-manifest.json");
+    const personalManifestPath = join(common.workspacesDir, "personal", "config", "skill-manifest.json");
+
+    // Seed acme's approval and let it install live (acme is the active profile).
+    installPersonalSkills([{ name: "a-skill", agent: "claude-code", sourcePath: sourceA }], "acme", {
+      claudeSkillsDir: common.claudeSkillsDir, codexSkillsDir: common.codexSkillsDir, manifestPath: acmeManifestPath,
+    });
+    // Seed "personal" profile's approval too, but it isn't active yet, so its
+    // mirror is not live on disk — matches how a real inactive profile's
+    // manifest looks (approved, but currently unlinked).
+    installPersonalSkills([{ name: "b-skill", agent: "claude-code", sourcePath: sourceB }], "personal", {
+      claudeSkillsDir: join(common.workspacesDir, "unused-claude"),
+      codexSkillsDir: join(common.workspacesDir, "unused-codex"),
+      manifestPath: personalManifestPath,
+    });
+
+    expect(lstatSync(join(common.codexSkillsDir, "a-skill")).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(common.codexSkillsDir, "b-skill"))).toBe(false);
+
+    const switched = await switchProfileAssets("acme", "personal", lifecyclePaths);
+
+    expect(existsSync(join(common.codexSkillsDir, "a-skill"))).toBe(false);
+    expect(lstatSync(join(common.codexSkillsDir, "b-skill")).isSymbolicLink()).toBe(true);
+    expect(switched.installedSkills).toContain("b-skill");
+    expect(switched.removedSkills).toContain("a-skill");
+
+    const acmeEntry = JSON.parse(readFileSync(acmeManifestPath, "utf8")).skills["claude-code:a-skill"];
+    expect(acmeEntry.status).toBe("approved");
+    expect(acmeEntry.removed_at).toBeNull();
+
+    const switchedBack = await switchProfileAssets("personal", "acme", lifecyclePaths);
+
+    expect(lstatSync(join(common.codexSkillsDir, "a-skill")).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(common.codexSkillsDir, "b-skill"))).toBe(false);
+    expect(switchedBack.installedSkills).toContain("a-skill");
+
+    const personalEntry = JSON.parse(readFileSync(personalManifestPath, "utf8")).skills["claude-code:b-skill"];
+    expect(personalEntry.status).toBe("approved");
+    expect(personalEntry.removed_at).toBeNull();
+  });
 });
 
 describe("isProfileSwitchLockHeld", () => {

@@ -915,7 +915,7 @@ export interface InstallTeamSkillsResult {
   installed: string[];
   skipped: string[];
   errors: string[];
-  conflicts: Array<{ name: string; reason: "personal-name-collision" | "target-modified" }>;
+  conflicts: Array<{ name: string; reason: PersonalSkillConflictReason }>;
 }
 
 /**
