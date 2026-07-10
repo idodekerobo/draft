@@ -9,7 +9,7 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, setActiveProfile, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
@@ -64,7 +64,7 @@ import {
   tombstoneMcp,
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
-import { switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
+import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
 import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
 import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
 
@@ -349,24 +349,29 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: created.reason === "exists" ? `Workspace "${name}" already exists.` : `Invalid name. Use letters, numbers, hyphens, and underscores only.` };
         }
         const oldProfile = getActiveProfile();
-        const activated = setActiveProfile(created.name);
-        if (!activated.ok) {
-          return { ok: false, error: "Created workspace but could not set it as active." };
+        // switchProfileAssets owns activation atomically, inside the
+        // profile-switch lock, with its own rollback-on-failure path — don't
+        // call setActiveProfile manually first, which would leave the
+        // active-profile file pointing at the new profile before the old
+        // profile's assets are torn down and before any lock is held. There
+        // is only ever one active profile, so creating (and implicitly
+        // activating) a new one also deactivates the outgoing profile's
+        // personal skill symlinks — the active profile's approved personal
+        // skills are the only ones currently mirrored to the sibling agent.
+        // A new workspace has no team assets, so this is a fast no-op for
+        // the install side, but it still uninstalls the old profile's
+        // team/personal assets and writes env.sh. A failure here means the
+        // new profile isn't safely usable yet — surface it, don't swallow it.
+        try {
+          await switchProfileAssets(oldProfile, created.name);
+        } catch (error) {
+          return { ok: false, error: `Created workspace but could not activate it: ${error instanceof Error ? error.message : String(error)}` };
         }
-        // Run the full switch lifecycle synchronously (same as switchProfile) so
-        // watchers are updated before profileChanged fires. There is only ever one
-        // active profile, so creating (and implicitly activating) a new one also
-        // deactivates the outgoing profile's personal skill symlinks — the active
-        // profile's approved personal skills are the only ones currently mirrored
-        // to the sibling agent. A new workspace has no team assets, so
-        // switchProfileAssets is a fast no-op for the install side, but it still
-        // uninstalls the old profile's team/personal assets and writes env.sh.
-        try { await switchProfileAssets(oldProfile, activated.active); } catch { /* non-fatal: new profile has no team assets */ }
-        restartProposalWatch(activated.active, watcherHandlers);
-        restartSkillWatchWithProfile(activated.active);
-        restartMcpWatchWithProfile(activated.active);
-        try { rpc.send.profileChanged({ profile: activated.active }); } catch {}
-        return { ok: true, active: activated.active };
+        restartProposalWatch(created.name, watcherHandlers);
+        restartSkillWatchWithProfile(created.name);
+        restartMcpWatchWithProfile(created.name);
+        try { rpc.send.profileChanged({ profile: created.name }); } catch {}
+        return { ok: true, active: created.name };
       },
 
       launchSession: async () => ({
@@ -1057,7 +1062,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       approveMcps: async ({ mcps }) => {
         try {
-          await approveMcpsCore(mcps);
+          const result = await approveMcpsCore(mcps);
+          if (result.errors.length > 0 || result.conflicts.length > 0) {
+            const parts = [
+              ...result.errors,
+              ...result.conflicts.map((c) => `${c.name}: ${c.reason}`),
+            ];
+            return { ok: false, error: parts.join("; ") };
+          }
+          // A newly-approved Codex-bound personal MCP's secret must be
+          // sourceable immediately, not only after the next profile switch.
+          try { rebuildEnvSh(getActiveProfile()); } catch { /* non-fatal */ }
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Failed to approve MCPs." };
@@ -1312,8 +1327,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       setMcpSecret: async ({ name, envVar, value }) => {
         const profile = getActiveProfile();
-        const result = await setTeamMcpSecret(name, profile, envVar, value);
+        // Team-MCP secrets are profile-scoped (same path resolvePaths uses in
+        // team-assets.ts) — without this the secret lands in the global
+        // secrets.json and the next profile switch, which reads the
+        // profile-scoped file, would flip the MCP back to pending-secrets.
+        const result = await setTeamMcpSecret(name, profile, envVar, value, {
+          statePath: join(getWorkspacePath(profile), "config"),
+        });
         if (!result.ok) return { ok: false, error: result.error, nowInstalled: false };
+        if (result.nowInstalled) {
+          try { rebuildEnvSh(profile); } catch { /* non-fatal */ }
+        }
         return { ok: true, nowInstalled: result.nowInstalled };
       },
 

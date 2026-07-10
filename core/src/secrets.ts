@@ -105,3 +105,15 @@ export function readSecretsJson(statePath?: string): Record<string, string> {
     return {};
   }
 }
+
+/**
+ * Merged secret lookup: profile-scoped values win, global values fill in
+ * anything missing. Team-MCP reads go through this so a secret that only
+ * exists globally (legacy desktop writes went to the global file) still
+ * resolves. Lookup only — never persist this merged view back to a profile
+ * file, or global legacy values get copied wholesale into every profile.
+ */
+export function readSecretsWithGlobalFallback(statePath?: string, globalStatePath?: string): Record<string, string> {
+  if (!statePath) return readSecretsJson(globalStatePath);
+  return { ...readSecretsJson(globalStatePath), ...readSecretsJson(statePath) };
+}

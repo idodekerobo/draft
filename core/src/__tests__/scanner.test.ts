@@ -659,6 +659,38 @@ describe("installPersonalSkills", () => {
     expect(manifest.skills["claude-code:review"]?.conflict_reason).toBe("team-name-collision");
   });
 
+  it("adopt-then-corrupt regression: a personal skill sharing a team skill's exact source is blocked, not silently adopted", () => {
+    const opts = skillOpts("adoptteam");
+    const sharedSource = join(TMP, "adoptteam-shared-src");
+    mkdirSync(sharedSource, { recursive: true });
+    writeFileSync(join(sharedSource, "SKILL.md"), "# shared\n");
+
+    installTeamSkills([{ name: "review", sourcePath: sharedSource }], "acme", opts);
+    const teamEntryBefore = readSkillManifest(opts.manifestPath).skills["team:review"];
+    const codexLinkPath = join(opts.codexSkillsDir, "review");
+    expect(lstatSync(codexLinkPath).isSymbolicLink()).toBe(true);
+
+    // Installing a personal skill of the same name whose source happens to
+    // be the exact same directory would make inspectSymlinkTarget report
+    // "owned" (the live symlink already resolves there) — team ownership
+    // must be checked first, before that "owned" state is ever consulted.
+    const result = installPersonalSkills(
+      [{ name: "review", agent: "claude-code", sourcePath: sharedSource }],
+      "acme",
+      opts,
+    );
+
+    expect(result.conflicts).toEqual([{ name: "review", reason: "team-name-collision" }]);
+    const manifest = readSkillManifest(opts.manifestPath);
+    expect(manifest.skills["team:review"]).toEqual(teamEntryBefore);
+    expect(lstatSync(codexLinkPath).isSymbolicLink()).toBe(true);
+
+    // A subsequent deactivate of the (never-actually-installed) personal
+    // entry must never touch the team's live mirror.
+    uninstallPersonalSkills("acme", opts);
+    expect(lstatSync(codexLinkPath).isSymbolicLink()).toBe(true);
+  });
+
   it("personal-vs-personal collision: reports personal-name-collision when the target is owned by an unrelated personal source", () => {
     const opts = skillOpts("personalcollision");
     const otherSource = join(TMP, "other-personal-src");
@@ -692,6 +724,43 @@ describe("installPersonalSkills", () => {
     expect(second.skipped).toEqual(["notes"]);
     expect(second.errors).toEqual([]);
     expect(second.conflicts).toEqual([]);
+  });
+});
+
+// ── installTeamSkills (bidirectional collision regression) ───────────────────
+
+describe("installTeamSkills bidirectional collision", () => {
+  function skillOpts(tag: string) {
+    return {
+      claudeSkillsDir: join(TMP, `it-${tag}`, "claude"),
+      codexSkillsDir: join(TMP, `it-${tag}`, "codex"),
+      manifestPath: join(TMP, `it-${tag}`, "skill-manifest.json"),
+    };
+  }
+
+  it("adopt-then-corrupt regression: a team skill sharing a personal skill's exact source is blocked, not silently adopted", () => {
+    const opts = skillOpts("adoptpersonal");
+    const sharedSource = join(TMP, "adoptpersonal-shared-src");
+    mkdirSync(sharedSource, { recursive: true });
+    writeFileSync(join(sharedSource, "SKILL.md"), "# shared\n");
+
+    installPersonalSkills([{ name: "notes", agent: "claude-code", sourcePath: sharedSource }], "acme", opts);
+    const personalEntryBefore = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    const codexLinkPath = join(opts.codexSkillsDir, "notes");
+    expect(lstatSync(codexLinkPath).isSymbolicLink()).toBe(true);
+
+    // Installing a team skill of the same name whose source happens to be
+    // the exact same directory would make inspectSymlinkTarget report
+    // "owned" for both targets (the live symlink already resolves there) —
+    // personal ownership must be checked first, before that "owned" state
+    // silently lets team adopt the personal entry's live mirror.
+    const result = installTeamSkills([{ name: "notes", sourcePath: sharedSource }], "acme", opts);
+
+    expect(result.conflicts).toEqual([{ name: "notes", reason: "personal-name-collision" }]);
+    const manifest = readSkillManifest(opts.manifestPath);
+    expect(manifest.skills["claude-code:notes"]).toEqual(personalEntryBefore);
+    expect(lstatSync(codexLinkPath).isSymbolicLink()).toBe(true);
+    expect(manifest.skills["team:notes"]?.status).toBe("conflict");
   });
 });
 
@@ -871,6 +940,48 @@ describe("removeSymlinks", () => {
     const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
     expect(entry?.status).toBe("approved");
     expect(entry?.removed_at).toBeNull();
+  });
+
+  it("refuses to remove an untracked skill's mirror when it points elsewhere, even with no manifest entry", () => {
+    const opts = skillOpts("untracked-notowned");
+    const source = join(TMP, "rm-untracked-source");
+    mkdirSync(source, { recursive: true });
+    const skill: ScannedSkill = {
+      name: "notes", agent: "claude-code", dirPath: source, files: [],
+      description: "", descriptionTokenCount: 0, tokenCount: 0,
+    };
+    // Never approved via createSymlinks — no manifest entry for this id.
+    // A live symlink happens to already exist at the mirror path, pointing
+    // to something unrelated.
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    const otherSource = join(TMP, "rm-untracked-other-src");
+    mkdirSync(otherSource, { recursive: true });
+    mkdirSync(opts.codexSkillsDir, { recursive: true });
+    symlinkSync(resolve(otherSource), linkPath);
+
+    const result = removeSymlinks([skill], opts);
+
+    expect(result.removed).toEqual([]);
+    expect(result.errors.length).toBe(1);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+  });
+
+  it("removes an untracked skill's mirror when it correctly points to the skill's own dirPath, even with no manifest entry", () => {
+    const opts = skillOpts("untracked-owned");
+    const source = join(TMP, "rm-untracked-owned-source");
+    mkdirSync(source, { recursive: true });
+    const skill: ScannedSkill = {
+      name: "notes", agent: "claude-code", dirPath: source, files: [],
+      description: "", descriptionTokenCount: 0, tokenCount: 0,
+    };
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    mkdirSync(opts.codexSkillsDir, { recursive: true });
+    symlinkSync(resolve(source), linkPath);
+
+    const result = removeSymlinks([skill], opts);
+
+    expect(result.removed).toEqual([linkPath]);
+    expect(() => lstatSync(linkPath)).toThrow();
   });
 
   it("a tombstoned entry is not resurrected by a later reconcileSkillManifest call", () => {

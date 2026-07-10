@@ -10,7 +10,7 @@ import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, readLocalConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { runMigrations } from 'draft-core/migrations/runner';
 import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
-import { isProfileSwitchLockHeld } from 'draft-core/sync/team-assets';
+import { withProfileSwitchLock } from 'draft-core/sync/team-assets';
 import { atomicPatch } from 'draft-core/sync/atomic-write';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
@@ -137,27 +137,29 @@ async function acknowledgeGitHubJob(job: Record<string, unknown>): Promise<void>
   });
 }
 
-function reconcileSkills() {
+async function reconcileSkills() {
   // A profile switch briefly leaves the active-profile file naming the
   // outgoing profile while its personal skills are already deactivated (see
   // core/src/sync/team-assets.ts's profile-switch lock). If reconcile ran in
   // that window it would "repair" a symlink the switch just tore down.
-  // Skip this tick entirely and let the next one retry — a switch completes
-  // in milliseconds, not minutes.
-  if (isProfileSwitchLockHeld()) return;
-  try {
-    const reconciled = reconcileSkillManifest();
-    if (reconciled.repaired.length > 0) log('info', `skills: repaired ${reconciled.repaired.length} symlink(s)`);
-    if (reconciled.tombstoned.length > 0) log('info', `skills: tombstoned ${reconciled.tombstoned.length} removed skill(s)`);
-    if (reconciled.orphaned.length > 0) log('warn', `skills: ${reconciled.orphaned.length} symlink(s) with missing source — open Draft to review`);
-    if (reconciled.conflicts.length > 0) log('warn', `skills: ${reconciled.conflicts.length} symlink conflict(s) — open Draft to resolve`);
+  // withProfileSwitchLock provides real mutual exclusion (not a racy
+  // check-then-act) — skip this tick entirely if a switch holds the lock and
+  // let the next one retry, since a switch completes in milliseconds.
+  await withProfileSwitchLock(() => {
+    try {
+      const reconciled = reconcileSkillManifest();
+      if (reconciled.repaired.length > 0) log('info', `skills: repaired ${reconciled.repaired.length} symlink(s)`);
+      if (reconciled.tombstoned.length > 0) log('info', `skills: tombstoned ${reconciled.tombstoned.length} removed skill(s)`);
+      if (reconciled.orphaned.length > 0) log('warn', `skills: ${reconciled.orphaned.length} symlink(s) with missing source — open Draft to review`);
+      if (reconciled.conflicts.length > 0) log('warn', `skills: ${reconciled.conflicts.length} symlink conflict(s) — open Draft to resolve`);
 
-    const { pending, conflicts } = detectPending();
-    if (pending.length > 0) log('info', `skills: ${pending.length} new skill(s) pending approval — open Draft to sync`);
-    if (conflicts.length > 0) log('warn', `skills: ${conflicts.length} same-name conflict(s) — open Draft to resolve`);
-  } catch {
-    log('warn', 'skills: reconciliation failed');
-  }
+      const { pending, conflicts } = detectPending();
+      if (pending.length > 0) log('info', `skills: ${pending.length} new skill(s) pending approval — open Draft to sync`);
+      if (conflicts.length > 0) log('warn', `skills: ${conflicts.length} same-name conflict(s) — open Draft to resolve`);
+    } catch {
+      log('warn', 'skills: reconciliation failed');
+    }
+  });
 }
 
 async function trimLog() {

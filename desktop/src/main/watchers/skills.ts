@@ -15,6 +15,7 @@ import {
   type ReconcileResult,
   type ScannedSkill,
 } from "draft-core/scanner";
+import { withProfileSwitchLock } from "draft-core/sync/team-assets";
 
 // 2-second debounce to allow rename detection (disappear + reappear within the window)
 const DEBOUNCE_MS = 2_000;
@@ -77,49 +78,59 @@ function scanWorkspaceSkillNames(workspaceSkillsDir: string): Set<string> {
   return names;
 }
 
-function handleWorkspaceSkillsChange(handlers: SkillWatchHandlers, options?: SkillWatchOptions): void {
+/**
+ * Mutates live symlinks and the skill manifest (installTeamSkills/
+ * uninstallTeamSkill), so the whole tick must run under the profile-switch
+ * lock — a switch's own uninstall/install can race this watcher's debounced
+ * or fallback-poll tick otherwise. Wrapped as one lock-guarded unit (not one
+ * attempt per install/uninstall call) so a tick either fully runs or fully
+ * skips, never partially.
+ */
+async function handleWorkspaceSkillsChange(handlers: SkillWatchHandlers, options?: SkillWatchOptions): Promise<void> {
   const wsSkillsDir = getWorkspaceSkillsDir(options);
   if (!wsSkillsDir || !options?.activeProfile) return;
 
-  const currentNames = scanWorkspaceSkillNames(wsSkillsDir);
+  await withProfileSwitchLock(() => {
+    const currentNames = scanWorkspaceSkillNames(wsSkillsDir);
 
-  // Detect newly added workspace skills
-  const addedNames = [...currentNames].filter((n) => !knownWorkspaceSkillNames.has(n));
-  // Detect removed workspace skills
-  const removedNames = [...knownWorkspaceSkillNames].filter((n) => !currentNames.has(n));
+    // Detect newly added workspace skills
+    const addedNames = [...currentNames].filter((n) => !knownWorkspaceSkillNames.has(n));
+    // Detect removed workspace skills
+    const removedNames = [...knownWorkspaceSkillNames].filter((n) => !currentNames.has(n));
 
-  knownWorkspaceSkillNames = currentNames;
+    knownWorkspaceSkillNames = currentNames;
 
-  if (addedNames.length > 0) {
-    const inputs = addedNames.map((name) => ({
-      name,
-      sourcePath: join(wsSkillsDir, name),
-    }));
-    try {
-      const result = installTeamSkills(inputs, options.activeProfile!, {
-        claudeSkillsDir: options.claudeSkillsDir,
-        codexSkillsDir: options.codexSkillsDir,
-        manifestPath: options.manifestPath,
-      });
-      if (result.installed.length > 0) {
-        handlers.onSkillsChanged(result.installed.length);
-        handlers.onTeamSkillsChanged?.(result.installed.length);
-      }
-    } catch { /* non-fatal */ }
-  }
-
-  if (removedNames.length > 0 && options.activeProfile) {
-    try {
-      for (const name of removedNames) {
-        uninstallTeamSkill(options.activeProfile, name, {
+    if (addedNames.length > 0) {
+      const inputs = addedNames.map((name) => ({
+        name,
+        sourcePath: join(wsSkillsDir, name),
+      }));
+      try {
+        const result = installTeamSkills(inputs, options.activeProfile!, {
           claudeSkillsDir: options.claudeSkillsDir,
           codexSkillsDir: options.codexSkillsDir,
           manifestPath: options.manifestPath,
         });
-      }
-      handlers.onSkillsChanged(removedNames.length);
-    } catch { /* non-fatal */ }
-  }
+        if (result.installed.length > 0) {
+          handlers.onSkillsChanged(result.installed.length);
+          handlers.onTeamSkillsChanged?.(result.installed.length);
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    if (removedNames.length > 0 && options.activeProfile) {
+      try {
+        for (const name of removedNames) {
+          uninstallTeamSkill(options.activeProfile, name, {
+            claudeSkillsDir: options.claudeSkillsDir,
+            codexSkillsDir: options.codexSkillsDir,
+            manifestPath: options.manifestPath,
+          });
+        }
+        handlers.onSkillsChanged(removedNames.length);
+      } catch { /* non-fatal */ }
+    }
+  });
 }
 
 export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWatchOptions): void {
@@ -131,24 +142,20 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
   knownSkillKeys.clear();
   knownHashes.clear();
 
-  // Run startup reconcile before setting up watchers
-  try {
-    const reconcileResult = reconcileSkillManifest({
-      claudeSkillsDir: options?.claudeSkillsDir,
-      codexSkillsDir: options?.codexSkillsDir,
-      manifestPath: options?.manifestPath,
-    });
-    handlers.onReconciled(reconcileResult);
-    if (reconcileResult.repaired.length > 0) {
-      handlers.onSkillsChanged(reconcileResult.repaired.length);
-    }
-  } catch { /* reconcile failure must not prevent watcher from starting */ }
-
-  // Install any team skills from workspace that aren't yet in both agents
+  // Populate workspace-skill known state (read-only scan) before the
+  // lock-guarded startup work below.
   const wsSkillsDir = getWorkspaceSkillsDir(options);
   if (wsSkillsDir && options?.activeProfile) {
     knownWorkspaceSkillNames = scanWorkspaceSkillNames(wsSkillsDir);
-    if (knownWorkspaceSkillNames.size > 0) {
+  }
+
+  // Startup team-skill install + reconcile — one lock-guarded unit (mirrors
+  // watchers/mcps.ts's startup): both mutate live symlinks and the manifest,
+  // and a concurrent profile switch's own writes could otherwise race either
+  // of them independently. Fire-and-forget async so it can be guarded by the
+  // profile-switch lock without blocking watcher setup on it.
+  withProfileSwitchLock(() => {
+    if (wsSkillsDir && options?.activeProfile && knownWorkspaceSkillNames.size > 0) {
       const inputs = [...knownWorkspaceSkillNames].map((name) => ({
         name,
         sourcePath: join(wsSkillsDir, name),
@@ -161,7 +168,20 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
         });
       } catch { /* non-fatal */ }
     }
-  }
+    return reconcileSkillManifest({
+      claudeSkillsDir: options?.claudeSkillsDir,
+      codexSkillsDir: options?.codexSkillsDir,
+      manifestPath: options?.manifestPath,
+    });
+  })
+    .then((reconcileResult) => {
+      if (!reconcileResult) return;
+      handlers.onReconciled(reconcileResult);
+      if (reconcileResult.repaired.length > 0) {
+        handlers.onSkillsChanged(reconcileResult.repaired.length);
+      }
+    })
+    .catch(() => { /* reconcile failure must not prevent watcher from starting */ });
 
   // Populate initial known state
   const initialSkills = scanSkillDirectories({
@@ -257,7 +277,7 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
             debounceTimer = null;
-            handleWorkspaceSkillsChange(handlers, options);
+            void handleWorkspaceSkillsChange(handlers, options);
             reconcile();
           }, DEBOUNCE_MS);
         }));
@@ -281,7 +301,7 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      if (wsSkillsDir) handleWorkspaceSkillsChange(handlers, options);
+      if (wsSkillsDir) void handleWorkspaceSkillsChange(handlers, options);
       reconcile();
     }, DEBOUNCE_MS);
   }, FALLBACK_POLL_MS);

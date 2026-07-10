@@ -3,15 +3,19 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, u
 import { join, resolve } from "path";
 import {
   installProfileAssets,
+  rebuildEnvSh,
   isProfileSwitchLockHeld,
+  releaseProfileSwitchLock,
   switchProfileAssets,
   TeamAssetValidationError,
   uninstallProfileAssets,
   validateProfileAssets,
+  withProfileSwitchLock,
   type TeamAssetPaths,
 } from "../sync/team-assets";
-import { readMcpManifest } from "../sync/manifest";
+import { readMcpManifest, type CanonicalMcp } from "../sync/manifest";
 import { readAgentMcps } from "../agents/mcp";
+import { installPersonalMcps } from "../sync/mcp-sync";
 import { installPersonalSkills, readSkillManifest } from "../scanner";
 
 const TMP = join("/tmp", `draft-team-assets-${process.pid}`);
@@ -320,5 +324,200 @@ describe("isProfileSwitchLockHeld", () => {
     // PID 999999 is very unlikely to be a live process.
     writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: 999999 }));
     expect(isProfileSwitchLockHeld(lockPath)).toBe(false);
+  });
+});
+
+describe("withProfileSwitchLock", () => {
+  const lockPath = join("/tmp", `draft-with-lock-test-${process.pid}`);
+  afterEach(() => rmSync(lockPath, { recursive: true, force: true }));
+
+  it("acquires, runs fn, and releases", async () => {
+    const result = await withProfileSwitchLock(() => "ran", lockPath);
+    expect(result).toBe("ran");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("releases even when fn throws", async () => {
+    await expect(withProfileSwitchLock(() => { throw new Error("boom"); }, lockPath)).rejects.toThrow("boom");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("a concurrent caller gets undefined immediately without running fn, while the first holds the lock", async () => {
+    let releaseFirst!: () => void;
+    const firstDone = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const secondFnCalled = { value: false };
+
+    const first = withProfileSwitchLock(async () => {
+      await firstDone;
+      return "first";
+    }, lockPath);
+
+    // give the first call a tick to actually acquire the lock directory
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(existsSync(lockPath)).toBe(true);
+
+    const second = await withProfileSwitchLock(() => {
+      secondFnCalled.value = true;
+      return "second";
+    }, lockPath);
+
+    expect(second).toBeUndefined();
+    expect(secondFnCalled.value).toBe(false);
+
+    releaseFirst();
+    expect(await first).toBe("first");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("recovers a lock abandoned by a crashed holder (dead pid): fn runs and the lock is released after", async () => {
+    mkdirSync(lockPath, { recursive: true });
+    // PID 999999 is very unlikely to be a live process — simulates a switch
+    // that died mid-flight and never ran its release.
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: 999999, token: "dead-token" }));
+
+    const result = await withProfileSwitchLock(() => "recovered", lockPath);
+    expect(result).toBe("recovered");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("still skips when the existing lock is held by a live process", async () => {
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token: "live-token" }));
+
+    const fnCalled = { value: false };
+    const result = await withProfileSwitchLock(() => { fnCalled.value = true; return "ran"; }, lockPath);
+    expect(result).toBeUndefined();
+    expect(fnCalled.value).toBe(false);
+    // The live holder's lock is left untouched.
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")).token).toBe("live-token");
+  });
+
+  it("does not delete a lock now owned by someone else (stale-takeover-then-late-release is a no-op)", () => {
+    // Original holder acquired with "old-token"...
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token: "old-token" }));
+
+    // ...then a new owner takes over (as acquireProfileSwitchLock's
+    // stale-takeover path does: rmSync + re-mkdir with its own token).
+    rmSync(lockPath, { recursive: true, force: true });
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token: "new-token" }));
+
+    // The original (stale) holder finally gets around to releasing with its
+    // now-outdated token — must be a no-op, not delete the new owner's lock.
+    releaseProfileSwitchLock("old-token", lockPath);
+
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")).token).toBe("new-token");
+
+    // The actual new owner's release, with the matching token, does work.
+    releaseProfileSwitchLock("new-token", lockPath);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+describe("personal MCP profile-switch lifecycle", () => {
+  it("switch A -> B -> A deactivates/reinstalls each profile's personal MCP config, never tombstoning", async () => {
+    const common = paths();
+    const lifecyclePaths: Partial<TeamAssetPaths> = {
+      workspacesDir: common.workspacesDir,
+      activeProfileFile: common.activeProfileFile,
+      claudeSkillsDir: common.claudeSkillsDir,
+      codexSkillsDir: common.codexSkillsDir,
+      claudeConfigPath: common.claudeConfigPath,
+      codexConfigPath: common.codexConfigPath,
+      envStatePath: common.envStatePath,
+    };
+    mkdirSync(join(common.activeProfileFile, ".."), { recursive: true });
+    writeFileSync(common.activeProfileFile, "acme\n");
+
+    const acmeMcpManifestPath = join(common.workspacesDir, "acme", "config", "mcp-manifest.json");
+    const personalMcpManifestPath = join(common.workspacesDir, "personal", "config", "mcp-manifest.json");
+    const canonicalA: CanonicalMcp = { type: "http", url: "https://a.example.com" };
+    const canonicalB: CanonicalMcp = { type: "http", url: "https://b.example.com" };
+
+    // Seed acme's approval and let it install live (acme is the active profile).
+    await installPersonalMcps(
+      [{ id: "codex:a-mcp", name: "a-mcp", source_agent: "codex", canonical: canonicalA, original_config: {} }],
+      { claudeConfigPath: common.claudeConfigPath, codexConfigPath: common.codexConfigPath, manifestPath: acmeMcpManifestPath },
+    );
+    // Seed "personal" profile's approval too, but it isn't active yet, so its
+    // config entry is not live on disk — matches how a real inactive
+    // profile's manifest looks (approved, but currently un-synced).
+    await installPersonalMcps(
+      [{ id: "codex:b-mcp", name: "b-mcp", source_agent: "codex", canonical: canonicalB, original_config: {} }],
+      {
+        claudeConfigPath: join(common.workspacesDir, "unused-claude.json"),
+        codexConfigPath: join(common.workspacesDir, "unused-codex", "config.toml"),
+        manifestPath: personalMcpManifestPath,
+      },
+    );
+
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["a-mcp"]).toBeDefined();
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["b-mcp"]).toBeUndefined();
+
+    const switched = await switchProfileAssets("acme", "personal", lifecyclePaths);
+
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["a-mcp"]).toBeUndefined();
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["b-mcp"]).toBeDefined();
+    expect(switched.installedMcps).toContain("b-mcp");
+    expect(switched.removedMcps).toContain("a-mcp");
+
+    const acmeEntry = JSON.parse(readFileSync(acmeMcpManifestPath, "utf8")).mcps["codex:a-mcp"];
+    expect(acmeEntry.removed_at).toBeNull();
+
+    const switchedBack = await switchProfileAssets("personal", "acme", lifecyclePaths);
+
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["a-mcp"]).toBeDefined();
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["b-mcp"]).toBeUndefined();
+    expect(switchedBack.installedMcps).toContain("a-mcp");
+
+    const personalEntry = JSON.parse(readFileSync(personalMcpManifestPath, "utf8")).mcps["codex:b-mcp"];
+    expect(personalEntry.removed_at).toBeNull();
+  });
+});
+
+describe("env.sh rebuild covers personal MCP secrets", () => {
+  const secretCanonical: CanonicalMcp = {
+    type: "http",
+    url: "https://mcp.example.com",
+    headers: { Authorization: { value_env: "DRAFT_MCP_PERSONAL_TOKEN", secret: true } },
+  };
+
+  function approvePersonalMcpAndSecret(common: TeamAssetPaths): Promise<unknown> {
+    // The secret lives in the profile-scoped secrets.json here; in production
+    // a personal MCP's secret lives in the global file, which rebuildEnvSh
+    // reaches through readSecretsWithGlobalFallback — the merge itself is
+    // covered in mcp-sync.test.ts, since tests must not write to the real
+    // global ~/.draft/state.
+    mkdirSync(common.statePath, { recursive: true });
+    writeFileSync(join(common.statePath, "secrets.json"), JSON.stringify({
+      DRAFT_MCP_PERSONAL_TOKEN: "personal-secret",
+    }));
+    return installPersonalMcps(
+      [{ id: "codex:linear", name: "linear", source_agent: "codex", canonical: secretCanonical, original_config: {} }],
+      { claudeConfigPath: common.claudeConfigPath, codexConfigPath: common.codexConfigPath, manifestPath: common.mcpManifestPath },
+    );
+  }
+
+  it("installProfileAssets writes env.sh including an approved personal MCP's secret", async () => {
+    const common = paths();
+    await approvePersonalMcpAndSecret(common);
+
+    await installProfileAssets("acme", common);
+
+    const envSh = readFileSync(join(common.envStatePath, "env.sh"), "utf8");
+    expect(envSh).toContain("DRAFT_MCP_PERSONAL_TOKEN");
+  });
+
+  it("a direct rebuildEnvSh after approval picks up the secret without a profile switch", async () => {
+    const common = paths();
+    await approvePersonalMcpAndSecret(common);
+
+    rebuildEnvSh("acme", common);
+
+    const envSh = readFileSync(join(common.envStatePath, "env.sh"), "utf8");
+    expect(envSh).toContain("DRAFT_MCP_PERSONAL_TOKEN");
   });
 });
