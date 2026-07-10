@@ -368,6 +368,30 @@ describe("withProfileSwitchLock", () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
+  it("recovers a lock abandoned by a crashed holder (dead pid): fn runs and the lock is released after", async () => {
+    mkdirSync(lockPath, { recursive: true });
+    // PID 999999 is very unlikely to be a live process — simulates a switch
+    // that died mid-flight and never ran its release.
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: 999999, token: "dead-token" }));
+
+    const result = await withProfileSwitchLock(() => "recovered", lockPath);
+    expect(result).toBe("recovered");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("still skips when the existing lock is held by a live process", async () => {
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token: "live-token" }));
+
+    const fnCalled = { value: false };
+    const result = await withProfileSwitchLock(() => { fnCalled.value = true; return "ran"; }, lockPath);
+    expect(result).toBeUndefined();
+    expect(fnCalled.value).toBe(false);
+    // The live holder's lock is left untouched.
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")).token).toBe("live-token");
+  });
+
   it("does not delete a lock now owned by someone else (stale-takeover-then-late-release is a no-op)", () => {
     // Original holder acquired with "old-token"...
     mkdirSync(lockPath, { recursive: true });

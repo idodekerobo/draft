@@ -486,7 +486,18 @@ export async function withProfileSwitchLock<T>(
     mkdirSync(lockPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    return undefined;
+    // Crashed-holder recovery: a switch that died mid-flight never runs its
+    // release, and without this check every non-blocking caller would skip
+    // forever until the next manual profile switch clears the stale dir.
+    // Same takeover semantics as the blocking acquire above.
+    if (!switchLockIsStaleByAge(lockPath) && switchLockOwnerIsAlive(lockPath)) return undefined;
+    rmSync(lockPath, { recursive: true, force: true });
+    try {
+      mkdirSync(lockPath);
+    } catch (retryError) {
+      if ((retryError as NodeJS.ErrnoException).code !== "EEXIST") throw retryError;
+      return undefined; // someone else won the takeover race
+    }
   }
   try {
     writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token }));
