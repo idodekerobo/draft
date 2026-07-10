@@ -10,10 +10,11 @@ import {
   type Agent,
   type CanonicalMcp,
   type McpManifestEntry,
+  type McpManifestSyncEntry,
 } from "./manifest";
 import { readWorkspaceMcpManifest, writeWorkspaceMcpManifest, type WorkspaceMcpEntry } from "./workspace-mcp";
 import { ParseError } from "./atomic-write";
-import { isSecretHeader, generateEnvVarName, writeSecretsJson, writeEnvSh, readSecretsJson } from "../secrets";
+import { isSecretHeader, generateEnvVarName, writeSecretsJson, readSecretsJson } from "../secrets";
 
 export type { WorkspaceMcpEntry };
 
@@ -278,76 +279,234 @@ export function detectMcpPending(opts?: McpSyncOpts): {
   return { pending, conflicts };
 }
 
+// ── Personal MCP install/uninstall lifecycle (profile-scoped) ────────────────
+
+export interface PersonalMcpInput {
+  id: string;
+  name: string;
+  source_agent: Agent;
+  canonical: CanonicalMcp;
+  original_config: Record<string, unknown>;
+}
+
+export type PersonalMcpConflictReason = "team-name-collision" | "personal-name-collision" | "target-modified";
+
+export interface InstallPersonalMcpsResult {
+  installed: string[];
+  skipped: string[];
+  errors: string[];
+  conflicts: Array<{ name: string; reason: PersonalMcpConflictReason }>;
+}
+
+/**
+ * Install a profile's approved personal MCPs into their target agent's
+ * config, with full ownership/collision checking. This is the sole writer
+ * for personal-MCP target-config entries: approveMcps() (below) delegates to
+ * this rather than writing the target config itself, and
+ * switchProfileAssets calls this too when reinstalling a profile's
+ * previously-approved personal MCPs on switch — calling it twice in a row is
+ * safe (idempotent via the same missing/owned state machine skills use),
+ * which that rollback-by-reinstall path requires.
+ *
+ * Personal MCP secrets are global — shared across all profiles, not scoped
+ * per-profile like team MCP secrets are. A personal MCP's credential belongs
+ * to the user, not to a specific product profile. This always reads from the
+ * global secrets.json regardless of opts.statePath (which, when this is
+ * called via team-assets.ts's mcpOpts(), is profile-scoped for team MCPs —
+ * a deliberate divergence between the two "kinds" sharing one options type).
+ * Does not write env.sh — that stays owned by team-assets.ts / the desktop
+ * approve/setSecret RPC handlers, which know the profile-scoped path and can
+ * rebuild it immediately after a successful install.
+ */
+export async function installPersonalMcps(
+  mcps: PersonalMcpInput[],
+  profile: string,
+  opts?: McpSyncOpts,
+): Promise<InstallPersonalMcpsResult> {
+  const result: InstallPersonalMcpsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  const manifest = readMcpManifest(opts?.manifestPath);
+  const secrets = readSecretsJson();
+  const now = new Date().toISOString();
+  let dirty = false;
+
+  for (const { id, name, source_agent, canonical, original_config } of mcps) {
+    const targetAgent: Agent = source_agent === "claude-code" ? "codex" : "claude-code";
+    const targetConfigPath = targetAgent === "claude-code" ? opts?.claudeConfigPath : opts?.codexConfigPath;
+    const existing = manifest.mcps[id];
+
+    let observed: Record<string, unknown> | undefined;
+    try {
+      observed = readAgentMcps(targetAgent, targetConfigPath)[name];
+    } catch (e) {
+      result.errors.push(`${name}: failed to read ${targetAgent} MCPs: ${e instanceof Error ? e.message : String(e)}`);
+      continue;
+    }
+
+    // Team ownership of this name is checked BEFORE inspecting the target at
+    // all — a coincidental config match must never let a personal MCP
+    // silently "adopt" a team-owned slot (a later uninstallPersonalMcps
+    // deactivate could then delete the team's live config entry, believing
+    // it owns it).
+    const teamEntry = manifest.mcps[`team:${name}`];
+    const isLiveTeamCollision = !!teamEntry
+      && teamEntry.kind === "team"
+      && teamEntry.install_state === "installed"
+      && !teamEntry.removed_at
+      && !!observed
+      && nativeEntryEquals(targetAgent, observed, teamEntry.sync_canonical, secrets);
+
+    const envVarMapping: Record<string, string> = {};
+    if (canonical.headers) {
+      for (const [header, hv] of Object.entries(canonical.headers)) {
+        if (hv.secret && hv.value_env) envVarMapping[hv.value_env] = `${header} header`;
+      }
+    }
+
+    if (isLiveTeamCollision) {
+      result.conflicts.push({ name, reason: "team-name-collision" });
+      manifest.mcps[id] = {
+        id, name, source_agent,
+        sync_canonical: canonical,
+        sync_canonical_hash: hashCanonical(canonical),
+        source_snapshot: { original_config },
+        env_var_mapping: envVarMapping,
+        synced_to: existing?.synced_to ?? {},
+        removed_at: null,
+        kind: "personal",
+        install_state: "conflict",
+        conflict_reason: "team-name-collision",
+      };
+      dirty = true;
+      continue;
+    }
+
+    const state = inspectMcpTarget(targetAgent, observed, canonical, secrets);
+
+    if (state === "conflict") {
+      result.conflicts.push({ name, reason: "personal-name-collision" });
+      manifest.mcps[id] = {
+        id, name, source_agent,
+        sync_canonical: canonical,
+        sync_canonical_hash: hashCanonical(canonical),
+        source_snapshot: { original_config },
+        env_var_mapping: envVarMapping,
+        synced_to: existing?.synced_to ?? {},
+        removed_at: null,
+        kind: "personal",
+        install_state: "conflict",
+        conflict_reason: "personal-name-collision",
+      };
+      dirty = true;
+      continue;
+    }
+
+    let synced = false;
+    if (state === "missing") {
+      try {
+        const targetEntry = targetAgent === "claude-code" ? toClaudeCodeEntry(canonical, secrets) : toCodexEntry(canonical);
+        await writeAgentMcp(targetAgent, name, targetEntry, targetConfigPath);
+        result.installed.push(name);
+        synced = true;
+      } catch (e) {
+        result.errors.push(`${name} → ${targetAgent}: ${e instanceof Error ? e.message : String(e)}`);
+        // Partial failure — still record the approval below, without a
+        // synced_to entry for this target (tolerant, matches the prior
+        // approveMcps behavior).
+      }
+    } else {
+      // "owned" — already correct (e.g. another profile approved the same
+      // personal MCP). Don't rewrite; just adopt the approval.
+      result.skipped.push(name);
+      synced = true;
+    }
+
+    manifest.mcps[id] = {
+      id, name, source_agent,
+      sync_canonical: canonical,
+      sync_canonical_hash: hashCanonical(canonical),
+      source_snapshot: { original_config },
+      env_var_mapping: envVarMapping,
+      synced_to: synced
+        ? { ...(existing?.synced_to ?? {}), [targetAgent]: { synced_at: now, target_name: name } }
+        : (existing?.synced_to ?? {}),
+      removed_at: null,
+      kind: "personal",
+    };
+    dirty = true;
+  }
+
+  if (dirty) writeMcpManifest(manifest, opts?.manifestPath);
+  return result;
+}
+
+/**
+ * Deactivate a profile's approved personal MCPs — remove the mirrored
+ * target-config entry without touching the manifest entry's approval. NOT
+ * the same as genuine removal (tombstoneMcp, used by removeMcp): the
+ * manifest entry is the only record of a personal MCP's approval, so
+ * tombstoning on every profile-switch teardown would permanently kill a
+ * profile's personal MCPs the first time you switched away from it.
+ * Switching back later calls installPersonalMcps again, which sees the
+ * entry still approved and reinstalls it via the "missing" branch — no
+ * special-casing needed, same self-healing state machine as skills.
+ *
+ * Loops synced_to generically (not assuming a single key) — demoteMcpFromTeam
+ * can leave a converted personal entry with more than one target — and skips
+ * any target agent equal to the entry's own source_agent.
+ */
+export async function uninstallPersonalMcps(
+  profile: string,
+  opts?: McpSyncOpts,
+): Promise<InstallPersonalMcpsResult> {
+  const result: InstallPersonalMcpsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  const manifest = readMcpManifest(opts?.manifestPath);
+  const secrets = readSecretsJson();
+
+  for (const entry of Object.values(manifest.mcps)) {
+    if (entry.kind !== "personal" || entry.removed_at !== null) continue;
+
+    for (const [agent, syncEntry] of Object.entries(entry.synced_to) as [Agent, McpManifestSyncEntry][]) {
+      if (agent === entry.source_agent) continue;
+      const configPath = agent === "claude-code" ? opts?.claudeConfigPath : opts?.codexConfigPath;
+      try {
+        const observed = readAgentMcps(agent, configPath)[entry.name];
+        if (!observed) continue; // already gone — no-op
+        if (!nativeEntryEquals(agent, observed, entry.sync_canonical, secrets)) {
+          result.conflicts.push({ name: entry.name, reason: "target-modified" });
+          continue;
+        }
+        await removeAgentMcp(agent, entry.name, configPath);
+        result.skipped.push(entry.name);
+      } catch (e) {
+        result.errors.push(`${entry.name} → ${agent}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  }
+
+  return result;
+}
+
 // ── Approval ──────────────────────────────────────────────────────────────────
 
 /**
- * Approve pending MCPs — write manifest entries and sync to target agent config.
- * This is the only place manifest entries are created.
+ * Approve pending MCPs — thin wrapper delegating to installPersonalMcps,
+ * which owns all manifest reads/writes and the target-config write in one
+ * pass. Kept as a separate export for the desktop RPC's existing call shape;
+ * write ordering is not a hazard here since installPersonalMcps is the sole
+ * writer.
  */
 export async function approveMcps(
   entries: PendingMcpEntry[],
   opts?: McpSyncOpts,
-): Promise<void> {
-  const manifest = readMcpManifest(opts?.manifestPath);
-  const secrets = readSecretsJson(opts?.statePath);
-
-  for (const entry of entries) {
-    const { id, name, source_agent, config: originalConfig, canonical } = entry;
-    const targetAgent: Agent = source_agent === "claude-code" ? "codex" : "claude-code";
-
-    // Build env_var_mapping for secret headers
-    const envVarMapping: Record<string, string> = {};
-    if (canonical.headers) {
-      for (const [header, hv] of Object.entries(canonical.headers)) {
-        if (hv.secret && hv.value_env) {
-          envVarMapping[hv.value_env] = `${header} header`;
-        }
-      }
-    }
-
-    const now = new Date().toISOString();
-    const manifestEntry: McpManifestEntry = {
-      id,
-      name,
-      source_agent,
-      sync_canonical: canonical,
-      sync_canonical_hash: hashCanonical(canonical),
-      source_snapshot: { original_config: originalConfig },
-      env_var_mapping: envVarMapping,
-      synced_to: {},
-      removed_at: null,
-      kind: "personal",
-    };
-
-    // Write to target agent config
-    try {
-      if (targetAgent === "claude-code") {
-        const targetEntry = toClaudeCodeEntry(canonical, secrets);
-        await writeAgentMcp("claude-code", name, targetEntry, opts?.claudeConfigPath);
-      } else {
-        const targetEntry = toCodexEntry(canonical);
-        await writeAgentMcp("codex", name, targetEntry, opts?.codexConfigPath);
-
-        // Persist env vars for Codex bearer auth
-        const envVarsToWrite: Record<string, string> = {};
-        for (const envVar of Object.keys(envVarMapping)) {
-          const literal = secrets[envVar];
-          if (literal) envVarsToWrite[envVar] = literal;
-        }
-        if (Object.keys(envVarsToWrite).length > 0) {
-          writeEnvSh({ ...secrets, ...envVarsToWrite }, opts?.statePath);
-        }
-      }
-
-      manifestEntry.synced_to[targetAgent] = { synced_at: now, target_name: name };
-    } catch {
-      // Partial failure — still write manifest entry without synced_to
-    }
-
-    manifest.mcps[id] = manifestEntry;
-  }
-
-  writeMcpManifest(manifest, opts?.manifestPath);
+): Promise<InstallPersonalMcpsResult> {
+  const inputs: PersonalMcpInput[] = entries.map((entry) => ({
+    id: entry.id,
+    name: entry.name,
+    source_agent: entry.source_agent,
+    canonical: entry.canonical,
+    original_config: entry.config,
+  }));
+  return installPersonalMcps(inputs, "", opts);
 }
 
 // ── Reconcile ─────────────────────────────────────────────────────────────────
@@ -528,6 +687,24 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
   return result;
 }
 
+// ── inspectMcpTarget ───────────────────────────────────────────────────────────
+
+/**
+ * Inspect an observed target-agent config entry against an expected
+ * canonical form. Shared by installTeamMcps and installPersonalMcps so both
+ * agree on what "already correct" vs "conflict" means for a cross-agent MCP
+ * mirror entry. Mirrors scanner.ts's inspectSymlinkTarget for skills.
+ */
+export function inspectMcpTarget(
+  agent: Agent,
+  observed: Record<string, unknown> | undefined,
+  expectedCanonical: CanonicalMcp,
+  secrets: Record<string, string>,
+): "missing" | "owned" | "conflict" {
+  if (!observed) return "missing";
+  return nativeEntryEquals(agent, observed, expectedCanonical, secrets) ? "owned" : "conflict";
+}
+
 // ── Team MCP management ───────────────────────────────────────────────────────
 
 export interface InstallTeamMcpsResult {
@@ -594,7 +771,7 @@ export async function installTeamMcps(
     const targetIsOwned = (agent: Agent, observed: Record<string, unknown> | undefined): boolean => {
       if (!observed) return true;
       if (!previous || previous.removed_at || previous.kind !== "team") return false;
-      return nativeEntryEquals(agent, observed, previous.sync_canonical, secrets);
+      return inspectMcpTarget(agent, observed, previous.sync_canonical, secrets) === "owned";
     };
     if (!targetIsOwned("claude-code", claudeMcps[name]) || !targetIsOwned("codex", codexMcps[name])) {
       manifestEntry.install_state = "conflict";

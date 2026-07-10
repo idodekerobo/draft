@@ -1062,7 +1062,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       approveMcps: async ({ mcps }) => {
         try {
-          await approveMcpsCore(mcps);
+          const result = await approveMcpsCore(mcps);
+          if (result.errors.length > 0 || result.conflicts.length > 0) {
+            const parts = [
+              ...result.errors,
+              ...result.conflicts.map((c) => `${c.name}: ${c.reason}`),
+            ];
+            return { ok: false, error: parts.join("; ") };
+          }
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Failed to approve MCPs." };
