@@ -19,10 +19,14 @@ import {
   readMcpManifest,
 } from "./manifest";
 import {
+  installPersonalMcps,
   installTeamMcps,
+  uninstallPersonalMcps,
   uninstallTeamMcps,
   type McpSyncOpts,
+  type PersonalMcpInput,
 } from "./mcp-sync";
+import type { McpManifest } from "./manifest";
 import {
   readWorkspaceMcpManifest,
   WorkspaceMcpValidationError,
@@ -127,6 +131,16 @@ function personalSkillsFromManifest(manifest: SkillManifest): PersonalSkillInput
   return Object.values(manifest.skills)
     .filter((entry) => entry.kind === "personal" && entry.status === "approved" && entry.removed_at === null)
     .map((entry) => ({ name: entry.name, agent: entry.source_agent, sourcePath: entry.source_path }));
+}
+
+/** Same reasoning as personalSkillsFromManifest, for MCPs — no status field on McpManifestEntry, so removed_at alone gates "active". */
+function personalMcpsFromManifest(manifest: McpManifest): PersonalMcpInput[] {
+  return Object.values(manifest.mcps)
+    .filter((entry) => entry.kind === "personal" && entry.removed_at === null)
+    .map((entry) => ({
+      id: entry.id, name: entry.name, source_agent: entry.source_agent,
+      canonical: entry.sync_canonical, original_config: entry.source_snapshot.original_config,
+    }));
 }
 
 export function validateProfileAssets(
@@ -235,14 +249,54 @@ export async function installProfileAssets(
   result.conflicts.push(...mcps.conflicts.map((conflict) => ({
     kind: "mcp" as const, name: conflict.name, profile, reason: conflict.reason,
   })));
+
+  const personalMcps = await installPersonalMcps(
+    personalMcpsFromManifest(readMcpManifest(resolved.mcpManifestPath)),
+    profile,
+    mcpOpts(resolved),
+  );
+  result.installedMcps.push(...personalMcps.installed);
+  result.errors.push(...personalMcps.errors);
+  result.conflicts.push(...personalMcps.conflicts.map((conflict) => ({
+    kind: "mcp" as const, name: conflict.name, profile, reason: conflict.reason,
+  })));
+
+  rebuildEnvSh(profile, resolved);
+  return result;
+}
+
+/**
+ * Rebuild env.sh (the file Codex bearer-auth env vars are sourced from) for
+ * whichever profile is active. Required secret names come from both this
+ * profile's team MCPs (profile-scoped secrets.json) and its approved
+ * personal MCPs (global secrets.json — see installPersonalMcps's doc
+ * comment on why personal MCP secrets are deliberately not profile-scoped).
+ * Exported so callers outside the install/switch flow — the desktop
+ * approveMcps/setMcpSecret RPC handlers — can trigger the same rebuild
+ * immediately after a direct approval, not only on the next profile switch.
+ */
+export function rebuildEnvSh(profile: string, paths?: Partial<TeamAssetPaths>): void {
+  const resolved = resolvePaths(profile, paths);
+  const workspaceMcps = readWorkspaceMcpManifest(resolved.workspacePath);
+  const teamSecretNames = workspaceMcps.servers.flatMap((entry) => entry.required_secrets);
+
+  const mcpManifest = readMcpManifest(resolved.mcpManifestPath);
+  const personalSecretNames = Object.values(mcpManifest.mcps)
+    .filter((entry) => entry.kind === "personal" && entry.removed_at === null)
+    .flatMap((entry) => Object.keys(entry.env_var_mapping));
+
+  const requiredSecretNames = new Set([...teamSecretNames, ...personalSecretNames]);
   const profileSecrets = readSecretsJson(resolved.statePath);
-  const requiredSecretNames = new Set(workspaceMcps.servers.flatMap((entry) => entry.required_secrets));
+  const globalSecrets = readSecretsJson();
+
   writeEnvSh(Object.fromEntries(
     [...requiredSecretNames]
-      .filter((name) => typeof profileSecrets[name] === "string" && profileSecrets[name])
-      .map((name) => [name, profileSecrets[name]!]),
+      .map((name): [string, string] | undefined => {
+        const value = profileSecrets[name] ?? globalSecrets[name];
+        return typeof value === "string" && value ? [name, value] : undefined;
+      })
+      .filter((entry): entry is [string, string] => entry !== undefined),
   ), resolved.envStatePath);
-  return result;
 }
 
 export async function uninstallProfileAssets(
@@ -290,6 +344,16 @@ export async function uninstallProfileAssets(
   result.conflicts.push(...mcpResult.conflicts.map((conflict) => ({
     kind: "mcp" as const, name: conflict.name, profile, reason: conflict.reason,
   })));
+
+  result.removedMcps.push(...Object.values(mcpManifest.mcps)
+    .filter((entry) => entry.kind === "personal" && entry.removed_at === null)
+    .map((entry) => entry.name));
+  const personalMcpUninstall = await uninstallPersonalMcps(profile, mcpOpts(resolved));
+  result.errors.push(...personalMcpUninstall.errors);
+  result.conflicts.push(...personalMcpUninstall.conflicts.map((conflict) => ({
+    kind: "mcp" as const, name: conflict.name, profile, reason: conflict.reason,
+  })));
+
   writeEnvSh({}, resolved.envStatePath);
   return result;
 }

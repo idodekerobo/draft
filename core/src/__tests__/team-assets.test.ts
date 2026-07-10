@@ -12,8 +12,9 @@ import {
   withProfileSwitchLock,
   type TeamAssetPaths,
 } from "../sync/team-assets";
-import { readMcpManifest } from "../sync/manifest";
+import { readMcpManifest, type CanonicalMcp } from "../sync/manifest";
 import { readAgentMcps } from "../agents/mcp";
+import { installPersonalMcps } from "../sync/mcp-sync";
 import { installPersonalSkills, readSkillManifest } from "../scanner";
 
 const TMP = join("/tmp", `draft-team-assets-${process.pid}`);
@@ -388,5 +389,68 @@ describe("withProfileSwitchLock", () => {
     // The actual new owner's release, with the matching token, does work.
     releaseProfileSwitchLock("new-token", lockPath);
     expect(existsSync(lockPath)).toBe(false);
+  });
+});
+
+describe("personal MCP profile-switch lifecycle", () => {
+  it("switch A -> B -> A deactivates/reinstalls each profile's personal MCP config, never tombstoning", async () => {
+    const common = paths();
+    const lifecyclePaths: Partial<TeamAssetPaths> = {
+      workspacesDir: common.workspacesDir,
+      activeProfileFile: common.activeProfileFile,
+      claudeSkillsDir: common.claudeSkillsDir,
+      codexSkillsDir: common.codexSkillsDir,
+      claudeConfigPath: common.claudeConfigPath,
+      codexConfigPath: common.codexConfigPath,
+      envStatePath: common.envStatePath,
+    };
+    mkdirSync(join(common.activeProfileFile, ".."), { recursive: true });
+    writeFileSync(common.activeProfileFile, "acme\n");
+
+    const acmeMcpManifestPath = join(common.workspacesDir, "acme", "config", "mcp-manifest.json");
+    const personalMcpManifestPath = join(common.workspacesDir, "personal", "config", "mcp-manifest.json");
+    const canonicalA: CanonicalMcp = { type: "http", url: "https://a.example.com" };
+    const canonicalB: CanonicalMcp = { type: "http", url: "https://b.example.com" };
+
+    // Seed acme's approval and let it install live (acme is the active profile).
+    await installPersonalMcps(
+      [{ id: "codex:a-mcp", name: "a-mcp", source_agent: "codex", canonical: canonicalA, original_config: {} }],
+      "acme",
+      { claudeConfigPath: common.claudeConfigPath, codexConfigPath: common.codexConfigPath, manifestPath: acmeMcpManifestPath },
+    );
+    // Seed "personal" profile's approval too, but it isn't active yet, so its
+    // config entry is not live on disk — matches how a real inactive
+    // profile's manifest looks (approved, but currently un-synced).
+    await installPersonalMcps(
+      [{ id: "codex:b-mcp", name: "b-mcp", source_agent: "codex", canonical: canonicalB, original_config: {} }],
+      "personal",
+      {
+        claudeConfigPath: join(common.workspacesDir, "unused-claude.json"),
+        codexConfigPath: join(common.workspacesDir, "unused-codex", "config.toml"),
+        manifestPath: personalMcpManifestPath,
+      },
+    );
+
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["a-mcp"]).toBeDefined();
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["b-mcp"]).toBeUndefined();
+
+    const switched = await switchProfileAssets("acme", "personal", lifecyclePaths);
+
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["a-mcp"]).toBeUndefined();
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["b-mcp"]).toBeDefined();
+    expect(switched.installedMcps).toContain("b-mcp");
+    expect(switched.removedMcps).toContain("a-mcp");
+
+    const acmeEntry = JSON.parse(readFileSync(acmeMcpManifestPath, "utf8")).mcps["codex:a-mcp"];
+    expect(acmeEntry.removed_at).toBeNull();
+
+    const switchedBack = await switchProfileAssets("personal", "acme", lifecyclePaths);
+
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["a-mcp"]).toBeDefined();
+    expect(readAgentMcps("claude-code", common.claudeConfigPath)["b-mcp"]).toBeUndefined();
+    expect(switchedBack.installedMcps).toContain("a-mcp");
+
+    const personalEntry = JSON.parse(readFileSync(personalMcpManifestPath, "utf8")).mcps["codex:b-mcp"];
+    expect(personalEntry.removed_at).toBeNull();
   });
 });
