@@ -867,13 +867,16 @@ export function removeSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
         continue;
       }
 
-      if (entry) {
-        const actual = realpathSync(resolve(dirname(linkPath), readlinkSync(linkPath)));
-        const expected = realpathSync(entry.source_path);
-        if (actual !== expected) {
-          result.errors.push(`${linkPath}: target does not match recorded source — refusing to delete`);
-          continue;
-        }
+      // Always verify ownership before unlinking — fall back to the
+      // ScannedSkill's own dirPath (the source being removed) when there's
+      // no manifest entry, so an untracked/never-approved skill still can't
+      // unlink an unrelated symlink that happens to share its target name.
+      const expectedSource = entry ? entry.source_path : resolve(skill.dirPath);
+      const actual = realpathSync(resolve(dirname(linkPath), readlinkSync(linkPath)));
+      const expected = realpathSync(expectedSource);
+      if (actual !== expected) {
+        result.errors.push(`${linkPath}: target does not match recorded source — refusing to delete`);
+        continue;
       }
 
       unlinkSync(linkPath);
@@ -937,6 +940,26 @@ export function installTeamSkills(
   const now = new Date().toISOString();
   let dirty = false;
 
+  // Mirror image of installPersonalSkills's isLiveTeamCollision check: if an
+  // approved personal entry already lives at this target (its own symlink
+  // happens to already resolve to what would be the team's absoluteSource),
+  // inspectSymlinkTarget alone would report "owned" — team install must not
+  // silently adopt that slot, or the personal entry is left dangling
+  // (approved, but its mirror reassigned) while the live symlink now belongs
+  // to two manifest entries.
+  const isLivePersonalCollision = (name: string, linkPath: string, targetAgent: Agent): boolean => {
+    const sourceAgent: Agent = targetAgent === "claude-code" ? "codex" : "claude-code";
+    const personalEntry = manifest.skills[`${sourceAgent}:${name}`];
+    if (!personalEntry || personalEntry.kind !== "personal" || personalEntry.status !== "approved" || personalEntry.removed_at !== null) return false;
+    const personalSync = personalEntry.synced_to[targetAgent];
+    if (!personalSync || personalSync.symlink_path !== linkPath) return false;
+    try {
+      return lstatSync(linkPath).isSymbolicLink() && realpathSync(linkPath) === realpathSync(personalEntry.source_path);
+    } catch {
+      return false;
+    }
+  };
+
   for (const { name, sourcePath } of skills) {
     const absoluteSource = resolve(sourcePath);
     const claudeLinkPath = join(claudeDir, name);
@@ -948,12 +971,15 @@ export function installTeamSkills(
       continue;
     }
 
+    const claudePersonalCollision = isLivePersonalCollision(name, claudeLinkPath, "claude-code");
+    const codexPersonalCollision = isLivePersonalCollision(name, codexLinkPath, "codex");
+
     const claudeState = inspectSymlinkTarget(claudeLinkPath, absoluteSource);
     const codexState = inspectSymlinkTarget(codexLinkPath, absoluteSource);
-    if (claudeState === "conflict" || codexState === "conflict") {
+    if (claudeState === "conflict" || codexState === "conflict" || claudePersonalCollision || codexPersonalCollision) {
       const conflictingPaths = [
-        ...(claudeState === "conflict" ? [claudeLinkPath] : []),
-        ...(codexState === "conflict" ? [codexLinkPath] : []),
+        ...(claudeState === "conflict" || claudePersonalCollision ? [claudeLinkPath] : []),
+        ...(codexState === "conflict" || codexPersonalCollision ? [codexLinkPath] : []),
       ];
       result.skipped.push(...conflictingPaths);
       result.conflicts.push({ name, reason: "personal-name-collision" });
@@ -1136,18 +1162,29 @@ export function installPersonalSkills(
   const now = new Date().toISOString();
   let dirty = false;
 
-  // Is `linkPath` a live symlink currently owned by an active team entry?
-  // Matching on a manifest entry's synced_to.symlink_path string alone is
-  // unreliable — a stale manifest entry can match even if the live
-  // filesystem target has since changed. Verify the realpath live instead.
-  const isLiveTeamCollision = (linkPath: string): boolean => {
-    for (const teamEntry of Object.values(manifest.skills)) {
-      if (teamEntry.kind !== "team" || teamEntry.status !== "approved" || teamEntry.removed_at !== null) continue;
+  // Is `linkPath` currently owned by an active team entry for this exact
+  // name? Look up `team:${name}` directly rather than looping every team
+  // entry by realpath alone — matching purely on realpath (without also
+  // confirming the entry's own name/synced_to correspond to this linkPath)
+  // can false-positive on an unrelated team entry whose source happens to
+  // resolve to the same real directory. The `team:${name}` id convention is
+  // enforced everywhere entries are written today, but isn't structurally
+  // guaranteed, so fall back to a name-based scan before concluding "no
+  // collision" (belt-and-suspenders).
+  const isLiveTeamCollision = (linkPath: string, name: string, targetAgent: Agent): boolean => {
+    const checkEntry = (teamEntry: SkillManifestEntry | undefined): boolean => {
+      if (!teamEntry || teamEntry.kind !== "team" || teamEntry.status !== "approved" || teamEntry.removed_at !== null) return false;
+      const teamSync = teamEntry.synced_to[targetAgent];
+      if (!teamSync || teamSync.symlink_path !== linkPath) return false;
       try {
-        if (lstatSync(linkPath).isSymbolicLink() && realpathSync(linkPath) === realpathSync(teamEntry.source_path)) {
-          return true;
-        }
-      } catch { /* not a live collision */ }
+        return lstatSync(linkPath).isSymbolicLink() && realpathSync(linkPath) === realpathSync(teamEntry.source_path);
+      } catch {
+        return false;
+      }
+    };
+    if (checkEntry(manifest.skills[`team:${name}`])) return true;
+    for (const teamEntry of Object.values(manifest.skills)) {
+      if (teamEntry.kind === "team" && teamEntry.name === name && checkEntry(teamEntry)) return true;
     }
     return false;
   };
@@ -1165,14 +1202,41 @@ export function installPersonalSkills(
       continue;
     }
 
+    // Team ownership of this name is checked BEFORE inspecting the live
+    // symlink target at all — a coincidental realpath match must never let a
+    // personal skill silently "adopt" a team-owned slot (inspectSymlinkTarget
+    // would report that as "owned", not "conflict", since the target already
+    // resolves correctly — but it's the team's, not this personal skill's).
+    // A later uninstallPersonalSkills deactivate would then delete the
+    // team's live mirror, believing it owns it.
+    if (isLiveTeamCollision(linkPath, name, targetAgent)) {
+      const reason: PersonalSkillConflictReason = "team-name-collision";
+      result.conflicts.push({ name, reason });
+      manifest.skills[id] = {
+        id,
+        name,
+        source_agent: agent,
+        source_path: absoluteSource,
+        skill_dir_hash: hashSkillDir(absoluteSource),
+        added_at: existing?.added_at ?? now,
+        approved_at: existing?.approved_at ?? now,
+        status: "conflict",
+        synced_to: existing?.synced_to ?? {},
+        removed_at: null,
+        kind: "personal",
+        install_state: "conflict",
+        conflict_reason: reason,
+      };
+      dirty = true;
+      continue;
+    }
+
     let createdSymlink = false;
     try {
       const state = inspectSymlinkTarget(linkPath, absoluteSource);
 
       if (state === "conflict") {
-        const reason: PersonalSkillConflictReason = isLiveTeamCollision(linkPath)
-          ? "team-name-collision"
-          : "personal-name-collision";
+        const reason: PersonalSkillConflictReason = "personal-name-collision";
         result.conflicts.push({ name, reason });
         manifest.skills[id] = {
           id,
