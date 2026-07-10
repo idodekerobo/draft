@@ -5,11 +5,13 @@ import {
   approveMcps,
   installPersonalMcps,
   installTeamMcps,
+  setTeamMcpSecret,
   uninstallPersonalMcps,
   type PersonalMcpInput,
 } from "../sync/mcp-sync";
 import { readMcpManifest, type CanonicalMcp } from "../sync/manifest";
 import { readAgentMcps } from "../agents/mcp";
+import { readSecretsWithGlobalFallback } from "../secrets";
 
 const TMP = join("/tmp", `draft-mcp-sync-${process.pid}`);
 afterEach(() => rmSync(TMP, { recursive: true, force: true }));
@@ -267,5 +269,50 @@ describe("approveMcps delegation", () => {
     const manifest = readMcpManifest(opts.manifestPath);
     expect(manifest.mcps["codex:linear"]).toMatchObject({ kind: "personal" });
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toMatchObject({ url: canonical.url });
+  });
+});
+
+describe("team-MCP secret scoping", () => {
+  it("readSecretsWithGlobalFallback: profile values win, global fills in the gaps", () => {
+    const profileState = join(TMP, "scoping", "profile-state");
+    const globalState = join(TMP, "scoping", "global-state");
+    mkdirSync(profileState, { recursive: true });
+    mkdirSync(globalState, { recursive: true });
+    writeFileSync(join(profileState, "secrets.json"), JSON.stringify({ SHARED: "profile", PROFILE_ONLY: "p" }));
+    writeFileSync(join(globalState, "secrets.json"), JSON.stringify({ SHARED: "global", GLOBAL_ONLY: "g" }));
+
+    expect(readSecretsWithGlobalFallback(profileState, globalState)).toEqual({
+      SHARED: "profile",
+      PROFILE_ONLY: "p",
+      GLOBAL_ONLY: "g",
+    });
+  });
+
+  it("setTeamMcpSecret writes only the profile-scoped secrets.json, and the install reads it back", async () => {
+    const statePath = join(TMP, "secretscope", "profile-state");
+    const opts = { ...mcpOpts("secretscope"), statePath };
+    const secretCanonical: CanonicalMcp = {
+      type: "http",
+      url: "https://mcp.example.com",
+      headers: { Authorization: { value_env: "DRAFT_MCP_LINEAR_TOKEN", secret: true } },
+    };
+
+    await installTeamMcps(
+      [{ name: "linear", canonical: secretCanonical, required_secrets: ["DRAFT_MCP_LINEAR_TOKEN"] }],
+      TMP,
+      "acme",
+      opts,
+    );
+    expect(readMcpManifest(opts.manifestPath).mcps["team:linear"].install_state).toBe("pending-secrets");
+
+    const result = await setTeamMcpSecret("linear", "acme", "DRAFT_MCP_LINEAR_TOKEN", "sekrit", opts);
+
+    expect(result.ok).toBe(true);
+    expect(result.nowInstalled).toBe(true);
+    // The secret landed in the profile-scoped file — and only the new var,
+    // never a merged view that would copy global values into the profile.
+    expect(JSON.parse(readFileSync(join(statePath, "secrets.json"), "utf8")))
+      .toEqual({ DRAFT_MCP_LINEAR_TOKEN: "sekrit" });
+    expect(readMcpManifest(opts.manifestPath).mcps["team:linear"].install_state).toBe("installed");
   });
 });

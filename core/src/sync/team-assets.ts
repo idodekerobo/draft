@@ -14,7 +14,7 @@ import {
   type SkillManifest,
   type TeamSkillInput,
 } from "../scanner";
-import { readSecretsJson, writeEnvSh } from "../secrets";
+import { readSecretsWithGlobalFallback, writeEnvSh } from "../secrets";
 import {
   readMcpManifest,
 } from "./manifest";
@@ -285,13 +285,12 @@ export function rebuildEnvSh(profile: string, paths?: Partial<TeamAssetPaths>): 
     .flatMap((entry) => Object.keys(entry.env_var_mapping));
 
   const requiredSecretNames = new Set([...teamSecretNames, ...personalSecretNames]);
-  const profileSecrets = readSecretsJson(resolved.statePath);
-  const globalSecrets = readSecretsJson();
+  const secrets = readSecretsWithGlobalFallback(resolved.statePath);
 
   writeEnvSh(Object.fromEntries(
     [...requiredSecretNames]
       .map((name): [string, string] | undefined => {
-        const value = profileSecrets[name] ?? globalSecrets[name];
+        const value = secrets[name];
         return typeof value === "string" && value ? [name, value] : undefined;
       })
       .filter((entry): entry is [string, string] => entry !== undefined),

@@ -1327,7 +1327,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       setMcpSecret: async ({ name, envVar, value }) => {
         const profile = getActiveProfile();
-        const result = await setTeamMcpSecret(name, profile, envVar, value);
+        // Team-MCP secrets are profile-scoped (same path resolvePaths uses in
+        // team-assets.ts) — without this the secret lands in the global
+        // secrets.json and the next profile switch, which reads the
+        // profile-scoped file, would flip the MCP back to pending-secrets.
+        const result = await setTeamMcpSecret(name, profile, envVar, value, {
+          statePath: join(getWorkspacePath(profile), "config"),
+        });
         if (!result.ok) return { ok: false, error: result.error, nowInstalled: false };
         if (result.nowInstalled) {
           try { rebuildEnvSh(profile); } catch { /* non-fatal */ }

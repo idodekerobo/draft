@@ -14,7 +14,7 @@ import {
 } from "./manifest";
 import { readWorkspaceMcpManifest, writeWorkspaceMcpManifest, type WorkspaceMcpEntry } from "./workspace-mcp";
 import { ParseError } from "./atomic-write";
-import { isSecretHeader, generateEnvVarName, writeSecretsJson, readSecretsJson } from "../secrets";
+import { isSecretHeader, generateEnvVarName, writeSecretsJson, readSecretsJson, readSecretsWithGlobalFallback } from "../secrets";
 import type { AssetConflictReason } from "../scanner";
 
 export type { WorkspaceMcpEntry };
@@ -553,7 +553,7 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
     else result.errors.push(`Failed to read ~/.codex/config.toml: ${e}`);
   }
 
-  const secrets = readSecretsJson(opts?.statePath);
+  const secrets = readSecretsWithGlobalFallback(opts?.statePath);
 
   for (const [id, entry] of Object.entries(manifest.mcps)) {
     if (entry.removed_at) {
@@ -748,7 +748,7 @@ export async function installTeamMcps(
     errors: [],
   };
   const manifest = readMcpManifest(opts?.manifestPath);
-  const secrets = readSecretsJson(opts?.statePath);
+  const secrets = readSecretsWithGlobalFallback(opts?.statePath);
   const now = new Date().toISOString();
   let claudeMcps: Record<string, Record<string, unknown>> = {};
   let codexMcps: Record<string, Record<string, unknown>> = {};
@@ -880,7 +880,7 @@ async function uninstallTeamMcpEntries(
     installed: [], installed_targets: [], missing_secrets: [], conflicts: [], errors: [],
   };
   const manifest = readMcpManifest(opts?.manifestPath);
-  const secrets = readSecretsJson(opts?.statePath);
+  const secrets = readSecretsWithGlobalFallback(opts?.statePath);
 
   for (const [id, entry] of Object.entries(manifest.mcps)) {
     if (entry.kind !== "team") continue;
@@ -1021,10 +1021,18 @@ export async function setTeamMcpSecret(
 
   if (!entry) return { ok: false, error: `Team MCP not found: ${mcpName}`, nowInstalled: false };
 
-  // Write secret to secrets.json
-  const secrets = readSecretsJson(opts?.statePath);
-  secrets[envVar] = value;
-  writeSecretsJson(secrets, opts?.statePath);
+  // Write the secret to the profile-scoped secrets.json. The write must
+  // persist only the profile file's own contents plus the new var — never
+  // the merged global-fallback view, or global legacy values get copied
+  // wholesale into every profile file.
+  const profileSecrets = readSecretsJson(opts?.statePath);
+  profileSecrets[envVar] = value;
+  writeSecretsJson(profileSecrets, opts?.statePath);
+
+  // All subsequent lookups (missing-secret check, toClaudeCodeEntry,
+  // nativeEntryEquals) see profile values first, global legacy values as
+  // fallback.
+  const secrets = readSecretsWithGlobalFallback(opts?.statePath);
 
   // Check if all secrets are now present
   const stillMissing = (entry.pending_secrets ?? []).filter((s) => s !== envVar && !secrets[s]);
