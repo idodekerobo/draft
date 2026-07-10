@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { writeFileSync, readFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
+import { writeFileSync, readFileSync, mkdirSync, rmSync, symlinkSync, lstatSync, readlinkSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 import {
   scanSkillDirectories,
@@ -8,6 +8,10 @@ import {
   isBackupDirName,
   scanMCPConnections,
   createSymlinks,
+  removeSymlinks,
+  installTeamSkills,
+  installPersonalSkills,
+  uninstallPersonalSkills,
   readSkillManifest,
   writeSkillManifest,
   hashSkillDir,
@@ -569,6 +573,316 @@ describe("createSymlinks", () => {
     expect(result.skipped).toEqual([]);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain("my-skill");
+  });
+});
+
+// ── installPersonalSkills ────────────────────────────────────────────────────
+
+describe("installPersonalSkills", () => {
+  function skillOpts(tag: string) {
+    return {
+      claudeSkillsDir: join(TMP, `pc-${tag}`, "claude"),
+      codexSkillsDir: join(TMP, `pc-${tag}`, "codex"),
+      manifestPath: join(TMP, `pc-${tag}`, "skill-manifest.json"),
+    };
+  }
+
+  it("missing target: creates the symlink and approves the entry", () => {
+    const opts = skillOpts("missing");
+    const source = join(TMP, "personal-src-missing");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "SKILL.md"), "# skill\n");
+
+    const result = installPersonalSkills(
+      [{ name: "notes", agent: "claude-code", sourcePath: source }],
+      "acme",
+      opts,
+    );
+
+    expect(result.installed).toEqual(["notes"]);
+    expect(result.conflicts).toEqual([]);
+    expect(result.errors).toEqual([]);
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    const manifest = readSkillManifest(opts.manifestPath);
+    expect(manifest.skills["claude-code:notes"]).toMatchObject({
+      kind: "personal", status: "approved", removed_at: null,
+    });
+  });
+
+  it("owned target: adopts an already-correct symlink without recreating it", () => {
+    const opts = skillOpts("owned");
+    const source = join(TMP, "personal-src-owned");
+    mkdirSync(source, { recursive: true });
+    mkdirSync(opts.codexSkillsDir, { recursive: true });
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    symlinkSync(resolve(source), linkPath);
+    const linkTarget = readlinkSync(linkPath);
+
+    const result = installPersonalSkills(
+      [{ name: "notes", agent: "claude-code", sourcePath: source }],
+      "acme",
+      opts,
+    );
+
+    expect(result.installed).toEqual([]);
+    expect(result.skipped).toEqual(["notes"]);
+    expect(result.conflicts).toEqual([]);
+    // symlink untouched (same target, not recreated)
+    expect(readlinkSync(linkPath)).toBe(linkTarget);
+    const manifest = readSkillManifest(opts.manifestPath);
+    expect(manifest.skills["claude-code:notes"]?.status).toBe("approved");
+  });
+
+  it("reverse collision: reports team-name-collision only when the live symlink resolves to an active team entry, and leaves the team entry untouched", () => {
+    const opts = skillOpts("teamcollision");
+    const teamSource = join(TMP, "team-src");
+    mkdirSync(teamSource, { recursive: true });
+    writeFileSync(join(teamSource, "SKILL.md"), "# team\n");
+    const personalSource = join(TMP, "personal-src-teamcollision");
+    mkdirSync(personalSource, { recursive: true });
+
+    installTeamSkills([{ name: "review", sourcePath: teamSource }], "acme", opts);
+    const teamEntryBefore = readSkillManifest(opts.manifestPath).skills["team:review"];
+    expect(teamEntryBefore?.status).toBe("approved");
+
+    const result = installPersonalSkills(
+      [{ name: "review", agent: "claude-code", sourcePath: personalSource }],
+      "acme",
+      opts,
+    );
+
+    expect(result.conflicts).toEqual([{ name: "review", reason: "team-name-collision" }]);
+    const manifest = readSkillManifest(opts.manifestPath);
+    expect(manifest.skills["team:review"]).toEqual(teamEntryBefore);
+    expect(manifest.skills["claude-code:review"]?.status).toBe("conflict");
+    expect(manifest.skills["claude-code:review"]?.conflict_reason).toBe("team-name-collision");
+  });
+
+  it("personal-vs-personal collision: reports personal-name-collision when the target is owned by an unrelated personal source", () => {
+    const opts = skillOpts("personalcollision");
+    const otherSource = join(TMP, "other-personal-src");
+    mkdirSync(otherSource, { recursive: true });
+    mkdirSync(opts.codexSkillsDir, { recursive: true });
+    symlinkSync(resolve(otherSource), join(opts.codexSkillsDir, "notes"));
+
+    const newSource = join(TMP, "new-personal-src");
+    mkdirSync(newSource, { recursive: true });
+
+    const result = installPersonalSkills(
+      [{ name: "notes", agent: "claude-code", sourcePath: newSource }],
+      "acme",
+      opts,
+    );
+
+    expect(result.conflicts).toEqual([{ name: "notes", reason: "personal-name-collision" }]);
+  });
+
+  it("is idempotent — calling twice in a row is safe", () => {
+    const opts = skillOpts("idempotent");
+    const source = join(TMP, "personal-src-idempotent");
+    mkdirSync(source, { recursive: true });
+
+    const input = [{ name: "notes", agent: "claude-code" as const, sourcePath: source }];
+    const first = installPersonalSkills(input, "acme", opts);
+    const second = installPersonalSkills(input, "acme", opts);
+
+    expect(first.installed).toEqual(["notes"]);
+    expect(second.installed).toEqual([]);
+    expect(second.skipped).toEqual(["notes"]);
+    expect(second.errors).toEqual([]);
+    expect(second.conflicts).toEqual([]);
+  });
+});
+
+// ── uninstallPersonalSkills ──────────────────────────────────────────────────
+
+describe("uninstallPersonalSkills", () => {
+  function skillOpts(tag: string) {
+    return {
+      claudeSkillsDir: join(TMP, `pu-${tag}`, "claude"),
+      codexSkillsDir: join(TMP, `pu-${tag}`, "codex"),
+      manifestPath: join(TMP, `pu-${tag}`, "skill-manifest.json"),
+    };
+  }
+
+  it("unlinks the symlink but leaves the manifest entry approved (deactivate, not tombstone)", () => {
+    const opts = skillOpts("deactivate");
+    const source = join(TMP, "personal-src-deactivate");
+    mkdirSync(source, { recursive: true });
+    installPersonalSkills([{ name: "notes", agent: "claude-code", sourcePath: source }], "acme", opts);
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+
+    uninstallPersonalSkills("acme", opts);
+
+    expect(() => lstatSync(linkPath)).toThrow();
+    const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    expect(entry?.status).toBe("approved");
+    expect(entry?.removed_at).toBeNull();
+  });
+
+  it("switch A -> B -> A restores A's personal skills (deactivate/reinstall round-trip)", () => {
+    const opts = skillOpts("roundtrip");
+    const sourceA = join(TMP, "personal-src-a");
+    const sourceB = join(TMP, "personal-src-b");
+    mkdirSync(sourceA, { recursive: true });
+    mkdirSync(sourceB, { recursive: true });
+
+    installPersonalSkills([{ name: "a-skill", agent: "claude-code", sourcePath: sourceA }], "profile-a", opts);
+    const linkA = join(opts.codexSkillsDir, "a-skill");
+    expect(lstatSync(linkA).isSymbolicLink()).toBe(true);
+
+    // switch away from A
+    uninstallPersonalSkills("profile-a", opts);
+    expect(() => lstatSync(linkA)).toThrow();
+
+    // install B's own personal skill
+    installPersonalSkills([{ name: "b-skill", agent: "claude-code", sourcePath: sourceB }], "profile-b", opts);
+    expect(lstatSync(join(opts.codexSkillsDir, "b-skill")).isSymbolicLink()).toBe(true);
+
+    // switch back to A
+    uninstallPersonalSkills("profile-b", opts);
+    const reinstallResult = installPersonalSkills(
+      [{ name: "a-skill", agent: "claude-code", sourcePath: sourceA }],
+      "profile-a",
+      opts,
+    );
+
+    expect(reinstallResult.installed).toEqual(["a-skill"]);
+    expect(lstatSync(linkA).isSymbolicLink()).toBe(true);
+    expect(readSkillManifest(opts.manifestPath).skills["claude-code:a-skill"]?.status).toBe("approved");
+  });
+
+  it("target-modified conflict: symlink now points elsewhere, entry left untouched and not tombstoned", () => {
+    const opts = skillOpts("targetmodified");
+    const source = join(TMP, "personal-src-targetmodified");
+    mkdirSync(source, { recursive: true });
+    installPersonalSkills([{ name: "notes", agent: "claude-code", sourcePath: source }], "acme", opts);
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    unlinkSync(linkPath);
+    const otherSource = join(TMP, "other-src-targetmodified");
+    mkdirSync(otherSource, { recursive: true });
+    symlinkSync(resolve(otherSource), linkPath);
+
+    const result = uninstallPersonalSkills("acme", opts);
+
+    expect(result.conflicts).toEqual([{ name: "notes", reason: "target-modified" }]);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true); // untouched
+    const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    expect(entry?.status).toBe("approved");
+    expect(entry?.removed_at).toBeNull();
+  });
+
+  it("already-deactivated entry (symlink already gone) is a no-op", () => {
+    const opts = skillOpts("alreadygone");
+    const source = join(TMP, "personal-src-alreadygone");
+    mkdirSync(source, { recursive: true });
+    installPersonalSkills([{ name: "notes", agent: "claude-code", sourcePath: source }], "acme", opts);
+    unlinkSync(join(opts.codexSkillsDir, "notes"));
+
+    const result = uninstallPersonalSkills("acme", opts);
+
+    expect(result.errors).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("ignores team-kind entries entirely", () => {
+    const opts = skillOpts("ignoreteam");
+    const teamSource = join(TMP, "team-src-ignore");
+    mkdirSync(teamSource, { recursive: true });
+    writeFileSync(join(teamSource, "SKILL.md"), "# team\n");
+    installTeamSkills([{ name: "review", sourcePath: teamSource }], "acme", opts);
+    const claudeTarget = join(opts.claudeSkillsDir, "review");
+    const codexTarget = join(opts.codexSkillsDir, "review");
+    expect(lstatSync(claudeTarget).isSymbolicLink()).toBe(true);
+    expect(lstatSync(codexTarget).isSymbolicLink()).toBe(true);
+
+    uninstallPersonalSkills("acme", opts);
+
+    expect(lstatSync(claudeTarget).isSymbolicLink()).toBe(true);
+    expect(lstatSync(codexTarget).isSymbolicLink()).toBe(true);
+  });
+});
+
+// ── removeSymlinks (genuine, permanent removal) ───────────────────────────────
+
+describe("removeSymlinks", () => {
+  function skillOpts(tag: string) {
+    return {
+      claudeSkillsDir: join(TMP, `rm-${tag}`, "claude"),
+      codexSkillsDir: join(TMP, `rm-${tag}`, "codex"),
+      manifestPath: join(TMP, `rm-${tag}`, "skill-manifest.json"),
+    };
+  }
+
+  function approvedSkill(opts: ReturnType<typeof skillOpts>, name: string): { skill: ScannedSkill; source: string } {
+    const source = join(TMP, `rm-source-${name}-${Math.random()}`);
+    mkdirSync(source, { recursive: true });
+    const skill: ScannedSkill = {
+      name, agent: "claude-code", dirPath: source, files: [],
+      description: "", descriptionTokenCount: 0, tokenCount: 0,
+    };
+    createSymlinks([skill], opts);
+    return { skill, source };
+  }
+
+  it("removes the symlink and tombstones the manifest entry", () => {
+    const opts = skillOpts("removes");
+    const { skill } = approvedSkill(opts, "notes");
+    const linkPath = join(opts.codexSkillsDir, "notes");
+
+    const result = removeSymlinks([skill], opts);
+
+    expect(result.removed).toEqual([linkPath]);
+    expect(() => lstatSync(linkPath)).toThrow();
+    const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    expect(entry?.status).toBe("tombstoned");
+    expect(entry?.removed_at).not.toBeNull();
+  });
+
+  it("tombstones even when the target symlink is already missing", () => {
+    const opts = skillOpts("alreadymissing");
+    const { skill } = approvedSkill(opts, "notes");
+    unlinkSync(join(opts.codexSkillsDir, "notes"));
+
+    const result = removeSymlinks([skill], opts);
+
+    expect(result.notFound.length).toBe(1);
+    const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    expect(entry?.status).toBe("tombstoned");
+    expect(entry?.removed_at).not.toBeNull();
+  });
+
+  it("refuses to remove (and does not tombstone) when the target is not the symlink Draft owns", () => {
+    const opts = skillOpts("notowned");
+    const { skill } = approvedSkill(opts, "notes");
+    const linkPath = join(opts.codexSkillsDir, "notes");
+    unlinkSync(linkPath);
+    const otherSource = join(TMP, "rm-other-src");
+    mkdirSync(otherSource, { recursive: true });
+    symlinkSync(resolve(otherSource), linkPath);
+
+    const result = removeSymlinks([skill], opts);
+
+    expect(result.removed).toEqual([]);
+    expect(result.errors.length).toBe(1);
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    expect(entry?.status).toBe("approved");
+    expect(entry?.removed_at).toBeNull();
+  });
+
+  it("a tombstoned entry is not resurrected by a later reconcileSkillManifest call", () => {
+    const opts = skillOpts("noresurrect");
+    const { skill } = approvedSkill(opts, "notes");
+    removeSymlinks([skill], opts);
+
+    reconcileSkillManifest(opts);
+
+    const entry = readSkillManifest(opts.manifestPath).skills["claude-code:notes"];
+    expect(entry?.status).toBe("tombstoned");
+    expect(() => lstatSync(join(opts.codexSkillsDir, "notes"))).toThrow();
   });
 });
 

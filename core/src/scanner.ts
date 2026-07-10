@@ -574,6 +574,16 @@ export function detectPending(opts?: ScanSkillOpts & { manifestPath?: string }):
  * Verify all approved manifest entries against the filesystem. Re-creates
  * missing symlinks (crash recovery), tombstones entries where both sides are
  * gone, and surfaces orphaned/conflicted symlinks for user review.
+ *
+ * INVARIANT: must only ever be called against the currently-active profile's
+ * manifest. An approved-but-currently-unlinked personal entry is a normal,
+ * expected state for an INACTIVE profile (its symlink was torn down by
+ * uninstallPersonalSkills on profile switch, and is not a corruption to
+ * repair) — reconcile would incorrectly "repair" it by recreating a symlink
+ * that belongs to a profile that isn't active. Callers (background daemon
+ * periodic reconcile, crash-recovery paths) must guarantee this, and must not
+ * run while a profile switch is in flight (see the profile-switch lock in
+ * core/src/sync/team-assets.ts and background/draft-background.ts).
  */
 export function reconcileSkillManifest(opts?: ScanSkillOpts & { manifestPath?: string }): ReconcileResult {
   const result: ReconcileResult = { repaired: [], tombstoned: [], orphaned: [], conflicts: [] };
@@ -673,6 +683,24 @@ export function reconcileSkillManifest(opts?: ScanSkillOpts & { manifestPath?: s
   }
 
   return result;
+}
+
+// ── inspectSymlinkTarget ───────────────────────────────────────────────────────
+
+/**
+ * Inspect a symlink target path against an expected real source. Shared by
+ * installTeamSkills and installPersonalSkills so both agree on what "already
+ * correct" vs "conflict" means for a cross-agent mirror symlink.
+ */
+export function inspectSymlinkTarget(linkPath: string, expectedSourcePath: string): "missing" | "owned" | "conflict" {
+  try {
+    const stat = lstatSync(linkPath);
+    if (!stat.isSymbolicLink()) return "conflict";
+    const actual = realpathSync(resolve(dirname(linkPath), readlinkSync(linkPath)));
+    return actual === realpathSync(expectedSourcePath) ? "owned" : "conflict";
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "conflict";
+  }
 }
 
 // ── createSymlinks ─────────────────────────────────────────────────────────────
@@ -792,46 +820,73 @@ export interface RemoveSymlinksResult {
   errors: string[];
 }
 
+/**
+ * Genuine, permanent removal — the user never wants this skill synced again.
+ * Distinct from uninstallPersonalSkills (profile-switch teardown), which only
+ * deactivates the symlink and leaves the manifest entry approved so switching
+ * back reinstalls it. This is the one place tombstoning is correct: it always
+ * tombstones the manifest entry (rather than deleting it outright) whenever
+ * the target is either successfully unlinked or already absent, so a later
+ * reconcile/install pass never resurrects it. Only skips tombstoning — and
+ * surfaces an error instead — when a target path exists but isn't the symlink
+ * Draft owns (ownership verified via realpath against the manifest's
+ * source_path).
+ */
 export function removeSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts): RemoveSymlinksResult {
   const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
   const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
+  const manifestPath = opts?.manifestPath ?? getDefaultManifestPath();
+  const manifest = readSkillManifest(manifestPath);
 
   const result: RemoveSymlinksResult = { removed: [], notFound: [], errors: [] };
+  let dirty = false;
+
+  const tombstone = (id: string) => {
+    const entry = manifest.skills[id];
+    if (!entry) return;
+    manifest.skills[id] = { ...entry, status: "tombstoned", removed_at: new Date().toISOString() };
+    dirty = true;
+  };
 
   for (const skill of skills) {
     const targetDir = skill.agent === "claude-code" ? codexDir : claudeDir;
     const linkPath = join(targetDir, skill.name);
+    const id = `${skill.agent}:${skill.name}`;
+    const entry = manifest.skills[id];
 
     try {
       if (!existsSync(linkPath)) {
         result.notFound.push(linkPath);
+        tombstone(id);
         continue;
       }
+
       const stat = lstatSync(linkPath);
       if (!stat.isSymbolicLink()) {
         result.errors.push(`${linkPath}: not a symlink — refusing to delete`);
         continue;
       }
+
+      if (entry) {
+        const actual = realpathSync(resolve(dirname(linkPath), readlinkSync(linkPath)));
+        const expected = realpathSync(entry.source_path);
+        if (actual !== expected) {
+          result.errors.push(`${linkPath}: target does not match recorded source — refusing to delete`);
+          continue;
+        }
+      }
+
       unlinkSync(linkPath);
       result.removed.push(linkPath);
+      tombstone(id);
     } catch (err) {
       result.errors.push(`${linkPath}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  if (result.removed.length > 0) {
+  if (dirty) {
     try {
-      const manifestPath = opts?.manifestPath ?? getDefaultManifestPath();
-      const manifest = readSkillManifest(manifestPath);
-      let dirty = false;
-      for (const skill of skills) {
-        const id = `${skill.agent}:${skill.name}`;
-        if (manifest.skills[id]) {
-          delete manifest.skills[id];
-          dirty = true;
-        }
-      }
-      if (dirty) writeSkillManifest(manifest, manifestPath);
+      writeSkillManifest(manifest, manifestPath);
     } catch (err) {
       result.errors.push(`skill manifest: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -852,6 +907,9 @@ export interface InstallTeamSkillsOpts {
   codexSkillsDir?: string;
   manifestPath?: string;
 }
+
+/** Shared across team and personal skill install/uninstall conflict reporting. */
+export type PersonalSkillConflictReason = "team-name-collision" | "personal-name-collision" | "target-modified";
 
 export interface InstallTeamSkillsResult {
   installed: string[];
@@ -890,19 +948,8 @@ export function installTeamSkills(
       continue;
     }
 
-    const inspectTarget = (linkPath: string): "missing" | "owned" | "conflict" => {
-      try {
-        const stat = lstatSync(linkPath);
-        if (!stat.isSymbolicLink()) return "conflict";
-        const actual = realpathSync(resolve(dirname(linkPath), readlinkSync(linkPath)));
-        return actual === realpathSync(absoluteSource) ? "owned" : "conflict";
-      } catch (e) {
-        return (e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "conflict";
-      }
-    };
-
-    const claudeState = inspectTarget(claudeLinkPath);
-    const codexState = inspectTarget(codexLinkPath);
+    const claudeState = inspectSymlinkTarget(claudeLinkPath, absoluteSource);
+    const codexState = inspectSymlinkTarget(codexLinkPath, absoluteSource);
     if (claudeState === "conflict" || codexState === "conflict") {
       const conflictingPaths = [
         ...(claudeState === "conflict" ? [claudeLinkPath] : []),
@@ -1044,6 +1091,204 @@ function uninstallTeamSkillEntries(
       result.errors.push(`skill manifest: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+  return result;
+}
+
+// ── Personal skill install/uninstall lifecycle (profile-scoped) ──────────────
+
+export interface PersonalSkillInput {
+  name: string;
+  /** The agent the skill is authored under (source side). */
+  agent: Agent;
+  sourcePath: string;
+}
+
+export interface InstallPersonalSkillsResult {
+  installed: string[];
+  skipped: string[];
+  errors: string[];
+  conflicts: Array<{ name: string; reason: PersonalSkillConflictReason }>;
+}
+
+/**
+ * Install a profile's approved personal skills as cross-agent mirror
+ * symlinks. Mirrors installTeamSkills, but only symlinks into the *opposite*
+ * agent's directory (matching createSymlinks' existing single-target
+ * behavior for personal skills), and is keyed `${source_agent}:${name}`
+ * rather than `team:${name}`.
+ *
+ * Idempotent by construction: "owned" (already correct) and "missing"
+ * (create) are the only two non-conflict states, so calling this twice in a
+ * row is safe — required by switchProfileAssets's rollback path, which calls
+ * installProfileAssets again on failure.
+ */
+export function installPersonalSkills(
+  skills: PersonalSkillInput[],
+  profile: string,
+  opts?: InstallTeamSkillsOpts,
+): InstallPersonalSkillsResult {
+  const claudeDir = opts?.claudeSkillsDir ?? DEFAULT_CLAUDE_SKILLS_DIR;
+  const codexDir = opts?.codexSkillsDir ?? DEFAULT_CODEX_SKILLS_DIR;
+  const manifestPath = opts?.manifestPath ?? getDefaultManifestPath();
+
+  const result: InstallPersonalSkillsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  const manifest = readSkillManifest(manifestPath);
+  const now = new Date().toISOString();
+  let dirty = false;
+
+  // Is `linkPath` a live symlink currently owned by an active team entry?
+  // Matching on a manifest entry's synced_to.symlink_path string alone is
+  // unreliable — a stale manifest entry can match even if the live
+  // filesystem target has since changed. Verify the realpath live instead.
+  const isLiveTeamCollision = (linkPath: string): boolean => {
+    for (const teamEntry of Object.values(manifest.skills)) {
+      if (teamEntry.kind !== "team" || teamEntry.status !== "approved" || teamEntry.removed_at !== null) continue;
+      try {
+        if (lstatSync(linkPath).isSymbolicLink() && realpathSync(linkPath) === realpathSync(teamEntry.source_path)) {
+          return true;
+        }
+      } catch { /* not a live collision */ }
+    }
+    return false;
+  };
+
+  for (const { name, agent, sourcePath } of skills) {
+    const id = `${agent}:${name}`;
+    const absoluteSource = resolve(sourcePath);
+    const targetDir = agent === "claude-code" ? codexDir : claudeDir;
+    const targetAgent: Agent = agent === "claude-code" ? "codex" : "claude-code";
+    const linkPath = join(targetDir, name);
+    const existing = manifest.skills[id];
+
+    if (!existsSync(absoluteSource)) {
+      result.errors.push(`${name}: source path does not exist: ${absoluteSource}`);
+      continue;
+    }
+
+    let createdSymlink = false;
+    try {
+      const state = inspectSymlinkTarget(linkPath, absoluteSource);
+
+      if (state === "conflict") {
+        const reason: PersonalSkillConflictReason = isLiveTeamCollision(linkPath)
+          ? "team-name-collision"
+          : "personal-name-collision";
+        result.conflicts.push({ name, reason });
+        manifest.skills[id] = {
+          id,
+          name,
+          source_agent: agent,
+          source_path: absoluteSource,
+          skill_dir_hash: hashSkillDir(absoluteSource),
+          added_at: existing?.added_at ?? now,
+          approved_at: existing?.approved_at ?? now,
+          status: "conflict",
+          synced_to: existing?.synced_to ?? {},
+          removed_at: null,
+          kind: "personal",
+          install_state: "conflict",
+          conflict_reason: reason,
+        };
+        dirty = true;
+        continue;
+      }
+
+      if (state === "missing") {
+        mkdirSync(targetDir, { recursive: true });
+        symlinkSync(absoluteSource, linkPath);
+        createdSymlink = true;
+        result.installed.push(name);
+      } else {
+        // "owned" — already correct (e.g. another profile approved the same
+        // personal skill). Don't recreate; just adopt the approval.
+        result.skipped.push(name);
+      }
+
+      manifest.skills[id] = {
+        id,
+        name,
+        source_agent: agent,
+        source_path: absoluteSource,
+        skill_dir_hash: hashSkillDir(absoluteSource),
+        added_at: existing?.added_at ?? now,
+        approved_at: existing?.approved_at ?? now,
+        status: "approved",
+        synced_to: {
+          ...(existing?.synced_to ?? {}),
+          [targetAgent]: { target_name: name, symlink_path: linkPath, synced_at: now },
+        },
+        removed_at: null,
+        kind: "personal",
+        install_state: "installed",
+      };
+      dirty = true;
+    } catch (e) {
+      if (createdSymlink) {
+        try { unlinkSync(linkPath); } catch { /* rollback best effort */ }
+      }
+      result.errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (dirty) {
+    try { writeSkillManifest(manifest, manifestPath); } catch (e) {
+      result.errors.push(`skill manifest: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Deactivate a profile's approved personal skills — tear down the mirror
+ * symlink without touching the manifest entry's approval. This is NOT the
+ * same as removeSymlinks: the manifest entry's status stays "approved" and
+ * removed_at stays null, because the manifest entry is the only record of
+ * the approval (personal skills, unlike team skills, have no external
+ * source-of-truth directory to rediscover from). Switching back to this
+ * profile later calls installPersonalSkills again, which sees the entry is
+ * still approved and reinstalls the (now-missing) symlink via the "missing"
+ * branch — no special-case needed.
+ */
+export function uninstallPersonalSkills(
+  profile: string,
+  opts?: InstallTeamSkillsOpts,
+): InstallPersonalSkillsResult {
+  const manifestPath = opts?.manifestPath ?? getDefaultManifestPath();
+  const manifest = readSkillManifest(manifestPath);
+  const result: InstallPersonalSkillsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+
+  for (const entry of Object.values(manifest.skills)) {
+    if (entry.kind !== "personal") continue;
+    if (entry.status !== "approved" || entry.removed_at !== null) continue;
+
+    for (const syncEntry of Object.values(entry.synced_to) as SkillManifestSyncEntry[]) {
+      const { symlink_path } = syncEntry;
+      try {
+        const stat = lstatSync(symlink_path);
+        if (!stat.isSymbolicLink()) {
+          result.conflicts.push({ name: entry.name, reason: "target-modified" });
+          continue;
+        }
+        const actual = realpathSync(resolve(dirname(symlink_path), readlinkSync(symlink_path)));
+        const expected = realpathSync(entry.source_path);
+        if (actual !== expected) {
+          result.conflicts.push({ name: entry.name, reason: "target-modified" });
+          continue;
+        }
+        unlinkSync(symlink_path);
+        result.skipped.push(symlink_path);
+      } catch (e) {
+        // ENOENT: already deactivated — no-op, not an error.
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+          result.errors.push(`${symlink_path}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+  }
+
+  // No manifest write: entries stay exactly as-is (status: "approved",
+  // removed_at: null), just with their symlink currently torn down.
   return result;
 }
 
