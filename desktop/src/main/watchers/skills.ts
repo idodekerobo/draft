@@ -142,28 +142,20 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
   knownSkillKeys.clear();
   knownHashes.clear();
 
-  // Run startup reconcile before setting up watchers. Fire-and-forget async
-  // (mirrors watchers/mcps.ts's own startup reconcile) so it can be guarded
-  // by the profile-switch lock without blocking watcher setup on it.
-  withProfileSwitchLock(() => reconcileSkillManifest({
-    claudeSkillsDir: options?.claudeSkillsDir,
-    codexSkillsDir: options?.codexSkillsDir,
-    manifestPath: options?.manifestPath,
-  }))
-    .then((reconcileResult) => {
-      if (!reconcileResult) return;
-      handlers.onReconciled(reconcileResult);
-      if (reconcileResult.repaired.length > 0) {
-        handlers.onSkillsChanged(reconcileResult.repaired.length);
-      }
-    })
-    .catch(() => { /* reconcile failure must not prevent watcher from starting */ });
-
-  // Install any team skills from workspace that aren't yet in both agents
+  // Populate workspace-skill known state (read-only scan) before the
+  // lock-guarded startup work below.
   const wsSkillsDir = getWorkspaceSkillsDir(options);
   if (wsSkillsDir && options?.activeProfile) {
     knownWorkspaceSkillNames = scanWorkspaceSkillNames(wsSkillsDir);
-    if (knownWorkspaceSkillNames.size > 0) {
+  }
+
+  // Startup team-skill install + reconcile — one lock-guarded unit (mirrors
+  // watchers/mcps.ts's startup): both mutate live symlinks and the manifest,
+  // and a concurrent profile switch's own writes could otherwise race either
+  // of them independently. Fire-and-forget async so it can be guarded by the
+  // profile-switch lock without blocking watcher setup on it.
+  withProfileSwitchLock(() => {
+    if (wsSkillsDir && options?.activeProfile && knownWorkspaceSkillNames.size > 0) {
       const inputs = [...knownWorkspaceSkillNames].map((name) => ({
         name,
         sourcePath: join(wsSkillsDir, name),
@@ -176,7 +168,20 @@ export function startSkillWatch(handlers: SkillWatchHandlers, options?: SkillWat
         });
       } catch { /* non-fatal */ }
     }
-  }
+    return reconcileSkillManifest({
+      claudeSkillsDir: options?.claudeSkillsDir,
+      codexSkillsDir: options?.codexSkillsDir,
+      manifestPath: options?.manifestPath,
+    });
+  })
+    .then((reconcileResult) => {
+      if (!reconcileResult) return;
+      handlers.onReconciled(reconcileResult);
+      if (reconcileResult.repaired.length > 0) {
+        handlers.onSkillsChanged(reconcileResult.repaired.length);
+      }
+    })
+    .catch(() => { /* reconcile failure must not prevent watcher from starting */ });
 
   // Populate initial known state
   const initialSkills = scanSkillDirectories({
