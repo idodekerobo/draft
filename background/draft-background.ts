@@ -10,6 +10,7 @@ import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, readLocalConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { runMigrations } from 'draft-core/migrations/runner';
 import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
+import { isProfileSwitchLockHeld } from 'draft-core/sync/team-assets';
 import { atomicPatch } from 'draft-core/sync/atomic-write';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
@@ -137,6 +138,13 @@ async function acknowledgeGitHubJob(job: Record<string, unknown>): Promise<void>
 }
 
 function reconcileSkills() {
+  // A profile switch briefly leaves the active-profile file naming the
+  // outgoing profile while its personal skills are already deactivated (see
+  // core/src/sync/team-assets.ts's profile-switch lock). If reconcile ran in
+  // that window it would "repair" a symlink the switch just tore down.
+  // Skip this tick entirely and let the next one retry — a switch completes
+  // in milliseconds, not minutes.
+  if (isProfileSwitchLockHeld()) return;
   try {
     const reconciled = reconcileSkillManifest();
     if (reconciled.repaired.length > 0) log('info', `skills: repaired ${reconciled.repaired.length} symlink(s)`);
