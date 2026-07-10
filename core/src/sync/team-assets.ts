@@ -1,7 +1,7 @@
-import { existsSync, lstatSync, readdirSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { getWorkspacePath, setActiveProfile } from "../config";
+import { DRAFT_ROOT, getWorkspacePath, setActiveProfile } from "../config";
 import {
   installTeamSkills,
   readSkillManifest,
@@ -242,6 +242,85 @@ export async function uninstallProfileAssets(
   return result;
 }
 
+// ── Profile-switch lock ────────────────────────────────────────────────────
+//
+// switchProfileAssets does uninstallProfileAssets(old) -> setActiveProfile(new)
+// -> installProfileAssets(new). Between the first two steps, the active-profile
+// file on disk still names the OLD profile. The background daemon's periodic
+// reconcileSkillManifest() pass runs as a separate long-running process; if its
+// tick lands in that window, it reads the old (still "active") profile's
+// manifest, sees the personal entry we just deactivated (approved, symlink now
+// missing — a state that's only supposed to be normal for an INACTIVE
+// profile), and "repairs" it by recreating the symlink we just tore down. This
+// lock closes that race: the daemon must check it and skip its tick entirely
+// while a switch is in flight (a switch completes in milliseconds; the next
+// tick a few minutes later simply retries). Mirrors the mkdir-based lock
+// pattern in core/src/migrations/runner.ts.
+
+const PROFILE_SWITCH_LOCK = join(DRAFT_ROOT, "state", "profile-switch.lock");
+const SWITCH_LOCK_WAIT_MS = 30_000;
+const SWITCH_LOCK_STALE_MS = 5 * 60_000;
+
+function switchLockOwnerIsAlive(lockPath: string): boolean {
+  try {
+    const { pid } = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")) as { pid?: number };
+    if (!pid) return true;
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+function switchLockIsStaleByAge(lockPath: string): boolean {
+  try {
+    return Date.now() - statSync(lockPath).mtimeMs > SWITCH_LOCK_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True if another process currently holds the profile-switch lock (and it
+ * doesn't look abandoned). The background daemon calls this before its
+ * periodic reconcile tick and skips the tick entirely if held.
+ *
+ * `lockPath` defaults to the real cross-process lock location and is only
+ * overridable for tests.
+ */
+export function isProfileSwitchLockHeld(lockPath: string = PROFILE_SWITCH_LOCK): boolean {
+  if (!existsSync(lockPath)) return false;
+  if (switchLockIsStaleByAge(lockPath)) return false;
+  return switchLockOwnerIsAlive(lockPath);
+}
+
+async function acquireProfileSwitchLock(): Promise<void> {
+  mkdirSync(join(DRAFT_ROOT, "state"), { recursive: true });
+  const deadline = Date.now() + SWITCH_LOCK_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      mkdirSync(PROFILE_SWITCH_LOCK);
+      writeFileSync(join(PROFILE_SWITCH_LOCK, "owner.json"), JSON.stringify({ pid: process.pid }));
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+
+      if (switchLockIsStaleByAge(PROFILE_SWITCH_LOCK) || !switchLockOwnerIsAlive(PROFILE_SWITCH_LOCK)) {
+        rmSync(PROFILE_SWITCH_LOCK, { recursive: true, force: true });
+        continue;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  throw new Error("Timed out waiting for another Draft process to finish a profile switch.");
+}
+
+function releaseProfileSwitchLock(): void {
+  rmSync(PROFILE_SWITCH_LOCK, { recursive: true, force: true });
+}
+
 export async function switchProfileAssets(
   oldProfile: string,
   newProfile: string,
@@ -249,31 +328,37 @@ export async function switchProfileAssets(
 ): Promise<ProfileAssetResult> {
   const validation = validateProfileAssets(newProfile, paths);
   if (!validation.ok) throw new TeamAssetValidationError(validation.errors);
-  const removed = await uninstallProfileAssets(oldProfile, paths);
-  const activationPaths = resolvePaths(newProfile, paths);
-  const activation = setActiveProfile(newProfile, {
-    workspacesDir: activationPaths.workspacesDir,
-    activeProfileFile: activationPaths.activeProfileFile,
-  });
-  if (!activation.ok) {
-    await installProfileAssets(oldProfile, paths);
-    throw new Error(`Failed to activate profile "${newProfile}": ${activation.reason}`);
-  }
+
+  await acquireProfileSwitchLock();
   try {
-    const installed = await installProfileAssets(newProfile, paths);
-    return {
-      ...installed,
-      removedSkills: removed.removedSkills,
-      removedMcps: removed.removedMcps,
-      conflicts: [...removed.conflicts, ...installed.conflicts],
-      errors: [...removed.errors, ...installed.errors],
-    };
-  } catch (error) {
-    setActiveProfile(oldProfile, {
+    const removed = await uninstallProfileAssets(oldProfile, paths);
+    const activationPaths = resolvePaths(newProfile, paths);
+    const activation = setActiveProfile(newProfile, {
       workspacesDir: activationPaths.workspacesDir,
       activeProfileFile: activationPaths.activeProfileFile,
     });
-    await installProfileAssets(oldProfile, paths);
-    throw error;
+    if (!activation.ok) {
+      await installProfileAssets(oldProfile, paths);
+      throw new Error(`Failed to activate profile "${newProfile}": ${activation.reason}`);
+    }
+    try {
+      const installed = await installProfileAssets(newProfile, paths);
+      return {
+        ...installed,
+        removedSkills: removed.removedSkills,
+        removedMcps: removed.removedMcps,
+        conflicts: [...removed.conflicts, ...installed.conflicts],
+        errors: [...removed.errors, ...installed.errors],
+      };
+    } catch (error) {
+      setActiveProfile(oldProfile, {
+        workspacesDir: activationPaths.workspacesDir,
+        activeProfileFile: activationPaths.activeProfileFile,
+      });
+      await installProfileAssets(oldProfile, paths);
+      throw error;
+    }
+  } finally {
+    releaseProfileSwitchLock();
   }
 }

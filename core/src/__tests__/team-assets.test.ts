@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, u
 import { join, resolve } from "path";
 import {
   installProfileAssets,
+  isProfileSwitchLockHeld,
   switchProfileAssets,
   TeamAssetValidationError,
   uninstallProfileAssets,
@@ -196,5 +197,35 @@ describe("profile team asset lifecycle", () => {
       .not.toBeNull();
     expect(JSON.parse(readFileSync(personalManifestPath, "utf8")).skills["team:notes"].removed_at)
       .toBeNull();
+  });
+
+});
+
+describe("isProfileSwitchLockHeld", () => {
+  const lockPath = join("/tmp", `draft-profile-switch-lock-test-${process.pid}`);
+  afterEach(() => rmSync(lockPath, { recursive: true, force: true }));
+
+  it("is false when no lock directory exists", () => {
+    expect(isProfileSwitchLockHeld(lockPath)).toBe(false);
+  });
+
+  it("is true when a live process holds a fresh lock", () => {
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid }));
+    expect(isProfileSwitchLockHeld(lockPath)).toBe(true);
+  });
+
+  it("is false once the lock is released", () => {
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid }));
+    rmSync(lockPath, { recursive: true, force: true });
+    expect(isProfileSwitchLockHeld(lockPath)).toBe(false);
+  });
+
+  it("is false when the recorded owner pid is no longer alive", () => {
+    mkdirSync(lockPath, { recursive: true });
+    // PID 999999 is very unlikely to be a live process.
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: 999999 }));
+    expect(isProfileSwitchLockHeld(lockPath)).toBe(false);
   });
 });
