@@ -132,6 +132,51 @@ describe("backfill personal skill manifests migration", () => {
     expect(readJson(manifestPath("profileb")).skills["claude-code:notes"].source_path).toBe(resolve(sourceB));
   });
 
+  it("does not treat two profiles' entries as conflicting when they point at the same real skill via different path spellings", async () => {
+    const realSource = join(TMP, "sources", "real-notes");
+    mkdirSync(realSource, { recursive: true });
+    const aliasSource = join(TMP, "sources", "alias-notes");
+    // aliasSource is a symlink to the same real directory acme's entry uses directly.
+    mkdirSync(join(aliasSource, ".."), { recursive: true });
+    symlinkSync(resolve(realSource), aliasSource);
+
+    const linkA = join(TMP, "acme-codex-skills", "notes");
+    const linkB = join(TMP, "profileb-codex-skills", "notes");
+    mkdirSync(join(linkA, ".."), { recursive: true });
+    mkdirSync(join(linkB, ".."), { recursive: true });
+    symlinkSync(resolve(realSource), linkA);
+    symlinkSync(resolve(realSource), linkB);
+
+    makeWorkspaceDir("acme");
+    makeWorkspaceDir("profileb");
+    makeWorkspaceDir("other");
+    writeJson(manifestPath("acme"), {
+      version: 5, schema_version: 5, min_reader_version: 1, name_conflicts: {},
+      skills: {
+        "claude-code:notes": personalEntry({
+          source_path: realSource,
+          synced_to: { codex: { target_name: "notes", symlink_path: linkA, synced_at: new Date().toISOString() } },
+        }),
+      },
+    });
+    writeJson(manifestPath("profileb"), {
+      version: 5, schema_version: 5, min_reader_version: 1, name_conflicts: {},
+      skills: {
+        "claude-code:notes": personalEntry({
+          source_path: aliasSource,
+          synced_to: { codex: { target_name: "notes", symlink_path: linkB, synced_at: new Date().toISOString() } },
+        }),
+      },
+    });
+
+    await migrateBackfillPersonalSkillManifests(TMP);
+
+    // Not a conflict (same real source via different spellings) — "other" gets backfilled.
+    const otherEntry = readJson(manifestPath("other")).skills["claude-code:notes"];
+    expect(otherEntry).toBeDefined();
+    expect(otherEntry.status).toBe("approved");
+  });
+
   it("never overwrites a profile's existing entry of any status, including its own tombstone", async () => {
     const source = join(TMP, "sources", "notes");
     mkdirSync(source, { recursive: true });

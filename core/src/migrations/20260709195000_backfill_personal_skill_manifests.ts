@@ -64,6 +64,15 @@ function isOwnedSymlink(linkPath: string, expectedSourcePath: string): boolean {
   }
 }
 
+/** True if both paths resolve to the same real location. Unresolvable paths never match (conservative default). */
+function sameRealSource(a: string, b: string): boolean {
+  try {
+    return realpathSync(a) === realpathSync(b);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Backfill every existing profile with approved personal-skill entries for
  * skills that are currently verified as correctly symlinked on disk.
@@ -105,10 +114,14 @@ export async function migrateBackfillPersonalSkillManifests(home: string = homed
       if (!stillValid) continue;
 
       const existing = allApproved.get(id);
-      if (existing && existing.source_path !== entry.source_path) {
+      if (existing && !sameRealSource(existing.source_path, entry.source_path)) {
         // Two profiles both approved this id but disagree about its source —
         // do not silently pick a winner. Drop it from the backfill set
         // entirely; each profile keeps its own existing (divergent) entry.
+        // Compared by realpath, not raw string equality: two profiles whose
+        // entries point at the same real skill through different path
+        // spellings (e.g. one via a symlinked alias) must not be treated as
+        // conflicting just because the strings differ.
         conflicting.add(id);
         continue;
       }
