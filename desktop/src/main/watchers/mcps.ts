@@ -16,6 +16,7 @@ import {
 } from "draft-core/sync/mcp-sync";
 import { readWorkspaceMcpManifest, type WorkspaceMcpEntry } from "draft-core/sync/workspace-mcp";
 import { hashCanonical } from "draft-core/sync/manifest";
+import { withProfileSwitchLock } from "draft-core/sync/team-assets";
 
 // 500ms debounce — config files change atomically via rename, so we want quick detection
 const DEBOUNCE_MS = 500;
@@ -69,6 +70,15 @@ function getWorkspacePath(options?: McpWatchOptions): string | null {
   return join(wsDir, options.activeProfile);
 }
 
+/**
+ * Mutates live agent configs and the MCP manifest (installTeamMcps/
+ * uninstallTeamMcp), so callers must run this — and anything else in the
+ * same tick, e.g. reconcile() — under a single withProfileSwitchLock call.
+ * This function does not acquire the lock itself: it's combined with other
+ * per-tick work at each call site so a tick either fully runs or fully
+ * skips, never partially (wrapping this and reconcile() as two separate
+ * lock attempts would let one win and the other skip needlessly).
+ */
 async function handleWorkspaceMcpChange(handlers: McpWatchHandlers, options?: McpWatchOptions): Promise<void> {
   const wsPath = getWorkspacePath(options);
   if (!wsPath || !options?.activeProfile) return;
@@ -106,28 +116,31 @@ export function startMcpWatch(handlers: McpWatchHandlers, options?: McpWatchOpti
 
   const syncOpts = buildSyncOpts(options);
 
-  // Install any team MCPs from workspace that aren't yet configured
+  // Install any team MCPs from workspace that aren't yet configured, then
+  // reconcile — one lock-guarded unit, since both write agent configs and a
+  // switch's own writes could otherwise race either of them independently.
   const wsPath = getWorkspacePath(options);
-  if (wsPath && options?.activeProfile) {
-    const wsManifest = readWorkspaceMcpManifest(wsPath);
+  const wsManifest = wsPath ? readWorkspaceMcpManifest(wsPath) : null;
+  if (wsManifest) {
     knownWorkspaceMcps = new Map(wsManifest.servers.map((entry) => [entry.name, hashCanonical(entry.canonical)]));
-    if (wsManifest.servers.length > 0) {
-      installTeamMcps(wsManifest.servers, wsPath, options.activeProfile, syncOpts)
-        .then((result) => {
-          if (result.missing_secrets.length > 0) {
-            handlers.onMcpsPendingCredentials?.(result.missing_secrets.map((missing) => ({
-              ...missing,
-              url: wsManifest.servers.find((server) => server.name === missing.name)?.canonical.url ?? "",
-            })));
-          }
-        })
-        .catch(() => { /* non-fatal */ });
-    }
   }
 
-  // Startup reconcile before setting up watchers
-  reconcile(syncOpts)
+  withProfileSwitchLock(async () => {
+    if (wsPath && options?.activeProfile && wsManifest && wsManifest.servers.length > 0) {
+      try {
+        const result = await installTeamMcps(wsManifest.servers, wsPath, options.activeProfile, syncOpts);
+        if (result.missing_secrets.length > 0) {
+          handlers.onMcpsPendingCredentials?.(result.missing_secrets.map((missing) => ({
+            ...missing,
+            url: wsManifest.servers.find((server) => server.name === missing.name)?.canonical.url ?? "",
+          })));
+        }
+      } catch { /* non-fatal */ }
+    }
+    return reconcile(syncOpts);
+  })
     .then((result) => {
+      if (!result) return;
       handlers.onReconciled(result);
       if (result.drifted.length > 0) handlers.onMcpsDrifted(result.drifted);
     })
@@ -140,25 +153,47 @@ export function startMcpWatch(handlers: McpWatchHandlers, options?: McpWatchOpti
     if (conflicts.length > 0) handlers.onMcpsConflict(conflicts);
   } catch { /* non-fatal */ }
 
+  // Reconcile alone (drift/removal detection) — lock-guarded, standalone.
+  const reconcileTick = () => {
+    withProfileSwitchLock(() => reconcile(syncOpts))
+      .then((result) => {
+        if (!result) return;
+        handlers.onReconciled(result);
+        if (result.drifted.length > 0) handlers.onMcpsDrifted(result.drifted);
+      })
+      .catch(() => {});
+  };
+
+  const pendingCheckTick = () => {
+    try {
+      const { pending, conflicts } = detectMcpPending(syncOpts);
+      if (pending.length > 0) handlers.onMcpsPending(pending);
+      if (conflicts.length > 0) handlers.onMcpsConflict(conflicts);
+    } catch { /* non-fatal */ }
+  };
+
+  // handleWorkspaceMcpChange + reconcile combined as ONE lock-guarded unit —
+  // both write agent configs, so wrapping them as two separate lock attempts
+  // would let one win and the other skip needlessly every tick.
+  const workspaceChangeAndReconcileTick = () => {
+    withProfileSwitchLock(async () => {
+      await handleWorkspaceMcpChange(handlers, options);
+      return reconcile(syncOpts);
+    })
+      .then((result) => {
+        if (!result) return;
+        handlers.onReconciled(result);
+        if (result.drifted.length > 0) handlers.onMcpsDrifted(result.drifted);
+      })
+      .catch(() => {});
+  };
+
   const onConfigChange = () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-
-      // Run reconcile for already-synced entries (drift/removal detection)
-      reconcile(syncOpts)
-        .then((result) => {
-          handlers.onReconciled(result);
-          if (result.drifted.length > 0) handlers.onMcpsDrifted(result.drifted);
-        })
-        .catch(() => {});
-
-      // Check for new pending entries
-      try {
-        const { pending, conflicts } = detectMcpPending(syncOpts);
-        if (pending.length > 0) handlers.onMcpsPending(pending);
-        if (conflicts.length > 0) handlers.onMcpsConflict(conflicts);
-      } catch { /* non-fatal */ }
+      reconcileTick();
+      pendingCheckTick();
     }, DEBOUNCE_MS);
   };
 
@@ -188,8 +223,8 @@ export function startMcpWatch(handlers: McpWatchHandlers, options?: McpWatchOpti
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
             debounceTimer = null;
-            void handleWorkspaceMcpChange(handlers, options);
-            onConfigChange();
+            workspaceChangeAndReconcileTick();
+            pendingCheckTick();
           }, DEBOUNCE_MS);
         }));
       } catch { /* non-fatal */ }
@@ -199,11 +234,7 @@ export function startMcpWatch(handlers: McpWatchHandlers, options?: McpWatchOpti
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      reconcile(syncOpts).then((r) => {
-        handlers.onReconciled(r);
-        if (r.drifted.length > 0) handlers.onMcpsDrifted(r.drifted);
-      }).catch(() => {});
-      void handleWorkspaceMcpChange(handlers, options);
+      workspaceChangeAndReconcileTick();
     }, DEBOUNCE_MS);
   }, FALLBACK_POLL_MS);
 }

@@ -64,7 +64,7 @@ import {
   tombstoneMcp,
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
-import { switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
+import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
 import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
 import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
 
@@ -1070,6 +1070,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             ];
             return { ok: false, error: parts.join("; ") };
           }
+          // A newly-approved Codex-bound personal MCP's secret must be
+          // sourceable immediately, not only after the next profile switch.
+          try { rebuildEnvSh(getActiveProfile()); } catch { /* non-fatal */ }
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Failed to approve MCPs." };
@@ -1326,6 +1329,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const profile = getActiveProfile();
         const result = await setTeamMcpSecret(name, profile, envVar, value);
         if (!result.ok) return { ok: false, error: result.error, nowInstalled: false };
+        if (result.nowInstalled) {
+          try { rebuildEnvSh(profile); } catch { /* non-fatal */ }
+        }
         return { ok: true, nowInstalled: result.nowInstalled };
       },
 
