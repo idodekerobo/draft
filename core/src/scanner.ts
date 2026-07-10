@@ -912,13 +912,13 @@ export interface InstallTeamSkillsOpts {
 }
 
 /** Shared across team and personal skill install/uninstall conflict reporting. */
-export type PersonalSkillConflictReason = "team-name-collision" | "personal-name-collision" | "target-modified";
+export type AssetConflictReason = "team-name-collision" | "personal-name-collision" | "target-modified";
 
 export interface InstallTeamSkillsResult {
   installed: string[];
   skipped: string[];
   errors: string[];
-  conflicts: Array<{ name: string; reason: PersonalSkillConflictReason }>;
+  conflicts: Array<{ name: string; reason: AssetConflictReason }>;
 }
 
 /**
@@ -1133,7 +1133,7 @@ export interface InstallPersonalSkillsResult {
   installed: string[];
   skipped: string[];
   errors: string[];
-  conflicts: Array<{ name: string; reason: PersonalSkillConflictReason }>;
+  conflicts: Array<{ name: string; reason: AssetConflictReason }>;
 }
 
 /**
@@ -1210,7 +1210,7 @@ export function installPersonalSkills(
     // A later uninstallPersonalSkills deactivate would then delete the
     // team's live mirror, believing it owns it.
     if (isLiveTeamCollision(linkPath, name, targetAgent)) {
-      const reason: PersonalSkillConflictReason = "team-name-collision";
+      const reason: AssetConflictReason = "team-name-collision";
       result.conflicts.push({ name, reason });
       manifest.skills[id] = {
         id,
@@ -1236,7 +1236,7 @@ export function installPersonalSkills(
       const state = inspectSymlinkTarget(linkPath, absoluteSource);
 
       if (state === "conflict") {
-        const reason: PersonalSkillConflictReason = "personal-name-collision";
+        const reason: AssetConflictReason = "personal-name-collision";
         result.conflicts.push({ name, reason });
         manifest.skills[id] = {
           id,

@@ -15,6 +15,7 @@ import {
 import { readWorkspaceMcpManifest, writeWorkspaceMcpManifest, type WorkspaceMcpEntry } from "./workspace-mcp";
 import { ParseError } from "./atomic-write";
 import { isSecretHeader, generateEnvVarName, writeSecretsJson, readSecretsJson } from "../secrets";
+import type { AssetConflictReason } from "../scanner";
 
 export type { WorkspaceMcpEntry };
 
@@ -289,7 +290,8 @@ export interface PersonalMcpInput {
   original_config: Record<string, unknown>;
 }
 
-export type PersonalMcpConflictReason = "team-name-collision" | "personal-name-collision" | "target-modified";
+/** Shared with skills' AssetConflictReason (core/src/scanner.ts) — one canonical union, not a duplicate literal. */
+export type PersonalMcpConflictReason = AssetConflictReason;
 
 export interface InstallPersonalMcpsResult {
   installed: string[];
@@ -515,6 +517,18 @@ export async function approveMcps(
  * Reconcile manifest entries against observed config state.
  * Called on startup and on config file changes.
  * Processes only approved/synced MCPs (pending entries are handled by detectMcpPending).
+ *
+ * INVARIANT: must only ever be called against the currently active profile's
+ * manifest. An approved-but-currently-un-synced personal entry is a normal,
+ * expected state for an INACTIVE profile (its target config was removed by
+ * uninstallPersonalMcps on profile switch, not a corruption to repair) —
+ * reconcile would incorrectly "repair" it by rewriting a config entry that
+ * belongs to a profile that isn't active. Callers (desktop watcher ticks)
+ * must guarantee this by running under withProfileSwitchLock
+ * (core/src/sync/team-assets.ts), which provides real mutual exclusion with
+ * switchProfileAssets — reconcile never runs concurrently with a switch, and
+ * a switch completes in milliseconds, so by the time reconcile runs the
+ * active profile's manifest state is always settled.
  */
 export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult> {
   const result: McpReconcileResult = { resynced: [], tombstoned: [], drifted: [], errors: [] };

@@ -10,7 +10,7 @@ import {
   uninstallPersonalSkills,
   uninstallTeamSkills,
   type PersonalSkillInput,
-  type PersonalSkillConflictReason,
+  type AssetConflictReason,
   type SkillManifest,
   type TeamSkillInput,
 } from "../scanner";
@@ -39,7 +39,7 @@ export interface TeamAssetConflict {
   name: string;
   profile: string;
   personalPath?: string;
-  reason: PersonalSkillConflictReason;
+  reason: AssetConflictReason;
 }
 
 export interface MissingMcpSecrets {
