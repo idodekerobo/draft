@@ -296,6 +296,8 @@ export type PersonalMcpConflictReason = AssetConflictReason;
 export interface InstallPersonalMcpsResult {
   installed: string[];
   skipped: string[];
+  /** Names whose mirrored target-config entry was actually removed (uninstall only). */
+  removed: string[];
   errors: string[];
   conflicts: Array<{ name: string; reason: PersonalMcpConflictReason }>;
 }
@@ -322,10 +324,9 @@ export interface InstallPersonalMcpsResult {
  */
 export async function installPersonalMcps(
   mcps: PersonalMcpInput[],
-  profile: string,
   opts?: McpSyncOpts,
 ): Promise<InstallPersonalMcpsResult> {
-  const result: InstallPersonalMcpsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  const result: InstallPersonalMcpsResult = { installed: [], skipped: [], removed: [], errors: [], conflicts: [] };
   const manifest = readMcpManifest(opts?.manifestPath);
   const secrets = readSecretsJson();
   const now = new Date().toISOString();
@@ -457,10 +458,9 @@ export async function installPersonalMcps(
  * any target agent equal to the entry's own source_agent.
  */
 export async function uninstallPersonalMcps(
-  profile: string,
   opts?: McpSyncOpts,
 ): Promise<InstallPersonalMcpsResult> {
-  const result: InstallPersonalMcpsResult = { installed: [], skipped: [], errors: [], conflicts: [] };
+  const result: InstallPersonalMcpsResult = { installed: [], skipped: [], removed: [], errors: [], conflicts: [] };
   const manifest = readMcpManifest(opts?.manifestPath);
   const secrets = readSecretsJson();
 
@@ -478,7 +478,7 @@ export async function uninstallPersonalMcps(
           continue;
         }
         await removeAgentMcp(agent, entry.name, configPath);
-        result.skipped.push(entry.name);
+        result.removed.push(entry.name);
       } catch (e) {
         result.errors.push(`${entry.name} → ${agent}: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -508,7 +508,7 @@ export async function approveMcps(
     canonical: entry.canonical,
     original_config: entry.config,
   }));
-  return installPersonalMcps(inputs, "", opts);
+  return installPersonalMcps(inputs, opts);
 }
 
 // ── Reconcile ─────────────────────────────────────────────────────────────────
@@ -782,6 +782,31 @@ export async function installTeamMcps(
     };
 
     const previous = manifest.mcps[id];
+
+    // Mirror image of installPersonalMcps's team-name-collision check: a
+    // live (non-removed) personal entry with this name must block the team
+    // install outright — even when the observed config happens to match the
+    // team canonical, adopting the slot would leave two manifest entries
+    // owning one config entry, and a later personal uninstall could delete
+    // the team's live mirror. Direct id lookups first (a personal entry's id
+    // is `<source_agent>:<name>`), then a name scan as the belt-and-suspenders
+    // fallback since the id convention isn't structurally guaranteed.
+    const livePersonal = (e: McpManifestEntry | undefined): boolean =>
+      !!e && e.kind === "personal" && e.removed_at === null;
+    const personalCollision =
+      livePersonal(manifest.mcps[`claude-code:${name}`])
+      || livePersonal(manifest.mcps[`codex:${name}`])
+      || Object.values(manifest.mcps).some((e) => e.name === name && livePersonal(e));
+    if (personalCollision) {
+      manifestEntry.install_state = "conflict";
+      manifestEntry.conflict_reason = "personal-name-collision";
+      manifestEntry.pending_secrets = undefined;
+      manifestEntry.synced_to = previous?.synced_to ?? {};
+      manifest.mcps[id] = manifestEntry;
+      result.conflicts.push({ name, reason: "personal-name-collision" });
+      continue;
+    }
+
     const targetIsOwned = (agent: Agent, observed: Record<string, unknown> | undefined): boolean => {
       if (!observed) return true;
       if (!previous || previous.removed_at || previous.kind !== "team") return false;

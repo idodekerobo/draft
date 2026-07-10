@@ -39,7 +39,7 @@ describe("installPersonalMcps", () => {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
 
-    const result = await installPersonalMcps([input], "acme", opts);
+    const result = await installPersonalMcps([input], opts);
 
     expect(result.installed).toEqual(["linear"]);
     expect(result.conflicts).toEqual([]);
@@ -57,7 +57,7 @@ describe("installPersonalMcps", () => {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
 
-    const result = await installPersonalMcps([input], "acme", opts);
+    const result = await installPersonalMcps([input], opts);
 
     expect(result.installed).toEqual([]);
     expect(result.skipped).toEqual(["linear"]);
@@ -80,7 +80,7 @@ describe("installPersonalMcps", () => {
     const input: PersonalMcpInput = {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
-    const result = await installPersonalMcps([input], "acme", opts);
+    const result = await installPersonalMcps([input], opts);
 
     expect(result.conflicts).toEqual([{ name: "linear", reason: "team-name-collision" }]);
     const manifest = readMcpManifest(opts.manifestPath);
@@ -89,9 +89,36 @@ describe("installPersonalMcps", () => {
 
     // A subsequent deactivate of the (never-actually-installed) personal
     // entry must never touch the team's live config.
-    await uninstallPersonalMcps("acme", opts);
+    await uninstallPersonalMcps(opts);
     const claudeMcps = readAgentMcps("claude-code", opts.claudeConfigPath);
     expect(claudeMcps.linear).toBeDefined();
+  });
+
+  it("team install is blocked by a live personal entry of the same name (reverse adopt-then-corrupt regression)", async () => {
+    const opts = mcpOpts("reversecollision");
+    const input: PersonalMcpInput = {
+      id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
+    };
+    await installPersonalMcps([input], opts);
+    const personalEntryBefore = readMcpManifest(opts.manifestPath).mcps["codex:linear"];
+    expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeDefined();
+
+    // Team ships an MCP with the same name and an identical canonical — the
+    // observed config matches, but the slot is personal-owned. Team install
+    // must conflict, never adopt.
+    const result = await installTeamMcps(
+      [{ name: "linear", canonical, required_secrets: [] }],
+      TMP,
+      "acme",
+      opts,
+    );
+
+    expect(result.conflicts).toEqual([{ name: "linear", reason: "personal-name-collision" }]);
+    const manifest = readMcpManifest(opts.manifestPath);
+    expect(manifest.mcps["team:linear"].install_state).toBe("conflict");
+    // The personal entry and its live config mirror are untouched.
+    expect(manifest.mcps["codex:linear"]).toEqual(personalEntryBefore);
+    expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toMatchObject({ url: canonical.url });
   });
 
   it("personal-name-collision: an unrelated config already occupies the target name", async () => {
@@ -101,7 +128,7 @@ describe("installPersonalMcps", () => {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
 
-    const result = await installPersonalMcps([input], "acme", opts);
+    const result = await installPersonalMcps([input], opts);
 
     expect(result.conflicts).toEqual([{ name: "linear", reason: "personal-name-collision" }]);
     const claudeMcps = readAgentMcps("claude-code", opts.claudeConfigPath);
@@ -114,8 +141,8 @@ describe("installPersonalMcps", () => {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
 
-    const first = await installPersonalMcps([input], "acme", opts);
-    const second = await installPersonalMcps([input], "acme", opts);
+    const first = await installPersonalMcps([input], opts);
+    const second = await installPersonalMcps([input], opts);
 
     expect(first.installed).toEqual(["linear"]);
     expect(second.installed).toEqual([]);
@@ -130,10 +157,10 @@ describe("uninstallPersonalMcps", () => {
     const input: PersonalMcpInput = {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
-    await installPersonalMcps([input], "acme", opts);
+    await installPersonalMcps([input], opts);
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeDefined();
 
-    await uninstallPersonalMcps("acme", opts);
+    await uninstallPersonalMcps(opts);
 
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeUndefined();
     const entry = readMcpManifest(opts.manifestPath).mcps["codex:linear"];
@@ -149,17 +176,17 @@ describe("uninstallPersonalMcps", () => {
       id: "codex:notion", name: "notion", source_agent: "codex", canonical: otherCanonical, original_config: {},
     };
 
-    await installPersonalMcps([inputA], "profile-a", opts);
+    await installPersonalMcps([inputA], opts);
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeDefined();
 
-    await uninstallPersonalMcps("profile-a", opts);
+    await uninstallPersonalMcps(opts);
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeUndefined();
 
-    await installPersonalMcps([inputB], "profile-b", opts);
+    await installPersonalMcps([inputB], opts);
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).notion).toBeDefined();
 
-    await uninstallPersonalMcps("profile-b", opts);
-    const reinstallResult = await installPersonalMcps([inputA], "profile-a", opts);
+    await uninstallPersonalMcps(opts);
+    const reinstallResult = await installPersonalMcps([inputA], opts);
 
     expect(reinstallResult.installed).toEqual(["linear"]);
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeDefined();
@@ -171,10 +198,10 @@ describe("uninstallPersonalMcps", () => {
     const input: PersonalMcpInput = {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
-    await installPersonalMcps([input], "acme", opts);
+    await installPersonalMcps([input], opts);
     writeClaudeJson(opts.claudeConfigPath, { linear: { url: otherCanonical.url } });
 
-    const result = await uninstallPersonalMcps("acme", opts);
+    const result = await uninstallPersonalMcps(opts);
 
     expect(result.conflicts).toEqual([{ name: "linear", reason: "target-modified" }]);
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toMatchObject({ url: otherCanonical.url });
@@ -187,10 +214,10 @@ describe("uninstallPersonalMcps", () => {
     const input: PersonalMcpInput = {
       id: "codex:linear", name: "linear", source_agent: "codex", canonical, original_config: {},
     };
-    await installPersonalMcps([input], "acme", opts);
+    await installPersonalMcps([input], opts);
     writeClaudeJson(opts.claudeConfigPath, {});
 
-    const result = await uninstallPersonalMcps("acme", opts);
+    const result = await uninstallPersonalMcps(opts);
 
     expect(result.errors).toEqual([]);
     expect(result.conflicts).toEqual([]);
@@ -207,7 +234,7 @@ describe("uninstallPersonalMcps", () => {
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeDefined();
     expect(readAgentMcps("codex", opts.codexConfigPath).linear).toBeDefined();
 
-    await uninstallPersonalMcps("acme", opts);
+    await uninstallPersonalMcps(opts);
 
     expect(readAgentMcps("claude-code", opts.claudeConfigPath).linear).toBeDefined();
     expect(readAgentMcps("codex", opts.codexConfigPath).linear).toBeDefined();

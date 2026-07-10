@@ -439,7 +439,6 @@ describe("personal MCP profile-switch lifecycle", () => {
     // Seed acme's approval and let it install live (acme is the active profile).
     await installPersonalMcps(
       [{ id: "codex:a-mcp", name: "a-mcp", source_agent: "codex", canonical: canonicalA, original_config: {} }],
-      "acme",
       { claudeConfigPath: common.claudeConfigPath, codexConfigPath: common.codexConfigPath, manifestPath: acmeMcpManifestPath },
     );
     // Seed "personal" profile's approval too, but it isn't active yet, so its
@@ -447,7 +446,6 @@ describe("personal MCP profile-switch lifecycle", () => {
     // profile's manifest looks (approved, but currently un-synced).
     await installPersonalMcps(
       [{ id: "codex:b-mcp", name: "b-mcp", source_agent: "codex", canonical: canonicalB, original_config: {} }],
-      "personal",
       {
         claudeConfigPath: join(common.workspacesDir, "unused-claude.json"),
         codexConfigPath: join(common.workspacesDir, "unused-codex", "config.toml"),

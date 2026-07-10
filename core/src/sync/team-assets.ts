@@ -252,7 +252,6 @@ export async function installProfileAssets(
 
   const personalMcps = await installPersonalMcps(
     personalMcpsFromManifest(readMcpManifest(resolved.mcpManifestPath)),
-    profile,
     mcpOpts(resolved),
   );
   result.installedMcps.push(...personalMcps.installed);
@@ -345,10 +344,8 @@ export async function uninstallProfileAssets(
     kind: "mcp" as const, name: conflict.name, profile, reason: conflict.reason,
   })));
 
-  result.removedMcps.push(...Object.values(mcpManifest.mcps)
-    .filter((entry) => entry.kind === "personal" && entry.removed_at === null)
-    .map((entry) => entry.name));
-  const personalMcpUninstall = await uninstallPersonalMcps(profile, mcpOpts(resolved));
+  const personalMcpUninstall = await uninstallPersonalMcps(mcpOpts(resolved));
+  result.removedMcps.push(...personalMcpUninstall.removed);
   result.errors.push(...personalMcpUninstall.errors);
   result.conflicts.push(...personalMcpUninstall.conflicts.map((conflict) => ({
     kind: "mcp" as const, name: conflict.name, profile, reason: conflict.reason,
