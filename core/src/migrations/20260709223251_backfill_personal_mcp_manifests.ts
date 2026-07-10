@@ -110,7 +110,7 @@ function isLiveMatch(entry: McpManifestEntryV5, home: string): boolean {
  * same reasoning and additive-only guarantees as
  * 20260709195000_backfill_personal_skill_manifests.ts, adapted for MCPs:
  * McpManifestEntry has no filesystem source_path to realpath-compare, so
- * cross-profile conflicts are compared by sync_canonical.url instead.
+ * cross-profile conflicts are compared by sync_canonical_hash instead.
  * Personal MCP secrets are global (see mcp-sync.ts's installPersonalMcps
  * doc comment), so — unlike a filesystem symlink — there is no
  * profile-specific secret-availability gate needed here.
@@ -138,7 +138,13 @@ export async function migrateBackfillPersonalMcpManifests(home: string = homedir
       if (!isLiveMatch(entry, home)) continue;
 
       const existing = allApproved.get(id);
-      if (existing && existing.sync_canonical.url !== entry.sync_canonical.url) {
+      // Compared by sync_canonical_hash, not url: two profiles can agree on
+      // the url but diverge on headers (e.g. different auth env vars) — that
+      // is still a disagreement about the entry's identity, and we must not
+      // silently pick whichever profile was scanned first. The hash is
+      // already on both entries; nothing to hand-roll. (url-only comparison
+      // remains fine for isLiveMatch above — that limitation is documented.)
+      if (existing && existing.sync_canonical_hash !== entry.sync_canonical_hash) {
         conflicting.add(id);
         continue;
       }

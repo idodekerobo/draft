@@ -100,6 +100,7 @@ describe("backfill personal mcp manifests migration", () => {
       version: 5, schema_version: 5, mcps: {
         "codex:linear": personalEntry({
           sync_canonical: { type: "http", url: "https://a.example.com" },
+          sync_canonical_hash: "sha256:a",
           synced_to: { "claude-code": { target_name: "linear-a", synced_at: new Date().toISOString() } },
         }),
       }, name_conflicts: {},
@@ -108,6 +109,7 @@ describe("backfill personal mcp manifests migration", () => {
       version: 5, schema_version: 5, mcps: {
         "codex:linear": personalEntry({
           sync_canonical: { type: "http", url: "https://b.example.com" },
+          sync_canonical_hash: "sha256:b",
           synced_to: { "claude-code": { target_name: "linear-b", synced_at: new Date().toISOString() } },
         }),
       }, name_conflicts: {},
@@ -118,6 +120,39 @@ describe("backfill personal mcp manifests migration", () => {
     expect(existsSync(manifestPath("other"))).toBe(false);
     expect(readJson(manifestPath("acme")).mcps["codex:linear"].sync_canonical.url).toBe("https://a.example.com");
     expect(readJson(manifestPath("profileb")).mcps["codex:linear"].sync_canonical.url).toBe("https://b.example.com");
+  });
+
+  it("skips backfill when two profiles share a url but disagree on headers (hash mismatch)", async () => {
+    // Same url, same live target — the only divergence is in headers (e.g.
+    // different auth env vars), visible via sync_canonical_hash. Neither
+    // side's version may be silently copied into a third profile.
+    writeClaudeConfig("https://mcp.example.com");
+    makeWorkspaceDir("acme");
+    makeWorkspaceDir("profileb");
+    makeWorkspaceDir("other");
+    const syncedTo = { "claude-code": { target_name: "linear", synced_at: new Date().toISOString() } };
+    writeJson(manifestPath("acme"), {
+      version: 5, schema_version: 5, mcps: {
+        "codex:linear": personalEntry({
+          sync_canonical: { type: "http", url: "https://mcp.example.com", headers: { Authorization: { value_env: "TOKEN_A", secret: true } } },
+          sync_canonical_hash: "sha256:headers-a",
+          synced_to: syncedTo,
+        }),
+      }, name_conflicts: {},
+    });
+    writeJson(manifestPath("profileb"), {
+      version: 5, schema_version: 5, mcps: {
+        "codex:linear": personalEntry({
+          sync_canonical: { type: "http", url: "https://mcp.example.com", headers: { Authorization: { value_env: "TOKEN_B", secret: true } } },
+          sync_canonical_hash: "sha256:headers-b",
+          synced_to: syncedTo,
+        }),
+      }, name_conflicts: {},
+    });
+
+    await migrateBackfillPersonalMcpManifests(TMP);
+
+    expect(existsSync(manifestPath("other"))).toBe(false);
   });
 
   it("never overwrites a profile's existing entry of any status, including its own tombstone", async () => {
