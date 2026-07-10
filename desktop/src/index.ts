@@ -354,9 +354,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: "Created workspace but could not set it as active." };
         }
         // Run the full switch lifecycle synchronously (same as switchProfile) so
-        // watchers are updated before profileChanged fires. A new workspace has no
-        // team assets, so switchProfileAssets is a fast no-op for the install side,
-        // but it still uninstalls the old profile's team assets and writes env.sh.
+        // watchers are updated before profileChanged fires. There is only ever one
+        // active profile, so creating (and implicitly activating) a new one also
+        // deactivates the outgoing profile's personal skill symlinks — the active
+        // profile's approved personal skills are the only ones currently mirrored
+        // to the sibling agent. A new workspace has no team assets, so
+        // switchProfileAssets is a fast no-op for the install side, but it still
+        // uninstalls the old profile's team/personal assets and writes env.sh.
         try { await switchProfileAssets(oldProfile, activated.active); } catch { /* non-fatal: new profile has no team assets */ }
         restartProposalWatch(activated.active, watcherHandlers);
         restartSkillWatchWithProfile(activated.active);
