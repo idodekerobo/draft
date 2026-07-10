@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { randomUUID } from "crypto";
 import { homedir } from "os";
 import { join } from "path";
 import { DRAFT_ROOT, getWorkspacePath, setActiveProfile } from "../config";
@@ -331,10 +332,21 @@ function switchLockIsStaleByAge(lockPath: string): boolean {
   }
 }
 
+/** Reads back the acquisition token written by whoever currently holds the lock, if any. */
+function switchLockOwnerToken(lockPath: string): string | null {
+  try {
+    const { token } = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")) as { token?: string };
+    return token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * True if another process currently holds the profile-switch lock (and it
- * doesn't look abandoned). The background daemon calls this before its
- * periodic reconcile tick and skips the tick entirely if held.
+ * doesn't look abandoned). Cheap advisory check only — callers that actually
+ * act on the manifest must use `withProfileSwitchLock` instead, since this is
+ * a point-in-time read with no exclusion guarantee of its own.
  *
  * `lockPath` defaults to the real cross-process lock location and is only
  * overridable for tests.
@@ -345,15 +357,23 @@ export function isProfileSwitchLockHeld(lockPath: string = PROFILE_SWITCH_LOCK):
   return switchLockOwnerIsAlive(lockPath);
 }
 
-async function acquireProfileSwitchLock(): Promise<void> {
+/**
+ * Blocking acquire with retry-until-timeout, used by switchProfileAssets
+ * itself (which needs to actually wait its turn, not skip). Returns the
+ * acquisition token — pass it to `releaseProfileSwitchLock` so release is
+ * ownership-verified: a stale-takeover means the original holder must never
+ * delete the new owner's lock out from under it.
+ */
+async function acquireProfileSwitchLock(): Promise<string> {
   mkdirSync(join(DRAFT_ROOT, "state"), { recursive: true });
   const deadline = Date.now() + SWITCH_LOCK_WAIT_MS;
+  const token = randomUUID();
 
   while (Date.now() < deadline) {
     try {
       mkdirSync(PROFILE_SWITCH_LOCK);
-      writeFileSync(join(PROFILE_SWITCH_LOCK, "owner.json"), JSON.stringify({ pid: process.pid }));
-      return;
+      writeFileSync(join(PROFILE_SWITCH_LOCK, "owner.json"), JSON.stringify({ pid: process.pid, token }));
+      return token;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
 
@@ -368,8 +388,48 @@ async function acquireProfileSwitchLock(): Promise<void> {
   throw new Error("Timed out waiting for another Draft process to finish a profile switch.");
 }
 
-function releaseProfileSwitchLock(): void {
-  rmSync(PROFILE_SWITCH_LOCK, { recursive: true, force: true });
+/**
+ * Ownership-verified release: only removes the lock directory if it still
+ * contains the token this caller was granted on acquire. If a stale-takeover
+ * happened in the meantime (this caller's own liveness lapsed and someone
+ * else grabbed the lock), the token on disk will belong to the new owner —
+ * release becomes a no-op instead of destroying their lock.
+ */
+/** Exported only for tests exercising the ownership-verified release invariant directly. */
+export function releaseProfileSwitchLock(token: string, lockPath: string = PROFILE_SWITCH_LOCK): void {
+  if (switchLockOwnerToken(lockPath) !== token) return;
+  rmSync(lockPath, { recursive: true, force: true });
+}
+
+/**
+ * Single non-blocking acquire attempt: if the lock is free, run `fn()` under
+ * it and always release (ownership-verified) afterward, returning its
+ * result. If the lock is already held by a live process, return `undefined`
+ * immediately without running `fn()` — callers that reconcile/repair state
+ * should skip their tick entirely rather than wait, since a switch completes
+ * in milliseconds and the next tick will simply retry. This is the primitive
+ * every write-capable reconcile/watcher call site must use instead of the
+ * bare `isProfileSwitchLockHeld()` check-then-act pattern, which does not by
+ * itself provide mutual exclusion.
+ */
+export async function withProfileSwitchLock<T>(
+  fn: () => T | Promise<T>,
+  lockPath: string = PROFILE_SWITCH_LOCK,
+): Promise<T | undefined> {
+  mkdirSync(join(lockPath, ".."), { recursive: true });
+  const token = randomUUID();
+  try {
+    mkdirSync(lockPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return undefined;
+  }
+  try {
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token }));
+    return await fn();
+  } finally {
+    releaseProfileSwitchLock(token, lockPath);
+  }
 }
 
 export async function switchProfileAssets(
@@ -380,7 +440,7 @@ export async function switchProfileAssets(
   const validation = validateProfileAssets(newProfile, paths);
   if (!validation.ok) throw new TeamAssetValidationError(validation.errors);
 
-  await acquireProfileSwitchLock();
+  const lockToken = await acquireProfileSwitchLock();
   try {
     const removed = await uninstallProfileAssets(oldProfile, paths);
     const activationPaths = resolvePaths(newProfile, paths);
@@ -410,6 +470,6 @@ export async function switchProfileAssets(
       throw error;
     }
   } finally {
-    releaseProfileSwitchLock();
+    releaseProfileSwitchLock(lockToken);
   }
 }

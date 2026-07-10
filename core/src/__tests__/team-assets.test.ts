@@ -4,10 +4,12 @@ import { join, resolve } from "path";
 import {
   installProfileAssets,
   isProfileSwitchLockHeld,
+  releaseProfileSwitchLock,
   switchProfileAssets,
   TeamAssetValidationError,
   uninstallProfileAssets,
   validateProfileAssets,
+  withProfileSwitchLock,
   type TeamAssetPaths,
 } from "../sync/team-assets";
 import { readMcpManifest } from "../sync/manifest";
@@ -320,5 +322,71 @@ describe("isProfileSwitchLockHeld", () => {
     // PID 999999 is very unlikely to be a live process.
     writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: 999999 }));
     expect(isProfileSwitchLockHeld(lockPath)).toBe(false);
+  });
+});
+
+describe("withProfileSwitchLock", () => {
+  const lockPath = join("/tmp", `draft-with-lock-test-${process.pid}`);
+  afterEach(() => rmSync(lockPath, { recursive: true, force: true }));
+
+  it("acquires, runs fn, and releases", async () => {
+    const result = await withProfileSwitchLock(() => "ran", lockPath);
+    expect(result).toBe("ran");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("releases even when fn throws", async () => {
+    await expect(withProfileSwitchLock(() => { throw new Error("boom"); }, lockPath)).rejects.toThrow("boom");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("a concurrent caller gets undefined immediately without running fn, while the first holds the lock", async () => {
+    let releaseFirst!: () => void;
+    const firstDone = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const secondFnCalled = { value: false };
+
+    const first = withProfileSwitchLock(async () => {
+      await firstDone;
+      return "first";
+    }, lockPath);
+
+    // give the first call a tick to actually acquire the lock directory
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(existsSync(lockPath)).toBe(true);
+
+    const second = await withProfileSwitchLock(() => {
+      secondFnCalled.value = true;
+      return "second";
+    }, lockPath);
+
+    expect(second).toBeUndefined();
+    expect(secondFnCalled.value).toBe(false);
+
+    releaseFirst();
+    expect(await first).toBe("first");
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("does not delete a lock now owned by someone else (stale-takeover-then-late-release is a no-op)", () => {
+    // Original holder acquired with "old-token"...
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token: "old-token" }));
+
+    // ...then a new owner takes over (as acquireProfileSwitchLock's
+    // stale-takeover path does: rmSync + re-mkdir with its own token).
+    rmSync(lockPath, { recursive: true, force: true });
+    mkdirSync(lockPath, { recursive: true });
+    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, token: "new-token" }));
+
+    // The original (stale) holder finally gets around to releasing with its
+    // now-outdated token — must be a no-op, not delete the new owner's lock.
+    releaseProfileSwitchLock("old-token", lockPath);
+
+    expect(existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")).token).toBe("new-token");
+
+    // The actual new owner's release, with the matching token, does work.
+    releaseProfileSwitchLock("new-token", lockPath);
+    expect(existsSync(lockPath)).toBe(false);
   });
 });
