@@ -167,6 +167,17 @@ export async function runLoad(args: string[]): Promise<void> {
     return;
   }
 
+  // No team repo configured — nothing to load, so skip the guard checks below
+  // and no-op silently rather than warning about "unpublished" changes.
+  if (!readCollaboration(workspace).ok) {
+    if (sessionStart) {
+      if (json) console.log(JSON.stringify({ ok: true, profile, skipped: true, reason: "no-collaboration", errors: [] }));
+      return;
+    }
+    fail("No team repo configured for this profile. Run /draft-setup-collab first.", json, 2);
+    return;
+  }
+
   const localValidation = validateProfileAssets(profile);
   if (!localValidation.ok) {
     finishFailure(`local team assets are invalid: ${localValidation.errors.map((entry) => entry.message).join("; ")}`);
