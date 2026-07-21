@@ -210,6 +210,10 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 });
 
+Electrobun.events.on("reopen", () => {
+  try { win.show(); } catch (err) { console.error("[draft-desktop] reopen failed:", err); }
+});
+
 // ── Tray ───────────────────────────────────────────────────────────────────────
 // TODO: Replace with image asset before Phase 1 ship (put image in "views://assets/tray-icon-template.png")
 
@@ -1578,13 +1582,24 @@ watcherHandlers = {
 
 // ── Main window ────────────────────────────────────────────────────────────────
 
-const win = new BrowserWindow({
-  title: "Draft",
-  url: "views://app/index.html",
-  titleBarStyle: "hiddenInset",
-  rpc,
-});
-win.setFrame(180, 100, 1150, 820);
+// Native close can't be intercepted (no preventDefault hook like beforeQuit),
+// so on close we swap in a fresh hidden window rather than reuse the dead one.
+function createMainWindow(hidden: boolean) {
+  const w = new BrowserWindow({
+    title: "Draft",
+    url: "views://app/index.html",
+    titleBarStyle: "hiddenInset",
+    rpc,
+    hidden,
+  });
+  w.setFrame(180, 100, 1150, 820);
+  w.on("close", () => {
+    win = createMainWindow(true);
+  });
+  return w;
+}
+
+let win = createMainWindow(false);
 
 function readContextFile(workspace: string, dimension: string): string {
   if (!dimension || dimension === "unknown") return "";
@@ -1604,7 +1619,7 @@ tray.on("tray-clicked", (e) => {
 
   if (action === "open" || action === "") {
     // action === "" fires when the tray icon itself is clicked (not a menu item).
-    win.show?.();
+    try { win.show(); } catch (err) { console.error("[draft-desktop] tray open failed:", err); }
   }
 
   if (action === "tray-stop-draft") {
