@@ -172,7 +172,6 @@ export async function runCodexScan(options: ScannerOptions = {}): Promise<void> 
       : 360 * 60_000);
 
   const { state, legacyProcessedIds } = await loadState(statePath);
-  const isFirstScan = !state.last_scanned_at;
   pruneState(state, nowMs);
 
   mkdirSync(pendingDir, { recursive: true });
@@ -180,7 +179,10 @@ export async function runCodexScan(options: ScannerOptions = {}): Promise<void> 
   mkdirSync(failedDir, { recursive: true });
 
   const suppressedIds = new Set(state.suppressed_sessions.map(entry => entry.session_id));
-  const daysToScan = isFirstScan ? 1 : EXPIRY_DAYS;
+  // Only ever discover today's sessions. If the daemon was off for a few days,
+  // sessions from those days are intentionally left unscanned rather than all
+  // queued for synthesis at once when the daemon comes back up.
+  const daysToScan = 1;
   let observed = 0;
   let queued = 0;
   let retried = 0;

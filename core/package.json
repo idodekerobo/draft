@@ -25,6 +25,7 @@
     "./sync/team-assets":     "./src/sync/team-assets.ts",
     "./sync/publish":         "./src/sync/publish.ts",
     "./secrets":              "./src/secrets.ts",
+    "./time":                 "./src/time.ts",
     "./migrations/runner":    "./src/migrations/runner.ts"
   },
   "scripts": {
