@@ -10,6 +10,7 @@ import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, readLocalConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { runMigrations } from 'draft-core/migrations/runner';
 import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
+import { isToday } from 'draft-core/time';
 import { withProfileSwitchLock } from 'draft-core/sync/team-assets';
 import { atomicPatch } from 'draft-core/sync/atomic-write';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
@@ -23,8 +24,15 @@ const DRAFT_WORKSPACE = getWorkspacePath(ACTIVE_PROFILE);
 const DRAFT_PENDING    = `${DRAFT_BACKGROUND}/pending`;
 const DRAFT_PROCESSING = `${DRAFT_BACKGROUND}/processing`;
 const DRAFT_FAILED     = `${DRAFT_BACKGROUND}/failed`;
+const DRAFT_DEFERRED   = `${DRAFT_BACKGROUND}/deferred`;
 const DRAFT_LOGS       = `${DRAFT_BACKGROUND}/logs`;
 const STATE_DIR        = `${DRAFT_BACKGROUND}/state`;
+
+// Session-synthesis jobs (Claude Code + Codex) are expensive — each spawns a
+// real `claude -p` call. If the daemon was off for a few days, don't drain the
+// whole backlog on restart: only synthesize sessions from today, and move
+// older ones to deferred/ instead of processing or deleting them.
+const SESSION_JOB_SOURCES = new Set(['claude-code-session', 'codex-session']);
 
 // Per-profile local config — read once at startup
 const _localCfgResult = readLocalConfig(DRAFT_WORKSPACE);
@@ -45,6 +53,7 @@ const SKILL_SYNC_MS      = 5 * 60 * 1000;
 mkdirSync(DRAFT_PENDING,    { recursive: true });
 mkdirSync(DRAFT_PROCESSING, { recursive: true });
 mkdirSync(DRAFT_FAILED,     { recursive: true });
+mkdirSync(DRAFT_DEFERRED,   { recursive: true });
 mkdirSync(DRAFT_LOGS,       { recursive: true });
 mkdirSync(STATE_DIR,        { recursive: true });
 
@@ -230,6 +239,15 @@ async function processJob(jobPath: string) {
   if (jobSource === 'claude-code-session' && !CLAUDE_CODE_SYNTHESIS_ON) {
     log('info', `job ${jobName}: claude-code synthesis disabled — dropping`);
     try { unlinkSync(processingPath); } catch {}
+    return;
+  }
+
+  // Session-synthesis jobs are expensive (real LLM calls). If this job is from
+  // a prior day — e.g. the daemon was off and the backlog piled up — defer it
+  // instead of burning tokens processing the whole backlog on restart.
+  if (SESSION_JOB_SOURCES.has(jobSource) && !isToday(job.timestamp as string | undefined)) {
+    log('info', `job ${jobName}: not from today — deferring (source=${jobSource})`);
+    try { renameSync(processingPath, `${DRAFT_DEFERRED}/${jobName}`); } catch {}
     return;
   }
 
