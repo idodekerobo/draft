@@ -8,8 +8,12 @@
 
 import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, unlinkSync, readdirSync } from "fs";
+import { homedir, platform } from "os";
 import { capture } from "../exec";
 import { DRAFT_ROOT } from "../config";
+
+const NOT_AUTHENTICATED_ERROR =
+  "You're not signed in to Claude Code. Open a terminal, run `claude`, then `/login` to sign in — then retry context setup.";
 
 const HEADLESS_LOG_DIR = join(DRAFT_ROOT, "logs", "headless");
 
@@ -57,6 +61,22 @@ export async function resolveRunnerBin(name: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * Preflight only — checks whether Claude Code has *ever* logged in, not
+ * whether that session is still valid. macOS stores the OAuth token in
+ * Keychain; there's no local way to validate it without a network call, and
+ * `spawnHeadlessAgent`'s stdout classification already catches expired
+ * tokens on the real run. This exists to skip a doomed run entirely for the
+ * common "never logged in" case, not to guarantee auth is good.
+ */
+export async function isClaudeAuthenticated(): Promise<boolean> {
+  if (platform() === "darwin") {
+    const result = await capture(["security", "find-generic-password", "-s", "Claude Code-credentials"]);
+    return result.exitCode === 0;
+  }
+  return existsSync(join(homedir(), ".claude", ".credentials.json"));
+}
+
 export async function spawnHeadlessAgent(
   opts: SpawnHeadlessAgentOpts,
 ): Promise<SpawnHeadlessAgentResult> {
@@ -68,6 +88,14 @@ export async function spawnHeadlessAgent(
   const runnerBin = await resolveRunnerBin(runner);
   if (!runnerBin) {
     return { ok: false, error: `${runnerName} CLI not found. Install it first or run /draft-setup manually.` };
+  }
+
+  // TODO(backlog): automate this via a detached tmux session that drives
+  // `claude` → `/login`, scrapes the OAuth URL from the pane, opens it for
+  // the user, and polls for success — deferred, tmux-scraping a TUI is
+  // fragile and this manual path is the safe baseline (see decision 2026-07-21).
+  if (runner === "claude" && !(await isClaudeAuthenticated())) {
+    return { ok: false, error: NOT_AUTHENTICATED_ERROR };
   }
 
   const ts = Date.now();
@@ -139,7 +167,8 @@ export async function spawnHeadlessAgent(
       if (exitCode === 0) {
         notify({ phase: "complete", label: "Context setup complete." });
       } else {
-        notify({ phase: "error", label: classifyStderr(stderr), error: stderr || `Exited with code ${exitCode}.` });
+        const combinedOutput = `${stdout}\n${stderr}`;
+        notify({ phase: "error", label: classifyOutput(combinedOutput), error: stderr || stdout || `Exited with code ${exitCode}.` });
       }
     } finally {
       try { unlinkSync(promptPath); } catch {}
@@ -150,8 +179,15 @@ export async function spawnHeadlessAgent(
   return { ok: true };
 }
 
-function classifyStderr(stderr: string): string {
-  const s = stderr.toLowerCase();
+// Claude Code's `-p` CLI writes auth failures ("Not logged in · Please run
+// /login", "Failed to authenticate. API Error: 401 ...") to stdout, not
+// stderr — so this must check both. Confirmed from real failure logs where
+// stderr was empty and the error text was in stdout.
+export function classifyOutput(output: string): string {
+  const s = output.toLowerCase();
+  if (s.includes("not logged in") || s.includes("failed to authenticate") || s.includes("please run /login") || s.includes("401")) {
+    return NOT_AUTHENTICATED_ERROR;
+  }
   if (s.includes("auth") || s.includes("login")) return "Your session expired. Sign in and try again.";
   if (s.includes("rate") || s.includes("429")) return "Rate limited. Wait a moment and try again.";
   if (s.includes("token") || s.includes("context length") || s.includes("too long")) return "Too much content to process at once. Try with a smaller folder.";
