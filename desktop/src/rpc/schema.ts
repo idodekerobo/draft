@@ -498,6 +498,13 @@ export type AppRPCType = {
       getContextFiles: { params: void; response: ContextFileEntry[] };
 
       /**
+       * Scaffold a new custom dimension: context/<name>/index.md + log/.
+       * Mirrors `draft dimension add <name>` (cli/src/commands/dimension.ts) so the
+       * two entry points stay behaviorally identical.
+       */
+      addContextDimension: { params: { name: string }; response: ActionResult };
+
+      /**
        * Write edited content to a context file on disk. Frequent/debounced tier —
        * does not touch history.db. relativePath is relative to <workspace>/context/.
        */

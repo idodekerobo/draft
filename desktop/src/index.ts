@@ -820,6 +820,34 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      addContextDimension: async ({ name }) => {
+        try {
+          if (!/^[a-z0-9-]+$/.test(name)) {
+            return { ok: false, error: "Dimension names may only contain lowercase letters, numbers, and hyphens." };
+          }
+          const workspace = getWorkspacePath(getActiveProfile());
+          const contextDir = join(workspace, "context");
+          const dimPath = join(contextDir, name);
+          const indexPath = join(dimPath, "index.md");
+          const logPath = join(dimPath, "log");
+
+          if (existsSync(indexPath)) {
+            return { ok: false, error: `Dimension '${name}' already exists.` };
+          }
+
+          mkdirSync(dimPath, { recursive: true });
+          mkdirSync(logPath, { recursive: true });
+          writeFileSync(
+            indexPath,
+            `---\nname: ${name}\ndescription: >\n  No information recorded yet.\nlast_updated: ""\nsource: ""\n---\n`,
+            "utf8"
+          );
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Failed to create dimension." };
+        }
+      },
+
       saveContextFile: async ({ relativePath, content }) => {
         try {
           const workspace = getWorkspacePath(getActiveProfile());

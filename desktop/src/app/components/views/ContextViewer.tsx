@@ -288,6 +288,84 @@ function GroupSection({
   );
 }
 
+// ── Add dimension row ────────────────────────────────────────────────────────
+// Inline affordance at the bottom of the tree for scaffolding a custom dimension
+// (context/<name>/index.md + log/) without leaving the desktop app. Mirrors
+// `draft dimension add <name>` / the draft-add-dimension skill's scaffold step.
+
+function AddDimensionRow({
+  onAdd,
+}: {
+  onAdd: (name: string) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
+
+  function close() {
+    setOpen(false);
+    setValue("");
+    setError(null);
+  }
+
+  async function submit() {
+    const slug = value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+    if (!slug) {
+      setError("Enter a name.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    const result = await onAdd(slug);
+    setSubmitting(false);
+    if (result.ok) {
+      close();
+    } else {
+      setError(result.error ?? "Failed to create dimension.");
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="context-tree__add-dim-trigger" onClick={() => setOpen(true)}>
+        + New dimension
+      </button>
+    );
+  }
+
+  return (
+    <div className="context-tree__add-dim-form">
+      <input
+        ref={inputRef}
+        className="context-tree__add-dim-input"
+        value={value}
+        placeholder="Dimension Name"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+          if (e.key === "Escape") close();
+        }}
+        disabled={submitting}
+      />
+      <div className="context-tree__add-dim-actions">
+        <button className="context-tree__add-dim-confirm" onClick={submit} disabled={submitting}>
+          {submitting ? "Adding…" : "Add"}
+        </button>
+        <button className="context-tree__add-dim-cancel" onClick={close} disabled={submitting}>
+          Cancel
+        </button>
+      </div>
+      {error && <p className="context-tree__add-dim-error">{error}</p>}
+    </div>
+  );
+}
+
 // ── Context tree ──────────────────────────────────────────────────────────────
 
 function ContextTree({
@@ -299,6 +377,7 @@ function ContextTree({
   onToggleDim,
   onToggleGroup,
   onContextMenu,
+  onAddDimension,
 }: {
   files: ContextFileEntry[];
   selectedPath: string;
@@ -308,6 +387,7 @@ function ContextTree({
   onToggleDim: (group: string) => void;
   onToggleGroup: (group: string) => void;
   onContextMenu?: (e: React.MouseEvent, path: string) => void;
+  onAddDimension: (name: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const dims = files.filter((f) => f.kind === "dim");
   const standalones = files.filter((f) => f.kind === "standalone");
@@ -373,6 +453,8 @@ function ContextTree({
           />
         );
       })}
+
+      <AddDimensionRow onAdd={onAddDimension} />
     </aside>
   );
 }
@@ -1173,6 +1255,17 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
     if (expanding) track("context_doc_expanded", { group });
   }
 
+  // ── Add dimension handler ─────────────────────────────────────────────────────
+  async function handleAddDimension(name: string): Promise<{ ok: boolean; error?: string }> {
+    const result = await rpc.request.addContextDimension({ name });
+    if (result.ok) {
+      track("context_dimension_added", {});
+      loadFiles();
+      setSelectedPath(`${name}/index.md`);
+    }
+    return result;
+  }
+
   function toggleGroup(group: string) {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -1257,6 +1350,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
             onToggleDim={toggleDim}
             onToggleGroup={toggleGroup}
             onContextMenu={handleContextMenu}
+            onAddDimension={handleAddDimension}
           />
           {selectedEntry && (
             selectedVersionId ? (
