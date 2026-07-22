@@ -598,8 +598,12 @@ export type AppRPCType = {
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
-      /** Start a non-interactive CLI session to create the active profile's context. */
-      runHeadlessSetup: { params: { mode: "scratch" | "import" | "github"; folderPath?: string; githubUrl?: string; runner?: "claude" | "codex" }; response: ActionResult };
+      /**
+       * Start a non-interactive CLI session to create the active profile's context.
+       * `dimensions` overrides the standard company/product/team/priorities set —
+       * omit to use the default four.
+       */
+      runHeadlessSetup: { params: { mode: "scratch" | "import" | "github"; folderPath?: string; githubUrl?: string; runner?: "claude" | "codex"; dimensions?: string[] }; response: ActionResult };
 
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };

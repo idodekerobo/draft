@@ -1200,7 +1200,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         };
       },
 
-      runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner }) => {
+      runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner, dimensions }) => {
         const workspace = getWorkspacePath(getActiveProfile());
 
         let importSummary: string | undefined;
@@ -1237,6 +1237,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           installedTools: getInstalledTools(),
           connectedIntegrations,
           importSummary,
+          dimensions,
         });
 
         return spawnHeadlessAgent({

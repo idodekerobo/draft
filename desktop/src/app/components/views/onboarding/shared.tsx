@@ -129,6 +129,67 @@ export function HeadlessProgress({ label }: { label: string }) {
   );
 }
 
+// ── DimensionPicker ──────────────────────────────────────────────────────────
+// Lets the user keep the standard four context dimensions or customize the set
+// (drop defaults, add their own) before headless setup runs. Mirrors the
+// scaffold shape used by `draft dimension add` / the draft-add-dimension skill.
+
+const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];
+
+function DimensionPicker({ dimensions, onChange }: { dimensions: string[]; onChange: (next: string[]) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  function toggleDefault(name: string) {
+    onChange(dimensions.includes(name) ? dimensions.filter((d) => d !== name) : [...dimensions, name]);
+  }
+
+  function addCustom() {
+    const slug = newName.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+    if (!slug || dimensions.includes(slug)) return;
+    onChange([...dimensions, slug]);
+    setNewName("");
+  }
+
+  const customDims = dimensions.filter((d) => !DEFAULT_SETUP_DIMENSIONS.includes(d));
+
+  return (
+    <div className="onboarding__dim-picker">
+      <button className="onboarding__dim-picker-toggle" onClick={() => setExpanded((prev) => !prev)}>
+        {expanded ? "▼" : "▶"} Customize context dimensions ({dimensions.length})
+      </button>
+      <p className="onboarding__dim-picker-subtitle">Draft tracks company, product, team, and priorities by default, keeping each up to date every session. Add your own (e.g. brand, architecture) and Draft will track those too.</p>
+      {expanded && (
+        <div className="onboarding__dim-picker-body">
+          {DEFAULT_SETUP_DIMENSIONS.map((name) => (
+            <label key={name} className="onboarding__dim-picker-row">
+              <input type="checkbox" checked={dimensions.includes(name)} onChange={() => toggleDefault(name)} />
+              <span>{name}</span>
+            </label>
+          ))}
+          {customDims.map((name) => (
+            <label key={name} className="onboarding__dim-picker-row">
+              <input type="checkbox" checked readOnly />
+              <span>{name}</span>
+              <button className="onboarding__dim-picker-remove" onClick={() => onChange(dimensions.filter((d) => d !== name))} aria-label={`Remove ${name}`}>✕</button>
+            </label>
+          ))}
+          <div className="onboarding__dim-picker-add">
+            <input
+              className="onboarding__dim-picker-add-input"
+              value={newName}
+              placeholder="dimension name"
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
+            />
+            <button className="onboarding__dim-picker-add-btn" onClick={addCustom}>Add</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── HeadlessSetupPanel ───────────────────────────────────────────────────────
 
 type Runner = "claude" | "codex";
@@ -155,6 +216,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
   const [availableRunners, setAvailableRunners] = useState<Runner[]>([]);
   const [selectedRunner, setSelectedRunner] = useState<Runner>("claude");
   const [runnersLoaded, setRunnersLoaded] = useState(false);
+  const [dimensions, setDimensions] = useState<string[]>(DEFAULT_SETUP_DIMENSIONS);
 
   useEffect(() => {
     void rpc.request.getAvailableRunners().then((result) => {
@@ -191,6 +253,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
     const result = await rpc.request.runHeadlessSetup({
       mode,
       runner: selectedRunner,
+      dimensions,
       ...(mode === "import" ? { folderPath: folderPath ?? undefined } : {}),
       ...(mode === "github" ? { githubUrl: githubUrl.trim() || undefined } : {}),
     });
@@ -226,6 +289,8 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
             </div>
           </div>
         )}
+
+        <DimensionPicker dimensions={dimensions} onChange={setDimensions} />
 
         <div className="onboarding__setup-options">
           <button

@@ -440,15 +440,22 @@ If import_context provided a `high`-confidence summary for a dimension and no in
 
 ### 2. Confirm dimensions
 
-Before writing files, tell the user what will be created and give them a chance to customize:
+Before writing files, use the **AskUserQuestion** tool to ask:
+> "I'll create context areas for: company, product, team, priorities.
+> A) Keep defaults
+> B) Customize (drop some, add my own)"
 
-> "I'll create context areas for: **company, product, team, priorities**.
-> Want to rename any or add custom ones? (e.g. `research`, `decisions`, `legal`)
-> Press enter to continue with defaults."
+**If "Keep defaults":** use all four, continue to step 3.
 
-Wait for their response. If they want changes, adjust the dimension list. If they press enter or say nothing, use the defaults.
+**If "Customize":**
+1. Use the **AskUserQuestion** tool (multiSelect) to ask which of the four to drop:
+   > "Which of these do you want to skip? (Leave all unselected to keep every one.)"
+   > company / product / team / priorities
+2. Use the **AskUserQuestion** tool to ask:
+   > "Any custom dimensions to add? (e.g. `research`, `decisions`, `legal` — comma-separated, or press enter to skip.)"
+   Slugify each name (lowercase, hyphens only, no spaces) before adding it to the list.
 
-Pass the confirmed dimension list to @draft-learner in the next step.
+Combine: (the four defaults minus what was dropped) + (any custom names added). This is the confirmed dimension list — pass it to @draft-learner in the next step.
 
 ### 3. Call @draft-learner
 
@@ -490,6 +497,7 @@ Body content by dimension:
 - **product**: product name, problem it solves, target user, key features, current state, open hypotheses
 - **team**: who's on the team, roles, structure, how decisions get made
 - **priorities**: active TODOs, current sprint goal, blockers, what success looks like
+- **any custom dimension**: use its name and whatever the user said about it (in the interview or in step 2) to infer what belongs there — don't force it into one of the shapes above
 
 Do NOT write log entries during /setup — this is the initial state.
 

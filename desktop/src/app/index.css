@@ -3107,6 +3107,19 @@ button {
 .onboarding__error-toggle { border: 0; background: transparent; color: var(--color-text-secondary); font-size: var(--font-size-secondary); cursor: pointer; padding: 4px 0; text-decoration: underline; }
 .onboarding__error-detail { width: 100%; max-height: 120px; overflow: auto; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--color-bg-sidebar); color: var(--color-text-secondary); font: 12px var(--font-mono); white-space: pre-wrap; word-break: break-all; }
 
+.onboarding__dim-picker { width: 100%; margin-top: 4px; }
+.onboarding__dim-picker-toggle { width: 100%; padding: 6px 0; background: transparent; border: 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-family: var(--font-ui); text-align: left; cursor: pointer; }
+.onboarding__dim-picker-toggle:hover { color: var(--color-text-primary); }
+.onboarding__dim-picker-subtitle { margin: 0 0 6px; color: var(--color-text-tertiary); font-size: var(--font-size-micro); line-height: 1.4; }
+.onboarding__dim-picker-body { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.02); }
+.onboarding__dim-picker-row { display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-family: var(--font-ui); }
+.onboarding__dim-picker-remove { margin-left: auto; padding: 2px 6px; background: transparent; border: 0; color: var(--color-text-tertiary); font-size: var(--font-size-micro); cursor: pointer; }
+.onboarding__dim-picker-remove:hover { color: var(--color-status-red); }
+.onboarding__dim-picker-add { display: flex; gap: 6px; margin-top: 2px; }
+.onboarding__dim-picker-add-input { flex: 1; height: 30px; padding: 0 8px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg-sidebar); color: var(--color-text-primary); font-size: var(--font-size-secondary); font-family: var(--font-ui); }
+.onboarding__dim-picker-add-btn { padding: 0 12px; height: 30px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: transparent; color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-family: var(--font-ui); cursor: pointer; }
+.onboarding__dim-picker-add-btn:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
+
 .onboarding__step-indicator {
   font-size: var(--font-size-micro);
   font-weight: 600;

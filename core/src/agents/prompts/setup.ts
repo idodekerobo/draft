@@ -3,6 +3,15 @@
 // Pure function: inputs in, string out. No I/O, no side effects.
 // Tune agent behavior here without touching spawn logic.
 
+export const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];
+
+const DIMENSION_GUIDANCE: Record<string, string> = {
+  company: "name, what they build, business model, stage, target market, key constraints",
+  product: "product name, problem it solves, target user, key features, current state, open hypotheses",
+  team: "who's on the team, roles, structure, how decisions get made",
+  priorities: "active TODOs, current sprint goal, blockers, what success looks like",
+};
+
 export interface BuildHeadlessSetupPromptOpts {
   workspace: string;
   installedTools: string[];
@@ -10,6 +19,8 @@ export interface BuildHeadlessSetupPromptOpts {
   /** Optional source summary. Local folder lists files; GitHub passes natural-language
    *  clone instructions (agent-led for this use case). */
   importSummary?: string;
+  /** Dimensions to scaffold. Defaults to the standard four if omitted or empty. */
+  dimensions?: string[];
 }
 
 export function buildHeadlessSetupPrompt(opts: BuildHeadlessSetupPromptOpts): string {
@@ -22,6 +33,15 @@ export function buildHeadlessSetupPrompt(opts: BuildHeadlessSetupPromptOpts): st
     : "none";
 
   const workspace = opts.workspace;
+  const dimensions = opts.dimensions && opts.dimensions.length > 0 ? opts.dimensions : DEFAULT_SETUP_DIMENSIONS;
+
+  const dimSubdirs = dimensions
+    .map((dim) => `    base / "context" / "${dim}" / "log",`)
+    .join("\n");
+
+  const dimGuidanceList = dimensions
+    .map((dim) => `- **${dim}**: ${DIMENSION_GUIDANCE[dim] ?? "infer the most relevant facts for a dimension named this from the available context"}`)
+    .join("\n");
 
   return `You are running Draft's non-interactive context setup.
 
@@ -39,10 +59,7 @@ Run this Python block first to establish the correct layout:
 from pathlib import Path
 base = Path("${workspace}")
 for subdir in [
-    base / "context" / "company" / "log",
-    base / "context" / "product" / "log",
-    base / "context" / "team" / "log",
-    base / "context" / "priorities" / "log",
+${dimSubdirs}
     base / "context" / "decisions",
     base / "docs",
     base / "config",
@@ -52,7 +69,7 @@ for subdir in [
 
 ## Step 2 — Write context index files
 
-Write \`context/<dim>/index.md\` for each of: company, product, team, priorities.
+Write \`context/<dim>/index.md\` for each of: ${dimensions.join(", ")}.
 
 Each file must have two parts:
 
@@ -76,10 +93,7 @@ source: /headless-setup
 \`\`\`
 
 Body content by dimension:
-- **company**: name, what they build, business model, stage, target market, key constraints
-- **product**: product name, problem it solves, target user, key features, current state, open hypotheses
-- **team**: who's on the team, roles, structure, how decisions get made
-- **priorities**: active TODOs, current sprint goal, blockers, what success looks like
+${dimGuidanceList}
 
 ## Rules
 
