@@ -831,6 +831,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                       <>
                         <span className="app-row__panel-help">Install the app to your workspace, then copy the app-level token and bot token.</span>
                         <label className="app-row__field-label" htmlFor="settings-slack-app-token">App-level token</label>
+                        <span className="app-row__hint">Found in <strong>Basic Information</strong> → under <strong>App-Level Tokens</strong> → click <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong></span>
                         <input id="settings-slack-app-token" className="app-row__input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="xapp-..." />
                         {appToken.length > 0 && !appToken.startsWith("xapp-") && (
                           <span className="app-row__validation">App-level tokens start with xapp-.</span>
