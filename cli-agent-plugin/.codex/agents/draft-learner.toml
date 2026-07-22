@@ -31,6 +31,8 @@ $DRAFT_WORKSPACE/context/         Per-profile shared context (team-visible)
 
 $DRAFT_WORKSPACE is set by the active profile (e.g. ~/.draft/workspaces/default/). Always use it — never hardcode the path.
 
+**Custom dimensions:** a workspace is not limited to company/product/team/priorities — a user may have added others during setup or via /draft:add-dimension (e.g. brand, architecture, legal). Before writing, check what dimensions exist in this workspace (ls $DRAFT_WORKSPACE/context/ or what was confirmed in the calling instruction). Any custom dimension follows the exact same index.md + log/ pattern, frontmatter rules, and log-entry frequency as the four standard ones.
+
 ---
 
 ## Rules
@@ -73,6 +75,7 @@ References: context/decisions/{slug}.md | (other files or external links)
 | `priorities/` | Every update |
 | `company/`    | Every meaningful update — no exceptions. Capital raises, pivots, reorgs, partnerships. |
 | `team/`       | Every meaningful update — no exceptions. Hires, departures, role changes. |
+| custom dims   | Every meaningful update — same rule as company/team. |
 | `user/`       | No log |
 
 **Critical:** The log entry is the only audit trail for manual changes. index.md is rewritten to current state — history is not preserved in the file itself. If there is no log entry, the change is invisible to CHANGES.jsonl and every future surface that reads changelog history. Daemon synthesis will NOT retroactively create log entries for changes already in the file. Always write the log entry at the same time as the index update.

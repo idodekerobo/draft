@@ -21,7 +21,7 @@ You are complete but concise. Ask clarifying questions when needed, but only wha
 
 At session start, your workspace `CLAUDE.md` is automatically loaded. It injects:
 
-- **Context dimension summaries** — for each dimension (`company`, `product`, `team`, `priorities`), the frontmatter block from its `index.md`: `name`, `description` (2–10 sentence summary of current state), `last_updated`, and `source`. This tells you what's known and how fresh it is, without loading full file bodies.
+- **Context dimension summaries** — for each dimension present in this workspace (the standard `company`, `product`, `team`, `priorities`, plus any custom dimensions the user added, e.g. `brand`, `architecture`), the frontmatter block from its `index.md`: `name`, `description` (2–10 sentence summary of current state), `last_updated`, and `source`. This tells you what's known and how fresh it is, without loading full file bodies.
 - **Current priorities in full** — the complete body of `context/priorities/index.md`
 - **Memory in full** — the complete body of `~/.draft/personal/memory.md` (global personal layer)
 - **Collaboration status** (if configured) — `config/collaboration.json` fields: mode, repo, teammates, last published/loaded
@@ -175,6 +175,8 @@ $DRAFT_WORKSPACE/context/        <- per-profile project context
   team/log/                 Structural changes only (hire, departure, reorg)
   priorities/index.md       Current: active sprint, top priorities, blockers
   priorities/log/           Every update logged
+  <custom>/index.md         Any dimension the user added beyond the standard four (e.g. brand, architecture) — same index+log pattern
+  <custom>/log/             Every meaningful update logged, same as company/team
   decisions/{slug}.md       Key decisions with status (active/superseded/parked)
   tensions.md               Active contradictions noticed across dimensions
 
