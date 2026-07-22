@@ -90,6 +90,19 @@ Use the **AskUserQuestion** tool to ask:
 
 **Option A — New dedicated repo:**
 
+Check which orgs the user belongs to:
+```bash
+gh api user/orgs --jq '.[].login'
+```
+
+- If this returns **no orgs**: skip straight to owner = `[username]` (from Step 2a's `gh api user` call above) — no need to ask.
+- If it returns **one or more orgs**: use the **AskUserQuestion** tool to ask:
+  > "Where should the repo live?
+  > A) Your personal account (`[username]`)
+  > B) One of your organizations: [list the org logins returned above]"
+
+  Store the chosen login (personal username or org login) as `OWNER`.
+
 Use the **AskUserQuestion** tool to ask:
 > "What should the repo be called? (Press Enter for `draft-context`)"
 
@@ -98,10 +111,14 @@ Use the **AskUserQuestion** tool to ask:
 
 Create the repo:
 ```bash
-gh repo create [username]/[repo-name] --private --description "Draft team context"
+gh repo create [OWNER]/[repo-name] --private --description "Draft team context"
 ```
 
-Set: `team_repo_url = https://github.com/[username]/[repo-name]`, `team_repo_subdir = root`
+If `OWNER` is an org and the create command fails with a permissions error (the user
+lacks repo-creation rights in that org), report the error and fall back to asking
+whether to create it under their personal account instead.
+
+Set: `team_repo_url = https://github.com/[OWNER]/[repo-name]`, `team_repo_subdir = root`
 
 **Option B — Existing repo:**
 
