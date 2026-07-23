@@ -119,6 +119,10 @@ export interface Secrets {
   slack_allowlist_channels?: string[];
   slack_capture_mode?: "passive" | "tagged";
   slack_analysis_window_hours?: number;
+  /** GitHub Device Flow OAuth token — used for the API-based team-load transport. */
+  github_oauth_token?: string;
+  /** Display only — never log/analytics. */
+  github_oauth_login?: string;
 }
 
 // ── Integrations schema ────────────────────────────────────────────────────────
@@ -130,6 +134,8 @@ export interface IntegrationEntry {
   channels?: number;
   repos?: string[];
   last_connected?: string;
+  /** How this integration got connected. Absent means the legacy gh-CLI flow. */
+  via?: "gh-cli" | "oauth-device-flow";
 }
 
 export interface Integrations {
@@ -369,6 +375,12 @@ export interface LocalConfig {
       mcp_hash: string;
     };
   };
+  /** Transport used to pull team content. Absent/"git" = clone via git/gh CLI. */
+  sync_method?: "git" | "github-api";
+  /** Default branch of the team repo, resolved via the GitHub API at join time. */
+  default_branch?: string;
+  /** Set once token exchange succeeds, cleared only once the join fully completes — enables restart-safe resume. */
+  pending_join?: { team_repo_url: string; owner: string; repo: string };
 }
 
 export type LocalConfigResult =
@@ -417,4 +429,14 @@ export function readCollaboration(workspacePath: string): CollabResult {
   } catch {
     return { ok: false, reason: "malformed" };
   }
+}
+
+/** Patch-based write — merges patch into existing collaboration.json so individual keys don't clobber each other. */
+export function writeCollaboration(workspacePath: string, patch: Partial<Collaboration>): void {
+  const collabPath = join(workspacePath, "config", "collaboration.json");
+  const result = readCollaboration(workspacePath);
+  const current: Collaboration = result.ok ? result.collab : {};
+  const updated = { ...current, ...patch };
+  mkdirSync(join(workspacePath, "config"), { recursive: true });
+  writeFileSync(collabPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
 }
