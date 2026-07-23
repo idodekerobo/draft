@@ -581,8 +581,7 @@ function recordHistoryRows(workspace: string, backupContextRoot: string): void {
       const oldContent = existsSync(oldPath) ? readFileSync(oldPath, "utf8") : null;
       if (newContent !== null && newContent !== oldContent) {
         // Content just arrived from the team repo, so it IS the current
-        // published state — mark it published at load time, same reasoning
-        // as loadDiff.ts's applyFromTmpDir and sync.ts's runLoad.
+        // published state — mark it published at load time.
         insertFileVersion(db, {
           filePath: relPath,
           content: newContent,
@@ -662,6 +661,15 @@ export async function promoteStagedTeamContent(operationId: string): Promise<Pro
   };
 
   const outcome = await withProfileSwitchLockRetrying<PromoteResult>(async () => {
+    // The active profile may have changed while we were waiting for the lock.
+    // Re-check under the same lock that protects uninstall/mirror/install so
+    // no mutation can begin against a workspace that is no longer active.
+    const lockedActiveWorkspace = getWorkspacePath(getActiveProfile());
+    if (lockedActiveWorkspace !== workspace) {
+      log(`promote: workspace_changed inside profile-switch lock operationId=${operationId}`);
+      return { ok: false, error: "workspace_changed" };
+    }
+
     try {
       const uninstallResult = await uninstallProfileAssets(profile);
 
@@ -715,6 +723,6 @@ export async function promoteStagedTeamContent(operationId: string): Promise<Pro
     return { ok: false, error: "apply_failed" };
   }
 
-  log(`promote: ${outcome.ok ? "ok" : "apply_failed"} operationId=${operationId}`);
+  log(`promote: ${outcome.ok ? "ok" : outcome.error} operationId=${operationId}`);
   return outcome;
 }
