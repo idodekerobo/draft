@@ -18,6 +18,14 @@ type EventMap = {
   skillsChanged: { count: number };
   mcpsChanged: { count: number };
   headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
+  githubOAuthProgress: {
+    phase: "awaiting_user" | "verifying_access" | "complete" | "error";
+    userCode?: string;
+    verificationUri?: string;
+    label: string;
+    error?: string;
+    errorCode?: string;
+  };
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
   badgeUpdate: { profile: string; count: number };
@@ -68,6 +76,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       mcpsChanged: (data) => events.emit("mcpsChanged", data),
 
       headlessProgress: (data) => events.emit("headlessProgress", data),
+      githubOAuthProgress: (data) => events.emit("githubOAuthProgress", data),
 
       // TODO: Phase 2: heartbeat went stale — daemon stopped
       daemonStopped: (data) => events.emit("daemonStopped", data),

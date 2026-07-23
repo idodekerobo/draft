@@ -14,11 +14,15 @@ export type DaemonControlVariant =
 
 export type OnboardingStep =
   | "welcome"
+  | "path-choice"         // new — join-team fork, right after welcome
   | "profile"
   | "intelligence-tools"
   | "scan-import"        // new — T2
   | "integrations"
   | "collab"
+  | "join-team"           // new — native GitHub OAuth join, replaces "collab" on the join path
   | "consent"
   | "headless-setup"     // new — T6
   | "complete";
+
+export type OnboardingPath = "solo" | "join";
