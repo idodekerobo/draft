@@ -9,7 +9,7 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readCollaboration, readIntegrations, writeIntegrations, readSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
@@ -41,7 +41,7 @@ import {
   getBundledDaemonBinPath,
   getBundledPluginDir,
 } from "./main/bundlePath";
-import { readLocalDiff, fetchRemoteDiff, applyFromTmpDir } from "./main/sync/loadDiff";
+import { readLocalDiff } from "./main/sync/loadDiff";
 import { runInstall } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
@@ -72,6 +72,7 @@ import {
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
 import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
+import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
 import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
 
 async function preflightPublish(): Promise<{ ok: true; profile: string; workspace: string } | { ok: false; error: string }> {
@@ -254,13 +255,11 @@ setTrayMenu(true);
 // eslint-disable-next-line prefer-const
 let watcherHandlers!: ProposalWatchHandlers;
 
-// Staging temp dir held between getTeamDiff (phase 1) and applyTeamDiff (phase 2).
-// Module-level so it survives across RPC calls. Cleaned up on next getTeamDiff call
-// or on applyTeamDiff. Empty string = no staging dir.
-let stagingTmpDir = "";
-
 const rpc = BrowserView.defineRPC<AppRPCType>({
-  maxRequestTime: 30_000,
+  // Team staging can spend up to 60s cloning; promotion can then wait up to
+  // 30s for the profile lock before applying assets. Keep the RPC alive for
+  // the full shared-loader lifecycle so the renderer never sees a false timeout.
+  maxRequestTime: 120_000,
   handlers: {
     requests: {
       getStatus: async () => {
@@ -471,20 +470,51 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getTeamDiff: async () => {
-        // Clean up any lingering staging dir before starting a fresh clone.
-        if (stagingTmpDir) {
-          try { (await import("fs")).rmSync(stagingTmpDir, { recursive: true, force: true }); } catch {}
-          stagingTmpDir = "";
+        const profile = getActiveProfile();
+        const workspace = getWorkspacePath(profile);
+        const collaboration = readCollaboration(workspace);
+        if (!collaboration.ok || !collaboration.collab.team_repo_url) {
+          return { ok: false, collabConfigured: false, error: "not_configured" };
         }
-        const result = await fetchRemoteDiff();
-        if (result.tmpDir) stagingTmpDir = result.tmpDir;
-        return result;
+
+        try {
+          const result = await stageTeamContent({ workspace, profile });
+          if (!result.ok) {
+            return { ok: false, collabConfigured: true, error: result.error };
+          }
+          return {
+            ok: true,
+            collabConfigured: true,
+            operationId: result.staged.operationId,
+            entries: result.staged.entries,
+            cursorLine: result.staged.cursorLine,
+          };
+        } catch {
+          return { ok: false, collabConfigured: true, error: "unexpected" };
+        }
       },
 
-      applyTeamDiff: async ({ tmpDir, cursorLine }) => {
-        const result = applyFromTmpDir(tmpDir, cursorLine);
-        if (stagingTmpDir === tmpDir) stagingTmpDir = "";
-        return result;
+      applyTeamDiff: async ({ operationId }) => {
+        try {
+          const result = await promoteStagedTeamContent(operationId);
+          if (!result.ok) return result;
+          return {
+            ok: true,
+            missingSecrets: result.missingSecrets,
+            conflicts: result.conflicts.map(({ kind, name, profile, reason }) => ({
+              kind,
+              name,
+              profile,
+              reason,
+            })),
+            installedSkills: result.installedSkills,
+            installedMcps: result.installedMcps,
+            removedSkills: result.removedSkills,
+            removedMcps: result.removedMcps,
+          };
+        } catch {
+          return { ok: false, error: "unexpected" };
+        }
       },
 
       getLocalConfig: async () => {
