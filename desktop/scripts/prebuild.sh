@@ -29,56 +29,64 @@ mkdir -p "$ASSETS_DIR/background" "$ASSETS_DIR/plugin" "$ASSETS_DIR/bin"
 
 log "Copying background/..."
 cp -r "$REPO_ROOT/background/." "$ASSETS_DIR/background/"
+# Runtime entrypoints are bundled below; never ship the monorepo dependency tree.
+rm -rf "$ASSETS_DIR/background/node_modules"
 log "  Done"
 
 # Bundle entrypoints that run after installation, outside the monorepo. Raw
 # TypeScript there cannot resolve workspace packages such as draft-core.
-log "Bundling Codex runtime entrypoints..."
-bun build \
-  --target=bun \
-  --outfile "$ASSETS_DIR/background/integrations/codex/codex-scanner.js" \
-  "$REPO_ROOT/background/integrations/codex/codex-scanner.ts"
-bun build \
-  --target=bun \
-  --outfile "$ASSETS_DIR/background/synthesizers/codex-session.js" \
-  "$REPO_ROOT/background/synthesizers/codex-session.ts"
-bun build \
-  --target=bun \
-  --outfile "$ASSETS_DIR/background/intelligence/codex.js" \
-  "$REPO_ROOT/background/intelligence/codex.ts"
+log "Bundling installed TypeScript runtime entrypoints..."
+RUNTIME_MANIFEST="$ASSETS_DIR/background/.runtime-bundles"
+: > "$RUNTIME_MANIFEST"
+
+# Bundle every executable TS runtime currently present. This intentionally uses
+# the source tree as the manifest so newly migrated pollers/synthesizers cannot
+# be forgotten while type-only/helper modules remain ordinary bundle inputs.
+{
+  find "$REPO_ROOT/background/integrations" -type f \
+    \( -name '*-poller.ts' -o -name '*-analyzer.ts' -o -name '*-scanner.ts' \
+       -o -name 'slack-capture.ts' -o -name 'slack-rebuild.ts' \)
+  find "$REPO_ROOT/background/synthesizers" -maxdepth 1 -type f -name '*.ts' ! -name 'synthesis-runtime.ts'
+  find "$REPO_ROOT/background/intelligence" -maxdepth 1 -type f -name '*.ts'
+} | sort | while IFS= read -r runtime_source; do
+    relative_path="${runtime_source#"$REPO_ROOT/background/"}"
+    relative_output="${relative_path%.ts}.js"
+    runtime_output="$ASSETS_DIR/background/$relative_output"
+    mkdir -p "$(dirname "$runtime_output")"
+    bun build --target=bun --outfile "$runtime_output" "$runtime_source"
+    printf '%s\n' "$relative_output" >> "$RUNTIME_MANIFEST"
+  done
+
+# Do not ship tests or duplicate raw sources for manifest-listed entrypoints.
+rm -rf "$ASSETS_DIR/background/__tests__"
+while IFS= read -r relative_output; do
+  [ -n "$relative_output" ] || continue
+  rm -f "$ASSETS_DIR/background/${relative_output%.js}.ts"
+done < "$RUNTIME_MANIFEST"
 
 # Smoke-test the staged bundles from a HOME with no monorepo node_modules.
-SMOKE_HOME=$(mktemp -d)
-trap 'rm -rf "$SMOKE_HOME"' EXIT
+SMOKE_ROOT=$(mktemp -d)
+SMOKE_HOME="$SMOKE_ROOT/home"
+SMOKE_INSTALL="$SMOKE_ROOT/install/background"
+mkdir -p "$SMOKE_HOME" "$SMOKE_INSTALL"
+cp -R "$ASSETS_DIR/background/." "$SMOKE_INSTALL/"
+trap 'rm -rf "$SMOKE_ROOT"' EXIT
 
-# Scanner exits 0 normally (no sessions dir = nothing to scan), so we can't use
-# exit status to detect failure. Capture output and check for module errors only.
-set +e
-scanner_output=$(HOME="$SMOKE_HOME" bun run \
-  "$ASSETS_DIR/background/integrations/codex/codex-scanner.js" 2>&1)
-set -e
-if [[ "$scanner_output" == *"Cannot find module"* ]]; then
-  echo "[prebuild] ERROR: scanner smoke test failed" >&2
-  echo "$scanner_output" >&2
-  exit 1
-fi
-
-# Synthesizer and intelligence adapter both require args and exit non-zero without
-# them — so a clean exit (status 0) or a module error both indicate failure.
-for runtime_entry in \
-  "$ASSETS_DIR/background/synthesizers/codex-session.js" \
-  "$ASSETS_DIR/background/intelligence/codex.js"; do
+while IFS= read -r relative_output; do
+  [ -n "$relative_output" ] || continue
+  runtime_entry="$SMOKE_INSTALL/$relative_output"
   set +e
   smoke_output=$(HOME="$SMOKE_HOME" bun run "$runtime_entry" 2>&1)
-  smoke_status=$?
   set -e
-  if [ "$smoke_status" -eq 0 ] || [[ "$smoke_output" == *"Cannot find module"* ]]; then
+  if [[ "$smoke_output" == *"Cannot find module"* ]] \
+     || [[ "$smoke_output" == *"Cannot find package"* ]] \
+     || [[ "$smoke_output" == *"ModuleNotFound"* ]]; then
     echo "[prebuild] ERROR: runtime smoke test failed for $runtime_entry" >&2
     echo "$smoke_output" >&2
     exit 1
   fi
-done
-rm -rf "$SMOKE_HOME"
+done < "$RUNTIME_MANIFEST"
+rm -rf "$SMOKE_ROOT"
 trap - EXIT
 log "  Done"
 

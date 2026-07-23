@@ -93,26 +93,18 @@ else
     echo "[Draft Daemon] NOTE: draft-background-bin not found — run prebuild.sh first (or use bun run for dev)" >&2
 fi
 
-# ── 2b. Copy synthesizers/ and intelligence/ subdirectories ────────────────────
+# ── 2b. Copy synthesizers/ and intelligence/ recursively ───────────────────────
 for subdir in "synthesizers" "intelligence"; do
     if [ -d "$SCRIPT_DIR/$subdir" ]; then
         mkdir -p "$DRAFT_BACKGROUND/$subdir"
-        for script in "$SCRIPT_DIR/$subdir"/*.sh; do
-            [ -f "$script" ] || continue
-            dest="$DRAFT_BACKGROUND/$subdir/$(basename "$script")"
-            cp "$script" "$dest"
-            chmod +x "$dest"
+        find "$SCRIPT_DIR/$subdir" -type f | while IFS= read -r source_file; do
+            relative_file="${source_file#"$SCRIPT_DIR/$subdir/"}"
+            dest="$DRAFT_BACKGROUND/$subdir/$relative_file"
+            [ "$source_file" = "$dest" ] && continue
+            mkdir -p "$(dirname "$dest")"
+            cp "$source_file" "$dest"
+            case "$dest" in *.sh) chmod +x "$dest" ;; esac
         done
-        for script in "$SCRIPT_DIR/$subdir"/*.ts; do
-            [ -f "$script" ] || continue
-            cp "$script" "$DRAFT_BACKGROUND/$subdir/$(basename "$script")"
-        done
-        for script in "$SCRIPT_DIR/$subdir"/*.js; do
-            [ -f "$script" ] || continue
-            cp "$script" "$DRAFT_BACKGROUND/$subdir/$(basename "$script")"
-        done
-        # Copy README if present
-        [ -f "$SCRIPT_DIR/$subdir/README.md" ] && cp "$SCRIPT_DIR/$subdir/README.md" "$DRAFT_BACKGROUND/$subdir/README.md"
         echo "[Draft Daemon] Installed $subdir/ to $DRAFT_BACKGROUND/$subdir"
     else
         echo "[Draft Daemon] NOTE: $subdir/ not found in $SCRIPT_DIR — synthesis adapters not installed" >&2
@@ -193,7 +185,7 @@ fi
 # and build an explicit PATH string to embed in the plist.
 echo ""
 echo "[Draft Daemon] Building daemon PATH..."
-_BIN_DIRS=("/usr/bin" "/bin" "/usr/sbin" "/sbin")
+_BIN_DIRS=("$HOME/.draft/bin" "/usr/bin" "/bin" "/usr/sbin" "/sbin")
 for _cmd in claude tmux python3 bun; do
     _bin_path=$(command -v "$_cmd" 2>/dev/null || echo "")
     if [ -n "$_bin_path" ]; then

@@ -1,22 +1,22 @@
 // commands/poll.ts — draft poll <integration>
 
-import { existsSync } from "fs";
 import { spawn } from "../utils/exec.ts";
 import { getActiveProfile, getWorkspacePath, readIntegrations } from "../utils/config.ts";
 import { bold, dim, red, cyan, green } from "../utils/output.ts";
+import { resolveRuntimeEntrypoint, runtimeCommand } from "draft-core/runtime";
 
 const HOME = process.env.HOME!;
 const BACKGROUND = `${HOME}/.draft/background`;
 
 type IntegrationConfig = {
-  script: string;
+  entrypoint: string;
   label: string;
   configCheck?: (workspace: string) => boolean;
 };
 
 const INTEGRATIONS: Record<string, IntegrationConfig> = {
   github: {
-    script: `${BACKGROUND}/integrations/github/github-poller.sh`,
+    entrypoint: `${BACKGROUND}/integrations/github/github-poller`,
     label: "GitHub",
     configCheck: (workspace) => {
       const result = readIntegrations(workspace);
@@ -24,11 +24,11 @@ const INTEGRATIONS: Record<string, IntegrationConfig> = {
     },
   },
   granola: {
-    script: `${BACKGROUND}/integrations/granola/granola-poller.sh`,
+    entrypoint: `${BACKGROUND}/integrations/granola/granola-poller`,
     label: "Granola",
   },
   slack: {
-    script: `${BACKGROUND}/integrations/slack/slack-analyzer.sh`,
+    entrypoint: `${BACKGROUND}/integrations/slack/slack-analyzer`,
     label: "Slack",
   },
 };
@@ -56,8 +56,9 @@ export async function runPoll(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  if (!existsSync(config.script)) {
-    console.error(red(`Poller script not found: ${config.script}`));
+  const entrypoint = resolveRuntimeEntrypoint(config.entrypoint);
+  if (!entrypoint) {
+    console.error(red(`Poller script not found: ${config.entrypoint}.{js,ts,sh}`));
     console.error(dim("Try reinstalling: draft add claude-code"));
     process.exit(3);
   }
@@ -76,7 +77,12 @@ export async function runPoll(args: string[]): Promise<void> {
   console.log(`${bold("Draft")} polling ${config.label}...`);
   console.log("");
 
-  const code = await spawn(["bash", config.script]);
+  const command = runtimeCommand(entrypoint);
+  if (!command) {
+    console.error(red("Bun runtime not found. Reinstall Draft or install Bun."));
+    process.exit(3);
+  }
+  const code = await spawn(command);
 
   if (code === 0) {
     console.log("");

@@ -14,7 +14,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // macOS GUI apps inherit a stripped PATH that excludes all of these.
 // Pass this as `env: { PATH: GUI_PATH }` in any capture() or Bun.spawn() call
 // that needs to find a user-installed binary (claude, codex, etc.).
-export const GUI_PATH = "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin";
+export const GUI_PATH = `${process.env.HOME ?? ""}/.draft/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin`;
 
 /**
  * spawn: passthrough stdio. stdout/stderr stream directly to the terminal.

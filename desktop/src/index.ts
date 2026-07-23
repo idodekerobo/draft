@@ -27,7 +27,7 @@ import {
   rejectProposal as rejectCoreProposal,
   applyProposalLocally,
 } from "draft-core/proposals";
-import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
 import { join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
@@ -1421,7 +1421,7 @@ function daemonPlistContent(binPath: string): string {
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string>
+        <string>${process.env.HOME ?? ""}/.draft/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string>
         <key>HOME</key>
         <string>${process.env.HOME ?? ""}</string>
     </dict>
@@ -1491,7 +1491,7 @@ async function syncBundledAssets(): Promise<void> {
     "synthesize.sh",
     "uninstall.sh",
   ];
-  const runtimeDirectories = ["intelligence", "integrations", "synthesizers", "node_modules"];
+  const runtimeDirectories = ["intelligence", "integrations", "synthesizers"];
 
   if (existsSync(backgroundDir)) {
     try {
@@ -1527,6 +1527,23 @@ async function syncBundledAssets(): Promise<void> {
           });
         }
       }
+
+      // The build manifest is an explicit allowlist of bundled JS entrypoints.
+      // Remove only their raw-TS predecessors; queues, state, captures, prompts,
+      // and any unlisted user files are never cleanup targets.
+      const runtimeManifest = join(backgroundDir, ".runtime-bundles");
+      if (existsSync(runtimeManifest)) {
+        for (const bundledPath of readFileSync(runtimeManifest, "utf8").split(/\r?\n/)) {
+          if (!bundledPath || bundledPath.startsWith("/") || bundledPath.includes("\\") || bundledPath.split("/").includes("..")) continue;
+          if (!/^(integrations|synthesizers|intelligence)\/[a-zA-Z0-9_./-]+\.js$/.test(bundledPath)) continue;
+          const staleTs = join(BACKGROUND_DIR, bundledPath.replace(/\.js$/, ".ts"));
+          if (existsSync(staleTs)) unlinkSync(staleTs);
+        }
+      }
+      // Older releases copied the monorepo dependency tree into the installed
+      // runtime. Bundles are self-contained now; this exact generated path is
+      // the only directory-level stale asset cleanup performed here.
+      rmSync(join(BACKGROUND_DIR, "node_modules"), { recursive: true, force: true });
       console.log(`[draft-desktop] daemon runtime synced to ${appVersion}`);
     } catch (err) {
       console.warn(`[draft-desktop] daemon runtime sync failed: ${err instanceof Error ? err.message : err}`);

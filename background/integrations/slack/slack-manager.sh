@@ -16,7 +16,8 @@ DRAFT_BACKGROUND="$HOME/.draft/background"
 # shellcheck source=config.sh
 source "$DRAFT_BACKGROUND/config.sh"
 
-CAPTURE_SCRIPT="$DRAFT_BACKGROUND/integrations/slack/slack-capture.ts"
+CAPTURE_SCRIPT="$DRAFT_BACKGROUND/integrations/slack/slack-capture.js"
+[ -f "$CAPTURE_SCRIPT" ] || CAPTURE_SCRIPT="$DRAFT_BACKGROUND/integrations/slack/slack-capture.ts"
 PID_FILE="$DRAFT_BACKGROUND/integrations/slack/capture.pid"
 LOG_FILE="$DRAFT_LOGS/slack-capture.log"
 
