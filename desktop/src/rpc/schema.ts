@@ -661,6 +661,39 @@ export type AppRPCType = {
 
       /** Check if team collaboration is configured for the active profile. */
       getCollabConfigured: { params: void; response: { configured: boolean } };
+
+      /**
+       * Whether the native GitHub join flow is available in this build —
+       * false for OSS/dev builds with no OAuth client id baked in, or when
+       * the build-time kill switch is off. Renderer never attempts an OAuth
+       * call it can't complete; it shows "not available in this build" instead.
+       */
+      getGitHubJoinConfig: { params: void; response: { enabled: boolean } };
+
+      /**
+       * Kick off the native GitHub Device Flow join-team flow. Fire-and-forget —
+       * returns almost immediately, well before the user has even seen the
+       * device code. All real progress (including the multi-minute wait for
+       * browser authorization) arrives via the githubOAuthProgress push.
+       */
+      startGitHubJoin: { params: { repoUrl: string }; response: ActionResult };
+
+      /** Cancel the in-flight device flow for the active workspace, if any. */
+      cancelGitHubJoin: { params: void; response: ActionResult };
+
+      /** Poll join status — used by JoinTeamStep to offer a "finish joining?" resume prompt on mount. */
+      checkGitHubJoinStatus: {
+        params: void;
+        response: { connected: boolean; pending: boolean; reason?: "no_access" | "token_revoked" | "network" };
+      };
+
+      /**
+       * Resume a pending join (LocalConfig.pending_join) after a crash or an
+       * earlier "no access yet" failure. Re-runs verifyRepoAccess + completeJoin
+       * against the already-issued token — no new device code needed. Same
+       * fire-and-forget contract as startGitHubJoin; progress via githubOAuthProgress.
+       */
+      resumeGitHubJoin: { params: void; response: ActionResult };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
@@ -744,6 +777,16 @@ export type AppRPCType = {
 
       /** One or more team MCPs are missing credentials after profile switch or load-team. */
       mcpsPendingCredentials: { mcps: PendingCredentialMcp[] };
+
+      /** Progress from the native GitHub Device Flow join-team flow. */
+      githubOAuthProgress: {
+        phase: "awaiting_user" | "verifying_access" | "complete" | "error";
+        userCode?: string;
+        verificationUri?: string;
+        label: string;
+        error?: string;
+        errorCode?: string;
+      };
     };
   }>;
 };
