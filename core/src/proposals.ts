@@ -36,6 +36,61 @@ export interface Proposal {
   contextUpdates: ContextUpdate[];
 }
 
+export type AutomatedSynthesisValidation =
+  | { ok: true; updates: ContextUpdate[] }
+  | { ok: false; error: string };
+
+/**
+ * Validate untrusted LLM synthesis before it reaches proposals/. Curator-created
+ * proposals still retain overwrite support in applyProposalLocally; automated
+ * sources are limited to append/tension and tightly routed context paths.
+ */
+export function validateAutomatedSynthesisOutput(raw: string): AutomatedSynthesisValidation {
+  if (Buffer.byteLength(raw, "utf8") > 1_000_000) {
+    return { ok: false, error: "synthesis output exceeds 1 MB" };
+  }
+  const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!fmMatch) return { ok: false, error: "missing YAML frontmatter" };
+
+  let parsed: unknown;
+  try {
+    parsed = load(fmMatch[1] ?? "");
+  } catch {
+    return { ok: false, error: "malformed YAML frontmatter" };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, error: "frontmatter must be an object" };
+  }
+  const rawUpdates = (parsed as Record<string, unknown>).context_updates;
+  if (!Array.isArray(rawUpdates)) return { ok: false, error: "context_updates must be an array" };
+
+  const updates: ContextUpdate[] = [];
+  for (const [index, value] of rawUpdates.entries()) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { ok: false, error: `context_updates[${index}] must be an object` };
+    }
+    const record = value as Record<string, unknown>;
+    if (typeof record.file !== "string" || typeof record.action !== "string" || typeof record.content !== "string") {
+      return { ok: false, error: `context_updates[${index}] has an invalid schema` };
+    }
+    const file = record.file;
+    const action = record.action;
+    if (action !== "append" && action !== "tension") {
+      return { ok: false, error: `automated action ${JSON.stringify(action)} is not allowed` };
+    }
+    if (/\p{Cc}/u.test(file) || file.startsWith("/") || file.includes("\\") || file.split("/").includes("..")) {
+      return { ok: false, error: `context_updates[${index}] has an unsafe file path` };
+    }
+    const validAppendPath = /^context\/[a-zA-Z0-9][a-zA-Z0-9_-]*\/index\.md$/.test(file);
+    const validTensionPath = file === "context/tensions.md";
+    if ((action === "append" && !validAppendPath) || (action === "tension" && !validTensionPath)) {
+      return { ok: false, error: `context_updates[${index}] is routed outside its allowed path` };
+    }
+    updates.push({ file, action, content: record.content });
+  }
+  return { ok: true, updates };
+}
+
 // ── Read ───────────────────────────────────────────────────────────────────────
 
 /**
