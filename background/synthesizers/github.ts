@@ -21,6 +21,16 @@ interface GitHubJob {
   github_context?: GitHubContext;
 }
 
+interface GitHubPromptInput {
+  activity: string;
+  teamProfilesMap: string;
+  contextFilesList: string;
+  outputPath: string;
+  intelligence: string;
+  timestamp: string;
+  profile: string;
+}
+
 function log(msg: string): void {
   process.stderr.write(`[github.ts] ${msg}\n`);
 }
@@ -29,7 +39,11 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function formatActivity(context: GitHubContext, profiles: TeamProfile[]): string {
+export function formatBodyPreview(value: unknown, maxLength = 200): string {
+  return text(value).replace(/\s+/g, ' ').trim().slice(0, maxLength).trim();
+}
+
+export function formatActivity(context: GitHubContext, profiles: TeamProfile[]): string {
   const resolveName = (login: string): string => {
     const match = profiles.find(profile => text(profile.github).toLowerCase() === login.toLowerCase());
     return text(match?.name) || login;
@@ -56,6 +70,8 @@ function formatActivity(context: GitHubContext, profiles: TeamProfile[]): string
     for (const release of releases) {
       const tag = text(release.tagName) || '?';
       lines.push(`- [${text(release.repo)}] ${tag} (${text(release.name) || tag}) — published ${text(release.publishedAt).slice(0, 10)}`);
+      const preview = formatBodyPreview(release.body);
+      if (preview) lines.push(`  Release notes: ${preview}`);
     }
     lines.push('');
   }
@@ -73,6 +89,83 @@ function formatActivity(context: GitHubContext, profiles: TeamProfile[]): string
   }
 
   return lines.join('\n') || '(no new GitHub activity)';
+}
+
+export function buildGitHubPrompt(input: GitHubPromptInput): string {
+  return `# Draft Synthesis Task — GitHub Activity
+
+You are a context synthesis agent for Draft. Your job is to extract relevant signal from recent GitHub activity and propose updates to the team's workspace context.
+
+## Team member profiles (GitHub username -> display name)
+${input.teamProfilesMap}
+
+## Recent GitHub activity
+${input.activity}
+
+## Existing workspace context files
+${input.contextFilesList}
+
+---
+
+## Your task
+
+Read the existing workspace context files to understand what's already captured. Then synthesize the GitHub activity above into context updates — focusing on what a product lead or engineering manager would care about.
+
+**Signal that matters:**
+- What shipped (merged PRs, releases) — who built it, what it does
+- Releases with meaningful notes about features, breaking changes, or user-visible fixes
+- What's actively in progress (open PRs) — who's working on what, any obvious blockers (long-open PRs, no reviews)
+- Release milestones
+
+**Signal to ignore:**
+- Low-signal PRs (dependency bumps, typo fixes, config changes)
+- Releases with blank or missing notes, or notes limited to chores and dependency updates
+- Activity that's already captured in existing context
+- Open PRs that were just created today (too early to be meaningful)
+
+**Rules:**
+- Use display names from the team profile map, not raw GitHub usernames
+- If a PR description clarifies what the feature does, include that context
+- Do NOT repeat what's already in workspace context files
+- If GitHub activity contradicts something in workspace context, use action: tension
+
+## Output format
+
+Write your output to: ${input.outputPath}
+
+Use this exact YAML frontmatter followed by a markdown preview:
+
+\`\`\`
+---
+input_source: github
+synthesized_by: ${input.intelligence}
+timestamp: ${input.timestamp}
+profile: ${input.profile}
+context_updates:
+  - file: context/product/index.md
+    action: append
+    content: |
+      [your synthesized insight here]
+---
+
+## GitHub synthesis preview
+
+[markdown summary of what was captured and why]
+\`\`\`
+
+If there is genuinely nothing relevant to capture, write:
+\`\`\`
+---
+input_source: github
+synthesized_by: ${input.intelligence}
+timestamp: ${input.timestamp}
+profile: ${input.profile}
+context_updates: []
+---
+
+No relevant GitHub activity to capture.
+\`\`\`
+`;
 }
 
 async function main(): Promise<void> {
@@ -127,78 +220,15 @@ async function main(): Promise<void> {
   const promptPath = join(tmpDir, `github-prompt-${Date.now()}-${crypto.randomUUID()}`);
   const outputPath = join(tmpDir, `github-synthesis-${Date.now()}-${crypto.randomUUID()}`);
 
-  const prompt = `# Draft Synthesis Task — GitHub Activity
-
-You are a context synthesis agent for Draft. Your job is to extract relevant signal from recent GitHub activity and propose updates to the team's workspace context.
-
-## Team member profiles (GitHub username -> display name)
-${teamProfilesMap}
-
-## Recent GitHub activity
-${formatActivity(job.github_context, profiles)}
-
-## Existing workspace context files
-${contextFilesList}
-
----
-
-## Your task
-
-Read the existing workspace context files to understand what's already captured. Then synthesize the GitHub activity above into context updates — focusing on what a product lead or engineering manager would care about.
-
-**Signal that matters:**
-- What shipped (merged PRs, releases) — who built it, what it does
-- What's actively in progress (open PRs) — who's working on what, any obvious blockers (long-open PRs, no reviews)
-- Release milestones
-
-**Signal to ignore:**
-- Low-signal PRs (dependency bumps, typo fixes, config changes)
-- Activity that's already captured in existing context
-- Open PRs that were just created today (too early to be meaningful)
-
-**Rules:**
-- Use display names from the team profile map, not raw GitHub usernames
-- If a PR description clarifies what the feature does, include that context
-- Do NOT repeat what's already in workspace context files
-- If GitHub activity contradicts something in workspace context, use action: tension
-
-## Output format
-
-Write your output to: ${outputPath}
-
-Use this exact YAML frontmatter followed by a markdown preview:
-
-\`\`\`
----
-input_source: github
-synthesized_by: ${intelligence}
-timestamp: ${timestamp}
-profile: ${profile}
-context_updates:
-  - file: context/product/index.md
-    action: append
-    content: |
-      [your synthesized insight here]
----
-
-## GitHub synthesis preview
-
-[markdown summary of what was captured and why]
-\`\`\`
-
-If there is genuinely nothing relevant to capture, write:
-\`\`\`
----
-input_source: github
-synthesized_by: ${intelligence}
-timestamp: ${timestamp}
-profile: ${profile}
-context_updates: []
----
-
-No relevant GitHub activity to capture.
-\`\`\`
-`;
+  const prompt = buildGitHubPrompt({
+    activity: formatActivity(job.github_context, profiles),
+    teamProfilesMap,
+    contextFilesList,
+    outputPath,
+    intelligence,
+    timestamp,
+    profile,
+  });
 
   await Bun.write(promptPath, prompt);
 
@@ -239,7 +269,9 @@ No relevant GitHub activity to capture.
   }
 }
 
-await main().catch(error => {
-  log(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  await main().catch(error => {
+    log(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}
