@@ -13,6 +13,7 @@ import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
 import { isToday } from 'draft-core/time';
 import { withProfileSwitchLock } from 'draft-core/sync/team-assets';
 import { atomicPatch } from 'draft-core/sync/atomic-write';
+import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
 
@@ -335,56 +336,52 @@ async function main(): Promise<void> {
   // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
   // stdout/stderr routed to logFd so poller log output lands in daemon.log.
 
+  function spawnRuntime(pathWithoutExtension: string, env?: Record<string, string>): boolean {
+    const entrypoint = resolveRuntimeEntrypoint(pathWithoutExtension);
+    if (!entrypoint) return false;
+    const command = runtimeCommand(entrypoint);
+    if (!command) {
+      log('warn', `runtime: bun not found for ${entrypoint.path}`);
+      return false;
+    }
+    Bun.spawn(command, {
+      stdin: 'ignore', stdout: logFd, stderr: logFd,
+      ...(env ? { env: { ...process.env, ...env } } : {}),
+    });
+    return true;
+  }
+
   // Granola poller
   setInterval(() => {
-    const script = `${DRAFT_BACKGROUND}/integrations/granola/granola-poller.sh`;
-    if (!existsSync(script)) return;
     const mode = process.env.DRAFT_GRANOLA_MODE ?? 'mcp';
     log('info', `granola: starting poll (interval=${GRANOLA_POLL_MS / 1000}s mode=${mode})`);
-    Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/granola/granola-poller`);
   }, GRANOLA_POLL_MS);
 
   // Slack manager (process health check — ensures slack-capture.ts is running if Slack is configured)
   setInterval(() => {
-    const script = `${DRAFT_BACKGROUND}/integrations/slack/slack-manager.sh`;
-    if (!existsSync(script)) return;
-    Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-manager`);
   }, SLACK_MANAGER_MS);
 
   // Slack analyzer (synthesis batch)
   setInterval(() => {
-    const script = `${DRAFT_BACKGROUND}/integrations/slack/slack-analyzer.sh`;
-    if (!existsSync(script)) return;
     log('info', `slack: starting analysis (interval=${SLACK_ANALYSIS_MS / 1000}s)`);
-    Bun.spawn(['bash', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-analyzer`);
   }, SLACK_ANALYSIS_MS);
 
   // GitHub poller
   setInterval(() => {
     const ghConfig = `${DRAFT_WORKSPACE}/config/github.json`;
-    const script = `${DRAFT_BACKGROUND}/integrations/github/github-poller.ts`;
-    if (!existsSync(ghConfig) || !existsSync(script)) return;
+    if (!existsSync(ghConfig)) return;
     log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
-    Bun.spawn(['bun', 'run', script], { stdin: 'ignore', stdout: logFd, stderr: logFd });
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/github/github-poller`);
   }, GITHUB_POLL_MS);
 
   // Codex session scanner
   function runCodexScan() {
-    const jsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.js`;
-    const tsScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.ts`;
-    const shScript = `${DRAFT_BACKGROUND}/integrations/codex/codex-scanner.sh`;
-    const script = existsSync(jsScript) ? jsScript : existsSync(tsScript) ? tsScript : shScript;
-    if (!existsSync(script)) return;
     log('info', `codex: starting scan (interval=${CODEX_SCAN_INTERVAL_MS / 60_000}m)`);
-    const cmd = script.endsWith('.sh') ? ['bash', script] : ['bun', 'run', script];
-    Bun.spawn(cmd, {
-      stdin: 'ignore',
-      stdout: logFd,
-      stderr: logFd,
-      env: {
-        ...process.env,
-        DRAFT_CODEX_SCAN_INTERVAL_MS: String(CODEX_SCAN_INTERVAL_MS),
-      },
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/codex/codex-scanner`, {
+      DRAFT_CODEX_SCAN_INTERVAL_MS: String(CODEX_SCAN_INTERVAL_MS),
     });
   }
 

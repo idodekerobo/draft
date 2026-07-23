@@ -5,6 +5,7 @@
   "exports": {
     "./config":               "./src/config.ts",
     "./exec":                 "./src/exec.ts",
+    "./runtime":              "./src/runtime.ts",
     "./status":               "./src/status.ts",
     "./heartbeat":            "./src/heartbeat.ts",
     "./appState":             "./src/appState.ts",

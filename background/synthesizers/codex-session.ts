@@ -18,6 +18,7 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { join, basename, dirname } from 'path';
 import { BACKGROUND_DIR, DRAFT_ROOT, getWorkspacePath } from 'draft-core/config';
+import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
 
 function log(msg: string) {
   process.stderr.write(`[codex-session.ts] ${msg}\n`);
@@ -245,18 +246,13 @@ log(`prompt written (${prompt.length} bytes), calling intelligence adapter`);
 // ── Call intelligence adapter ──────────────────────────────────────────────────
 
 const intelligence = process.env.DRAFT_SESSION_INTELLIGENCE ?? 'claude-code';
-const jsAdapterPath = join(BACKGROUND_DIR, 'intelligence', `${intelligence}.js`);
-const tsAdapterPath = join(BACKGROUND_DIR, 'intelligence', `${intelligence}.ts`);
-const shAdapterPath = join(BACKGROUND_DIR, 'intelligence', `${intelligence}.sh`);
-
-let adapterCmd: string[];
-if (existsSync(jsAdapterPath)) {
-  adapterCmd = ['bun', 'run', jsAdapterPath, promptFile, outputFile];
-} else if (existsSync(tsAdapterPath)) {
-  adapterCmd = ['bun', 'run', tsAdapterPath, promptFile, outputFile];
-} else if (existsSync(shAdapterPath)) {
-  adapterCmd = ['bash', shAdapterPath, promptFile, outputFile];
-} else {
+if (!/^[a-zA-Z0-9_-]+$/.test(intelligence)) {
+  log('ERROR: invalid intelligence adapter name');
+  process.exit(1);
+}
+const adapter = resolveRuntimeEntrypoint(join(BACKGROUND_DIR, 'intelligence', intelligence));
+const adapterCmd = adapter && runtimeCommand(adapter, [promptFile, outputFile]);
+if (!adapterCmd) {
   log(`ERROR: intelligence adapter not found for "${intelligence}" (tried .js, .ts, and .sh)`);
   try { unlinkSync(promptFile); } catch {}
   process.exit(1);

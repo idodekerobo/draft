@@ -47,12 +47,18 @@ if (existsSync(daemonSrc)) {
 // Bun runtime — from Electrobun's own dist; codesigned by Electrobun's build step
 // along with draft and draft-background-bin. Enables zero-install TypeScript
 // integration scripts (slack-capture, and future granola/github TypeScript ports).
-const bunSrc  = join(import.meta.dir, "..", "node_modules", "electrobun", "dist-macos-arm64", "bun");
+const bunArch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : null;
+if (!bunArch) {
+  console.error(`[postbuild] FATAL: unsupported macOS architecture: ${process.arch}`);
+  process.exit(1);
+}
+const bunDist = `dist-macos-${bunArch}`;
+const bunSrc  = join(import.meta.dir, "..", "node_modules", "electrobun", bunDist, "bun");
 const bunDest = join(buildDir, appName + ".app", "Contents", "MacOS", "bun");
 
 if (!existsSync(bunSrc)) {
   console.error(`[postbuild] FATAL: bun runtime not found at ${bunSrc}`);
-  console.error(`[postbuild] Check that electrobun's dist-macos-arm64/bun path hasn't changed.`);
+  console.error(`[postbuild] Check that electrobun's ${bunDist}/bun path exists for this architecture.`);
   process.exit(1);
 }
 copyFileSync(bunSrc, bunDest);

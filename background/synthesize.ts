@@ -6,6 +6,8 @@
 
 import { openActivityDb, insertRun, type ActivityRun } from 'draft-core/db/activity';
 import { BACKGROUND_DIR, getWorkspacePath } from 'draft-core/config';
+import { validateAutomatedSynthesisOutput } from 'draft-core/proposals';
+import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, statSync } from 'fs';
 import { basename, join } from 'path';
 
@@ -25,6 +27,20 @@ interface Job {
   cwd?: string;
   transcript_path?: string;
   transcript_fingerprint?: string;
+}
+
+const SYNTHESIS_ADAPTERS = {
+  github: 'github',
+  slack: 'slack',
+  granola: 'granola',
+  'claude-code-session': 'claude-code-session',
+  'codex-session': 'codex-session',
+} as const;
+
+type SynthesisSource = keyof typeof SYNTHESIS_ADAPTERS;
+
+function isSynthesisSource(value: unknown): value is SynthesisSource {
+  return typeof value === 'string' && Object.hasOwn(SYNTHESIS_ADAPTERS, value);
 }
 
 const LOGS_DIR   = `${BACKGROUND_DIR}/logs`;
@@ -76,7 +92,11 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   const jobId          = job.job_id          ?? fallbackJobId;
   const sessionId      = job.session_id      ?? null;
   const reason         = job.reason          ?? 'unknown';
-  const source         = job.source          ?? 'claude-code-session';
+  const rawSource      = job.source          ?? 'claude-code-session';
+  if (!isSynthesisSource(rawSource)) {
+    return { status: 'failed', proposalsGenerated: 0, errorMsg: 'invalid synthesis source' };
+  }
+  const source         = rawSource;
   const cwd            = job.cwd             ?? null;
   const transcriptPath: string | null = job.transcript_path ?? null;
   const sessionShort   = sessionId ? sessionId.slice(0, 8) : 'unknown';
@@ -136,16 +156,10 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   slog('info', `synthesize: starting (session=${sessionShort} profile=${profile})`);
 
   // ── Resolve adapter script (bundled .js, then source .ts, then .sh) ───────
-  const jsScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.js`);
-  const tsScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.ts`);
-  const shScript = join(BACKGROUND_DIR, 'synthesizers', `${source}.sh`);
-  const adapterScript = existsSync(jsScript)
-    ? jsScript
-    : existsSync(tsScript)
-      ? tsScript
-      : shScript;
-
-  if (!existsSync(adapterScript)) {
+  const adapter = resolveRuntimeEntrypoint(
+    join(BACKGROUND_DIR, 'synthesizers', SYNTHESIS_ADAPTERS[source]),
+  );
+  if (!adapter) {
     const msg = `source adapter not found for "${source}" (tried .js, .ts, and .sh; session=${sessionShort})`;
     slog('error', `synthesize: ${msg}`);
     writeActivityRow(workspace, {
@@ -157,9 +171,12 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
     return { status: 'failed', proposalsGenerated: 0, errorMsg: msg };
   }
 
-  const adapterCmd = adapterScript.endsWith('.sh')
-    ? ['bash', adapterScript, jobPath]
-    : ['bun', 'run', adapterScript, jobPath];
+  const adapterCmd = runtimeCommand(adapter, [jobPath]);
+  if (!adapterCmd) {
+    const msg = `bun runtime not found for source adapter "${source}"`;
+    slog('error', `synthesize: ${msg}`);
+    return { status: 'failed', proposalsGenerated: 0, errorMsg: msg };
+  }
 
   // ── Count proposals before spawn (ENOENT-safe) ────────────────────────────
   const stagingDir  = join(workspace, 'proposals');
@@ -216,9 +233,32 @@ export async function synthesize(jobPath: string): Promise<SynthesizeResult> {
   }
 
   // ── Validate output ────────────────────────────────────────────────────────
-  if (!stdoutText.trim() || stdoutText.includes('context_updates: []')) {
-    const why = !stdoutText.trim() ? 'empty output' : 'no team-relevant updates';
+  if (!stdoutText.trim()) {
+    const why = 'empty output';
     slog('info', `synthesize: ${why} (session=${sessionShort}) — nothing to stage`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
+      startedAt, endedAt: new Date().toISOString(), status: 'success',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: null, errorMsg: null,
+    });
+    return { status: 'success', proposalsGenerated: 0 };
+  }
+
+  const validation = validateAutomatedSynthesisOutput(stdoutText);
+  if (!validation.ok) {
+    const errorMsg = `invalid automated synthesis output: ${validation.error}`;
+    slog('error', `synthesize: ${errorMsg} (source=${source} session=${sessionShort})`);
+    writeActivityRow(workspace, {
+      id: jobId, profile, source, sessionId, cwd, transcriptPath,
+      startedAt, endedAt: new Date().toISOString(), status: 'failed',
+      durationMs: Date.now() - startTime,
+      proposalsGenerated: 0, skipReason: null, errorMsg,
+    });
+    return { status: 'failed', proposalsGenerated: 0, errorMsg };
+  }
+  if (!validation.updates.length) {
+    slog('info', `synthesize: no team-relevant updates (session=${sessionShort}) — nothing to stage`);
     writeActivityRow(workspace, {
       id: jobId, profile, source, sessionId, cwd, transcriptPath,
       startedAt, endedAt: new Date().toISOString(), status: 'success',
