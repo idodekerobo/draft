@@ -2,10 +2,10 @@ import type { ElectrobunConfig } from "electrobun";
 
 // Read PostHog key + host from build-config.json at config evaluation time.
 // Absent for OSS builds → empty string → phTrack no-ops in the main process.
-let _buildCfg: { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string } = {};
+let _buildCfg: { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string; github_oauth_client_id?: string; github_join_enabled?: boolean } = {};
 try {
   const raw = await Bun.file(new URL("./src/build-config.json", import.meta.url).pathname).text();
-  _buildCfg = JSON.parse(raw) as { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string };
+  _buildCfg = JSON.parse(raw) as { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string; github_oauth_client_id?: string; github_join_enabled?: boolean };
 } catch { /* no build-config.json — OSS build */ }
 
 const isDev               = process.argv.includes("dev");
@@ -15,6 +15,8 @@ const _crispId            = JSON.stringify(_buildCfg.crisp_website_id           
 const _crispHistoryUrl    = JSON.stringify(_buildCfg.crisp_history_endpoint           ?? "");
 const _crispHistorySecret = JSON.stringify(_buildCfg.crisp_history_secret             ?? "");
 const _calUrl             = JSON.stringify(_buildCfg.cal_url                          ?? "");
+const _ghClientId         = JSON.stringify(_buildCfg.github_oauth_client_id           ?? "");
+const _ghJoinEnabled      = JSON.stringify(_buildCfg.github_join_enabled              ?? false);
 
 export default {
   app: {
@@ -39,6 +41,8 @@ export default {
         "process.env.DRAFT_CRISP_HISTORY_ENDPOINT": _crispHistoryUrl,
         "process.env.DRAFT_CRISP_HISTORY_SECRET":   _crispHistorySecret,
         "process.env.DRAFT_CAL_URL":                _calUrl,
+        "process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID": _ghClientId,
+        "process.env.DRAFT_GITHUB_JOIN_ENABLED":    _ghJoinEnabled,
       },
     },
     views: {
