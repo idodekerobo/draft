@@ -29,4 +29,11 @@ export type AnalyticsEvent =
   | { event: "context_dimension_added";    props: Record<string, never> }
   | { event: "analytics_consent_granted";  props: Record<string, never> }
   | { event: "profile_actioned";           props: { action: "created" | "selected" } }
-  | { event: "install_skipped";            props: { tools: string[] } };
+  | { event: "install_skipped";            props: { tools: string[] } }
+  | { event: "onboarding_path_chosen";      props: { path: "join" | "solo" } }
+  | { event: "github_join_started";        props: Record<string, never> }
+  | { event: "github_join_code_displayed"; props: Record<string, never> }
+  | { event: "github_join_succeeded";      props: Record<string, never> }
+  | { event: "github_join_failed";         props: { error_code: "no_access" | "expired" | "denied" | "network" | "rate_limited" | "device_flow_disabled" | "unknown" } }
+  | { event: "github_join_resumed";        props: Record<string, never> }
+  | { event: "team_resync_failed";         props: { error_code: "token_revoked" | "no_access" | "network" | "rate_limited"; surface: "session_start" | "desktop_pull" } };

@@ -14,9 +14,10 @@ import { useState, useEffect, useRef } from "react";
 import type { InstallableTool, InstallStep, ProfileDetail } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
-import type { OnboardingStep } from "../../../types";
+import type { OnboardingPath, OnboardingStep } from "../../../types";
 import { TOOL_PREREQS } from "./constants";
 import { WelcomeStep } from "./WelcomeStep";
+import { PathChoiceStep } from "./PathChoiceStep";
 import { ProfileStep } from "./ProfileStep";
 import { ToolSelectionStep } from "./ToolSelectionStep";
 import { IntegrationSetupStep } from "./IntegrationSetupStep";
@@ -24,9 +25,16 @@ import { CompleteStep } from "./CompleteStep";
 import { ScanImportStep } from "./ScanImportStep";
 import { HeadlessSetupStep } from "./HeadlessSetupStep";
 import { CollabStep } from "./CollabStep";
+import { JoinTeamStep } from "./JoinTeamStep";
 
-const BASE_STEPS: OnboardingStep[] = [
-  "welcome", "profile", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
+const SOLO_BASE_STEPS: OnboardingStep[] = [
+  "welcome", "path-choice", "profile", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
+];
+const SOLO_SCAN_STEPS: OnboardingStep[] = [
+  "welcome", "path-choice", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "collab", "complete",
+];
+const JOIN_STEPS: OnboardingStep[] = [
+  "welcome", "path-choice", "profile", "join-team", "intelligence-tools", "integrations", "complete",
 ];
 
 interface OnboardingOrchestratorProps {
@@ -44,6 +52,8 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   const [consentSaving, setConsentSaving] = useState(false);
   const [consentAnswered, setConsentAnswered] = useState(false);
   const [hasScannableSkills, setHasScannableSkills] = useState<boolean | null>(null);
+  const [onboardingPath, setOnboardingPath] = useState<OnboardingPath | null>(null);
+  const [joinAvailable, setJoinAvailable] = useState(false);
 
   const { track, setConsent, setReplayEnabled } = useAnalytics();
   const completedRef = useRef(false);
@@ -56,15 +66,24 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   }, [step]);
 
   useEffect(() => {
+    // Fires unconditionally on mount, before any path is chosen, against
+    // whatever profile is currently active (not the one being created). Its
+    // result only feeds the solo-path variant selection below — it has zero
+    // effect on the join path, which never renders scan-import regardless.
     rpc.request.scanSkills()
       .then((result) => setHasScannableSkills(result.skills.length > 0))
       // Preserve the step on scan failure so it can show its retry/skip UI.
       .catch(() => setHasScannableSkills(true));
   }, []);
 
-  const activeSteps: OnboardingStep[] = hasScannableSkills === false && step !== "scan-import"
-    ? BASE_STEPS
-    : ["welcome", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "collab", "complete"];
+  useEffect(() => {
+    rpc.request.getGitHubJoinConfig()
+      .then((cfg) => setJoinAvailable(cfg.enabled))
+      .catch(() => setJoinAvailable(false));
+  }, []);
+
+  const soloSteps = hasScannableSkills === false && step !== "scan-import" ? SOLO_BASE_STEPS : SOLO_SCAN_STEPS;
+  const activeSteps: OnboardingStep[] = onboardingPath === "join" ? JOIN_STEPS : soloSteps;
 
   // Fire abandoned if component unmounts before completion
   useEffect(() => {
@@ -105,7 +124,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       const result = await rpc.request.switchProfile({ profile: name });
       if (result.ok) {
         track("profile_actioned", { action: "selected" });
-        setStep("intelligence-tools");
+        goNext();
       } else {
         setProfileError(result.error ?? "Switch failed.");
       }
@@ -125,7 +144,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
       const result = await rpc.request.createProfile({ name: trimmed });
       if (result.ok) {
         track("profile_actioned", { action: "created" });
-        setStep("intelligence-tools");
+        goNext();
       } else {
         setProfileError(result.error ?? "Create failed.");
       }
@@ -225,6 +244,19 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           onNext={goNext}
         />
       )}
+      {step === "path-choice" && (
+        <PathChoiceStep
+          stepNum={stepNum}
+          totalSteps={totalSteps}
+          onBack={handleBack}
+          joinAvailable={joinAvailable}
+          onChoose={(path) => {
+            track("onboarding_path_chosen", { path });
+            setOnboardingPath(path);
+            goNext();
+          }}
+        />
+      )}
       {step === "profile" && (
         <ProfileStep
           stepNum={stepNum}
@@ -238,6 +270,15 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           settingProfile={settingProfile}
           handleSelectProfile={handleSelectProfile}
           handleCreateProfile={handleCreateProfile}
+          restrictToNewProfile={onboardingPath === "join"}
+        />
+      )}
+      {step === "join-team" && (
+        <JoinTeamStep
+          stepNum={stepNum}
+          totalSteps={totalSteps}
+          onBack={handleBack}
+          onNext={goNext}
         />
       )}
       {step === "intelligence-tools" && (

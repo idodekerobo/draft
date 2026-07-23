@@ -16,29 +16,33 @@
     "./agents/headless":      "./src/agents/headless.ts",
     "./agents/prompts/setup": "./src/agents/prompts/setup.ts",
     "./integrations/granola": "./src/integrations/granola.ts",
-    "./integrations/slack":   "./src/integrations/slack.ts",
-    "./integrations/github":  "./src/integrations/github.ts",
-    "./agents/mcp":           "./src/agents/mcp.ts",
-    "./sync/atomic-write":    "./src/sync/atomic-write.ts",
-    "./sync/manifest":        "./src/sync/manifest.ts",
-    "./sync/mcp-sync":        "./src/sync/mcp-sync.ts",
-    "./sync/workspace-mcp":   "./src/sync/workspace-mcp.ts",
-    "./sync/team-assets":     "./src/sync/team-assets.ts",
-    "./sync/publish":         "./src/sync/publish.ts",
-    "./secrets":              "./src/secrets.ts",
-    "./time":                 "./src/time.ts",
-    "./migrations/runner":    "./src/migrations/runner.ts"
+    "./integrations/slack": "./src/integrations/slack.ts",
+    "./integrations/github": "./src/integrations/github.ts",
+    "./agents/mcp": "./src/agents/mcp.ts",
+    "./sync/atomic-write": "./src/sync/atomic-write.ts",
+    "./sync/manifest": "./src/sync/manifest.ts",
+    "./sync/mcp-sync": "./src/sync/mcp-sync.ts",
+    "./sync/workspace-mcp": "./src/sync/workspace-mcp.ts",
+    "./sync/team-assets": "./src/sync/team-assets.ts",
+    "./sync/publish": "./src/sync/publish.ts",
+    "./sync/team-load": "./src/sync/team-load.ts",
+    "./integrations/github-oauth": "./src/integrations/github-oauth.ts",
+    "./secrets": "./src/secrets.ts",
+    "./time": "./src/time.ts",
+    "./migrations/runner": "./src/migrations/runner.ts"
   },
   "scripts": {
     "test": "bun test"
   },
   "dependencies": {
     "js-yaml": "^4.1.1",
-    "smol-toml": "^1.7.0"
+    "smol-toml": "^1.7.0",
+    "tar-stream": "^3.2.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/tar-stream": "^3.1.4"
   },
   "peerDependencies": {
     "typescript": "^5"

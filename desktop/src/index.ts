@@ -17,6 +17,12 @@ import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, writeSlackConfig } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
+import {
+  cancelActiveDeviceFlow,
+  parseGitHubRepoUrl,
+  resumePendingJoin,
+  startGitHubDeviceFlow,
+} from "draft-core/integrations/github-oauth";
 import { homedir, userInfo } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
 import { openHistoryDb, insertFileVersion, queryFileVersions, getFileVersion } from "draft-core/db/history";
@@ -1385,6 +1391,59 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch {
           return { configured: false };
         }
+      },
+
+      // ── native GitHub OAuth join-team flow ─────────────────────────────────
+      //
+      // Fire-and-forget — NOT awaited. The RPC response returns here, well
+      // before the user has even seen the device code, let alone authorized
+      // in a browser. All real progress (including the multi-minute wait for
+      // browser authorization) arrives via repeated githubOAuthProgress pushes.
+
+      getGitHubJoinConfig: async () => {
+        return { enabled: Boolean(process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID) && Boolean(process.env.DRAFT_GITHUB_JOIN_ENABLED) };
+      },
+
+      startGitHubJoin: async ({ repoUrl }) => {
+        if (!process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID || !process.env.DRAFT_GITHUB_JOIN_ENABLED) {
+          return { ok: false, error: "GitHub join isn't available in this build." };
+        }
+        const profile = getActiveProfile();
+        const workspace = getWorkspacePath(profile);
+        const parsed = parseGitHubRepoUrl(repoUrl);
+        if (!parsed) {
+          return { ok: false, error: "Enter a valid GitHub URL, e.g. https://github.com/owner/repo." };
+        }
+        void startGitHubDeviceFlow({
+          repoUrl, workspace, profile,
+          onProgress: (p) => { try { rpc.send.githubOAuthProgress(p); } catch {} },
+        });
+        return { ok: true };
+      },
+
+      cancelGitHubJoin: async () => {
+        cancelActiveDeviceFlow(getWorkspacePath(getActiveProfile()));
+        return { ok: true };
+      },
+
+      checkGitHubJoinStatus: async () => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const local = readLocalConfig(workspace);
+        const integrations = readIntegrations(workspace);
+        return {
+          connected: integrations.ok ? (integrations.integrations.github?.connected ?? false) : false,
+          pending: local.ok ? Boolean(local.config.pending_join) : false,
+        };
+      },
+
+      resumeGitHubJoin: async () => {
+        const profile = getActiveProfile();
+        const workspace = getWorkspacePath(profile);
+        void resumePendingJoin({
+          workspace, profile,
+          onProgress: (p) => { try { rpc.send.githubOAuthProgress(p); } catch {} },
+        });
+        return { ok: true };
       },
     },
     messages: {

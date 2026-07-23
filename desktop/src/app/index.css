@@ -3499,6 +3499,7 @@ button {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
+  color: var(--color-text-primary);
   cursor: pointer;
   transition: background 120ms, border-color 120ms;
   margin-top: 7px;
@@ -3513,13 +3514,13 @@ button {
 .onboarding__cmd-text {
   font-family: var(--font-mono);
   font-size: var(--font-size-micro);
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   white-space: nowrap;
 }
 
 .onboarding__cmd-copy {
   font-size: var(--font-size-micro);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 

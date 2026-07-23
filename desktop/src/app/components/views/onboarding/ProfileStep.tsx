@@ -14,6 +14,15 @@ interface ProfileStepProps {
   settingProfile: boolean;
   handleSelectProfile: (name: string) => void;
   handleCreateProfile: () => void;
+  /**
+   * Join-team path only: render the create-new-profile form, no
+   * existing-profile picker. A freshly created profile has an empty
+   * workspace, so the dirty-baseline/unpublished-changes guards in
+   * stageTeamContent can never fire during a join — this makes "existing
+   * profile has conflicting local state" structurally impossible rather than
+   * something to detect and explain.
+   */
+  restrictToNewProfile?: boolean;
 }
 
 export function ProfileStep({
@@ -28,6 +37,7 @@ export function ProfileStep({
   settingProfile,
   handleSelectProfile,
   handleCreateProfile,
+  restrictToNewProfile,
 }: ProfileStepProps) {
   return (
     <div className="onboarding__body">
@@ -48,7 +58,7 @@ export function ProfileStep({
         </div>
       </div>
 
-      {profilesLoaded && profileList.length > 0 && (
+      {!restrictToNewProfile && profilesLoaded && profileList.length > 0 && (
         <>
           <p className="onboarding__desc" style={{ marginBottom: 10 }}>
             You have existing workspaces — pick one or create a new one.
