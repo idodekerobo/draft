@@ -1,53 +1,50 @@
 // commands/sync.ts — canonical draft publish + draft load lifecycle
 
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "fs";
-import { tmpdir } from "os";
+import { mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { capture } from "../utils/exec";
 import {
   getActiveProfile,
   getWorkspacePath,
   readCollaboration,
-  readLocalConfig,
-  writeLocalConfig,
 } from "../utils/config";
 import { green, red, yellow, dim, bold } from "../utils/output";
 import {
-  installProfileAssets,
-  uninstallProfileAssets,
   validateProfileAssets,
   type ProfileAssetResult,
 } from "draft-core/sync/team-assets";
 import {
-  openHistoryDb,
-  insertFileVersion,
-} from "draft-core/db/history";
-import {
   publishTeamContext,
   listUnpublishedContextPaths,
-  cloneTeamRepo,
-  mirrorDirectory,
-  mirrorFile,
-  walkMarkdownFiles,
-  hashAssets,
-  equalHashes,
-  assetsAreNonEmpty,
-  assetState,
-  writeAssetState,
   PublishError,
-  type AssetHashes,
 } from "draft-core/sync/publish";
+import {
+  stageTeamContent,
+  promoteStagedTeamContent,
+  type StageErrorCode,
+  type PromoteResult,
+} from "draft-core/sync/team-load";
+
+function mapErrorToMessage(error: StageErrorCode | Extract<PromoteResult, { ok: false }>["error"]): string {
+  switch (error) {
+    case "no_token": return "GitHub sign-in required. Reconnect GitHub for this team.";
+    case "no_access": return "No access to the team repository. Ask your team to add you, then try again.";
+    case "token_revoked": return "GitHub access was revoked. Reconnect GitHub for this team.";
+    case "network": return "Network error while contacting GitHub.";
+    case "rate_limited": return "GitHub rate-limited this request. Try again shortly.";
+    case "archive_invalid": return "The team repository archive was invalid or unsafe to extract.";
+    case "archive_too_large": return "The team repository archive exceeded the allowed size.";
+    case "unpublished_local_changes": return "unpublished local context changes detected. Run `draft publish` before loading.";
+    case "unpublished_team_assets": return "unpublished team asset changes detected. Run `draft publish` or explicitly rerun `draft load --discard-team-assets`.";
+    case "local_asset_validation_failed": return "local team assets are invalid. Run `draft doctor` for details.";
+    case "remote_asset_validation_failed": return "remote team assets are invalid.";
+    case "clone_failed": return "Failed to clone the team repository.";
+    case "workspace_changed": return "The active profile changed during load. Try again.";
+    case "stage_not_found": return "The staged team content expired. Try again.";
+    case "apply_failed": return "Failed to apply team content. Local state was restored.";
+    default: return `Team load failed: ${error}`;
+  }
+}
 
 interface SyncJsonResult {
   ok: boolean;
@@ -66,11 +63,6 @@ function fail(message: string, json: boolean, code = 1): void {
   if (json) console.log(JSON.stringify({ ok: false, errors: [message] }));
   else console.error(red(message));
   process.exitCode = code;
-}
-
-function countJsonl(path: string): number {
-  if (!existsSync(path)) return 0;
-  return readFileSync(path, "utf8").split("\n").filter((line) => line.trim()).length;
 }
 
 function writeNotification(workspace: string, name: string, message: string): void {
@@ -178,131 +170,39 @@ export async function runLoad(args: string[]): Promise<void> {
     return;
   }
 
-  const localValidation = validateProfileAssets(profile);
-  if (!localValidation.ok) {
-    finishFailure(`local team assets are invalid: ${localValidation.errors.map((entry) => entry.message).join("; ")}`);
+  const staged = await stageTeamContent({ workspace, profile, discardTeamAssets: discard });
+  if (!staged.ok) {
+    finishFailure(mapErrorToMessage(staged.error));
     return;
   }
-  const currentHashes = hashAssets(workspace);
-  const baseline = assetState(workspace).baseline;
-  if (!discard && ((!baseline && assetsAreNonEmpty(workspace)) || (baseline && !equalHashes(currentHashes, baseline)))) {
-    finishFailure("unpublished team asset changes detected. Run `draft publish` or explicitly rerun `draft load --discard-team-assets`.");
-    return;
-  }
-  if (!discard && listUnpublishedContextPaths(workspace).length > 0) {
-    finishFailure("unpublished local context changes detected. Run `draft publish` before loading.");
+  const promoted = await promoteStagedTeamContent(staged.staged.operationId);
+  if (!promoted.ok) {
+    finishFailure(mapErrorToMessage(promoted.error));
     return;
   }
 
-  const cloned = await cloneTeamRepo(workspace);
-  if ("error" in cloned) {
-    finishFailure(cloned.error, 2);
-    return;
+  // Same fields, same message text, same session-start vs. interactive
+  // branching as before the shared-loader migration.
+  const output = formatAssets({
+    profile,
+    installedSkills: promoted.installedSkills,
+    installedMcps: promoted.installedMcps,
+    removedSkills: promoted.removedSkills,
+    removedMcps: promoted.removedMcps,
+    conflicts: promoted.conflicts,
+    missingSecrets: promoted.missingSecrets,
+    errors: [],
+  });
+  if (sessionStart) {
+    const note = output.partial
+      ? `Team context loaded with required actions: ${promoted.missingSecrets.length} MCP credential set(s) missing; ${promoted.conflicts.length} personal-name conflict(s).`
+      : "Team context and assets refreshed from the shared repository.";
+    writeNotification(workspace, output.partial ? "load-team-warning.txt" : "load-team-loaded.txt", note);
   }
-
-  const validation = validateProfileAssets(profile, { workspacePath: cloned.root });
-  if (!validation.ok) {
-    rmSync(cloned.tmp, { recursive: true, force: true });
-    finishFailure(`remote team assets are invalid: ${validation.errors.map((entry) => entry.message).join("; ")}`);
-    return;
-  }
-
-  const backup = mkdtempSync(join(tmpdir(), "draft-load-backup-"));
-  try {
-    for (const item of ["context", "skills", "CHANGES.jsonl"]) {
-      const source = join(workspace, item);
-      if (existsSync(source)) {
-        if (lstatSync(source).isDirectory()) cpSync(source, join(backup, item), { recursive: true });
-        else cpSync(source, join(backup, item));
-      }
-    }
-    for (const name of ["mcp.json", "collaboration.json"]) {
-      const source = join(workspace, "config", name);
-      if (existsSync(source)) {
-        mkdirSync(join(backup, "config"), { recursive: true });
-        cpSync(source, join(backup, "config", name));
-      }
-    }
-
-    await uninstallProfileAssets(profile);
-    mirrorDirectory(join(cloned.root, "context"), join(workspace, "context"));
-    mirrorDirectory(join(cloned.root, "skills"), join(workspace, "skills"));
-    mirrorFile(join(cloned.root, "config", "mcp.json"), join(workspace, "config", "mcp.json"));
-    mirrorFile(join(cloned.root, "config", "collaboration.json"), join(workspace, "config", "collaboration.json"));
-    mirrorFile(join(cloned.root, "CHANGES.jsonl"), join(workspace, "CHANGES.jsonl"));
-
-    const loadedAt = new Date().toISOString();
-    const newContextRoot = join(workspace, "context");
-    const backupContextRoot = join(backup, "context");
-    const historyDb = openHistoryDb(workspace);
-    try {
-      const relPaths = new Set([
-        ...walkMarkdownFiles(newContextRoot),
-        ...walkMarkdownFiles(backupContextRoot),
-      ]);
-      for (const relPath of relPaths) {
-        const newPath = join(newContextRoot, relPath);
-        const oldPath = join(backupContextRoot, relPath);
-        const newContent = existsSync(newPath) ? readFileSync(newPath, "utf8") : null;
-        const oldContent = existsSync(oldPath) ? readFileSync(oldPath, "utf8") : null;
-        if (newContent !== null && newContent !== oldContent) {
-          // Content just came from the remote repo, so it IS the current
-          // published state — mark it published at load time. Otherwise every
-          // freshly-loaded file looks "unpublished" (diffs against "", and
-          // trips the load-time "unpublished changes" guard) until the user
-          // edits and republishes it.
-          insertFileVersion(historyDb, {
-            filePath: relPath,
-            content: newContent,
-            createdAt: loadedAt,
-            source: "team-load",
-            author: null,
-            sessionId: null,
-            publishedAt: loadedAt,
-            changesEntryId: null,
-          });
-        }
-      }
-    } finally {
-      historyDb.close();
-    }
-
-    const result = await installProfileAssets(profile);
-    const hashes = hashAssets(workspace);
-    writeAssetState(workspace, hashes, "load");
-    writeLocalConfig(workspace, {
-      last_loaded: new Date().toISOString(),
-      lastLoadCursor: countJsonl(join(workspace, "CHANGES.jsonl")),
-    });
-
-    const output = formatAssets(result);
-    if (sessionStart) {
-      const note = output.partial
-        ? `Team context loaded with required actions: ${result.missingSecrets.length} MCP credential set(s) missing; ${result.conflicts.length} personal-name conflict(s).`
-        : "Team context and assets refreshed from the shared repository.";
-      writeNotification(workspace, output.partial ? "load-team-warning.txt" : "load-team-loaded.txt", note);
-    }
-    if (json) console.log(JSON.stringify(output));
-    else {
-      console.log(`${green("✓")} Team context and assets loaded.`);
-      if (result.missingSecrets.length) console.log(`${yellow("⚠")} MCP credentials required: ${result.missingSecrets.map((entry) => entry.name).join(", ")}`);
-      if (result.conflicts.length) console.log(`${yellow("⚠")} Personal assets preserved for ${result.conflicts.length} conflict(s).`);
-    }
-  } catch (error) {
-    try {
-      await uninstallProfileAssets(profile);
-      mirrorDirectory(join(backup, "context"), join(workspace, "context"));
-      mirrorDirectory(join(backup, "skills"), join(workspace, "skills"));
-      mirrorFile(join(backup, "config", "mcp.json"), join(workspace, "config", "mcp.json"));
-      mirrorFile(join(backup, "config", "collaboration.json"), join(workspace, "config", "collaboration.json"));
-      mirrorFile(join(backup, "CHANGES.jsonl"), join(workspace, "CHANGES.jsonl"));
-      await installProfileAssets(profile);
-    } catch {
-      // Preserve the original failure; the lifecycle error is reported below.
-    }
-    finishFailure(error instanceof Error ? error.message : String(error), 3);
-  } finally {
-    rmSync(backup, { recursive: true, force: true });
-    rmSync(cloned.tmp, { recursive: true, force: true });
+  if (json) console.log(JSON.stringify(output));
+  else {
+    console.log(`${green("✓")} Team context and assets loaded.`);
+    if (promoted.missingSecrets.length) console.log(`${yellow("⚠")} MCP credentials required: ${promoted.missingSecrets.map((entry) => entry.name).join(", ")}`);
+    if (promoted.conflicts.length) console.log(`${yellow("⚠")} Personal assets preserved for ${promoted.conflicts.length} conflict(s).`);
   }
 }
