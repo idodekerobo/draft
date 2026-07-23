@@ -81,6 +81,6 @@ function writeGitHubConnected(workspace: string): void {
   const current = result.ok ? result.integrations : {};
   writeIntegrations(workspace, {
     ...current,
-    github: { ...(current.github ?? {}), connected: true, last_connected: new Date().toISOString() },
+    github: { ...(current.github ?? {}), connected: true, via: "gh-cli", last_connected: new Date().toISOString() },
   });
 }
