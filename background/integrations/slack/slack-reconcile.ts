@@ -127,6 +127,20 @@ export async function main(): Promise<void> {
     }
   }
 
+  // Private channels drop out of conversations.list entirely once the bot is
+  // kicked (unlike public channels, which still list with isMember: false) —
+  // so an allowlisted channel absent from the response needs the same
+  // warn-once treatment as an explicit isMember: false.
+  const seenIds = new Set(result.channels.map((channel) => channel.id));
+  for (const channelId of allowlist) {
+    if (seenIds.has(channelId)) continue;
+    if (state[channelId] === 'warned') continue;
+    state[channelId] = 'warned';
+    stateDirty = true;
+    const name = rolesChannels[channelId] ?? channelId;
+    log('warn', `bot no longer in #${name} (or channel is private/deleted and inaccessible) — capture will silently stop for this channel until re-invited`);
+  }
+
   if (allowlistDirty) {
     writeSecrets(workspace, { slack_allowlist_channels: [...allowlist] });
   }
