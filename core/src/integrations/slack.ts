@@ -111,6 +111,7 @@ export interface SlackChannel {
   id: string;
   name: string;
   memberCount: number;
+  isMember: boolean;
 }
 
 export type SlackChannelResult =
@@ -130,7 +131,7 @@ export async function fetchSlackChannels(botToken: string): Promise<SlackChannel
 
   const data = await resp.json() as {
     ok: boolean;
-    channels?: Array<{ id: string; name: string; num_members?: number }>;
+    channels?: Array<{ id: string; name: string; num_members?: number; is_member?: boolean }>;
     error?: string;
   };
 
@@ -139,7 +140,7 @@ export async function fetchSlackChannels(botToken: string): Promise<SlackChannel
   }
 
   const channels: SlackChannel[] = (data.channels ?? [])
-    .map((c) => ({ id: c.id, name: c.name, memberCount: c.num_members ?? 0 }))
+    .map((c) => ({ id: c.id, name: c.name, memberCount: c.num_members ?? 0, isMember: c.is_member ?? false }))
     .sort((a, b) => b.memberCount - a.memberCount);
 
   return { ok: true, channels };
