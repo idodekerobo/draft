@@ -45,7 +45,7 @@ RUNTIME_MANIFEST="$ASSETS_DIR/background/.runtime-bundles"
 {
   find "$REPO_ROOT/background/integrations" -type f \
     \( -name '*-poller.ts' -o -name '*-analyzer.ts' -o -name '*-scanner.ts' \
-       -o -name 'slack-capture.ts' -o -name 'slack-rebuild.ts' \)
+       -o -name 'slack-capture.ts' -o -name 'slack-rebuild.ts' -o -name 'slack-reconcile.ts' \)
   find "$REPO_ROOT/background/synthesizers" -maxdepth 1 -type f -name '*.ts' ! -name 'synthesis-runtime.ts'
   find "$REPO_ROOT/background/intelligence" -maxdepth 1 -type f -name '*.ts'
 } | sort | while IFS= read -r runtime_source; do

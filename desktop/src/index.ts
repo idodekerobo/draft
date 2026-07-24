@@ -9,13 +9,13 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
-import { buildSlackManifestUrl, validateSlackTokenFormat, writeSlackConfig } from "draft-core/integrations/slack";
+import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels, readStoredSlackBotToken, writeSlackConfig, writeSlackRolesChannels, updateSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import {
   cancelActiveDeviceFlow,
@@ -1169,14 +1169,50 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       getSlackManifestUrl: async () => buildSlackManifestUrl(),
 
-      connectSlack: async ({ botToken, appToken }) => {
+      listSlackChannels: async ({ botToken }) => {
+        const workspace = getWorkspacePath(getActiveProfile());
+        const token = botToken || readStoredSlackBotToken(workspace);
+        if (!token) return { ok: false, error: "Slack is not connected yet." };
+        const result = await fetchSlackChannels(token);
+        if (!result.ok) return { ok: false, error: result.error };
+
+        const secrets = readSecrets(workspace);
+        const allowlist = new Set(secrets.ok ? (secrets.secrets.slack_allowlist_channels ?? []) : []);
+        const channels = result.channels.map((channel) => ({ ...channel, allowlisted: allowlist.has(channel.id) }));
+
+        return { ok: true, channels };
+      },
+
+      connectSlack: async ({ botToken, appToken, channelIds }) => {
         const fmt = validateSlackTokenFormat(botToken, appToken);
         if (!fmt.ok) return fmt;
         try {
-          writeSlackConfig({ workspace: getWorkspacePath(getActiveProfile()), botToken, appToken });
+          const workspace = getWorkspacePath(getActiveProfile());
+          writeSlackConfig({ workspace, botToken, appToken, channelIds });
+
+          // Resolve names for the selected channels so slack-rebuild.ts can label
+          // captured messages — connectSlack only receives IDs from the picker.
+          const listResult = await fetchSlackChannels(botToken);
+          if (listResult.ok) {
+            const selectedNames = Object.fromEntries(
+              listResult.channels
+                .filter((channel) => channelIds.includes(channel.id))
+                .map((channel) => [channel.id, channel.name]),
+            );
+            writeSlackRolesChannels(workspace, selectedNames);
+          }
+
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Slack connection." };
+        }
+      },
+
+      updateSlackChannels: async ({ channelIds }) => {
+        try {
+          return await updateSlackChannels(getWorkspacePath(getActiveProfile()), channelIds);
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not update Slack channels." };
         }
       },
 

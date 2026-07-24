@@ -8,10 +8,13 @@
 //      validateSlackTokensWithApi — HTTP validation against Slack API (ported from SKILL.md Step 2)
 //   3. fetchSlackChannels — conversations.list (ported from SKILL.md Step 3)
 //   4. writeSlackConfig — patch-writes secrets.json + integrations.json
+//      readStoredSlackBotToken — reads the already-saved bot token, for flows that don't re-collect it
+//      updateSlackChannels — updates the channel allowlist for an already-connected integration
+//      writeSlackRolesChannels — merges channel names into slack-roles.json's __channels map
 
-import { readFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import { writeSecrets, writeIntegrations, readIntegrations, BACKGROUND_DIR } from "../config";
+import { readSecrets, writeSecrets, writeIntegrations, readIntegrations, BACKGROUND_DIR } from "../config";
 
 // ── Manifest URL ───────────────────────────────────────────────────────────────
 
@@ -111,6 +114,7 @@ export interface SlackChannel {
   id: string;
   name: string;
   memberCount: number;
+  isMember: boolean;
 }
 
 export type SlackChannelResult =
@@ -130,7 +134,7 @@ export async function fetchSlackChannels(botToken: string): Promise<SlackChannel
 
   const data = await resp.json() as {
     ok: boolean;
-    channels?: Array<{ id: string; name: string; num_members?: number }>;
+    channels?: Array<{ id: string; name: string; num_members?: number; is_member?: boolean }>;
     error?: string;
   };
 
@@ -139,7 +143,7 @@ export async function fetchSlackChannels(botToken: string): Promise<SlackChannel
   }
 
   const channels: SlackChannel[] = (data.channels ?? [])
-    .map((c) => ({ id: c.id, name: c.name, memberCount: c.num_members ?? 0 }))
+    .map((c) => ({ id: c.id, name: c.name, memberCount: c.num_members ?? 0, isMember: c.is_member ?? false }))
     .sort((a, b) => b.memberCount - a.memberCount);
 
   return { ok: true, channels };
@@ -172,4 +176,73 @@ export function writeSlackConfig(opts: WriteSlackConfigOpts): void {
       last_connected: new Date().toISOString(),
     },
   });
+}
+
+/** Read the bot token already saved for this workspace, or undefined if Slack isn't connected. */
+export function readStoredSlackBotToken(workspace: string): string | undefined {
+  const secrets = readSecrets(workspace);
+  return secrets.ok ? secrets.secrets.slack_bot_token : undefined;
+}
+
+// ── Update channel allowlist (already-connected integration) ───────────────────
+
+export type UpdateSlackChannelsResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Update slack_allowlist_channels for an already-connected Slack integration —
+ * the "Update channels" path, distinct from the initial connectSlack. Uses the
+ * bot token already on disk; does not touch stored tokens.
+ */
+export async function updateSlackChannels(workspace: string, channelIds: string[]): Promise<UpdateSlackChannelsResult> {
+  const botToken = readStoredSlackBotToken(workspace);
+  if (!botToken) return { ok: false, error: "Slack is not connected yet." };
+
+  writeSecrets(workspace, { slack_allowlist_channels: channelIds });
+
+  const existing = readIntegrations(workspace);
+  writeIntegrations(workspace, {
+    ...(existing.ok ? existing.integrations : {}),
+    slack: {
+      ...(existing.ok ? existing.integrations.slack : {}),
+      connected: true,
+      channels: channelIds.length,
+      last_connected: new Date().toISOString(),
+    },
+  });
+
+  const listResult = await fetchSlackChannels(botToken);
+  if (listResult.ok) {
+    const selectedNames = Object.fromEntries(
+      listResult.channels
+        .filter((channel) => channelIds.includes(channel.id))
+        .map((channel) => [channel.id, channel.name]),
+    );
+    writeSlackRolesChannels(workspace, selectedNames);
+  }
+
+  return { ok: true };
+}
+
+// ── Channel name map (slack-roles.json's __channels) ────────────────────────────
+
+/**
+ * Merge channel ID → name entries into slack-roles.json's __channels map,
+ * preserving existing user role entries and any names already recorded there.
+ */
+export function writeSlackRolesChannels(workspace: string, channels: Record<string, string>): void {
+  const rolesPath = join(workspace, "config", "slack-roles.json");
+  let roles: Record<string, unknown> = {};
+  try {
+    roles = JSON.parse(readFileSync(rolesPath, "utf8")) as Record<string, unknown>;
+  } catch {}
+
+  const existingChannels = roles.__channels && typeof roles.__channels === "object" && !Array.isArray(roles.__channels)
+    ? roles.__channels as Record<string, string>
+    : {};
+
+  roles.__channels = { ...existingChannels, ...channels };
+  mkdirSync(join(workspace, "config"), { recursive: true });
+  writeFileSync(rolesPath, JSON.stringify(roles, null, 2) + "\n", "utf8");
 }

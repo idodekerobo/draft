@@ -46,6 +46,7 @@ const CLAUDE_CODE_SYNTHESIS_ON = _localCfg.claudeCodeSynthesis ?? true;
 const PENDING_POLL_MS   = parseInt(process.env.DRAFT_PENDING_POLL   ?? '5')     * 1000;
 const GRANOLA_POLL_MS   = parseInt(process.env.DRAFT_GRANOLA_POLL   ?? '900')   * 1000;
 const SLACK_MANAGER_MS  = 60_000;
+const SLACK_RECONCILE_MS = parseInt(process.env.DRAFT_SLACK_CAPTURE ?? '1800') * 1000;
 const SLACK_ANALYSIS_MS = parseInt(process.env.DRAFT_SLACK_ANALYSIS ?? '14400') * 1000;
 const GITHUB_POLL_MS    = parseInt(process.env.DRAFT_GITHUB_POLL    ?? '3600')  * 1000;
 const SKILL_SYNC_MS      = 5 * 60 * 1000;
@@ -362,6 +363,11 @@ async function main(): Promise<void> {
   setInterval(() => {
     spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-manager`);
   }, SLACK_MANAGER_MS);
+
+  // Slack reconcile (channel-membership diff/merge against slack_allowlist_channels)
+  setInterval(() => {
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-reconcile`);
+  }, SLACK_RECONCILE_MS);
 
   // Slack analyzer (synthesis batch)
   setInterval(() => {

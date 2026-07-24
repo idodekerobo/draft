@@ -15,6 +15,14 @@
  * Capture modes (slack_capture_mode in config/secrets.json):
  *   passive — capture all messages in allowlisted channels (default)
  *   tagged  — capture only messages containing !draft
+ *
+ * Live config reload: slack_allowlist_channels / slack_capture_mode can change at
+ * any time — e.g. slack-reconcile.ts adding a channel invited directly in Slack,
+ * or the desktop app / CLI skill saving a new selection. Socket Mode delivers one
+ * workspace-wide event stream regardless of which channels are allowlisted, so
+ * picking up a change doesn't require a reconnect: reloadLiveConfig() re-reads
+ * secrets.json on a timer and swaps the filter handleMessage() reads from. See
+ * "── Live config ──" below.
  */
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
@@ -101,6 +109,33 @@ function loadUsers(): SlackUsers {
   if (!existsSync(USERS_FILE)) return {};
   try { return JSON.parse(readFileSync(USERS_FILE, 'utf8')); }
   catch { return {}; }
+}
+
+// ── Live config ──────────────────────────────────────────────────────────────
+// The filter handleMessage() reads on every incoming event — independent of the
+// WebSocket connection lifecycle. Set once at startup, refreshed on every
+// reconnect (connect() already reloads secrets for tokens), and refreshed again
+// on its own timer below so an allowlist/mode change lands without waiting for
+// a reconnect. A failed reload (e.g. secrets.json transiently unreadable mid-write
+// by another process) keeps the last-known-good config rather than clearing it.
+
+let liveConfig: SlackSecrets | null = null;
+
+function reloadLiveConfig(): void {
+  const fresh = loadSecrets();
+  if (!fresh) return; // loadSecrets() already logged why — keep serving the last-known-good config
+
+  if (liveConfig) {
+    const added   = fresh.slack_allowlist_channels.filter(id => !liveConfig!.slack_allowlist_channels.includes(id));
+    const removed = liveConfig.slack_allowlist_channels.filter(id => !fresh.slack_allowlist_channels.includes(id));
+    if (added.length)   log('info', `config reload — now capturing: ${added.join(', ')}`);
+    if (removed.length) log('info', `config reload — no longer capturing: ${removed.join(', ')}`);
+    if (fresh.slack_capture_mode !== liveConfig.slack_capture_mode) {
+      log('info', `config reload — capture mode changed: ${liveConfig.slack_capture_mode} → ${fresh.slack_capture_mode}`);
+    }
+  }
+
+  liveConfig = fresh;
 }
 
 // ── File helpers ──────────────────────────────────────────────────────────────
@@ -284,13 +319,17 @@ async function run(): Promise<void> {
   loadState();
 
   // Startup check — exit immediately if Slack is not configured at all.
-  // After startup, config is reloaded on every connect attempt so token
-  // changes (e.g. from /draft:connect slack) take effect without a restart.
+  // After startup, tokens are reloaded on every connect attempt (so token changes
+  // take effect without a restart), and the allowlist/mode filter is additionally
+  // reloaded on its own timer below (see "── Live config ──") so it doesn't have
+  // to wait for a reconnect.
   const initialConfig = loadSecrets();
   if (!initialConfig) {
     log('error', 'Slack not configured — run /draft:connect slack to set up');
     process.exit(1);
   }
+  liveConfig = initialConfig;
+  setInterval(reloadLiveConfig, 60_000);
 
   log('info', `starting (mode=${initialConfig.slack_capture_mode} channels=${initialConfig.slack_allowlist_channels.join(',')})`);
 
@@ -312,6 +351,9 @@ async function run(): Promise<void> {
     if (config.slack_allowlist_channels.length === 0) {
       log('warn', 'No channels in allowlist — nothing to capture');
     }
+
+    // Keep the live filter in sync on every reconnect too, not just the periodic timer.
+    liveConfig = config;
 
     let users = loadUsers();
 
@@ -350,7 +392,8 @@ async function run(): Promise<void> {
           const payload    = msg.payload as Record<string, unknown>;
           const slackEvent = payload.event as Record<string, unknown> | undefined;
           if (slackEvent?.type === 'message') {
-            handleMessage(slackEvent, config, users).catch(err =>
+            if (!liveConfig) return; // not loaded yet — should not happen post-startup, skip defensively
+            handleMessage(slackEvent, liveConfig, users).catch(err =>
               log('error', `handleMessage error: ${err}`)
             );
           }
