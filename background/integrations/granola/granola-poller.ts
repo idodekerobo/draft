@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { activeProfile, defaultBackgroundDir, workspacePath } from '../port-runtime-paths';
 import { validateAutomatedSynthesisOutput } from 'draft-core/proposals';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
+import { resolveRunnerBin } from 'draft-core/agents/headless';
 import { parseGranolaMode } from '../../synthesizers/granola';
 
 export interface GranolaState { last_checked_at: string | null; processed_meeting_ids: string[] }
@@ -97,6 +98,15 @@ function structuredLog(level: 'info' | 'warn' | 'error', msg: string): void {
   process.stderr.write(`${JSON.stringify({ ts: new Date().toISOString(), level, component: 'granola-poller', msg })}\n`);
 }
 
+// Resolves `claude` via known install paths (like the gh/codex pollers), since the
+// daemon's PATH is baked at install time and a bare spawn crashes the poll if stale.
+export async function verifyGranolaMcp(): Promise<boolean> {
+  const claudeBin = await resolveRunnerBin('claude');
+  if (!claudeBin) return false;
+  const p = Bun.spawn([claudeBin, 'mcp', 'list'], { stdout: 'pipe', stderr: 'ignore' });
+  return (await new Response(p.stdout as ReadableStream).text()).toLowerCase().includes('granola') && await p.exited === 0;
+}
+
 async function main() {
   const profile = activeProfile(); const workspace = workspacePath(profile); const backgroundDir = defaultBackgroundDir();
   const secretsPath = join(workspace, 'config', 'secrets.json');
@@ -105,7 +115,7 @@ async function main() {
   const mode = parseGranolaMode(process.env.DRAFT_GRANOLA_MODE ?? secrets.granola_mode);
   const poll = createGranolaPoller({ statePath: join(backgroundDir, 'state', 'granola.json'), workspace, profile, mode,
     token: typeof secrets.granola_api_token === 'string' ? secrets.granola_api_token : undefined }, {
-    async verifyMcp() { const p = Bun.spawn(['claude', 'mcp', 'list'], { stdout: 'pipe', stderr: 'ignore' }); return (await new Response(p.stdout as ReadableStream).text()).toLowerCase().includes('granola') && await p.exited === 0; },
+    verifyMcp: verifyGranolaMcp,
     async synthesize(context) {
       const contextPath = await writeContext(context);
       try {
