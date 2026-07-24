@@ -2572,6 +2572,25 @@ button {
   flex-shrink: 0;
 }
 
+.app-row__manage {
+  height: 24px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms, color 100ms;
+  white-space: nowrap;
+}
+
+.app-row__manage:hover {
+  border-color: var(--color-accent-blue);
+  color: var(--color-accent-blue);
+}
+
 .app-row__disconnect {
   height: 24px;
   padding: 0 10px;

@@ -21,6 +21,7 @@ export type AnalyticsEvent =
   | { event: "daemon_start_failed";        props: { error_code: string } }
   | { event: "integration_connected";      props: { source: string } }
   | { event: "integration_disconnected";   props: { source: string } }
+  | { event: "integration_channels_updated"; props: { source: string } }
   | { event: "tool_installed";             props: { tool: string } }
   | { event: "install_failed";             props: { tool: string; step_label: string } }
   | { event: "context_section_toggled";    props: { section: string; enabled: boolean } }
