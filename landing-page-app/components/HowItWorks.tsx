@@ -18,8 +18,8 @@ const steps = [
   {
     step: "03",
     title: "Connect your tools",
-    body: "Link Granola, Slack, and GitHub. The daemon starts capturing meeting notes, threads, and PR activity on a schedule — no manual effort.",
-    tag: "Granola · Slack · GitHub",
+    body: "Link Granola, Fireflies, Slack, and GitHub. The daemon starts capturing meeting notes, threads, and PR activity on a schedule — no manual effort.",
+    tag: "Granola · Fireflies · Slack · GitHub",
   },
   {
     step: "04",

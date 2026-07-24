@@ -38,8 +38,8 @@ const features = [
     number: "03",
     title: "Stays current, automatically",
     headline: "Context that keeps up with you.",
-    body: "Connect Granola, Slack, and GitHub. The Draft daemon runs in the background on a schedule, synthesizing new meeting notes, threads, and PR activity into proposed workspace updates. Review in the inbox — accept what matters.",
-    detail: "Granola · Slack · GitHub · Background daemon · Proposals inbox",
+    body: "Connect Granola, Fireflies, Slack, and GitHub. The Draft daemon runs in the background on a schedule, synthesizing new meeting notes, threads, and PR activity into proposed workspace updates. Review in the inbox — accept what matters.",
+    detail: "Granola · Fireflies · Slack · GitHub · Background daemon · Proposals inbox",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5"/>
