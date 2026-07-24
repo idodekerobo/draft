@@ -27,6 +27,10 @@ const INTEGRATIONS: Record<string, IntegrationConfig> = {
     entrypoint: `${BACKGROUND}/integrations/granola/granola-poller`,
     label: "Granola",
   },
+  fireflies: {
+    entrypoint: `${BACKGROUND}/integrations/fireflies/fireflies-poller`,
+    label: "Fireflies",
+  },
   slack: {
     entrypoint: `${BACKGROUND}/integrations/slack/slack-analyzer`,
     label: "Slack",

@@ -43,6 +43,11 @@ export async function runStatus(_args: string[]): Promise<void> {
     : dim("not connected");
   console.log(`  ${dot(granolaState)}  Granola       ${granolaLabel}`);
 
+  // Fireflies
+  const firefliesState = secrets.fireflies_api_token ? "running" : "stopped";
+  const firefliesLabel = firefliesState === "running" ? green("connected") : dim("not connected");
+  console.log(`  ${dot(firefliesState)}  Fireflies     ${firefliesLabel}`);
+
   // Slack
   const slackState = (secrets.slack_bot_token && secrets.slack_app_token) ? "running" : "stopped";
   const slackLabel = slackState === "running" ? green("connected") : dim("not connected");
