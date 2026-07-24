@@ -11,9 +11,16 @@ export interface SlackChannelPickerProps {
   botToken?: string;
   selected: string[];
   onChange: (next: string[]) => void;
+  /**
+   * Fires once, after the first successful fetch, with the raw channel list —
+   * lets callers seed `selected` from `allowlisted` (e.g. pre-check the channels
+   * already in slack_allowlist_channels when opening "Update channels", so
+   * saving doesn't silently drop them). Does not fire again on refetch.
+   */
+  onLoaded?: (channels: SlackChannelOption[]) => void;
 }
 
-export function SlackChannelPicker({ botToken, selected, onChange }: SlackChannelPickerProps) {
+export function SlackChannelPicker({ botToken, selected, onChange, onLoaded }: SlackChannelPickerProps) {
   const [channels, setChannels] = useState<SlackChannelOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +37,7 @@ export function SlackChannelPicker({ botToken, selected, onChange }: SlackChanne
           return;
         }
         setChannels(result.channels ?? []);
+        onLoaded?.(result.channels ?? []);
       })
       .catch(() => {
         if (!cancelled) {
@@ -38,6 +46,7 @@ export function SlackChannelPicker({ botToken, selected, onChange }: SlackChanne
         }
       });
     return () => { cancelled = true; };
+    // onLoaded intentionally excluded — it must fire once per fetch (keyed on botToken), not re-run on every parent render.
   }, [botToken]);
 
   function toggle(id: string) {

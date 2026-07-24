@@ -386,6 +386,8 @@ export interface SlackChannelOption {
   memberCount: number;
   /** True if the bot is already a member — e.g. invited directly in Slack. */
   isMember: boolean;
+  /** True if this channel is currently in slack_allowlist_channels — distinct from isMember, which reflects Slack-side membership and can diverge from Draft's allowlist. */
+  allowlisted: boolean;
 }
 
 export interface ContextFileEntry {

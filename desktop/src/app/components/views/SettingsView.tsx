@@ -880,7 +880,12 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                   <div className="app-row__connect-panel">
                     <span className="app-row__panel-label">Update channels</span>
                     <span className="app-row__panel-help">Pick which channels Draft should capture.</span>
-                    <SlackChannelPicker selected={slackChannelSelection} onChange={setSlackChannelSelection} />
+                    <SlackChannelPicker
+                      selected={slackChannelSelection}
+                      onChange={setSlackChannelSelection}
+                      onLoaded={(channels) => setSlackChannelSelection((current) =>
+                        current.length > 0 ? current : channels.filter((c) => c.allowlisted).map((c) => c.id))}
+                    />
                     <button className="app-row__connect app-row__panel-action" onClick={() => void handleUpdateSlackChannels()} disabled={savingChannels || slackChannelSelection.length === 0}>
                       {savingChannels ? "Saving…" : "Save channels"}
                     </button>
@@ -918,7 +923,13 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                     {slackStep === 3 && (
                       <>
                         <span className="app-row__panel-help">Pick which channels Draft should capture. You can update this later.</span>
-                        <SlackChannelPicker botToken={botToken} selected={slackChannelSelection} onChange={setSlackChannelSelection} />
+                        <SlackChannelPicker
+                          botToken={botToken}
+                          selected={slackChannelSelection}
+                          onChange={setSlackChannelSelection}
+                          onLoaded={(channels) => setSlackChannelSelection((current) =>
+                            current.length > 0 ? current : channels.filter((c) => c.allowlisted).map((c) => c.id))}
+                        />
                         <button className="app-row__connect app-row__panel-action" onClick={() => void handleConnectSlack()} disabled={connectingSource === "slack" || slackChannelSelection.length === 0}>
                           {connectingSource === "slack" ? "Connecting…" : "Connect Slack"}
                         </button>

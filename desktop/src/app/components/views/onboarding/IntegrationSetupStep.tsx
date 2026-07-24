@@ -207,7 +207,13 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
           </>}
           {slackStep === 3 && <>
             <p className="onboarding__integration-help">Pick which channels Draft should capture. You can update this later in Settings.</p>
-            <SlackChannelPicker botToken={botToken} selected={slackChannelIds} onChange={setSlackChannelIds} />
+            <SlackChannelPicker
+              botToken={botToken}
+              selected={slackChannelIds}
+              onChange={setSlackChannelIds}
+              onLoaded={(channels) => setSlackChannelIds((current) =>
+                current.length > 0 ? current : channels.filter((c) => c.allowlisted).map((c) => c.id))}
+            />
             <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || slackChannelIds.length === 0}>
               {saving === "slack" ? "Connecting…" : "Connect Slack"}
             </button>

@@ -9,7 +9,7 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
@@ -1170,11 +1170,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getSlackManifestUrl: async () => buildSlackManifestUrl(),
 
       listSlackChannels: async ({ botToken }) => {
-        const token = botToken || readStoredSlackBotToken(getWorkspacePath(getActiveProfile()));
+        const workspace = getWorkspacePath(getActiveProfile());
+        const token = botToken || readStoredSlackBotToken(workspace);
         if (!token) return { ok: false, error: "Slack is not connected yet." };
         const result = await fetchSlackChannels(token);
         if (!result.ok) return { ok: false, error: result.error };
-        return { ok: true, channels: result.channels };
+
+        const secrets = readSecrets(workspace);
+        const allowlist = new Set(secrets.ok ? (secrets.secrets.slack_allowlist_channels ?? []) : []);
+        const channels = result.channels.map((channel) => ({ ...channel, allowlisted: allowlist.has(channel.id) }));
+
+        return { ok: true, channels };
       },
 
       connectSlack: async ({ botToken, appToken, channelIds }) => {
