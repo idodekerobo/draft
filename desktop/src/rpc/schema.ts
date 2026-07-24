@@ -281,15 +281,53 @@ export interface LoadDiffResult {
   lastLoaded: string | null;
 }
 
-/** Returned by getTeamDiff — includes staging tmpDir for HITL apply phase. */
-export interface TeamDiffResult {
-  entries: LoadDiffEntry[];
-  cursorLine: number;
-  /** Absolute path to the staging clone. Pass to applyTeamDiff to apply. Empty string if clone failed. */
-  tmpDir: string;
-  /** False when collaboration is not configured — UI hides sync bar entirely. */
-  collabConfigured: boolean;
+export type TeamStageErrorCode =
+  | "no_token" | "no_access" | "token_revoked" | "network" | "rate_limited"
+  | "archive_invalid" | "archive_too_large"
+  | "unpublished_local_changes" | "unpublished_team_assets"
+  | "local_asset_validation_failed" | "remote_asset_validation_failed"
+  | "clone_failed" | "unexpected";
+
+/** Serializable preview returned by the shared team-content staging lifecycle. */
+export type TeamDiffResult =
+  | {
+      ok: true;
+      collabConfigured: true;
+      /** Opaque loader capability. The renderer never receives a staging path. */
+      operationId: string;
+      entries: LoadDiffEntry[];
+      /** Display state only; promotion derives the cursor from operationId. */
+      cursorLine: number;
+    }
+  | { ok: false; collabConfigured: false; error: "not_configured" }
+  | { ok: false; collabConfigured: true; error: TeamStageErrorCode };
+
+export interface TeamLoadMissingSecret {
+  name: string;
+  requiredSecrets: string[];
 }
+
+export interface TeamLoadConflict {
+  kind: "skill" | "mcp";
+  name: string;
+  profile: string;
+  reason: "team-name-collision" | "personal-name-collision" | "target-modified";
+}
+
+export type TeamApplyErrorCode =
+  | "workspace_changed" | "stage_not_found" | "apply_failed" | "unexpected";
+
+export type TeamApplyResult =
+  | {
+      ok: true;
+      missingSecrets: TeamLoadMissingSecret[];
+      conflicts: TeamLoadConflict[];
+      installedSkills: string[];
+      installedMcps: string[];
+      removedSkills: string[];
+      removedMcps: string[];
+    }
+  | { ok: false; error: TeamApplyErrorCode };
 
 export interface LocalConfig {
   teamLoadMode: "auto" | "review";
@@ -497,11 +535,11 @@ export type AppRPCType = {
       /** Read CHANGES.jsonl delta since last cursor (from local workspace copy — what hook applied). */
       loadDiff: { params: void; response: LoadDiffResult };
 
-      /** Fetch team diff from remote: shallow-clone → read CHANGES.jsonl delta → return entries + tmpDir. */
+      /** Stage team content and return a serializable preview plus opaque operation ID. */
       getTeamDiff: { params: void; response: TeamDiffResult };
 
-      /** Apply staged tmpDir → workspace: copy context + CHANGES.jsonl, update cursor, delete tmpDir. */
-      applyTeamDiff: { params: { tmpDir: string; cursorLine: number }; response: ActionResult };
+      /** Promote previously staged team content using only its opaque operation ID. */
+      applyTeamDiff: { params: { operationId: string }; response: TeamApplyResult };
 
       /** Read per-profile local config (teamLoadMode). */
       getLocalConfig: { params: void; response: LocalConfig };

@@ -4,10 +4,13 @@ import { join } from "path";
 import {
   publishTeamContext,
   listUnpublishedContextPaths,
+  hashAssets,
   PublishError,
 } from "../sync/publish";
 import { capture as realCapture } from "../exec";
 import { openHistoryDb, insertFileVersion, getLatestUnpublishedVersion } from "../db/history";
+import { stageTeamContent } from "../sync/team-load";
+import type { LocalConfig } from "../config";
 
 const TMP = `/tmp/draft-core-publish-test-${Date.now()}`;
 let counter = 0;
@@ -70,6 +73,30 @@ function insertVersion(workspace: string, filePath: string, content: string, pub
   }
 }
 
+function readLocal(workspace: string): LocalConfig {
+  return JSON.parse(readFileSync(join(workspace, "config", "local.json"), "utf8")) as LocalConfig;
+}
+
+function writeLocal(workspace: string, value: LocalConfig): void {
+  writeFileSync(join(workspace, "config", "local.json"), JSON.stringify(value, null, 2) + "\n");
+}
+
+function addSkill(workspace: string, content = "# Skill\n"): void {
+  mkdirSync(join(workspace, "skills", "somepack"), { recursive: true });
+  writeFileSync(join(workspace, "skills", "somepack", "SKILL.md"), content);
+}
+
+function addMcp(workspace: string, name = "linear"): void {
+  writeFileSync(join(workspace, "config", "mcp.json"), JSON.stringify({
+    version: 1,
+    servers: [{
+      name,
+      canonical: { type: "http", url: `https://${name}.example.com` },
+      required_secrets: [],
+    }],
+  }));
+}
+
 describe("publishTeamContext — scoped publish", () => {
   it("publishes only the named file(s), leaves skills/mcp/accepted untouched", async () => {
     const bareRepo = await makeBareTeamRepo();
@@ -114,6 +141,46 @@ describe("publishTeamContext — scoped publish", () => {
     expect(productVersion?.publishedAt).not.toBeNull();
     expect(teamVersion?.publishedAt).toBeNull();
   });
+
+  for (const dirty of ["skill", "mcp", "both"] as const) {
+    it(`preserves asset baseline and last_remote when ${dirty} assets are dirty`, async () => {
+      const bareRepo = await makeBareTeamRepo();
+      const workspace = setupWorkspace(bareRepo);
+      addSkill(workspace);
+      addMcp(workspace);
+      const baseline = hashAssets(workspace);
+      const lastRemote = { skills_hash: "remote-skills", mcp_hash: "remote-mcp" };
+      writeLocal(workspace, { team_assets: { baseline, last_remote: lastRemote } });
+
+      if (dirty === "skill" || dirty === "both") addSkill(workspace, "# Locally changed\n");
+      if (dirty === "mcp" || dirty === "both") addMcp(workspace, "github");
+      insertVersion(workspace, "product/index.md", "content A");
+
+      const result = await publishTeamContext(workspace, "test-profile", {
+        paths: ["product/index.md"],
+      });
+
+      expect(result.published).toBe(true);
+      expect(readLocal(workspace).team_assets).toEqual({ baseline, last_remote: lastRemote });
+      expect(readLocal(workspace).last_published).toBeString();
+
+      const staged = await stageTeamContent({ workspace, profile: "test-profile" });
+      expect(staged).toEqual({ ok: false, error: "unpublished_team_assets" });
+    });
+  }
+
+  it("preserves a clean asset baseline", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    addSkill(workspace);
+    const baseline = hashAssets(workspace);
+    writeLocal(workspace, { team_assets: { baseline } });
+    insertVersion(workspace, "product/index.md", "content A");
+
+    await publishTeamContext(workspace, "test-profile", { paths: ["product/index.md"] });
+
+    expect(readLocal(workspace).team_assets).toEqual({ baseline });
+  });
 });
 
 describe("publishTeamContext — full publish", () => {
@@ -151,6 +218,119 @@ describe("publishTeamContext — full publish", () => {
     db.close();
     expect(productVersion?.publishedAt).not.toBeNull();
     expect(teamVersion?.publishedAt).not.toBeNull();
+  });
+
+  it("records the baseline from the committed repo snapshot and preserves last_remote", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    addSkill(workspace, "# Published\n");
+    addMcp(workspace);
+    const lastRemote = { skills_hash: "remote-skills", mcp_hash: "remote-mcp" };
+    writeLocal(workspace, { team_assets: { last_remote: lastRemote } });
+
+    await publishTeamContext(workspace, "test-profile");
+
+    const checkout = tmpDir("checkout-baseline");
+    await realCapture(["git", "clone", bareRepo, checkout]);
+    expect(readLocal(workspace).team_assets).toEqual({
+      baseline: hashAssets(checkout),
+      last_remote: lastRemote,
+    });
+  });
+
+  it("does not let a mid-publish workspace mutation change the published baseline", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    addSkill(workspace, "# Snapshot sent to repo\n");
+    const before = hashAssets(workspace);
+
+    const mutatingCapture: typeof realCapture = async (cmd, opts) => {
+      if (cmd[0] === "git" && cmd.includes("push")) {
+        addSkill(workspace, "# Changed while push was in flight\n");
+      }
+      return realCapture(cmd, opts);
+    };
+
+    await publishTeamContext(workspace, "test-profile", { capture: mutatingCapture });
+
+    expect(hashAssets(workspace)).not.toEqual(before);
+    expect(readLocal(workspace).team_assets?.baseline).toEqual(before);
+  });
+
+  it("does not update publish bookkeeping when push fails", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    addSkill(workspace);
+    const existing = {
+      last_published: "2025-01-01T00:00:00.000Z",
+      team_assets: {
+        baseline: { skills_hash: "old-skills", mcp_hash: "old-mcp" },
+        last_remote: { skills_hash: "remote-skills", mcp_hash: "remote-mcp" },
+      },
+    };
+    writeLocal(workspace, existing);
+
+    const failingCapture: typeof realCapture = async (cmd, opts) => {
+      if (cmd[0] === "git" && cmd.includes("push")) {
+        return { exitCode: 1, stdout: "", stderr: "simulated push failure" };
+      }
+      return realCapture(cmd, opts);
+    };
+
+    await expect(
+      publishTeamContext(workspace, "test-profile", { capture: failingCapture })
+    ).rejects.toBeInstanceOf(PublishError);
+    expect(readLocal(workspace)).toEqual(existing);
+  });
+
+  it("does not update bookkeeping for a simulated no-op", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    const existing = {
+      last_published: "2025-01-01T00:00:00.000Z",
+      team_assets: {
+        baseline: { skills_hash: "old-skills", mcp_hash: "old-mcp" },
+      },
+    };
+    writeLocal(workspace, existing);
+
+    const noOpCapture: typeof realCapture = async (cmd, opts) => {
+      if (cmd[0] === "git" && cmd.includes("status") && cmd.includes("--porcelain")) {
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }
+      return realCapture(cmd, opts);
+    };
+
+    const result = await publishTeamContext(workspace, "test-profile", {
+      capture: noOpCapture,
+    });
+    expect(result.published).toBe(false);
+    expect(readLocal(workspace)).toEqual(existing);
+  });
+});
+
+describe("stageTeamContent — asset baseline guard", () => {
+  it("keeps a missing baseline absent after scoped publish and blocks nonempty assets", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    addSkill(workspace);
+    insertVersion(workspace, "product/index.md", "content A");
+
+    await publishTeamContext(workspace, "test-profile", { paths: ["product/index.md"] });
+
+    expect(readLocal(workspace).team_assets?.baseline).toBeUndefined();
+    expect(await stageTeamContent({ workspace, profile: "test-profile" }))
+      .toEqual({ ok: false, error: "unpublished_team_assets" });
+  });
+
+  it("keeps a missing baseline absent after scoped publish with empty assets", async () => {
+    const bareRepo = await makeBareTeamRepo();
+    const workspace = setupWorkspace(bareRepo);
+    insertVersion(workspace, "product/index.md", "content A");
+
+    await publishTeamContext(workspace, "test-profile", { paths: ["product/index.md"] });
+
+    expect(readLocal(workspace).team_assets?.baseline).toBeUndefined();
   });
 });
 

@@ -293,6 +293,9 @@ export async function publishTeamContext(
   try {
     mkdirSync(cloned.root, { recursive: true });
     copyPublishedState(workspace, cloned.root, scoped ? { paths: opts!.paths } : undefined);
+    // A full publish's baseline must describe the exact asset snapshot staged
+    // in the team repo, not a later view of the live workspace.
+    const publishedAssetHashes = scoped ? undefined : hashAssets(cloned.root);
 
     const changesPath = join(cloned.root, "CHANGES.jsonl");
     const change = {
@@ -369,7 +372,9 @@ export async function publishTeamContext(
     }
 
     writeLocalConfig(workspace, { last_published: new Date().toISOString() });
-    writeAssetState(workspace, hashAssets(workspace), "publish");
+    if (publishedAssetHashes) {
+      writeAssetState(workspace, publishedAssetHashes, "publish");
+    }
 
     const files = scoped ? opts!.paths! : walkMarkdownFiles(join(workspace, "context"));
     log(`success — files=${files.length} proposalsCleared=${proposalsCleared}`);

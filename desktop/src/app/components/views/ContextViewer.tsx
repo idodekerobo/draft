@@ -8,7 +8,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { diffLines, type Change } from "diff";
-import type { ContextFileEntry, ContextFileVersion, LoadDiffEntry, LocalConfig, SessionPreview, TeamDiffResult } from "../../../rpc/schema";
+import type {
+  ContextFileEntry,
+  ContextFileVersion,
+  LoadDiffEntry,
+  LocalConfig,
+  SessionPreview,
+  TeamApplyResult,
+  TeamDiffResult,
+  TeamStageErrorCode,
+} from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { ContextEditor, RawEditor, type EditorHandle } from "./ContextEditor";
@@ -33,6 +42,78 @@ function relativeTime(iso: string | null): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function teamStageErrorCopy(error: TeamStageErrorCode): string {
+  switch (error) {
+    case "no_token":
+      return "GitHub connection is missing. Reconnect GitHub in Settings.";
+    case "token_revoked":
+      return "GitHub access expired. Reconnect GitHub in Settings.";
+    case "no_access":
+      return "Draft can't access the team repository. Check your GitHub access.";
+    case "network":
+      return "Couldn't reach the team repository. Check your connection and try again.";
+    case "rate_limited":
+      return "GitHub's request limit was reached. Try again later.";
+    case "archive_invalid":
+      return "The downloaded team archive is invalid.";
+    case "archive_too_large":
+      return "The team archive is too large for Draft to load.";
+    case "unpublished_local_changes":
+      return "Publish or revert your local context changes before loading from the team.";
+    case "unpublished_team_assets":
+      return "Publish or revert your local team skill and MCP changes before loading.";
+    case "local_asset_validation_failed":
+      return "Your local team skills or MCP configuration is invalid. Fix it before loading.";
+    case "remote_asset_validation_failed":
+      return "The repository contains an invalid team skill or MCP configuration.";
+    case "clone_failed":
+      return "Couldn't clone the team repository. Check GitHub authentication and try again.";
+    case "unexpected":
+      return "Couldn't prepare the team update. Try again.";
+  }
+}
+
+function teamApplyErrorCopy(error: Exclude<TeamApplyResult, { ok: true }>["error"]): string {
+  switch (error) {
+    case "workspace_changed":
+      return "The active profile changed. Load the team update again.";
+    case "stage_not_found":
+      return "This preview expired. Load the team update again.";
+    case "apply_failed":
+      return "Draft couldn't apply the team update. Your existing context was restored.";
+    case "unexpected":
+      return "Couldn't apply the team update. Try again.";
+  }
+}
+
+function teamApplyNotice(result: Extract<TeamApplyResult, { ok: true }>): string {
+  const installedCount = result.installedSkills.length + result.installedMcps.length;
+  const removedCount = result.removedSkills.length + result.removedMcps.length;
+  const details: string[] = [];
+  if (installedCount > 0) details.push(`${installedCount} team ${installedCount === 1 ? "asset" : "assets"} installed`);
+  if (removedCount > 0) details.push(`${removedCount} team ${removedCount === 1 ? "asset" : "assets"} removed`);
+  if (result.missingSecrets.length > 0) {
+    const count = result.missingSecrets.length;
+    details.push(`${count} MCP ${count === 1 ? "connection needs" : "connections need"} credentials in Settings`);
+  }
+  if (result.conflicts.length > 0) {
+    const count = result.conflicts.length;
+    details.push(`${count} team asset ${count === 1 ? "conflict needs" : "conflicts need"} review`);
+  }
+  return details.length > 0
+    ? `Loaded. ${details.join("; ")}.`
+    : "Loaded team context and assets.";
+}
+
+function isTrackedTeamResyncError(
+  error: TeamStageErrorCode,
+): error is "token_revoked" | "no_access" | "network" | "rate_limited" {
+  return error === "token_revoked"
+    || error === "no_access"
+    || error === "network"
+    || error === "rate_limited";
+}
+
 // ── TeamSyncBar ────────────────────────────────────────────────────────────────
 
 type SyncStatus = "idle" | "loading" | "loaded" | "applying" | "error";
@@ -42,10 +123,11 @@ interface TeamSyncBarProps {
   pendingCount: number;
   status: SyncStatus;
   errorMsg: string;
+  noticeMsg: string;
   onLoad: () => void;
 }
 
-function TeamSyncBar({ lastLoaded, pendingCount, status, errorMsg, onLoad }: TeamSyncBarProps) {
+function TeamSyncBar({ lastLoaded, pendingCount, status, errorMsg, noticeMsg, onLoad }: TeamSyncBarProps) {
   const isWorking = status === "loading" || status === "applying";
 
   return (
@@ -53,6 +135,8 @@ function TeamSyncBar({ lastLoaded, pendingCount, status, errorMsg, onLoad }: Tea
       <div className="sync-bar__left">
         {status === "error" ? (
           <span className="sync-bar__error">{errorMsg}</span>
+        ) : noticeMsg ? (
+          <span className="sync-bar__timestamp">{noticeMsg}</span>
         ) : (
           <>
             <span className="sync-bar__timestamp">
@@ -95,7 +179,9 @@ function ChangelogPanel({ entries, mode, isApplying, onApply, onDismiss }: Chang
   return (
     <div className="changelog-panel">
       {entries.length === 0 ? (
-        <p className="changelog-panel__empty">No changes since last load.</p>
+        <p className="changelog-panel__empty">
+          No context changelog entries since last load. Applying may still refresh team skills and MCPs.
+        </p>
       ) : (
         <ul className="changelog-panel__list">
           {entries.map((e, i) => (
@@ -108,7 +194,7 @@ function ChangelogPanel({ entries, mode, isApplying, onApply, onDismiss }: Chang
         </ul>
       )}
 
-      {mode === "review" && entries.length > 0 && (
+      {mode === "review" && (
         <div className="changelog-actions">
           <button
             className="proposal-action proposal-action--primary changelog-actions__apply"
@@ -1075,16 +1161,26 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   const [localCursor, setLocalCursor] = useState(0);
 
   // Staged remote diff (HITL mode — held between getTeamDiff and applyTeamDiff)
-  const [stagedDiff, setStagedDiff] = useState<TeamDiffResult | null>(null);
+  const [stagedDiff, setStagedDiff] = useState<Extract<TeamDiffResult, { ok: true }> | null>(null);
   const [showChangelog, setShowChangelog] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncError, setSyncError] = useState("");
+  const [syncNotice, setSyncNotice] = useState("");
 
   // ── Reset view state when profile switches ───────────────────────────────────
   useEffect(() => {
     setMode("browse");
     setSessionPreview(null);
     setCtxMenu(null);
+    setStagedDiff(null);
+    setShowChangelog(false);
+    setSyncStatus("idle");
+    setSyncError("");
+    setSyncNotice("");
+    setLocalEntries([]);
+    setLocalCursor(0);
+    setLastLoaded(null);
+    setCollabConfigured(false);
   }, [activeProfile]);
 
   // ── Session preview ───────────────────────────────────────────────────────────
@@ -1166,13 +1262,22 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   const handleLoad = useCallback(async () => {
     setSyncStatus("loading");
     setSyncError("");
+    setSyncNotice("");
     setStagedDiff(null);
 
     try {
       const diff = await rpc.request.getTeamDiff();
       setCollabConfigured(diff.collabConfigured);
 
-      if (!diff.collabConfigured) {
+      if (!diff.ok) {
+        if (diff.collabConfigured) {
+          if (isTrackedTeamResyncError(diff.error)) {
+            track("team_resync_failed", { error_code: diff.error, surface: "desktop_pull" });
+          }
+          setSyncError(teamStageErrorCopy(diff.error));
+          setSyncStatus("error");
+          return;
+        }
         setSyncStatus("idle");
         return;
       }
@@ -1180,17 +1285,21 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
       if (localConfig.teamLoadMode === "review") {
         // HITL: stage the diff, show changelog with Apply button
         setStagedDiff(diff);
-        setLocalEntries(diff.entries);
         setShowChangelog(true);
         setSyncStatus("loaded");
       } else {
         // Auto: apply immediately
         setSyncStatus("applying");
-        const apply = await rpc.request.applyTeamDiff({ tmpDir: diff.tmpDir, cursorLine: diff.cursorLine });
-        if (!apply.ok) throw new Error(apply.error ?? "Apply failed.");
+        const apply = await rpc.request.applyTeamDiff({ operationId: diff.operationId });
+        if (!apply.ok) {
+          setSyncError(teamApplyErrorCopy(apply.error));
+          setSyncStatus("error");
+          return;
+        }
         setLastLoaded(new Date().toISOString());
         setLocalEntries(diff.entries);
         setLocalCursor(diff.cursorLine);
+        setSyncNotice(teamApplyNotice(apply));
         setShowChangelog(diff.entries.length > 0);
         setSyncStatus("loaded");
         onNewChanges(false); // user triggered this — they're seeing it now
@@ -1200,21 +1309,31 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
       setSyncStatus("error");
       setSyncError(err instanceof Error ? err.message : "Sync failed.");
     }
-  }, [localConfig.teamLoadMode]);
+  }, [localConfig.teamLoadMode, track]);
 
   // ── HITL Apply ───────────────────────────────────────────────────────────────
   async function handleApply() {
-    if (!stagedDiff?.tmpDir) return;
+    if (!stagedDiff) return;
     setSyncStatus("applying");
+    setSyncError("");
+    setSyncNotice("");
     try {
       const result = await rpc.request.applyTeamDiff({
-        tmpDir: stagedDiff.tmpDir,
-        cursorLine: stagedDiff.cursorLine,
+        operationId: stagedDiff.operationId,
       });
-      if (!result.ok) throw new Error(result.error ?? "Apply failed.");
+      if (!result.ok) {
+        setStagedDiff(null);
+        setShowChangelog(false);
+        setSyncError(teamApplyErrorCopy(result.error));
+        setSyncStatus("error");
+        return;
+      }
       setLastLoaded(new Date().toISOString());
       setLocalCursor(stagedDiff.cursorLine);
+      setLocalEntries(stagedDiff.entries);
+      setSyncNotice(teamApplyNotice(result));
       setStagedDiff(null);
+      setShowChangelog(false);
       setSyncStatus("loaded");
       onNewChanges(false);
       loadFiles();
@@ -1228,6 +1347,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
     setStagedDiff(null);
     setShowChangelog(false);
     setSyncStatus("idle");
+    setSyncNotice("");
   }
 
   // ── Mode toggle (called from settings, reflected immediately) ────────────────
@@ -1278,6 +1398,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   const selectedEntry = files.find((f) => f.relativePath === selectedPath) ?? null;
 
   const changelogEntries = stagedDiff ? stagedDiff.entries : localEntries;
+  const pendingCount = stagedDiff ? stagedDiff.entries.length : localEntries.length;
   const isApplying = syncStatus === "applying";
 
   if (files.length === 0) {
@@ -1286,9 +1407,10 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
         {collabConfigured && (
           <TeamSyncBar
             lastLoaded={lastLoaded}
-            pendingCount={localEntries.length}
+            pendingCount={pendingCount}
             status={syncStatus}
             errorMsg={syncError}
+            noticeMsg={syncNotice}
             onLoad={handleLoad}
           />
         )}
@@ -1320,9 +1442,10 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
       {collabConfigured && (
         <TeamSyncBar
           lastLoaded={lastLoaded}
-          pendingCount={localEntries.length}
+          pendingCount={pendingCount}
           status={syncStatus}
           errorMsg={syncError}
+          noticeMsg={syncNotice}
           onLoad={handleLoad}
         />
       )}
