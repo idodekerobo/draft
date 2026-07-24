@@ -375,6 +375,19 @@ export interface ConnectedAppsStatus {
   };
 }
 
+/**
+ * A Slack channel the bot can see, from conversations.list.
+ * Mirrors draft-core/integrations/slack's SlackChannel rather than importing it,
+ * per this file's convention of staying free of Node/Bun-only modules.
+ */
+export interface SlackChannelOption {
+  id: string;
+  name: string;
+  memberCount: number;
+  /** True if the bot is already a member — e.g. invited directly in Slack. */
+  isMember: boolean;
+}
+
 export interface ContextFileEntry {
   relativePath: string;
   label: string;
@@ -592,8 +605,18 @@ export type AppRPCType = {
       /** Build and return the Slack app creation URL with the manifest pre-filled. */
       getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };
 
-      /** Persist Slack bot and app credentials and connection status for the daemon. */
-      connectSlack: { params: { botToken: string; appToken: string }; response: ActionResult };
+      /**
+       * List the bot's visible Slack channels (public + private) via conversations.list.
+       * Omit botToken to use the token already saved for an already-connected integration
+       * (the Settings "Update channels" flow).
+       */
+      listSlackChannels: { params: { botToken?: string }; response: { ok: boolean; channels?: SlackChannelOption[]; error?: string } };
+
+      /** Persist Slack bot and app credentials, connection status, and the selected channel allowlist for the daemon. */
+      connectSlack: { params: { botToken: string; appToken: string; channelIds: string[] }; response: ActionResult };
+
+      /** Update the channel allowlist for an already-connected Slack integration, using the saved bot token. */
+      updateSlackChannels: { params: { channelIds: string[] }; response: ActionResult };
 
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
