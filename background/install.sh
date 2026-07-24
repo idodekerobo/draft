@@ -37,6 +37,12 @@ if [ ! -f "$DRAFT_BACKGROUND/state/granola.json" ]; then
     echo "[Draft Daemon] Seeded state/granola.json"
 fi
 
+if [ ! -f "$DRAFT_BACKGROUND/state/fireflies.json" ]; then
+    printf '{"last_checked_at":null,"processed_meeting_ids":[]}\n' \
+        > "$DRAFT_BACKGROUND/state/fireflies.json"
+    echo "[Draft Daemon] Seeded state/fireflies.json"
+fi
+
 # ── 2. Copy scripts ────────────────────────────────────────────────────────────
 _SCRIPTS=(
     "on-session-end.sh"

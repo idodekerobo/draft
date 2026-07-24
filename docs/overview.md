@@ -55,7 +55,7 @@ The daemon is a long-running process registered as a macOS LaunchAgent (`com.dra
 
 It does three things:
 - **Processes synthesis jobs** — when a Claude Code session ends, the plugin drops a job file locally. The daemon picks it up, uses Claude to extract any team-relevant updates from the session transcript, and stages them as proposals for your review.
-- **Polls integrations** — Granola, Slack, and GitHub are polled on a schedule. New meeting notes, Slack threads, and GitHub activity are synthesized into proposed context updates.
+- **Polls integrations** — Granola, Fireflies, Slack, and GitHub are polled on a schedule. New meeting notes, Slack threads, and GitHub activity are synthesized into proposed context updates.
 - **Heartbeat** — writes a heartbeat file every few seconds so the desktop app can show live daemon status.
 
 All processing happens locally. Integration pollers talk directly to those services' APIs using credentials stored on your machine.

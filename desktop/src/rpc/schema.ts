@@ -384,11 +384,11 @@ export interface ToolDetail {
   addedAt: string | null;
 }
 
-/** Detail for a single input source integration (granola, slack, github). */
+/** Detail for a single input source integration (granola, slack, github, fireflies). */
 export interface IntegrationDetail {
   connected: boolean;
   lastConnected: string | null;
-  /** "mcp"|"api" for Granola; "passive"|"tagged" for Slack; null otherwise. */
+  /** "mcp"|"api" for Granola; "passive"|"tagged" for Slack; null otherwise. Fireflies has no mode — always null. */
   mode: string | null;
   /** Slack: number of configured channels. Null for other sources. */
   channels: number | null;
@@ -410,6 +410,7 @@ export interface ConnectedAppsStatus {
     granola: IntegrationDetail;
     slack: IntegrationDetail;
     github: IntegrationDetail;
+    fireflies: IntegrationDetail;
   };
 }
 
@@ -590,7 +591,7 @@ export type AppRPCType = {
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
       /** Disconnect an input source by setting connected=false in integrations.json. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" }; response: ActionResult };
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" }; response: ActionResult };
 
       /**
        * Connect GitHub natively via `gh auth login --web`.
@@ -641,6 +642,9 @@ export type AppRPCType = {
 
       /** Persist a Granola API key and connection status for the daemon. */
       connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
+
+      /** Register Fireflies' MCP server (with bearer-token auth) and persist connection status. */
+      connectFireflies: { params: { apiKey: string }; response: ActionResult };
 
       /** Build and return the Slack app creation URL with the manifest pre-filled. */
       getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };

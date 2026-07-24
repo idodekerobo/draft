@@ -45,6 +45,7 @@ const CLAUDE_CODE_SYNTHESIS_ON = _localCfg.claudeCodeSynthesis ?? true;
 // Polling intervals — env var overrides with same defaults as config.sh
 const PENDING_POLL_MS   = parseInt(process.env.DRAFT_PENDING_POLL   ?? '5')     * 1000;
 const GRANOLA_POLL_MS   = parseInt(process.env.DRAFT_GRANOLA_POLL   ?? '900')   * 1000;
+const FIREFLIES_POLL_MS = parseInt(process.env.DRAFT_FIREFLIES_POLL ?? '900')   * 1000;
 const SLACK_MANAGER_MS  = 60_000;
 const SLACK_RECONCILE_MS = parseInt(process.env.DRAFT_SLACK_CAPTURE ?? '1800') * 1000;
 const SLACK_ANALYSIS_MS = parseInt(process.env.DRAFT_SLACK_ANALYSIS ?? '14400') * 1000;
@@ -358,6 +359,12 @@ async function main(): Promise<void> {
     log('info', `granola: starting poll (interval=${GRANOLA_POLL_MS / 1000}s mode=${mode})`);
     spawnRuntime(`${DRAFT_BACKGROUND}/integrations/granola/granola-poller`);
   }, GRANOLA_POLL_MS);
+
+  // Fireflies poller
+  setInterval(() => {
+    log('info', `fireflies: starting poll (interval=${FIREFLIES_POLL_MS / 1000}s)`);
+    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/fireflies/fireflies-poller`);
+  }, FIREFLIES_POLL_MS);
 
   // Slack manager (process health check — ensures slack-capture.ts is running if Slack is configured)
   setInterval(() => {

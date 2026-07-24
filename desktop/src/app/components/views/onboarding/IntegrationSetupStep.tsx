@@ -12,7 +12,7 @@ interface IntegrationSetupStepProps {
   onNext: () => void;
 }
 
-type IntegrationName = "granola" | "slack" | "github";
+type IntegrationName = "granola" | "slack" | "github" | "fireflies";
 
 export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: IntegrationSetupStepProps) {
   const { track } = useAnalytics();
@@ -20,6 +20,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
   const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
   const [granolaKey, setGranolaKey] = useState("");
+  const [firefliesKey, setFirefliesKey] = useState("");
   const [slackStep, setSlackStep] = useState<1 | 2 | 3>(1);
   const [botToken, setBotToken] = useState("");
   const [appToken, setAppToken] = useState("");
@@ -96,6 +97,25 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
     }
   }
 
+  async function connectFireflies() {
+    setSaving("fireflies");
+    setError(null);
+    try {
+      const result = await rpc.request.connectFireflies({ apiKey: firefliesKey });
+      if (!result.ok) {
+        setError(result.error ?? "Could not connect Fireflies. Check your API key.");
+        return;
+      }
+      track("integration_connected", { source: "fireflies" });
+      await loadConnections();
+      setExpanded(null);
+    } catch {
+      setError("Could not connect Fireflies. Try again.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
   async function connectSlack() {
     setSaving("slack");
     setError(null);
@@ -133,6 +153,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
   const granola = connections?.granola;
   const slack = connections?.slack;
   const github = connections?.github;
+  const fireflies = connections?.fireflies;
 
   return (
     <div className="onboarding__body onboarding__body--wide">
@@ -227,6 +248,17 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
         )}
 
         <IntegrationSetupCard title="GitHub" description="Track repositories and pull requests" hint="1 step" connected={github?.connected ?? false} expanded={false} onToggle={() => void connectGitHub()} action={connectingGitHub ? "Waiting…" : "Connect"} />
+
+        <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies)}>
+          <p className="onboarding__integration-help">Open Fireflies Developer Settings, then copy your API Key.</p>
+          <button className="empty-state__cta onboarding__cta" onClick={() => rpc.send.openUrl({ url: "https://app.fireflies.ai/settings/developer-settings" })}>
+            Open Fireflies Developer Settings
+          </button>
+          <input className="onboarding__integration-input" type="password" value={firefliesKey} onChange={(event) => setFirefliesKey(event.target.value)} placeholder="Fireflies API key" aria-label="Fireflies API key" />
+          <button className="empty-state__cta onboarding__cta" onClick={() => void connectFireflies()} disabled={saving === "fireflies" || !firefliesKey.trim()}>
+            {saving === "fireflies" ? "Connecting…" : "Connect Fireflies"}
+          </button>
+        </IntegrationSetupCard>
       </div>
 
       <div className="onboarding__actions" style={{ marginTop: 20 }}>

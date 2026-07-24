@@ -2,9 +2,9 @@
 name: draft-connect
 description: >
   Connect integrations to the Draft daemon. Guides the user through configuring
-  Granola (MCP or API), Slack, and GitHub. Run as /draft:connect to see all
-  integrations, or /draft:connect <name> to configure a specific one. Each
-  integration has its own sub-skill file in this directory.
+  Granola (MCP or API), Fireflies (MCP), Slack, and GitHub. Run as /draft:connect
+  to see all integrations, or /draft:connect <name> to configure a specific one.
+  Each integration has its own sub-skill file in this directory.
 ---
 
 # /draft:connect — Integration Hub
@@ -12,6 +12,7 @@ description: >
 **Usage:**
 - `/draft:connect` — show all integrations and current connection status
 - `/draft:connect granola` — set up or reconfigure Granola
+- `/draft:connect fireflies` — set up or reconfigure Fireflies
 - `/draft:connect slack` — set up or reconfigure Slack
 - `/draft:connect github` — set up or reconfigure GitHub repo polling
 
@@ -33,7 +34,11 @@ and execute it from Step 0.
 Read the file at `${CLAUDE_PLUGIN_ROOT}/skills/draft-connect/github/SKILL.md`
 and execute it from Step 0.
 
-**`/draft:connect granola disconnect`**, **`/draft:connect slack disconnect`**, **`/draft:connect github disconnect`**
+**`/draft:connect fireflies`**
+Read the file at `${CLAUDE_PLUGIN_ROOT}/skills/draft-connect/fireflies/SKILL.md`
+and execute it from Step 0.
+
+**`/draft:connect granola disconnect`**, **`/draft:connect slack disconnect`**, **`/draft:connect github disconnect`**, **`/draft:connect fireflies disconnect`**
 Read the corresponding sub-skill file and execute it from Step 1, passing `disconnect` as the action. The sub-skill's disconnect flow will run and stop.
 
 **No argument — `/draft:connect`**
@@ -85,6 +90,11 @@ if gh.get('connected'):
 else:
     github_status = 'not configured — run /draft:connect github'
 print(f'github:{github_status}')
+
+# ── Fireflies ─────────────────────────────────────────────────────────────────
+ff = integrations.get('fireflies', {})
+fireflies_status = 'connected' if ff.get('connected') else 'not configured'
+print(f'fireflies:{fireflies_status}')
 "
 ```
 
@@ -93,9 +103,10 @@ Print a status table using the output above:
 ```
 Draft Integrations
 
-  granola   [connected (MCP) | connected (API) | not configured]
-  slack     [connected (passive, 2 channels) | not configured]
-  github    [connected (org/repo1, org/repo2) | not configured — run /draft:connect github]
+  granola     [connected (MCP) | connected (API) | not configured]
+  fireflies   [connected | not configured]
+  slack       [connected (passive, 2 channels) | not configured]
+  github      [connected (org/repo1, org/repo2) | not configured — run /draft:connect github]
 
 Run /draft:connect <name> to set up an integration.
 ```

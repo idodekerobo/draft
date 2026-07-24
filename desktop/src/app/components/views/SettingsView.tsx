@@ -245,13 +245,14 @@ function IntelligenceToolRow({ toolKey, detail, onInstalled }: IntelligenceToolR
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  granola: "Granola",
-  slack:   "Slack",
-  github:  "GitHub",
+  granola:   "Granola",
+  slack:     "Slack",
+  github:    "GitHub",
+  fireflies: "Fireflies",
 };
 
 interface InputSourceRowProps {
-  sourceKey: "granola" | "slack" | "github";
+  sourceKey: "granola" | "slack" | "github" | "fireflies";
   detail: IntegrationDetail;
   onDisconnect: () => void;
   onToggleConnect: () => void;
@@ -386,12 +387,13 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | null>(null);
+  const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | "fireflies" | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
-  const [expandedSource, setExpandedSource] = useState<"granola" | "slack" | null>(null);
-  const [connectingSource, setConnectingSource] = useState<"granola" | "slack" | null>(null);
+  const [expandedSource, setExpandedSource] = useState<"granola" | "slack" | "fireflies" | null>(null);
+  const [connectingSource, setConnectingSource] = useState<"granola" | "slack" | "fireflies" | null>(null);
   const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
   const [granolaKey, setGranolaKey] = useState("");
+  const [firefliesKey, setFirefliesKey] = useState("");
   const [slackStep, setSlackStep] = useState<1 | 2 | 3>(1);
   const [botToken, setBotToken] = useState("");
   const [appToken, setAppToken] = useState("");
@@ -487,7 +489,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
-  async function handleDisconnect(source: "granola" | "slack" | "github") {
+  async function handleDisconnect(source: "granola" | "slack" | "github" | "fireflies") {
     if (!apps) return;
     setDisconnecting(source);
     try {
@@ -550,6 +552,26 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       setSaveError(granolaMode === "mcp"
         ? "MCP registration failed. Try API key instead."
         : "Could not connect Granola. Try again.");
+    } finally {
+      setConnectingSource(null);
+    }
+  }
+
+  async function handleConnectFireflies() {
+    setConnectingSource("fireflies");
+    setSaveError(null);
+    try {
+      const result = await rpc.request.connectFireflies({ apiKey: firefliesKey });
+      if (!result.ok) {
+        setSaveError(result.error ?? "Could not connect Fireflies. Check your API key.");
+        return;
+      }
+      track("integration_connected", { source: "fireflies" });
+      await refreshConnectedApps();
+      setExpandedSource(null);
+      setFirefliesKey("");
+    } catch {
+      setSaveError("Could not connect Fireflies. Try again.");
     } finally {
       setConnectingSource(null);
     }
@@ -839,7 +861,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
               );
             })()}
 
-            {(["granola", "slack", "github"] as const).map((key) => (
+            {(["granola", "fireflies", "slack", "github"] as const).map((key) => (
               <InputSourceRow
                 key={key}
                 sourceKey={key}
@@ -872,6 +894,36 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                     )}
                     <button className="app-row__connect app-row__panel-action" onClick={() => void handleConnectGranola()} disabled={connectingSource === "granola" || (granolaMode === "api" && !granolaKey.trim())}>
                       {connectingSource === "granola" ? "Connecting…" : "Connect Granola"}
+                    </button>
+                  </div>
+                )}
+
+                {key === "fireflies" && (
+                  <div className="app-row__connect-panel">
+                    <span className="app-row__panel-label">Get your API key</span>
+                    <span className="app-row__panel-help">
+                      Open Fireflies Developer Settings, then copy your API Key.
+                    </span>
+                    <button
+                      className="app-row__panel-link app-row__panel-action"
+                      onClick={() => rpc.send.openUrl({ url: "https://app.fireflies.ai/settings/developer-settings" })}
+                    >
+                      Open Fireflies Developer Settings
+                    </button>
+                    <input
+                      className="app-row__input"
+                      type="password"
+                      value={firefliesKey}
+                      onChange={(event) => setFirefliesKey(event.target.value)}
+                      placeholder="Fireflies API key"
+                      aria-label="Fireflies API key"
+                    />
+                    <button
+                      className="app-row__connect app-row__panel-action"
+                      onClick={() => void handleConnectFireflies()}
+                      disabled={connectingSource === "fireflies" || !firefliesKey.trim()}
+                    >
+                      {connectingSource === "fireflies" ? "Connecting…" : "Connect Fireflies"}
                     </button>
                   </div>
                 )}

@@ -1,6 +1,7 @@
 brainstorm/
 plans/
 research/
+DESIGN.md
 .env.*
 .env
 .env.development.local

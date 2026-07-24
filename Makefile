@@ -5,6 +5,34 @@ stop:
 	-lsof -ti:3001 | xargs kill -9 2>/dev/null || true
 	@echo "All services stopped."
 
+# ── Dev CLI/Daemon Refresh ───────────────────────────────────────────────────
+#
+#   make dev-refresh
+#     Compiles fresh `draft` CLI + daemon binaries from current source and
+#     deploys them to where the real, globally-installed daemon/CLI run from
+#     (~/.draft/bin/draft, ~/.draft/background/draft-background-bin). Use this
+#     after changing background/ or cli/ code, so `draft status`/`draft poll`
+#     and the auto-polling daemon loop reflect your latest changes — `bun run
+#     dev` in desktop/ alone does NOT rebuild either binary.
+#
+#     background/draft-background-bin is gitignored — left in place after the
+#     run for install.sh's fallback lookup; harmless to leave, safe to `rm`.
+
+.PHONY: dev-refresh
+
+dev-refresh:
+	@echo "[dev-refresh] Compiling fresh CLI + daemon binaries..."
+	@bash desktop/scripts/prebuild.sh
+	@echo "[dev-refresh] Deploying daemon binary..."
+	@cp desktop/assets/background/draft-background-bin background/draft-background-bin
+	@echo "[dev-refresh] Deploying CLI binary..."
+	@cp desktop/assets/bin/draft ~/.draft/bin/draft
+	@echo "[dev-refresh] Reinstalling daemon (restarts LaunchAgent)..."
+	@bash background/install.sh
+	@echo ""
+	@echo "[dev-refresh] Done. Verify with: draft status"
+	@echo ""
+
 # ── CLI Plugin ────────────────────────────────────────────────────────────────
 #
 # Two commands:
