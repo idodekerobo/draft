@@ -2733,6 +2733,28 @@ button {
   height: 28px;
 }
 
+/* Secondary ghost action inside a connect panel — e.g. "Open X Developer Settings".
+   Distinct from .app-row__connect (primary blue CTA) so the external-link step
+   reads as a lesser action than the Connect button below it. */
+.app-row__panel-link {
+  align-self: flex-start;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-micro);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background 100ms, border-color 100ms, color 100ms;
+  white-space: nowrap;
+}
+
+.app-row__panel-link:hover {
+  border-color: var(--color-accent-blue);
+  color: var(--color-accent-blue);
+}
+
 /* ── Skill sync (Settings) ──────────────────────────────────────────────────── */
 
 .skill-sync__list {

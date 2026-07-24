@@ -39,6 +39,7 @@ const SOURCE_LABELS: Record<string, string> = {
   "granola":             "Granola",
   "slack":               "Slack",
   "github":              "GitHub",
+  "fireflies":           "Fireflies",
 };
 
 function sourceLabel(source: string): string {

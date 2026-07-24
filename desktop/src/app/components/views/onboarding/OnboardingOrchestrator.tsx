@@ -5,7 +5,7 @@
 //   2. Profile  — create / pick workspace (BEFORE install — install needs active-profile)
 //   3. Install  — tool selection + install (calls runInstall RPC)
 //   4. Scan + import — skipped when no third-party skills exist
-//   5. Integrations — connect Granola, Slack, and GitHub inline
+//   5. Integrations — connect Granola, Fireflies, Slack, and GitHub inline
 //   6. Context setup — optional headless setup with manual fallback
 //   7. Collab — team collaboration awareness
 //   8. Finalize — analytics consent and daemon start
