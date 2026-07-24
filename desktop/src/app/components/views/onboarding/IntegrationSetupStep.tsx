@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ConnectedAppsStatus, IntegrationDetail } from "../../../../rpc/schema";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
 import { rpc } from "../../../rpc";
+import { SlackChannelPicker } from "../../shared/SlackChannelPicker";
 import { IntegrationSetupCard } from "./shared";
 
 interface IntegrationSetupStepProps {
@@ -19,9 +20,11 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
   const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
   const [granolaKey, setGranolaKey] = useState("");
-  const [slackStep, setSlackStep] = useState<1 | 2>(1);
+  const [slackStep, setSlackStep] = useState<1 | 2 | 3>(1);
   const [botToken, setBotToken] = useState("");
   const [appToken, setAppToken] = useState("");
+  const [slackChannelIds, setSlackChannelIds] = useState<string[]>([]);
+  const [slackConnected, setSlackConnected] = useState(false);
   const [saving, setSaving] = useState<IntegrationName | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,14 +100,14 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
     setSaving("slack");
     setError(null);
     try {
-      const result = await rpc.request.connectSlack({ botToken, appToken });
+      const result = await rpc.request.connectSlack({ botToken, appToken, channelIds: slackChannelIds });
       if (!result.ok) {
         setError(result.error ?? "Could not connect Slack. Check bot permissions.");
         return;
       }
       track("integration_connected", { source: "slack" });
       await loadConnections();
-      setExpanded(null);
+      setSlackConnected(true);
     } catch {
       setError("Could not connect Slack. Try again.");
     } finally {
@@ -165,8 +168,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
           </button>
         </IntegrationSetupCard>
 
-        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="2 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
-          <p className="onboarding__integration-step-indicator">Step {slackStep} of 2</p>
+        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
+          <p className="onboarding__integration-step-indicator">Step {slackStep} of 3</p>
           {slackStep === 1 && <>
             <p className="onboarding__integration-help">Draft creates a read-only Slack app in your workspace to capture channel activity. You'll pick the workspace, create the app, then copy two tokens back here.</p>
             <button className="empty-state__cta onboarding__cta" onClick={async () => {
@@ -198,11 +201,24 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
             {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
               <p className="onboarding__integration-validation">Bot tokens start with xoxb-.</p>
             )}
-            <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || !botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
+            <button className="empty-state__cta onboarding__cta" onClick={() => setSlackStep(3)} disabled={!botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
+              Next
+            </button>
+          </>}
+          {slackStep === 3 && <>
+            <p className="onboarding__integration-help">Pick which channels Draft should capture. You can update this later in Settings.</p>
+            <SlackChannelPicker botToken={botToken} selected={slackChannelIds} onChange={setSlackChannelIds} />
+            <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || slackChannelIds.length === 0}>
               {saving === "slack" ? "Connecting…" : "Connect Slack"}
             </button>
           </>}
         </IntegrationSetupCard>
+        {slackConnected && (
+          <p className="onboarding__integration-help">
+            Invite the bot to each channel you selected — run <code>/invite @Draft Context</code> in Slack.
+            The bot reads messages but never posts; this is required for capture to work.
+          </p>
+        )}
 
         <IntegrationSetupCard title="GitHub" description="Track repositories and pull requests" hint="1 step" connected={github?.connected ?? false} expanded={false} onToggle={() => void connectGitHub()} action={connectingGitHub ? "Waiting…" : "Connect"} />
       </div>
