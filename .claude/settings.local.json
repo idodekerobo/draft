@@ -22,7 +22,8 @@
       "WebFetch(domain:bun.com)",
       "WebFetch(domain:docs.openclaw.ai)",
       "WebFetch(domain:hermes-agent.nousresearch.com)",
-      "Skill(browse)"
+      "Skill(browse)",
+      "Skill(investigate)"
     ]
   }
 }
