@@ -15,6 +15,7 @@ import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
+import { registerFirefliesMCP, writeFirefliesConfig } from "draft-core/integrations/fireflies";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels, readStoredSlackBotToken, writeSlackConfig, writeSlackRolesChannels, updateSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import {
@@ -732,7 +733,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
 
-        function integrationDetail(key: "granola" | "slack" | "github"): IntegrationDetail {
+        function integrationDetail(key: "granola" | "slack" | "github" | "fireflies"): IntegrationDetail {
           const entry = int[key];
           return {
             connected:     entry?.connected    ?? false,
@@ -758,9 +759,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             hermes:        toolDetail("hermes"),
           },
           integrations: {
-            granola: integrationDetail("granola"),
-            slack:   integrationDetail("slack"),
-            github:  githubDetail,
+            granola:   integrationDetail("granola"),
+            slack:     integrationDetail("slack"),
+            github:    githubDetail,
+            fireflies: integrationDetail("fireflies"),
           },
         };
       },
@@ -1194,6 +1196,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
+        }
+      },
+
+      connectFireflies: async ({ apiKey }) => {
+        if (!apiKey.trim()) return { ok: false, error: "Enter your Fireflies API key." };
+        const reg = await registerFirefliesMCP(apiKey.trim());
+        if (!reg.ok) return reg;
+        try {
+          writeFirefliesConfig(getWorkspacePath(getActiveProfile()), apiKey.trim());
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Fireflies connection." };
         }
       },
 
