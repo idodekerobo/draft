@@ -13,9 +13,14 @@ Source adapters are responsible for:
 
 ```
 synthesizers/
-  claude-code-session.sh     # Claude Code session transcripts
-  granola.sh     # Granola meeting transcripts
-  slack.sh       # Slack message batches
+  maintainer-contract.ts     # shared outcome contract, imported by every adapter
+  synthesis-runtime.ts       # context snapshots + intelligence invocation
+  claude-code-session.ts     # Claude Code session transcripts
+  codex-session.ts           # Codex session transcripts
+  granola.ts                 # Granola meeting transcripts
+  fireflies.ts               # Fireflies meeting transcripts
+  slack.ts                   # Slack message batches
+  github.ts                  # merged PRs and releases
 ```
 
 ## Interface
@@ -42,9 +47,25 @@ Job file schema (written by on-session-end.sh, confirmed 2026-05-17):
 stdout = .md file with YAML frontmatter
 ```
 
-The output document has two layers:
-1. **YAML frontmatter** — machine-parseable structured data for commit-to-team-context.sh
-2. **Markdown body** — human-readable curator preview in proposals/
+Every adapter emits a single YAML frontmatter block declaring exactly one outcome.
+The adapter never writes to `context/` itself — the host validates this document and
+performs any write. Adapters get the outcome rules by calling
+`buildMaintainerContractPrompt()` from `maintainer-contract.ts`; do not hand-write
+them per source.
+
+### Outcomes
+
+| Outcome | Meaning | What the host does |
+|---|---|---|
+| `no_change` | Nothing durable happened. The most common real result. | Records a clean run. Nothing is written. |
+| `rewrite` | Existing context is now out of date. | Verifies each target's hash, replaces the whole file atomically, snapshots before/after, writes a dimension log entry. |
+| `needs_input` | A named contradiction that cannot be safely reconciled from the evidence. | Stages one item under `proposals/flagged/`. No context file is touched. |
+
+`no_change` carries neither `rewrites` nor `needs_input_reason`. `needs_input` carries
+only a reason. `rewrite` carries at least one entry whose `file` is an existing
+`context/<dimension>/index.md`, whose `base_sha256` is copied verbatim from the host's
+supplied snapshot hash, and whose `content` is the complete replacement document
+rather than a patch.
 
 ```markdown
 ---
@@ -53,44 +74,34 @@ input_source: session
 synthesized_by: claude-code
 timestamp: 2026-05-17T02:44:08Z
 profile: draft-pm-agent
-context_updates:
+outcome: rewrite
+rewrites:
   - file: context/product/index.md
-    action: append
+    base_sha256: <the host_sha256 supplied for that file>
+    summary: |
+      Recorded the separate-clone pattern for GitHub publishing; dropped the note
+      that the approach was still undecided.
+    removals:
+      - claim: "publishing approach still undecided"
+        reason: "settled this session — separate clone avoids git init in the workspace"
     content: |
-      Decided to use separate-clone pattern for GitHub publishing...
-  - file: context/tensions.md
-    action: tension
-    content: |
-      ### Target user contradiction
-      - **Observed:** 2026-05-17
-      - **Signal:** Session says "targeting music directors" but context/product/index.md says "targeting composers"
-      - **Status:** unresolved
-      - **Resolution:**
+      [complete new content for context/product/index.md]
 ---
-
-## Synthesis preview
-
-### context/product/index.md — append
-Decided to use separate-clone pattern for GitHub publishing...
-
-### context/tensions.md — tension
-Target user contradiction: session says "targeting music directors" but product/index.md says "targeting composers"
 ```
 
-### Action types
+Meeting sources (`granola`, `fireflies`) must additionally emit a `meeting_ids` list
+for every outcome — it is how the poller advances its cursor. An empty list is valid.
 
-| Action | Meaning | Handler behaviour |
-|---|---|---|
-| `append` | New information that complements existing context | Appended to `file` |
-| `tension` | New info contradicts existing context | Always appended to `context/tensions.md` regardless of `file` field. The `file` field is metadata only — it describes which dimension the contradiction relates to. |
-| `overwrite` | Full file replacement | Replaces `file` contents. **Do not use in synthesis prompts** — reserved for curator-triggered compaction only. |
+Contradictions are no longer routed to `context/tensions.md`; an unresolved one is
+`needs_input`. Adapters must never write to `context/tensions.md` — the snapshot they
+receive is read-only conflict evidence.
 
 ### Exit codes
-- `exit 0` — success; synthesize.sh writes stdout to proposals/
-- `exit 1` — failure; synthesize.sh moves job to background/failed/
+- `exit 0` — success; `synthesize.ts` validates and routes stdout
+- `exit 1` — failure; `synthesize.ts` moves the job to `background/failed/`
 
 ### Stderr
-All log lines go to stderr. synthesize.sh captures them to background/logs/.
+All log lines go to stderr. `synthesize.ts` captures them to `background/logs/`.
 
 ## Calling the intelligence adapter
 
@@ -99,37 +110,48 @@ its own intelligence config var — use the one for your source, not a generic o
 
 | Source adapter | Intelligence var | Default |
 |---|---|---|
-| `claude-code-session.sh` | `DRAFT_SESSION_INTELLIGENCE` | `claude-code` |
-| `granola.sh` | `DRAFT_GRANOLA_INTELLIGENCE` | `claude-code` |
-| `slack.sh` | `DRAFT_SLACK_INTELLIGENCE` | `claude-code` |
+| `claude-code-session.ts`, `codex-session.ts` | `DRAFT_SESSION_INTELLIGENCE` | `claude-code` |
+| `granola.ts` | `DRAFT_GRANOLA_INTELLIGENCE` | `claude-code` |
+| `fireflies.ts` | `DRAFT_FIREFLIES_INTELLIGENCE` | `claude-code` |
+| `slack.ts` | `DRAFT_SLACK_INTELLIGENCE` | `claude-code` |
+| `github.ts` | `DRAFT_GITHUB_INTELLIGENCE` | `claude-code` |
 
-All three vars are exported by `config.sh`. Override via environment variable.
+Override via environment variable. The same value is recorded as `synthesized_by` on
+the resulting run, so it must be read from the env rather than hardcoded.
 
 Valid values: `claude-code` (tmux TUI, full tool access), `claude-api` (stateless curl, faster/cheaper), `codex` (future).
 
-```bash
-# Use the var for YOUR source — not DRAFT_SESSION_INTELLIGENCE
-INTELLIGENCE="${DRAFT_GRANOLA_INTELLIGENCE:-claude-code}"
-INTELLIGENCE_SCRIPT="$DRAFT_BACKGROUND/intelligence/${INTELLIGENCE}.sh"
-
-if [ ! -x "$INTELLIGENCE_SCRIPT" ]; then
-    _log "ERROR: intelligence adapter not found: $INTELLIGENCE_SCRIPT"
-    exit 1
-fi
-
-bash "$INTELLIGENCE_SCRIPT" "$PROMPT_FILE" "$OUTPUT_FILE"
+```ts
+// Use the var for YOUR source — not DRAFT_SESSION_INTELLIGENCE
+const intelligence = process.env.DRAFT_GRANOLA_INTELLIGENCE ?? 'claude-code';
+const snapshot = createContextSnapshot(workspace);
+try {
+  return await runIntelligence({
+    adapterPath: resolveIntelligenceAdapter(backgroundDir, intelligence, deps.exists),
+    prompt: buildMyPrompt({ /* source evidence */ snapshot, outputPath, intelligence }),
+    outputPath,
+  }, deps);
+} finally {
+  cleanupContextSnapshot(snapshot);
+  rmSync(outputPath, { force: true });
+}
 ```
 
 See `intelligence/README.md` for the intelligence adapter contract.
 
 ## Adding a new source adapter
 
-1. Create `synthesizers/<source>.sh`
-2. Source `config.sh` for paths and env vars
-3. Accept `$1` as job file path
-4. Add a `DRAFT_<SOURCE>_INTELLIGENCE` var to `config.sh` (follow the existing pattern)
-5. Build a prompt file containing all synthesis instructions
-6. Create a temp output file path at `$DRAFT_WORKSPACE/tmp/<source>-output-XXXX.md` (not /tmp/ — Claude Code cannot write there)
-7. Call `intelligence/${DRAFT_<SOURCE>_INTELLIGENCE}.sh "$PROMPT_FILE" "$OUTPUT_FILE"`
-8. On success: `cat "$OUTPUT_FILE"` to stdout, exit 0
-9. On failure: log to stderr, exit 1
+1. Create `synthesizers/<source>.ts` exporting a `build<Source>Prompt()` and a
+   `run<Source>()`, so the prompt is testable without spawning a model.
+2. Register it in `SYNTHESIS_ADAPTERS` in `background/synthesize.ts`, or call it from
+   your poller.
+3. Add a `DRAFT_<SOURCE>_INTELLIGENCE` env var following the table above.
+4. Take a context snapshot with `createContextSnapshot()` and clean it up in a
+   `finally` — the snapshot hashes are what make a rewrite's `base_sha256` verifiable.
+5. Describe only your source's evidence in the prompt, then append
+   `buildMaintainerContractPrompt()` for the outcome rules. Never restate the outcome
+   contract yourself; it drifts.
+6. Write output to `$DRAFT_WORKSPACE/tmp/<source>-…` (not `/tmp/` — Claude Code cannot
+   write there) and return its contents.
+7. Route the result through `routeAutomatedMaintainerOutput()`. Never write to
+   `context/` from an adapter.
