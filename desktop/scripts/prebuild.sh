@@ -4,10 +4,14 @@
 # What this does:
 #   1. Copies background/ daemon scripts → desktop/assets/background/
 #   2. Copies cli-agent-plugin/ → desktop/assets/plugin/
-#   3. Compiles the draft CLI as a standalone binary → desktop/assets/bin/draft
+#   3. Builds tmux (and libevent) from source → desktop/assets/bin/tmux
+#   4. Compiles the draft CLI as a standalone binary → desktop/assets/bin/draft
+#   5. Compiles the daemon binary → desktop/assets/background/draft-background-bin
+#   6. Stages the app icon set
 #
 # Run before every build. Idempotent — wipes and recreates assets/ each time.
-# assets/ is gitignored (build artifact, not committed).
+# assets/ is gitignored (build artifact, not committed). The tmux build is cached
+# under .build-cache/ (also gitignored) since it is the one slow step here.
 
 set -euo pipefail
 
@@ -116,47 +120,190 @@ log "Copying cli-agent-plugin/..."
 cp -r "$REPO_ROOT/cli-agent-plugin/." "$ASSETS_DIR/plugin/"
 log "  Done"
 
-# ── 3. Stage tmux static binary ───────────────────────────────────────────────
-# Download a precompiled static macOS tmux binary and stage it for bundling.
-# Pin a specific release + SHA256 checksum for reproducibility.
-# For CI: set TMUX_DOWNLOAD_URL and TMUX_SHA256 in the environment.
+# ── 3. Build tmux from source ─────────────────────────────────────────────────
+#
+# This used to `cp $(which tmux)` from the build machine, which shipped a
+# Homebrew binary to every user: it dynamically linked
+# /opt/homebrew/opt/{libevent,ncurses,utf8proc}/lib/*.dylib — paths that exist
+# only on the release builder's Mac — and carried a minos of 15.0. Since
+# installer.ts copies the bundled tmux to ~/.draft/bin/tmux and the daemon puts
+# ~/.draft/bin first on PATH, that binary also *shadowed* a user's own working
+# `brew install tmux`. It could not load for virtually anyone.
+#
+# So we build tmux ourselves, against a from-source libevent and macOS's own
+# system ncurses, at a fixed 14.0 deployment target. Notes on why it's shaped
+# this way (each of these was tried and rejected):
+#   - tmux's configure.ac hard-errors on `--enable-static` on macOS, so a fully
+#     static binary is not achievable; linking only /usr/lib is the real goal.
+#   - Homebrew's own .a archives are compiled at minos 15.0, and its static
+#     ncurses has a hardcoded /opt/homebrew/Cellar terminfo path baked in —
+#     invisible to otool -L, but broken at runtime on any other Mac.
+#   - macOS has no system libevent, so that one genuinely must be built here.
+#     macOS *does* ship ncurses in /usr/lib with terminfo in /usr/share/terminfo,
+#     so we deliberately starve pkg-config (PKG_CONFIG_LIBDIR → an empty dir;
+#     clearing PKG_CONFIG_PATH alone is not enough, pkg-config falls back to
+#     compiled-in defaults that include /opt/homebrew) and let tmux's
+#     AC_SEARCH_LIBS(setupterm) fallback find -lncurses on its own.
+#   - --disable-utf8proc must be passed explicitly (configure errors if neither
+#     --enable-utf8proc nor --disable-utf8proc is given on macOS). We accept
+#     tmux's builtin width tables: the session adapter only greps for a marker
+#     and stats the output file, so nothing in the parse is column-sensitive.
+#
+# The build is cached under .build-cache/ keyed on the full recipe, but a cache
+# hit is still re-verified below before staging — the verification is the point.
 
 TMUX_DEST="$ASSETS_DIR/bin/tmux"
 
-# TODO(ci): Replace the dev fallback below with a self-hosted static build for production CI.
-#   Build from source on a Mac (links only against system libs — no Homebrew dylib deps):
-#     cd /tmp && curl -fsSL https://github.com/tmux/tmux/releases/download/3.5a/tmux-3.5a.tar.gz | tar xz
-#     cd tmux-3.5a
-#     ./configure --prefix=/tmp/tmux-out --enable-static \
-#       CFLAGS="-I$(brew --prefix libevent)/include -I$(brew --prefix ncurses)/include" \
-#       LDFLAGS="-L$(brew --prefix libevent)/lib -L$(brew --prefix ncurses)/lib"
-#     make -j4 && make install
-#     otool -L /tmp/tmux-out/bin/tmux  # verify: only /usr/lib/* and /System/* entries
-#     shasum -a 256 /tmp/tmux-out/bin/tmux
-#   Upload the binary to a GitHub Release on this repo (e.g. tag: build-deps-v1).
-#   Then set TMUX_DOWNLOAD_URL + TMUX_SHA256 as CI secrets and hardcode defaults here.
-if [ -n "${TMUX_DOWNLOAD_URL:-}" ]; then
-  log "Downloading tmux from $TMUX_DOWNLOAD_URL"
-  curl -fsSL "$TMUX_DOWNLOAD_URL" -o "$TMUX_DEST"
-  if [ -n "${TMUX_SHA256:-}" ]; then
-    echo "$TMUX_SHA256  $TMUX_DEST" | shasum -a 256 -c - || {
-      echo "[prebuild] ERROR: tmux checksum mismatch" >&2; exit 1
+TMUX_VERSION="3.5a"
+TMUX_SHA256="16216bd0877170dfcc64157085ba9013610b12b082548c7c9542cc0103198951"
+LIBEVENT_VERSION="2.1.12-stable"
+LIBEVENT_SHA256="92e6de1be9ec176428fd2367677e61ceffc2ee1cb119035037a27d346b0403bb"
+# Must stay >= the floor patched into the other bundled binaries by
+# scripts/lib/patch-minos.ts, and <= libNativeWrapper.dylib's genuine 14.0.
+MACOS_MIN="14.0"
+
+TMUX_CACHE_DIR="$DESKTOP_DIR/.build-cache/tmux-${TMUX_VERSION}-libevent${LIBEVENT_VERSION}-min${MACOS_MIN}"
+TMUX_CACHED="$TMUX_CACHE_DIR/tmux"
+
+fatal() { echo "[prebuild] ERROR: $1" >&2; exit 1; }
+
+# Every check that can fail on *this* machine for the same reason it would fail
+# on a user's machine. Applied to freshly built and cached binaries alike.
+verify_tmux() {
+  local bin="$1"
+
+  # 1. Linkage: only system libraries. This is what the old build got wrong.
+  local bad_links
+  bad_links=$(otool -L "$bin" | tail -n +2 | awk '{print $1}' \
+    | grep -vE '^(/usr/lib/|/System/Library/)' || true)
+  if [ -n "$bad_links" ]; then
+    fatal "tmux links non-system libraries:"$'\n'"$bad_links"
+  fi
+
+  # 2. Deployment floor.
+  local minos
+  minos=$(otool -l "$bin" | awk '/LC_BUILD_VERSION/{f=1} f&&/^ *minos/{print $2; exit}')
+  [ -n "$minos" ] || fatal "tmux has no LC_BUILD_VERSION minos"
+  if [ "$(printf '%s\n%s\n' "$minos" "$MACOS_MIN" | sort -V | tail -1)" != "$MACOS_MIN" ]; then
+    fatal "tmux minos $minos exceeds the $MACOS_MIN floor"
+  fi
+
+  # 3. Compiled-in Homebrew paths. otool -L cannot see these — this is the check
+  #    that catches the hardcoded-terminfo-path class of bug.
+  local brew_paths
+  brew_paths=$(strings -a "$bin" | grep -E '/opt/homebrew|/Cellar/' || true)
+  if [ -n "$brew_paths" ]; then
+    fatal "tmux contains compiled-in Homebrew paths:"$'\n'"$brew_paths"
+  fi
+
+  # 4. It is the version we think it is.
+  local reported
+  reported=$("$bin" -V 2>&1 || true)
+  [ "$reported" = "tmux $TMUX_VERSION" ] || fatal "tmux reports '$reported', expected 'tmux $TMUX_VERSION'"
+
+  # 5. Functional smoke test in a scrubbed environment. `env -i` drops
+  #    DYLD_LIBRARY_PATH and DYLD_FALLBACK_LIBRARY_PATH along with everything
+  #    else — a clean PATH alone would not stop dyld from resolving Homebrew
+  #    dylibs via the fallback path, letting a bad binary pass. TERM=screen is
+  #    set explicitly so this exercises system terminfo only.
+  local smoke_home smoke_out
+  smoke_home=$(mktemp -d)
+  smoke_out=$(env -i PATH=/usr/bin:/bin HOME="$smoke_home" TMUX_TMPDIR="$smoke_home" TERM=screen \
+    "$bin" -L draft-prebuild-smoke new-session -d -s smoke 'echo tmux-smoke-ok; sleep 5' 2>&1) || {
+      rm -rf "$smoke_home"; fatal "tmux smoke test: could not create a session:"$'\n'"$smoke_out"
     }
-  fi
-  chmod +x "$TMUX_DEST"
-  log "  tmux downloaded: $TMUX_DEST"
+  sleep 1
+  smoke_out=$(env -i PATH=/usr/bin:/bin HOME="$smoke_home" TMUX_TMPDIR="$smoke_home" TERM=screen \
+    "$bin" -L draft-prebuild-smoke capture-pane -p -t smoke 2>&1) || true
+  env -i PATH=/usr/bin:/bin HOME="$smoke_home" TMUX_TMPDIR="$smoke_home" TERM=screen \
+    "$bin" -L draft-prebuild-smoke kill-server >/dev/null 2>&1 || true
+  rm -rf "$smoke_home"
+  case "$smoke_out" in
+    *tmux-smoke-ok*) ;;
+    *) fatal "tmux smoke test: capture-pane did not return the expected output:"$'\n'"$smoke_out" ;;
+  esac
+}
+
+if [ -x "$TMUX_CACHED" ]; then
+  log "Using cached tmux build ($TMUX_VERSION)"
 else
-  # Dev fallback: copy from build machine (requires tmux installed — e.g. brew install tmux)
-  TMUX_BIN=$(command -v tmux 2>/dev/null || true)
-  if [ -n "$TMUX_BIN" ]; then
-    log "  Copying tmux from $TMUX_BIN (build-machine fallback)"
-    cp "$TMUX_BIN" "$TMUX_DEST"
-    chmod +x "$TMUX_DEST"
-    log "  tmux staged: $TMUX_DEST"
-  else
-    log "  WARN: tmux not found on PATH — session monitoring will be unavailable in this build"
-  fi
+  log "Building tmux $TMUX_VERSION from source (libevent $LIBEVENT_VERSION, macOS $MACOS_MIN floor)..."
+
+  TMUX_WORK=$(mktemp -d)
+  trap 'rm -rf "$TMUX_WORK"' EXIT
+
+  export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+  TMUX_CC="clang -mmacosx-version-min=$MACOS_MIN"
+
+  # ── libevent (static, ours) ──────────────────────────────────────────────────
+  log "  Downloading libevent $LIBEVENT_VERSION..."
+  curl -fsSL -o "$TMUX_WORK/libevent.tar.gz" \
+    "https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz"
+  echo "$LIBEVENT_SHA256  $TMUX_WORK/libevent.tar.gz" | shasum -a 256 -c - >/dev/null \
+    || fatal "libevent checksum mismatch"
+  tar xzf "$TMUX_WORK/libevent.tar.gz" -C "$TMUX_WORK"
+
+  log "  Building libevent..."
+  (
+    cd "$TMUX_WORK/libevent-${LIBEVENT_VERSION}"
+    ./configure --prefix="$TMUX_WORK/libevent-out" \
+      --disable-shared --enable-static --disable-openssl \
+      --disable-libevent-regress --disable-samples --disable-debug-mode \
+      CC="$TMUX_CC"
+    make -j"$(sysctl -n hw.ncpu)"
+    make install
+  ) > "$TMUX_WORK/libevent-build.log" 2>&1 || {
+    tail -40 "$TMUX_WORK/libevent-build.log" >&2
+    fatal "libevent build failed (full log: $TMUX_WORK/libevent-build.log)"
+  }
+
+  # ── tmux ─────────────────────────────────────────────────────────────────────
+  log "  Downloading tmux $TMUX_VERSION..."
+  curl -fsSL -o "$TMUX_WORK/tmux.tar.gz" \
+    "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz"
+  echo "$TMUX_SHA256  $TMUX_WORK/tmux.tar.gz" | shasum -a 256 -c - >/dev/null \
+    || fatal "tmux checksum mismatch"
+  tar xzf "$TMUX_WORK/tmux.tar.gz" -C "$TMUX_WORK"
+
+  log "  Building tmux..."
+  mkdir -p "$TMUX_WORK/pkgconfig-empty"
+  (
+    cd "$TMUX_WORK/tmux-${TMUX_VERSION}"
+    # Isolate pkg-config so Homebrew cannot leak back in, and hand configure the
+    # libevent archive by absolute path so it never resolves -levent_core to a
+    # Homebrew dylib. Setting both *_CFLAGS and *_LIBS makes PKG_CHECK_MODULES
+    # skip its pkg-config probe entirely.
+    export PKG_CONFIG_LIBDIR="$TMUX_WORK/pkgconfig-empty"
+    export PKG_CONFIG_PATH=""
+    export LIBEVENT_CORE_CFLAGS="-I$TMUX_WORK/libevent-out/include"
+    export LIBEVENT_CORE_LIBS="$TMUX_WORK/libevent-out/lib/libevent_core.a"
+    ./configure --prefix="$TMUX_WORK/tmux-out" --disable-utf8proc CC="$TMUX_CC"
+    make -j"$(sysctl -n hw.ncpu)"
+  ) > "$TMUX_WORK/tmux-build.log" 2>&1 || {
+    tail -40 "$TMUX_WORK/tmux-build.log" >&2
+    fatal "tmux build failed (full log: $TMUX_WORK/tmux-build.log)"
+  }
+
+  log "  Verifying built tmux..."
+  verify_tmux "$TMUX_WORK/tmux-${TMUX_VERSION}/tmux"
+
+  mkdir -p "$TMUX_CACHE_DIR"
+  cp "$TMUX_WORK/tmux-${TMUX_VERSION}/tmux" "$TMUX_CACHED"
+  chmod +x "$TMUX_CACHED"
+
+  rm -rf "$TMUX_WORK"
+  trap - EXIT
 fi
+
+# Re-verify even on a cache hit — a stale or tampered cache entry must never
+# silently reintroduce the Homebrew-linked binary this whole section exists to
+# prevent. If any check fails, the build fails.
+log "  Verifying tmux before staging..."
+verify_tmux "$TMUX_CACHED"
+
+cp "$TMUX_CACHED" "$TMUX_DEST"
+chmod +x "$TMUX_DEST"
+log "  tmux staged: $TMUX_DEST"
 
 # ── 4. Compile draft CLI binary ────────────────────────────────────────────────
 
