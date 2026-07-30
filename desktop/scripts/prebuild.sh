@@ -72,12 +72,32 @@ mkdir -p "$SMOKE_HOME" "$SMOKE_INSTALL"
 cp -R "$ASSETS_DIR/background/." "$SMOKE_INSTALL/"
 trap 'rm -rf "$SMOKE_ROOT"' EXIT
 
+# Bounded per-entrypoint window, no `timeout`/`gtimeout` dependency (poll + kill —
+# portable across a clean macOS with no coreutils installed). Needed because some
+# entrypoints (e.g. slack-capture.ts) are long-running daemons that reconnect
+# forever and never exit on their own; only a startup-time module-resolution
+# failure would surface this fast, so we only need to watch briefly, not wait
+# for the process to finish.
+SMOKE_TIMEOUT_S=8
+
 while IFS= read -r relative_output; do
   [ -n "$relative_output" ] || continue
   runtime_entry="$SMOKE_INSTALL/$relative_output"
-  set +e
-  smoke_output=$(HOME="$SMOKE_HOME" bun run "$runtime_entry" 2>&1)
-  set -e
+  smoke_log="$SMOKE_ROOT/smoke-output.log"
+  : > "$smoke_log"
+  HOME="$SMOKE_HOME" bun run "$runtime_entry" > "$smoke_log" 2>&1 &
+  smoke_pid=$!
+  elapsed_ticks=0
+  max_ticks=$((SMOKE_TIMEOUT_S * 2))
+  while kill -0 "$smoke_pid" 2>/dev/null && [ "$elapsed_ticks" -lt "$max_ticks" ]; do
+    sleep 0.5
+    elapsed_ticks=$((elapsed_ticks + 1))
+  done
+  if kill -0 "$smoke_pid" 2>/dev/null; then
+    kill -9 "$smoke_pid" 2>/dev/null || true
+  fi
+  wait "$smoke_pid" 2>/dev/null || true
+  smoke_output=$(cat "$smoke_log")
   if [[ "$smoke_output" == *"Cannot find module"* ]] \
      || [[ "$smoke_output" == *"Cannot find package"* ]] \
      || [[ "$smoke_output" == *"ModuleNotFound"* ]]; then
