@@ -1,10 +1,13 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { activeProfile, defaultBackgroundDir, workspacePath } from '../port-runtime-paths';
-import { validateAutomatedSynthesisOutput } from 'draft-core/proposals';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
 import { resolveRunnerBin } from 'draft-core/agents/headless';
 import { parseGranolaMode } from '../../synthesizers/granola';
+import {
+  routeAutomatedMaintainerOutput,
+  type AutomatedMaintainerRouteResult,
+} from '../../automated-maintainer-router';
 
 export interface GranolaState { last_checked_at: string | null; processed_meeting_ids: string[] }
 export interface GranolaPollContext {
@@ -24,25 +27,12 @@ export function mergeGranolaState(state: GranolaState, timestamp: string, ids: s
   return { last_checked_at: timestamp, processed_meeting_ids: [...new Set([...state.processed_meeting_ids, ...ids.filter(Boolean)])] };
 }
 
-export function extractMeetingIds(output: string): string[] {
-  const front = output.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
-  const lines = front.split('\n');
-  const start = lines.findIndex(line => /^meeting_ids:\s*$/.test(line));
-  if (start < 0) return [];
-  const ids: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    const match = line.match(/^\s+-\s+(\S.*?)\s*$/);
-    if (!match) break;
-    if (!match[1].startsWith('[')) ids.push(match[1]);
-  }
-  return ids;
-}
-
 export interface GranolaPollDeps {
   verifyMcp(): Promise<boolean>;
   synthesize(context: GranolaPollContext): Promise<string>;
   write(path: string, content: string): void;
   now(): Date;
+  route?(output: string, timestamp: string): AutomatedMaintainerRouteResult;
   log?(level: 'info' | 'warn' | 'error', message: string): void;
 }
 
@@ -50,7 +40,7 @@ export function createGranolaPoller(config: {
   statePath: string; workspace: string; profile: string; mode: 'mcp' | 'api'; token?: string;
 }, deps: GranolaPollDeps) {
   let running = false;
-  return async function poll(): Promise<'overlap' | 'skipped' | 'empty' | 'staged'> {
+  return async function poll(): Promise<'overlap' | 'skipped' | 'empty' | 'applied' | 'flagged' | 'deferred'> {
     if (running) return 'overlap';
     running = true;
     try {
@@ -63,27 +53,33 @@ export function createGranolaPoller(config: {
       const output = await deps.synthesize({ type: 'granola', mode, profile: config.profile,
         timestamp, last_checked_at: state.last_checked_at, state_file: config.statePath,
         processed_meeting_ids: state.processed_meeting_ids });
-      if (!output) {
-        deps.write(config.statePath, `${JSON.stringify(mergeGranolaState(state, timestamp, []), null, 2)}\n`);
-        deps.log?.('info', `no output; state advanced to ${timestamp}`);
-        return 'empty';
+      const routed = deps.route
+        ? deps.route(output, timestamp)
+        : routeAutomatedMaintainerOutput(output, {
+            job_id: `granola:${timestamp}`,
+            input_source: 'granola',
+            synthesized_by: process.env.DRAFT_GRANOLA_INTELLIGENCE ?? 'claude-code',
+            timestamp,
+            profile: config.profile,
+          }, config.workspace);
+      if (routed.status === 'locked') {
+        deps.log?.('info', 'workspace busy — deferring; state not advanced');
+        return 'deferred';
       }
-      const validation = validateAutomatedSynthesisOutput(output);
-      if (!validation.ok) throw new Error(`invalid automated synthesis output: ${validation.error}`);
-      const ids = extractMeetingIds(output);
+      const ids = routed.meetingIds;
       const next = mergeGranolaState(state, timestamp, ids);
-      if (!validation.updates.length) {
-        deps.write(config.statePath, `${JSON.stringify(next, null, 2)}\n`);
-        deps.log?.('info', `no team-relevant updates; state advanced to ${timestamp}`);
-        return 'empty';
-      }
-      const stamp = timestamp.replace(/[-:]/g, '');
-      const proposalPath = join(config.workspace, 'proposals', `${stamp}-granola.md`);
-      deps.write(proposalPath, output);
-      deps.log?.('info', `staged at ${proposalPath}`);
       deps.write(config.statePath, `${JSON.stringify(next, null, 2)}\n`);
       deps.log?.('info', `state updated (last_checked_at=${timestamp}, new_ids=${ids.length})`);
-      return 'staged';
+      if (routed.status === 'flagged') {
+        deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
+        return 'flagged';
+      }
+      if (routed.outcome === 'rewrite') {
+        deps.log?.('info', 'context updated automatically');
+        return 'applied';
+      }
+      deps.log?.('info', 'no team-relevant updates');
+      return 'empty';
     } finally { running = false; }
   };
 }
@@ -100,8 +96,10 @@ function structuredLog(level: 'info' | 'warn' | 'error', msg: string): void {
 
 // Resolves `claude` via known install paths (like the gh/codex pollers), since the
 // daemon's PATH is baked at install time and a bare spawn crashes the poll if stale.
-export async function verifyGranolaMcp(): Promise<boolean> {
-  const claudeBin = await resolveRunnerBin('claude');
+export async function verifyGranolaMcp(
+  resolve = resolveRunnerBin,
+): Promise<boolean> {
+  const claudeBin = await resolve('claude');
   if (!claudeBin) return false;
   const p = Bun.spawn([claudeBin, 'mcp', 'list'], { stdout: 'pipe', stderr: 'ignore' });
   return (await new Response(p.stdout as ReadableStream).text()).toLowerCase().includes('granola') && await p.exited === 0;

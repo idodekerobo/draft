@@ -44,7 +44,7 @@ The source adapter reads `$2` after the call and forwards it to stdout.
 - `exit 1` — failure (model error, timeout, empty output, unexpected interactive prompt)
 
 ### Stderr
-All log lines go to stderr. synthesize.sh captures them to background/logs/.
+All log lines go to stderr. `synthesize.ts` captures them to `background/logs/`.
 
 ## Phase 1: claude-code.sh (tmux TUI)
 

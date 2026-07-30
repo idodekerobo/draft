@@ -31,7 +31,7 @@ if [ -f "$_profile_file" ]; then
 fi
 
 # ── Map OpenClaw reason to synthesis reason ─────────────────────────────────
-# synthesize.sh skips jobs where reason != "prompt_input_exit".
+# synthesize.ts skips jobs where reason != "prompt_input_exit".
 # idle    = session naturally wound down (user finished)
 # daily   = daily reset cycle (real work happened)
 # shutdown = gateway clean shutdown (completed session)

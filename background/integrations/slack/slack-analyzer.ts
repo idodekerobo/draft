@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { readReplacesProposal, safeReplacementPath } from '../../synthesizers/slack';
 import { activeProfile, defaultBackgroundDir, workspacePath } from '../port-runtime-paths';
-import { validateAutomatedSynthesisOutput } from 'draft-core/proposals';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
+import {
+  routeAutomatedMaintainerOutput,
+  type AutomatedMaintainerRouteResult,
+} from '../../automated-maintainer-router';
 
 export interface SlackAnalyzerDeps {
   rebuild(input: { channel: string; channelName: string; hours: number }): Promise<string | null>;
@@ -11,6 +13,7 @@ export interface SlackAnalyzerDeps {
   exists(path: string): boolean;
   write(path: string, content: string): void;
   now(): Date;
+  route?(output: string, timestamp: string): AutomatedMaintainerRouteResult;
   log?(level: 'info' | 'warn' | 'error', message: string): void;
 }
 
@@ -33,7 +36,7 @@ export function createSlackAnalyzer(config: {
   workspace: string; profile: string; channels: string[]; channelNames?: Record<string, string>; hours: number;
 }, deps: SlackAnalyzerDeps) {
   let running = false;
-  return async function analyze(): Promise<'overlap' | 'empty' | 'staged' | 'replaced'> {
+  return async function analyze(): Promise<'overlap' | 'empty' | 'applied' | 'flagged' | 'deferred'> {
     if (running) return 'overlap';
     running = true;
     try {
@@ -49,17 +52,29 @@ export function createSlackAnalyzer(config: {
       const output = await deps.synthesize({ type: 'slack', profile: config.profile, timestamp,
         analysis_window_hours: config.hours, channels: config.channels, reconstructed_files: reconstructed,
         workspace: config.workspace });
-      if (!output) { deps.log?.('info', 'no synthesis output — nothing team-relevant found'); return 'empty'; }
-      const validation = validateAutomatedSynthesisOutput(output);
-      if (!validation.ok) throw new Error(`invalid automated synthesis output: ${validation.error}`);
-      if (!validation.updates.length) { deps.log?.('info', 'synthesizer found no team-relevant updates'); return 'empty'; }
-      const proposals = join(config.workspace, 'proposals');
-      const replacement = safeReplacementPath(proposals, readReplacesProposal(output), deps.exists);
-      if (replacement) { deps.write(replacement, output); deps.log?.('info', `overwrote existing proposal: ${replacement}`); return 'replaced'; }
-      const stamp = timestamp.replace(/[-:]/g, '');
-      deps.write(join(proposals, `${stamp}-slack.md`), output);
-      deps.log?.('info', `staged at ${join(proposals, `${stamp}-slack.md`)}`);
-      return 'staged';
+      const routed = deps.route
+        ? deps.route(output, timestamp)
+        : routeAutomatedMaintainerOutput(output, {
+            job_id: `slack:${timestamp}`,
+            input_source: 'slack',
+            synthesized_by: process.env.DRAFT_SLACK_INTELLIGENCE ?? 'claude-code',
+            timestamp,
+            profile: config.profile,
+          }, config.workspace);
+      if (routed.status === 'locked') {
+        deps.log?.('info', 'workspace busy — deferring');
+        return 'deferred';
+      }
+      if (routed.status === 'flagged') {
+        deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
+        return 'flagged';
+      }
+      if (routed.outcome === 'rewrite') {
+        deps.log?.('info', 'context updated automatically');
+        return 'applied';
+      }
+      deps.log?.('info', 'synthesizer found no team-relevant updates');
+      return 'empty';
     } finally { running = false; }
   };
 }

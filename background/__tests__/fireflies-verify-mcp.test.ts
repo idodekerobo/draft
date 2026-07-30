@@ -1,14 +1,12 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { verifyFirefliesMcp } from '../integrations/fireflies/fireflies-poller';
 
 // verifyFirefliesMcp must resolve `claude` via resolveRunnerBin (existsSync against
 // known install paths, like the gh/codex pollers) rather than a bare
 // Bun.spawn(['claude', ...]) that depends on the daemon process's own PATH.
 let mockResolveRunnerBin: (name: string) => Promise<string | null> = async () => null;
-mock.module('draft-core/agents/headless', () => ({ resolveRunnerBin: (name: string) => mockResolveRunnerBin(name) }));
-
-const { verifyFirefliesMcp } = await import('../integrations/fireflies/fireflies-poller');
 
 const ROOT = `/tmp/draft-fireflies-verify-mcp-test-${process.pid}`;
 afterEach(() => { rmSync(ROOT, { recursive: true, force: true }); mockResolveRunnerBin = async () => null; });
@@ -17,7 +15,7 @@ describe('verifyFirefliesMcp', () => {
   it('resolves false (never throws) when claude cannot be resolved on PATH', async () => {
     let resolveCalledWith: string | undefined;
     mockResolveRunnerBin = async name => { resolveCalledWith = name; return null; };
-    await expect(verifyFirefliesMcp()).resolves.toBe(false);
+    await expect(verifyFirefliesMcp(mockResolveRunnerBin)).resolves.toBe(false);
     expect(resolveCalledWith).toBe('claude');
   });
 
@@ -27,7 +25,7 @@ describe('verifyFirefliesMcp', () => {
     writeFileSync(fakeClaude, '#!/bin/bash\necho "fireflies  connected"\nexit 0\n');
     chmodSync(fakeClaude, 0o755);
     mockResolveRunnerBin = async name => name === 'claude' ? fakeClaude : null;
-    await expect(verifyFirefliesMcp()).resolves.toBe(true);
+    await expect(verifyFirefliesMcp(mockResolveRunnerBin)).resolves.toBe(true);
   });
 
   it('resolves false when the resolved claude has no fireflies MCP registered', async () => {
@@ -36,6 +34,6 @@ describe('verifyFirefliesMcp', () => {
     writeFileSync(fakeClaude, '#!/bin/bash\necho "some-other-mcp  connected"\nexit 0\n');
     chmodSync(fakeClaude, 0o755);
     mockResolveRunnerBin = async () => fakeClaude;
-    await expect(verifyFirefliesMcp()).resolves.toBe(false);
+    await expect(verifyFirefliesMcp(mockResolveRunnerBin)).resolves.toBe(false);
   });
 });

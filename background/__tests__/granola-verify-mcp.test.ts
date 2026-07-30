@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { verifyGranolaMcp } from '../integrations/granola/granola-poller';
 
 // verifyGranolaMcp must resolve `claude` via resolveRunnerBin (existsSync against
 // known install paths, like the gh/codex pollers) rather than a bare
@@ -10,9 +11,6 @@ import { join } from 'path';
 // uncaught, so it crashes the whole poll — whenever Claude Code was installed
 // after Draft's daemon, or lives somewhere install.sh didn't scan.
 let mockResolveRunnerBin: (name: string) => Promise<string | null> = async () => null;
-mock.module('draft-core/agents/headless', () => ({ resolveRunnerBin: (name: string) => mockResolveRunnerBin(name) }));
-
-const { verifyGranolaMcp } = await import('../integrations/granola/granola-poller');
 
 const ROOT = `/tmp/draft-granola-verify-mcp-test-${process.pid}`;
 afterEach(() => { rmSync(ROOT, { recursive: true, force: true }); mockResolveRunnerBin = async () => null; });
@@ -21,7 +19,7 @@ describe('verifyGranolaMcp', () => {
   it('resolves false (never throws) when claude cannot be resolved on PATH', async () => {
     let resolveCalledWith: string | undefined;
     mockResolveRunnerBin = async name => { resolveCalledWith = name; return null; };
-    await expect(verifyGranolaMcp()).resolves.toBe(false);
+    await expect(verifyGranolaMcp(mockResolveRunnerBin)).resolves.toBe(false);
     expect(resolveCalledWith).toBe('claude');
   });
 
@@ -31,7 +29,7 @@ describe('verifyGranolaMcp', () => {
     writeFileSync(fakeClaude, '#!/bin/bash\necho "granola-mcp-server  connected"\nexit 0\n');
     chmodSync(fakeClaude, 0o755);
     mockResolveRunnerBin = async name => name === 'claude' ? fakeClaude : null;
-    await expect(verifyGranolaMcp()).resolves.toBe(true);
+    await expect(verifyGranolaMcp(mockResolveRunnerBin)).resolves.toBe(true);
   });
 
   it('resolves false when the resolved claude has no granola MCP registered', async () => {
@@ -40,6 +38,6 @@ describe('verifyGranolaMcp', () => {
     writeFileSync(fakeClaude, '#!/bin/bash\necho "some-other-mcp  connected"\nexit 0\n');
     chmodSync(fakeClaude, 0o755);
     mockResolveRunnerBin = async () => fakeClaude;
-    await expect(verifyGranolaMcp()).resolves.toBe(false);
+    await expect(verifyGranolaMcp(mockResolveRunnerBin)).resolves.toBe(false);
   });
 });
