@@ -1,12 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { listProposals, parseProposal, acceptProposal, rejectProposal } from "../proposals";
+import {
+  acknowledgeFlaggedProposal,
+  applyProposalLocally,
+  dismissFlaggedProposal,
+  listProposals,
+  parseProposal,
+  acceptProposal,
+  proposalArchiveDirs,
+  rejectProposal,
+} from "../proposals";
 
 const TMP = `/tmp/draft-core-proposals-test-${Date.now()}`;
 const PROPOSALS_DIR = join(TMP, "proposals");
-const ACCEPTED_DIR  = join(TMP, "accepted");
-const REJECTED_DIR  = join(TMP, "rejected");
+const ACCEPTED_DIR  = join(PROPOSALS_DIR, "accepted");
+const REJECTED_DIR  = join(PROPOSALS_DIR, "rejected");
 
 const VALID_PROPOSAL = `---
 source: granola
@@ -33,6 +42,20 @@ Updated content.
 `;
 
 const NO_FRONTMATTER = `This proposal has no frontmatter at all.`;
+const FLAGGED_PROPOSAL = `---
+outcome: needs_input
+needs_input_reason: Confirm whether the old or new roadmap is authoritative.
+source: claude-code
+timestamp: 2026-05-27T09:15:00Z
+summary: Automated maintainer needs input
+context_updates:
+  - file: context/product/index.md
+    action: overwrite
+    content: unsafe rewrite
+---
+
+# Human review required
+`;
 
 beforeEach(() => {
   mkdirSync(PROPOSALS_DIR, { recursive: true });
@@ -76,6 +99,18 @@ describe("listProposals", () => {
     const result = listProposals(TMP);
     expect(result[0].filename).toBe("older.md");
     expect(result[1].filename).toBe("newer.md");
+  });
+
+  it("includes flagged/*.md with a stable relative ID", () => {
+    const flaggedDir = join(PROPOSALS_DIR, "flagged");
+    mkdirSync(flaggedDir);
+    writeFileSync(join(flaggedDir, "needs-input.md"), FLAGGED_PROPOSAL);
+
+    const result = listProposals(TMP);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].filename).toBe("flagged/needs-input.md");
+    expect(result[0].kind).toBe("flagged");
   });
 });
 
@@ -127,6 +162,45 @@ describe("parseProposal", () => {
     expect(p.source).toBe("unknown");
     expect(p.body).toBe("");
   });
+
+  it("parses flagged outcome and needs_input_reason", () => {
+    const flaggedDir = join(PROPOSALS_DIR, "flagged");
+    mkdirSync(flaggedDir);
+    const file = join(flaggedDir, "needs-input.md");
+    writeFileSync(file, FLAGGED_PROPOSAL);
+
+    const p = parseProposal("flagged/needs-input.md", file);
+
+    expect(p.kind).toBe("flagged");
+    expect(p.outcome).toBe("needs_input");
+    expect(p.needsInputReason).toBe("Confirm whether the old or new roadmap is authoritative.");
+  });
+
+  it("supports legacy flagged_reason and the body Reason section", () => {
+    const flaggedDir = join(PROPOSALS_DIR, "flagged");
+    mkdirSync(flaggedDir);
+    const file = join(flaggedDir, "stale.md");
+    writeFileSync(file, `---
+flagged_reason: stale
+summary: Stale automated maintainer rewrite
+---
+
+# Human review required
+
+## Reason
+
+Product context changed after synthesis.
+
+## Proposed rewrites
+
+None.
+`);
+
+    const p = parseProposal("flagged/stale.md", file);
+
+    expect(p.outcome).toBe("stale");
+    expect(p.needsInputReason).toBe("Product context changed after synthesis.");
+  });
 });
 
 // ── acceptProposal ──────────────────────────────────────────────────────────────
@@ -152,9 +226,58 @@ describe("acceptProposal", () => {
 
   it("throws when source file does not exist", () => {
     const ghost = { filename: "ghost.md", path: "/nonexistent/ghost.md", mtime: 0,
+      kind: "manual" as const, outcome: "", needsInputReason: "",
       source: "unknown", createdAt: "", timestamp: "", dimension: "unknown", action: "update",
       synthesizedBy: "", summary: "", body: "", rawContent: "", content: "", contextUpdates: [] };
     expect(() => acceptProposal(ghost, ACCEPTED_DIR)).toThrow();
+  });
+});
+
+describe("flagged proposal actions", () => {
+  it("cannot apply a context rewrite", () => {
+    const flaggedDir = join(PROPOSALS_DIR, "flagged");
+    const contextPath = join(TMP, "context", "product", "index.md");
+    mkdirSync(flaggedDir);
+    mkdirSync(join(TMP, "context", "product"), { recursive: true });
+    writeFileSync(contextPath, "original\n");
+    const file = join(flaggedDir, "unsafe.md");
+    writeFileSync(file, FLAGGED_PROPOSAL);
+    const proposal = parseProposal("flagged/unsafe.md", file);
+
+    expect(() => applyProposalLocally(proposal, TMP)).toThrow("cannot apply context updates");
+    expect(readFileSync(contextPath, "utf8")).toBe("original\n");
+  });
+
+  it("acknowledges into proposals/accepted without applying", () => {
+    const flaggedDir = join(PROPOSALS_DIR, "flagged");
+    mkdirSync(flaggedDir);
+    const file = join(flaggedDir, "ack.md");
+    writeFileSync(file, FLAGGED_PROPOSAL);
+    const proposal = parseProposal("flagged/ack.md", file);
+
+    acknowledgeFlaggedProposal(proposal, TMP);
+
+    expect(existsSync(join(PROPOSALS_DIR, "accepted", "ack.md"))).toBe(true);
+    expect(existsSync(join(TMP, "accepted", "ack.md"))).toBe(false);
+  });
+
+  it("dismisses into proposals/rejected", () => {
+    const flaggedDir = join(PROPOSALS_DIR, "flagged");
+    mkdirSync(flaggedDir);
+    const file = join(flaggedDir, "dismiss.md");
+    writeFileSync(file, FLAGGED_PROPOSAL);
+    const proposal = parseProposal("flagged/dismiss.md", file);
+
+    dismissFlaggedProposal(proposal, TMP);
+
+    expect(existsSync(join(PROPOSALS_DIR, "rejected", "dismiss.md"))).toBe(true);
+  });
+
+  it("returns canonical archive directories under proposals/", () => {
+    expect(proposalArchiveDirs(TMP)).toEqual({
+      accepted: join(TMP, "proposals", "accepted"),
+      rejected: join(TMP, "proposals", "rejected"),
+    });
   });
 });
 

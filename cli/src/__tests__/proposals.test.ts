@@ -4,8 +4,8 @@ import { join } from "path";
 
 const TMP = `/tmp/draft-proposals-test-${Date.now()}`;
 const PROPOSALS_DIR = join(TMP, "proposals");
-const ACCEPTED_DIR = join(TMP, "accepted");
-const REJECTED_DIR = join(TMP, "rejected");
+const ACCEPTED_DIR = join(PROPOSALS_DIR, "accepted");
+const REJECTED_DIR = join(PROPOSALS_DIR, "rejected");
 
 const SAMPLE_PROPOSAL = `---
 source: granola
@@ -79,7 +79,7 @@ describe("proposals skip", () => {
 
     // Skip: do nothing — file stays in proposals/
     expect(existsSync(src)).toBe(true);
-    expect(readdirSync(PROPOSALS_DIR).length).toBe(1);
+    expect(readdirSync(PROPOSALS_DIR).filter((name) => name.endsWith(".md"))).toHaveLength(1);
   });
 });
 
