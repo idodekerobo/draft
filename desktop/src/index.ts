@@ -1650,13 +1650,14 @@ async function syncBundledAssets(): Promise<void> {
     return;
   }
 
-  // Keep ~/.draft/bin/{draft,bun,tmux} in lockstep with the running app
-  // version on every launch — self-update replaces the .app bundle but
-  // never re-runs the onboarding extraction, so already-onboarded users
-  // would otherwise keep stale (possibly broken) binaries forever. Runs
-  // before any early return below so it isn't skipped on no-op launches.
+  // Keep ~/.draft/bin/{draft,bun,tmux} in lockstep with the running build on
+  // every launch — self-update replaces the .app bundle but never re-runs the
+  // onboarding extraction, so already-onboarded users would otherwise keep
+  // stale (possibly broken) binaries forever. Keyed on the same version:hash
+  // build id as the daemon runtime below, and likewise runs before every early
+  // return so it isn't skipped on no-op launches.
   try {
-    await syncExtractedBins(appVersion);
+    await syncExtractedBins(appBuildId, isDevChannel);
   } catch (err) {
     console.warn(`[draft-desktop] bin sync failed: ${err instanceof Error ? err.message : err}`);
   }

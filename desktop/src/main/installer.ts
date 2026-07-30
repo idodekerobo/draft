@@ -41,28 +41,41 @@ const DRAFT_BIN_PATH    = `${DRAFT_BIN_DIR}/draft`;
 const SYSTEM_LINK       = "/usr/local/bin/draft";
 const BIN_VERSION_STAMP = `${DRAFT_BIN_DIR}/.version`;
 
+export interface BuildIdentity {
+  /** `version:hash` — the key ~/.draft/bin's contents are stamped against. */
+  buildId: string;
+  /** Electrobun reports hash="dev" for every local dev build; see syncExtractedBins. */
+  isDevChannel: boolean;
+}
+
 /**
- * Best-effort resolution of the running app's version, for stamping
+ * Best-effort resolution of the running build's identity, for stamping
  * ~/.draft/bin/.version. Returns null in dev mode or on any failure
  * (matches the try/catch pattern index.ts uses around the same call).
+ *
+ * Keyed on version:hash rather than version alone for the same reason
+ * syncBundledAssets() is — two builds can share a version string (a
+ * same-version rebuild, or a hotfix cut without a bump), and the first one
+ * to stamp would otherwise mask the second's binaries forever.
  */
-async function resolveAppVersion(): Promise<string | null> {
+async function resolveBuildIdentity(): Promise<BuildIdentity | null> {
   try {
     const info = await Electrobun.Updater.getLocalInfo();
-    return info?.version ?? null;
+    if (!info?.version) return null;
+    return { buildId: `${info.version}:${info.hash}`, isDevChannel: info.channel === "dev" };
   } catch {
     return null;
   }
 }
 
 /**
- * Record the app version ~/.draft/bin was last extracted/synced from.
+ * Record the build ~/.draft/bin was last extracted/synced from.
  * Best-effort — a failed write just means we re-copy on the next launch.
  */
-function writeBinVersionStamp(appVersion: string): void {
+function writeBinVersionStamp(buildId: string): void {
   try {
     mkdirSync(DRAFT_BIN_DIR, { recursive: true });
-    writeFileSync(BIN_VERSION_STAMP, appVersion);
+    writeFileSync(BIN_VERSION_STAMP, buildId);
   } catch (err) {
     log(`failed to write bin version stamp (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -78,15 +91,15 @@ function writeBinVersionStamp(appVersion: string): void {
  */
 export async function runInstall(
   tools: InstallableTool[],
-  appVersion?: string,
+  buildId?: string,
 ): Promise<InstallResult> {
   const steps: InstallStep[] = [];
   log(`runInstall called — tools: ${JSON.stringify(tools)}`);
 
-  const resolvedVersion = appVersion ?? (await resolveAppVersion());
+  const resolvedBuildId = buildId ?? (await resolveBuildIdentity())?.buildId ?? null;
 
   // ── Step 1: Extract binary ───────────────────────────────────────────────────
-  const draftBin = await extractBinary(steps, resolvedVersion);
+  const draftBin = await extractBinary(steps, resolvedBuildId);
   log(`extractBinary result — draftBin: ${draftBin ?? "null (dev mode)"}`);
 
   // ── Step 2: Symlink to /usr/local/bin ────────────────────────────────────────
@@ -118,7 +131,7 @@ export async function runInstall(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function extractBinary(steps: InstallStep[], appVersion: string | null): Promise<string | null> {
+async function extractBinary(steps: InstallStep[], buildId: string | null): Promise<string | null> {
   const bundledBin = getBundledBinPath();
 
   if (!bundledBin) {
@@ -178,35 +191,39 @@ async function extractBinary(steps: InstallStep[], appVersion: string | null): P
     log(`bundled tmux not found (dev build or prebuild skipped) — session monitoring requires user-installed tmux`);
   }
 
-  // Stamp the version we just extracted from, so a fresh onboard starts in
+  // Stamp the build we just extracted from, so a fresh onboard starts in
   // sync and syncExtractedBins() doesn't immediately re-copy on next launch.
-  if (appVersion) writeBinVersionStamp(appVersion);
+  if (buildId) writeBinVersionStamp(buildId);
 
   return DRAFT_BIN_PATH;
 }
 
 /**
  * Keep ~/.draft/bin's copies of draft/bun/tmux in lockstep with the running
- * app version. Self-update replaces the .app bundle but never re-runs
+ * build. Self-update replaces the .app bundle but never re-runs
  * extractBinary(), so without this, already-onboarded users keep stale
  * (and potentially broken) binaries in ~/.draft/bin forever — notably a
  * stale tmux that shadows the user's own working tmux on PATH.
  *
  * Called on every launch (see index.ts syncBundledAssets). No-ops if the
  * user hasn't onboarded yet (~/.draft/bin doesn't exist — onboarding will
- * do the initial extraction) or if we're already stamped at appVersion.
+ * do the initial extraction) or if we're already stamped at buildId.
  */
-export async function syncExtractedBins(appVersion: string): Promise<void> {
+export async function syncExtractedBins(buildId: string, isDevChannel = false): Promise<void> {
   if (!existsSync(DRAFT_BIN_DIR)) {
     // Not onboarded yet — nothing to keep in sync.
     return;
   }
 
-  const stampedVersion = existsSync(BIN_VERSION_STAMP)
+  const stampedBuildId = existsSync(BIN_VERSION_STAMP)
     ? readFileSync(BIN_VERSION_STAMP, "utf8").trim()
     : null;
 
-  if (stampedVersion === appVersion) {
+  // Electrobun reports hash="dev" for every local dev build, so the buildId
+  // can't distinguish two of them — always re-copy there rather than let an
+  // earlier dev build's stamp mask a later one. Same reasoning (and the same
+  // "it's only a few file copies" tradeoff) as syncBundledAssets in index.ts.
+  if (!isDevChannel && stampedBuildId === buildId) {
     // Already in sync.
     return;
   }
@@ -227,7 +244,7 @@ export async function syncExtractedBins(appVersion: string): Promise<void> {
     try {
       copyFileSync(bundled, dest);
       chmodSync(dest, 0o755);
-      log(`synced ${label} to ${appVersion} at ${dest}`);
+      log(`synced ${label} to ${buildId} at ${dest}`);
       copied++;
     } catch (err) {
       // e.g. ETXTBSY if the binary is executing right now. Non-fatal.
@@ -239,7 +256,7 @@ export async function syncExtractedBins(appVersion: string): Promise<void> {
   // Stamp only when every binary we attempted succeeded. Stamping after a
   // partial failure would pin the version and leave the failed binary stale
   // until the next release; leaving it unstamped just retries next launch.
-  if (copied > 0 && failed === 0) writeBinVersionStamp(appVersion);
+  if (copied > 0 && failed === 0) writeBinVersionStamp(buildId);
 }
 
 async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<void> {
