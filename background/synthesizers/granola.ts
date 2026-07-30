@@ -11,6 +11,7 @@ import {
 } from './synthesis-runtime';
 import { buildMaintainerContractPrompt } from './maintainer-contract';
 import { defaultBackgroundDir, workspacePath } from '../integrations/port-runtime-paths';
+import { SOURCE_FAILURE_PROMPT } from './source-result';
 
 export type GranolaMode = 'mcp' | 'api';
 export interface GranolaContext {
@@ -131,6 +132,7 @@ confirming transcripts are not stored locally" = SIGNAL.
 "Discussed technical options" = NOISE.
 
 ## STRICT RULES
+- ${SOURCE_FAILURE_PROMPT}
 - Do not ask the user inline. Omit vague unsupported discussion; when the meeting evidence names an unresolved contradiction, return needs_input with both claims and their sources.
 - Do NOT copy raw transcript text. Write synthesized insights only.
 - Do NOT invent information not present in the transcript.
