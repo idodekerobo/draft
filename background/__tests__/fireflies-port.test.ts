@@ -30,6 +30,7 @@ describe('Fireflies prompt', () => {
     const prompt = buildFirefliesPrompt({ workspace, profile: 'p', outputPath: '/out', currentTimestamp: 'now', intelligence: 'fake', context: {}, snapshot: createContextSnapshot(workspace) });
     const frozen = ['**SIGNAL — capture:**', '**NOISE — skip:**', 'Do NOT invent information', 'needs_input'];
     for (const phrase of frozen) expect(prompt).toContain(phrase);
+    expect(prompt).toContain('DRAFT_SOURCE_UNAVAILABLE');
   });
 
   it('runs synthesis with fully faked intelligence boundaries', async () => {
@@ -62,11 +63,18 @@ describe('Fireflies state and orchestration', () => {
     expect(called).toBe(false);
   });
 
-  it('skips the poll when the MCP server is not registered', async () => {
-    const poll = createFirefliesPoller({ statePath: join(ROOT, 'state.json'), workspace: ROOT, profile: 'p', token: 'secret' }, {
-      verifyMcp: async () => false, synthesize: async () => { throw new Error('should not be called'); }, write: () => {}, now: () => new Date(),
+  it('records the first unavailable MCP transition without advancing the watermark', async () => {
+    const statePath = join(ROOT, 'state.json');
+    let written = '';
+    const poll = createFirefliesPoller({ statePath, workspace: ROOT, profile: 'p', token: 'secret' }, {
+      verifyMcp: async () => false, synthesize: async () => { throw new Error('should not be called'); },
+      write: (_path, content) => { written = content; }, now: () => new Date('2026-01-01T00:00:00Z'),
     });
-    expect(await poll()).toBe('skipped');
+    await expect(poll()).rejects.toMatchObject({ name: 'SourceUnavailableError', code: 'mcp_missing' });
+    expect(JSON.parse(written)).toMatchObject({
+      last_checked_at: null,
+      health: { status: 'unavailable', code: 'mcp_missing' },
+    });
   });
 
   it('applies rewrites, acknowledges validated meeting IDs, and rejects overlap', async () => {

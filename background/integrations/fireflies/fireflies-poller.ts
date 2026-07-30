@@ -2,13 +2,22 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { activeProfile, defaultBackgroundDir, workspacePath } from '../port-runtime-paths';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
-import { resolveRunnerBin } from 'draft-core/agents/headless';
+import { readIntegrations } from 'draft-core/config';
 import {
   routeAutomatedMaintainerOutput,
   type AutomatedMaintainerRouteResult,
 } from '../../automated-maintainer-router';
+import { recordTerminalActivity, startTerminalActivity } from '../../terminal-activity';
+import { prepareMcpIntegration, type McpVerification } from '../mcp-runtime-health';
+import { parseSourceUnavailable, SourceUnavailableError } from '../../synthesizers/source-result';
 
-export interface FirefliesState { last_checked_at: string | null; processed_meeting_ids: string[] }
+export interface PollHealth {
+  status: 'healthy' | 'unavailable';
+  checked_at: string;
+  code?: string;
+  message?: string;
+}
+export interface FirefliesState { last_checked_at: string | null; processed_meeting_ids: string[]; health?: PollHealth }
 export interface FirefliesPollContext {
   type: 'fireflies'; profile: string; timestamp: string;
   last_checked_at: string | null; state_file: string; processed_meeting_ids: string[];
@@ -18,16 +27,18 @@ export function readFirefliesState(path: string): FirefliesState {
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<FirefliesState>;
     return { last_checked_at: typeof raw.last_checked_at === 'string' ? raw.last_checked_at : null,
-      processed_meeting_ids: Array.isArray(raw.processed_meeting_ids) ? raw.processed_meeting_ids.filter((id): id is string => typeof id === 'string') : [] };
+      processed_meeting_ids: Array.isArray(raw.processed_meeting_ids) ? raw.processed_meeting_ids.filter((id): id is string => typeof id === 'string') : [],
+      ...(raw.health?.status === 'healthy' || raw.health?.status === 'unavailable' ? { health: raw.health as PollHealth } : {}) };
   } catch { return { last_checked_at: null, processed_meeting_ids: [] }; }
 }
 
 export function mergeFirefliesState(state: FirefliesState, timestamp: string, ids: string[]): FirefliesState {
-  return { last_checked_at: timestamp, processed_meeting_ids: [...new Set([...state.processed_meeting_ids, ...ids.filter(Boolean)])] };
+  return { last_checked_at: timestamp, processed_meeting_ids: [...new Set([...state.processed_meeting_ids, ...ids.filter(Boolean)])],
+    health: { status: 'healthy', checked_at: timestamp } };
 }
 
 export interface FirefliesPollDeps {
-  verifyMcp(): Promise<boolean>;
+  verifyMcp(): Promise<boolean | McpVerification>;
   synthesize(context: FirefliesPollContext): Promise<string>;
   write(path: string, content: string): void;
   now(): Date;
@@ -42,15 +53,38 @@ export function createFirefliesPoller(config: {
   return async function poll(): Promise<'overlap' | 'skipped' | 'empty' | 'applied' | 'flagged' | 'deferred'> {
     if (running) return 'overlap';
     running = true;
+    const activity = startTerminalActivity('fireflies', deps.now());
     try {
       const state = readFirefliesState(config.statePath);
       deps.log?.('info', `starting poll (last_checked=${state.last_checked_at ?? 'never'})`);
       if (!config.token) { deps.log?.('warn', 'fireflies_api_token missing — skipping poll'); return 'skipped'; }
-      if (!await deps.verifyMcp()) { deps.log?.('warn', 'Fireflies MCP not found — skipping poll'); return 'skipped'; }
-      const timestamp = deps.now().toISOString().replace(/\.\d{3}Z$/, 'Z');
+      const rawVerification = await deps.verifyMcp();
+      const verification: McpVerification = typeof rawVerification === 'boolean'
+        ? rawVerification ? { ok: true, serverId: 'fireflies' } : { ok: false, code: 'mcp_missing', message: 'Fireflies MCP is unavailable.' }
+        : rawVerification;
+      if (!verification.ok) {
+        const checkedAt = deps.now().toISOString().replace(/\.\d{3}Z$/, 'Z');
+        const transitioned = state.health?.status !== 'unavailable';
+        deps.write(config.statePath, `${JSON.stringify({ ...state, health: {
+          status: 'unavailable', checked_at: checkedAt, code: verification.code, message: verification.message.slice(0, 500),
+        } }, null, 2)}\n`);
+        deps.log?.('warn', verification.message);
+        if (transitioned) throw new SourceUnavailableError(verification.code, verification.message);
+        return 'skipped';
+      }
+      const timestamp = activity.timestamp;
       const output = await deps.synthesize({ type: 'fireflies', profile: config.profile,
         timestamp, last_checked_at: state.last_checked_at, state_file: config.statePath,
         processed_meeting_ids: state.processed_meeting_ids });
+      const unavailable = parseSourceUnavailable(output);
+      if (unavailable) {
+        const transitioned = state.health?.status !== 'unavailable';
+        deps.write(config.statePath, `${JSON.stringify({ ...state, health: {
+          status: 'unavailable', checked_at: timestamp, code: unavailable.code, message: unavailable.message,
+        } }, null, 2)}\n`);
+        if (transitioned) throw new SourceUnavailableError(unavailable.code, unavailable.message);
+        return 'skipped';
+      }
       const routed = deps.route
         ? deps.route(output, timestamp)
         : routeAutomatedMaintainerOutput(output, {
@@ -70,14 +104,24 @@ export function createFirefliesPoller(config: {
       deps.log?.('info', `state updated (last_checked_at=${timestamp}, new_ids=${ids.length})`);
       if (routed.status === 'flagged') {
         deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'fireflies',
+          activity, endedAt: deps.now(), outcome: 'needs_input', log: deps.log });
         return 'flagged';
       }
       if (routed.outcome === 'rewrite') {
         deps.log?.('info', 'context updated automatically');
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'fireflies',
+          activity, endedAt: deps.now(), outcome: 'rewrite', log: deps.log });
         return 'applied';
       }
       deps.log?.('info', 'no team-relevant updates');
+      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'fireflies',
+        activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
       return 'empty';
+    } catch (error) {
+      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'fireflies',
+        activity, endedAt: deps.now(), error, log: deps.log });
+      throw error;
     } finally { running = false; }
   };
 }
@@ -92,25 +136,19 @@ function structuredLog(level: 'info' | 'warn' | 'error', msg: string): void {
   process.stderr.write(`${JSON.stringify({ ts: new Date().toISOString(), level, component: 'fireflies-poller', msg })}\n`);
 }
 
-// Resolves `claude` via known install paths (like the gh/codex pollers), since the
-// daemon's PATH is baked at install time and a bare spawn crashes the poll if stale.
-export async function verifyFirefliesMcp(
-  resolve = resolveRunnerBin,
-): Promise<boolean> {
-  const claudeBin = await resolve('claude');
-  if (!claudeBin) return false;
-  const p = Bun.spawn([claudeBin, 'mcp', 'list'], { stdout: 'pipe', stderr: 'ignore' });
-  return (await new Response(p.stdout as ReadableStream).text()).toLowerCase().includes('fireflies') && await p.exited === 0;
-}
-
 async function main() {
   const profile = activeProfile(); const workspace = workspacePath(profile); const backgroundDir = defaultBackgroundDir();
   const secretsPath = join(workspace, 'config', 'secrets.json');
   let secrets: Record<string, unknown> = {};
   try { secrets = JSON.parse(readFileSync(secretsPath, 'utf8')); } catch {}
+  const integrationsResult = readIntegrations(workspace);
+  const integration = integrationsResult.ok ? integrationsResult.integrations.fireflies : undefined;
+  if (!integration?.connected) return;
+  const prepared = await prepareMcpIntegration({ workspace, source: 'fireflies', preferredIds: ['fireflies'] });
+  if (!prepared.enabled) return;
   const token = typeof secrets.fireflies_api_token === 'string' ? secrets.fireflies_api_token : undefined;
   const poll = createFirefliesPoller({ statePath: join(backgroundDir, 'state', 'fireflies.json'), workspace, profile, token }, {
-    verifyMcp: verifyFirefliesMcp,
+    verifyMcp: async () => prepared.verification,
     async synthesize(context) {
       const contextPath = await writeContext(context);
       try {

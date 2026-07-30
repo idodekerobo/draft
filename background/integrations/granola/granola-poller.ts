@@ -2,14 +2,23 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { activeProfile, defaultBackgroundDir, workspacePath } from '../port-runtime-paths';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
-import { resolveRunnerBin } from 'draft-core/agents/headless';
+import { readIntegrations } from 'draft-core/config';
 import { parseGranolaMode } from '../../synthesizers/granola';
 import {
   routeAutomatedMaintainerOutput,
   type AutomatedMaintainerRouteResult,
 } from '../../automated-maintainer-router';
+import { recordTerminalActivity, startTerminalActivity } from '../../terminal-activity';
+import { prepareMcpIntegration, type McpVerification } from '../mcp-runtime-health';
+import { parseSourceUnavailable, SourceUnavailableError } from '../../synthesizers/source-result';
 
-export interface GranolaState { last_checked_at: string | null; processed_meeting_ids: string[] }
+export interface PollHealth {
+  status: 'healthy' | 'unavailable';
+  checked_at: string;
+  code?: string;
+  message?: string;
+}
+export interface GranolaState { last_checked_at: string | null; processed_meeting_ids: string[]; health?: PollHealth }
 export interface GranolaPollContext {
   type: 'granola'; mode: 'mcp' | 'api'; profile: string; timestamp: string;
   last_checked_at: string | null; state_file: string; processed_meeting_ids: string[];
@@ -19,16 +28,18 @@ export function readGranolaState(path: string): GranolaState {
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<GranolaState>;
     return { last_checked_at: typeof raw.last_checked_at === 'string' ? raw.last_checked_at : null,
-      processed_meeting_ids: Array.isArray(raw.processed_meeting_ids) ? raw.processed_meeting_ids.filter((id): id is string => typeof id === 'string') : [] };
+      processed_meeting_ids: Array.isArray(raw.processed_meeting_ids) ? raw.processed_meeting_ids.filter((id): id is string => typeof id === 'string') : [],
+      ...(raw.health?.status === 'healthy' || raw.health?.status === 'unavailable' ? { health: raw.health as PollHealth } : {}) };
   } catch { return { last_checked_at: null, processed_meeting_ids: [] }; }
 }
 
 export function mergeGranolaState(state: GranolaState, timestamp: string, ids: string[]): GranolaState {
-  return { last_checked_at: timestamp, processed_meeting_ids: [...new Set([...state.processed_meeting_ids, ...ids.filter(Boolean)])] };
+  return { last_checked_at: timestamp, processed_meeting_ids: [...new Set([...state.processed_meeting_ids, ...ids.filter(Boolean)])],
+    health: { status: 'healthy', checked_at: timestamp } };
 }
 
 export interface GranolaPollDeps {
-  verifyMcp(): Promise<boolean>;
+  verifyMcp(): Promise<boolean | McpVerification>;
   synthesize(context: GranolaPollContext): Promise<string>;
   write(path: string, content: string): void;
   now(): Date;
@@ -43,16 +54,41 @@ export function createGranolaPoller(config: {
   return async function poll(): Promise<'overlap' | 'skipped' | 'empty' | 'applied' | 'flagged' | 'deferred'> {
     if (running) return 'overlap';
     running = true;
+    const activity = startTerminalActivity('granola', deps.now());
     try {
       const mode = parseGranolaMode(config.mode);
       const state = readGranolaState(config.statePath);
       deps.log?.('info', `starting poll (mode=${mode} last_checked=${state.last_checked_at ?? 'never'})`);
-      if (mode === 'mcp' && !await deps.verifyMcp()) { deps.log?.('warn', 'Granola MCP not found — skipping poll'); return 'skipped'; }
+      if (mode === 'mcp') {
+        const rawVerification = await deps.verifyMcp();
+        const verification: McpVerification = typeof rawVerification === 'boolean'
+          ? rawVerification ? { ok: true, serverId: 'granola' } : { ok: false, code: 'mcp_missing', message: 'Granola MCP is unavailable.' }
+          : rawVerification;
+        if (!verification.ok) {
+          const checkedAt = deps.now().toISOString().replace(/\.\d{3}Z$/, 'Z');
+          const transitioned = state.health?.status !== 'unavailable';
+          deps.write(config.statePath, `${JSON.stringify({ ...state, health: {
+            status: 'unavailable', checked_at: checkedAt, code: verification.code, message: verification.message.slice(0, 500),
+          } }, null, 2)}\n`);
+          deps.log?.('warn', verification.message);
+          if (transitioned) throw new SourceUnavailableError(verification.code, verification.message);
+          return 'skipped';
+        }
+      }
       if (mode === 'api' && !config.token) { deps.log?.('warn', 'granola_api_token missing — skipping poll'); return 'skipped'; }
-      const timestamp = deps.now().toISOString().replace(/\.\d{3}Z$/, 'Z');
+      const timestamp = activity.timestamp;
       const output = await deps.synthesize({ type: 'granola', mode, profile: config.profile,
         timestamp, last_checked_at: state.last_checked_at, state_file: config.statePath,
         processed_meeting_ids: state.processed_meeting_ids });
+      const unavailable = parseSourceUnavailable(output);
+      if (unavailable) {
+        const transitioned = state.health?.status !== 'unavailable';
+        deps.write(config.statePath, `${JSON.stringify({ ...state, health: {
+          status: 'unavailable', checked_at: timestamp, code: unavailable.code, message: unavailable.message,
+        } }, null, 2)}\n`);
+        if (transitioned) throw new SourceUnavailableError(unavailable.code, unavailable.message);
+        return 'skipped';
+      }
       const routed = deps.route
         ? deps.route(output, timestamp)
         : routeAutomatedMaintainerOutput(output, {
@@ -72,14 +108,24 @@ export function createGranolaPoller(config: {
       deps.log?.('info', `state updated (last_checked_at=${timestamp}, new_ids=${ids.length})`);
       if (routed.status === 'flagged') {
         deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
+          activity, endedAt: deps.now(), outcome: 'needs_input', log: deps.log });
         return 'flagged';
       }
       if (routed.outcome === 'rewrite') {
         deps.log?.('info', 'context updated automatically');
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
+          activity, endedAt: deps.now(), outcome: 'rewrite', log: deps.log });
         return 'applied';
       }
       deps.log?.('info', 'no team-relevant updates');
+      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
+        activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
       return 'empty';
+    } catch (error) {
+      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
+        activity, endedAt: deps.now(), error, log: deps.log });
+      throw error;
     } finally { running = false; }
   };
 }
@@ -94,26 +140,22 @@ function structuredLog(level: 'info' | 'warn' | 'error', msg: string): void {
   process.stderr.write(`${JSON.stringify({ ts: new Date().toISOString(), level, component: 'granola-poller', msg })}\n`);
 }
 
-// Resolves `claude` via known install paths (like the gh/codex pollers), since the
-// daemon's PATH is baked at install time and a bare spawn crashes the poll if stale.
-export async function verifyGranolaMcp(
-  resolve = resolveRunnerBin,
-): Promise<boolean> {
-  const claudeBin = await resolve('claude');
-  if (!claudeBin) return false;
-  const p = Bun.spawn([claudeBin, 'mcp', 'list'], { stdout: 'pipe', stderr: 'ignore' });
-  return (await new Response(p.stdout as ReadableStream).text()).toLowerCase().includes('granola') && await p.exited === 0;
-}
-
 async function main() {
   const profile = activeProfile(); const workspace = workspacePath(profile); const backgroundDir = defaultBackgroundDir();
   const secretsPath = join(workspace, 'config', 'secrets.json');
   let secrets: Record<string, unknown> = {};
   try { secrets = JSON.parse(readFileSync(secretsPath, 'utf8')); } catch {}
   const mode = parseGranolaMode(process.env.DRAFT_GRANOLA_MODE ?? secrets.granola_mode);
+  const integrationsResult = readIntegrations(workspace);
+  const integration = integrationsResult.ok ? integrationsResult.integrations.granola : undefined;
+  if (!integration?.connected) return;
+  const prepared = mode === 'mcp'
+    ? await prepareMcpIntegration({ workspace, source: 'granola', preferredIds: ['granola', 'granola-mcp'] })
+    : null;
+  if (prepared && !prepared.enabled) return;
   const poll = createGranolaPoller({ statePath: join(backgroundDir, 'state', 'granola.json'), workspace, profile, mode,
     token: typeof secrets.granola_api_token === 'string' ? secrets.granola_api_token : undefined }, {
-    verifyMcp: verifyGranolaMcp,
+    verifyMcp: async () => prepared?.enabled ? prepared.verification : { ok: true, serverId: 'api' },
     async synthesize(context) {
       const contextPath = await writeContext(context);
       try {

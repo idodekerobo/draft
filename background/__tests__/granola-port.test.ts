@@ -43,6 +43,7 @@ describe('Granola prompt and API parsing parity', () => {
     const prompts = [buildGranolaPrompt({ ...base, context: { mode: 'mcp' } }), buildGranolaPrompt({ ...base, context: { mode: 'api' }, transcriptContent: 'transcript' })];
     const frozen = ['**SIGNAL — capture:**', '**NOISE — skip:**', 'Do NOT invent information', 'needs_input'];
     for (const phrase of frozen) for (const prompt of prompts) expect(prompt).toContain(phrase);
+    expect(prompts[0]).toContain('DRAFT_SOURCE_UNAVAILABLE');
   });
 
   it('filters incomplete, old and empty API meetings', () => {
@@ -161,6 +162,26 @@ describe('Granola state and orchestration', () => {
     });
     await expect(poll()).rejects.toThrow('invalid maintainer output');
     expect(writes).toEqual([]);
+  });
+
+  it('keeps source unavailability outside maintainer routing and preserves the watermark', async () => {
+    const statePath = join(ROOT, 'source-unavailable.json');
+    const before = { last_checked_at: '2026-01-01T00:00:00Z', processed_meeting_ids: ['old'] };
+    mkdirSync(ROOT, { recursive: true }); writeFileSync(statePath, JSON.stringify(before));
+    let routeCalled = false;
+    const poll = createGranolaPoller({ statePath, workspace: ROOT, profile: 'p', mode: 'mcp' }, {
+      verifyMcp: async () => true,
+      synthesize: async () => 'DRAFT_SOURCE_UNAVAILABLE {"code":"mcp_tool_error","message":"tool call failed"}',
+      route: () => { routeCalled = true; throw new Error('should not route'); },
+      write: (path, content) => writeFileSync(path, content),
+      now: () => new Date('2026-01-02T00:00:00Z'),
+    });
+    await expect(poll()).rejects.toMatchObject({ name: 'SourceUnavailableError', code: 'mcp_tool_error' });
+    expect(routeCalled).toBe(false);
+    expect(JSON.parse(readFileSync(statePath, 'utf8'))).toMatchObject({
+      ...before,
+      health: { status: 'unavailable', code: 'mcp_tool_error' },
+    });
   });
 
   it('defers and leaves state byte-identical when the workspace is locked', async () => {

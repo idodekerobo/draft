@@ -6,6 +6,7 @@ import {
   routeAutomatedMaintainerOutput,
   type AutomatedMaintainerRouteResult,
 } from '../../automated-maintainer-router';
+import { recordTerminalActivity, startTerminalActivity } from '../../terminal-activity';
 
 export interface SlackAnalyzerDeps {
   rebuild(input: { channel: string; channelName: string; hours: number }): Promise<string | null>;
@@ -38,7 +39,9 @@ export function createSlackAnalyzer(config: {
   let running = false;
   return async function analyze(): Promise<'overlap' | 'empty' | 'applied' | 'flagged' | 'deferred'> {
     if (running) return 'overlap';
+    if (!config.channels.length) return 'empty';
     running = true;
+    const activity = startTerminalActivity('slack', deps.now());
     try {
       deps.log?.('info', `starting analysis (channels=${config.channels.join(' ')} window=${config.hours}h)`);
       const reconstructed: string[] = [];
@@ -47,8 +50,13 @@ export function createSlackAnalyzer(config: {
         if (file && deps.exists(file)) { reconstructed.push(file); deps.log?.('info', `rebuilt ${channel} → ${file}`); }
         else deps.log?.('info', `no messages for ${channel} — skipping`);
       }
-      if (!reconstructed.length) { deps.log?.('info', 'no reconstructed files — nothing to synthesize'); return 'empty'; }
-      const timestamp = deps.now().toISOString().replace(/\.\d{3}Z$/, 'Z');
+      if (!reconstructed.length) {
+        deps.log?.('info', 'no reconstructed files — nothing to synthesize');
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
+          activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
+        return 'empty';
+      }
+      const timestamp = activity.timestamp;
       const output = await deps.synthesize({ type: 'slack', profile: config.profile, timestamp,
         analysis_window_hours: config.hours, channels: config.channels, reconstructed_files: reconstructed,
         workspace: config.workspace });
@@ -67,14 +75,24 @@ export function createSlackAnalyzer(config: {
       }
       if (routed.status === 'flagged') {
         deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
+          activity, endedAt: deps.now(), outcome: 'needs_input', log: deps.log });
         return 'flagged';
       }
       if (routed.outcome === 'rewrite') {
         deps.log?.('info', 'context updated automatically');
+        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
+          activity, endedAt: deps.now(), outcome: 'rewrite', log: deps.log });
         return 'applied';
       }
       deps.log?.('info', 'synthesizer found no team-relevant updates');
+      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
+        activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
       return 'empty';
+    } catch (error) {
+      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
+        activity, endedAt: deps.now(), error, log: deps.log });
+      throw error;
     } finally { running = false; }
   };
 }
