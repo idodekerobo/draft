@@ -130,6 +130,8 @@ export interface Secrets {
 
 export interface IntegrationEntry {
   connected: boolean;
+  /** Exact Claude MCP server ID selected during setup. */
+  mcp_server_id?: string;
   mode?: string;
   workspace?: string;
   channels?: number;
