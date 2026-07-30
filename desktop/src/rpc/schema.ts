@@ -29,6 +29,8 @@ export interface ActivityRun {
   status: "success" | "failed" | "skipped" | "timeout";
   durationMs: number | null;
   proposalsGenerated: number;
+  maintainerOutcome: "no_change" | "rewrite" | "needs_input" | null;
+  changedDimensions: string[];
   skipReason: string | null;
   errorMsg: string | null;
   transcriptPath: string | null;
@@ -97,7 +99,11 @@ export interface AppState {
 }
 
 export interface ProposalSummary {
+  /** Stable ID relative to proposals/ (flagged IDs start with "flagged/"). */
   filename: string;
+  kind: "manual" | "flagged";
+  outcome: string;
+  needsInputReason: string;
   source: string;
   dimension: string;
   action: string;
@@ -458,7 +464,7 @@ export interface ContextFileVersion {
   filePath: string;
   content: string;
   createdAt: string;
-  source: "human-edit" | "team-load" | "initial";
+  source: "human-edit" | "team-load" | "initial" | "automated-maintainer";
   author: string | null;
   sessionId: string | null;
   publishedAt: string | null;
@@ -527,10 +533,10 @@ export type AppRPCType = {
       /** Stop the background daemon via launchctl. */
       stopDaemon: { params: void; response: ActionResult };
 
-      /** Accept a pending proposal (moves to accepted/). */
+      /** Accept a manual proposal, or acknowledge a flagged item. */
       acceptProposal: { params: { filename: string }; response: ActionResult };
 
-      /** Reject a pending proposal (moves to rejected/). */
+      /** Reject a manual proposal, or dismiss a flagged item. */
       rejectProposal: { params: { filename: string }; response: ActionResult };
 
       /** Read CHANGES.jsonl delta since last cursor (from local workspace copy — what hook applied). */

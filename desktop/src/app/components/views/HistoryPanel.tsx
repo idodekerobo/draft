@@ -18,6 +18,7 @@ export function relativeTime(iso: string): string {
 function sourceLabel(source: ContextFileVersion["source"]): string {
   if (source === "team-load") return "Team load";
   if (source === "initial") return "Initial";
+  if (source === "automated-maintainer") return "Automated maintainer";
   return "Edited";
 }
 

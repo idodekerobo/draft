@@ -26,11 +26,13 @@ import {
 } from "draft-core/integrations/github-oauth";
 import { homedir, userInfo } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
-import { openHistoryDb, insertFileVersion, queryFileVersions, getFileVersion } from "draft-core/db/history";
+import { openHistoryDb, insertFileVersion, queryFileVersions, getFileVersion, queryAutomatedRewriteDimensions } from "draft-core/db/history";
 import {
   listProposals,
-  parseProposal,
+  acknowledgeFlaggedProposal,
   acceptProposal as acceptCoreProposal,
+  dismissFlaggedProposal,
+  proposalArchiveDirs,
   rejectProposal as rejectCoreProposal,
   applyProposalLocally,
 } from "draft-core/proposals";
@@ -310,6 +312,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspace = getWorkspacePath(getActiveProfile());
         return listProposals(workspace).map((proposal) => ({
           filename: proposal.filename,
+          kind: proposal.kind,
+          outcome: proposal.outcome,
+          needsInputReason: proposal.needsInputReason,
           source: proposal.source,
           dimension: proposal.dimension,
           action: proposal.action,
@@ -442,11 +447,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       acceptProposal: async ({ filename }) => {
         try {
           const workspace = getWorkspacePath(getActiveProfile());
-          const proposalPath = join(workspace, "proposals", filename);
-          const proposal = parseProposal(filename, proposalPath);
-          // Apply context_updates to local workspace files before moving the file.
-          applyProposalLocally(proposal, workspace);
-          acceptCoreProposal(proposal, join(workspace, "accepted"));
+          const proposal = listProposals(workspace).find((item) => item.filename === filename);
+          if (!proposal) return { ok: false, error: "Proposal not found" };
+          if (proposal.kind === "flagged") {
+            acknowledgeFlaggedProposal(proposal, workspace);
+          } else {
+            // Manual/import proposals keep their existing apply-on-accept behavior.
+            applyProposalLocally(proposal, workspace);
+            acceptCoreProposal(proposal, proposalArchiveDirs(workspace).accepted);
+          }
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Accept failed" };
@@ -456,9 +465,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       rejectProposal: async ({ filename }) => {
         try {
           const workspace = getWorkspacePath(getActiveProfile());
-          const proposalPath = join(workspace, "proposals", filename);
-          const proposal = parseProposal(filename, proposalPath);
-          rejectCoreProposal(proposal, join(workspace, "rejected"));
+          const proposal = listProposals(workspace).find((item) => item.filename === filename);
+          if (!proposal) return { ok: false, error: "Proposal not found" };
+          if (proposal.kind === "flagged") {
+            dismissFlaggedProposal(proposal, workspace);
+          } else {
+            rejectCoreProposal(proposal, proposalArchiveDirs(workspace).rejected);
+          }
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Reject failed" };
@@ -1398,7 +1411,25 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           const db = openActivityDb(workspace);
           const runs = queryRuns(db, 50);
           db.close();
-          return runs;
+          const historyPath = join(workspace, "history.db");
+          if (!existsSync(historyPath)) {
+            return runs.map(run => ({ ...run, changedDimensions: [] }));
+          }
+          let historyDb: ReturnType<typeof openHistoryDb> | undefined;
+          try {
+            const openedHistoryDb = openHistoryDb(workspace);
+            historyDb = openedHistoryDb;
+            return runs.map(run => ({
+              ...run,
+              changedDimensions: run.maintainerOutcome === "rewrite"
+                ? queryAutomatedRewriteDimensions(openedHistoryDb, run.sessionId ?? run.id)
+                : [],
+            }));
+          } catch {
+            return runs.map(run => ({ ...run, changedDimensions: [] }));
+          } finally {
+            historyDb?.close();
+          }
         } catch {
           return [];
         }
@@ -1627,7 +1658,6 @@ async function syncBundledAssets(): Promise<void> {
     "start.sh",
     "status.sh",
     "stop.sh",
-    "synthesize.sh",
     "uninstall.sh",
   ];
   const runtimeDirectories = ["intelligence", "integrations", "synthesizers"];
