@@ -391,6 +391,11 @@ button {
   flex-shrink: 0;
 }
 
+.proposal-row__flag {
+  color: #ffbd66;
+  font-weight: 600;
+}
+
 .proposal-detail {
   min-width: 0;
   display: flex;
@@ -420,6 +425,27 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.proposal-flagged-reason {
+  display: grid;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 189, 102, 0.45);
+  border-radius: var(--radius-md);
+  background: rgba(255, 189, 102, 0.1);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-secondary);
+  line-height: 1.4;
+}
+
+.proposal-flagged-reason strong {
+  color: #ffbd66;
+}
+
+.proposal-flagged-reason small {
+  color: var(--color-text-secondary);
 }
 
 .proposal-detail__body {
@@ -2443,6 +2469,10 @@ button {
 .app-row__status-dot--pending {
   background: var(--color-status-yellow);
   animation: dot-pulse 1.5s ease-in-out infinite;
+}
+
+.app-row__status-dot--attention {
+  background: var(--color-status-yellow);
 }
 
 .app-row__text {

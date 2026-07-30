@@ -12,7 +12,7 @@ export interface ProposalWatchHandlers {
 
 const FALLBACK_POLL_MS = 60_000;
 
-let proposalWatcher: ReturnType<typeof watch> | null = null;
+let proposalWatchers: ReturnType<typeof watch>[] = [];
 let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 let lastCount = 0;
 let started = false;
@@ -56,8 +56,8 @@ export function restartProposalWatch(profile: string, handlers: ProposalWatchHan
 }
 
 export function stopProposalWatch(): void {
-  proposalWatcher?.close();
-  proposalWatcher = null;
+  for (const watcher of proposalWatchers) watcher.close();
+  proposalWatchers = [];
   if (fallbackTimer) clearInterval(fallbackTimer);
   fallbackTimer = null;
   started = false;
@@ -68,13 +68,17 @@ export function stopProposalWatch(): void {
 function startDirectoryWatch(reconcile: (notify: boolean) => void): void {
   if (!watchedProfile) return;
   const proposalsDir = `${getWorkspacePath(watchedProfile)}/proposals`;
+  const flaggedDir = `${proposalsDir}/flagged`;
   mkdirSync(proposalsDir, { recursive: true });
+  mkdirSync(flaggedDir, { recursive: true });
 
-  try {
-    proposalWatcher = watch(proposalsDir, { persistent: false }, () => {
-      reconcile(true);
-    });
-  } catch {
-    // Fallback poll remains active.
+  for (const directory of [proposalsDir, flaggedDir]) {
+    try {
+      proposalWatchers.push(watch(directory, { persistent: false }, () => {
+        reconcile(true);
+      }));
+    } catch {
+      // Fallback poll remains active.
+    }
   }
 }

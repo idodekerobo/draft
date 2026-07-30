@@ -5,7 +5,7 @@
 // operations live here so the desktop can reuse them.
 
 import { existsSync, readdirSync, renameSync, statSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "fs";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { load } from "js-yaml";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -17,9 +17,13 @@ export interface ContextUpdate {
 }
 
 export interface Proposal {
+  /** Stable ID relative to proposals/ (for example "flagged/item.md"). */
   filename: string;
   path: string;
   mtime: number;
+  kind: "manual" | "flagged";
+  outcome: string;
+  needsInputReason: string;
   source: string;
   createdAt: string;
   timestamp: string;
@@ -36,61 +40,6 @@ export interface Proposal {
   contextUpdates: ContextUpdate[];
 }
 
-export type AutomatedSynthesisValidation =
-  | { ok: true; updates: ContextUpdate[] }
-  | { ok: false; error: string };
-
-/**
- * Validate untrusted LLM synthesis before it reaches proposals/. Curator-created
- * proposals still retain overwrite support in applyProposalLocally; automated
- * sources are limited to append/tension and tightly routed context paths.
- */
-export function validateAutomatedSynthesisOutput(raw: string): AutomatedSynthesisValidation {
-  if (Buffer.byteLength(raw, "utf8") > 1_000_000) {
-    return { ok: false, error: "synthesis output exceeds 1 MB" };
-  }
-  const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (!fmMatch) return { ok: false, error: "missing YAML frontmatter" };
-
-  let parsed: unknown;
-  try {
-    parsed = load(fmMatch[1] ?? "");
-  } catch {
-    return { ok: false, error: "malformed YAML frontmatter" };
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { ok: false, error: "frontmatter must be an object" };
-  }
-  const rawUpdates = (parsed as Record<string, unknown>).context_updates;
-  if (!Array.isArray(rawUpdates)) return { ok: false, error: "context_updates must be an array" };
-
-  const updates: ContextUpdate[] = [];
-  for (const [index, value] of rawUpdates.entries()) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { ok: false, error: `context_updates[${index}] must be an object` };
-    }
-    const record = value as Record<string, unknown>;
-    if (typeof record.file !== "string" || typeof record.action !== "string" || typeof record.content !== "string") {
-      return { ok: false, error: `context_updates[${index}] has an invalid schema` };
-    }
-    const file = record.file;
-    const action = record.action;
-    if (action !== "append" && action !== "tension") {
-      return { ok: false, error: `automated action ${JSON.stringify(action)} is not allowed` };
-    }
-    if (/\p{Cc}/u.test(file) || file.startsWith("/") || file.includes("\\") || file.split("/").includes("..")) {
-      return { ok: false, error: `context_updates[${index}] has an unsafe file path` };
-    }
-    const validAppendPath = /^context\/[a-zA-Z0-9][a-zA-Z0-9_-]*\/index\.md$/.test(file);
-    const validTensionPath = file === "context/tensions.md";
-    if ((action === "append" && !validAppendPath) || (action === "tension" && !validTensionPath)) {
-      return { ok: false, error: `context_updates[${index}] is routed outside its allowed path` };
-    }
-    updates.push({ file, action, content: record.content });
-  }
-  return { ok: true, updates };
-}
-
 // ── Read ───────────────────────────────────────────────────────────────────────
 
 /**
@@ -101,13 +50,25 @@ export function listProposals(workspacePath: string): Proposal[] {
   const proposalsDir = join(workspacePath, "proposals");
   if (!existsSync(proposalsDir)) return [];
 
-  const files = readdirSync(proposalsDir)
+  const manualFiles = readdirSync(proposalsDir)
     .filter((f) => f.endsWith(".md"))
     .map((f) => ({
       name: f,
       path: join(proposalsDir, f),
       mtime: statSync(join(proposalsDir, f)).mtimeMs,
-    }))
+    }));
+  const flaggedDir = join(proposalsDir, "flagged");
+  const flaggedFiles = existsSync(flaggedDir)
+    ? readdirSync(flaggedDir)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => ({
+        name: join("flagged", f),
+        path: join(flaggedDir, f),
+        mtime: statSync(join(flaggedDir, f)).mtimeMs,
+      }))
+    : [];
+
+  const files = [...manualFiles, ...flaggedFiles]
     .sort((a, b) => a.mtime - b.mtime);
 
   return files.map((f) => parseProposal(f.name, f.path));
@@ -128,6 +89,9 @@ export function parseProposal(filename: string, filePath: string): Proposal {
   }
 
   let source = "unknown";
+  const kind = basename(dirname(filePath)) === "flagged" ? "flagged" : "manual";
+  let outcome = "";
+  let needsInputReason = "";
   let createdAt = "";
   let timestamp = "";
   let dimension = "unknown";
@@ -140,6 +104,8 @@ export function parseProposal(filename: string, filePath: string): Proposal {
   if (fmMatch) {
     const fm = parseFrontmatter(fmMatch[1] ?? "");
     source = stringField(fm.source) || stringField(fm.input_source) || source;
+    outcome = stringField(fm.outcome) || stringField(fm.flagged_reason);
+    needsInputReason = stringField(fm.needs_input_reason);
     createdAt = stringField(fm.created_at) || stringField(fm.createdAt) || createdAt;
     timestamp = stringField(fm.timestamp) || createdAt;
     dimension = stringField(fm.dimension) || firstContextUpdateDimension(fm) || dimension;
@@ -161,6 +127,9 @@ export function parseProposal(filename: string, filePath: string): Proposal {
   }
 
   const body = fmMatch ? fileContent.slice(fmMatch[0].length).trim() : fileContent.trim();
+  if (kind === "flagged" && !needsInputReason) {
+    needsInputReason = extractReasonSection(body);
+  }
   if (summary === filename && dimension !== "unknown") {
     summary = `${action} ${dimension}`;
   }
@@ -169,6 +138,9 @@ export function parseProposal(filename: string, filePath: string): Proposal {
     filename,
     path: filePath,
     mtime: existsSync(filePath) ? statSync(filePath).mtimeMs : 0,
+    kind,
+    outcome,
+    needsInputReason,
     source,
     createdAt,
     timestamp,
@@ -191,7 +163,7 @@ export function parseProposal(filename: string, filePath: string): Proposal {
  */
 export function acceptProposal(proposal: Proposal, acceptedDir: string): void {
   ensureDir(acceptedDir);
-  renameSync(proposal.path, join(acceptedDir, proposal.filename));
+  renameSync(proposal.path, join(acceptedDir, basename(proposal.path)));
 }
 
 /**
@@ -200,7 +172,27 @@ export function acceptProposal(proposal: Proposal, acceptedDir: string): void {
  */
 export function rejectProposal(proposal: Proposal, rejectedDir: string): void {
   ensureDir(rejectedDir);
-  renameSync(proposal.path, join(rejectedDir, proposal.filename));
+  renameSync(proposal.path, join(rejectedDir, basename(proposal.path)));
+}
+
+/** Canonical archive locations for every proposal outcome. */
+export function proposalArchiveDirs(workspacePath: string): { accepted: string; rejected: string } {
+  return {
+    accepted: join(workspacePath, "proposals", "accepted"),
+    rejected: join(workspacePath, "proposals", "rejected"),
+  };
+}
+
+/** Acknowledge a flagged item without applying any context rewrite. */
+export function acknowledgeFlaggedProposal(proposal: Proposal, workspacePath: string): void {
+  requireFlagged(proposal);
+  acceptProposal(proposal, proposalArchiveDirs(workspacePath).accepted);
+}
+
+/** Dismiss a flagged item without applying any context rewrite. */
+export function dismissFlaggedProposal(proposal: Proposal, workspacePath: string): void {
+  requireFlagged(proposal);
+  rejectProposal(proposal, proposalArchiveDirs(workspacePath).rejected);
 }
 
 /**
@@ -214,6 +206,9 @@ export function rejectProposal(proposal: Proposal, rejectedDir: string): void {
  *   tension — appends to context/tensions.md regardless of the file field
  */
 export function applyProposalLocally(proposal: Proposal, workspacePath: string): void {
+  if (proposal.kind === "flagged") {
+    throw new Error("Flagged items require acknowledgement or dismissal and cannot apply context updates.");
+  }
   for (const update of proposal.contextUpdates) {
     if (!update.content) continue;
 
@@ -240,6 +235,17 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+}
+
+function requireFlagged(proposal: Proposal): void {
+  if (proposal.kind !== "flagged") {
+    throw new Error("This action is only available for flagged items.");
+  }
+}
+
+function extractReasonSection(body: string): string {
+  const match = body.match(/(?:^|\n)## Reason\s*\n+([\s\S]*?)(?=\n##\s|\s*$)/i);
+  return match?.[1]?.trim() ?? "";
 }
 
 function parseFrontmatter(raw: string): Record<string, unknown> {

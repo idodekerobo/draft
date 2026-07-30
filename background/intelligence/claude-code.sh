@@ -141,7 +141,7 @@ done
 # - Claude asking a question instead of writing (❯, no file) → loop continues → timeout
 # - Claude done (❯ + file written) → exit loop ✓
 #
-# Max wait: 280s (parent synthesize.sh watchdog has a 300s limit — leave buffer).
+# Max wait: 280s (parent synthesize.ts watchdog has a 300s limit — leave buffer).
 ELAPSED=0
 MAX_WAIT=280
 POLL_INTERVAL=10

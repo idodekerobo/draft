@@ -105,8 +105,8 @@ describe("publishTeamContext — scoped publish", () => {
     mkdirSync(join(workspace, "skills", "somepack"), { recursive: true });
     writeFileSync(join(workspace, "skills", "somepack", "SKILL.md"), "skill\n");
     writeFileSync(join(workspace, "config", "mcp.json"), JSON.stringify({ version: 1, servers: [] }));
-    mkdirSync(join(workspace, "accepted"), { recursive: true });
-    writeFileSync(join(workspace, "accepted", "proposal1.md"), "a proposal\n");
+    mkdirSync(join(workspace, "proposals", "accepted"), { recursive: true });
+    writeFileSync(join(workspace, "proposals", "accepted", "proposal1.md"), "a proposal\n");
 
     insertVersion(workspace, "product/index.md", "content A");
     insertVersion(workspace, "team/index.md", "content B");
@@ -131,7 +131,7 @@ describe("publishTeamContext — scoped publish", () => {
     expect(lastChange.files).toEqual(["context/product/index.md"]);
 
     // accepted/ untouched
-    expect(existsSync(join(workspace, "accepted", "proposal1.md"))).toBe(true);
+    expect(existsSync(join(workspace, "proposals", "accepted", "proposal1.md"))).toBe(true);
 
     // history.db: only product/index.md marked published
     const db = openHistoryDb(workspace);
@@ -191,8 +191,8 @@ describe("publishTeamContext — full publish", () => {
     mkdirSync(join(workspace, "skills", "somepack"), { recursive: true });
     writeFileSync(join(workspace, "skills", "somepack", "SKILL.md"), "skill\n");
     writeFileSync(join(workspace, "config", "mcp.json"), JSON.stringify({ version: 1, servers: [] }));
-    mkdirSync(join(workspace, "accepted"), { recursive: true });
-    writeFileSync(join(workspace, "accepted", "proposal1.md"), "a proposal\n");
+    mkdirSync(join(workspace, "proposals", "accepted"), { recursive: true });
+    writeFileSync(join(workspace, "proposals", "accepted", "proposal1.md"), "a proposal\n");
 
     insertVersion(workspace, "product/index.md", "content A");
     insertVersion(workspace, "team/index.md", "content B");
@@ -210,7 +210,7 @@ describe("publishTeamContext — full publish", () => {
     expect(existsSync(join(checkout, "skills", "somepack", "SKILL.md"))).toBe(true);
     expect(existsSync(join(checkout, "config", "mcp.json"))).toBe(true);
 
-    expect(existsSync(join(workspace, "accepted", "proposal1.md"))).toBe(false);
+    expect(existsSync(join(workspace, "proposals", "accepted", "proposal1.md"))).toBe(false);
 
     const db = openHistoryDb(workspace);
     const productVersion = getLatestUnpublishedVersion(db, "product/index.md");

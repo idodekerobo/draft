@@ -362,7 +362,7 @@ export async function publishTeamContext(
 
     let proposalsCleared = 0;
     if (!scoped) {
-      const accepted = join(workspace, "accepted");
+      const accepted = join(workspace, "proposals", "accepted");
       if (existsSync(accepted)) {
         for (const name of readdirSync(accepted).filter((entry) => entry.endsWith(".md"))) {
           unlinkSync(join(accepted, name));

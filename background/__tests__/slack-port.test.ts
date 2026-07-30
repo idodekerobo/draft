@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { createHash } from 'crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { buildSlackPrompt, extractDescription, readPending, readReplacesProposal, runSlackSynthesis, safeReplacementPath } from '../synthesizers/slack';
+import { buildSlackPrompt, extractDescription, readPending, runSlackSynthesis } from '../synthesizers/slack';
+import { createContextSnapshot } from '../synthesizers/synthesis-runtime';
 import { createSlackAnalyzer, parseSlackRuntimeConfig } from '../integrations/slack/slack-analyzer';
 
 const ROOT = `/tmp/draft-slack-port-test-${process.pid}`;
@@ -15,15 +15,13 @@ describe('Slack on-device prompt parsing', () => {
     writeFileSync(index, '---\ndescription: >\n  Product direction\n  for teammates\nlast_updated: x\n---\n'); writeFileSync(reconstructed, 'messages');
     writeFileSync(join(workspace, 'proposals', '20260101T000000Z-slack.md'), '---\ntimestamp: 2026-01-01T00:00:00Z\n---\nold');
     expect(extractDescription(readFileSync(index, 'utf8'))).toBe('Product direction for teammates');
-    const prompt = buildSlackPrompt({ analysis_window_hours: 8, reconstructed_files: [reconstructed] }, { workspace, profile: 'p', currentTimestamp: 'now', intelligence: 'fake' });
-    expect(prompt).toContain('20260101T000000Z-slack.md'); expect(prompt).toContain('action: tension'); expect(prompt).toContain('DO NOT USE in context_updates');
-  });
-
-  it('allows only existing bare proposal filenames in the established convention', () => {
-    const dir = join(ROOT, 'proposals'); mkdirSync(dir, { recursive: true }); const good = '20260101T010203Z-slack.md'; writeFileSync(join(dir, good), 'x');
-    expect(safeReplacementPath(dir, good)).toBe(join(dir, good));
-    for (const bad of ['../' + good, `sub/${good}`, '..', 'notes.md', '20260101T010203Z-slack.md/..']) expect(safeReplacementPath(dir, bad)).toBeNull();
-    expect(readReplacesProposal(`---\nreplaces_proposal: ${good}\n---`)).toBe(good);
+    const snapshot = createContextSnapshot(workspace);
+    const prompt = buildSlackPrompt({ analysis_window_hours: 8, reconstructed_files: [reconstructed] }, { workspace, profile: 'p', currentTimestamp: 'now', intelligence: 'fake', outputPath: '/out', snapshot });
+    expect(prompt).toContain('20260101T000000Z-slack.md');
+    expect(prompt).toContain(snapshot.files[0].snapshotPath);
+    expect(prompt).toContain('base_sha256:');
+    expect(prompt).not.toContain('context_updates');
+    expect(prompt).not.toContain('replaces_proposal:');
   });
 
   it('uses legacy empty descriptions and isolates unreadable pending proposals', () => {
@@ -36,12 +34,15 @@ describe('Slack on-device prompt parsing', () => {
     expect(readPending(workspace).latestTimestamp).toBe('(no prior synthesis)');
   });
 
-  it('matches the complete normalized Slack prompt golden', () => {
+  it('renders Slack evidence with the shared immutable contract', () => {
     const workspace = join(ROOT, 'workspace'); const channel = join(ROOT, 'product', 'day.md'); mkdirSync(dirname(channel), { recursive: true }); mkdirSync(join(workspace, 'context', 'product'), { recursive: true });
     writeFileSync(channel, 'messages'); writeFileSync(join(workspace, 'context', 'product', 'index.md'), '---\ndescription: Product\n---\n');
-    const prompt = buildSlackPrompt({ analysis_window_hours: 8, reconstructed_files: [channel] }, { workspace, profile: 'p', currentTimestamp: 'now', intelligence: 'fake' });
-    const normalized = prompt.replaceAll(workspace, '<WORKSPACE>').replaceAll(ROOT, '<ROOT>');
-    expect(createHash('sha256').update(normalized).digest('hex')).toBe('d6dcb18e284b343ebe17c4555f8ea4e6e36726c8197ecf35e6be59b8f9eeba71');
+    const snapshot = createContextSnapshot(workspace);
+    const prompt = buildSlackPrompt({ analysis_window_hours: 8, reconstructed_files: [channel] }, { workspace, profile: 'p', currentTimestamp: 'now', intelligence: 'fake', outputPath: '/out', snapshot });
+    expect(prompt).toContain(channel);
+    expect(prompt).toContain(snapshot.files[0].sha256);
+    expect(prompt).toContain('outcome: rewrite');
+    expect(prompt).toContain('needs_input');
   });
 
   it('rejects direct synthesis without reconstructed files', async () => {
@@ -55,19 +56,20 @@ describe('Slack on-device prompt parsing', () => {
     const files = new Map<string, string>(); let prompt = ''; const previous = process.env.DRAFT_SLACK_INTELLIGENCE; process.env.DRAFT_SLACK_INTELLIGENCE = 'fake';
     try {
       const output = await runSlackSynthesis({ profile: 'p', reconstructed_files: [rebuilt] }, { workspace, backgroundDir: '/bg', now: new Date('2026-01-01T00:00:00Z'), deps: {
-        async invoke(input) { prompt = input.prompt; files.set(input.outputPath, '---\ncontext_updates: []\n---\n'); return 0; }, makeTemp: () => '/prompt',
+        async invoke(input) { prompt = input.prompt; files.set(input.outputPath, '---\noutcome: no_change\n---\n'); return 0; }, makeTemp: () => '/prompt',
         readFile: path => files.get(path)!, writeFile: (path, value) => { files.set(path, value); }, removeFile: path => { files.delete(path); }, exists: path => path === '/bg/intelligence/fake.sh' || files.has(path),
       }});
-      expect(output).toContain('context_updates: []'); expect(prompt).toContain(rebuilt); expect(prompt).toContain('empty context_updates');
+      expect(output).toContain('outcome: no_change'); expect(prompt).toContain(rebuilt); expect(prompt).toContain('Choose exactly one outcome');
     } finally { if (previous === undefined) delete process.env.DRAFT_SLACK_INTELLIGENCE; else process.env.DRAFT_SLACK_INTELLIGENCE = previous; }
   });
 
-  it('keeps committed legacy append/tension and relevance contract sections', () => {
+  it('keeps source relevance rules and removes the replacement contract', () => {
     const workspace = join(ROOT, 'workspace'); mkdirSync(workspace, { recursive: true });
-    const prompt = buildSlackPrompt({}, { workspace, profile: 'p', currentTimestamp: 'now', intelligence: 'fake' });
-    for (const phrase of ['**SIGNAL — capture:**', '**NOISE — skip:**', '**CONTRADICTIONS — use action: tension:**', 'Do NOT invent information', 'replaces_proposal must be an exact filename']) {
+    const prompt = buildSlackPrompt({}, { workspace, profile: 'p', currentTimestamp: 'now', intelligence: 'fake', outputPath: '/out', snapshot: createContextSnapshot(workspace) });
+    for (const phrase of ['**SIGNAL — capture:**', '**NOISE — skip:**', 'Do NOT invent information', 'outcome: no_change']) {
       expect(prompt).toContain(phrase);
     }
+    expect(prompt).not.toContain('replaces_proposal');
   });
 });
 
@@ -84,24 +86,42 @@ describe('Slack analyzer orchestration', () => {
     });
     expect(await analyzer()).toBe('empty'); expect(calls).toEqual([{ channel: 'C1', channelName: 'product', hours: 4 }, { channel: 'C2', channelName: 'eng', hours: 4 }]);
   });
-  it('replaces a safe existing proposal and rejects overlap', async () => {
-    const workspace = join(ROOT, 'workspace'); const proposals = join(workspace, 'proposals'); const rebuilt = join(ROOT, 'rebuilt.md'); const existing = join(proposals, '20260101T010203Z-slack.md');
-    mkdirSync(proposals, { recursive: true }); writeFileSync(rebuilt, 'messages'); writeFileSync(existing, 'old');
+  it('routes rewrites to automatic apply and rejects overlap', async () => {
+    const workspace = join(ROOT, 'workspace'); const rebuilt = join(ROOT, 'rebuilt.md');
+    mkdirSync(workspace, { recursive: true }); writeFileSync(rebuilt, 'messages');
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); const writes: string[] = []; const logs: string[] = [];
     const analyzer = createSlackAnalyzer({ workspace, profile: 'p', channels: ['C1'], hours: 8 }, {
       rebuild: async () => rebuilt,
-      async synthesize() { await gate; return '---\nreplaces_proposal: 20260101T010203Z-slack.md\ncontext_updates:\n  - file: context/product/index.md\n    action: append\n    content: |\n      A specific product decision.\n---'; },
-      exists: path => path === rebuilt || path === existing, write: path => { writes.push(path); }, now: () => new Date('2026-01-02T00:00:00Z'), log: (_level, message) => { logs.push(message); },
+      async synthesize() { await gate; return validRewrite(); },
+      exists: path => path === rebuilt, write: path => { writes.push(path); },
+      route: () => ({ status: 'success', outcome: 'rewrite', flaggedPath: null, meetingIds: [] }),
+      now: () => new Date('2026-01-02T00:00:00Z'), log: (_level, message) => { logs.push(message); },
     });
-    const first = analyzer(); expect(await analyzer()).toBe('overlap'); release(); expect(await first).toBe('replaced'); expect(writes).toEqual([existing]); expect(logs.some(message => message.startsWith('starting analysis'))).toBe(true); expect(logs.some(message => message.startsWith('rebuilt C1'))).toBe(true); expect(logs.some(message => message.startsWith('overwrote existing proposal'))).toBe(true);
+    const first = analyzer(); expect(await analyzer()).toBe('overlap'); release(); expect(await first).toBe('applied'); expect(writes).toEqual([]); expect(logs.some(message => message.startsWith('starting analysis'))).toBe(true); expect(logs.some(message => message.startsWith('rebuilt C1'))).toBe(true); expect(logs.some(message => message.startsWith('context updated'))).toBe(true);
   });
 
-  it('creates a new proposal when replacement is traversal or missing', async () => {
+  it('stages needs-input through the handler without replacement writes', async () => {
     const workspace = join(ROOT, 'workspace'); const rebuilt = join(ROOT, 'rebuilt.md'); mkdirSync(ROOT, { recursive: true }); writeFileSync(rebuilt, 'x'); const writes: string[] = [];
     const analyzer = createSlackAnalyzer({ workspace, profile: 'p', channels: ['C'], hours: 1 }, { rebuild: async () => rebuilt,
-      synthesize: async () => '---\nreplaces_proposal: ../../owned.md\ncontext_updates:\n  - file: context/product/index.md\n    action: append\n    content: |\n      A specific product decision.\n---', exists: path => path === rebuilt,
-      write: path => { writes.push(path); }, now: () => new Date('2026-01-02T00:00:00Z') });
-    expect(await analyzer()).toBe('staged'); expect(writes[0]).toBe(join(workspace, 'proposals', '20260102T000000Z-slack.md'));
+      synthesize: async () => '---\noutcome: needs_input\nneeds_input_reason: "Two named Slack decisions conflict."\n---', exists: path => path === rebuilt,
+      write: path => { writes.push(path); },
+      route: () => ({ status: 'flagged', outcome: 'needs_input', flaggedPath: '/flagged.md', meetingIds: [] }),
+      now: () => new Date('2026-01-02T00:00:00Z') });
+    expect(await analyzer()).toBe('flagged'); expect(writes).toEqual([]);
+  });
+
+  it('defers without writing anything when the workspace is locked', async () => {
+    const workspace = join(ROOT, 'workspace'); const rebuilt = join(ROOT, 'rebuilt.md');
+    mkdirSync(workspace, { recursive: true }); writeFileSync(rebuilt, 'messages');
+    const writes: string[] = [];
+    const analyzer = createSlackAnalyzer({ workspace, profile: 'p', channels: ['C1'], hours: 8 }, {
+      rebuild: async () => rebuilt, synthesize: async () => validRewrite(),
+      exists: path => path === rebuilt, write: path => { writes.push(path); },
+      route: () => ({ status: 'locked', outcome: 'rewrite', flaggedPath: null, meetingIds: [] }),
+      now: () => new Date('2026-01-02T00:00:00Z'),
+    });
+    expect(await analyzer()).toBe('deferred');
+    expect(writes).toEqual([]);
   });
 
   it('propagates rebuild/synthesis failures and rejects empty or invalid synthesis safely', async () => {
@@ -109,7 +129,20 @@ describe('Slack analyzer orchestration', () => {
     const now = () => new Date('2026-01-01T00:00:00Z');
     await expect(createSlackAnalyzer(base, { rebuild: async () => { throw new Error('rebuild failed'); }, synthesize: async () => '', exists: () => false, write: () => {}, now })()).rejects.toThrow('rebuild failed');
     await expect(createSlackAnalyzer(base, { rebuild: async () => '/rebuilt', synthesize: async () => { throw new Error('synth failed'); }, exists: () => true, write: () => {}, now })()).rejects.toThrow('synth failed');
-    expect(await createSlackAnalyzer(base, { rebuild: async () => '/rebuilt', synthesize: async () => '', exists: () => true, write: () => { throw new Error('must not write'); }, now })()).toBe('empty');
-    await expect(createSlackAnalyzer(base, { rebuild: async () => '/rebuilt', synthesize: async () => 'invalid', exists: () => true, write: () => {}, now })()).rejects.toThrow('invalid automated synthesis output');
+    await expect(createSlackAnalyzer(base, { rebuild: async () => '/rebuilt', synthesize: async () => '', exists: () => true, write: () => { throw new Error('must not write'); }, now })()).rejects.toThrow('invalid maintainer output');
+    await expect(createSlackAnalyzer(base, { rebuild: async () => '/rebuilt', synthesize: async () => 'invalid', exists: () => true, write: () => {}, route: () => { throw new Error('invalid maintainer output'); }, now })()).rejects.toThrow('invalid maintainer output');
   });
 });
+
+function validRewrite(): string {
+  return `---
+outcome: rewrite
+rewrites:
+  - file: context/product/index.md
+    base_sha256: ${"a".repeat(64)}
+    summary: A specific product decision.
+    content: |
+      # Product
+      A specific product decision.
+---`;
+}

@@ -45,7 +45,7 @@ export interface CaptureResult {
  */
 export async function capture(
   cmd: string[],
-  opts?: { timeoutMs?: number; env?: Record<string, string> }
+  opts?: { timeoutMs?: number; env?: Record<string, string>; cwd?: string }
 ): Promise<CaptureResult> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const bin  = cmd[0] ?? "";
@@ -61,6 +61,7 @@ export async function capture(
       stdout: "pipe",
       stderr: "pipe",
       ...(env ? { env } : {}),
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
     });
   } catch (err: unknown) {
     // Binary not found or failed to spawn — treat as non-zero exit

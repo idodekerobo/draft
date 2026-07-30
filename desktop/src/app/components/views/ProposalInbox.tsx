@@ -107,17 +107,23 @@ export function ProposalInbox({ activeProfile, onCountChange, daemonStopped = fa
   }, [selectedFilename]);
 
   async function act(kind: "accept" | "reject", filename: string) {
+    const proposal = proposals.find((p) => p.filename === filename);
+    const isFlagged = proposal?.kind === "flagged";
     const result = kind === "accept"
       ? await rpc.request.acceptProposal({ filename })
       : await rpc.request.rejectProposal({ filename });
 
     if (!result.ok) {
-      setError(result.error ?? `${kind === "accept" ? "Accept" : "Reject"} failed.`);
+      const action = isFlagged
+        ? (kind === "accept" ? "Acknowledge" : "Dismiss")
+        : (kind === "accept" ? "Accept" : "Reject");
+      setError(result.error ?? `${action} failed.`);
       return;
     }
 
-    const source = proposals.find((p) => p.filename === filename)?.source ?? "unknown";
-    track("proposal_actioned", { action: kind === "accept" ? "accepted" : "rejected", source });
+    const source = proposal?.source ?? "unknown";
+    const action = kind === "accept" ? "accepted" : "rejected";
+    track("proposal_actioned", { action, source });
     await refresh();
   }
 
@@ -184,6 +190,7 @@ function ProposalList({
         >
           <span className="proposal-row__summary">{proposal.summary}</span>
           <span className="proposal-row__tags">
+            {proposal.kind === "flagged" && <span className="proposal-row__flag">Needs review</span>}
             <span>{proposal.source}</span>
             <span className="proposal-row__sep">·</span>
             <span>{proposal.dimension}</span>
@@ -210,6 +217,7 @@ function ProposalDetail({
   onReject: () => void;
 }) {
   const diff = (() => {
+    if (proposal.kind === "flagged") return [];
     const incoming = proposal.content || proposal.body;
     if (proposal.action === "overwrite") {
       return diffLines(proposal.currentContent, incoming);
@@ -234,6 +242,13 @@ function ProposalDetail({
           <span>{formatDate(proposal.timestamp || proposal.createdAt)}</span>
         </div>
         <h2 className="proposal-detail__title">{proposal.summary}</h2>
+        {proposal.kind === "flagged" && (
+          <div className="proposal-flagged-reason" role="alert">
+            <strong>Needs your input</strong>
+            <span>{proposal.needsInputReason || proposal.outcome || "Human review is required."}</span>
+            <small>Acknowledging or dismissing this item will not change context files.</small>
+          </div>
+        )}
       </header>
 
       <div className="proposal-detail__body">
@@ -249,11 +264,17 @@ function ProposalDetail({
       </div>
 
       <footer className="proposal-detail__footer">
-        <button className="proposal-action proposal-action--primary" onClick={onAccept}>Accept</button>
-        <button className="proposal-action proposal-action--ghost" onClick={onReject}>Reject</button>
-        <button className="proposal-action proposal-action--link" onClick={onToggleRaw}>
-          {rawOpen ? "View diff" : "View raw"}
+        <button className="proposal-action proposal-action--primary" onClick={onAccept}>
+          {proposal.kind === "flagged" ? "Acknowledge" : "Accept"}
         </button>
+        <button className="proposal-action proposal-action--ghost" onClick={onReject}>
+          {proposal.kind === "flagged" ? "Dismiss" : "Reject"}
+        </button>
+        {proposal.kind !== "flagged" && (
+          <button className="proposal-action proposal-action--link" onClick={onToggleRaw}>
+            {rawOpen ? "View diff" : "View raw"}
+          </button>
+        )}
       </footer>
     </section>
   );

@@ -235,7 +235,7 @@ async function processJob(jobPath: string) {
   const sessionId = String(job.session_id ?? 'unknown');
   log('info', `job ${jobName}: profile=${profile} session_id=${sessionId}`);
 
-  // Route to synthesize.ts module (replaced synthesize.sh)
+  // Route to the TypeScript synthesis module.
   const jobSource = String(job.source ?? 'claude-code-session');
 
   // Drop Claude Code session jobs if synthesis is disabled in settings
@@ -255,6 +255,11 @@ async function processJob(jobPath: string) {
   }
 
   const result = await synthesize(processingPath);
+  if (result.status === 'deferred') {
+    log('info', `job ${jobName}: deferred (workspace busy) — returning to pending/`);
+    try { renameSync(processingPath, `${DRAFT_PENDING}/${jobName}`); } catch {}
+    return;
+  }
   if (result.status === 'success' || result.status === 'skipped') {
     if (jobSource === 'github' && result.status === 'success') {
       try {

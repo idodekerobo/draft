@@ -279,6 +279,7 @@ function InputSourceRow({
 }: InputSourceRowProps) {
   const isGitHub = sourceKey === "github";
   const isPending = isGitHub && isConnectingGitHub;
+  const needsAttention = detail.connected && detail.healthStatus === "needs_attention";
 
   function buildMeta(): string {
     if (!detail.connected) return "Not connected";
@@ -297,7 +298,7 @@ function InputSourceRow({
     <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
       <div className="app-row__main">
         <div className="app-row__left">
-          <span className={`app-row__status-dot${detail.connected ? " app-row__status-dot--on" : isPending ? " app-row__status-dot--pending" : ""}`} />
+          <span className={`app-row__status-dot${needsAttention ? " app-row__status-dot--attention" : detail.connected ? " app-row__status-dot--on" : isPending ? " app-row__status-dot--pending" : ""}`} />
           <div className="app-row__text">
             <span className="app-row__name">{SOURCE_LABELS[sourceKey] ?? sourceKey}</span>
             <span className="app-row__meta">
@@ -328,6 +329,11 @@ function InputSourceRow({
                   </span>
                 )}
               </>
+            )}
+            {needsAttention && (
+              <span className="app-row__warning">
+                Needs attention — {detail.healthMessage ?? "Draft cannot currently reach this source."} Reconnect the integration if this persists.
+              </span>
             )}
           </div>
         </div>

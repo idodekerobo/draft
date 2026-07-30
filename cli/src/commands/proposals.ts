@@ -1,18 +1,20 @@
 // commands/proposals.ts — interactive approve/reject pending AI proposals
 //
 // Reads proposals once at startup (no file-watching).
-// Keypress: [a]ccept  [r]eject  [s]kip  [q]uit
+// Keypress (manual): [a]ccept [r]eject; (flagged): [a]cknowledge [d]ismiss.
 // Data logic (Proposal type, listProposals, parseProposal, acceptProposal, rejectProposal)
 // lives in draft-core/proposals so the desktop UI can reuse it.
 
-import { join } from "path";
 import { getActiveProfile, getWorkspacePath } from "../utils/config";
 import { green, red, dim, cyan, bold } from "../utils/output";
 import {
   type Proposal,
+  acknowledgeFlaggedProposal,
   listProposals,
   acceptProposal,
   applyProposalLocally,
+  dismissFlaggedProposal,
+  proposalArchiveDirs,
   rejectProposal,
 } from "draft-core/proposals";
 
@@ -20,14 +22,14 @@ export async function runProposals(args: string[]): Promise<void> {
   if (args.includes("--help")) {
     console.log("Usage: draft proposals");
     console.log("Interactively review pending AI-generated context proposals.");
-    console.log("Keys: [a]ccept  [r]eject  [s]kip  [q]uit");
+    console.log("Manual: [a]ccept  [r]eject. Flagged: [a]cknowledge  [d]ismiss.");
+    console.log("All items: [s]kip  [q]uit");
     process.exit(0);
   }
 
   const profile = getActiveProfile();
   const workspace = getWorkspacePath(profile);
-  const acceptedDir = join(workspace, "accepted");
-  const rejectedDir = join(workspace, "rejected");
+  const { accepted: acceptedDir, rejected: rejectedDir } = proposalArchiveDirs(workspace);
 
   // Scan once at startup (oldest first) — listProposals from draft-core/proposals
   const proposals = listProposals(workspace);
@@ -38,7 +40,7 @@ export async function runProposals(args: string[]): Promise<void> {
   }
 
   console.log("");
-  console.log(`${bold(String(proposals.length))} pending proposal(s). Keys: ${cyan("[a]ccept")}  ${red("[r]eject")}  ${dim("[s]kip")}  ${dim("[q]uit")}`);
+  console.log(`${bold(String(proposals.length))} pending proposal(s).`);
   console.log("");
 
   for (let i = 0; i < proposals.length; i++) {
@@ -52,11 +54,17 @@ export async function runProposals(args: string[]): Promise<void> {
       process.exit(0);
     }
 
-    if (key === "a") {
+    if (proposal.kind === "flagged" && key === "a") {
+      acknowledgeFlaggedProposal(proposal, workspace);
+      console.log(`\n${green("[✓]")} Acknowledged. ${dim("No context files were changed.")}`);
+    } else if (proposal.kind === "flagged" && key === "d") {
+      dismissFlaggedProposal(proposal, workspace);
+      console.log(`\n${red("[✗]")} Dismissed. ${dim("No context files were changed.")}`);
+    } else if (proposal.kind === "manual" && key === "a") {
       applyProposalLocally(proposal, workspace);
       acceptProposal(proposal, acceptedDir);
       console.log(`\n${green("[✓]")} Accepted locally. ${dim("Run `draft publish` to publish context and team assets together.")}`);
-    } else if (key === "r") {
+    } else if (proposal.kind === "manual" && key === "r") {
       rejectProposal(proposal, rejectedDir);
       console.log(`\n${red("[✗]")} Rejected.`);
     } else {
@@ -76,6 +84,9 @@ function printProposalHeader(p: Proposal, index: number, total: number): void {
   console.log(dim(separator));
   console.log(`${dim(`[${index}/${total}]`)}  ${bold("source:")} ${cyan(p.source)}${p.createdAt ? `  ${dim(p.createdAt)}` : ""}`);
   console.log(`${bold("summary:")} ${p.summary}`);
+  if (p.kind === "flagged") {
+    console.log(`${bold("needs input:")} ${red(p.needsInputReason || p.outcome || "Human review required")}`);
+  }
   if (p.body) {
     console.log("");
     // Print first 20 lines of body as diff preview
@@ -94,7 +105,10 @@ function printProposalHeader(p: Proposal, index: number, total: number): void {
     }
   }
   console.log("");
-  process.stdout.write(`${cyan("[a]ccept")}  ${red("[r]eject")}  ${dim("[s]kip")}  ${dim("[q]uit")}  › `);
+  const actions = p.kind === "flagged"
+    ? `${cyan("[a]cknowledge")}  ${red("[d]ismiss")}`
+    : `${cyan("[a]ccept")}  ${red("[r]eject")}`;
+  process.stdout.write(`${actions}  ${dim("[s]kip")}  ${dim("[q]uit")}  › `);
 }
 
 // ── Single keypress reader ─────────────────────────────────────────────────────
@@ -111,7 +125,7 @@ function readKey(): Promise<string> {
       process.stdin.removeListener("data", handler);
 
       const k = key.toLowerCase();
-      if (k === "a" || k === "r" || k === "s" || k === "q" || k === "\u0003" /* Ctrl+C */) {
+      if (k === "a" || k === "r" || k === "d" || k === "s" || k === "q" || k === "\u0003" /* Ctrl+C */) {
         resolve(k === "\u0003" ? "q" : k);
       } else {
         // invalid key — re-prompt

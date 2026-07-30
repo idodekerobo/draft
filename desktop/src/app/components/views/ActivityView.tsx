@@ -76,6 +76,20 @@ function friendlyError(raw: string | null): string {
   return "Something went wrong";
 }
 
+const OUTCOME_LABELS: Record<NonNullable<ActivityRun["maintainerOutcome"]>, string> = {
+  no_change: "No context changes",
+  rewrite: "Context updated",
+  needs_input: "Needs input/review",
+};
+
+function successDescription(run: ActivityRun): string {
+  if (run.maintainerOutcome) return OUTCOME_LABELS[run.maintainerOutcome];
+  if (run.proposalsGenerated === 0) return "No updates found";
+  return run.proposalsGenerated === 1
+    ? "Synthesized 1 proposal"
+    : `Synthesized ${run.proposalsGenerated} proposals`;
+}
+
 // ── Empty state ────────────────────────────────────────────────────────────────
 
 function ActivityEmptyPrompt() {
@@ -99,10 +113,7 @@ const STATUS_BADGE_LABEL: Record<ActivityRun["status"], string> = {
 
 function statusDescription(run: ActivityRun): string | null {
   if (run.status === "success") {
-    if (run.proposalsGenerated === 0) return "No updates found";
-    return run.proposalsGenerated === 1
-      ? "Synthesized 1 proposal"
-      : `Synthesized ${run.proposalsGenerated} proposals`;
+    return successDescription(run);
   }
   if (run.status === "skipped") return friendlySkipReason(run.skipReason);
   if (run.status === "timeout") return "Synthesis timed out";
@@ -130,6 +141,11 @@ function ActivityRunDetail({ run }: { run: ActivityRun }) {
       {run.transcriptPath && (
         <span className="activity-run__project-path activity-run__transcript-path">{run.transcriptPath}</span>
       )}
+      {run.maintainerOutcome === "rewrite" && run.changedDimensions.length > 0 && (
+        <span className="activity-run__project-path">
+          Changed: {run.changedDimensions.join(", ")}
+        </span>
+      )}
     </div>
   );
 }
@@ -149,10 +165,12 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
 
   if (run.status === "success") {
     const dur = formatDuration(run.durationMs);
-    const prop = run.proposalsGenerated === 1
-      ? "1 proposal"
-      : `${run.proposalsGenerated} proposals`;
-    metaLine = [ts, dur, prop].filter(Boolean).join(" · ");
+    const outcome = run.maintainerOutcome
+      ? OUTCOME_LABELS[run.maintainerOutcome]
+      : run.proposalsGenerated === 1
+        ? "1 proposal"
+        : `${run.proposalsGenerated} proposals`;
+    metaLine = [ts, dur, outcome].filter(Boolean).join(" · ");
   } else if (run.status === "skipped") {
     metaLine = `${ts} · ${friendlySkipReason(run.skipReason)}`;
   } else if (run.status === "failed") {

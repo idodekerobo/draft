@@ -9,8 +9,9 @@ const WORKSPACE_DIRS = [
   "context",
   "config",
   "proposals",
-  "accepted",
-  "rejected",
+  "proposals/accepted",
+  "proposals/rejected",
+  "proposals/flagged",
   "docs",
 ];
 
