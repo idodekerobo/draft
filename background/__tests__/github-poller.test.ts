@@ -1,31 +1,14 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import type { GhQueryResult, GitHubState } from '../integrations/github/github-poller';
-
-// The background package is deployed with draft-core as a workspace dependency,
-// but this focused test also runs in a clean worktree without node_modules.
-mock.module('draft-core/config', () => ({
-  BACKGROUND_DIR: '/tmp/draft-github-unused',
-  getActiveProfile: () => 'test',
-  getWorkspacePath: () => '/tmp/draft-github-unused-workspace',
-}));
-mock.module('draft-core/agents/headless', () => ({ resolveRunnerBin: async () => null }));
-mock.module('draft-core/sync/atomic-write', () => ({
-  atomicPatch: async (path: string, patcher: (raw: string) => string | Promise<string>) => {
-    const raw = existsSync(path) ? readFileSync(path, 'utf8') : '';
-    const next = await patcher(raw);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, next);
-  },
-}));
-
-const {
+import { join } from 'path';
+import {
   acknowledgeSuppressedReleases,
   defaultState,
   readGitHubState,
   runGitHubPoll,
-} = await import('../integrations/github/github-poller');
+  type GhQueryResult,
+  type GitHubState,
+} from '../integrations/github/github-poller';
 
 const ROOT = `/tmp/draft-github-poller-test-${process.pid}`;
 const NOW = '2026-07-22T12:00:00.000Z';
@@ -35,6 +18,9 @@ type Query = { args: string[]; description: string };
 
 function successfulDefaults(args: string[]): GhQueryResult {
   if (args[0] === 'release' && args[1] === 'view') return { ok: true, value: { body: '' } };
+  if (args[0] === 'pr' && args[1] === 'view') {
+    return { ok: true, value: { body: '', commits: [], files: [{ path: 'README.md' }] } };
+  }
   return { ok: true, value: [] };
 }
 
@@ -75,6 +61,92 @@ function githubContext(job: Record<string, unknown>): Record<string, unknown> {
 }
 
 afterEach(() => rmSync(ROOT, { recursive: true, force: true }));
+
+describe('GitHub merged PR evidence retrieval', () => {
+  it('uses the merged list only for discovery and fetches full normalized PR evidence', async () => {
+    const body = `Why this matters\r\n\r\n${'customer evidence '.repeat(20)}  `;
+    const result = await poll({ respond: (args) => {
+      if (args[0] === 'pr' && args[1] === 'list' && args.includes('merged')) {
+        return {
+          ok: true,
+          value: [{ number: 42, title: 'Ship evidence', author: { login: 'octo' }, mergedAt: NOW }],
+        };
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return {
+          ok: true,
+          value: {
+            body,
+            commits: [{
+              messageHeadline: 'Add customer workflow',
+              messageBody: 'Preserve the complete rationale.\r\nSecond line.  ',
+            }],
+            files: [
+              { path: 'src/workflow.ts', additions: 31, deletions: 4, patch: 'SECRET DIFF CONTENT' },
+              { path: 'src/workflow.test.ts', additions: 18, deletions: 0 },
+            ],
+          },
+        };
+      }
+      return successfulDefaults(args);
+    } });
+
+    expect(result.outcome).toBe('queued');
+    expect(result.queries.find(query => query.args[0] === 'pr' && query.args[1] === 'list')!.args)
+      .toEqual([
+        'pr', 'list', '--repo', REPO, '--state', 'merged',
+        '--json', 'number,title,author,mergedAt', '--limit', '20',
+      ]);
+    expect(result.queries.find(query => query.args[0] === 'pr' && query.args[1] === 'view')!.args)
+      .toEqual(['pr', 'view', '42', '--repo', REPO, '--json', 'body,commits,files']);
+
+    const pr = (githubContext(result.jobs[0]).merged_prs as Array<Record<string, unknown>>)[0];
+    expect(pr.body).toBe(body.replace(/\r\n/g, '\n').trim());
+    expect(pr.commits).toEqual([
+      'Add customer workflow\n\nPreserve the complete rationale.\nSecond line.',
+    ]);
+    expect(pr.files).toEqual([
+      'src/workflow.ts (+31/-4)',
+      'src/workflow.test.ts (+18/-0)',
+    ]);
+    expect(JSON.stringify(pr)).not.toContain('SECRET DIFF CONTENT');
+  });
+
+  it('falls back to name-only diff only when detail files have no stable filenames', async () => {
+    const result = await poll({ respond: (args) => {
+      if (args[0] === 'pr' && args[1] === 'list' && args.includes('merged')) {
+        return { ok: true, value: [{ number: 8, mergedAt: NOW }] };
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return { ok: true, value: { body: 'Body', commits: [], files: [{ additions: 2, deletions: 1 }] } };
+      }
+      if (args[0] === 'pr' && args[1] === 'diff') {
+        return { ok: true, value: 'src/one.ts\nsrc/two.ts\n' };
+      }
+      return successfulDefaults(args);
+    } });
+
+    expect(result.queries.find(query => query.args[0] === 'pr' && query.args[1] === 'diff')!.args)
+      .toEqual(['pr', 'diff', '8', '--repo', REPO, '--name-only']);
+    const pr = (githubContext(result.jobs[0]).merged_prs as Array<Record<string, unknown>>)[0];
+    expect(pr.files).toEqual(['src/one.ts', 'src/two.ts']);
+  });
+
+  it('does not fetch a diff when stable file pointers are available', async () => {
+    const result = await poll({ respond: (args) => {
+      if (args[0] === 'pr' && args[1] === 'list' && args.includes('merged')) {
+        return { ok: true, value: [{ number: 9, mergedAt: NOW }] };
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return { ok: true, value: { body: '', commits: [], files: [{ path: 'src/stable.ts' }] } };
+      }
+      return successfulDefaults(args);
+    } });
+
+    expect(result.outcome).toBe('queued');
+    expect(result.queries.some(query => query.args[0] === 'pr' && query.args[1] === 'diff')).toBe(false);
+  });
+});
 
 describe('GitHub release retrieval', () => {
   it('uses supported list metadata and views bodies for newly discovered tags only', async () => {
@@ -121,6 +193,44 @@ describe('GitHub release retrieval', () => {
 });
 
 describe('GitHub partial failure and retry behavior', () => {
+  it('leaves a PR unacknowledged and fixes the watermark when detail retrieval fails', async () => {
+    const result = await poll({ respond: (args) => {
+      if (args[0] === 'pr' && args[1] === 'list' && args.includes('merged')) {
+        return { ok: true, value: [{ number: 77, mergedAt: NOW }] };
+      }
+      if (args[0] === 'pr' && args[1] === 'view') return { ok: false };
+      return successfulDefaults(args);
+    } });
+
+    expect(result.outcome).toBe('partial-failure');
+    expect(result.jobs).toHaveLength(0);
+    expect(result.watermarks).toHaveLength(0);
+  });
+
+  it('queues other evidence but does not acknowledge a PR whose detail fallback fails', async () => {
+    const result = await poll({ respond: (args) => {
+      if (args[0] === 'pr' && args[1] === 'list' && args.includes('merged')) {
+        return { ok: true, value: [
+          { number: 1, mergedAt: NOW },
+          { number: 2, mergedAt: NOW },
+        ] };
+      }
+      if (args[0] === 'pr' && args[1] === 'view' && args[2] === '1') {
+        return { ok: true, value: { body: 'Good', commits: [], files: [{ path: 'good.ts' }] } };
+      }
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return { ok: true, value: { body: 'Retry', commits: [], files: [] } };
+      }
+      if (args[0] === 'pr' && args[1] === 'diff') return { ok: false };
+      return successfulDefaults(args);
+    } });
+
+    expect(result.outcome).toBe('queued');
+    const context = githubContext(result.jobs[0]);
+    expect(context.new_pr_ids).toEqual([`${REPO}:1`]);
+    expect(context.advance_watermark).toBe(false);
+  });
+
   it('does not advance state when release listing fails', async () => {
     const result = await poll({ respond: (args) =>
       args[0] === 'release' && args[1] === 'list'

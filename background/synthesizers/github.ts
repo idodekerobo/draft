@@ -1,8 +1,14 @@
 // GitHub source adapter: turn an embedded poller context into a proposal prompt.
 
-import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { BACKGROUND_DIR, getWorkspacePath } from 'draft-core/config';
+import {
+  cleanupContextSnapshot,
+  createContextSnapshot,
+  type ContextSnapshot,
+} from './synthesis-runtime';
+import { buildMaintainerContractPrompt } from './maintainer-contract';
 
 interface TeamProfile {
   github?: string;
@@ -21,14 +27,14 @@ interface GitHubJob {
   github_context?: GitHubContext;
 }
 
-interface GitHubPromptInput {
+export interface GitHubPromptInput {
   activity: string;
   teamProfilesMap: string;
-  contextFilesList: string;
   outputPath: string;
   intelligence: string;
   timestamp: string;
   profile: string;
+  snapshot: ContextSnapshot;
 }
 
 function log(msg: string): void {
@@ -39,8 +45,27 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-export function formatBodyPreview(value: unknown, maxLength = 200): string {
-  return text(value).replace(/\s+/g, ' ').trim().slice(0, maxLength).trim();
+export function formatBodyPreview(value: unknown): string {
+  return text(value)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n')
+    .trim();
+}
+
+function evidenceBlock(label: string, value: string, indent = '  '): string[] {
+  if (!value) return [];
+  return [
+    `${indent}${label}:`,
+    ...value.split('\n').map(line => `${indent}  ${line}`),
+  ];
+}
+
+function stringItems(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
 }
 
 export function formatActivity(context: GitHubContext, profiles: TeamProfile[]): string {
@@ -58,8 +83,22 @@ export function formatActivity(context: GitHubContext, profiles: TeamProfile[]):
         ? resolveName(text((pr.author as Record<string, unknown>).login) || 'unknown')
         : 'unknown';
       lines.push(`- [${text(pr.repo)}] #${String(pr.number ?? '?')} by ${author} on ${text(pr.mergedAt).slice(0, 10)}: ${text(pr.title) || '(no title)'}`);
-      const preview = text(pr.body).slice(0, 200).trim().replace(/\s*\n\s*/g, ' ');
-      if (preview) lines.push(`  Description: ${preview}`);
+      lines.push(...evidenceBlock('Body evidence', formatBodyPreview(pr.body)));
+      const commits = stringItems(pr.commits);
+      if (commits.length > 0) {
+        lines.push('  Commit evidence:');
+        for (const commit of commits) {
+          const normalized = formatBodyPreview(commit);
+          const [first, ...rest] = normalized.split('\n');
+          lines.push(`    - ${first}`);
+          lines.push(...rest.map(line => `      ${line}`));
+        }
+      }
+      const files = stringItems(pr.files);
+      if (files.length > 0) {
+        lines.push('  File evidence:');
+        lines.push(...files.map(file => `    - ${file}`));
+      }
     }
     lines.push('');
   }
@@ -70,8 +109,7 @@ export function formatActivity(context: GitHubContext, profiles: TeamProfile[]):
     for (const release of releases) {
       const tag = text(release.tagName) || '?';
       lines.push(`- [${text(release.repo)}] ${tag} (${text(release.name) || tag}) — published ${text(release.publishedAt).slice(0, 10)}`);
-      const preview = formatBodyPreview(release.body);
-      if (preview) lines.push(`  Release notes: ${preview}`);
+      lines.push(...evidenceBlock('Release notes', formatBodyPreview(release.body)));
     }
     lines.push('');
   }
@@ -102,19 +140,16 @@ ${input.teamProfilesMap}
 ## Recent GitHub activity
 ${input.activity}
 
-## Existing workspace context files
-${input.contextFilesList}
-
 ---
 
 ## Your task
 
-Read the existing workspace context files to understand what's already captured. Then synthesize the GitHub activity above into context updates — focusing on what a product lead or engineering manager would care about.
+Read the immutable context snapshot in the shared contract below. Then synthesize the GitHub activity above into durable current state — focusing on outcomes and rationale a product lead or engineering manager would need later.
 
 **Signal that matters:**
-- What shipped (merged PRs, releases) — who built it, what it does
+- What shipped (merged PRs, releases) — the durable outcome, why it matters, and rationale supported by the PR or release evidence
 - Releases with meaningful notes about features, breaking changes, or user-visible fixes
-- What's actively in progress (open PRs) — who's working on what, any obvious blockers (long-open PRs, no reviews)
+- What's actively in progress only when it establishes a durable priority, owner, constraint, or blocker
 - Release milestones
 
 **Signal to ignore:**
@@ -125,46 +160,21 @@ Read the existing workspace context files to understand what's already captured.
 
 **Rules:**
 - Use display names from the team profile map, not raw GitHub usernames
-- If a PR description clarifies what the feature does, include that context
+- Prefer outcome-and-rationale language over implementation summaries or activity-feed recaps
+- If a PR description clarifies why the outcome matters or records a decision, preserve that rationale
 - Do NOT repeat what's already in workspace context files
-- If GitHub activity contradicts something in workspace context, use action: tension
 
-## Output format
-
-Write your output to: ${input.outputPath}
-
-Use this exact YAML frontmatter followed by a markdown preview:
-
-\`\`\`
----
-input_source: github
-synthesized_by: ${input.intelligence}
-timestamp: ${input.timestamp}
-profile: ${input.profile}
-context_updates:
-  - file: context/product/index.md
-    action: append
-    content: |
-      [your synthesized insight here]
----
-
-## GitHub synthesis preview
-
-[markdown summary of what was captured and why]
-\`\`\`
-
-If there is genuinely nothing relevant to capture, write:
-\`\`\`
----
-input_source: github
-synthesized_by: ${input.intelligence}
-timestamp: ${input.timestamp}
-profile: ${input.profile}
-context_updates: []
----
-
-No relevant GitHub activity to capture.
-\`\`\`
+${buildMaintainerContractPrompt({
+    snapshot: input.snapshot,
+    metadata: {
+      session_id: `github:${input.timestamp}`,
+      input_source: 'github',
+      synthesized_by: input.intelligence,
+      timestamp: input.timestamp,
+      profile: input.profile,
+    },
+    outputPath: input.outputPath,
+  })}
 `;
 }
 
@@ -184,7 +194,6 @@ async function main(): Promise<void> {
 
   const profile = job.profile ?? 'default';
   const workspace = getWorkspacePath(profile);
-  const contextDir = join(workspace, 'context');
   const teamProfilesPath = join(workspace, 'config', 'team-profiles.json');
   const tmpDir = join(workspace, 'tmp');
   mkdirSync(tmpDir, { recursive: true });
@@ -202,32 +211,20 @@ async function main(): Promise<void> {
     teamProfilesMap = '  (not configured — run /draft:connect github to add team member mappings)';
   }
 
-  const contextFiles: string[] = [];
-  try {
-    for (const entry of readdirSync(contextDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const indexPath = join(contextDir, entry.name, 'index.md');
-      if (existsSync(indexPath)) contextFiles.push(indexPath);
-    }
-    contextFiles.sort();
-  } catch {}
-  const contextFilesList = contextFiles.length > 0
-    ? contextFiles.map(file => `   - ${file}`).join('\n')
-    : '   (none found)';
-
   const intelligence = process.env.DRAFT_GITHUB_INTELLIGENCE ?? 'claude-code';
   const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const promptPath = join(tmpDir, `github-prompt-${Date.now()}-${crypto.randomUUID()}`);
   const outputPath = join(tmpDir, `github-synthesis-${Date.now()}-${crypto.randomUUID()}`);
+  const snapshot = createContextSnapshot(workspace);
 
   const prompt = buildGitHubPrompt({
     activity: formatActivity(job.github_context, profiles),
     teamProfilesMap,
-    contextFilesList,
     outputPath,
     intelligence,
     timestamp,
     profile,
+    snapshot,
   });
 
   await Bun.write(promptPath, prompt);
@@ -264,6 +261,7 @@ async function main(): Promise<void> {
     }
     process.stdout.write(output);
   } finally {
+    cleanupContextSnapshot(snapshot);
     try { unlinkSync(promptPath); } catch {}
     try { unlinkSync(outputPath); } catch {}
   }

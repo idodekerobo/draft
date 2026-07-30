@@ -195,7 +195,14 @@ async function runGhJson(ghBin: string, args: string[], description: string): Pr
       log('warn', `${description} failed (exit=${exitCode}): ${stderr.trim().slice(0, 500)}`);
       return { ok: false };
     }
-    return { ok: true, value: JSON.parse(stdout || 'null') };
+    try {
+      return { ok: true, value: JSON.parse(stdout || 'null') };
+    } catch {
+      // `gh pr diff --name-only` is intentionally plain text. Keeping the
+      // command runner tolerant of it lets the poller use the same injectable
+      // query boundary for both JSON discovery/detail calls and that fallback.
+      return { ok: true, value: stdout };
+    }
   } catch (error) {
     log('warn', `${description} failed: ${error instanceof Error ? error.message : String(error)}`);
     return { ok: false };
@@ -231,6 +238,76 @@ function objectResult(result: GhQueryResult): { ok: boolean; item?: Record<strin
     : { ok: false };
 }
 
+function normalizeMultiline(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n')
+    .trim();
+}
+
+function normalizeCommitMessages(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const messages: string[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const commit = raw as Record<string, unknown>;
+    const headline = normalizeMultiline(commit.messageHeadline);
+    const body = normalizeMultiline(commit.messageBody);
+    const message = body && body !== headline
+      ? [headline, body].filter(Boolean).join('\n\n')
+      : headline || body;
+    if (message) messages.push(message);
+  }
+  return messages;
+}
+
+function stableFilename(file: Record<string, unknown>): string {
+  for (const key of ['path', 'filename', 'name']) {
+    const value = file[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function normalizeFilePointers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const pointers: string[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const file = raw as Record<string, unknown>;
+    const filename = stableFilename(file);
+    if (!filename) continue;
+    const additions = typeof file.additions === 'number' ? file.additions : null;
+    const deletions = typeof file.deletions === 'number' ? file.deletions : null;
+    const changes = [
+      additions === null ? '' : `+${additions}`,
+      deletions === null ? '' : `-${deletions}`,
+    ].filter(Boolean).join('/');
+    pointers.push(changes ? `${filename} (${changes})` : filename);
+  }
+  return pointers;
+}
+
+function normalizeNameOnlyFiles(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return value
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map(filename => filename.trim())
+      .filter(Boolean);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((filename): filename is string => typeof filename === 'string')
+      .map(filename => filename.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 export function hasMeaningfulReleaseNotes(body: unknown): boolean {
   return typeof body === 'string' && body.trim().length > 0;
 }
@@ -261,7 +338,7 @@ export async function runGitHubPoll(
   for (const repo of repos) {
     const mergedResult = arrayResult(await dependencies.query([
       'pr', 'list', '--repo', repo, '--state', 'merged',
-      '--json', 'number,title,body,author,mergedAt', '--limit', '20',
+      '--json', 'number,title,author,mergedAt', '--limit', '20',
     ], `fetch merged PRs for ${repo}`));
     if (!mergedResult.ok) context.advance_watermark = false;
     for (const raw of mergedResult.items) {
@@ -272,7 +349,37 @@ export async function runGitHubPoll(
       const mergedAt = typeof pr.mergedAt === 'string' ? pr.mergedAt : '';
       if (processedPrIds.has(id)) continue;
       if (state.last_polled_at && mergedAt && mergedAt < state.last_polled_at) continue;
-      context.merged_prs.push({ ...pr, repo });
+
+      const detailResult = objectResult(await dependencies.query([
+        'pr', 'view', String(pr.number), '--repo', repo, '--json', 'body,commits,files',
+      ], `fetch merged PR details for ${repo}#${String(pr.number)}`));
+      if (!detailResult.ok) {
+        // This PR remains undiscovered from the durable queue's perspective.
+        // Holding the watermark makes the list query find and retry it later.
+        context.advance_watermark = false;
+        continue;
+      }
+
+      const detail = detailResult.item!;
+      let files = normalizeFilePointers(detail.files);
+      if (files.length === 0) {
+        const fallback = await dependencies.query([
+          'pr', 'diff', String(pr.number), '--repo', repo, '--name-only',
+        ], `fetch merged PR filenames for ${repo}#${String(pr.number)}`);
+        if (!fallback.ok) {
+          context.advance_watermark = false;
+          continue;
+        }
+        files = normalizeNameOnlyFiles(fallback.value);
+      }
+
+      context.merged_prs.push({
+        ...pr,
+        repo,
+        body: normalizeMultiline(detail.body),
+        commits: normalizeCommitMessages(detail.commits),
+        files,
+      });
       context.new_pr_ids.push(id);
     }
 
