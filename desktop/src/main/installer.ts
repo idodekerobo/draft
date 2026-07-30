@@ -6,8 +6,9 @@
 //
 // Idempotent — safe to call if partially or fully installed.
 
-import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import Electrobun from "electrobun/bun";
 import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir, getBundledBunPath, getBundledTmuxPath } from "./bundlePath";
 import { capture } from "../exec";
 
@@ -35,9 +36,50 @@ export interface InstallResult {
   steps: InstallStep[];
 }
 
-const DRAFT_BIN_DIR  = `${process.env.HOME}/.draft/bin`;
-const DRAFT_BIN_PATH = `${DRAFT_BIN_DIR}/draft`;
-const SYSTEM_LINK    = "/usr/local/bin/draft";
+const DRAFT_BIN_DIR     = `${process.env.HOME}/.draft/bin`;
+const DRAFT_BIN_PATH    = `${DRAFT_BIN_DIR}/draft`;
+const SYSTEM_LINK       = "/usr/local/bin/draft";
+const BIN_VERSION_STAMP = `${DRAFT_BIN_DIR}/.version`;
+
+export interface BuildIdentity {
+  /** `version:hash` — the key ~/.draft/bin's contents are stamped against. */
+  buildId: string;
+  /** Electrobun reports hash="dev" for every local dev build; see syncExtractedBins. */
+  isDevChannel: boolean;
+}
+
+/**
+ * Best-effort resolution of the running build's identity, for stamping
+ * ~/.draft/bin/.version. Returns null in dev mode or on any failure
+ * (matches the try/catch pattern index.ts uses around the same call).
+ *
+ * Keyed on version:hash rather than version alone for the same reason
+ * syncBundledAssets() is — two builds can share a version string (a
+ * same-version rebuild, or a hotfix cut without a bump), and the first one
+ * to stamp would otherwise mask the second's binaries forever.
+ */
+async function resolveBuildIdentity(): Promise<BuildIdentity | null> {
+  try {
+    const info = await Electrobun.Updater.getLocalInfo();
+    if (!info?.version) return null;
+    return { buildId: `${info.version}:${info.hash}`, isDevChannel: info.channel === "dev" };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record the build ~/.draft/bin was last extracted/synced from.
+ * Best-effort — a failed write just means we re-copy on the next launch.
+ */
+function writeBinVersionStamp(buildId: string): void {
+  try {
+    mkdirSync(DRAFT_BIN_DIR, { recursive: true });
+    writeFileSync(BIN_VERSION_STAMP, buildId);
+  } catch (err) {
+    log(`failed to write bin version stamp (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 /**
  * Full first-launch install:
@@ -47,12 +89,17 @@ const SYSTEM_LINK    = "/usr/local/bin/draft";
  *
  * In dev mode (no bundled binary), falls back to calling `draft` from PATH.
  */
-export async function runInstall(tools: InstallableTool[]): Promise<InstallResult> {
+export async function runInstall(
+  tools: InstallableTool[],
+  buildId?: string,
+): Promise<InstallResult> {
   const steps: InstallStep[] = [];
   log(`runInstall called — tools: ${JSON.stringify(tools)}`);
 
+  const resolvedBuildId = buildId ?? (await resolveBuildIdentity())?.buildId ?? null;
+
   // ── Step 1: Extract binary ───────────────────────────────────────────────────
-  const draftBin = await extractBinary(steps);
+  const draftBin = await extractBinary(steps, resolvedBuildId);
   log(`extractBinary result — draftBin: ${draftBin ?? "null (dev mode)"}`);
 
   // ── Step 2: Symlink to /usr/local/bin ────────────────────────────────────────
@@ -84,7 +131,7 @@ export async function runInstall(tools: InstallableTool[]): Promise<InstallResul
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function extractBinary(steps: InstallStep[]): Promise<string | null> {
+async function extractBinary(steps: InstallStep[], buildId: string | null): Promise<string | null> {
   const bundledBin = getBundledBinPath();
 
   if (!bundledBin) {
@@ -144,7 +191,72 @@ async function extractBinary(steps: InstallStep[]): Promise<string | null> {
     log(`bundled tmux not found (dev build or prebuild skipped) — session monitoring requires user-installed tmux`);
   }
 
+  // Stamp the build we just extracted from, so a fresh onboard starts in
+  // sync and syncExtractedBins() doesn't immediately re-copy on next launch.
+  if (buildId) writeBinVersionStamp(buildId);
+
   return DRAFT_BIN_PATH;
+}
+
+/**
+ * Keep ~/.draft/bin's copies of draft/bun/tmux in lockstep with the running
+ * build. Self-update replaces the .app bundle but never re-runs
+ * extractBinary(), so without this, already-onboarded users keep stale
+ * (and potentially broken) binaries in ~/.draft/bin forever — notably a
+ * stale tmux that shadows the user's own working tmux on PATH.
+ *
+ * Called on every launch (see index.ts syncBundledAssets). No-ops if the
+ * user hasn't onboarded yet (~/.draft/bin doesn't exist — onboarding will
+ * do the initial extraction) or if we're already stamped at buildId.
+ */
+export async function syncExtractedBins(buildId: string, isDevChannel = false): Promise<void> {
+  if (!existsSync(DRAFT_BIN_DIR)) {
+    // Not onboarded yet — nothing to keep in sync.
+    return;
+  }
+
+  const stampedBuildId = existsSync(BIN_VERSION_STAMP)
+    ? readFileSync(BIN_VERSION_STAMP, "utf8").trim()
+    : null;
+
+  // Electrobun reports hash="dev" for every local dev build, so the buildId
+  // can't distinguish two of them — always re-copy there rather than let an
+  // earlier dev build's stamp mask a later one. Same reasoning (and the same
+  // "it's only a few file copies" tradeoff) as syncBundledAssets in index.ts.
+  if (!isDevChannel && stampedBuildId === buildId) {
+    // Already in sync.
+    return;
+  }
+
+  const targets: Array<{ label: string; bundled: string | null; dest: string }> = [
+    { label: "draft", bundled: getBundledBinPath(),  dest: `${DRAFT_BIN_DIR}/draft` },
+    { label: "bun",   bundled: getBundledBunPath(),  dest: `${DRAFT_BIN_DIR}/bun` },
+    { label: "tmux",  bundled: getBundledTmuxPath(), dest: `${DRAFT_BIN_DIR}/tmux` },
+  ];
+
+  let copied = 0;
+  let failed  = 0;
+  for (const { label, bundled, dest } of targets) {
+    if (!bundled || !existsSync(bundled)) {
+      // Dev mode (no bundled binary) or bundling was skipped for this build.
+      continue;
+    }
+    try {
+      copyFileSync(bundled, dest);
+      chmodSync(dest, 0o755);
+      log(`synced ${label} to ${buildId} at ${dest}`);
+      copied++;
+    } catch (err) {
+      // e.g. ETXTBSY if the binary is executing right now. Non-fatal.
+      log(`${label} sync failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+      failed++;
+    }
+  }
+
+  // Stamp only when every binary we attempted succeeded. Stamping after a
+  // partial failure would pin the version and leave the failed binary stale
+  // until the next release; leaving it unstamped just retries next launch.
+  if (copied > 0 && failed === 0) writeBinVersionStamp(buildId);
 }
 
 async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<void> {

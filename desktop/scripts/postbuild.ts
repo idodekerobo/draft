@@ -6,6 +6,7 @@
 
 import { copyFileSync, chmodSync, existsSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
+import { patchMinos, assertVtoolAvailable } from "./lib/patch-minos";
 
 const buildDir = process.env.ELECTROBUN_BUILD_DIR;
 const appName  = process.env.ELECTROBUN_APP_NAME;
@@ -85,3 +86,15 @@ if (existsSync(resourcesDaemon)) {
   rmSync(resourcesDaemon);
   console.log(`[postbuild] Removed unsigned daemon copy from Resources (install.sh will source from MacOS/)`);
 }
+
+// ── Lower the macOS deployment floor on Electrobun's prebuilt inner binaries ──
+//
+// libasar.dylib and zig-zstd are downloaded prebuilt releases (zig-asar, zig-zstd)
+// whose own release pipelines baked in a minos of 14.8.x — high enough that dyld
+// refuses to load them on macOS 14.x, even though both link only libSystem.
+// Runs before Electrobun's codesign step for this bundle, so signatures stay valid.
+// See scripts/lib/patch-minos.ts for the full rationale.
+assertVtoolAvailable();
+const macosDir = join(buildDir, appName + ".app", "Contents", "MacOS");
+patchMinos(join(macosDir, "libasar.dylib"), "libasar.dylib");
+patchMinos(join(macosDir, "zig-zstd"),      "zig-zstd");

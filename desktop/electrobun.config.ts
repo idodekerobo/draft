@@ -65,5 +65,8 @@ export default {
   },
   scripts: {
     postBuild: "scripts/postbuild.ts",
+    // Fires after the outer self-extracting wrapper bundle is assembled, before
+    // it is codesigned. Lowers Contents/MacOS/launcher's macOS deployment floor.
+    postWrap: "scripts/postwrap.ts",
   },
 } satisfies ElectrobunConfig;
