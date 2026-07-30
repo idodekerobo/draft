@@ -23,7 +23,11 @@
       "WebFetch(domain:docs.openclaw.ai)",
       "WebFetch(domain:hermes-agent.nousresearch.com)",
       "Skill(browse)",
-      "Skill(investigate)"
+      "Skill(investigate)",
+      "WebFetch(domain:docs.fireflies.ai)",
+      "WebFetch(domain:executor.sh)",
+      "WebFetch(domain:pipedream.com)",
+      "WebFetch(domain:api.github.com)"
     ]
   }
 }
