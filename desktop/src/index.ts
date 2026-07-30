@@ -1634,15 +1634,24 @@ function daemonPlistContent(binPath: string): string {
 
 async function syncBundledAssets(): Promise<void> {
   let appVersion: string;
+  let appBuildId: string;
+  let isDevChannel: boolean;
   try {
     const info = await Electrobun.Updater.getLocalInfo();
     appVersion = info.version;
+    // Two builds can share a version string (e.g. a same-version dev rebuild, or
+    // a hotfix cut without a version bump). `hash` is Electrobun's per-build
+    // content hash for canary/stable builds, so combining it with version
+    // closes that gap there — an earlier same-version build's stamp no longer
+    // permanently masks a later one's real fixes.
+    appBuildId = `${info.version}:${info.hash}`;
+    isDevChannel = info.channel === "dev";
   } catch {
     return;
   }
 
   const sidecarPath = `${BACKGROUND_DIR}/.app-version`;
-  const installedVersion = existsSync(sidecarPath)
+  const installedBuildId = existsSync(sidecarPath)
     ? readFileSync(sidecarPath, "utf8").trim()
     : null;
 
@@ -1650,7 +1659,13 @@ async function syncBundledAssets(): Promise<void> {
   const plistContent = existsSync(PLIST_PATH) ? readFileSync(PLIST_PATH, "utf8") : "";
   const plistNeedsMigration = plistContent.includes("draft-daemon.sh");
 
-  if (installedVersion === appVersion && !plistNeedsMigration) return;
+  // Electrobun always reports hash="dev" for local dev-channel builds (never
+  // packaged into a hashed update artifact), so two different dev builds are
+  // otherwise indistinguishable under the version:hash key above — confirmed
+  // empirically, hash stayed "dev" across two separate `bun run build:dev`
+  // runs. Always resync on dev rather than risk masking a same-version,
+  // same-hash rebuild; the resync itself is just a few cheap file copies.
+  if (!isDevChannel && installedBuildId === appBuildId && !plistNeedsMigration) return;
 
   // ── Daemon binary ───────────────────────────────────────────────────────────
   const bundledBin = getBundledDaemonBinPath();
@@ -1781,7 +1796,7 @@ async function syncBundledAssets(): Promise<void> {
   }
 
   // Write sidecar last — if any step above threw, we'll retry on next launch.
-  writeFileSync(sidecarPath, appVersion, "utf8");
+  writeFileSync(sidecarPath, appBuildId, "utf8");
 }
 
 // ── Update helpers ─────────────────────────────────────────────────────────────
