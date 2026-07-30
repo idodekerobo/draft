@@ -100,17 +100,17 @@ else
 fi
 
 # ── 2b. Copy synthesizers/ and intelligence/ recursively ───────────────────────
+# Mirror each subdir exactly (rsync --delete) rather than merge-copy. A plain
+# additive copy can leave a stale bundled .js in place forever once its source
+# layout changes (e.g. a module that used to ship compiled moves to raw .ts) —
+# resolveRuntimeEntrypoint() prefers .js over .ts, so an orphaned .js silently
+# wins over the up-to-date source on every future reinstall. Mirroring removes
+# anything the current source no longer provides.
 for subdir in "synthesizers" "intelligence"; do
     if [ -d "$SCRIPT_DIR/$subdir" ]; then
         mkdir -p "$DRAFT_BACKGROUND/$subdir"
-        find "$SCRIPT_DIR/$subdir" -type f | while IFS= read -r source_file; do
-            relative_file="${source_file#"$SCRIPT_DIR/$subdir/"}"
-            dest="$DRAFT_BACKGROUND/$subdir/$relative_file"
-            [ "$source_file" = "$dest" ] && continue
-            mkdir -p "$(dirname "$dest")"
-            cp "$source_file" "$dest"
-            case "$dest" in *.sh) chmod +x "$dest" ;; esac
-        done
+        rsync -a --delete "$SCRIPT_DIR/$subdir/" "$DRAFT_BACKGROUND/$subdir/"
+        find "$DRAFT_BACKGROUND/$subdir" -name "*.sh" -exec chmod +x {} \;
         echo "[Draft Daemon] Installed $subdir/ to $DRAFT_BACKGROUND/$subdir"
     else
         echo "[Draft Daemon] NOTE: $subdir/ not found in $SCRIPT_DIR — synthesis adapters not installed" >&2
@@ -118,23 +118,21 @@ for subdir in "synthesizers" "intelligence"; do
 done
 
 # ── 2c. Copy integrations/ subdirectories ─────────────────────────────────────
-# Each integration (granola, slack, ...) has its own subdir with shell + TS code.
+# Each integration (granola, slack, ...) has its own subdir with shell + TS/JS
+# code. Mirror exactly (see rationale above) — except integrations/slack/captures,
+# which is runtime user data (captured meeting transcripts), not shipped source,
+# and must survive reinstalls untouched.
 for integ_src in "$SCRIPT_DIR/integrations"/*/; do
     [ -d "$integ_src" ] || continue
     integ_name=$(basename "$integ_src")
     integ_dst="$DRAFT_BACKGROUND/integrations/$integ_name"
     mkdir -p "$integ_dst"
-    # Copy shell scripts
-    for script in "$integ_src"*.sh; do
-        [ -f "$script" ] || continue
-        cp "$script" "$integ_dst/$(basename "$script")"
-        chmod +x "$integ_dst/$(basename "$script")"
-    done
-    # Copy JavaScript bundles, TypeScript sources, and config files (bun projects)
-    for f in "$integ_src"*.js "$integ_src"*.ts "$integ_src"*.json; do
-        [ -f "$f" ] || continue
-        cp "$f" "$integ_dst/$(basename "$f")"
-    done
+    if [ "$integ_name" = "slack" ]; then
+        rsync -a --delete --exclude=captures "$integ_src" "$integ_dst/"
+    else
+        rsync -a --delete "$integ_src" "$integ_dst/"
+    fi
+    find "$integ_dst" -maxdepth 1 -name "*.sh" -exec chmod +x {} \;
     echo "[Draft Daemon] Installed integrations/$integ_name/ to $integ_dst"
 done
 

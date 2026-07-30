@@ -8,27 +8,33 @@ stop:
 # ── Dev CLI/Daemon Refresh ───────────────────────────────────────────────────
 #
 #   make dev-refresh
-#     Compiles fresh `draft` CLI + daemon binaries from current source and
-#     deploys them to where the real, globally-installed daemon/CLI run from
-#     (~/.draft/bin/draft, ~/.draft/background/draft-background-bin). Use this
-#     after changing background/ or cli/ code, so `draft status`/`draft poll`
-#     and the auto-polling daemon loop reflect your latest changes — `bun run
-#     dev` in desktop/ alone does NOT rebuild either binary.
+#     Compiles fresh `draft` CLI + daemon binaries and bundled runtime (pollers,
+#     synthesizers, intelligence adapters) from current source via prebuild.sh,
+#     then installs straight from that freshly-built desktop/assets/background/
+#     tree — the same tree a real app bundle ships — to where the real,
+#     globally-installed daemon/CLI run from (~/.draft/bin/draft,
+#     ~/.draft/background/). Use this after changing background/ or cli/ code,
+#     so `draft status`/`draft poll` and the auto-polling daemon loop reflect
+#     your latest changes — `bun run dev` in desktop/ alone does NOT rebuild
+#     either binary.
 #
-#     background/draft-background-bin is gitignored — left in place after the
-#     run for install.sh's fallback lookup; harmless to leave, safe to `rm`.
+#     Deliberately does NOT install from the bare repo-root background/ dir:
+#     that tree only has raw .ts sources (no bundled .js), so a plain
+#     `bash background/install.sh` silently leaves any previously-installed
+#     bundle in place — including a stale, pre-fix one — since
+#     resolveRuntimeEntrypoint() prefers .js over .ts. Installing from
+#     desktop/assets/background/ (always a full fresh rebuild — prebuild.sh
+#     wipes and recreates it every run) avoids that trap entirely.
 
 .PHONY: dev-refresh
 
 dev-refresh:
-	@echo "[dev-refresh] Compiling fresh CLI + daemon binaries..."
+	@echo "[dev-refresh] Compiling fresh CLI + daemon binaries + runtime bundles..."
 	@bash desktop/scripts/prebuild.sh
-	@echo "[dev-refresh] Deploying daemon binary..."
-	@cp desktop/assets/background/draft-background-bin background/draft-background-bin
 	@echo "[dev-refresh] Deploying CLI binary..."
 	@cp desktop/assets/bin/draft ~/.draft/bin/draft
-	@echo "[dev-refresh] Reinstalling daemon (restarts LaunchAgent)..."
-	@bash background/install.sh
+	@echo "[dev-refresh] Installing daemon (binary + runtime bundles) from freshly built assets..."
+	@bash desktop/assets/background/install.sh
 	@echo ""
 	@echo "[dev-refresh] Done. Verify with: draft status"
 	@echo ""
