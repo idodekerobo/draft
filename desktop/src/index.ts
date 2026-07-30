@@ -746,10 +746,30 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
 
+        function integrationHealth(key: "granola" | "fireflies"): Pick<IntegrationDetail, "healthStatus" | "healthCheckedAt" | "healthMessage"> {
+          try {
+            const raw = JSON.parse(readFileSync(join(BACKGROUND_DIR, "state", `${key}.json`), "utf8")) as {
+              health?: { status?: unknown; checked_at?: unknown; message?: unknown };
+            };
+            const status = raw.health?.status;
+            return {
+              healthStatus: status === "healthy" ? "healthy" : status === "unavailable" ? "needs_attention" : "unknown",
+              healthCheckedAt: typeof raw.health?.checked_at === "string" ? raw.health.checked_at : null,
+              healthMessage: typeof raw.health?.message === "string" ? raw.health.message : null,
+            };
+          } catch {
+            return { healthStatus: "unknown", healthCheckedAt: null, healthMessage: null };
+          }
+        }
+
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies"): IntegrationDetail {
           const entry = int[key];
+          const health = key === "granola" || key === "fireflies"
+            ? integrationHealth(key)
+            : { healthStatus: "unknown" as const, healthCheckedAt: null, healthMessage: null };
           return {
             connected:     entry?.connected    ?? false,
+            ...health,
             lastConnected: entry?.last_connected ?? null,
             mode:          entry?.mode          ?? null,
             channels:      entry?.channels      ?? null,
@@ -1192,10 +1212,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       connectGranolaMCP: async () => {
-        const reg = await registerGranolaMCP();
+        const workspace = getWorkspacePath(getActiveProfile());
+        const reg = await registerGranolaMCP(workspace);
         if (!reg.ok) return reg;
         try {
-          writeGranolaConfig(getWorkspacePath(getActiveProfile()), "mcp");
+          writeGranolaConfig(workspace, "mcp", undefined, reg.mcpServerId);
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
@@ -1214,10 +1235,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       connectFireflies: async ({ apiKey }) => {
         if (!apiKey.trim()) return { ok: false, error: "Enter your Fireflies API key." };
-        const reg = await registerFirefliesMCP(apiKey.trim());
+        const workspace = getWorkspacePath(getActiveProfile());
+        const reg = await registerFirefliesMCP(apiKey.trim(), workspace);
         if (!reg.ok) return reg;
         try {
-          writeFirefliesConfig(getWorkspacePath(getActiveProfile()), apiKey.trim());
+          writeFirefliesConfig(workspace, apiKey.trim(), reg.mcpServerId);
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not save the Fireflies connection." };

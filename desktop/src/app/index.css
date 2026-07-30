@@ -2471,6 +2471,10 @@ button {
   animation: dot-pulse 1.5s ease-in-out infinite;
 }
 
+.app-row__status-dot--attention {
+  background: var(--color-status-yellow);
+}
+
 .app-row__text {
   display: flex;
   flex-direction: column;

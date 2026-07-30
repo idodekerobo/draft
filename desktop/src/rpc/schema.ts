@@ -393,6 +393,10 @@ export interface ToolDetail {
 /** Detail for a single input source integration (granola, slack, github, fireflies). */
 export interface IntegrationDetail {
   connected: boolean;
+  /** Runtime source health. Setup intent remains represented by connected. */
+  healthStatus: "unknown" | "healthy" | "needs_attention";
+  healthCheckedAt: string | null;
+  healthMessage: string | null;
   lastConnected: string | null;
   /** "mcp"|"api" for Granola; "passive"|"tagged" for Slack; null otherwise. Fireflies has no mode — always null. */
   mode: string | null;
