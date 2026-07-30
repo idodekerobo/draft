@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS runs (
   status              TEXT NOT NULL,
   duration_ms         INTEGER,
   proposals_generated INTEGER DEFAULT 0,
+  maintainer_outcome  TEXT CHECK (
+    maintainer_outcome IN ('no_change', 'rewrite', 'needs_input')
+    OR maintainer_outcome IS NULL
+  ),
   skip_reason         TEXT,
   error_msg           TEXT,
   transcript_path     TEXT
@@ -31,4 +35,16 @@ CREATE TABLE IF NOT EXISTS file_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_file_versions_path_created ON file_versions(file_path, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_file_versions_unpublished ON file_versions(file_path, published_at);
+
+CREATE TABLE IF NOT EXISTS automated_rewrite_snapshots (
+  id              TEXT PRIMARY KEY,
+  source_event_id TEXT NOT NULL,
+  file_path       TEXT NOT NULL,
+  before_content  TEXT NOT NULL,
+  after_content   TEXT NOT NULL,
+  source          TEXT NOT NULL,
+  summary         TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  UNIQUE(source_event_id, file_path)
+);
 `;

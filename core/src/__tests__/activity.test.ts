@@ -19,6 +19,7 @@ function makeRun(overrides: Partial<ActivityRun> = {}): ActivityRun {
     status: "success",
     durationMs: 1234,
     proposalsGenerated: 1,
+    maintainerOutcome: null,
     skipReason: null,
     errorMsg: null,
     transcriptPath: null,
@@ -74,6 +75,37 @@ describe("openActivityDb", () => {
     const run = makeRun({ transcriptPath: "/tmp/session.jsonl" });
     insertRun(db, run);
     expect(queryRuns(db)[0].transcriptPath).toBe("/tmp/session.jsonl");
+    expect(queryRuns(db)[0].maintainerOutcome).toBeNull();
+    db.close();
+  });
+
+  it("adds maintainer_outcome to a legacy runs table and round-trips it", () => {
+    mkdirSync(TMP, { recursive: true });
+    const legacyDb = new Database(join(TMP, "activity.db"), { create: true });
+    legacyDb.exec(`
+      CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        profile TEXT NOT NULL,
+        source TEXT NOT NULL,
+        session_id TEXT,
+        cwd TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL,
+        duration_ms INTEGER,
+        proposals_generated INTEGER DEFAULT 0,
+        skip_reason TEXT,
+        error_msg TEXT,
+        transcript_path TEXT
+      );
+    `);
+    legacyDb.close();
+
+    const db = openActivityDb(TMP);
+    const columns = db.query<{ name: string }, []>("PRAGMA table_info(runs)").all();
+    expect(columns.some(({ name }) => name === "maintainer_outcome")).toBe(true);
+    insertRun(db, makeRun({ maintainerOutcome: "rewrite" }));
+    expect(queryRuns(db)[0].maintainerOutcome).toBe("rewrite");
     db.close();
   });
 });
@@ -126,6 +158,7 @@ describe("insertRun + queryRuns", () => {
       durationMs: null,
       endedAt: null,
       transcriptPath: "/tmp/session.jsonl",
+      maintainerOutcome: "needs_input",
     });
     insertRun(db, run);
     const [row] = queryRuns(db);
@@ -135,6 +168,7 @@ describe("insertRun + queryRuns", () => {
     expect(row.skipReason).toBe("abrupt_exit");
     expect(row.errorMsg).toBeNull();
     expect(row.transcriptPath).toBe("/tmp/session.jsonl");
+    expect(row.maintainerOutcome).toBe("needs_input");
     db.close();
   });
 });

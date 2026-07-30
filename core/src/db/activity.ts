@@ -13,6 +13,12 @@ export function openActivityDb(workspacePath: string): Database {
   if (!columns.some(({ name }) => name === "transcript_path")) {
     db.exec("ALTER TABLE runs ADD COLUMN transcript_path TEXT;");
   }
+  if (!columns.some(({ name }) => name === "maintainer_outcome")) {
+    db.exec(`ALTER TABLE runs ADD COLUMN maintainer_outcome TEXT CHECK (
+      maintainer_outcome IN ('no_change', 'rewrite', 'needs_input')
+      OR maintainer_outcome IS NULL
+    );`);
+  }
   return db;
 }
 
@@ -20,12 +26,13 @@ export function insertRun(db: Database, run: ActivityRun): void {
   db.run(
     `INSERT OR IGNORE INTO runs
        (id, profile, source, session_id, cwd, started_at, ended_at, status,
-        duration_ms, proposals_generated, skip_reason, error_msg, transcript_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        duration_ms, proposals_generated, maintainer_outcome, skip_reason, error_msg, transcript_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       run.id, run.profile, run.source, run.sessionId, run.cwd,
       run.startedAt, run.endedAt, run.status, run.durationMs,
-      run.proposalsGenerated, run.skipReason, run.errorMsg, run.transcriptPath,
+      run.proposalsGenerated, run.maintainerOutcome, run.skipReason, run.errorMsg,
+      run.transcriptPath,
     ]
   );
 }
@@ -40,6 +47,7 @@ export function queryRuns(db: Database, limit = 50): ActivityRun[] {
             status,
             duration_ms         AS durationMs,
             proposals_generated AS proposalsGenerated,
+            maintainer_outcome  AS maintainerOutcome,
             skip_reason         AS skipReason,
             error_msg           AS errorMsg,
             transcript_path     AS transcriptPath

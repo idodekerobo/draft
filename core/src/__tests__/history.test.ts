@@ -7,8 +7,11 @@ import {
   getFileVersion,
   getLatestUnpublishedVersion,
   markPublished,
+  insertAutomatedRewriteSnapshot,
+  getAutomatedRewriteSnapshot,
+  queryAutomatedRewriteDimensions,
 } from "../db/history";
-import type { FileVersion } from "../db/history";
+import type { AutomatedRewriteSnapshot, FileVersion } from "../db/history";
 
 const TMP = `/tmp/draft-core-history-test-${Date.now()}`;
 
@@ -36,6 +39,7 @@ describe("openHistoryDb", () => {
     const db = openHistoryDb(TMP);
     const rows = db.query("SELECT name FROM sqlite_master WHERE type='table'").all();
     expect(rows.some((r: any) => r.name === "file_versions")).toBe(true);
+    expect(rows.some((r: any) => r.name === "automated_rewrite_snapshots")).toBe(true);
     db.close();
   });
 
@@ -44,7 +48,17 @@ describe("openHistoryDb", () => {
     const db1 = openHistoryDb(TMP);
     db1.close();
     const db2 = openHistoryDb(TMP);
+    const tables = db2.query("SELECT name FROM sqlite_master WHERE type='table'").all();
+    expect(tables.filter((row: any) => row.name === "automated_rewrite_snapshots")).toHaveLength(1);
     db2.close();
+  });
+
+  it("sets a 5 second busy timeout", () => {
+    mkdirSync(TMP, { recursive: true });
+    const db = openHistoryDb(TMP);
+    const row = db.query<{ timeout: number }, []>("PRAGMA busy_timeout").get();
+    expect(row?.timeout).toBe(5000);
+    db.close();
   });
 });
 
@@ -140,6 +154,80 @@ describe("getLatestUnpublishedVersion + markPublished", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].publishedAt).toBe("2026-06-02T00:00:00.000Z");
     expect(rows[0].changesEntryId).toBe("changes-entry-1");
+    db.close();
+  });
+});
+
+describe("automated rewrite snapshots", () => {
+  function makeSnapshot(
+    overrides: Partial<Omit<AutomatedRewriteSnapshot, "id">> = {}
+  ): Omit<AutomatedRewriteSnapshot, "id"> {
+    return {
+      sourceEventId: "event-123",
+      filePath: "product/index.md",
+      beforeContent: "---\r\nname: product\r\n---\r\nBefore.\n",
+      afterContent: "---\nname: product\n---\nAfter.  \n",
+      source: "slack",
+      summary: "Replace stale product context with the launch decision",
+      createdAt: "2026-07-29T18:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("round-trips exact contents and metadata with a generated UUID", () => {
+    mkdirSync(TMP, { recursive: true });
+    const db = openHistoryDb(TMP);
+    const snapshot = makeSnapshot();
+    const id = insertAutomatedRewriteSnapshot(db, snapshot);
+
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(getAutomatedRewriteSnapshot(db, snapshot.sourceEventId, snapshot.filePath)).toEqual({
+      id,
+      ...snapshot,
+    });
+    expect(getAutomatedRewriteSnapshot(db, "unknown-event", snapshot.filePath)).toBeNull();
+    db.close();
+  });
+
+  it("throws on duplicate source event and file path without overwriting", () => {
+    mkdirSync(TMP, { recursive: true });
+    const db = openHistoryDb(TMP);
+    const original = makeSnapshot();
+    insertAutomatedRewriteSnapshot(db, original);
+
+    expect(() => insertAutomatedRewriteSnapshot(db, makeSnapshot({
+      beforeContent: "different before",
+      afterContent: "different after",
+      summary: "duplicate",
+    }))).toThrow();
+
+    const stored = getAutomatedRewriteSnapshot(db, original.sourceEventId, original.filePath);
+    expect(stored?.beforeContent).toBe(original.beforeContent);
+    expect(stored?.afterContent).toBe(original.afterContent);
+    expect(stored?.summary).toBe(original.summary);
+    db.close();
+  });
+
+  it("maps rewrite snapshot paths to unique sorted dimensions", () => {
+    mkdirSync(TMP, { recursive: true });
+    const db = openHistoryDb(TMP);
+    insertAutomatedRewriteSnapshot(db, makeSnapshot({ filePath: "team/index.md" }));
+    insertAutomatedRewriteSnapshot(db, makeSnapshot({
+      filePath: "product/index.md",
+    }));
+    insertAutomatedRewriteSnapshot(db, makeSnapshot({
+      filePath: "context/company/index.md",
+    }));
+    insertAutomatedRewriteSnapshot(db, makeSnapshot({
+      filePath: "not-a-dimension.md",
+    }));
+
+    expect(queryAutomatedRewriteDimensions(db, "event-123")).toEqual([
+      "company",
+      "product",
+      "team",
+    ]);
+    expect(queryAutomatedRewriteDimensions(db, "unknown-event")).toEqual([]);
     db.close();
   });
 });
