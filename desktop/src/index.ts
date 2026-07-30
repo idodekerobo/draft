@@ -45,7 +45,7 @@ import {
   getBundledPluginDir,
 } from "./main/bundlePath";
 import { readLocalDiff } from "./main/sync/loadDiff";
-import { runInstall } from "./main/installer";
+import { runInstall, syncExtractedBins } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
 import {
@@ -1648,6 +1648,17 @@ async function syncBundledAssets(): Promise<void> {
     isDevChannel = info.channel === "dev";
   } catch {
     return;
+  }
+
+  // Keep ~/.draft/bin/{draft,bun,tmux} in lockstep with the running app
+  // version on every launch — self-update replaces the .app bundle but
+  // never re-runs the onboarding extraction, so already-onboarded users
+  // would otherwise keep stale (possibly broken) binaries forever. Runs
+  // before any early return below so it isn't skipped on no-op launches.
+  try {
+    await syncExtractedBins(appVersion);
+  } catch (err) {
+    console.warn(`[draft-desktop] bin sync failed: ${err instanceof Error ? err.message : err}`);
   }
 
   const sidecarPath = `${BACKGROUND_DIR}/.app-version`;
