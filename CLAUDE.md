@@ -16,3 +16,23 @@ Key routing rules:
 - Design system, brand → invoke design-consultation
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
+
+## Database changes (backend/Supabase)
+
+`supabase/migrations/` is the applied source of truth (the Supabase CLI
+hardcodes this path — it cannot be relocated). `db/schemas/<table>.sql` is a
+hand-maintained current-state snapshot per table, kept for humans/agents to
+read schema without querying the live database.
+
+Whenever a schema change is made, both must happen together, every time:
+
+1. `supabase migration new <short_name>` — creates the timestamped file in
+   `supabase/migrations/`. Do not hand-write the timestamp.
+2. Write the SQL in that generated file.
+3. `supabase db push --linked --dry-run` to preview, then
+   `supabase db push --linked` to apply to the linked remote project.
+4. Update the corresponding file(s) in `db/schemas/` by hand to match the
+   new table state. This does not happen automatically — never skip it.
+
+Never write raw SQL directly against the remote database outside this flow,
+and never leave `db/schemas/` out of sync with what's actually applied.
