@@ -22,5 +22,7 @@ create table workspaces (
   foreign key (team_id, organization_id)
     references teams(id, organization_id) on delete restrict,
   foreign key (inference_credential_id, id)
-    references credentials(id, workspace_id) on delete restrict
+    references credentials(id, workspace_id) on delete restrict,
+  foreign key (current_context_version_id, id)
+    references workspace_context_versions(id, workspace_id) on delete restrict
 );

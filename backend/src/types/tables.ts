@@ -1,15 +1,23 @@
 import type {
+  ContextVersionCreationReason,
   CredentialProvider,
   CredentialStatus,
+  ErrorOperation,
   OrganizationStatus,
+  ScheduleKind,
+  ScheduledTaskType,
   SourceConnectionProvider,
   SourceConnectionStatus,
   SourceItemLifecycleStatus,
   SourceItemType,
+  SynthesisRunOutcome,
+  SynthesisRunStatus,
+  SynthesisRunTriggerType,
   TeamStatus,
   UserOrgRole,
   UserStatus,
   WorkspaceAccessMode,
+  WorkspaceEventType,
   WorkspaceStatus,
 } from "./enums";
 
@@ -113,4 +121,101 @@ export interface SourceItemRow {
   supersedes_source_item_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Append-only: no updated_at.
+export interface WorkspaceContextVersionRow {
+  id: string;
+  workspace_id: string;
+  version_number: number;
+  previous_version_id: string | null;
+  documents_json: Record<string, { content: string; sha256: string }>;
+  content_hash: string;
+  creation_reason: ContextVersionCreationReason;
+  synthesis_run_id: string | null;
+  restored_from_version_id: string | null;
+  summary: string;
+  created_at: string;
+}
+
+export interface ScheduledTaskRow {
+  id: string;
+  workspace_id: string;
+  source_connection_id: string | null;
+  task_type: ScheduledTaskType;
+  task_key: string;
+  schedule_kind: ScheduleKind;
+  cron_expression: string | null;
+  interval_seconds: number | null;
+  timezone: string;
+  enabled: boolean;
+  config_json: Record<string, unknown>;
+  next_due_at: string | null;
+  last_enqueued_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SynthesisRunRow {
+  id: string;
+  workspace_id: string;
+  scheduled_task_id: string | null;
+  retry_of_run_id: string | null;
+  idempotency_key: string;
+  status: SynthesisRunStatus;
+  trigger_type: SynthesisRunTriggerType;
+  base_context_version_id: string;
+  attempt: number;
+  prompt_version: string;
+  outcome: SynthesisRunOutcome | null;
+  result_summary: string | null;
+  result_hash: string | null;
+  needs_input_json: unknown[] | null;
+  needs_input_resolution: string | null;
+  needs_input_resolved_at: string | null;
+  needs_input_resolved_by: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Immutable membership row: no updated_at.
+export interface SynthesisRunSourceItemRow {
+  workspace_id: string;
+  synthesis_run_id: string;
+  source_item_id: string;
+  position: number;
+  source_item_version: string;
+  content_hash: string;
+  created_at: string;
+}
+
+// Immutable feed row: no updated_at.
+export interface WorkspaceEventRow {
+  id: string;
+  workspace_id: string;
+  sequence_number: number;
+  event_type: WorkspaceEventType;
+  synthesis_run_id: string | null;
+  source_connection_id: string | null;
+  context_version_id: string | null;
+  summary: string;
+  payload_json: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+}
+
+// Dumb append-only log row: no updated_at, no status.
+export interface ErrorRow {
+  id: string;
+  workspace_id: string;
+  source_connection_id: string | null;
+  scheduled_task_id: string | null;
+  synthesis_run_id: string | null;
+  operation: ErrorOperation;
+  message: string;
+  detail_json: Record<string, unknown>;
+  stack_trace: string | null;
+  created_at: string;
 }

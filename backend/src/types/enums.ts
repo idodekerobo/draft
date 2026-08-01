@@ -52,3 +52,58 @@ export type SourceItemLifecycleStatus =
   | "superseded"
   | "deleted"
   | "quarantined";
+
+export type ContextVersionCreationReason =
+  | "seed"
+  | "synthesis"
+  | "manual_edit"
+  | "restore";
+
+export type ScheduledTaskType =
+  | "ingest_source"
+  | "synthesize_workspace"
+  | "rebuild_projection";
+
+export type ScheduleKind = "cron" | "interval";
+
+export type SynthesisRunStatus =
+  | "queued"
+  | "preparing"
+  | "running"
+  | "validating"
+  | "committing"
+  | "succeeded"
+  | "failed"
+  | "stale"
+  | "cancelled";
+
+export type SynthesisRunTriggerType =
+  | "schedule"
+  | "source_threshold"
+  | "manual"
+  | "retry"
+  | "stale_requeue"
+  | "seed_test";
+
+export type SynthesisRunOutcome = "changed" | "no_change" | "failure" | "stale";
+
+export type WorkspaceEventType =
+  | "source_items_added"
+  | "context_updated"
+  | "no_change"
+  | "needs_input"
+  | "input_resolved"
+  | "source_delayed"
+  | "context_restored"
+  | "manual_edit";
+
+export type ErrorOperation =
+  | "ingestion"
+  | "scheduling"
+  | "queue"
+  | "execution"
+  | "validation"
+  | "commit"
+  | "projection"
+  | "auth"
+  | "read";
