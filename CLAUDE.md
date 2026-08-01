@@ -36,3 +36,5 @@ Whenever a schema change is made, both must happen together, every time:
 
 Never write raw SQL directly against the remote database outside this flow,
 and never leave `db/schemas/` out of sync with what's actually applied.
+
+Do not push to the linked Supabase project until you get explicit approval that I'm good with the changes.
