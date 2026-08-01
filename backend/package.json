@@ -1,0 +1,21 @@
+{
+  "name": "draft-backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/server.ts",
+    "seed": "bun run scripts/seed.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "^1.3.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
