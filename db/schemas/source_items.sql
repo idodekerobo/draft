@@ -3,7 +3,7 @@ create table source_items (
   workspace_id                uuid not null references workspaces(id) on delete cascade,
   source_connection_id        uuid not null,
   item_type                   text not null
-                                 check (item_type in ('transcript', 'message', 'coding_session', 'document', 'provider_event')),
+                                 check (item_type in ('meeting_transcript', 'meeting_notes', 'message', 'coding_session', 'document', 'provider_event')),
   external_id                  text not null,
   external_version             text not null,
   lifecycle_status             text not null default 'received'
