@@ -66,3 +66,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 desktop/src/build-config.json
 
 internal-apps/
+
+# Founder-workspace spike/seed scripts with real meeting content (Plan 0037
+# Spike 3) -- never belongs in this public repo.
+backend/scripts/seed-context.ts
+backend/scripts/seed-source-item.ts
