@@ -39,7 +39,8 @@ export type SourceConnectionStatus =
   | "error";
 
 export type SourceItemType =
-  | "transcript"
+  | "meeting_transcript"
+  | "meeting_notes"
   | "message"
   | "coding_session"
   | "document"
