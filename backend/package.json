@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/server.ts",
-    "seed": "bun run scripts/seed.ts",
     "test": "bun test"
   },
   "dependencies": {
