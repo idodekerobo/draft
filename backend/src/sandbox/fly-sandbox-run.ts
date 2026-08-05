@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ValidatedRunBundle } from "../context-version-files";
+import type { ValidatedRunBundle } from "../synthesis/context-version-files";
 import { createSandboxCallbackToken } from "./callback-token";
 import {
   FlyMachinesClient,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { ValidatedRunBundle } from "../../context-version-files";
+import type { ValidatedRunBundle } from "../../synthesis/context-version-files";
 import { verifySandboxCallbackToken } from "../../sandbox/callback-token";
 import type { CreateFlyMachineInput } from "../../sandbox/fly-machines";
 import { launchFlySandboxRun } from "../../sandbox/fly-sandbox-run";
