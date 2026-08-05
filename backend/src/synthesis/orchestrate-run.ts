@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
 import {
   authenticateSandboxCallbackRequest,
   launchFlySandboxRun,
@@ -23,6 +24,21 @@ import { validateSynthesisResult } from "./validate-result";
 export async function launchSynthesisRun(
   options: LaunchSynthesisRunOptions,
 ): Promise<LaunchSynthesisRunResult> {
+  const client = options.client ?? (await import("../db/client")).serviceClient;
+
+  const admission = await checkRunAllowed(options.workspaceId, client);
+  if (!admission.ok) {
+    const { error: errorInsertError } = await client.from("errors").insert({
+      workspace_id: options.workspaceId,
+      scheduled_task_id: options.scheduledTaskId ?? null,
+      operation: "scheduling",
+      message: `Synthesis run denied by admission gate: ${admission.reason}`,
+      detail_json: { trigger_type: options.triggerType },
+    });
+    if (errorInsertError) throw errorInsertError;
+    throw new RunNotAllowedError(options.workspaceId, admission.reason);
+  }
+
   const runId = await prepareRun(options);
 
   const bundle = await loadValidatedRunBundle({
