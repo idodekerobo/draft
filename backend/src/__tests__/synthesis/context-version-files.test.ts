@@ -5,8 +5,8 @@ import {
   canonicalDocumentsHash,
   type BuildRunBundleInput,
   type ContextDocuments,
-} from "../context-version-files";
-import type { WorkspaceContextVersionRow } from "../types/tables";
+} from "../../synthesis/context-version-files";
+import type { WorkspaceContextVersionRow } from "../../types/tables";
 
 const ids = {
   organization: "11111111-1111-4111-8111-111111111111",

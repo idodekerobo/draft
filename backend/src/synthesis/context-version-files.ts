@@ -4,7 +4,7 @@ import type {
   SynthesisRunRow,
   SynthesisRunSourceItemRow,
   WorkspaceContextVersionRow,
-} from "./types/tables";
+} from "../types/tables";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const UUID_PATTERN =
