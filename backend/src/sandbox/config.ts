@@ -1,5 +1,6 @@
 const FLY_IMAGE_DIGEST_PATTERN =
   /^registry\.fly\.io\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?@sha256:[0-9a-f]{64}$/;
+const CALLBACK_PATH = "/sandbox/callback";
 
 export interface SandboxDeploymentConfig {
   flyApiToken: string;
@@ -33,10 +34,10 @@ export function validateSandboxDeploymentConfig(
   try {
     callbackUrl = new URL(config.callbackUrl);
   } catch {
-    throw new Error("SANDBOX_CALLBACK_URL must be a valid HTTPS URL");
+    throw new Error("API_BASE_URL must be a valid HTTPS URL");
   }
   if (callbackUrl.protocol !== "https:") {
-    throw new Error("SANDBOX_CALLBACK_URL must be a valid HTTPS URL");
+    throw new Error("API_BASE_URL must be a valid HTTPS URL");
   }
   if (!FLY_IMAGE_DIGEST_PATTERN.test(config.flySandboxImage)) {
     throw new Error(
@@ -51,12 +52,20 @@ export function validateSandboxDeploymentConfig(
 export function loadSandboxDeploymentConfig(
   env: SandboxEnvironment = process.env,
 ): SandboxDeploymentConfig {
+  const baseUrl = required(env, "API_BASE_URL");
+  let callbackUrl: string;
+  try {
+    callbackUrl = new URL(CALLBACK_PATH, baseUrl).toString();
+  } catch {
+    throw new Error("API_BASE_URL must be a valid URL");
+  }
+
   return validateSandboxDeploymentConfig({
     flyApiToken: required(env, "FLY_API_TOKEN"),
     flyAppName: required(env, "FLY_APP_NAME"),
     flySandboxImage: required(env, "FLY_SANDBOX_IMAGE"),
     flyRegion: required(env, "FLY_REGION"),
-    callbackUrl: required(env, "SANDBOX_CALLBACK_URL"),
+    callbackUrl,
     callbackSecret: required(env, "SANDBOX_CALLBACK_SECRET"),
   });
 }

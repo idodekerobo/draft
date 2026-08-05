@@ -10,7 +10,7 @@ const environment = {
   FLY_APP_NAME: "draft-sandbox",
   FLY_SANDBOX_IMAGE: digest,
   FLY_REGION: "iad",
-  SANDBOX_CALLBACK_URL: "https://api.example.test/sandbox/callback",
+  API_BASE_URL: "https://api.example.test",
   SANDBOX_CALLBACK_SECRET: "signing-secret",
 };
 
@@ -33,10 +33,10 @@ describe("sandbox deployment config", () => {
     }
   });
 
-  it("rejects non-HTTPS callback URLs", () => {
+  it("rejects non-HTTPS callback base URLs", () => {
     expect(() => loadSandboxDeploymentConfig({
       ...environment,
-      SANDBOX_CALLBACK_URL: "http://api.example.test/callback",
+      API_BASE_URL: "http://api.example.test",
     })).toThrow("valid HTTPS URL");
   });
 
