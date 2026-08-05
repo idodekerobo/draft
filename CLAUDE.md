@@ -20,9 +20,10 @@ Key routing rules:
 ## Database changes (backend/Supabase)
 
 `supabase/migrations/` is the applied source of truth (the Supabase CLI
-hardcodes this path — it cannot be relocated). `db/schemas/<table>.sql` is a
-hand-maintained current-state snapshot per table, kept for humans/agents to
-read schema without querying the live database.
+hardcodes this path — it cannot be relocated). `db/schemas/<table>.sql` and
+`db/functions/<function>.sql` are hand-maintained current-state snapshots
+(one per table, one per function) kept for humans/agents to read schema
+without querying the live database.
 
 Whenever a schema change is made, both must happen together, every time:
 
@@ -31,10 +32,12 @@ Whenever a schema change is made, both must happen together, every time:
 2. Write the SQL in that generated file.
 3. `supabase db push --linked --dry-run` to preview, then
    `supabase db push --linked` to apply to the linked remote project.
-4. Update the corresponding file(s) in `db/schemas/` by hand to match the
-   new table state. This does not happen automatically — never skip it.
+4. Update the corresponding file(s) in `db/schemas/` and/or `db/functions/`
+   by hand to match the new state. This does not happen automatically —
+   never skip it.
 
 Never write raw SQL directly against the remote database outside this flow,
-and never leave `db/schemas/` out of sync with what's actually applied.
+and never leave `db/schemas/` or `db/functions/` out of sync with what's
+actually applied.
 
 Do not push to the linked Supabase project until you get explicit approval that I'm good with the changes.
