@@ -8,7 +8,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2"
+    "@supabase/supabase-js": "^2",
+    "cron-parser": "^5.7.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
