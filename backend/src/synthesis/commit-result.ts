@@ -7,46 +7,13 @@ import type {
   WorkspaceContextVersionRow,
   WorkspaceRow,
 } from "../types/tables";
+import { insertEvent } from "../events/insert-event";
 
 function sha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-// TODO(M4): read-then-insert sequence_number has a race under concurrent
-// writers. Fine for this single-operator run; replace with a locking
-// RPC/transaction before anything else can write concurrently.
-async function insertEvent(
-  client: SupabaseClient,
-  workspaceId: string,
-  fields: {
-    event_type: string;
-    synthesis_run_id: string;
-    context_version_id: string | null;
-    summary: string;
-  },
-): Promise<void> {
-  const { data: last, error: lastError } = await client
-    .from("workspace_events")
-    .select("sequence_number")
-    .eq("workspace_id", workspaceId)
-    .order("sequence_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (lastError) throw lastError;
-  const nextSequence = (last?.sequence_number ?? 0) + 1;
-  const { error } = await client.from("workspace_events").insert({
-    workspace_id: workspaceId,
-    sequence_number: nextSequence,
-    event_type: fields.event_type,
-    synthesis_run_id: fields.synthesis_run_id,
-    context_version_id: fields.context_version_id,
-    summary: fields.summary,
-    occurred_at: new Date().toISOString(),
-  });
-  if (error) throw error;
-}
-
-// TODO(M4): sequential writes, not a transaction — accepted for this
+// TODO: sequential writes, not a transaction — accepted for this
 // single-operator run. Wrap steps below in a real transaction/RPC once
 // concurrent writers are possible.
 export async function commitSynthesisResult(

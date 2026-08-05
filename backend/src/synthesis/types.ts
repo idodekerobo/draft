@@ -2,7 +2,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { SynthesisRunTriggerType } from "../types/enums";
 
-// Mirrors the frozen structured result contract (Plan 0037, "Structured result contract").
 export interface SynthesisResultNeedsInputItem {
   question: string;
   current_claim: string;
@@ -27,7 +26,14 @@ export interface ValidatedSynthesisResult {
 export interface LaunchSynthesisRunOptions {
   workspaceId: string;
   triggerType: SynthesisRunTriggerType;
-  /** Ordered source items to include, already fetched and normalized. */
+  /**
+   * Source items to include, already fetched and normalized, in the order
+   * the synthesis agent should read them (becomes file position 0000, 0001,
+   * ... in the run bundle). For providers with multiple items covering the
+   * same source over time — e.g. Slack's per-channel message batches —
+   * callers must sort oldest-first per channel so the agent sees each
+   * channel's history in chronological order.
+   */
   sourceItemIds: string[];
   scheduledTaskId?: string;
   config: SandboxDeploymentConfig;
