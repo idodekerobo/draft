@@ -25,7 +25,7 @@ export class WorkspaceRunAlreadyActiveError extends Error {
 export async function prepareRun(
   options: Pick<
     LaunchSynthesisRunOptions,
-    "workspaceId" | "triggerType" | "sourceItemIds" | "scheduledTaskId" | "client"
+    "workspaceId" | "triggerType" | "sourceItemIds" | "scheduledTaskId" | "occurrenceAt" | "client"
   >,
 ): Promise<string> {
   const client =
@@ -49,11 +49,13 @@ export async function prepareRun(
     );
   }
 
-  // Scheduled runs are keyed on {scheduled_task_id}:{occurrence_timestamp_utc}
-  // so re-enqueueing the same occurrence is a no-op; all other trigger types
-  // get a fresh uuid per call.
+  // {scheduled_task_id}:{occurrence_at} so duplicate dispatches of the same
+  // occurrence collide on one key; {trigger_type}:{uuid} otherwise.
+  if (options.scheduledTaskId && !options.occurrenceAt) {
+    throw new Error("prepareRun: scheduledTaskId requires occurrenceAt for a stable idempotency key");
+  }
   const idempotencyKey = options.scheduledTaskId
-    ? `${options.scheduledTaskId}:${new Date().toISOString()}`
+    ? `${options.scheduledTaskId}:${options.occurrenceAt}`
     : `${options.triggerType}:${randomUUID()}`;
 
   // "preparing", not "queued": synthesis_runs_one_active_writer only guards

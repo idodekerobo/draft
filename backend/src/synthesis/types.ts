@@ -36,6 +36,9 @@ export interface LaunchSynthesisRunOptions {
    */
   sourceItemIds: string[];
   scheduledTaskId?: string;
+  // ISO 8601 occurrence being fulfilled; required alongside scheduledTaskId
+  // for a stable idempotency key.
+  occurrenceAt?: string;
   config: SandboxDeploymentConfig;
   client?: SupabaseClient;
 }

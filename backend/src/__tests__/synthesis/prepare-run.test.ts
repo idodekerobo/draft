@@ -138,25 +138,61 @@ function fakeReceipt(): FlySandboxRunReceipt {
 }
 
 describe("prepareRun", () => {
-  it("uses {scheduled_task_id}:{occurrence_timestamp_utc} for scheduled runs", async () => {
+  it("uses {scheduled_task_id}:{occurrence_at} for scheduled runs", async () => {
     const { client, calls } = createFakeClient({ sourceItems: [] });
+    const occurrenceAt = "2026-08-05T08:00:00.000Z";
 
     await prepareRun({
       workspaceId: ids.workspace,
       triggerType: "schedule",
       sourceItemIds: [],
       scheduledTaskId: ids.scheduledTask,
+      occurrenceAt,
       client,
     });
 
     expect(calls.runInserts).toHaveLength(1);
     const insert = calls.runInserts[0];
     expect(insert.scheduled_task_id).toBe(ids.scheduledTask);
-    const key = insert.idempotency_key as string;
-    expect(key.startsWith(`${ids.scheduledTask}:`)).toBe(true);
-    const timestampPart = key.slice(`${ids.scheduledTask}:`.length);
-    expect(() => new Date(timestampPart).toISOString()).not.toThrow();
-    expect(new Date(timestampPart).toISOString()).toBe(timestampPart);
+    expect(insert.idempotency_key).toBe(`${ids.scheduledTask}:${occurrenceAt}`);
+  });
+
+  it("throws if scheduledTaskId is given without occurrenceAt", async () => {
+    const { client } = createFakeClient({ sourceItems: [] });
+
+    await expect(
+      prepareRun({
+        workspaceId: ids.workspace,
+        triggerType: "schedule",
+        sourceItemIds: [],
+        scheduledTaskId: ids.scheduledTask,
+        client,
+      }),
+    ).rejects.toThrow(/occurrenceAt/);
+  });
+
+  it("re-dispatching the same occurrence produces the same idempotency key", async () => {
+    const { client, calls } = createFakeClient({ sourceItems: [] });
+    const occurrenceAt = "2026-08-05T13:00:00.000Z";
+
+    await prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "schedule",
+      sourceItemIds: [],
+      scheduledTaskId: ids.scheduledTask,
+      occurrenceAt,
+      client,
+    });
+    await prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "schedule",
+      sourceItemIds: [],
+      scheduledTaskId: ids.scheduledTask,
+      occurrenceAt,
+      client,
+    }).catch(() => undefined); // fake client doesn't enforce the unique constraint; real DB would reject the second insert
+
+    expect(calls.runInserts[0].idempotency_key).toBe(calls.runInserts[1].idempotency_key);
   });
 
   it("uses {trigger_type}:{uuid} for manual/seed/other runs", async () => {
