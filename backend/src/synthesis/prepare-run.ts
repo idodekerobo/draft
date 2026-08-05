@@ -1,12 +1,26 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FlySandboxRunReceipt } from "../sandbox";
+import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type { SourceItemRow, WorkspaceRow } from "../types/tables";
 
 // Bumped whenever the rendered prompt/schema contract (task #4) changes in a
 // way that should be distinguishable in synthesis_runs.prompt_version history.
 const PROMPT_VERSION = "synthesis-v1";
+
+// Postgres unique_violation, raised here by synthesis_runs_one_active_writer.
+const UNIQUE_VIOLATION = "23505";
+
+// Thrown when a workspace already has a run in preparing/running/validating/
+// committing. Callers triggering ad hoc (non-scheduled) runs should surface
+// this as "try again shortly" rather than a raw DB error.
+export class WorkspaceRunAlreadyActiveError extends Error {
+  constructor(public readonly workspaceId: string) {
+    super(`Workspace ${workspaceId} already has an active synthesis run`);
+    this.name = "WorkspaceRunAlreadyActiveError";
+  }
+}
 
 export async function prepareRun(
   options: Pick<
@@ -16,6 +30,8 @@ export async function prepareRun(
 ): Promise<string> {
   const client =
     options.client ?? (await import("../db/client")).serviceClient;
+
+  await sweepStaleSynthesisRuns(client, { workspaceId: options.workspaceId });
 
   const { data: workspaceData, error: workspaceError } = await client
     .from("workspaces")
@@ -40,13 +56,16 @@ export async function prepareRun(
     ? `${options.scheduledTaskId}:${new Date().toISOString()}`
     : `${options.triggerType}:${randomUUID()}`;
 
+  // "preparing", not "queued": synthesis_runs_one_active_writer only guards
+  // preparing/running/validating/committing, so the row is protected from
+  // the moment it's created rather than only once markRunLaunched promotes it.
   const { data: runData, error: runError } = await client
     .from("synthesis_runs")
     .insert({
       workspace_id: options.workspaceId,
       scheduled_task_id: options.scheduledTaskId ?? null,
       idempotency_key: idempotencyKey,
-      status: "queued",
+      status: "preparing",
       trigger_type: options.triggerType,
       base_context_version_id: workspace.current_context_version_id,
       attempt: 1,
@@ -54,7 +73,17 @@ export async function prepareRun(
     })
     .select("id")
     .single();
-  if (runError) throw runError;
+  if (runError) {
+    // Checked by message, not just the 23505 code: a (workspace_id,
+    // idempotency_key) collision is a different, unrelated situation.
+    if (
+      runError.code === UNIQUE_VIOLATION &&
+      runError.message.includes("synthesis_runs_one_active_writer")
+    ) {
+      throw new WorkspaceRunAlreadyActiveError(options.workspaceId);
+    }
+    throw runError;
+  }
   const runId = (runData as { id: string }).id;
 
   if (options.sourceItemIds.length > 0) {

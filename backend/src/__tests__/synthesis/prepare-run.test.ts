@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { markRunLaunched, prepareRun } from "../../synthesis/prepare-run";
+import {
+  markRunLaunched,
+  prepareRun,
+  WorkspaceRunAlreadyActiveError,
+} from "../../synthesis/prepare-run";
 import type { FlySandboxRunReceipt } from "../../sandbox";
 
 const ids = {
@@ -15,28 +19,38 @@ const ids = {
 interface FakeClientOptions {
   currentContextVersionId?: string | null;
   sourceItems?: Array<{ id: string; external_version: string; content_hash: string | null }>;
-  runInsertError?: Error;
+  runInsertError?: { message: string; code: string };
   membershipInsertError?: Error;
 }
 
 /**
- * Minimal fake standing in for the chainable Supabase query builder shape
- * `.from().select().eq().single()` / `.from().insert().select().single()` /
- * `.from().update().eq()` used by prepare-run.ts. Records every insert/update
- * call so tests can assert on the payloads sent.
+ * Fake Supabase client for prepare-run.ts's insert/update/select chains.
+ * Records call order so tests can assert the sweep runs before the insert.
  */
 function createFakeClient(options: FakeClientOptions = {}) {
   const calls: {
+    order: string[];
     runInserts: Record<string, unknown>[];
     membershipInserts: Record<string, unknown>[];
     updates: Array<{ table: string; payload: Record<string, unknown>; id: string }>;
-  } = { runInserts: [], membershipInserts: [], updates: [] };
+  } = { order: [], runInserts: [], membershipInserts: [], updates: [] };
 
   const currentContextVersionId =
     options.currentContextVersionId === undefined
       ? ids.version
       : options.currentContextVersionId;
   const sourceItems = options.sourceItems ?? [];
+
+  // Stand-in for the sweep's select query; always resolves to no stale
+  // candidates (sweep behavior itself is covered by reconcile-stale-runs.test.ts).
+  function emptySweepSelectResult() {
+    const result = {
+      eq: () => result,
+      then: (resolve: (value: { data: unknown[]; error: null }) => void) =>
+        resolve({ data: [], error: null }),
+    };
+    return result;
+  }
 
   function from(table: string) {
     if (table === "workspaces") {
@@ -65,7 +79,14 @@ function createFakeClient(options: FakeClientOptions = {}) {
 
     if (table === "synthesis_runs") {
       return {
+        select: () => ({
+          in: () => {
+            calls.order.push("sweep-select");
+            return { lt: () => emptySweepSelectResult() };
+          },
+        }),
         insert: (payload: Record<string, unknown>) => {
+          calls.order.push("run-insert");
           calls.runInserts.push(payload);
           return {
             select: () => ({
@@ -206,7 +227,7 @@ describe("prepareRun", () => {
     });
   });
 
-  it("inserts the run row with status queued and attempt 1", async () => {
+  it("inserts the run row with status preparing and attempt 1", async () => {
     const { client, calls } = createFakeClient({ sourceItems: [] });
 
     await prepareRun({
@@ -217,11 +238,64 @@ describe("prepareRun", () => {
     });
 
     const insert = calls.runInserts[0];
-    expect(insert.status).toBe("queued");
+    expect(insert.status).toBe("preparing");
     expect(insert.attempt).toBe(1);
     expect(insert.base_context_version_id).toBe(ids.version);
     expect(insert.workspace_id).toBe(ids.workspace);
     expect(typeof insert.prompt_version).toBe("string");
+  });
+
+  it("sweeps stale runs for the workspace before inserting the new run", async () => {
+    const { client, calls } = createFakeClient({ sourceItems: [] });
+
+    await prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "manual",
+      sourceItemIds: [],
+      client,
+    });
+
+    expect(calls.order).toEqual(["sweep-select", "run-insert"]);
+  });
+
+  it("throws WorkspaceRunAlreadyActiveError when the insert hits the one-active-writer index", async () => {
+    const { client } = createFakeClient({
+      sourceItems: [],
+      runInsertError: {
+        message:
+          'duplicate key value violates unique constraint "synthesis_runs_one_active_writer"',
+        code: "23505",
+      },
+    });
+
+    await expect(
+      prepareRun({
+        workspaceId: ids.workspace,
+        triggerType: "manual",
+        sourceItemIds: [],
+        client,
+      }),
+    ).rejects.toBeInstanceOf(WorkspaceRunAlreadyActiveError);
+  });
+
+  it("rethrows a 23505 from a different constraint (e.g. duplicate idempotency key) unchanged", async () => {
+    const { client } = createFakeClient({
+      sourceItems: [],
+      runInsertError: {
+        message:
+          'duplicate key value violates unique constraint "synthesis_runs_workspace_id_idempotency_key_key"',
+        code: "23505",
+      },
+    });
+
+    await expect(
+      prepareRun({
+        workspaceId: ids.workspace,
+        triggerType: "manual",
+        sourceItemIds: [],
+        client,
+      }),
+    ).rejects.not.toBeInstanceOf(WorkspaceRunAlreadyActiveError);
   });
 });
 
