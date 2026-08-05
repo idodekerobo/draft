@@ -28,3 +28,20 @@ create table workspace_context_versions (
 create unique index workspace_context_versions_one_per_run
   on workspace_context_versions (synthesis_run_id)
   where synthesis_run_id is not null;
+
+alter table workspace_context_versions enable row level security;
+
+create policy workspace_context_versions_select on workspace_context_versions
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = workspace_context_versions.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table workspace_context_versions to authenticated;
+grant select on table workspace_context_versions to service_role;

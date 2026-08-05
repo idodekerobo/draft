@@ -28,3 +28,7 @@ create table scheduled_tasks (
     or (schedule_kind = 'interval' and interval_seconds is not null and cron_expression is null)
   )
 );
+
+alter table scheduled_tasks enable row level security;
+
+grant select, insert, update on table scheduled_tasks to service_role;

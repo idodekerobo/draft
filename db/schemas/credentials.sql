@@ -21,3 +21,7 @@ create table credentials (
 
   unique (id, workspace_id)
 );
+
+alter table credentials enable row level security;
+
+grant select on table credentials to service_role;

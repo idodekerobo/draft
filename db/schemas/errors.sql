@@ -22,3 +22,20 @@ create table errors (
   foreign key (synthesis_run_id, workspace_id)
     references synthesis_runs(id, workspace_id) on delete restrict
 );
+
+alter table errors enable row level security;
+
+create policy errors_select on errors
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = errors.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table errors to authenticated;
+grant insert on table errors to service_role;

@@ -30,3 +30,20 @@ create table source_items (
     or (content_markdown is not null and content_hash is not null)
   )
 );
+
+alter table source_items enable row level security;
+
+create policy source_items_select on source_items
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = source_items.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table source_items to authenticated;
+grant select, insert, update on table source_items to service_role;

@@ -25,3 +25,20 @@ create table workspace_events (
   foreign key (context_version_id, workspace_id)
     references workspace_context_versions(id, workspace_id) on delete restrict
 );
+
+alter table workspace_events enable row level security;
+
+create policy workspace_events_select on workspace_events
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = workspace_events.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table workspace_events to authenticated;
+grant select, insert on table workspace_events to service_role;

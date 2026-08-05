@@ -45,3 +45,20 @@ create unique index synthesis_runs_one_active_writer
 -- input_tokens, output_tokens, estimated_cost_usd, heartbeat_at). Add these
 -- back when the execution/worker path is actually built (Plan 0037 task 4) --
 -- they were cut early because nothing writes to them yet.
+
+alter table synthesis_runs enable row level security;
+
+create policy synthesis_runs_select on synthesis_runs
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = synthesis_runs.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table synthesis_runs to authenticated;
+grant select, insert, update on table synthesis_runs to service_role;

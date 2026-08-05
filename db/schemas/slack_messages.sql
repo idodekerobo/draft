@@ -41,3 +41,20 @@ create table slack_messages (
   foreign key (source_connection_id, workspace_id)
     references source_connections(id, workspace_id) on delete cascade
 );
+
+alter table slack_messages enable row level security;
+
+create policy slack_messages_select on slack_messages
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = slack_messages.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table slack_messages to authenticated;
+grant select, insert, update on table slack_messages to service_role;

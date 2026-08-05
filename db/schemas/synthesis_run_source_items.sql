@@ -16,3 +16,7 @@ create table synthesis_run_source_items (
   foreign key (source_item_id, workspace_id)
     references source_items(id, workspace_id) on delete restrict
 );
+
+alter table synthesis_run_source_items enable row level security;
+
+grant select, insert on table synthesis_run_source_items to service_role;

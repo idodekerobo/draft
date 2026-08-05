@@ -11,3 +11,14 @@ create table teams (
   unique (organization_id, slug),
   unique (id, organization_id)
 );
+
+alter table teams enable row level security;
+
+create policy teams_select on teams
+  for select to authenticated
+  using (
+    organization_id = current_user_org_id()
+    and id = current_user_team_id()
+  );
+
+grant select on table teams to authenticated;

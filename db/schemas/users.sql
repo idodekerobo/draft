@@ -16,6 +16,17 @@ create table users (
     references teams(id, organization_id) on delete restrict
 );
 
+alter table users enable row level security;
+
+create policy users_select on users
+  for select to authenticated
+  using (
+    organization_id = current_user_org_id()
+    and primary_team_id = current_user_team_id()
+  );
+
+grant select on table users to authenticated;
+
 create or replace function current_user_org_id()
 returns uuid
 language sql

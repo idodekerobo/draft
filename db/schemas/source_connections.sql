@@ -22,3 +22,20 @@ create table source_connections (
   foreign key (credential_id, workspace_id)
     references credentials(id, workspace_id) on delete restrict
 );
+
+alter table source_connections enable row level security;
+
+create policy source_connections_select on source_connections
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = source_connections.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table source_connections to authenticated;
+grant select, insert, update on table source_connections to service_role;

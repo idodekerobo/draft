@@ -26,3 +26,16 @@ create table workspaces (
   foreign key (current_context_version_id, id)
     references workspace_context_versions(id, workspace_id) on delete restrict
 );
+
+alter table workspaces enable row level security;
+
+create policy workspaces_select on workspaces
+  for select to authenticated
+  using (
+    organization_id = current_user_org_id()
+    and team_id = current_user_team_id()
+    and access_mode = 'team_default'
+  );
+
+grant select on table workspaces to authenticated;
+grant select on table workspaces to service_role;

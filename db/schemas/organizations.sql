@@ -7,3 +7,11 @@ create table organizations (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+alter table organizations enable row level security;
+
+create policy organizations_select on organizations
+  for select to authenticated
+  using (id = current_user_org_id());
+
+grant select on table organizations to authenticated;
