@@ -275,6 +275,9 @@ export async function registerSlackBatchMaterializationTask(
 ): Promise<void> {
   const db = client ?? (await import("../../db/client")).serviceClient;
 
+  // next_due_at must be set here, or the tick never selects this row.
+  const nextDueAt = new Date(Date.now() + MATERIALIZATION_INTERVAL_SECONDS * 1000);
+
   const { error } = await db.from("scheduled_tasks").upsert(
     {
       workspace_id: connection.workspace_id,
@@ -286,6 +289,7 @@ export async function registerSlackBatchMaterializationTask(
       cron_expression: null,
       timezone: "UTC",
       enabled: true,
+      next_due_at: nextDueAt.toISOString(),
     } satisfies Partial<ScheduledTaskRow>,
     { onConflict: "workspace_id,task_type,task_key" },
   );
