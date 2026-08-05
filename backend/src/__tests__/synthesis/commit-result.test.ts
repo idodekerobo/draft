@@ -12,31 +12,17 @@ const ids = {
 };
 
 interface FakeClientOptions {
-  liveCurrentContextVersionId?: string;
   baseDocuments?: Record<string, { content: string; sha256: string }>;
-  baseVersionNumber?: number;
-  lastSequenceNumber?: number | null;
+  rpcResult?: { status: "committed" | "stale"; new_version_id: string | null };
 }
 
 /**
- * Minimal fake standing in for the chainable Supabase query builder shape
- * used by commit-result.ts:
- * `.from().select().eq().single()`, `.from().update().eq()`,
- * `.from().insert().select().single()`,
- * `.from().select().eq().order().limit().maybeSingle()`.
- * Records every insert/update call so tests can assert on payloads sent.
+ * Fake Supabase client: `.from().select().eq().single()` for the run and
+ * base-version reads, plus `.rpc()` recorded for assertions.
  */
 function createFakeClient(options: FakeClientOptions = {}) {
-  const calls: {
-    contextVersionInserts: Record<string, unknown>[];
-    workspaceUpdates: Record<string, unknown>[];
-    eventInserts: Record<string, unknown>[];
-    runUpdates: Record<string, unknown>[];
-  } = {
-    contextVersionInserts: [],
-    workspaceUpdates: [],
-    eventInserts: [],
-    runUpdates: [],
+  const calls: { rpcCalls: { fn: string; args: Record<string, unknown> }[] } = {
+    rpcCalls: [],
   };
 
   const baseDocuments = options.baseDocuments ?? {
@@ -45,9 +31,6 @@ function createFakeClient(options: FakeClientOptions = {}) {
       sha256: "a".repeat(64),
     },
   };
-  const baseVersionNumber = options.baseVersionNumber ?? 3;
-  const liveCurrentContextVersionId =
-    options.liveCurrentContextVersionId ?? ids.baseVersion;
 
   function from(table: string) {
     if (table === "synthesis_runs") {
@@ -64,31 +47,6 @@ function createFakeClient(options: FakeClientOptions = {}) {
             }),
           }),
         }),
-        update: (payload: Record<string, unknown>) => ({
-          eq: async (_column: string, _id: string) => {
-            calls.runUpdates.push(payload);
-            return { data: null, error: null };
-          },
-        }),
-      };
-    }
-
-    if (table === "workspaces") {
-      return {
-        select: () => ({
-          eq: () => ({
-            single: async () => ({
-              data: { current_context_version_id: liveCurrentContextVersionId },
-              error: null,
-            }),
-          }),
-        }),
-        update: (payload: Record<string, unknown>) => ({
-          eq: async (_column: string, _id: string) => {
-            calls.workspaceUpdates.push(payload);
-            return { data: null, error: null };
-          },
-        }),
       };
     }
 
@@ -97,67 +55,26 @@ function createFakeClient(options: FakeClientOptions = {}) {
         select: () => ({
           eq: () => ({
             single: async () => ({
-              data: {
-                id: ids.baseVersion,
-                workspace_id: ids.workspace,
-                version_number: baseVersionNumber,
-                previous_version_id: null,
-                documents_json: baseDocuments,
-                content_hash: canonicalDocumentsHash(baseDocuments),
-                creation_reason: "seed",
-                synthesis_run_id: null,
-                restored_from_version_id: null,
-                summary: "base",
-                created_at: new Date().toISOString(),
-              },
+              data: { documents_json: baseDocuments },
               error: null,
             }),
           }),
         }),
-        insert: (payload: Record<string, unknown>) => {
-          calls.contextVersionInserts.push(payload);
-          return {
-            select: () => ({
-              single: async () => ({
-                data: { ...payload, id: ids.newVersion },
-                error: null,
-              }),
-            }),
-          };
-        },
-      };
-    }
-
-    if (table === "workspace_events") {
-      return {
-        select: () => ({
-          eq: () => ({
-            order: () => ({
-              limit: () => ({
-                maybeSingle: async () => ({
-                  data:
-                    options.lastSequenceNumber === undefined
-                      ? null
-                      : options.lastSequenceNumber === null
-                        ? null
-                        : { sequence_number: options.lastSequenceNumber },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
-        insert: async (payload: Record<string, unknown>) => {
-          calls.eventInserts.push(payload);
-          return { data: null, error: null };
-        },
       };
     }
 
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
-  const client = { from } as unknown as SupabaseClient;
+  async function rpc(fn: string, args: Record<string, unknown>) {
+    calls.rpcCalls.push({ fn, args });
+    return {
+      data: options.rpcResult ?? { status: "committed", new_version_id: ids.newVersion },
+      error: null,
+    };
+  }
+
+  const client = { from, rpc } as unknown as SupabaseClient;
   return { client, calls };
 }
 
@@ -177,58 +94,28 @@ function baseValidated(
 }
 
 describe("commitSynthesisResult", () => {
-  it("marks the run stale and writes nothing when the base version is no longer current", async () => {
-    const { client, calls } = createFakeClient({
-      liveCurrentContextVersionId: "99999999-9999-4999-8999-999999999999",
-    });
+  it("computes the merged document set and calls the atomic RPC on 'changed'", async () => {
+    const { client, calls } = createFakeClient();
 
     await commitSynthesisResult(baseValidated(), client);
 
-    expect(calls.contextVersionInserts).toHaveLength(0);
-    expect(calls.workspaceUpdates).toHaveLength(0);
-    expect(calls.eventInserts).toHaveLength(0);
-    expect(calls.runUpdates).toHaveLength(1);
-    const update = calls.runUpdates[0];
-    expect(update.status).toBe("stale");
-    expect(update.outcome).toBe("stale");
-    expect(typeof update.result_summary).toBe("string");
-    expect(update.completed_at).toBeDefined();
-  });
+    expect(calls.rpcCalls).toHaveLength(1);
+    const call = calls.rpcCalls[0];
+    expect(call.fn).toBe("commit_synthesis_run");
+    expect(call.args.p_run_id).toBe(ids.run);
+    expect(call.args.p_outcome).toBe("changed");
+    expect(call.args.p_summary).toBe("Updated company doc.");
 
-  it("commits a new version, advances the pointer, and records an event on 'changed'", async () => {
-    const { client, calls } = createFakeClient({ baseVersionNumber: 3 });
-
-    await commitSynthesisResult(baseValidated(), client);
-
-    expect(calls.contextVersionInserts).toHaveLength(1);
-    const versionInsert = calls.contextVersionInserts[0];
-    expect(versionInsert.workspace_id).toBe(ids.workspace);
-    expect(versionInsert.version_number).toBe(4);
-    expect(versionInsert.previous_version_id).toBe(ids.baseVersion);
-    expect(versionInsert.creation_reason).toBe("synthesis");
-    expect(versionInsert.synthesis_run_id).toBe(ids.run);
-    const newDocs = versionInsert.documents_json as Record<
+    const documents = call.args.p_documents_json as Record<
       string,
       { content: string; sha256: string }
     >;
-    expect(newDocs["company/index.md"].content).toBe("new content");
-
-    expect(calls.workspaceUpdates).toHaveLength(1);
-    expect(calls.workspaceUpdates[0].current_context_version_id).toBe(ids.newVersion);
-
-    expect(calls.eventInserts).toHaveLength(1);
-    expect(calls.eventInserts[0].event_type).toBe("context_updated");
-    expect(calls.eventInserts[0].context_version_id).toBe(ids.newVersion);
-    expect(calls.eventInserts[0].synthesis_run_id).toBe(ids.run);
-
-    expect(calls.runUpdates).toHaveLength(1);
-    const runUpdate = calls.runUpdates[0];
-    expect(runUpdate.status).toBe("succeeded");
-    expect(runUpdate.outcome).toBe("changed");
-    expect(runUpdate.result_hash).toBe(versionInsert.content_hash);
+    expect(documents["company/index.md"].content).toBe("new content");
+    expect(call.args.p_content_hash).toBe(canonicalDocumentsHash(documents));
+    expect(call.args.p_needs_input_json).toBeNull();
   });
 
-  it("writes no new version and leaves the pointer untouched on 'no_change'", async () => {
+  it("does not fetch a base version and passes null documents/hash on 'no_change'", async () => {
     const { client, calls } = createFakeClient();
 
     await commitSynthesisResult(
@@ -236,17 +123,48 @@ describe("commitSynthesisResult", () => {
       client,
     );
 
-    expect(calls.contextVersionInserts).toHaveLength(0);
-    expect(calls.workspaceUpdates).toHaveLength(0);
+    expect(calls.rpcCalls).toHaveLength(1);
+    const call = calls.rpcCalls[0];
+    expect(call.args.p_outcome).toBe("no_change");
+    expect(call.args.p_documents_json).toBeNull();
+    expect(call.args.p_content_hash).toBeNull();
+  });
 
-    expect(calls.eventInserts).toHaveLength(1);
-    expect(calls.eventInserts[0].event_type).toBe("no_change");
-    expect(calls.eventInserts[0].context_version_id).toBeNull();
+  it("passes needs_input through to the RPC untouched", async () => {
+    const { client, calls } = createFakeClient();
+    const needsInput = [
+      {
+        question: "Is pricing usage-based or seat-based?",
+        current_claim: "usage-based",
+        new_claim: "seat-based",
+        reason: "conflicting statements across two calls",
+        evidence: [{ source_item_id: "item-1", excerpt: "..." }],
+      },
+    ];
 
-    expect(calls.runUpdates).toHaveLength(1);
-    const runUpdate = calls.runUpdates[0];
-    expect(runUpdate.status).toBe("succeeded");
-    expect(runUpdate.outcome).toBe("no_change");
-    expect(runUpdate.result_hash).toBeUndefined();
+    await commitSynthesisResult(baseValidated({ needs_input: needsInput }), client);
+
+    expect(calls.rpcCalls[0].args.p_needs_input_json).toEqual(needsInput);
+  });
+
+  it("resolves without throwing when the RPC reports the base as stale", async () => {
+    const { client, calls } = createFakeClient({
+      rpcResult: { status: "stale", new_version_id: null },
+    });
+
+    await expect(commitSynthesisResult(baseValidated(), client)).resolves.toBeUndefined();
+    expect(calls.rpcCalls).toHaveLength(1);
+  });
+
+  it("throws when the RPC call itself errors", async () => {
+    const { client } = createFakeClient();
+    const failingClient = {
+      from: (client as unknown as { from: (t: string) => unknown }).from,
+      rpc: async () => ({ data: null, error: new Error("boom") }),
+    } as unknown as SupabaseClient;
+
+    await expect(commitSynthesisResult(baseValidated(), failingClient)).rejects.toThrow(
+      "boom",
+    );
   });
 });
