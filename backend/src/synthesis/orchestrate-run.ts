@@ -49,7 +49,7 @@ export async function launchSynthesisRun(
   // never gets a callback (crashed sandbox, dead tunnel, stale image, etc.)
   // -- it stays "running" forever and synthesis_runs_one_active_writer then
   // blocks every future run for the workspace with a 23505 duplicate-key
-  // error. Until that sweep exists (M4+), check for and manually mark such
+  // error. Until a stale-run sweep exists, check for and manually mark such
   // rows "failed" first.
   await markRunLaunched(runId, receipt, options.client);
 

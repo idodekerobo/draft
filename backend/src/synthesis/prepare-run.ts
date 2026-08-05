@@ -33,9 +33,9 @@ export async function prepareRun(
     );
   }
 
-  // Idempotency key convention (plan 0037, ~lines 765-768): scheduled runs are
-  // keyed on {scheduled_task_id}:{occurrence_timestamp_utc} so re-enqueueing the
-  // same occurrence is a no-op; all other trigger types get a fresh uuid per call.
+  // Scheduled runs are keyed on {scheduled_task_id}:{occurrence_timestamp_utc}
+  // so re-enqueueing the same occurrence is a no-op; all other trigger types
+  // get a fresh uuid per call.
   const idempotencyKey = options.scheduledTaskId
     ? `${options.scheduledTaskId}:${new Date().toISOString()}`
     : `${options.triggerType}:${randomUUID()}`;
