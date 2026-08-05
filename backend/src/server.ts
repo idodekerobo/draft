@@ -1,5 +1,6 @@
 import { loadConfig } from "./config";
 import { startSlackListeners } from "./ingestion/slack/bootstrap";
+import { startScheduler } from "./scheduling/bootstrap";
 import { routes } from "./routes";
 
 const config = loadConfig();
@@ -17,3 +18,5 @@ console.log(`draft-backend listening on :${config.port}`);
 startSlackListeners().catch((error) => {
   console.error("failed to start Slack listeners", error);
 });
+
+startScheduler();
