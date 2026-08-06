@@ -13,6 +13,7 @@ export interface BackendConfig {
   supabasePublishableKey: string;
   supabaseSecretKey: string;
   port: number;
+  appUrl: string;
 }
 
 export function loadConfig(): BackendConfig {
@@ -21,5 +22,6 @@ export function loadConfig(): BackendConfig {
     supabasePublishableKey: requireEnv("SUPABASE_PUBLISHABLE_KEY"),
     supabaseSecretKey: requireEnv("SUPABASE_SECRET_KEY"),
     port: Number(process.env.PORT ?? 8787),
+    appUrl: process.env.APP_URL ?? "https://app.draftai.us",
   };
 }
