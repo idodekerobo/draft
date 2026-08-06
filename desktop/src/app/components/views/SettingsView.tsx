@@ -410,6 +410,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [calUrl, setCalUrl]                = useState<string>("");
+  const [cloudSignIn, setCloudSignIn] = useState<"idle" | "awaiting_approval" | "complete" | "error">("idle");
+  const [cloudSignInError, setCloudSignInError] = useState<string | null>(null);
 
   const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
 
@@ -425,13 +427,15 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       rpc.request.getContextSections(),
       rpc.request.getAppVersion(),
       rpc.request.getCrispConfig(),
+      rpc.request.getCloudAuthStatus(),
     ])
-      .then(([config, connectedApps, contextSections, appVersion, crispConfig]) => {
+      .then(([config, connectedApps, contextSections, appVersion, crispConfig, cloudAuth]) => {
         setSettings(config);
         setApps(connectedApps);
         setSections(contextSections);
         setVersionInfo(appVersion);
         setCalUrl(crispConfig.cal_url);
+        setCloudSignIn(cloudAuth.signedIn ? "complete" : "idle");
       })
       .catch(() => setLoadError("Failed to load settings."));
   }, [activeProfile]);
@@ -452,9 +456,30 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         setUpdateCheckState("failed");
         setTimeout(() => setUpdateCheckState("idle"), 5_000);
       }),
+      events.on("signInProgress", ({ phase, error }) => {
+        setCloudSignIn(phase);
+        setCloudSignInError(error ? error.replaceAll("_", " ") : null);
+      }),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
+
+  useEffect(
+    () => () => {
+      if (cloudSignIn === "awaiting_approval")
+        void rpc.request.cancelBrowserSignIn();
+    },
+    [cloudSignIn],
+  );
+
+  async function handleCloudSignIn() {
+    setCloudSignInError(null);
+    const result = await rpc.request.startBrowserSignIn();
+    if (!result.ok) {
+      setCloudSignIn("error");
+      setCloudSignInError(result.error ?? "Could not start sign in");
+    }
+  }
 
   // ── Save error auto-dismiss ────────────────────────────────────────────────
   useEffect(() => {
@@ -1004,6 +1029,34 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         <section className="settings__section">
           <h2 className="settings__section-label">System</h2>
           <div className="settings__rows">
+            <div className="settings__row">
+              <div className="settings__row-content">
+                <span className="settings__row-label">Draft Cloud</span>
+                <span className="settings__row-desc">
+                  {cloudSignIn === "awaiting_approval"
+                    ? "Finish signing in in your browser"
+                    : cloudSignIn === "complete"
+                      ? "Signed in"
+                      : cloudSignIn === "error"
+                        ? `Sign-in failed${cloudSignInError ? `: ${cloudSignInError}` : ""}`
+                        : "Connect this desktop app to your Draft account"}
+                </span>
+              </div>
+              <button
+                className="settings__action-button"
+                disabled={
+                  cloudSignIn === "awaiting_approval" ||
+                  cloudSignIn === "complete"
+                }
+                onClick={() => void handleCloudSignIn()}
+              >
+                {cloudSignIn === "awaiting_approval"
+                  ? "Waiting…"
+                  : cloudSignIn === "complete"
+                    ? "Signed in"
+                    : "Sign in"}
+              </button>
+            </div>
             <div className="settings__row">
               <div className="settings__row-content">
                 <span className="settings__row-label">Start on login</span>

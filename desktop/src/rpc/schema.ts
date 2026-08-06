@@ -757,6 +757,9 @@ export type AppRPCType = {
 
       /** Cancel the in-flight device flow for the active workspace, if any. */
       cancelGitHubJoin: { params: void; response: ActionResult };
+      startBrowserSignIn: { params: void; response: ActionResult };
+      cancelBrowserSignIn: { params: void; response: ActionResult };
+      getCloudAuthStatus: { params: void; response: { signedIn: boolean } };
 
       /** Poll join status — used by JoinTeamStep to offer a "finish joining?" resume prompt on mount. */
       checkGitHubJoinStatus: {
@@ -854,6 +857,11 @@ export type AppRPCType = {
 
       /** One or more team MCPs are missing credentials after profile switch or load-team. */
       mcpsPendingCredentials: { mcps: PendingCredentialMcp[] };
+
+      signInProgress: {
+        phase: "awaiting_approval" | "complete" | "error";
+        error?: string;
+      };
 
       /** Progress from the native GitHub Device Flow join-team flow. */
       githubOAuthProgress: {

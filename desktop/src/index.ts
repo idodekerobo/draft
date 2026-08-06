@@ -77,6 +77,10 @@ import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-
 import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
 import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
 import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
+import { startBrowserSignIn } from "./main/auth/browser-sign-in";
+import { readAuthState } from "draft-core/auth-state";
+
+let browserSignInController: AbortController | null = null;
 
 async function preflightPublish(): Promise<{ ok: true; profile: string; workspace: string } | { ok: false; error: string }> {
   const profile = getActiveProfile();
@@ -1558,6 +1562,31 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         cancelActiveDeviceFlow(getWorkspacePath(getActiveProfile()));
         return { ok: true };
       },
+
+      startBrowserSignIn: async () => {
+        browserSignInController?.abort();
+        browserSignInController = new AbortController();
+        void startBrowserSignIn(browserSignInController.signal, {
+          openUrl: (url) =>
+            Bun.spawn(["open", url], {
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "ignore",
+            }),
+          progress: (value) => {
+            try {
+              rpc.send.signInProgress(value);
+            } catch {}
+          },
+        });
+        return { ok: true };
+      },
+      cancelBrowserSignIn: async () => {
+        browserSignInController?.abort();
+        browserSignInController = null;
+        return { ok: true };
+      },
+      getCloudAuthStatus: async () => ({ signedIn: readAuthState() !== null }),
 
       checkGitHubJoinStatus: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
