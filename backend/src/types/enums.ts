@@ -8,6 +8,8 @@ export type UserOrgRole = "owner" | "admin" | "member";
 
 export type UserStatus = "invited" | "active" | "disabled";
 
+export type InviteStatus = "active" | "revoked" | "expired";
+
 export type WorkspaceStatus = "active" | "archived";
 
 export type WorkspaceAccessMode = "team_default" | "restricted";

@@ -3,6 +3,7 @@ import type {
   CredentialProvider,
   CredentialStatus,
   ErrorOperation,
+  InviteStatus,
   OrganizationStatus,
   ScheduleKind,
   ScheduledTaskType,
@@ -20,6 +21,17 @@ import type {
   WorkspaceEventType,
   WorkspaceStatus,
 } from "./enums";
+
+export interface InviteRow {
+  id: string;
+  organization_id: string;
+  team_id: string;
+  token: string;
+  status: InviteStatus;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface OrganizationRow {
   id: string;
