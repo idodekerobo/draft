@@ -8,6 +8,7 @@ import { EVENTS } from "@/lib/analytics";
 const GITHUB_URL = "https://github.com/idodekerobo/draft";
 const DOWNLOAD_URL =
   "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
@@ -101,6 +102,7 @@ export default function Nav() {
           ))}
 
           {/* GitHub icon link */}
+          <a href={`${APP_URL}/signup`} style={{ color: "var(--color-accent)", textDecoration: "none", fontWeight: 600 }}>Sign up</a>
           <a
             href={GITHUB_URL}
             target="_blank"
