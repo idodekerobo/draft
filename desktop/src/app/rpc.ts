@@ -25,8 +25,10 @@ type EventMap = {
     label: string;
     error?: string;
     errorCode?: string;
+    resumable?: boolean;
   };
   signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string };
+  authStateChanged: { signedIn: boolean };
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
   badgeUpdate: { profile: string; count: number };
@@ -79,6 +81,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       headlessProgress: (data) => events.emit("headlessProgress", data),
       githubOAuthProgress: (data) => events.emit("githubOAuthProgress", data),
       signInProgress: (data) => events.emit("signInProgress", data),
+      authStateChanged: (data) => events.emit("authStateChanged", data),
 
       // TODO: Phase 2: heartbeat went stale — daemon stopped
       daemonStopped: (data) => events.emit("daemonStopped", data),

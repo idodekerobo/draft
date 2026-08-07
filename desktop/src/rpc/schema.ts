@@ -12,6 +12,13 @@
 
 import type { RPCSchema } from "electrobun/bun";
 
+export interface UserIdentity {
+  signedIn: boolean;
+  organizationId: string | null;
+  teamId: string | null;
+  workspaceId: string | null;
+}
+
 // ── Shared payload types ───────────────────────────────────────────────────────
 // Defined inline here (not imported from draft-core) so the renderer can safely
 // import this file without pulling in any Node/Bun-only modules.
@@ -759,7 +766,8 @@ export type AppRPCType = {
       cancelGitHubJoin: { params: void; response: ActionResult };
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };
-      getCloudAuthStatus: { params: void; response: { signedIn: boolean } };
+      signOut: { params: void; response: ActionResult };
+      getUserIdentity: { params: void; response: UserIdentity };
 
       /** Poll join status — used by JoinTeamStep to offer a "finish joining?" resume prompt on mount. */
       checkGitHubJoinStatus: {
@@ -863,6 +871,9 @@ export type AppRPCType = {
         error?: string;
       };
 
+      /** Local auth session was cleared by the main process. */
+      authStateChanged: { signedIn: boolean };
+
       /** Progress from the native GitHub Device Flow join-team flow. */
       githubOAuthProgress: {
         phase: "awaiting_user" | "verifying_access" | "complete" | "error";
@@ -871,6 +882,7 @@ export type AppRPCType = {
         label: string;
         error?: string;
         errorCode?: string;
+        resumable?: boolean;
       };
     };
   }>;

@@ -14,6 +14,7 @@ export type DaemonControlVariant =
 
 export type OnboardingStep =
   | "welcome"
+  | "cloud-sign-in"
   | "path-choice"         // new — join-team fork, right after welcome
   | "profile"
   | "intelligence-tools"

@@ -78,7 +78,7 @@ import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync
 import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
 import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
-import { readAuthState } from "draft-core/auth-state";
+import { clearAuthState, readAuthState } from "draft-core/auth-state";
 
 let browserSignInController: AbortController | null = null;
 
@@ -1586,7 +1586,26 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         browserSignInController = null;
         return { ok: true };
       },
-      getCloudAuthStatus: async () => ({ signedIn: readAuthState() !== null }),
+      signOut: async () => {
+        browserSignInController?.abort();
+        browserSignInController = null;
+        try {
+          clearAuthState();
+        } catch {
+          return { ok: false, error: "Could not sign out" };
+        }
+        try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
+        return { ok: true };
+      },
+      getUserIdentity: async () => {
+        const state = readAuthState();
+        return {
+          signedIn: state !== null,
+          organizationId: state?.organization_id ?? null,
+          teamId: state?.team_id ?? null,
+          workspaceId: state?.workspace_id ?? null,
+        };
+      },
 
       checkGitHubJoinStatus: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
