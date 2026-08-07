@@ -36,6 +36,8 @@ export async function runDimension(args: string[]): Promise<void> {
 // ── list ───────────────────────────────────────────────────────────────────────
 
 async function listDimensions(): Promise<void> {
+  // TODO(cloud-context): replace this local inspection with the workspace context
+  // API once the CLI becomes a supported M1 delivery surface.
   const workspacePath = getWorkspacePath();
   const contextPath = join(workspacePath, "context");
 

@@ -96,6 +96,8 @@ function listContextIndexFiles(
   files: Array<{ relativePath: string; sourcePath: string }>;
   tensions: { relativePath: string; sourcePath: string } | null;
 } {
+  // TODO(cloud-context): this daemon snapshot still reads the local projection.
+  // Replace it with the workspace context API when local context is retired.
   const contextDir = join(workspace, 'context');
   if (!existsSync(contextDir)) return { files: [], tensions: null };
 
