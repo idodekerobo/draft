@@ -2763,6 +2763,25 @@ button {
   height: 28px;
 }
 
+.onboarding__cloud-sign-in-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sidebar);
+}
+
+.onboarding__cloud-sign-in-status {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+}
+
 /* Secondary ghost action inside a connect panel — e.g. "Open X Developer Settings".
    Distinct from .app-row__connect (primary blue CTA) so the external-link step
    reads as a lesser action than the Connect button below it. */

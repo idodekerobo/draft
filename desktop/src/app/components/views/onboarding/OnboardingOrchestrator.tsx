@@ -26,15 +26,17 @@ import { ScanImportStep } from "./ScanImportStep";
 import { HeadlessSetupStep } from "./HeadlessSetupStep";
 import { CollabStep } from "./CollabStep";
 import { JoinTeamStep } from "./JoinTeamStep";
+import { CloudSignInStep } from "./CloudSignInStep";
+import { useUserIdentity } from "../../../identity/UserIdentityContext";
 
 const SOLO_BASE_STEPS: OnboardingStep[] = [
-  "welcome", "path-choice", "profile", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
+  "welcome", "cloud-sign-in", "path-choice", "profile", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
 ];
 const SOLO_SCAN_STEPS: OnboardingStep[] = [
-  "welcome", "path-choice", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "collab", "complete",
+  "welcome", "cloud-sign-in", "path-choice", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "collab", "complete",
 ];
-const JOIN_STEPS: OnboardingStep[] = [
-  "welcome", "path-choice", "profile", "join-team", "intelligence-tools", "integrations", "complete",
+const JOIN_STEPS_BASE: OnboardingStep[] = [
+  "welcome", "cloud-sign-in", "path-choice", "profile", "join-team", "intelligence-tools", "integrations", "complete",
 ];
 
 interface OnboardingOrchestratorProps {
@@ -56,6 +58,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   const [joinAvailable, setJoinAvailable] = useState(false);
 
   const { track, setConsent, setReplayEnabled } = useAnalytics();
+  const { workspaceId } = useUserIdentity();
   const completedRef = useRef(false);
   const stepRef      = useRef<OnboardingStep>(step);
   useEffect(() => { stepRef.current = step; }, [step]);
@@ -83,7 +86,13 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   }, []);
 
   const soloSteps = hasScannableSkills === false && step !== "scan-import" ? SOLO_BASE_STEPS : SOLO_SCAN_STEPS;
-  const activeSteps: OnboardingStep[] = onboardingPath === "join" ? JOIN_STEPS : soloSteps;
+  // TODO: Give signed-in users without a workspace a team-creation/invite flow.
+  const joinSteps = workspaceId ? JOIN_STEPS_BASE.filter((currentStep) => currentStep !== "join-team") : JOIN_STEPS_BASE;
+  const activeSteps: OnboardingStep[] = onboardingPath === "join" ? joinSteps : soloSteps;
+
+  useEffect(() => {
+    if (step === "cloud-sign-in" && workspaceId) goNext();
+  }, [step, workspaceId]);
 
   // Fire abandoned if component unmounts before completion
   useEffect(() => {
@@ -241,6 +250,14 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
         <WelcomeStep
           stepNum={stepNum}
           totalSteps={totalSteps}
+          onNext={goNext}
+        />
+      )}
+      {step === "cloud-sign-in" && (
+        <CloudSignInStep
+          stepNum={stepNum}
+          totalSteps={totalSteps}
+          onBack={handleBack}
           onNext={goNext}
         />
       )}

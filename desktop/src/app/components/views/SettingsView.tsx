@@ -18,6 +18,7 @@ import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTo
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { SlackChannelPicker } from "../shared/SlackChannelPicker";
+import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { SkillSyncSection } from "./settings/SkillSyncSection";
 import { McpSyncSection } from "./settings/McpSyncSection";
 import { PublishSection } from "./settings/PublishSection";
@@ -410,10 +411,9 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [calUrl, setCalUrl]                = useState<string>("");
-  const [cloudSignIn, setCloudSignIn] = useState<"idle" | "awaiting_approval" | "complete" | "error">("idle");
-  const [cloudSignInError, setCloudSignInError] = useState<string | null>(null);
 
   const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
+  const { cloudSignIn, cloudSignInError, handleCloudSignIn, handleCloudSignOut } = useCloudSignIn();
 
   // ── Load ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -427,15 +427,13 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       rpc.request.getContextSections(),
       rpc.request.getAppVersion(),
       rpc.request.getCrispConfig(),
-      rpc.request.getCloudAuthStatus(),
     ])
-      .then(([config, connectedApps, contextSections, appVersion, crispConfig, cloudAuth]) => {
+      .then(([config, connectedApps, contextSections, appVersion, crispConfig]) => {
         setSettings(config);
         setApps(connectedApps);
         setSections(contextSections);
         setVersionInfo(appVersion);
         setCalUrl(crispConfig.cal_url);
-        setCloudSignIn(cloudAuth.signedIn ? "complete" : "idle");
       })
       .catch(() => setLoadError("Failed to load settings."));
   }, [activeProfile]);
@@ -456,30 +454,9 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         setUpdateCheckState("failed");
         setTimeout(() => setUpdateCheckState("idle"), 5_000);
       }),
-      events.on("signInProgress", ({ phase, error }) => {
-        setCloudSignIn(phase);
-        setCloudSignInError(error ? error.replaceAll("_", " ") : null);
-      }),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
-
-  useEffect(
-    () => () => {
-      if (cloudSignIn === "awaiting_approval")
-        void rpc.request.cancelBrowserSignIn();
-    },
-    [cloudSignIn],
-  );
-
-  async function handleCloudSignIn() {
-    setCloudSignInError(null);
-    const result = await rpc.request.startBrowserSignIn();
-    if (!result.ok) {
-      setCloudSignIn("error");
-      setCloudSignInError(result.error ?? "Could not start sign in");
-    }
-  }
 
   // ── Save error auto-dismiss ────────────────────────────────────────────────
   useEffect(() => {
@@ -1045,15 +1022,14 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
               <button
                 className="settings__action-button"
                 disabled={
-                  cloudSignIn === "awaiting_approval" ||
-                  cloudSignIn === "complete"
+                  cloudSignIn === "awaiting_approval"
                 }
-                onClick={() => void handleCloudSignIn()}
+                onClick={() => void (cloudSignIn === "complete" ? handleCloudSignOut() : handleCloudSignIn())}
               >
                 {cloudSignIn === "awaiting_approval"
                   ? "Waiting…"
                   : cloudSignIn === "complete"
-                    ? "Signed in"
+                    ? "Sign out"
                     : "Sign in"}
               </button>
             </div>
