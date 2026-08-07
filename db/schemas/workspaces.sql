@@ -27,6 +27,9 @@ create table workspaces (
     references workspace_context_versions(id, workspace_id) on delete restrict
 );
 
+create index if not exists workspaces_team_id_access_mode_idx
+  on workspaces (team_id, access_mode);
+
 alter table workspaces enable row level security;
 
 create policy workspaces_select on workspaces
