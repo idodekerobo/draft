@@ -104,7 +104,7 @@ function assertPositiveLimit(value: number, label: string): void {
   }
 }
 
-function assertSafeDocumentPath(path: string): void {
+export function assertSafeDocumentPath(path: string): void {
   const segments = path.split("/");
   if (
     path.startsWith("/") ||
