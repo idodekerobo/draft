@@ -222,8 +222,9 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
     void rpc.request.getAvailableRunners().then((result) => {
       const installed = result.runners.filter((r) => r.installed).map((r) => r.name);
       setAvailableRunners(installed);
-      if (installed.length > 0 && !installed.includes(selectedRunner)) {
-        setSelectedRunner(installed[0]);
+      const firstInstalled = installed[0];
+      if (firstInstalled && !installed.includes(selectedRunner)) {
+        setSelectedRunner(firstInstalled);
       }
       setRunnersLoaded(true);
     }).catch(() => setRunnersLoaded(true));
@@ -355,7 +356,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
         <p className="onboarding__headless-success">{label}</p>
         {files.length > 0 && <p className="onboarding__hint">Created or updated: {files.slice(0, 4).map((file) => file.label).join(", ")}{files.length > 4 ? ", and more" : ""}.</p>}
         <div className="onboarding__actions" style={{ marginTop: 20 }}>
-          <button className="onboarding__skip" onClick={() => rpc.send.openWorkspaceInFinder()}>Open in Finder</button>
+          <button className="onboarding__skip" onClick={() => rpc.send.openWorkspaceInFinder({})}>Open in Finder</button>
           <button className="empty-state__cta onboarding__cta" onClick={onComplete}>{completeLabel}</button>
         </div>
       </>}

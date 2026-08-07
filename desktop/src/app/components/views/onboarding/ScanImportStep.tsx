@@ -16,9 +16,9 @@ interface ScanImportStepProps {
 interface ErrorBoundaryState { error: Error | null }
 
 class ScanErrorBoundary extends Component<{ children: ReactNode; onSkip: () => void; onRetry: () => void }, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: null };
+  override state: ErrorBoundaryState = { error: null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  render() {
+  override render() {
     if (this.state.error) {
       return (
         <div className="onboarding__scan-error">
