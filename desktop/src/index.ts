@@ -76,9 +76,10 @@ import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
 import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
 import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
-import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
+import type { AppRPCType, ContextFileEntry, IntegrationDetail } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
-import { clearAuthState, readAuthState } from "draft-core/auth-state";
+import { clearAuthState, getCachedWorkspaceId, readAuthState } from "draft-core/auth-state";
+import { fetchServerJSON } from "./main/server/server-client";
 
 let browserSignInController: AbortController | null = null;
 
@@ -90,6 +91,123 @@ async function preflightPublish(): Promise<{ ok: true; profile: string; workspac
   const gh = await capture(["gh", "api", "user", "--jq", ".login"]);
   if (gh.exitCode !== 0 || !gh.stdout.trim()) return { ok: false, error: "GitHub CLI not authenticated. Run `gh auth login` first." };
   return { ok: true, profile, workspace };
+}
+
+const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
+const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
+
+function capitalize(str: string): string {
+  return str.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function slugToLabel(slug: string): string {
+  return capitalize(slug.replace(/[-_]/g, " "));
+}
+
+function splitFrontmatter(content: string): { frontmatterRaw: string; body: string } {
+  if (!content.startsWith("---")) return { frontmatterRaw: "", body: content };
+  const end = content.indexOf("\n---", 3);
+  if (end === -1) return { frontmatterRaw: "", body: content };
+  const body = content.slice(end + 4).replace(/^\n/, "");
+  return { frontmatterRaw: content.slice(0, content.length - body.length), body };
+}
+
+function logEntryLabel(filename: string): string {
+  const base = filename.replace(/\.md$/, "");
+  // Expect prefix like 20260514_ or 20260514-
+  const match = base.match(/^(\d{4})(\d{2})(\d{2})[_-]/);
+  if (match) {
+    const [, year, month, day] = match;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  }
+  return slugToLabel(base);
+}
+
+function toContextFileEntry(relativePath: string, content: string): ContextFileEntry | null {
+  const segments = relativePath.split("/");
+  const [group, second, third] = segments;
+  if (!group || CONTEXT_SKIP_ROOT.has(group) || !relativePath.endsWith(".md")) return null;
+
+  const split = splitFrontmatter(content);
+  if (segments.length === 1) {
+    const base = relativePath.replace(/\.md$/, "");
+    return {
+      relativePath,
+      label: slugToLabel(base),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "standalone",
+      group: base,
+      groupLabel: slugToLabel(base),
+    };
+  }
+
+  if (segments.length === 2 && second === "index.md") {
+    return {
+      relativePath,
+      label: slugToLabel(group),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "dim",
+      group,
+      groupLabel: slugToLabel(group),
+    };
+  }
+
+  if (segments.length === 3 && second === "log" && third) {
+    return {
+      relativePath,
+      label: logEntryLabel(third),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "log",
+      group,
+      groupLabel: slugToLabel(group),
+    };
+  }
+
+  if (segments.length === 2 && second) {
+    const base = second.replace(/\.md$/, "");
+    return {
+      relativePath,
+      label: slugToLabel(base),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "group-child",
+      group,
+      groupLabel: slugToLabel(group),
+    };
+  }
+
+  return null;
+}
+
+function sortContextFileEntries(entries: ContextFileEntry[]): ContextFileEntry[] {
+  return entries.sort((a, b) => {
+    function sortKey(e: ContextFileEntry): [number, number, string, string] {
+      const stdIdx = CONTEXT_DIMENSION_ORDER.indexOf(e.group);
+      if (e.kind === "dim") {
+        return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 0, e.group, ""];
+      }
+      if (e.kind === "log") {
+        return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
+      }
+      if (e.kind === "standalone") return [200, 0, e.group, ""];
+      return [300, 0, e.group, e.relativePath];
+    }
+
+    const ka = sortKey(a);
+    const kb = sortKey(b);
+    for (let i = 0; i < ka.length; i++) {
+      const av = ka[i];
+      const bv = kb[i];
+      if (av === undefined || bv === undefined) break;
+      if (av < bv) return -1;
+      if (av > bv) return 1;
+    }
+    return 0;
+  });
 }
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
@@ -567,169 +685,34 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getContextFiles: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const contextDir = join(workspace, "context");
-        if (!existsSync(contextDir)) return [];
-
-        const SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
-        const DIMENSION_ORDER = ["company", "product", "team", "priorities"];
-
-        function capitalize(str: string): string {
-          return str.replace(/\b\w/g, (c) => c.toUpperCase());
-        }
-
-        function slugToLabel(slug: string): string {
-          return capitalize(slug.replace(/[-_]/g, " "));
-        }
-
-        function splitFrontmatter(content: string): { frontmatterRaw: string; body: string } {
-          if (!content.startsWith("---")) return { frontmatterRaw: "", body: content };
-          const end = content.indexOf("\n---", 3);
-          if (end === -1) return { frontmatterRaw: "", body: content };
-          const body = content.slice(end + 4).replace(/^\n/, "");
-          return { frontmatterRaw: content.slice(0, content.length - body.length), body };
-        }
-
-        function logEntryLabel(filename: string): string {
-          const base = filename.replace(/\.md$/, "");
-          // Expect prefix like 20260514_ or 20260514-
-          const match = base.match(/^(\d{4})(\d{2})(\d{2})[_-]/);
-          if (match) {
-            const [, year, month, day] = match;
-            const date = new Date(Number(year), Number(month) - 1, Number(day));
-            return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
-          }
-          return slugToLabel(base);
-        }
-
-        const entries: import("./rpc/schema").ContextFileEntry[] = [];
-
-        let topLevel: string[];
         try {
-          topLevel = readdirSync(contextDir);
+          // Currently assumes one team_default workspace. A real workspace list and
+          // picker are needed before supporting teams with multiple workspaces.
+          const workspaceId = getCachedWorkspaceId();
+          if (!workspaceId) return [];
+
+          // Live reads are intentional; a local cache/mirror is deferred until
+          // offline support is explicitly brought into scope.
+          const manifest = await fetchServerJSON<{
+            paths: string[];
+          }>(`workspaces/${workspaceId}/context`);
+          const documents = await Promise.all(
+            manifest.paths.map((path) =>
+              fetchServerJSON<{ path: string; content: string }>(
+                `workspaces/${workspaceId}/context/documents/${path.split("/").map(encodeURIComponent).join("/")}`,
+              ),
+            ),
+          );
+
+          return sortContextFileEntries(
+            documents.flatMap((document) => {
+              const entry = toContextFileEntry(document.path, document.content);
+              return entry ? [entry] : [];
+            }),
+          );
         } catch {
           return [];
         }
-
-        for (const name of topLevel) {
-          if (SKIP_ROOT.has(name)) continue;
-          const fullPath = join(contextDir, name);
-          let stat;
-          try { stat = statSync(fullPath); } catch { continue; }
-
-          if (stat.isDirectory()) {
-            const indexPath = join(fullPath, "index.md");
-            const hasIndex = existsSync(indexPath);
-
-            if (hasIndex) {
-              // Dimension dir — emit index.md as "dim" entry
-              let content = "";
-              try { content = readFileSync(indexPath, "utf8"); } catch { /* empty */ }
-              const { frontmatterRaw, body } = splitFrontmatter(content);
-              entries.push({
-                relativePath: `${name}/index.md`,
-                label: slugToLabel(name),
-                content: body,
-                frontmatterRaw,
-                kind: "dim",
-                group: name,
-                groupLabel: slugToLabel(name),
-              });
-
-              // Walk log/ subdir for log entries
-              const logDir = join(fullPath, "log");
-              if (existsSync(logDir)) {
-                let logFiles: string[];
-                try { logFiles = readdirSync(logDir); } catch { logFiles = []; }
-                const mdLogFiles = logFiles.filter((f) => f.endsWith(".md")).sort().reverse();
-                for (const lf of mdLogFiles) {
-                  const lfPath = join(logDir, lf);
-                  let lfContent = "";
-                  try { lfContent = readFileSync(lfPath, "utf8"); } catch { continue; }
-                  const lfSplit = splitFrontmatter(lfContent);
-                  entries.push({
-                    relativePath: `${name}/log/${lf}`,
-                    label: logEntryLabel(lf),
-                    content: lfSplit.body,
-                    frontmatterRaw: lfSplit.frontmatterRaw,
-                    kind: "log",
-                    group: name,
-                    groupLabel: slugToLabel(name),
-                  });
-                }
-              }
-            } else {
-              // Group dir — all .md files as group-child entries
-              let children: string[];
-              try { children = readdirSync(fullPath); } catch { continue; }
-              const mdChildren = children.filter((c) => c.endsWith(".md")).sort();
-              for (const child of mdChildren) {
-                const childPath = join(fullPath, child);
-                let childContent = "";
-                try { childContent = readFileSync(childPath, "utf8"); } catch { continue; }
-                const childBase = child.replace(/\.md$/, "");
-                const childSplit = splitFrontmatter(childContent);
-                entries.push({
-                  relativePath: `${name}/${child}`,
-                  label: slugToLabel(childBase),
-                  content: childSplit.body,
-                  frontmatterRaw: childSplit.frontmatterRaw,
-                  kind: "group-child",
-                  group: name,
-                  groupLabel: slugToLabel(name),
-                });
-              }
-            }
-          } else if (name.endsWith(".md")) {
-            let fileContent = "";
-            try { fileContent = readFileSync(fullPath, "utf8"); } catch { continue; }
-            const base = name.replace(/\.md$/, "");
-            const fileSplit = splitFrontmatter(fileContent);
-            entries.push({
-              relativePath: name,
-              label: slugToLabel(base),
-              content: fileSplit.body,
-              frontmatterRaw: fileSplit.frontmatterRaw,
-              kind: "standalone",
-              group: base,
-              groupLabel: slugToLabel(base),
-            });
-          }
-        }
-
-        // Sort order:
-        //   1. Standard dims (company → product → team → priorities), then their log entries
-        //   2. Other dims with index.md (alphabetical), then their log entries
-        //   3. Standalone files
-        //   4. Group-child entries (by group, then filename)
-        entries.sort((a, b) => {
-          function sortKey(e: import("./rpc/schema").ContextFileEntry): [number, number, string, string] {
-            const stdIdx = DIMENSION_ORDER.indexOf(e.group);
-            if (e.kind === "dim") {
-              return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 0, e.group, ""];
-            }
-            if (e.kind === "log") {
-              return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
-            }
-            if (e.kind === "standalone") {
-              return [200, 0, e.group, ""];
-            }
-            // group-child
-            return [300, 0, e.group, e.relativePath];
-          }
-          const ka = sortKey(a);
-          const kb = sortKey(b);
-          for (let i = 0; i < ka.length; i++) {
-            const av = ka[i];
-            const bv = kb[i];
-            if (av === undefined || bv === undefined) break;
-            if (av < bv) return -1;
-            if (av > bv) return 1;
-          }
-          return 0;
-        });
-
-        return entries;
       },
 
       getConnectedApps: async () => {
