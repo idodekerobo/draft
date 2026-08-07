@@ -8,5 +8,7 @@
   "github_oauth_client_id": "",
   "github_join_enabled": true,
   "draft_api_base_url": "http://localhost:8787",
-  "draft_app_url": "http://localhost:3000"
+  "draft_app_url": "http://localhost:3000",
+  "supabase_url": "http://localhost:54321",
+  "supabase_publishable_key": ""
 }

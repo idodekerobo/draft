@@ -22,7 +22,34 @@ export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSig
       if (!response.ok) throw new Error("pairing_failed");
       const tokens = await response.json() as { access_token: string; refresh_token: string; expires_at?: number; expires_in?: number };
       const nowSeconds = Math.floor(Date.now() / 1000);
-      writeAuthState({ access_token: tokens.access_token, refresh_token: tokens.refresh_token, expires_at: tokens.expires_at ?? nowSeconds + (tokens.expires_in ?? 3600) });
+      const authState = {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: tokens.expires_at ?? nowSeconds + (tokens.expires_in ?? 3600),
+        organization_id: null,
+        team_id: null,
+        workspace_id: null,
+      };
+      writeAuthState(authState);
+      try {
+        const whoamiResponse = await fetch(`${apiUrl}/whoami`, {
+          signal,
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+        if (whoamiResponse.ok) {
+          const whoami = await whoamiResponse.json() as {
+            organization_id: string | null;
+            primary_team_id: string | null;
+            workspace_id: string | null;
+          };
+          writeAuthState({
+            ...authState,
+            organization_id: whoami.organization_id,
+            team_id: whoami.primary_team_id,
+            workspace_id: whoami.workspace_id,
+          });
+        }
+      } catch { /* non-fatal — sign-in still completes with uncached identity */ }
       events.progress({ phase: "complete" }); return;
     }
     if (!signal.aborted) events.progress({ phase: "error", error: "timed_out" });
