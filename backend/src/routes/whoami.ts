@@ -2,14 +2,15 @@ import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { UserRow } from "../types/tables";
 
+type UserIdentityRow = Pick<
+  UserRow,
+  "id" | "email" | "display_name" | "organization_id" | "primary_team_id" | "organization_role" | "status"
+> & { workspace_id: string | null };
+
 export const GET = withAuth(async (_req, caller) => {
   const { data, error } = await serviceClient
-    .from("users")
-    .select(
-      "id, email, display_name, organization_id, primary_team_id, organization_role, status",
-    )
-    .eq("id", caller.userId)
-    .maybeSingle<UserRow>();
+    .rpc("get_user_identity", { p_user_id: caller.userId })
+    .maybeSingle<UserIdentityRow>();
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 });
