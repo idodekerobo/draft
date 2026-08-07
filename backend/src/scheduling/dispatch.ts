@@ -61,7 +61,7 @@ async function dispatchIngestSource(
 }
 
 // No retry here either -- a crash is handled by the next scheduled
-// occurrence plus M4's stale-run sweep, not by hammering WorkspaceRunAlreadyActiveError.
+// occurrence plus the stale-run sweep, not by hammering WorkspaceRunAlreadyActiveError.
 async function dispatchSynthesizeWorkspace(
   task: ScheduledTaskRow,
   occurrenceAt: string,
@@ -119,6 +119,6 @@ export async function dispatchScheduledTask(
     await dispatchSynthesizeWorkspace(fresh, options.occurrenceAt, options.config, options.client, deps);
     return;
   }
-  // rebuild_projection: M1 has no projection to rebuild -- fail loud, don't silently succeed.
+  // rebuild_projection: no projection exists yet -- fail loud, don't silently succeed.
   throw new Error(`Unsupported scheduled task_type "${fresh.task_type}" for task ${fresh.id}`);
 }
