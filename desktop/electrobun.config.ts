@@ -17,10 +17,13 @@ const _crispHistorySecret = JSON.stringify(_buildCfg.crisp_history_secret       
 const _calUrl             = JSON.stringify(_buildCfg.cal_url                          ?? "");
 const _ghClientId         = JSON.stringify(_buildCfg.github_oauth_client_id           ?? "");
 const _ghJoinEnabled      = JSON.stringify(_buildCfg.github_join_enabled              ?? false);
-const _draftApiBaseUrl    = JSON.stringify(_buildCfg.draft_api_base_url               ?? "https://api.draftai.us");
-const _draftAppUrl        = JSON.stringify(_buildCfg.draft_app_url                    ?? "https://app.draftai.us");
-const _supabaseUrl        = JSON.stringify(_buildCfg.supabase_url                    ?? "http://localhost:54321");
-const _supabasePublishableKey = JSON.stringify(_buildCfg.supabase_publishable_key    ?? "");
+// `make run-local` supplies the root .env.local values for desktop dev. Keep
+// release builds tied to build-config.json so local URLs cannot accidentally
+// be baked into a distributable bundle.
+const _draftApiBaseUrl    = JSON.stringify(isDev ? (process.env.DRAFT_API_BASE_URL ?? _buildCfg.draft_api_base_url) : (_buildCfg.draft_api_base_url ?? "https://api.draftai.us"));
+const _draftAppUrl        = JSON.stringify(isDev ? (process.env.DRAFT_APP_URL ?? _buildCfg.draft_app_url) : (_buildCfg.draft_app_url ?? "https://app.draftai.us"));
+const _supabaseUrl        = JSON.stringify(isDev ? (process.env.DRAFT_SUPABASE_URL ?? _buildCfg.supabase_url) : (_buildCfg.supabase_url ?? "http://localhost:54321"));
+const _supabasePublishableKey = JSON.stringify(isDev ? (process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY ?? _buildCfg.supabase_publishable_key) : (_buildCfg.supabase_publishable_key ?? ""));
 
 export default {
   app: {
