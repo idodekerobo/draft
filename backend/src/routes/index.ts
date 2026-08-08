@@ -1,4 +1,5 @@
 import * as firefliesWebhook from "../webhooks/fireflies/route";
+import * as connections from "./connections";
 import * as health from "./health";
 import * as sandboxCallback from "./sandbox-callback";
 import * as whoami from "./whoami";
@@ -11,6 +12,9 @@ export const routes = {
   "/health": { GET: health.GET },
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
   "/workspaces/:id/context": { GET: workspaceContext.contextGET },
+  "/workspaces/:id/connections": { GET: connections.GET, POST: connections.POST },
+  "/workspaces/:id/connections/:provider": { PATCH: connections.PATCH, DELETE: connections.DELETE },
+  "/workspaces/:id/connections/:provider/channels": { GET: connections.CHANNELS_GET },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },
   "/link": { POST: links.createPOST },
