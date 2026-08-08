@@ -78,6 +78,7 @@ import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team
 import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { clearAuthState, getCachedWorkspaceId, readAuthState } from "draft-core/auth-state";
+import { getUserIdentity } from "./main/auth/user-identity";
 import { fetchServer, fetchServerJSON } from "./main/server/server-client";
 
 let browserSignInController: AbortController | null = null;
@@ -1624,13 +1625,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return { ok: true };
       },
       getUserIdentity: async () => {
-        const state = readAuthState();
-        return {
-          signedIn: state !== null,
-          organizationId: state?.organization_id ?? null,
-          teamId: state?.team_id ?? null,
-          workspaceId: state?.workspace_id ?? null,
-        };
+        return getUserIdentity();
       },
       checkGitHubJoinStatus: async () => {
         const workspace = getWorkspacePath(getActiveProfile());

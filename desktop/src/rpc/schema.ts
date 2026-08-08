@@ -14,6 +14,7 @@ import type { RPCSchema } from "electrobun/bun";
 
 export interface UserIdentity {
   signedIn: boolean;
+  hydrated: boolean;
   organizationId: string | null;
   teamId: string | null;
   workspaceId: string | null;

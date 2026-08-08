@@ -25,6 +25,7 @@
     "tiptap-markdown": "^0.9.0"
   },
   "scripts": {
+    "test": "bun test",
     "start": "electrobun dev",
     "dev": "electrobun dev --watch",
     "prebuild": "bash scripts/prebuild.sh",
