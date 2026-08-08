@@ -120,6 +120,34 @@ This is a Bun monorepo. Install all workspace dependencies from the root:
 bun install
 ```
 
+### Run the local application stack
+
+The repository-level local entrypoint starts the web app, landing page,
+backend, and desktop app together:
+
+```bash
+cp .env.example .env.local
+# Fill in the private values in .env.local.
+make run-local
+```
+
+The root env file is organized by scope. Set `DRAFT_APP_URL` to the browser
+origin and `DRAFT_API_BASE_URL` to the backend URL reachable by browsers,
+desktop, and webhooks. For an ngrok backend, use the same ngrok URL for
+`DRAFT_API_BASE_URL`; the backend can still listen locally on
+`DRAFT_BACKEND_PORT`.
+
+The current backend scheduler requires `DRAFT_API_BASE_URL` to be an HTTPS
+URL, so a public tunnel such as ngrok is required for the full local stack.
+`make run-local` validates the required URLs, ports, Supabase values, Fly
+deployment values, and `SANDBOX_CALLBACK_SECRET` before starting anything. If
+one is missing, it exits with the exact variable name that must be added.
+
+`make run-local` currently preserves the app-local `.env.local` files as a
+temporary fallback while configuration is migrated. Those files are not
+deleted automatically. See each app README for standalone development and
+self-hosting variables.
+
 ### CLI
 
 ```bash
