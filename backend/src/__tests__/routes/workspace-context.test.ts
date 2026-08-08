@@ -32,15 +32,7 @@ mock.module("../../db/client", () => ({
 const routeModule = await import("../../routes/workspace-context");
 
 function request(params: Record<string, string>): Request {
-  // documentGET derives the wildcard-captured path from the URL itself
-  // (Bun does not expose "*" via req.params), so the fake request's URL
-  // must actually match "/workspaces/:id/context/documents/<*>" for those
-  // tests to exercise the same code path a real request would.
-  const wildcard = params["*"];
-  const url = wildcard !== undefined
-    ? `http://internal.test/workspaces/${params.id}/context/documents/${wildcard.split("/").map(encodeURIComponent).join("/")}`
-    : "http://internal.test";
-  return Object.assign(new Request(url), { params });
+  return Object.assign(new Request("http://internal.test"), { params });
 }
 
 describe("workspace context routes", () => {
@@ -49,7 +41,7 @@ describe("workspace context routes", () => {
     queryResult = { data: null, error: null };
   });
 
-  it("returns the latest context manifest after access is granted", async () => {
+  it("returns the latest context snapshot after access is granted", async () => {
     queryResult = {
       data: {
         id: "version-2",
@@ -73,7 +65,10 @@ describe("workspace context routes", () => {
       contentHash: "hash-2",
       creationReason: "synthesis",
       createdAt: "2026-08-06T00:00:00.000Z",
-      paths: ["product/index.md", "product/log/20260806_note.md"],
+      documents: {
+        "product/index.md": { content: "product", sha256: "sha-product" },
+        "product/log/20260806_note.md": { content: "note", sha256: "sha-note" },
+      },
     });
   });
 
@@ -91,45 +86,4 @@ describe("workspace context routes", () => {
     expect(await response.json()).toEqual({ error: "no_context_yet" });
   });
 
-  it("returns a document from the latest version", async () => {
-    queryResult = {
-      data: {
-        documents_json: {
-          "product/log/20260806_note.md": { content: "note", sha256: "sha-note" },
-        },
-      },
-      error: null,
-    };
-
-    const response = await routeModule.documentGET(
-      request({ id: "workspace-1", "*": "product/log/20260806_note.md" }) as never,
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      path: "product/log/20260806_note.md",
-      content: "note",
-      sha256: "sha-note",
-    });
-  });
-
-  it("returns not_found for a missing document", async () => {
-    queryResult = { data: { documents_json: {} }, error: null };
-
-    const response = await routeModule.documentGET(
-      request({ id: "workspace-1", "*": "product/missing.md" }) as never,
-    );
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "not_found" });
-  });
-
-  it.each(["../../etc/passwd", "/absolute.md", "product/data.json"])(
-    "rejects unsafe document path %s",
-    async (path) => {
-      const response = await routeModule.documentGET(
-        request({ id: "workspace-1", "*": path }) as never,
-      );
-      expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: "invalid_path" });
-    },
-  );
 });

@@ -11,7 +11,6 @@ export const routes = {
   "/health": { GET: health.GET },
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
   "/workspaces/:id/context": { GET: workspaceContext.contextGET },
-  "/workspaces/:id/context/documents/*": { GET: workspaceContext.documentGET },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },
   "/link": { POST: links.createPOST },
