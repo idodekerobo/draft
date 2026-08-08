@@ -5,7 +5,7 @@ import { events, rpc } from "../rpc";
 export type CloudSignInPhase = "idle" | "awaiting_approval" | "complete" | "error";
 
 export function useCloudSignIn() {
-  const { signedIn } = useUserIdentity();
+  const { signedIn, hydrated } = useUserIdentity();
   const [cloudSignIn, setCloudSignIn] = useState<CloudSignInPhase>(signedIn ? "complete" : "idle");
   const [cloudSignInError, setCloudSignInError] = useState<string | null>(null);
   const phaseRef = useRef(cloudSignIn);
@@ -15,8 +15,8 @@ export function useCloudSignIn() {
   }, [cloudSignIn]);
 
   useEffect(() => {
-    if (signedIn) setCloudSignIn("complete");
-  }, [signedIn]);
+    if (hydrated && signedIn) setCloudSignIn("complete");
+  }, [signedIn, hydrated]);
 
   useEffect(() => events.on("signInProgress", ({ phase, error }) => {
     setCloudSignIn(phase);

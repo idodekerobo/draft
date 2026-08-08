@@ -10,11 +10,11 @@ interface CloudSignInStepProps {
 
 export function CloudSignInStep({ stepNum, totalSteps, onBack, onNext }: CloudSignInStepProps) {
   const { cloudSignIn, cloudSignInError, handleCloudSignIn } = useCloudSignIn();
-  const { workspaceId } = useUserIdentity();
+  const { workspaceId, signedIn, hydrated } = useUserIdentity();
 
   // TODO: Add a no-workspace team-creation/invite flow; Continue currently lets
   // signed-in users proceed without a resolved workspace.
-  const complete = cloudSignIn === "complete";
+  const complete = cloudSignIn === "complete" && hydrated && signedIn;
 
   return (
     <div className="onboarding__body">
@@ -26,7 +26,7 @@ export function CloudSignInStep({ stepNum, totalSteps, onBack, onNext }: CloudSi
       <p className="onboarding__desc">Sign in once to connect this desktop to your shared workspace. Your source connections and context stay available across devices.</p>
       <div className="onboarding__cloud-sign-in-panel">
         <span className="onboarding__cloud-sign-in-status" data-phase={cloudSignIn}>
-          {cloudSignIn === "awaiting_approval" ? "Finish signing in in your browser" : complete ? (workspaceId ? "Signed in — loading your workspace" : "Signed in — no team yet") : cloudSignIn === "error" ? "Sign-in needs attention" : "Not connected"}
+          {cloudSignIn === "awaiting_approval" ? "Finish signing in in your browser" : cloudSignIn === "complete" && !hydrated ? "Finishing sign-in…" : complete ? (workspaceId ? "Signed in — loading your workspace" : "Signed in — no team yet") : cloudSignIn === "error" ? "Sign-in needs attention" : "Not connected"}
         </span>
         {complete && !workspaceId && (
           <span className="onboarding__hint">

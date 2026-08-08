@@ -54,8 +54,9 @@ export function App() {
   const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [supportOpen, setSupportOpen]           = useState(false);
   const [contextSnapshot, setContextSnapshot] = useState<{ workspaceId: string | null; files: ContextFileEntry[] }>({ workspaceId: null, files: [] });
+  const [contextLoading, setContextLoading] = useState(false);
   const contextRequestRef = useRef(0);
-  const { workspaceId } = useUserIdentity();
+  const { workspaceId, hydrated: identityHydrated } = useUserIdentity();
   const workspaceIdRef = useRef(workspaceId);
   const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
 
@@ -130,10 +131,12 @@ export function App() {
       const files = await rpc.request.getContextFiles();
       if (requestId === contextRequestRef.current && workspaceIdRef.current === requestedWorkspaceId) {
         setContextSnapshot({ workspaceId: requestedWorkspaceId, files });
+        setContextLoading(false);
       }
     } catch {
       if (requestId === contextRequestRef.current && workspaceIdRef.current === requestedWorkspaceId) {
         setContextSnapshot({ workspaceId: requestedWorkspaceId, files: [] });
+        setContextLoading(false);
       }
     }
   }, []);
@@ -142,6 +145,7 @@ export function App() {
   useEffect(() => {
     contextRequestRef.current += 1;
     setContextSnapshot({ workspaceId, files: [] });
+    setContextLoading(Boolean(workspaceId));
     if (workspaceId) void reloadContextFiles();
   }, [workspaceId, reloadContextFiles]);
 
@@ -349,6 +353,7 @@ export function App() {
                 />
               )}
               {activeView === "context" && (
+                !identityHydrated ? <div className="empty-state">Loading workspace…</div> :
                 <ContextViewer
                   key={`${activeProfile}:${workspaceId ?? "signed-out"}`}
                   activeProfile={activeProfile}
@@ -361,6 +366,7 @@ export function App() {
                       : update,
                   }))}
                   reloadFiles={reloadContextFiles}
+                  loading={contextLoading || contextSnapshot.workspaceId !== workspaceId}
                 />
               )}
               {activeView === "activity" && (

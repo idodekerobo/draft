@@ -1125,9 +1125,10 @@ interface ContextViewerProps {
   files: ContextFileEntry[];
   setFiles: Dispatch<SetStateAction<ContextFileEntry[]>>;
   reloadFiles: () => Promise<void>;
+  loading: boolean;
 }
 
-export function ContextViewer({ activeProfile, onNewChanges, files, setFiles, reloadFiles }: ContextViewerProps) {
+export function ContextViewer({ activeProfile, onNewChanges, files, setFiles, reloadFiles, loading }: ContextViewerProps) {
   const { track } = useAnalytics();
 
   // ── File tree state ──────────────────────────────────────────────────────────
@@ -1400,6 +1401,10 @@ export function ContextViewer({ activeProfile, onNewChanges, files, setFiles, re
   const changelogEntries = stagedDiff ? stagedDiff.entries : localEntries;
   const pendingCount = stagedDiff ? stagedDiff.entries.length : localEntries.length;
   const isApplying = syncStatus === "applying";
+
+  if (loading && files.length === 0) {
+    return <div className="empty-state">Loading context…</div>;
+  }
 
   if (files.length === 0) {
     return (
