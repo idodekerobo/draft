@@ -121,8 +121,7 @@ export interface RegisterFirefliesReconciliationTaskConnection {
   workspace_id: string;
 }
 
-// A backstop for missed webhooks, not the primary path -- 15 minutes bounds
-// staleness without hammering the Fireflies API.
+// Webhooks are primary; reconcile every 15 minutes to recover missed events.
 const RECONCILIATION_INTERVAL_SECONDS = 15 * 60;
 
 export async function registerFirefliesReconciliationTask(

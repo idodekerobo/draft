@@ -25,11 +25,6 @@ export function buildFirefliesContentMarkdown(meeting: FirefliesMeetingData): st
     sections.push(`## Outline\n\n${meeting.outline}`);
   }
 
-  const transcriptBody = meeting.sentences
-    .map((s) => `**${s.speakerName}:** ${s.text}`)
-    .join("\n\n");
-  sections.push(`## Transcript\n\n${transcriptBody}`);
-
   return `# ${meeting.title}
 
 **Date:** ${meeting.occurredAt}
@@ -37,6 +32,27 @@ export function buildFirefliesContentMarkdown(meeting: FirefliesMeetingData): st
 
 ${sections.join("\n\n")}
 `;
+}
+
+export function buildFirefliesSanitizedRaw(meeting: FirefliesMeetingData): FirefliesMeetingData {
+  return {
+    meetingId: meeting.meetingId,
+    title: meeting.title,
+    occurredAt: meeting.occurredAt,
+    attendees: [...meeting.attendees],
+    ...(meeting.shortSummary !== undefined ? { shortSummary: meeting.shortSummary } : {}),
+    ...(meeting.overview !== undefined ? { overview: meeting.overview } : {}),
+    ...(meeting.actionItems !== undefined ? { actionItems: meeting.actionItems } : {}),
+    ...(meeting.outline !== undefined ? { outline: meeting.outline } : {}),
+    sentences: meeting.sentences.map(({ speakerName, text }) => ({ speakerName, text })),
+  };
+}
+
+export function buildFirefliesExternalVersion(
+  contentMarkdown: string,
+  sanitizedRaw: FirefliesMeetingData,
+): string {
+  return sha256(JSON.stringify({ contentMarkdown, sanitizedRaw }));
 }
 
 export async function ingestFirefliesMeeting(
@@ -53,6 +69,8 @@ export async function ingestFirefliesMeeting(
   const meeting = await fetchFirefliesMeeting(apiToken, meetingId);
   const contentMarkdown = buildFirefliesContentMarkdown(meeting);
   const contentHash = sha256(contentMarkdown);
+  const sanitizedRaw = buildFirefliesSanitizedRaw(meeting);
+  const externalVersion = buildFirefliesExternalVersion(contentMarkdown, sanitizedRaw);
 
   const db = client ?? (await import("../../db/client")).serviceClient;
 
@@ -61,8 +79,9 @@ export async function ingestFirefliesMeeting(
     source_connection_id: connection.id,
     item_type: "meeting_transcript",
     external_id: meetingId,
-    // Fireflies gives no revision id; the content hash stands in for both.
-    external_version: contentHash,
+    // Fireflies gives no revision id, so include both synthesis content and
+    // structured transcript data in the deterministic revision hash.
+    external_version: externalVersion,
     occurred_at: meeting.occurredAt,
     content_markdown: contentMarkdown,
     content_hash: contentHash,
@@ -71,6 +90,7 @@ export async function ingestFirefliesMeeting(
       attendees: meeting.attendees,
       fireflies_meeting_id: meetingId,
     },
+    sanitized_raw_json: sanitizedRaw,
   });
 
   await insertEvent(db, connection.workspace_id, {

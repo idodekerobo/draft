@@ -178,13 +178,27 @@ describe("ingestFirefliesMeeting", () => {
     expect(markdown).toContain("## Overview");
     expect(markdown).toContain("## Action Items");
     expect(markdown).toContain("## Outline");
-    expect(markdown).toContain("## Transcript");
-    expect(markdown).toContain("**Alice:** Let's start.");
-    expect(markdown).toContain("**Bob:** Sounds good.");
+    expect(markdown).not.toContain("## Transcript");
+    expect(markdown).not.toContain("Let's start.");
+    expect(markdown).not.toContain("Sounds good.");
 
     const expectedHash = sha256(markdown);
-    expect(state.upsertedItem?.external_version).toBe(expectedHash);
     expect(state.upsertedItem?.content_hash).toBe(expectedHash);
+
+    expect(state.upsertedItem?.sanitized_raw_json).toEqual({
+      meetingId: "meeting-123",
+      title: "Weekly Sync",
+      occurredAt: new Date(1735689600000).toISOString(),
+      attendees: ["Alice"],
+      shortSummary: "Quick sync.",
+      overview: "Roadmap discussion.",
+      actionItems: "- Follow up with design.",
+      outline: "1. Roadmap",
+      sentences: [
+        { speakerName: "Alice", text: "Let's start." },
+        { speakerName: "Bob", text: "Sounds good." },
+      ],
+    });
 
     expect(state.eventInsertPayload?.event_type).toBe("source_items_added");
     expect(state.eventInsertPayload?.source_connection_id).toBe(ids.connection);
@@ -221,8 +235,12 @@ describe("ingestFirefliesMeeting", () => {
 });
 
 describe("content hashing (idempotency)", () => {
-  it("produces the same external_version/content_hash for identical fetched content", async () => {
-    const { buildFirefliesContentMarkdown } = await import(
+  it("keeps content_hash tied to markdown and versions structured transcript changes", async () => {
+    const {
+      buildFirefliesContentMarkdown,
+      buildFirefliesExternalVersion,
+      buildFirefliesSanitizedRaw,
+    } = await import(
       "../../../ingestion/fireflies/normalize"
     );
 
@@ -243,15 +261,44 @@ describe("content hashing (idempotency)", () => {
 
     const markdownA = buildFirefliesContentMarkdown(meeting);
     const markdownB = buildFirefliesContentMarkdown({ ...meeting });
+    const rawA = buildFirefliesSanitizedRaw(meeting);
+    const rawB = buildFirefliesSanitizedRaw({ ...meeting });
 
     expect(markdownA).toBe(markdownB);
     expect(sha256(markdownA)).toBe(sha256(markdownB));
+    expect(buildFirefliesExternalVersion(markdownA, rawA)).toBe(
+      buildFirefliesExternalVersion(markdownB, rawB),
+    );
 
     const differentMeeting: FirefliesMeetingData = {
       ...meeting,
       sentences: [...meeting.sentences, { speakerName: "Alice", text: "One more thing." }],
     };
     const markdownC = buildFirefliesContentMarkdown(differentMeeting);
-    expect(sha256(markdownC)).not.toBe(sha256(markdownA));
+    const rawC = buildFirefliesSanitizedRaw(differentMeeting);
+    expect(markdownC).toBe(markdownA);
+    expect(sha256(markdownC)).toBe(sha256(markdownA));
+    expect(buildFirefliesExternalVersion(markdownC, rawC)).not.toBe(
+      buildFirefliesExternalVersion(markdownA, rawA),
+    );
+  });
+
+  it("produces valid concise markdown when summary fields are absent", async () => {
+    const { buildFirefliesContentMarkdown } = await import(
+      "../../../ingestion/fireflies/normalize"
+    );
+    const markdown = buildFirefliesContentMarkdown({
+      meetingId: "meeting-empty",
+      title: "Unsummary Meeting",
+      occurredAt: "2025-01-01T00:00:00.000Z",
+      attendees: [],
+      sentences: [{ speakerName: "Alice", text: "Sensitive transcript text." }],
+    });
+
+    expect(markdown).toContain("# Unsummary Meeting");
+    expect(markdown).toContain("**Date:** 2025-01-01T00:00:00.000Z");
+    expect(markdown).toContain("**Attendees:** ");
+    expect(markdown).not.toContain("Sensitive transcript text.");
+    expect(markdown).not.toContain("## Transcript");
   });
 });
