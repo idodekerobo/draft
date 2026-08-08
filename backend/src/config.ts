@@ -14,14 +14,17 @@ export interface BackendConfig {
   supabaseSecretKey: string;
   port: number;
   appUrl: string;
+  apiBaseUrl: string;
 }
 
 export function loadConfig(): BackendConfig {
+  const port = Number(process.env.PORT ?? 8787);
   return {
     supabaseUrl: requireEnv("SUPABASE_URL"),
     supabasePublishableKey: requireEnv("SUPABASE_PUBLISHABLE_KEY"),
     supabaseSecretKey: requireEnv("SUPABASE_SECRET_KEY"),
-    port: Number(process.env.PORT ?? 8787),
+    port,
     appUrl: process.env.APP_URL ?? "https://app.draftai.us",
+    apiBaseUrl: process.env.API_BASE_URL ?? `http://localhost:${port}`,
   };
 }
