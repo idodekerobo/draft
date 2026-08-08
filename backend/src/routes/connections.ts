@@ -29,8 +29,13 @@ interface FirefliesConnectBody {
   api_token: string;
 }
 
-type ConnectBody = SlackConnectBody | FirefliesConnectBody;
-type SupportedProvider = "slack" | "fireflies";
+interface ClaudeCodeConnectBody {
+  provider: "claude_code";
+  token: string;
+}
+
+type ConnectBody = SlackConnectBody | FirefliesConnectBody | ClaudeCodeConnectBody;
+type SupportedProvider = "slack" | "fireflies" | "claude_code";
 
 interface SlackConnectResponse {
   ok: true;
@@ -57,7 +62,7 @@ interface SlackApiError extends Error {
 const config = loadConfig();
 
 function isSupportedProvider(value: unknown): value is SupportedProvider {
-  return value === "slack" || value === "fireflies";
+  return value === "slack" || value === "fireflies" || value === "claude_code";
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -78,6 +83,12 @@ function isFirefliesConnectBody(value: unknown): value is FirefliesConnectBody {
   if (!value || typeof value !== "object") return false;
   const body = value as Partial<FirefliesConnectBody>;
   return body.provider === "fireflies" && isNonEmptyString(body.api_token);
+}
+
+function isClaudeCodeConnectBody(value: unknown): value is ClaudeCodeConnectBody {
+  if (!value || typeof value !== "object") return false;
+  const body = value as Partial<ClaudeCodeConnectBody>;
+  return body.provider === "claude_code" && isNonEmptyString(body.token);
 }
 
 function isChannelIds(value: unknown): value is string[] {
@@ -161,7 +172,15 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .in("provider", ["slack", "fireflies"]);
   if (error) return errorResponse("lookup_failed", 500, error);
 
-  const connections = ((data ?? []) as Array<Pick<
+  const connections: Array<{
+    provider: string;
+    status: string | null;
+    display_name: string | null;
+    last_success_at: string | null;
+    last_error_at: string | null;
+    channel_ids: string[];
+    connected?: boolean;
+  }> = ((data ?? []) as Array<Pick<
     SourceConnectionRow,
     "provider" | "status" | "display_name" | "last_success_at" | "last_error_at" | "config_json"
   >>).map((connection) => ({
@@ -174,6 +193,37 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
       ? connection.config_json.channel_ids.filter((value): value is string => typeof value === "string")
       : [],
   }));
+
+  const { data: workspaceData, error: workspaceError } = await serviceClient
+    .from("workspaces")
+    .select("inference_credential_id")
+    .eq("id", req.params.id)
+    .single();
+  if (workspaceError) return errorResponse("workspace_lookup_failed", 500, workspaceError);
+
+  const inferenceCredentialId = (workspaceData as { inference_credential_id: string | null } | null)
+    ?.inference_credential_id ?? null;
+  let claudeCodeStatus: string | null = null;
+  if (inferenceCredentialId) {
+    const { data: credentialData, error: credentialError } = await serviceClient
+      .from("credentials")
+      .select("status")
+      .eq("id", inferenceCredentialId)
+      .eq("workspace_id", req.params.id)
+      .maybeSingle();
+    if (credentialError) return errorResponse("credential_lookup_failed", 500, credentialError);
+    claudeCodeStatus = (credentialData as { status: string } | null)?.status ?? null;
+  }
+  connections.push({
+    provider: "claude_code",
+    status: claudeCodeStatus,
+    display_name: null,
+    last_success_at: null,
+    last_error_at: null,
+    channel_ids: [],
+    connected: claudeCodeStatus === "active",
+  });
+
   return Response.json({ connections });
 });
 
@@ -225,8 +275,60 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   if (!body || typeof body !== "object" || !isSupportedProvider((body as { provider?: unknown }).provider)) {
     return errorResponse("invalid_provider", 400);
   }
-  if (!isSlackConnectBody(body) && !isFirefliesConnectBody(body)) {
+  if (!isSlackConnectBody(body) && !isFirefliesConnectBody(body) && !isClaudeCodeConnectBody(body)) {
     return errorResponse("invalid_body", 400);
+  }
+
+  if (body.provider === "claude_code") {
+    // Workspace-level credential, not a source_connections row: no live probe,
+    // no scheduled task — a bad token surfaces on the first real run via the
+    // existing 401/pause/reconnect handling.
+    const encryptedToken = encryptCredentialPayload(body.token, CURRENT_CREDENTIAL_KEY_VERSION);
+
+    const { data: existingCredential, error: existingCredentialError } = await serviceClient
+      .from("credentials")
+      .select("id")
+      .eq("workspace_id", req.params.id)
+      .eq("provider", "claude_code")
+      .maybeSingle();
+    if (existingCredentialError) return errorResponse("credential_lookup_failed", 500, existingCredentialError);
+
+    let claudeCodeCredentialId: string;
+    if (existingCredential) {
+      claudeCodeCredentialId = existingCredential.id;
+      const { error: updateError } = await serviceClient
+        .from("credentials")
+        .update({
+          encrypted_payload: encryptedToken,
+          encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+          status: "active",
+        })
+        .eq("id", claudeCodeCredentialId)
+        .eq("workspace_id", req.params.id);
+      if (updateError) return errorResponse("credential_update_failed", 500, updateError);
+    } else {
+      const { data: insertedCredential, error: insertError } = await serviceClient
+        .from("credentials")
+        .insert({
+          workspace_id: req.params.id,
+          provider: "claude_code",
+          encrypted_payload: encryptedToken,
+          encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+          status: "active",
+        })
+        .select("id")
+        .single();
+      if (insertError || !insertedCredential) return errorResponse("credential_insert_failed", 500, insertError);
+      claudeCodeCredentialId = insertedCredential.id;
+    }
+
+    const { error: workspacePointerError } = await serviceClient
+      .from("workspaces")
+      .update({ inference_credential_id: claudeCodeCredentialId })
+      .eq("id", req.params.id);
+    if (workspacePointerError) return errorResponse("workspace_update_failed", 500, workspacePointerError);
+
+    return Response.json({ ok: true });
   }
 
   const isFireflies = body.provider === "fireflies";
@@ -415,6 +517,7 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
 });
 
 export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) => {
+  if (req.params.provider === "claude_code") return errorResponse("not_supported", 400);
   if (!isSupportedProvider(req.params.provider)) return errorResponse("invalid_provider", 400);
 
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);

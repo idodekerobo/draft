@@ -33,11 +33,17 @@ interface ScheduledTask {
   enabled: boolean;
 }
 
+interface Workspace {
+  id: string;
+  inference_credential_id: string | null;
+}
+
 const state: {
   connections: Connection[];
   credentials: Credential[];
   scheduledTasks: ScheduledTask[];
-} = { connections: [], credentials: [], scheduledTasks: [] };
+  workspaces: Workspace[];
+} = { connections: [], credentials: [], scheduledTasks: [], workspaces: [] };
 
 function matches(row: object, filters: Record<string, unknown>): boolean {
   const values = row as Record<string, unknown>;
@@ -83,6 +89,10 @@ function createFakeClient() {
         }
 
         if (table === "credentials") {
+          if (operation === "select") {
+            const row = state.credentials.find((candidate) => matches(candidate, filters));
+            return { data: row ? { ...row } : null, error: null };
+          }
           if (operation === "update") {
             const rows = state.credentials.filter((candidate) => matches(candidate, filters));
             for (const row of rows) Object.assign(row, payload);
@@ -92,6 +102,18 @@ function createFakeClient() {
             const row = { ...(payload as unknown as Credential), id: "credential-new" } as Credential;
             state.credentials.push(row);
             return { data: { id: row.id }, error: null };
+          }
+        }
+
+        if (table === "workspaces") {
+          if (operation === "select") {
+            const row = state.workspaces.find((candidate) => matches(candidate, filters));
+            return { data: row ? { ...row } : null, error: null };
+          }
+          if (operation === "update") {
+            const rows = state.workspaces.filter((candidate) => matches(candidate, filters));
+            for (const row of rows) Object.assign(row, payload);
+            return { data: null, error: null };
           }
         }
 
@@ -240,6 +262,9 @@ beforeEach(() => {
   state.scheduledTasks = [
     { workspace_id: workspaceId, task_type: "ingest_source", task_key: "slack-connection", enabled: true },
   ];
+  state.workspaces = [
+    { id: workspaceId, inference_credential_id: null },
+  ];
 });
 
 function request(method: string, params: Record<string, string>, body?: unknown): Request {
@@ -356,15 +381,101 @@ describe("workspace connection routes", () => {
     const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      connections: [{
-        provider: "slack",
-        status: "active",
-        display_name: "Slack",
-        last_success_at: null,
-        last_error_at: null,
-        channel_ids: ["C-old"],
-      }],
+      connections: [
+        {
+          provider: "slack",
+          status: "active",
+          display_name: "Slack",
+          last_success_at: null,
+          last_error_at: null,
+          channel_ids: ["C-old"],
+        },
+        {
+          provider: "claude_code",
+          status: null,
+          display_name: null,
+          last_success_at: null,
+          last_error_at: null,
+          channel_ids: [],
+          connected: false,
+        },
+      ],
     });
+  });
+
+  it("reports claude_code as connected once a token is stored", async () => {
+    state.workspaces[0]!.inference_credential_id = "claude-code-credential";
+    state.credentials.push({
+      id: "claude-code-credential",
+      workspace_id: workspaceId,
+      provider: "claude_code",
+      encrypted_payload: "irrelevant",
+      encryption_key_version: "v1",
+      status: "active",
+    });
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as {
+      connections: Array<{
+        provider: string;
+        connected?: boolean;
+        status: string | null;
+        display_name: string | null;
+        last_success_at: string | null;
+        last_error_at: string | null;
+        channel_ids: string[];
+      }>;
+    };
+    const claudeCode = body.connections.find((connection) => connection.provider === "claude_code");
+    expect(claudeCode).toEqual({
+      provider: "claude_code",
+      status: "active",
+      display_name: null,
+      last_success_at: null,
+      last_error_at: null,
+      channel_ids: [],
+      connected: true,
+    });
+  });
+
+  it("stores a claude_code token as a workspace-level credential, not a source_connections row", async () => {
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, { provider: "claude_code", token: "sk-ant-oat01-token" }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(state.connections).toHaveLength(1); // unchanged — still just the seeded Slack connection
+    const claudeCodeCredential = state.credentials.find((credential) => credential.provider === "claude_code");
+    expect(claudeCodeCredential).toBeDefined();
+    expect(claudeCodeCredential?.status).toBe("active");
+    expect(decryptCredentialPayload(claudeCodeCredential?.encrypted_payload, "v1")).toBe("sk-ant-oat01-token");
+    expect(state.workspaces[0]?.inference_credential_id).toBe(claudeCodeCredential?.id ?? null);
+  });
+
+  it("re-connecting claude_code updates the existing credential in place", async () => {
+    await routeModule.POST(
+      request("POST", { id: workspaceId }, { provider: "claude_code", token: "first-token" }) as never,
+    );
+    const firstCredentialId = state.workspaces[0]?.inference_credential_id;
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, { provider: "claude_code", token: "second-token" }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.credentials.filter((credential) => credential.provider === "claude_code")).toHaveLength(1);
+    expect(state.workspaces[0]?.inference_credential_id).toBe(firstCredentialId);
+    const credential = state.credentials.find((c) => c.id === firstCredentialId);
+    expect(decryptCredentialPayload(credential?.encrypted_payload, "v1")).toBe("second-token");
+  });
+
+  it("rejects DELETE for claude_code instead of silently no-oping", async () => {
+    const response = await routeModule.DELETE(
+      request("DELETE", { id: workspaceId, provider: "claude_code" }) as never,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "not_supported" });
   });
 
   it("returns live Slack channel titles and marks configured channels", async () => {
