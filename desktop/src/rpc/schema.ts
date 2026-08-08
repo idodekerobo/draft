@@ -432,6 +432,7 @@ export interface ConnectedAppsStatus {
     github: IntegrationDetail;
     fireflies: IntegrationDetail;
   };
+  claudeCode: { connected: boolean };
 }
 
 /**
@@ -666,6 +667,12 @@ export type AppRPCType = {
       /** Persist Fireflies API credentials in Draft Cloud and return webhook setup values. */
       connectFireflies: { params: { apiKey: string }; response: ActionResult & { webhookUrl?: string; webhookSecret?: string } };
 
+      /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
+      connectClaudeCode: { params: { token: string }; response: ActionResult };
+
+      /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
+      getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };
+
       /** Build and return the Slack app creation URL with the manifest pre-filled. */
       getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };
 
@@ -694,6 +701,15 @@ export type AppRPCType = {
 
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
+
+      /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
+      getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };
+
+      /** Open the native folder picker for uploading local files as source items for the cloud sandbox to read. */
+      selectUploadFolder: { params: void; response: { folderPath: string | null } };
+
+      /** Read a locally-selected folder's files and upload their content as source items for the active workspace — the cloud sandbox can't read the local disk itself. */
+      uploadSourceItems: { params: { folderPath: string }; response: ActionResult & { inserted?: number; skipped?: string[] } };
 
       /**
        * Run inject-context.sh and return the full text that would be injected

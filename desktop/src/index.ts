@@ -36,7 +36,7 @@ import {
   applyProposalLocally,
 } from "draft-core/proposals";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
-import { join, resolve } from "path";
+import { extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
   getBundledBackgroundDir,
@@ -214,6 +214,62 @@ function sortContextFileEntries(entries: ContextFileEntry[]): ContextFileEntry[]
 // Falls back to empty string for OSS builds (no build-config.json).
 const _phKey          = process.env.DRAFT_PH_KEY           ?? "";
 const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.posthog.com";
+// Mirrors backend's PILOT_RUN_BUNDLE_LIMITS (backend/src/synthesis/load-run-bundle.ts) —
+// client-side filtering is a UX nicety; the server re-validates these limits itself.
+const UPLOAD_MAX_FILE_BYTES = 1_000_000;
+const UPLOAD_MAX_TOTAL_BYTES = 10_000_000;
+const UPLOAD_BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
+  ".zip", ".tar", ".gz", ".tgz", ".rar", ".7z",
+  ".exe", ".dll", ".so", ".dylib", ".bin",
+  ".mp3", ".mp4", ".mov", ".wav", ".avi",
+  ".woff", ".woff2", ".ttf", ".otf",
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+]);
+
+// Walks directory-by-directory, pruning ignored directory names (.git,
+// node_modules, dotfiles) BEFORE descending into them
+async function collectUploadFiles(rootDir: string): Promise<{ path: string; content: string }[]> {
+  const files: { path: string; content: string }[] = [];
+  let totalBytes = 0;
+
+  function walk(dir: string, relativeDir: string): void {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === ".git" || entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath, relativePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (UPLOAD_BINARY_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+
+      const stat = statSync(fullPath, { throwIfNoEntry: false });
+      if (!stat) continue;
+      if (stat.size > UPLOAD_MAX_FILE_BYTES || totalBytes + stat.size > UPLOAD_MAX_TOTAL_BYTES) continue;
+
+      pending.push({ relativePath, fullPath, bytes: stat.size });
+      totalBytes += stat.size;
+    }
+  }
+
+  const pending: { relativePath: string; fullPath: string; bytes: number }[] = [];
+  walk(rootDir, "");
+
+  for (const item of pending) {
+    try {
+      const content = await Bun.file(item.fullPath).text();
+      files.push({ path: item.relativePath, content });
+    } catch {
+      // Not valid UTF-8 text (likely a binary file the extension filter missed) — skip it.
+    }
+  }
+
+  return files;
+}
+
 const _crispWebsiteId      = process.env.DRAFT_CRISP_WEBSITE_ID       ?? "";
 const _crispHistoryUrl     = process.env.DRAFT_CRISP_HISTORY_ENDPOINT  ?? "";
 const _crispHistorySecret  = process.env.DRAFT_CRISP_HISTORY_SECRET    ?? "";
@@ -727,11 +783,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
         type CloudConnectionStatus = {
-          provider: "slack" | "fireflies";
-          status: string;
+          provider: "slack" | "fireflies" | "claude_code";
+          status: string | null;
           last_success_at: string | null;
           last_error_at: string | null;
           channel_ids?: string[];
+          connected?: boolean;
         };
         let cloudConnections: CloudConnectionStatus[] | null = null;
         const cloudWorkspaceId = getCachedWorkspaceId();
@@ -803,6 +860,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           ? await checkGhCli()
           : null;
 
+        const claudeCodeConnection = cloudConnections?.find((connection) => connection.provider === "claude_code");
+
         return {
           tools: {
             "claude-code": toolDetail("claude-code"),
@@ -817,6 +876,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             github:    githubDetail,
             fireflies: integrationDetail("fireflies"),
           },
+          claudeCode: { connected: claudeCodeConnection?.status === "active" },
         };
       },
 
@@ -1274,6 +1334,30 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      connectClaudeCode: async ({ token }) => {
+        if (!token.trim()) return { ok: false, error: "Paste your Claude Code OAuth token." };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "claude_code", token: token.trim() }),
+          });
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Claude Code." };
+        }
+      },
+
+      getInviteLink: async () => {
+        try {
+          const response = await fetchServerJSON<{ url: string; expiresAt: string }>("invites/mine");
+          return { ok: true as const, ...response };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not load the invite link." };
+        }
+      },
+
       getSlackManifestUrl: async () => buildSlackManifestUrl(),
 
       listSlackChannels: async ({ botToken }) => {
@@ -1339,6 +1423,53 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      selectUploadFolder: async () => {
+        try {
+          const [folderPath] = await Utils.openFileDialog({
+            canChooseFiles: false,
+            canChooseDirectory: true,
+            allowsMultipleSelection: false,
+          });
+          return { folderPath: folderPath || null };
+        } catch {
+          return { folderPath: null };
+        }
+      },
+
+      uploadSourceItems: async ({ folderPath }) => {
+        if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+          return { ok: false, error: "Choose a valid local folder to upload." };
+        }
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+
+        let files: { path: string; content: string }[];
+        try {
+          files = await collectUploadFiles(folderPath);
+        } catch (err) {
+          console.error("uploadSourceItems: failed to walk selected folder", folderPath, err);
+          return { ok: false, error: err instanceof Error ? `Could not read the selected folder: ${err.message}` : "Could not read the selected folder." };
+        }
+
+        if (files.length === 0) {
+          return { ok: false, error: "No eligible files found in that folder." };
+        }
+
+        try {
+          return await fetchServerJSON<{ ok: true; inserted: number; skipped: string[] }>(
+            `workspaces/${workspaceId}/source-items`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ files }),
+            },
+          );
+        } catch (err) {
+          console.error("uploadSourceItems: POST /source-items failed", err);
+          return { ok: false, error: err instanceof Error ? err.message : "Could not upload files." };
+        }
+      },
+
       getAvailableRunners: async () => {
         const [claudePath, codexPath] = await Promise.all([
           findRunnerBin("claude"),
@@ -1350,6 +1481,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             { name: "codex" as const, installed: codexPath !== null },
           ],
         };
+      },
+
+      getWorkspaceContextStatus: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { hasContext: false };
+        try {
+          await fetchServerJSON(`workspaces/${workspaceId}/context`);
+          return { hasContext: true };
+        } catch {
+          // Covers both the expected "no_context_yet" 404 and any other failure
+          return { hasContext: false };
+        }
       },
 
       runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner, dimensions }) => {
