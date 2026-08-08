@@ -8,10 +8,11 @@
 //   - Proposal badge count (from badgeUpdate push; filtered by active profile)
 //   - Daemon start state + error toast (auto-dismissing)
 
-import { useState, useEffect, useRef } from "react";
-import type { DaemonStatus } from "../rpc/schema";
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { ContextFileEntry, DaemonStatus } from "../rpc/schema";
 import { events, rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
+import { useUserIdentity } from "./identity/UserIdentityContext";
 import { StatusBar } from "./components/StatusBar";
 import type { DaemonControlVariant, View } from "./types";
 import { Sidebar } from "./components/Sidebar";
@@ -52,6 +53,10 @@ export function App() {
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [supportOpen, setSupportOpen]           = useState(false);
+  const [contextSnapshot, setContextSnapshot] = useState<{ workspaceId: string | null; files: ContextFileEntry[] }>({ workspaceId: null, files: [] });
+  const contextRequestRef = useRef(0);
+  const { workspaceId } = useUserIdentity();
+  const workspaceIdRef = useRef(workspaceId);
   const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
 
   useEffect(() => {
@@ -114,6 +119,31 @@ export function App() {
   }
 
   useEffect(() => { void loadProfiles(); }, []);
+
+  useEffect(() => { workspaceIdRef.current = workspaceId; }, [workspaceId]);
+
+  const reloadContextFiles = useCallback(async () => {
+    const requestedWorkspaceId = workspaceIdRef.current;
+    if (!requestedWorkspaceId) return;
+    const requestId = ++contextRequestRef.current;
+    try {
+      const files = await rpc.request.getContextFiles();
+      if (requestId === contextRequestRef.current && workspaceIdRef.current === requestedWorkspaceId) {
+        setContextSnapshot({ workspaceId: requestedWorkspaceId, files });
+      }
+    } catch {
+      if (requestId === contextRequestRef.current && workspaceIdRef.current === requestedWorkspaceId) {
+        setContextSnapshot({ workspaceId: requestedWorkspaceId, files: [] });
+      }
+    }
+  }, []);
+
+  // Keying the snapshot by cloud workspace prevents ui flicker while new request is in flight
+  useEffect(() => {
+    contextRequestRef.current += 1;
+    setContextSnapshot({ workspaceId, files: [] });
+    if (workspaceId) void reloadContextFiles();
+  }, [workspaceId, reloadContextFiles]);
 
   // ── Push: badge updates (filtered by active profile) ──────────────────────
   useEffect(() => {
@@ -305,9 +335,9 @@ export function App() {
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} onOpenFeedback={() => setSupportOpen(true)} />
           ) : (onboardingActive || status?.appState?.userState === "no-profile") ? (
-            <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); }} />
+            <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); await reloadContextFiles(); }} />
           ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
-            <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
+            <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); await reloadContextFiles(); }} />
           ) : (
             <>
               {activeView === "proposals" && (
@@ -320,9 +350,17 @@ export function App() {
               )}
               {activeView === "context" && (
                 <ContextViewer
-                  key={activeProfile}
+                  key={`${activeProfile}:${workspaceId ?? "signed-out"}`}
                   activeProfile={activeProfile}
                   onNewChanges={setContextHasNew}
+                  files={contextSnapshot.workspaceId === workspaceId ? contextSnapshot.files : []}
+                  setFiles={(update) => setContextSnapshot((snapshot) => ({
+                    workspaceId,
+                    files: typeof update === "function"
+                      ? update(snapshot.workspaceId === workspaceId ? snapshot.files : [])
+                      : update,
+                  }))}
+                  reloadFiles={reloadContextFiles}
                 />
               )}
               {activeView === "activity" && (

@@ -691,22 +691,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           const workspaceId = getCachedWorkspaceId();
           if (!workspaceId) return [];
 
-          // Live reads are intentional; a local cache/mirror is deferred until
-          // offline support is explicitly brought into scope.
-          const manifest = await fetchServerJSON<{
-            paths: string[];
+          // This RPC always reads the current cloud snapshot. The renderer owns
+          // the session-lifetime snapshot used to survive Context tab remounts;
+          // a persistent local cache/mirror remains deferred.
+          const context = await fetchServerJSON<{
+            documents: Record<string, { content: string; sha256: string }>;
           }>(`workspaces/${workspaceId}/context`);
-          const documents = await Promise.all(
-            manifest.paths.map((path) =>
-              fetchServerJSON<{ path: string; content: string }>(
-                `workspaces/${workspaceId}/context/documents/${path.split("/").map(encodeURIComponent).join("/")}`,
-              ),
-            ),
-          );
 
           return sortContextFileEntries(
-            documents.flatMap((document) => {
-              const entry = toContextFileEntry(document.path, document.content);
+            Object.entries(context.documents).flatMap(([path, document]) => {
+              const entry = toContextFileEntry(path, document.content);
               return entry ? [entry] : [];
             }),
           );

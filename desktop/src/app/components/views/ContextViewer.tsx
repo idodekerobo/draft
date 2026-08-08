@@ -5,7 +5,7 @@
 //   ChangelogPanel — diff entries; Apply action in HITL mode (hidden when no entries)
 //   context-viewer__body — file tree (left) + markdown content (right)
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { diffLines, type Change } from "diff";
 import type {
@@ -1122,13 +1122,15 @@ function ContextMenu({ state, onReveal, onClose }: {
 interface ContextViewerProps {
   activeProfile: string;
   onNewChanges: (hasNew: boolean) => void;
+  files: ContextFileEntry[];
+  setFiles: Dispatch<SetStateAction<ContextFileEntry[]>>;
+  reloadFiles: () => Promise<void>;
 }
 
-export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProps) {
+export function ContextViewer({ activeProfile, onNewChanges, files, setFiles, reloadFiles }: ContextViewerProps) {
   const { track } = useAnalytics();
 
   // ── File tree state ──────────────────────────────────────────────────────────
-  const [files, setFiles] = useState<ContextFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [expandedDims, setExpandedDims] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -1203,18 +1205,17 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
     setCtxMenu({ x: e.clientX, y: e.clientY, relativePath });
   }
 
-  // ── Load context files ───────────────────────────────────────────────────────
-  function loadFiles() {
-    rpc.request.getContextFiles().then((result) => {
-      setFiles(result);
-      if (result.length > 0) {
-        const firstSelectable = result.find(
-          (f) => f.kind === "dim" || f.kind === "standalone" || f.kind === "group-child"
-        );
-        setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0]?.relativePath ?? ""));
-      }
-    }).catch(() => setFiles([]));
-  }
+  // Reconcile selection whenever the shared snapshot changes. This covers first
+  // load, removals, profile switches, and explicit reloads after mutations.
+  useEffect(() => {
+    setSelectedPath((previous) => {
+      if (files.some((file) => file.relativePath === previous)) return previous;
+      const firstSelectable = files.find(
+        (file) => file.kind === "dim" || file.kind === "standalone" || file.kind === "group-child",
+      );
+      return firstSelectable?.relativePath ?? files[0]?.relativePath ?? "";
+    });
+  }, [files]);
 
   // ── Sync a saved edit back into tree state ───────────────────────────────────
   // Without this, `files` stays frozen at whatever loadFiles() last returned. Switch
@@ -1242,7 +1243,6 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
 
   // ── On mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    loadFiles();
     refreshLocalDiff();
 
     rpc.request.getLocalConfig().then((cfg) => setLocalConfig(cfg)).catch(() => {});
@@ -1303,7 +1303,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
         setShowChangelog(diff.entries.length > 0);
         setSyncStatus("loaded");
         onNewChanges(false); // user triggered this — they're seeing it now
-        loadFiles(); // refresh tree with newly applied context
+        void reloadFiles(); // refresh tree with newly applied context
       }
     } catch (err) {
       setSyncStatus("error");
@@ -1336,7 +1336,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
       setShowChangelog(false);
       setSyncStatus("loaded");
       onNewChanges(false);
-      loadFiles();
+      void reloadFiles();
     } catch (err) {
       setSyncStatus("error");
       setSyncError(err instanceof Error ? err.message : "Apply failed.");
@@ -1380,7 +1380,7 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
     const result = await rpc.request.addContextDimension({ name });
     if (result.ok) {
       track("context_dimension_added", {});
-      loadFiles();
+      void reloadFiles();
       setSelectedPath(`${name}/index.md`);
     }
     return result;
