@@ -17,7 +17,9 @@ import type { ReactNode } from "react";
 import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { SlackChannelPicker } from "../shared/SlackChannelPicker";
+import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
+import { GranolaConnectPanel } from "../shared/GranolaConnectPanel";
+import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { SkillSyncSection } from "./settings/SkillSyncSection";
 import { McpSyncSection } from "./settings/McpSyncSection";
@@ -354,7 +356,6 @@ function InputSourceRow({
               >
                 {isDisconnecting ? "Disconnecting…" : "Disconnect"}
               </button>
-              <span className="app-row__disconnect-note">Takes effect on next daemon cycle</span>
             </>
           ) : isGitHub ? (
             <button
@@ -397,16 +398,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | "fireflies" | null>(null);
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [expandedSource, setExpandedSource] = useState<"granola" | "slack" | "fireflies" | null>(null);
-  const [connectingSource, setConnectingSource] = useState<"granola" | "slack" | "fireflies" | null>(null);
-  const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
-  const [granolaKey, setGranolaKey] = useState("");
-  const [firefliesKey, setFirefliesKey] = useState("");
-  const [slackStep, setSlackStep] = useState<1 | 2 | 3>(1);
-  const [botToken, setBotToken] = useState("");
-  const [appToken, setAppToken] = useState("");
-  const [managingSlackChannels, setManagingSlackChannels] = useState(false);
-  const [slackChannelSelection, setSlackChannelSelection] = useState<string[]>([]);
-  const [savingChannels, setSavingChannels] = useState(false);
+  const [slackPanelMode, setSlackPanelMode] = useState<"connect" | "manage">("connect");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
@@ -458,6 +450,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     return () => unsubs.forEach((u) => u());
   }, []);
 
+
   // ── Save error auto-dismiss ────────────────────────────────────────────────
   useEffect(() => {
     if (!saveError) return;
@@ -504,9 +497,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       const result = await rpc.request.disconnectIntegration({ source });
       if (result.ok) {
         if (source === "slack") {
-          setManagingSlackChannels(false);
-          setSlackChannelSelection([]);
-          setSlackStep(1);
+          setSlackPanelMode("connect");
           setExpandedSource((current) => current === "slack" ? null : current);
         }
         setApps({
@@ -538,126 +529,16 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     } catch { /* non-fatal */ }
   }
 
-  async function handleConnectGranola() {
-    setConnectingSource("granola");
-    setSaveError(null);
-    try {
-      const result = granolaMode === "mcp"
-        ? await rpc.request.connectGranolaMCP()
-        : await rpc.request.connectGranolaAPI({ apiKey: granolaKey });
-      if (!result.ok) {
-        const fallback = granolaMode === "mcp"
-          ? "MCP registration failed. Try API key instead."
-          : "Invalid token. Check Settings → API → Personal access token in Granola.";
-        setSaveError(result.error ?? fallback);
-        return;
-      }
-      track("integration_connected", { source: "granola" });
-      await refreshConnectedApps();
-      setExpandedSource(null);
-      setGranolaKey("");
-    } catch {
-      setSaveError(granolaMode === "mcp"
-        ? "MCP registration failed. Try API key instead."
-        : "Could not connect Granola. Try again.");
-    } finally {
-      setConnectingSource(null);
-    }
-  }
-
-  async function handleConnectFireflies() {
-    setConnectingSource("fireflies");
-    setSaveError(null);
-    try {
-      const result = await rpc.request.connectFireflies({ apiKey: firefliesKey });
-      if (!result.ok) {
-        setSaveError(result.error ?? "Could not connect Fireflies. Check your API key.");
-        return;
-      }
-      track("integration_connected", { source: "fireflies" });
-      await refreshConnectedApps();
-      setExpandedSource(null);
-      setFirefliesKey("");
-    } catch {
-      setSaveError("Could not connect Fireflies. Try again.");
-    } finally {
-      setConnectingSource(null);
-    }
-  }
-
-  async function handleOpenSlackManifest() {
-    try {
-      const result = await rpc.request.getSlackManifestUrl();
-      if (result.ok && result.url) {
-        rpc.send.openUrl({ url: result.url });
-      } else {
-        rpc.send.openUrl({ url: "https://api.slack.com/apps" });
-        setSaveError(result.error ?? "Could not load manifest. Create the app manually.");
-      }
-      setSlackStep(2);
-    } catch {
-      rpc.send.openUrl({ url: "https://api.slack.com/apps" });
-      setSaveError("Could not load manifest. Create the app manually.");
-      setSlackStep(2);
-    }
-  }
-
-  async function handleConnectSlack() {
-    setConnectingSource("slack");
-    setSaveError(null);
-    try {
-      const result = await rpc.request.connectSlack({ botToken, appToken, channelIds: slackChannelSelection });
-      if (!result.ok) {
-        setSaveError(result.error ?? "Could not connect Slack. Check bot permissions.");
-        return;
-      }
-      track("integration_connected", { source: "slack" });
-      await refreshConnectedApps();
-      setExpandedSource(null);
-      setSlackStep(1);
-      setBotToken("");
-      setAppToken("");
-      setSlackChannelSelection([]);
-    } catch {
-      setSaveError("Could not connect Slack. Try again.");
-    } finally {
-      setConnectingSource(null);
-    }
-  }
-
   function toggleSlackPanel(mode: "connect" | "manage") {
     setSaveError(null);
     setExpandedSource((current) => {
-      const alreadyOpenSameMode = current === "slack" && managingSlackChannels === (mode === "manage");
+      const alreadyOpenSameMode = current === "slack" && slackPanelMode === mode;
       if (alreadyOpenSameMode) {
-        setManagingSlackChannels(false);
         return null;
       }
-      setManagingSlackChannels(mode === "manage");
-      setSlackChannelSelection([]);
-      if (mode === "connect") setSlackStep(1);
+      setSlackPanelMode(mode);
       return "slack";
     });
-  }
-
-  async function handleUpdateSlackChannels() {
-    setSavingChannels(true);
-    setSaveError(null);
-    try {
-      const result = await rpc.request.updateSlackChannels({ channelIds: slackChannelSelection });
-      if (!result.ok) {
-        setSaveError(result.error ?? "Could not update Slack channels.");
-        return;
-      }
-      track("integration_channels_updated", { source: "slack" });
-      await refreshConnectedApps();
-      setExpandedSource(null);
-      setManagingSlackChannels(false);
-    } catch {
-      setSaveError("Could not update Slack channels. Try again.");
-    } finally {
-      setSavingChannels(false);
-    }
   }
 
   // ── GitHub connect ─────────────────────────────────────────────────────────
@@ -889,113 +770,15 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 connectedAction={key === "slack" ? { label: "Update channels", onClick: () => toggleSlackPanel("manage") } : undefined}
               >
                 {key === "granola" && (
-                  <div className="app-row__connect-panel">
-                    <span className="app-row__panel-label">Connection method</span>
-                    <div className="app-row__mode-picker">
-                      <button className={granolaMode === "mcp" ? "app-row__mode--selected" : ""} onClick={() => setGranolaMode("mcp")}>MCP</button>
-                      <button className={granolaMode === "api" ? "app-row__mode--selected" : ""} onClick={() => setGranolaMode("api")}>API key</button>
-                    </div>
-                    {granolaMode === "mcp" ? (
-                      <span className="app-row__panel-help">Register Granola with Claude Code automatically. Authenticate in Claude Code on your next session.</span>
-                    ) : (
-                      <input className="app-row__input" type="password" value={granolaKey} onChange={(event) => setGranolaKey(event.target.value)} placeholder="Granola API key" aria-label="Granola API key" />
-                    )}
-                    <button className="app-row__connect app-row__panel-action" onClick={() => void handleConnectGranola()} disabled={connectingSource === "granola" || (granolaMode === "api" && !granolaKey.trim())}>
-                      {connectingSource === "granola" ? "Connecting…" : "Connect Granola"}
-                    </button>
-                  </div>
+                  <GranolaConnectPanel detail={apps.integrations.granola} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
                 )}
 
                 {key === "fireflies" && (
-                  <div className="app-row__connect-panel">
-                    <span className="app-row__panel-label">Get your API key</span>
-                    <span className="app-row__panel-help">
-                      Open Fireflies Developer Settings, then copy your API Key.
-                    </span>
-                    <button
-                      className="app-row__panel-link app-row__panel-action"
-                      onClick={() => rpc.send.openUrl({ url: "https://app.fireflies.ai/settings/developer-settings" })}
-                    >
-                      Open Fireflies Developer Settings
-                    </button>
-                    <input
-                      className="app-row__input"
-                      type="password"
-                      value={firefliesKey}
-                      onChange={(event) => setFirefliesKey(event.target.value)}
-                      placeholder="Fireflies API key"
-                      aria-label="Fireflies API key"
-                    />
-                    <button
-                      className="app-row__connect app-row__panel-action"
-                      onClick={() => void handleConnectFireflies()}
-                      disabled={connectingSource === "fireflies" || !firefliesKey.trim()}
-                    >
-                      {connectingSource === "fireflies" ? "Connecting…" : "Connect Fireflies"}
-                    </button>
-                  </div>
+                  <FirefliesConnectPanel detail={apps.integrations.fireflies} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
                 )}
 
-                {key === "slack" && managingSlackChannels && (
-                  <div className="app-row__connect-panel">
-                    <span className="app-row__panel-label">Update channels</span>
-                    <span className="app-row__panel-help">Pick which channels Draft should capture.</span>
-                    <SlackChannelPicker
-                      selected={slackChannelSelection}
-                      onChange={setSlackChannelSelection}
-                      onLoaded={(channels) => setSlackChannelSelection((current) =>
-                        current.length > 0 ? current : channels.filter((c) => c.allowlisted).map((c) => c.id))}
-                    />
-                    <button className="app-row__connect app-row__panel-action" onClick={() => void handleUpdateSlackChannels()} disabled={savingChannels || slackChannelSelection.length === 0}>
-                      {savingChannels ? "Saving…" : "Save channels"}
-                    </button>
-                  </div>
-                )}
-
-                {key === "slack" && !managingSlackChannels && (
-                  <div className="app-row__connect-panel">
-                    <span className="app-row__panel-label">Step {slackStep} of 3</span>
-                    {slackStep === 1 && (
-                      <>
-                        <span className="app-row__panel-help">Create a read-only Slack app, then paste the generated tokens back here.</span>
-                        <button className="app-row__connect app-row__panel-action" onClick={() => void handleOpenSlackManifest()}>Create Slack app</button>
-                      </>
-                    )}
-                    {slackStep === 2 && (
-                      <>
-                        <span className="app-row__panel-help">Install the app to your workspace, then copy the app-level token and bot token.</span>
-                        <label className="app-row__field-label" htmlFor="settings-slack-app-token">App-level token</label>
-                        <span className="app-row__hint">Found in <strong>Basic Information</strong> → under <strong>App-Level Tokens</strong> → click <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong></span>
-                        <input id="settings-slack-app-token" className="app-row__input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="xapp-..." />
-                        {appToken.length > 0 && !appToken.startsWith("xapp-") && (
-                          <span className="app-row__validation">App-level tokens start with xapp-.</span>
-                        )}
-                        <label className="app-row__field-label" htmlFor="settings-slack-bot-token">Bot token</label>
-                        <input id="settings-slack-bot-token" className="app-row__input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="xoxb-..." />
-                        {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
-                          <span className="app-row__validation">Bot tokens start with xoxb-.</span>
-                        )}
-                        <button className="app-row__connect app-row__panel-action" onClick={() => setSlackStep(3)} disabled={!botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
-                          Next
-                        </button>
-                      </>
-                    )}
-                    {slackStep === 3 && (
-                      <>
-                        <span className="app-row__panel-help">Pick which channels Draft should capture. You can update this later.</span>
-                        <SlackChannelPicker
-                          botToken={botToken}
-                          selected={slackChannelSelection}
-                          onChange={setSlackChannelSelection}
-                          onLoaded={(channels) => setSlackChannelSelection((current) =>
-                            current.length > 0 ? current : channels.filter((c) => c.allowlisted).map((c) => c.id))}
-                        />
-                        <button className="app-row__connect app-row__panel-action" onClick={() => void handleConnectSlack()} disabled={connectingSource === "slack" || slackChannelSelection.length === 0}>
-                          {connectingSource === "slack" ? "Connecting…" : "Connect Slack"}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                {key === "slack" && (
+                  <SlackConnectPanel detail={apps.integrations.slack} mode={slackPanelMode} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
                 )}
               </InputSourceRow>
             ))}
