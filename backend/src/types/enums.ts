@@ -31,6 +31,7 @@ export type SourceConnectionProvider =
   | "granola"
   | "claude_session"
   | "codex_session"
+  | "manual_upload"
   | "reserved_other";
 
 export type SourceConnectionStatus =
