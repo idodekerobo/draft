@@ -1,3 +1,11 @@
+.PHONY: run-local run-landing stop
+
+# Starts web (3000), landing (3001), API (8787), and desktop in one foreground
+# supervisor. Copy .env.example to the root .env.local before starting. Core/
+# background are intentionally excluded. Stop all children with Ctrl-C.
+run-local:
+	@bash scripts/run-local.sh
+
 run-landing:
 	cd landing-page-app && npm run dev -- --port 3001
 
