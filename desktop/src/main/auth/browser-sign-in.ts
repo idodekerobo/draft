@@ -29,6 +29,7 @@ export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSig
         organization_id: null,
         team_id: null,
         workspace_id: null,
+        identity_resolved: false,
       };
       writeAuthState(authState);
       try {
@@ -47,6 +48,7 @@ export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSig
             organization_id: whoami.organization_id,
             team_id: whoami.primary_team_id,
             workspace_id: whoami.workspace_id,
+            identity_resolved: true,
           });
         }
       } catch { /* non-fatal — sign-in still completes with uncached identity */ }

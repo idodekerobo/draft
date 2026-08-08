@@ -9,23 +9,31 @@ export interface AuthState {
   organization_id: string | null;
   team_id: string | null;
   workspace_id: string | null;
+  /** True only after the account/workspace identity has been resolved by /whoami. */
+  identity_resolved: boolean;
 }
 const PERSONAL_DIR = join(DRAFT_ROOT, "personal");
 const AUTH_FILE = join(PERSONAL_DIR, "auth.json");
 
+export function normalizeAuthState(value: Partial<AuthState>): AuthState | null {
+  return typeof value.access_token === "string" && typeof value.refresh_token === "string" && typeof value.expires_at === "number"
+    ? {
+        access_token: value.access_token,
+        refresh_token: value.refresh_token,
+        expires_at: value.expires_at,
+        organization_id: value.organization_id ?? null,
+        team_id: value.team_id ?? null,
+        workspace_id: value.workspace_id ?? null,
+        // Legacy auth files predate identity hydration and must be recovered.
+        identity_resolved: value.identity_resolved === true,
+      }
+    : null;
+}
+
 export function readAuthState(): AuthState | null {
   try {
     const value = JSON.parse(readFileSync(AUTH_FILE, "utf8")) as Partial<AuthState>;
-    return typeof value.access_token === "string" && typeof value.refresh_token === "string" && typeof value.expires_at === "number"
-      ? {
-          access_token: value.access_token,
-          refresh_token: value.refresh_token,
-          expires_at: value.expires_at,
-          organization_id: value.organization_id ?? null,
-          team_id: value.team_id ?? null,
-          workspace_id: value.workspace_id ?? null,
-        }
-      : null;
+    return normalizeAuthState(value);
   } catch { return null; }
 }
 
@@ -54,37 +62,64 @@ export function clearAuthState(): void {
 // at once (e.g. getContextFiles fetching N documents in parallel) all hit
 // this within the same tick, so a single in-flight refresh is shared
 // instead of each caller firing its own request.
-let inFlightRefresh: Promise<string> | null = null;
-
-export async function getFreshAccessToken(options: { supabaseUrl: string; publishableKey: string; now?: () => number }): Promise<string> {
-  const state = readAuthState();
-  if (!state) throw new Error("not_signed_in");
-  const nowSeconds = Math.floor((options.now?.() ?? Date.now()) / 1000);
-  if (state.expires_at > nowSeconds + 60) return state.access_token;
-  if (inFlightRefresh) return inFlightRefresh;
-
-  inFlightRefresh = (async () => {
-    try {
-      const response = await fetch(`${options.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
-        method: "POST",
-        headers: { apikey: options.publishableKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: state.refresh_token }),
-      });
-      if (!response.ok) throw new Error("session_refresh_failed");
-      const body = await response.json() as { access_token?: string; refresh_token?: string; expires_at?: number; expires_in?: number };
-      if (!body.access_token || !body.refresh_token) throw new Error("invalid_refresh_response");
-      const refreshed = {
-        ...state,
-        access_token: body.access_token,
-        refresh_token: body.refresh_token,
-        expires_at: body.expires_at ?? nowSeconds + (body.expires_in ?? 3600),
-      };
-      writeAuthState(refreshed);
-      return refreshed.access_token;
-    } finally {
-      inFlightRefresh = null;
-    }
-  })();
-
-  return inFlightRefresh;
+export interface AccessTokenProviderDeps {
+  read(): AuthState | null;
+  write(state: AuthState): void;
+  fetch(input: string, init: RequestInit): Promise<Response>;
 }
+
+export class AuthRefreshError extends Error {
+  constructor(public readonly kind: "terminal" | "transient") {
+    super(`session_refresh_${kind}`);
+    this.name = "AuthRefreshError";
+  }
+}
+
+export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
+  let inFlightRefresh: Promise<string> | null = null;
+  return async function accessToken(options: { supabaseUrl: string; publishableKey: string; now?: () => number; forceRefresh?: boolean }): Promise<string> {
+    const state = deps.read();
+    if (!state) throw new Error("not_signed_in");
+    const nowSeconds = Math.floor((options.now?.() ?? Date.now()) / 1000);
+    if (!options.forceRefresh && state.expires_at > nowSeconds + 60) return state.access_token;
+    if (inFlightRefresh) return inFlightRefresh;
+
+    inFlightRefresh = (async () => {
+      try {
+        let response: Response;
+        try {
+          response = await deps.fetch(`${options.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+            method: "POST",
+            headers: { apikey: options.publishableKey, "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: state.refresh_token }),
+          });
+        } catch {
+          throw new AuthRefreshError("transient");
+        }
+        if (!response.ok) {
+          const terminal = response.status === 400 || response.status === 401 || response.status === 403;
+          throw new AuthRefreshError(terminal ? "terminal" : "transient");
+        }
+        const body = await response.json() as { access_token?: string; refresh_token?: string; expires_at?: number; expires_in?: number };
+        if (!body.access_token || !body.refresh_token) throw new AuthRefreshError("transient");
+        const refreshed = {
+          ...state,
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+          expires_at: body.expires_at ?? nowSeconds + (body.expires_in ?? 3600),
+        };
+        const current = deps.read();
+        if (!current || current.refresh_token !== state.refresh_token) throw new Error("auth_state_changed");
+        deps.write(refreshed);
+        return refreshed.access_token;
+      } finally {
+        inFlightRefresh = null;
+      }
+    })();
+
+    return inFlightRefresh;
+  };
+}
+
+const defaultAccessTokenProvider = createAccessTokenProvider({ read: readAuthState, write: writeAuthState, fetch: (input, init) => fetch(input, init) });
+export const getFreshAccessToken = defaultAccessTokenProvider;
