@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { nextReconnectDelay } from "../../../ingestion/slack/socket-listener";
+import {
+  SlackSocketOpenError,
+  classifySlackListenerFailure,
+  nextReconnectDelay,
+} from "../../../ingestion/slack/socket-listener";
 
 // Only the pure backoff step is unit-tested here; a full WebSocket lifecycle
 // isn't practically mockable in this test environment.
@@ -20,5 +24,22 @@ describe("nextReconnectDelay", () => {
   it("respects a custom max", () => {
     expect(nextReconnectDelay(8_000, 10_000)).toBe(10_000);
     expect(nextReconnectDelay(4_000, 10_000)).toBe(8_000);
+  });
+});
+
+describe("classifySlackListenerFailure", () => {
+  it("does not retry terminal Slack authentication failures", () => {
+    expect(classifySlackListenerFailure(new SlackSocketOpenError("invalid_auth"))).toEqual({
+      retryable: false,
+      connectionStatus: "revoked",
+    });
+    expect(classifySlackListenerFailure(new SlackSocketOpenError("token_revoked")).retryable).toBe(false);
+  });
+
+  it("retries transient Slack and network failures", () => {
+    expect(classifySlackListenerFailure(new SlackSocketOpenError("internal_error"))).toEqual({
+      retryable: true,
+    });
+    expect(classifySlackListenerFailure(new TypeError("fetch failed"))).toEqual({ retryable: true });
   });
 });
