@@ -2759,7 +2759,8 @@ button {
   font: var(--font-size-secondary) var(--font-ui);
 }
 
-.app-row__panel-action {
+.app-row__panel-action,
+.onboarding__panel-action {
   height: 28px;
 }
 
@@ -2921,8 +2922,11 @@ button {
 
 /* Secondary ghost action inside a connect panel — e.g. "Open X Developer Settings".
    Distinct from .app-row__connect (primary blue CTA) so the external-link step
-   reads as a lesser action than the Connect button below it. */
-.app-row__panel-link {
+   reads as a lesser action than the Connect button below it. Shared with the
+   "onboarding" classPrefix variant used by onboarding steps (FirefliesConnectPanel,
+   ConnectClaudeCodeStep, HeadlessSetupStep) — same visual treatment, different prefix. */
+.app-row__panel-link,
+.onboarding__panel-link {
   align-self: flex-start;
   padding: 0 10px;
   background: transparent;
@@ -2936,7 +2940,8 @@ button {
   white-space: nowrap;
 }
 
-.app-row__panel-link:hover {
+.app-row__panel-link:hover,
+.onboarding__panel-link:hover {
   border-color: var(--color-accent-blue);
   color: var(--color-accent-blue);
 }

@@ -44,42 +44,14 @@ export function CompleteStep({
         <button className="onboarding__back" onClick={onBack}>← Back</button>
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
-      <h1 className="onboarding__title">One last thing — then you're running.</h1>
-
-      <div className="onboarding__education">
-        <div className="onboarding__education-text">
-          <strong>Context setup</strong>
-          <span>
-            If you skipped setup, open Claude Code or Codex and run{" "}
-            <code className="onboarding__code">/draft-setup</code>
-            {" "}any time. Otherwise, you can refine the context Draft just created as your product evolves.
-          </span>
-        </div>
-      </div>
-
-      <div className="onboarding__education" style={{ marginTop: 10 }}>
-        <div className="onboarding__education-text">
-          <strong>Draft is also a CLI</strong>
-          <span>
-            Run{" "}
-            <code className="onboarding__code">draft --help</code>
-            {" "}in your terminal. Every feature in this app is also available
-            as commands — manage workspaces, switch profiles, check status.
-          </span>
-        </div>
-      </div>
-
-      <div className="onboarding__education" style={{ marginTop: 10 }}>
-        <div className="onboarding__education-text">
-          <strong>Runs in the background</strong>
-          <span>
-            Draft runs while your Mac is on — the desktop app doesn't need to
-            stay open. Close it anytime and Draft keeps capturing context. You'll
-            find Draft in your menu bar, and you can start, stop, and control it
-            from there or from your terminal.
-          </span>
-        </div>
-      </div>
+      {/* TODO: this screen previously pointed at /draft-setup, the `draft`
+          CLI, and the local background daemon, local-model concepts
+          that don't apply now Simplified to just close out onboarding until those are rebuilt. */}
+      <h1 className="onboarding__title">You're all set.</h1>
+      <p className="onboarding__desc">
+        If you started a synthesis run, your initial context will load automatically once it
+        finishes. Claude Code will use it from then on — no extra setup needed.
+      </p>
 
       <button
         className="empty-state__cta onboarding__cta"
@@ -87,7 +59,7 @@ export function CompleteStep({
         onClick={handleStart}
         disabled={isStarting}
       >
-        {isStarting ? "Starting…" : "Start Draft"}
+        {isStarting ? "Starting…" : "Let's go"}
       </button>
     </div>
   );

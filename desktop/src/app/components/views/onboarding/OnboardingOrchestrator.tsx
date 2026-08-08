@@ -1,42 +1,39 @@
 // OnboardingOrchestrator.tsx — state + handler hub for the onboarding wizard
 //
-// At most eight active steps:
-//   1. Welcome  — what Draft is, three-component architecture
-//   2. Profile  — create / pick workspace (BEFORE install — install needs active-profile)
-//   3. Install  — tool selection + install (calls runInstall RPC)
-//   4. Scan + import — skipped when no third-party skills exist
-//   5. Integrations — connect Granola, Fireflies, Slack, and GitHub inline
-//   6. Context setup — optional headless setup with manual fallback
-//   7. Collab — team collaboration awareness
-//   8. Finalize — analytics consent and daemon start
+// Active steps:
+//   1. Welcome        — what Draft is
+//   2. Cloud sign-in  — skipped when already signed in with a resolved workspace at mount
+//   3. Connect Claude Code
+//   4. Integrations   — connect Slack and Fireflies inline
+//   5. Context setup  — cloud bootstrap (local-folder upload + trigger synthesis)
+//   6. Collab         — invite link for teammates
+//   7. Finalize       — analytics consent
+//
+// TODO: path-choice of solo/join-team, native GitHub OAuth
+// device flow to a shared context repo, ScanImportStep, ProfileStep are commented out
+// getActiveProfile() already falls back to "default" when no profile is chosen
+// underlying getProfiles/switchProfile/createProfile RPCs are still used elsewhere
 
-import { useState, useEffect, useRef } from "react";
-import type { InstallableTool, InstallStep, ProfileDetail } from "../../../../rpc/schema";
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { ConnectedAppsStatus } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
-import type { OnboardingPath, OnboardingStep } from "../../../types";
-import { TOOL_PREREQS } from "./constants";
+import type { OnboardingStep } from "../../../types";
 import { WelcomeStep } from "./WelcomeStep";
-import { PathChoiceStep } from "./PathChoiceStep";
-import { ProfileStep } from "./ProfileStep";
-import { ToolSelectionStep } from "./ToolSelectionStep";
+// import { PathChoiceStep } from "./PathChoiceStep"; // TODO: see note above
+// import { ProfileStep } from "./ProfileStep"; // TODO: see note above
+import { ConnectClaudeCodeStep } from "./ConnectClaudeCodeStep";
 import { IntegrationSetupStep } from "./IntegrationSetupStep";
 import { CompleteStep } from "./CompleteStep";
-import { ScanImportStep } from "./ScanImportStep";
+// import { ScanImportStep } from "./ScanImportStep"; // TODO: see note above
 import { HeadlessSetupStep } from "./HeadlessSetupStep";
 import { CollabStep } from "./CollabStep";
-import { JoinTeamStep } from "./JoinTeamStep";
+// import { JoinTeamStep } from "./JoinTeamStep"; // TODO: see note above
 import { CloudSignInStep } from "./CloudSignInStep";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
 
-const SOLO_BASE_STEPS: OnboardingStep[] = [
-  "welcome", "cloud-sign-in", "path-choice", "profile", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
-];
-const SOLO_SCAN_STEPS: OnboardingStep[] = [
-  "welcome", "cloud-sign-in", "path-choice", "profile", "intelligence-tools", "scan-import", "integrations", "headless-setup", "collab", "complete",
-];
-const JOIN_STEPS_BASE: OnboardingStep[] = [
-  "welcome", "cloud-sign-in", "path-choice", "profile", "join-team", "intelligence-tools", "integrations", "complete",
+const BASE_STEPS: OnboardingStep[] = [
+  "welcome", "cloud-sign-in", "intelligence-tools", "integrations", "headless-setup", "collab", "complete",
 ];
 
 interface OnboardingOrchestratorProps {
@@ -45,20 +42,26 @@ interface OnboardingOrchestratorProps {
 
 export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorProps) {
   const [step, setStep]               = useState<OnboardingStep>("welcome");
-  const [selected, setSelected]       = useState<Set<InstallableTool>>(new Set(["claude-code"]));
-  const [installing, setInstalling]   = useState(false);
-  const [steps, setSteps]             = useState<InstallStep[]>([]);
-  const [installError, setInstallError] = useState<string | null>(null);
   const [isStarting, setIsStarting]   = useState(false);
-  const [showContinue, setShowContinue] = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
   const [consentAnswered, setConsentAnswered] = useState(false);
-  const [hasScannableSkills, setHasScannableSkills] = useState<boolean | null>(null);
-  const [onboardingPath, setOnboardingPath] = useState<OnboardingPath | null>(null);
-  const [joinAvailable, setJoinAvailable] = useState(false);
+
+  // Lifted here (rather than owned by IntegrationSetupStep) so it survives
+  // the step remounting when the user navigates away and back — otherwise
+  // connections resets to null on every remount and briefly flashes
+  // "unconnected" until getConnectedApps() resolves again.
+  const [connections, setConnections] = useState<ConnectedAppsStatus["integrations"] | null>(null);
+  const loadConnections = useCallback(async () => {
+    try {
+      const result = await rpc.request.getConnectedApps();
+      setConnections(result.integrations);
+    } catch { /* IntegrationSetupStep surfaces its own error message on failure. */ }
+  }, []);
+  useEffect(() => { void loadConnections(); }, [loadConnections]);
 
   const { track, setConsent, setReplayEnabled } = useAnalytics();
-  const { workspaceId } = useUserIdentity();
+  const identity = useUserIdentity();
+  const { workspaceId } = identity;
   const completedRef = useRef(false);
   const stepRef      = useRef<OnboardingStep>(step);
   useEffect(() => { stepRef.current = step; }, [step]);
@@ -68,30 +71,25 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
     track("onboarding_step_viewed", { step });
   }, [step]);
 
+  const [skipCloudSignIn, setSkipCloudSignIn] = useState<boolean | null>(null);
   useEffect(() => {
-    // Fires unconditionally on mount, before any path is chosen, against
-    // whatever profile is currently active (not the one being created). Its
-    // result only feeds the solo-path variant selection below — it has zero
-    // effect on the join path, which never renders scan-import regardless.
-    rpc.request.scanSkills()
-      .then((result) => setHasScannableSkills(result.skills.length > 0))
-      // Preserve the step on scan failure so it can show its retry/skip UI.
-      .catch(() => setHasScannableSkills(true));
-  }, []);
+    if (skipCloudSignIn !== null || !identity.hydrated) return;
+    setSkipCloudSignIn(Boolean(identity.workspaceId));
+  }, [identity.hydrated, identity.workspaceId, skipCloudSignIn]);
 
+  const activeSteps: OnboardingStep[] = skipCloudSignIn
+    ? BASE_STEPS.filter((currentStep) => currentStep !== "cloud-sign-in")
+    : BASE_STEPS;
+
+  // Fallback for the race where identity hydration resolves (already signed
+  // in) after the user has already landed on cloud-sign-in but before
+  // skipCloudSignIn above has been decided — guarded to fire once 
+  const autoSkippedCloudSignIn = useRef(false);
   useEffect(() => {
-    rpc.request.getGitHubJoinConfig()
-      .then((cfg) => setJoinAvailable(cfg.enabled))
-      .catch(() => setJoinAvailable(false));
-  }, []);
-
-  const soloSteps = hasScannableSkills === false && step !== "scan-import" ? SOLO_BASE_STEPS : SOLO_SCAN_STEPS;
-  // TODO: Give signed-in users without a workspace a team-creation/invite flow.
-  const joinSteps = workspaceId ? JOIN_STEPS_BASE.filter((currentStep) => currentStep !== "join-team") : JOIN_STEPS_BASE;
-  const activeSteps: OnboardingStep[] = onboardingPath === "join" ? joinSteps : soloSteps;
-
-  useEffect(() => {
-    if (step === "cloud-sign-in" && workspaceId) goNext();
+    if (step === "cloud-sign-in" && workspaceId && !autoSkippedCloudSignIn.current) {
+      autoSkippedCloudSignIn.current = true;
+      goNext();
+    }
   }, [step, workspaceId]);
 
   // Fire abandoned if component unmounts before completion
@@ -103,108 +101,61 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
     };
   }, []);
 
-  // ── Profile step ──────────────────────────────────────────────────────────────
-
-  const [profileList, setProfileList]       = useState<ProfileDetail[]>([]);
-  const [profilesLoaded, setProfilesLoaded] = useState(false);
-  const [newProfileName, setNewProfileName] = useState("");
-  const [profileError, setProfileError]     = useState<string | null>(null);
-  const [settingProfile, setSettingProfile] = useState(false);
-
-  // Delay "Continue anyway" so it can't be hit in the same click as Install.
-  useEffect(() => {
-    if (!installError) { setShowContinue(false); return; }
-    const t = setTimeout(() => setShowContinue(true), 1_000);
-    return () => clearTimeout(t);
-  }, [installError]);
-
-  // Load profile list when profile step becomes active.
-  useEffect(() => {
-    if (step !== "profile") return;
-    rpc.request.getProfiles()
-      .then((pl) => { setProfileList(pl.details); setProfilesLoaded(true); })
-      .catch(() => setProfilesLoaded(true));
-  }, [step]);
-
-  async function handleSelectProfile(name: string) {
-    setSettingProfile(true);
-    setProfileError(null);
-    try {
-      const result = await rpc.request.switchProfile({ profile: name });
-      if (result.ok) {
-        track("profile_actioned", { action: "selected" });
-        goNext();
-      } else {
-        setProfileError(result.error ?? "Switch failed.");
-      }
-    } catch {
-      setProfileError("Switch failed.");
-    } finally {
-      setSettingProfile(false);
-    }
-  }
-
-  async function handleCreateProfile() {
-    const trimmed = newProfileName.trim();
-    if (!trimmed) return;
-    setSettingProfile(true);
-    setProfileError(null);
-    try {
-      const result = await rpc.request.createProfile({ name: trimmed });
-      if (result.ok) {
-        track("profile_actioned", { action: "created" });
-        goNext();
-      } else {
-        setProfileError(result.error ?? "Create failed.");
-      }
-    } catch {
-      setProfileError("Create failed.");
-    } finally {
-      setSettingProfile(false);
-    }
-  }
-
-  const prereqTools = [...selected]
-    .filter((id): id is keyof typeof TOOL_PREREQS => id in TOOL_PREREQS)
-    .map((id) => ({ id, ...TOOL_PREREQS[id]! }));
-
-  function toggleTool(id: InstallableTool) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleInstall() {
-    if (selected.size === 0) return;
-    setInstalling(true);
-    setInstallError(null);
-    try {
-      const result = await rpc.request.runInstall({ tools: [...selected] });
-      setSteps(result.steps);
-      if (result.ok) {
-        for (const tool of selected) track("tool_installed", { tool });
-        setInstallError(null);
-        setSteps([]);
-        goNext();
-      } else {
-        const failedStep = result.steps.find((s) => !s.ok);
-        for (const tool of selected) {
-          track("install_failed", { tool, step_label: failedStep?.label ?? "unknown" });
-        }
-        setInstallError("Some steps failed. You can continue or try again.");
-      }
-    } catch {
-      for (const tool of selected) {
-        track("install_failed", { tool, step_label: "rpc_error" });
-      }
-      setInstallError("Installation failed. Try again, or continue and run `draft add claude-code` in your terminal to finish setup.");
-    } finally {
-      setInstalling(false);
-    }
-  }
+  // TODO: profile step — see file-header note. Onboarding no longer visits
+  // "profile", so this local-desktop-profile create/select state and its
+  // handlers have no active caller right now. Left here for reference
+  // rather than deleted, matching the treatment of the other removed steps.
+  //
+  // const [profileList, setProfileList]       = useState<ProfileDetail[]>([]);
+  // const [profilesLoaded, setProfilesLoaded] = useState(false);
+  // const [newProfileName, setNewProfileName] = useState("");
+  // const [profileError, setProfileError]     = useState<string | null>(null);
+  // const [settingProfile, setSettingProfile] = useState(false);
+  //
+  // useEffect(() => {
+  //   if (step !== "profile") return;
+  //   rpc.request.getProfiles()
+  //     .then((pl) => { setProfileList(pl.details); setProfilesLoaded(true); })
+  //     .catch(() => setProfilesLoaded(true));
+  // }, [step]);
+  //
+  // async function handleSelectProfile(name: string) {
+  //   setSettingProfile(true);
+  //   setProfileError(null);
+  //   try {
+  //     const result = await rpc.request.switchProfile({ profile: name });
+  //     if (result.ok) {
+  //       track("profile_actioned", { action: "selected" });
+  //       goNext();
+  //     } else {
+  //       setProfileError(result.error ?? "Switch failed.");
+  //     }
+  //   } catch {
+  //     setProfileError("Switch failed.");
+  //   } finally {
+  //     setSettingProfile(false);
+  //   }
+  // }
+  //
+  // async function handleCreateProfile() {
+  //   const trimmed = newProfileName.trim();
+  //   if (!trimmed) return;
+  //   setSettingProfile(true);
+  //   setProfileError(null);
+  //   try {
+  //     const result = await rpc.request.createProfile({ name: trimmed });
+  //     if (result.ok) {
+  //       track("profile_actioned", { action: "created" });
+  //       goNext();
+  //     } else {
+  //       setProfileError(result.error ?? "Create failed.");
+  //     }
+  //   } catch {
+  //     setProfileError("Create failed.");
+  //   } finally {
+  //     setSettingProfile(false);
+  //   }
+  // }
 
   async function handleConsent(granted: boolean) {
     setConsentSaving(true);
@@ -221,7 +172,7 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   async function handleStart() {
     setIsStarting(true);
     completedRef.current = true;
-    track("onboarding_completed", { tools_selected: [...selected] });
+    track("onboarding_completed", { tools_selected: ["claude-code"] });
     try {
       await rpc.request.startDaemon();
       await rpc.request.startSkillWatcher();
@@ -261,60 +212,15 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           onNext={goNext}
         />
       )}
-      {step === "path-choice" && (
-        <PathChoiceStep
-          stepNum={stepNum}
-          totalSteps={totalSteps}
-          onBack={handleBack}
-          joinAvailable={joinAvailable}
-          onChoose={(path) => {
-            track("onboarding_path_chosen", { path });
-            setOnboardingPath(path);
-            goNext();
-          }}
-        />
-      )}
-      {step === "profile" && (
-        <ProfileStep
-          stepNum={stepNum}
-          totalSteps={totalSteps}
-          onBack={handleBack}
-          profileList={profileList}
-          profilesLoaded={profilesLoaded}
-          newProfileName={newProfileName}
-          setNewProfileName={setNewProfileName}
-          profileError={profileError}
-          settingProfile={settingProfile}
-          handleSelectProfile={handleSelectProfile}
-          handleCreateProfile={handleCreateProfile}
-          restrictToNewProfile={onboardingPath === "join"}
-        />
-      )}
-      {step === "join-team" && (
-        <JoinTeamStep
+      {/* TODO: path-choice — see file-header note */}
+      {/* TODO: profile — see file-header note */}
+      {/* TODO: join-team — see file-header note */}
+      {step === "intelligence-tools" && (
+        <ConnectClaudeCodeStep
           stepNum={stepNum}
           totalSteps={totalSteps}
           onBack={handleBack}
           onNext={goNext}
-        />
-      )}
-      {step === "intelligence-tools" && (
-        <ToolSelectionStep
-          stepNum={stepNum}
-          totalSteps={totalSteps}
-          onBack={handleBack}
-          selected={selected}
-          toggleTool={toggleTool}
-          installing={installing}
-          steps={steps}
-          installError={installError}
-          showContinue={showContinue}
-          handleInstall={handleInstall}
-          prereqTools={prereqTools}
-          onSkip={() => {
-            track("install_skipped", { tools: [...selected] });
-            goNext();
-          }}
         />
       )}
       {step === "integrations" && (
@@ -323,16 +229,11 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           totalSteps={totalSteps}
           onBack={handleBack}
           onNext={goNext}
+          connections={connections}
+          loadConnections={loadConnections}
         />
       )}
-      {step === "scan-import" && (
-        <ScanImportStep
-          stepNum={stepNum}
-          totalSteps={totalSteps}
-          onBack={handleBack}
-          onNext={goNext}
-        />
-      )}
+      {/* TODO: scan-import — see file-header note */}
       {step === "headless-setup" && (
         <HeadlessSetupStep
           stepNum={stepNum}
