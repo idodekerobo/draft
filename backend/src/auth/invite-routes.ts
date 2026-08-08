@@ -1,10 +1,56 @@
+import { loadConfig } from "../config";
 import { serviceClient } from "../db/client";
+import { generateInviteToken } from "./generate-token";
 import { withAuth } from "./withAuth";
 
 type InviteTokenRequest = Bun.BunRequest<"/invites/:token">;
 type InviteAcceptRequest = Bun.BunRequest<"/invites/:token/accept">;
+type MineRequest = Bun.BunRequest<"/invites/mine">;
+
+const INVITE_TTL_MS = 30 * 86_400_000;
 
 async function expire(id: string): Promise<void> { await serviceClient.from("invites").update({ status: "expired" }).eq("id", id).eq("status", "active"); }
+
+// for now, one invite link per (org, team) is reused across requests
+export const mineGET = withAuth<MineRequest>(async (_req, caller) => {
+  const { data: user, error: userError } = await serviceClient
+    .from("users").select("organization_id, primary_team_id").eq("id", caller.userId).maybeSingle();
+  if (userError) return Response.json({ error: "lookup_failed" }, { status: 500 });
+  if (!user?.organization_id || !user.primary_team_id) {
+    return Response.json({ error: "no_team" }, { status: 404 });
+  }
+
+  const { data: existing, error: existingError } = await serviceClient
+    .from("invites")
+    .select("token, expires_at")
+    .eq("organization_id", user.organization_id)
+    .eq("team_id", user.primary_team_id)
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) return Response.json({ error: "lookup_failed" }, { status: 500 });
+
+  if (existing) {
+    return Response.json({
+      url: `${loadConfig().appUrl}/invite/${existing.token}`,
+      expiresAt: existing.expires_at,
+    });
+  }
+
+  const token = generateInviteToken();
+  const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+  const { error: insertError } = await serviceClient.from("invites").insert({
+    organization_id: user.organization_id,
+    team_id: user.primary_team_id,
+    token,
+    expires_at: expiresAt,
+  });
+  if (insertError) return Response.json({ error: "create_failed" }, { status: 500 });
+
+  return Response.json({ url: `${loadConfig().appUrl}/invite/${token}`, expiresAt });
+});
 
 export async function resolveGET(req: InviteTokenRequest): Promise<Response> {
   const { data: invite, error } = await serviceClient.from("invites")
