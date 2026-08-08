@@ -49,6 +49,38 @@ export async function prepareRun(
     );
   }
 
+  const uniqueSourceItemIds = [...new Set(options.sourceItemIds)];
+  if (uniqueSourceItemIds.length !== options.sourceItemIds.length) {
+    throw new Error(
+      "prepareRun: sourceItemIds must not contain duplicate IDs",
+    );
+  }
+
+  let sourceItems: Pick<
+    SourceItemRow,
+    "id" | "external_version" | "content_hash"
+  >[] = [];
+  if (uniqueSourceItemIds.length > 0) {
+    const { data: sourceItemsData, error: sourceItemsError } = await client
+      .from("source_items")
+      .select("id, external_version, content_hash")
+      .in("id", uniqueSourceItemIds)
+      .eq("workspace_id", options.workspaceId)
+      .eq("lifecycle_status", "ready");
+    if (sourceItemsError) throw sourceItemsError;
+    sourceItems = (sourceItemsData ?? []) as typeof sourceItems;
+
+    const eligibleIds = new Set(sourceItems.map((item) => item.id));
+    const ineligibleIds = uniqueSourceItemIds.filter(
+      (id) => !eligibleIds.has(id),
+    );
+    if (ineligibleIds.length > 0) {
+      throw new Error(
+        `Missing or ineligible source items while preparing run: ${ineligibleIds.join(", ")}`,
+      );
+    }
+  }
+
   // {scheduled_task_id}:{occurrence_at} so duplicate dispatches of the same
   // occurrence collide on one key; {trigger_type}:{uuid} otherwise.
   if (options.scheduledTaskId && !options.occurrenceAt) {
@@ -89,24 +121,14 @@ export async function prepareRun(
   const runId = (runData as { id: string }).id;
 
   if (options.sourceItemIds.length > 0) {
-    const { data: sourceItemsData, error: sourceItemsError } = await client
-      .from("source_items")
-      .select("id, external_version, content_hash")
-      .in("id", options.sourceItemIds);
-    if (sourceItemsError) throw sourceItemsError;
-    const sourceItems = (sourceItemsData ?? []) as Pick<
-      SourceItemRow,
-      "id" | "external_version" | "content_hash"
-    >[];
     const sourceItemsById = new Map(
       sourceItems.map((item) => [item.id, item]),
     );
 
     const membershipRows = options.sourceItemIds.map((sourceItemId, position) => {
       const sourceItem = sourceItemsById.get(sourceItemId);
-      if (!sourceItem) {
-        throw new Error(`Missing source item ${sourceItemId} while preparing run`);
-      }
+      // Eligibility was checked before creating the run row.
+      if (!sourceItem) throw new Error(`Missing source item ${sourceItemId}`);
       return {
         workspace_id: options.workspaceId,
         synthesis_run_id: runId,

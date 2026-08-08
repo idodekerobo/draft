@@ -18,7 +18,13 @@ const ids = {
 
 interface FakeClientOptions {
   currentContextVersionId?: string | null;
-  sourceItems?: Array<{ id: string; external_version: string; content_hash: string | null }>;
+  sourceItems?: Array<{
+    id: string;
+    workspace_id: string;
+    lifecycle_status: "ready" | "superseded" | "deleted";
+    external_version: string;
+    content_hash: string | null;
+  }>;
   runInsertError?: { message: string; code: string };
   membershipInsertError?: Error;
 }
@@ -69,10 +75,21 @@ function createFakeClient(options: FakeClientOptions = {}) {
     if (table === "source_items") {
       return {
         select: () => ({
-          in: async (_column: string, values: string[]) => ({
-            data: sourceItems.filter((item) => values.includes(item.id)),
-            error: null,
-          }),
+          in: (_column: string, values: string[]) => {
+            let filtered = sourceItems.filter((item) => values.includes(item.id));
+            const query = {
+              eq: (column: string, value: string) => {
+                filtered = filtered.filter(
+                  (item) => item[column as keyof typeof item] === value,
+                );
+                return query;
+              },
+              then: (
+                resolve: (value: { data: typeof sourceItems; error: null }) => void,
+              ) => resolve({ data: filtered, error: null }),
+            };
+            return query;
+          },
         }),
       };
     }
@@ -231,8 +248,20 @@ describe("prepareRun", () => {
   it("assigns position 0..n-1 to source items in the given order and pulls version/hash from source_items", async () => {
     const { client, calls } = createFakeClient({
       sourceItems: [
-        { id: ids.sourceA, external_version: "3", content_hash: "hash-a" },
-        { id: ids.sourceB, external_version: "7", content_hash: "hash-b" },
+        {
+          id: ids.sourceA,
+          workspace_id: ids.workspace,
+          lifecycle_status: "ready",
+          external_version: "3",
+          content_hash: "hash-a",
+        },
+        {
+          id: ids.sourceB,
+          workspace_id: ids.workspace,
+          lifecycle_status: "ready",
+          external_version: "7",
+          content_hash: "hash-b",
+        },
       ],
     });
 
@@ -261,6 +290,88 @@ describe("prepareRun", () => {
       source_item_version: "3",
       content_hash: "hash-a",
     });
+  });
+
+  it("rejects superseded source items before creating a run", async () => {
+    const { client, calls } = createFakeClient({
+      sourceItems: [{
+        id: ids.sourceA,
+        workspace_id: ids.workspace,
+        lifecycle_status: "superseded",
+        external_version: "3",
+        content_hash: "hash-a",
+      }],
+    });
+
+    await expect(prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "manual",
+      sourceItemIds: [ids.sourceA],
+      client,
+    })).rejects.toThrow(/ineligible.*source items/i);
+    expect(calls.runInserts).toHaveLength(0);
+    expect(calls.membershipInserts).toHaveLength(0);
+  });
+
+  it("rejects source items from another workspace before creating a run", async () => {
+    const { client, calls } = createFakeClient({
+      sourceItems: [{
+        id: ids.sourceA,
+        workspace_id: "99999999-9999-4999-8999-999999999999",
+        lifecycle_status: "ready",
+        external_version: "3",
+        content_hash: "hash-a",
+      }],
+    });
+
+    await expect(prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "manual",
+      sourceItemIds: [ids.sourceA],
+      client,
+    })).rejects.toThrow(ids.sourceA);
+    expect(calls.runInserts).toHaveLength(0);
+    expect(calls.membershipInserts).toHaveLength(0);
+  });
+
+  it("rejects deleted source items before creating a run", async () => {
+    const { client, calls } = createFakeClient({
+      sourceItems: [{
+        id: ids.sourceA,
+        workspace_id: ids.workspace,
+        lifecycle_status: "deleted",
+        external_version: "3",
+        content_hash: "hash-a",
+      }],
+    });
+
+    await expect(prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "manual",
+      sourceItemIds: [ids.sourceA],
+      client,
+    })).rejects.toThrow(ids.sourceA);
+    expect(calls.runInserts).toHaveLength(0);
+  });
+
+  it("rejects duplicate requested source IDs before creating a run", async () => {
+    const { client, calls } = createFakeClient({
+      sourceItems: [{
+        id: ids.sourceA,
+        workspace_id: ids.workspace,
+        lifecycle_status: "ready",
+        external_version: "3",
+        content_hash: "hash-a",
+      }],
+    });
+
+    await expect(prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "manual",
+      sourceItemIds: [ids.sourceA, ids.sourceA],
+      client,
+    })).rejects.toThrow(/duplicate/i);
+    expect(calls.runInserts).toHaveLength(0);
   });
 
   it("inserts the run row with status preparing and attempt 1", async () => {
