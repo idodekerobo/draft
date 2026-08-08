@@ -409,6 +409,8 @@ export interface IntegrationDetail {
   mode: string | null;
   /** Slack: number of configured channels. Null for other sources. */
   channels: number | null;
+  /** Slack: configured channel IDs returned by the cloud connection status. */
+  channelIds?: string[];
   /** GitHub: list of watched repos. Empty for other sources. */
   repos: string[];
   /** GitHub only: local gh CLI availability/authentication. Null for other sources. */
@@ -660,16 +662,16 @@ export type AppRPCType = {
       /** Persist a Granola API key and connection status for the daemon. */
       connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
 
-      /** Register Fireflies' MCP server (with bearer-token auth) and persist connection status. */
-      connectFireflies: { params: { apiKey: string }; response: ActionResult };
+      /** Persist Fireflies API credentials in Draft Cloud and return webhook setup values. */
+      connectFireflies: { params: { apiKey: string }; response: ActionResult & { webhookUrl?: string; webhookSecret?: string } };
 
       /** Build and return the Slack app creation URL with the manifest pre-filled. */
       getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };
 
       /**
-       * List the bot's visible Slack channels (public + private) via conversations.list.
-       * Omit botToken to use the token already saved for an already-connected integration
-       * (the Settings "Update channels" flow).
+       * List public Slack channels during initial setup via conversations.list.
+       * Omit botToken to ask the server to use the stored credential for the
+       * Settings "Update channels" flow.
        */
       listSlackChannels: { params: { botToken?: string }; response: { ok: boolean; channels?: SlackChannelOption[]; error?: string } };
 

@@ -9,14 +9,13 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readCollaboration, readIntegrations, writeIntegrations, readSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readCollaboration, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
-import { registerFirefliesMCP, writeFirefliesConfig } from "draft-core/integrations/fireflies";
-import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels, readStoredSlackBotToken, writeSlackConfig, writeSlackRolesChannels, updateSlackChannels } from "draft-core/integrations/slack";
+import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import {
   cancelActiveDeviceFlow,
@@ -76,10 +75,10 @@ import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
 import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
 import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
-import type { AppRPCType, ContextFileEntry, IntegrationDetail } from "./rpc/schema";
+import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { clearAuthState, getCachedWorkspaceId, readAuthState } from "draft-core/auth-state";
-import { fetchServerJSON } from "./main/server/server-client";
+import { fetchServer, fetchServerJSON } from "./main/server/server-client";
 
 let browserSignInController: AbortController | null = null;
 
@@ -726,6 +725,25 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspace  = getWorkspacePath(getActiveProfile());
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
+        type CloudConnectionStatus = {
+          provider: "slack" | "fireflies";
+          status: string;
+          last_success_at: string | null;
+          last_error_at: string | null;
+          channel_ids?: string[];
+        };
+        let cloudConnections: CloudConnectionStatus[] | null = null;
+        const cloudWorkspaceId = getCachedWorkspaceId();
+        if (cloudWorkspaceId) {
+          try {
+            const response = await fetchServerJSON<{ connections: CloudConnectionStatus[] }>(
+              `workspaces/${cloudWorkspaceId}/connections`,
+            );
+            cloudConnections = response.connections;
+          } catch {
+            cloudConnections = null;
+          }
+        }
 
         function integrationHealth(key: "granola" | "fireflies"): Pick<IntegrationDetail, "healthStatus" | "healthCheckedAt" | "healthMessage"> {
           try {
@@ -745,15 +763,35 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies"): IntegrationDetail {
           const entry = int[key];
+          const cloud = (key === "slack" || key === "fireflies")
+            ? cloudConnections?.find((connection) => connection.provider === key)
+            : undefined;
           const health = key === "granola" || key === "fireflies"
             ? integrationHealth(key)
             : { healthStatus: "unknown" as const, healthCheckedAt: null, healthMessage: null };
+          if (key === "slack" || key === "fireflies") {
+            return {
+              // Cloud-backed integrations must not fall back to stale local flags
+              // when the server is unreachable or the user is signed out.
+              connected: cloud?.status === "active",
+              healthStatus: cloud?.status === "active" ? "healthy" : cloud?.status === "degraded" || cloud?.status === "error" ? "needs_attention" : "unknown",
+              healthCheckedAt: cloud?.last_success_at ?? null,
+              healthMessage: cloud?.last_error_at ? "The cloud ingestion worker reported an error." : null,
+              lastConnected: cloud?.last_success_at ?? null,
+              mode: null,
+              channels: key === "slack" ? (cloud?.channel_ids?.length ?? 0) : null,
+              channelIds: key === "slack" ? (cloud?.channel_ids ?? []) : undefined,
+              repos: [],
+              ghCliStatus: null,
+            };
+          }
           return {
             connected:     entry?.connected    ?? false,
             ...health,
             lastConnected: entry?.last_connected ?? null,
             mode:          entry?.mode          ?? null,
             channels:      entry?.channels      ?? null,
+            channelIds:    undefined,
             repos:         entry?.repos         ?? [],
             ghCliStatus:    null,
           };
@@ -783,6 +821,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       disconnectIntegration: async ({ source }) => {
         try {
+          if (source === "slack" || source === "fireflies") {
+            const workspaceId = getCachedWorkspaceId();
+            if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+            await fetchServer(`workspaces/${workspaceId}/connections/${source}`, { method: "DELETE" });
+            return { ok: true };
+          }
           const workspace = getWorkspacePath(getActiveProfile());
           const result    = readIntegrations(workspace);
           const current   = result.ok ? result.integrations : {};
@@ -1216,61 +1260,66 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       connectFireflies: async ({ apiKey }) => {
         if (!apiKey.trim()) return { ok: false, error: "Enter your Fireflies API key." };
-        const workspace = getWorkspacePath(getActiveProfile());
-        const reg = await registerFirefliesMCP(apiKey.trim(), workspace);
-        if (!reg.ok) return reg;
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          writeFirefliesConfig(workspace, apiKey.trim(), reg.mcpServerId);
-          return { ok: true };
+          return await fetchServerJSON<{ ok: true; webhookUrl: string; webhookSecret: string }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "fireflies", api_token: apiKey.trim() }),
+          });
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Fireflies connection." };
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Fireflies." };
         }
       },
 
       getSlackManifestUrl: async () => buildSlackManifestUrl(),
 
       listSlackChannels: async ({ botToken }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const token = botToken || readStoredSlackBotToken(workspace);
-        if (!token) return { ok: false, error: "Slack is not connected yet." };
-        const result = await fetchSlackChannels(token);
-        if (!result.ok) return { ok: false, error: result.error };
+        if (botToken) {
+          // Initial channel selection is public-only. Private channels are not
+          // discoverable until the bot has been invited to them in Slack.
+          const result = await fetchSlackChannels(botToken, "public_channel");
+          if (!result.ok) return { ok: false, error: result.error };
+          return { ok: true, channels: result.channels.map((channel) => ({ ...channel, allowlisted: false })) };
+        }
 
-        const secrets = readSecrets(workspace);
-        const allowlist = new Set(secrets.ok ? (secrets.secrets.slack_allowlist_channels ?? []) : []);
-        const channels = result.channels.map((channel) => ({ ...channel, allowlisted: allowlist.has(channel.id) }));
-
-        return { ok: true, channels };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: true; channels: SlackChannelOption[] }>(
+            `workspaces/${workspaceId}/connections/slack/channels`,
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not load Slack channels." };
+        }
       },
 
       connectSlack: async ({ botToken, appToken, channelIds }) => {
         const fmt = validateSlackTokenFormat(botToken, appToken);
         if (!fmt.ok) return fmt;
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          writeSlackConfig({ workspace, botToken, appToken, channelIds });
-
-          // Resolve names for the selected channels so slack-rebuild.ts can label
-          // captured messages — connectSlack only receives IDs from the picker.
-          const listResult = await fetchSlackChannels(botToken);
-          if (listResult.ok) {
-            const selectedNames = Object.fromEntries(
-              listResult.channels
-                .filter((channel) => channelIds.includes(channel.id))
-                .map((channel) => [channel.id, channel.name]),
-            );
-            writeSlackRolesChannels(workspace, selectedNames);
-          }
-
-          return { ok: true };
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "slack", bot_token: botToken, app_token: appToken, channel_ids: channelIds }),
+          });
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Slack connection." };
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Slack." };
         }
       },
 
       updateSlackChannels: async ({ channelIds }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          return await updateSlackChannels(getWorkspacePath(getActiveProfile()), channelIds);
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections/slack`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channel_ids: channelIds }),
+          });
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not update Slack channels." };
         }
@@ -1583,7 +1632,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           workspaceId: state?.workspace_id ?? null,
         };
       },
-
       checkGitHubJoinStatus: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
         const local = readLocalConfig(workspace);

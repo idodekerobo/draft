@@ -12,9 +12,6 @@ export async function fetchServer(path: string, init?: RequestInit): Promise<Res
     headers: { ...init?.headers, Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) {
-    // Every route in this backend returns { error: "<code>" } on failure —
-    // surface that code as the thrown message instead of a generic one, so
-    // callers' catch blocks (which do `err.message`) show something useful.
     let message = `request_failed_${response.status}`;
     try {
       const body = await response.json() as { error?: unknown };
