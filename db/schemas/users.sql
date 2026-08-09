@@ -9,6 +9,7 @@ create table users (
   status              text not null default 'invited'
                          check (status in ('invited', 'active', 'disabled')),
   last_seen_at        timestamptz,
+  onboarding_completed_at timestamptz,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now(),
 

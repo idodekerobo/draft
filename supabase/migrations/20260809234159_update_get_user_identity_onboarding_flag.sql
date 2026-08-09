@@ -1,7 +1,8 @@
--- Returns the authenticated user's application identity and their team's
--- default workspace in one database query. The function is restricted to the
--- backend service role because it accepts an explicit user id.
-create or replace function public.get_user_identity(p_user_id uuid)
+-- Postgres disallows changing a function's return-table column list via
+-- CREATE OR REPLACE; the function must be dropped and recreated.
+drop function if exists public.get_user_identity(uuid);
+
+create function public.get_user_identity(p_user_id uuid)
 returns table (
   id uuid,
   email text,
