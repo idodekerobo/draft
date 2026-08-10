@@ -209,4 +209,34 @@ describe("renderSynthesisPrompt", () => {
     const { prompt } = await renderSynthesisPrompt(bundle);
     expect(prompt).toContain("(no new source material)");
   });
+
+  it("includes the bootstrap guidance section on a first run with dimensions", async () => {
+    const input = bundleInput();
+    input.baseVersion = version({});
+    const bundle = buildValidatedRunBundle(input);
+    const dimensions = [
+      { dimensionName: "product", dimensionDescription: "problem it solves, target user" },
+      { dimensionName: "brand", dimensionDescription: "User-defined dimension: brand" },
+    ];
+    const { prompt } = await renderSynthesisPrompt(bundle, dimensions);
+
+    expect(prompt).toContain("Bootstrap guidance");
+    expect(prompt).toContain("- product: problem it solves, target user");
+    expect(prompt).toContain("- brand: User-defined dimension: brand");
+  });
+
+  it("omits the bootstrap section when the workspace already has context, even with dimensions passed", async () => {
+    const bundle = buildValidatedRunBundle(bundleInput());
+    const dimensions = [{ dimensionName: "product", dimensionDescription: "..." }];
+    const { prompt } = await renderSynthesisPrompt(bundle, dimensions);
+    expect(prompt).not.toContain("Bootstrap guidance");
+  });
+
+  it("omits the bootstrap section on a first run when no dimensions are passed", async () => {
+    const input = bundleInput();
+    input.baseVersion = version({});
+    const bundle = buildValidatedRunBundle(input);
+    const { prompt } = await renderSynthesisPrompt(bundle);
+    expect(prompt).not.toContain("Bootstrap guidance");
+  });
 });

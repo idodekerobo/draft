@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { RunNotAllowedError } from "../../synthesis/check-run-allowed";
+import { WorkspaceRunAlreadyActiveError } from "../../synthesis/prepare-run";
 
 const caller = { userId: "user-1", accessToken: "token-1" };
 const workspaceId = "workspace-1";
@@ -90,6 +92,9 @@ function createFakeClient() {
 }
 
 let accessResult: Response | null = null;
+type LaunchOutcome = { ok: true; runId: string; machineId: string } | { ok: false; error: Error };
+let launchOutcome: LaunchOutcome = { ok: true, runId: "run-1", machineId: "machine-1" };
+let launchCalls: Array<{ workspaceId: string; sourceItemIds: string[] }> = [];
 
 mock.module("../../auth/withAuth", () => ({
   withAuth: (handler: (request: Request, authenticatedCaller: typeof caller) => unknown) =>
@@ -99,6 +104,19 @@ mock.module("../../auth/workspace-access", () => ({
   assertWorkspaceAccess: async () => accessResult,
 }));
 mock.module("../../db/client", () => ({ serviceClient: createFakeClient() }));
+process.env.API_BASE_URL = "https://example.test";
+process.env.FLY_API_TOKEN = "token";
+process.env.FLY_APP_NAME = "app";
+process.env.FLY_SANDBOX_IMAGE = `registry.fly.io/app@sha256:${"0".repeat(64)}`;
+process.env.FLY_REGION = "ewr";
+process.env.SANDBOX_CALLBACK_SECRET = "secret";
+mock.module("../../synthesis/orchestrate-run", () => ({
+  launchSynthesisRun: async (options: { workspaceId: string; sourceItemIds: string[] }) => {
+    launchCalls.push({ workspaceId: options.workspaceId, sourceItemIds: options.sourceItemIds });
+    if (launchOutcome.ok) return { runId: launchOutcome.runId, machineId: launchOutcome.machineId, bundleHash: "hash" };
+    throw launchOutcome.error;
+  },
+}));
 
 const routeModule = await import("../../routes/source-items");
 
@@ -107,6 +125,8 @@ beforeEach(() => {
   state.connections = [];
   state.items = [];
   itemUpsertShouldFail = null;
+  launchOutcome = { ok: true, runId: "run-1", machineId: "machine-1" };
+  launchCalls = [];
 });
 
 function request(body?: unknown): Request {
@@ -185,6 +205,58 @@ describe("POST /workspaces/:id/source-items", () => {
     const response = await routeModule.POST(request({ files: [{ path: "" }] }) as never);
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ ok: false, error: "invalid_body" });
+  });
+
+  it("triggerSynthesis: launches a run scoped to exactly the just-inserted item ids", async () => {
+    const response = await routeModule.POST(
+      request({ files: [{ path: "a.md", content: "one" }, { path: "b.md", content: "two" }], triggerSynthesis: true }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { ok: boolean; inserted: number; runId?: string; machineId?: string };
+    expect(body).toMatchObject({ ok: true, inserted: 2, runId: "run-1", machineId: "machine-1" });
+    expect(launchCalls).toHaveLength(1);
+    expect(launchCalls[0]?.workspaceId).toBe(workspaceId);
+    expect(launchCalls[0]?.sourceItemIds).toEqual(state.items.map((item) => item.id));
+  });
+
+  it("triggerSynthesis: does not launch when nothing was inserted", async () => {
+    itemUpsertShouldFail = "a.md";
+
+    const response = await routeModule.POST(
+      request({ files: [{ path: "a.md", content: "one" }], triggerSynthesis: true }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, inserted: 0, skipped: ["a.md"], reason: "no_ready_items" });
+    expect(launchCalls).toHaveLength(0);
+  });
+
+  it("triggerSynthesis: reports a launch failure without masking the upload success", async () => {
+    launchOutcome = { ok: false, error: new WorkspaceRunAlreadyActiveError(workspaceId) };
+
+    const response = await routeModule.POST(
+      request({ files: [{ path: "a.md", content: "one" }], triggerSynthesis: true }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, inserted: 1, skipped: [], synthesisError: "run_already_active" });
+  });
+
+  it("triggerSynthesis: maps RunNotAllowedError and generic launch failures to distinct error codes", async () => {
+    launchOutcome = { ok: false, error: new RunNotAllowedError(workspaceId, "runs_enabled is false") };
+    let response = await routeModule.POST(request({ files: [{ path: "a.md", content: "one" }], triggerSynthesis: true }) as never);
+    expect((await response.json() as { synthesisError: string }).synthesisError).toBe("run_not_allowed");
+
+    launchOutcome = { ok: false, error: new Error("boom") };
+    response = await routeModule.POST(request({ files: [{ path: "b.md", content: "two" }], triggerSynthesis: true }) as never);
+    expect((await response.json() as { synthesisError: string }).synthesisError).toBe("launch_failed");
+  });
+
+  it("does not trigger synthesis when triggerSynthesis is omitted", async () => {
+    const response = await routeModule.POST(request({ files: [{ path: "a.md", content: "one" }] }) as never);
+    expect(await response.json()).toEqual({ ok: true, inserted: 1, skipped: [] });
+    expect(launchCalls).toHaveLength(0);
   });
 
   it("returns the workspace access denial before touching storage", async () => {

@@ -3,6 +3,7 @@ import * as connections from "./connections";
 import * as health from "./health";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sourceItems from "./source-items";
+import * as synthesisRuns from "./synthesis-runs";
 import * as whoami from "./whoami";
 import * as workspaceContext from "./workspace-context";
 import * as invites from "../auth/invite-routes";
@@ -16,6 +17,7 @@ export const routes = {
   "/workspaces/:id/connections": { GET: connections.GET, POST: connections.POST },
   "/workspaces/:id/connections/:provider": { PATCH: connections.PATCH, DELETE: connections.DELETE },
   "/workspaces/:id/connections/:provider/channels": { GET: connections.CHANNELS_GET },
+  "/workspaces/:id/synthesis-runs": { POST: synthesisRuns.POST },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/invites/mine": { GET: invites.mineGET },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },

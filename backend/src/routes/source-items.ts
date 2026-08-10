@@ -3,7 +3,12 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { upsertSourceConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
+import { loadSandboxDeploymentConfig } from "../sandbox";
+import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { PILOT_RUN_BUNDLE_LIMITS } from "../synthesis/load-run-bundle";
+import { launchSynthesisRun } from "../synthesis/orchestrate-run";
+import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
+import type { DimensionHint } from "../synthesis/types";
 
 type SourceItemsRequest = Bun.BunRequest<"/workspaces/:id/source-items">;
 
@@ -14,6 +19,27 @@ interface UploadFile {
 
 interface UploadBody {
   files: UploadFile[];
+  /**
+   * When true, immediately launch a synthesis run scoped to exactly the
+   * items this request inserts — not every ready item in the workspace.
+   * One request/response instead of the caller fetching inserted IDs and
+   * making a second trigger call; also sidesteps ready items accumulated
+   * from earlier, unrelated uploads pushing a later run over its bundle
+   * byte cap.
+   */
+  triggerSynthesis?: boolean;
+  /**
+   * Context dimensions to guide a workspace's first synthesis run. Only
+   * meaningful when triggerSynthesis is true and this is that workspace's
+   * bootstrap run — see render-prompt.ts. Ignored on later runs.
+   */
+  dimensions?: DimensionHint[];
+}
+
+function isDimensionHint(value: unknown): value is DimensionHint {
+  if (!value || typeof value !== "object") return false;
+  const hint = value as Partial<DimensionHint>;
+  return typeof hint.dimensionName === "string" && typeof hint.dimensionDescription === "string";
 }
 
 function errorResponse(error: string, status = 500, detail?: unknown): Response {
@@ -32,7 +58,9 @@ function isUploadFile(value: unknown): value is UploadFile {
 function isUploadBody(value: unknown): value is UploadBody {
   if (!value || typeof value !== "object") return false;
   const body = value as Partial<UploadBody>;
-  return Array.isArray(body.files) && body.files.every(isUploadFile);
+  if (!Array.isArray(body.files) || !body.files.every(isUploadFile)) return false;
+  if (body.triggerSynthesis !== undefined && typeof body.triggerSynthesis !== "boolean") return false;
+  return body.dimensions === undefined || (Array.isArray(body.dimensions) && body.dimensions.every(isDimensionHint));
 }
 
 export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
@@ -85,11 +113,11 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
     return errorResponse("connection_upsert_failed", 500, err);
   }
 
-  let inserted = 0;
+  const insertedIds: string[] = [];
   const now = new Date().toISOString();
   for (const file of eligible) {
     try {
-      await upsertSourceItem(serviceClient, {
+      const { item } = await upsertSourceItem(serviceClient, {
         workspace_id: req.params.id,
         source_connection_id: sourceConnection.id,
         item_type: "document",
@@ -100,12 +128,47 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
         content_hash: file.contentHash,
         lifecycle_status: "ready",
       });
-      inserted += 1;
+      insertedIds.push(item.id);
     } catch (err) {
       console.error(`source-items route: failed to upsert ${file.path}`, err);
       skipped.push(file.path);
     }
   }
 
-  return Response.json({ ok: true, inserted, skipped });
+  if (!body.triggerSynthesis) {
+    return Response.json({ ok: true, inserted: insertedIds.length, skipped });
+  }
+
+  if (insertedIds.length === 0) {
+    return Response.json({ ok: true, inserted: 0, skipped, reason: "no_ready_items" });
+  }
+
+  try {
+    const result = await launchSynthesisRun({
+      workspaceId: req.params.id,
+      triggerType: "manual",
+      sourceItemIds: insertedIds,
+      config: loadSandboxDeploymentConfig(),
+      dimensions: body.dimensions,
+    });
+    return Response.json({
+      ok: true,
+      inserted: insertedIds.length,
+      skipped,
+      runId: result.runId,
+      machineId: result.machineId,
+    });
+  } catch (err) {
+    const synthesisError = err instanceof WorkspaceRunAlreadyActiveError
+      ? "run_already_active"
+      : err instanceof RunNotAllowedError
+        ? "run_not_allowed"
+        : "launch_failed";
+    if (synthesisError === "launch_failed") {
+      console.error("source-items route: triggerSynthesis launch failed", err);
+    }
+    // Upload itself succeeded — don't mask that behind ok:false just
+    // because the chained launch failed afterward.
+    return Response.json({ ok: true, inserted: insertedIds.length, skipped, synthesisError });
+  }
 });

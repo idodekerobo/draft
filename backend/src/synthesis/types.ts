@@ -23,6 +23,11 @@ export interface ValidatedSynthesisResult {
   payload: SynthesisResultPayload;
 }
 
+export interface DimensionHint {
+  dimensionName: string;
+  dimensionDescription: string;
+}
+
 export interface LaunchSynthesisRunOptions {
   workspaceId: string;
   triggerType: SynthesisRunTriggerType;
@@ -41,6 +46,12 @@ export interface LaunchSynthesisRunOptions {
   occurrenceAt?: string;
   config: SandboxDeploymentConfig;
   client?: SupabaseClient;
+  /**
+   * Guidance for the model on a workspace's first synthesis run only —
+   * never used to seed documents_json, and ignored once the workspace has
+   * any existing context documents. See render-prompt.ts's bootstrap branch.
+   */
+  dimensions?: DimensionHint[];
 }
 
 export interface LaunchSynthesisRunResult {

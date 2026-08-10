@@ -134,9 +134,30 @@ export function HeadlessProgress({ label }: { label: string }) {
 // (drop defaults, add their own) before headless setup runs. Mirrors the
 // scaffold shape used by `draft dimension add` / the draft-add-dimension skill.
 
-const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];
+export const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];
 
-function DimensionPicker({ dimensions, onChange }: { dimensions: string[]; onChange: (next: string[]) => void }) {
+// Mirrors core/src/agents/prompts/setup.ts's DIMENSION_GUIDANCE — kept as a
+// separate copy since the desktop app doesn't depend on core/.
+export const DEFAULT_DIMENSION_DESCRIPTIONS: Record<string, string> = {
+  company: "name, what they build, business model, stage, target market, key constraints",
+  product: "product name, problem it solves, target user, key features, current state, open hypotheses",
+  team: "who's on the team, roles, structure, how decisions get made",
+  priorities: "active TODOs, current sprint goal, blockers, what success looks like",
+};
+
+export interface DimensionHint {
+  dimensionName: string;
+  dimensionDescription: string;
+}
+
+export function toDimensionHints(names: string[]): DimensionHint[] {
+  return names.map((name) => ({
+    dimensionName: name,
+    dimensionDescription: DEFAULT_DIMENSION_DESCRIPTIONS[name] ?? `User-defined dimension: ${name}`,
+  }));
+}
+
+export function DimensionPicker({ dimensions, onChange }: { dimensions: string[]; onChange: (next: string[]) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [newName, setNewName] = useState("");
 

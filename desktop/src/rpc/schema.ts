@@ -705,11 +705,36 @@ export type AppRPCType = {
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
       getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };
 
+      /** Trigger a cloud synthesis run against whatever source items are currently ready. */
+      triggerSynthesisRun: { params: void; response: ActionResult & { runId?: string; machineId?: string; reason?: string } };
+
       /** Open the native folder picker for uploading local files as source items for the cloud sandbox to read. */
       selectUploadFolder: { params: void; response: { folderPath: string | null } };
 
-      /** Read a locally-selected folder's files and upload their content as source items for the active workspace — the cloud sandbox can't read the local disk itself. */
-      uploadSourceItems: { params: { folderPath: string }; response: ActionResult & { inserted?: number; skipped?: string[] } };
+      /**
+       * Upload a local folder's file contents as source items. When
+       * triggerSynthesis is true, the server chains straight into launching
+       * a synthesis run scoped to exactly the items this call inserts (not
+       * every ready item in the workspace) — one request/response instead
+       * of a separate triggerSynthesisRun call with plumbed-through IDs.
+       */
+      uploadSourceItems: {
+        params: { folderPath: string; triggerSynthesis?: boolean };
+        response: ActionResult & { inserted?: number; skipped?: string[]; runId?: string; machineId?: string; reason?: string; synthesisError?: string };
+      };
+
+      /**
+       * Onboarding's single entrypoint for starting a workspace's first
+       * synthesis run: uploads a local folder's contents as source items
+       * (if given) then launches synthesis, always passing dimension hints
+       * for the bootstrap prompt. Internally still calls the same
+       * source-items / synthesis-runs backend routes as uploadSourceItems /
+       * triggerSynthesisRun.
+       */
+      bootstrapWorkspaceContext: {
+        params: { folderPath?: string; dimensions: { dimensionName: string; dimensionDescription: string }[] };
+        response: ActionResult & { inserted?: number; skipped?: string[]; runId?: string; machineId?: string; reason?: string; synthesisError?: string };
+      };
 
       /**
        * Run inject-context.sh and return the full text that would be injected

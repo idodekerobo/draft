@@ -1436,7 +1436,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      uploadSourceItems: async ({ folderPath }) => {
+      uploadSourceItems: async ({ folderPath, triggerSynthesis }) => {
         if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
           return { ok: false, error: "Choose a valid local folder to upload." };
         }
@@ -1456,17 +1456,70 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
 
         try {
-          return await fetchServerJSON<{ ok: true; inserted: number; skipped: string[] }>(
+          return await fetchServerJSON<{
+            ok: true; inserted: number; skipped: string[];
+            runId?: string; machineId?: string; reason?: string; synthesisError?: string;
+          }>(
             `workspaces/${workspaceId}/source-items`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ files }),
+              body: JSON.stringify({ files, triggerSynthesis }),
             },
           );
         } catch (err) {
           console.error("uploadSourceItems: POST /source-items failed", err);
           return { ok: false, error: err instanceof Error ? err.message : "Could not upload files." };
+        }
+      },
+
+      bootstrapWorkspaceContext: async ({ folderPath, dimensions }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+
+        if (folderPath) {
+          if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+            return { ok: false, error: "Choose a valid local folder to upload." };
+          }
+          let files: { path: string; content: string }[];
+          try {
+            files = await collectUploadFiles(folderPath);
+          } catch (err) {
+            console.error("bootstrapWorkspaceContext: failed to walk selected folder", folderPath, err);
+            return { ok: false, error: err instanceof Error ? `Could not read the selected folder: ${err.message}` : "Could not read the selected folder." };
+          }
+          if (files.length === 0) {
+            return { ok: false, error: "No eligible files found in that folder." };
+          }
+          try {
+            return await fetchServerJSON<{
+              ok: true; inserted: number; skipped: string[];
+              runId?: string; machineId?: string; reason?: string; synthesisError?: string;
+            }>(
+              `workspaces/${workspaceId}/source-items`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files, triggerSynthesis: true, dimensions }),
+              },
+            );
+          } catch (err) {
+            console.error("bootstrapWorkspaceContext: POST /source-items failed", err);
+            return { ok: false, error: err instanceof Error ? err.message : "Could not upload files." };
+          }
+        }
+
+        try {
+          return await fetchServerJSON<{ ok: boolean; runId?: string; machineId?: string; reason?: string; error?: string }>(
+            `workspaces/${workspaceId}/synthesis-runs`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dimensions }),
+            },
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not start the workspace synthesis run." };
         }
       },
 
@@ -1492,6 +1545,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch {
           // Covers both the expected "no_context_yet" 404 and any other failure
           return { hasContext: false };
+        }
+      },
+
+      triggerSynthesisRun: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: boolean; runId?: string; machineId?: string; reason?: string; error?: string }>(
+            `workspaces/${workspaceId}/synthesis-runs`,
+            { method: "POST" },
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not start the workspace synthesis run." };
         }
       },
 

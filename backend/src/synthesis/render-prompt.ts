@@ -1,4 +1,5 @@
 import type { ValidatedRunBundle } from "./context-version-files";
+import type { DimensionHint } from "./types";
 
 const CONTEXT_PREFIX = "input/context/";
 const SOURCES_PREFIX = "input/sources/";
@@ -45,9 +46,26 @@ function collectSourceFiles(bundle: ValidatedRunBundle): SourceFileEntry[] {
 // The model must see exactly ONE path per file (a bundle-relative "read
 // from" path, never absolute) — a prior bug had it pick the wrong one as a
 // "documents" key when both were shown.
+function buildBootstrapSection(dimensions: DimensionHint[]): string {
+  const dimensionList = dimensions
+    .map((d) => `- ${d.dimensionName}: ${d.dimensionDescription}`)
+    .join("\n");
+
+  return `## Bootstrap guidance
+This is this workspace's first synthesis run — there is no existing context yet.
+The user selected these dimensions to track. Use them as guidance for what
+documents to create (one Markdown file per dimension is a reasonable default,
+e.g. "company/index.md"), but you still decide the actual document names and
+structure — these are a starting hint, not a literal file manifest.
+
+${dimensionList}
+`;
+}
+
 function buildPrompt(
   contextFiles: ContextFileEntry[],
   sourceFiles: SourceFileEntry[],
+  dimensions?: DimensionHint[],
 ): string {
   const contextList =
     contextFiles
@@ -59,6 +77,10 @@ function buildPrompt(
   const sourceList =
     sourceFiles.map((f) => `- read from: ${f.readPath}`).join("\n") ||
     "(no new source material)";
+  const bootstrapSection =
+    contextFiles.length === 0 && dimensions && dimensions.length > 0
+      ? `\n${buildBootstrapSection(dimensions)}\n`
+      : "";
 
   return `# Draft Synthesis Task
 
@@ -66,7 +88,7 @@ You are a context synthesis agent for Draft, a shared team context layer.
 
 ## Existing context (read-only; paths and content-hashes below are host-verified)
 ${contextList}
-
+${bootstrapSection}
 ## New source material to reconcile against the context above
 ${sourceList}
 
@@ -182,10 +204,11 @@ function buildJsonSchema(allowedDocumentPaths: string[]): Record<string, unknown
 
 export async function renderSynthesisPrompt(
   bundle: ValidatedRunBundle,
+  dimensions?: DimensionHint[],
 ): Promise<{ prompt: string; jsonSchema: Record<string, unknown> }> {
   const contextFiles = collectContextFiles(bundle);
   const sourceFiles = collectSourceFiles(bundle);
-  const prompt = buildPrompt(contextFiles, sourceFiles);
+  const prompt = buildPrompt(contextFiles, sourceFiles, dimensions);
   const jsonSchema = buildJsonSchema(contextFiles.map((f) => f.logicalPath));
   return { prompt, jsonSchema };
 }

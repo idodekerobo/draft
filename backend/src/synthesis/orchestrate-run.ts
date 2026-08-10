@@ -51,7 +51,7 @@ export async function launchSynthesisRun(
     options.workspaceId,
     options.client,
   );
-  const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle);
+  const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions);
 
   const receipt = await launchFlySandboxRun({
     bundle,
