@@ -39,6 +39,7 @@ type EventMap = {
   updateAvailable: { version: string };
   updateNotAvailable: Record<string, never>;
   updateCheckFailed: { error: string };
+  bootstrapRunStarted: { runId: string };
 };
 
 // Internal listener type — erased at call sites; external API remains typed.

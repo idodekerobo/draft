@@ -50,6 +50,8 @@ export function App() {
   const [updateVersion, setUpdateVersion]   = useState<string | null>(null);
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [syncToast, setSyncToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const bootstrapPollRef = useRef<{ cancelled: boolean } | null>(null);
   const [supportOpen, setSupportOpen]           = useState(false);
   const [contextSnapshot, setContextSnapshot] = useState<{ workspaceId: string | null; files: ContextFileEntry[] }>({ workspaceId: null, files: [] });
   const [contextLoading, setContextLoading] = useState(false);
@@ -164,6 +166,57 @@ export function App() {
       void loadProfiles();  // Refresh list in case a new profile was created.
     });
   }, []);
+
+  // ── Bootstrap synthesis run polling ───────────────────────────────────────
+  // Onboarding's "Let's go" can land the user in the main app before the
+  // cloud sandbox finishes the workspace's first synthesis run. There's no
+  // push from the backend when it completes, so poll the (already-existing)
+  // context endpoint until it goes from empty to non-empty, or give up after
+  // a timeout rather than polling forever.
+  useEffect(() => {
+    return events.on("bootstrapRunStarted", () => {
+      if (bootstrapPollRef.current) bootstrapPollRef.current.cancelled = true; // supersede any earlier poll
+      const token = { cancelled: false };
+      bootstrapPollRef.current = token;
+      const startedForWorkspaceId = workspaceIdRef.current;
+
+      const POLL_MS = 10_000;
+      const TIMEOUT_MS = 10 * 60_000;
+      const deadline = Date.now() + TIMEOUT_MS;
+
+      void (async () => {
+        while (!token.cancelled && workspaceIdRef.current === startedForWorkspaceId && Date.now() < deadline) {
+          await new Promise<void>((resolve) => setTimeout(resolve, POLL_MS));
+          if (token.cancelled || workspaceIdRef.current !== startedForWorkspaceId) return;
+          let files: ContextFileEntry[];
+          try {
+            files = await rpc.request.getContextFiles();
+          } catch {
+            continue;
+          }
+          if (token.cancelled || workspaceIdRef.current !== startedForWorkspaceId) return;
+          if (files.length > 0) {
+            await reloadContextFiles();
+            setSyncToast({ type: "success", msg: "Your workspace context is ready." });
+            return;
+          }
+        }
+        if (!token.cancelled && workspaceIdRef.current === startedForWorkspaceId) {
+          setSyncToast({ type: "error", msg: "Still setting up your workspace — check the Context tab again shortly." });
+        }
+      })();
+    });
+  }, [reloadContextFiles]);
+
+  useEffect(() => {
+    return () => { if (bootstrapPollRef.current) bootstrapPollRef.current.cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!syncToast) return;
+    const id = setTimeout(() => setSyncToast(null), 5_000);
+    return () => clearTimeout(id);
+  }, [syncToast]);
 
   // ── Start error auto-dismiss ───────────────────────────────────────────────
   useEffect(() => {
@@ -399,6 +452,12 @@ export function App() {
         <div className="toast toast--error" role="alert">
           <span>{startError}</span>
           <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {syncToast && (
+        <div className={`toast toast--${syncToast.type}`} role={syncToast.type === "error" ? "alert" : "status"}>
+          <span>{syncToast.msg}</span>
+          <button className="toast__dismiss" onClick={() => setSyncToast(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
       <SupportPanel

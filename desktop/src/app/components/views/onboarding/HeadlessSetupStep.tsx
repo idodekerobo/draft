@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { rpc } from "../../../rpc";
+import { events, rpc } from "../../../rpc";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
 import { DEFAULT_SETUP_DIMENSIONS, DimensionPicker, toDimensionHints } from "./shared";
 
@@ -57,6 +57,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
       }
       if (result.runId) {
         setMessage("Your workspace is being set up in the cloud. This can take a few minutes.");
+        events.emit("bootstrapRunStarted", { runId: result.runId });
         setTimeout(onNext, 800);
         return;
       }
