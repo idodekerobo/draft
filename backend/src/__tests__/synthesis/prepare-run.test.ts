@@ -14,6 +14,7 @@ const ids = {
   scheduledTask: "77777777-7777-4777-8777-777777777777",
   sourceA: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   sourceB: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  seededVersion: "66666666-6666-4666-8666-666666666666",
 };
 
 interface FakeClientOptions {
@@ -38,8 +39,9 @@ function createFakeClient(options: FakeClientOptions = {}) {
     order: string[];
     runInserts: Record<string, unknown>[];
     membershipInserts: Record<string, unknown>[];
+    contextVersionInserts: Record<string, unknown>[];
     updates: Array<{ table: string; payload: Record<string, unknown>; id: string }>;
-  } = { order: [], runInserts: [], membershipInserts: [], updates: [] };
+  } = { order: [], runInserts: [], membershipInserts: [], contextVersionInserts: [], updates: [] };
 
   const currentContextVersionId =
     options.currentContextVersionId === undefined
@@ -69,6 +71,26 @@ function createFakeClient(options: FakeClientOptions = {}) {
             }),
           }),
         }),
+        update: (payload: Record<string, unknown>) => ({
+          eq: async (_column: string, id: string) => {
+            calls.updates.push({ table: "workspaces", payload, id });
+            return { data: null, error: null };
+          },
+        }),
+      };
+    }
+
+    if (table === "workspace_context_versions") {
+      return {
+        insert: (payload: Record<string, unknown>) => {
+          calls.order.push("seed-context-version-insert");
+          calls.contextVersionInserts.push(payload);
+          return {
+            select: () => ({
+              single: async () => ({ data: { id: ids.seededVersion }, error: null }),
+            }),
+          };
+        },
       };
     }
 
@@ -232,17 +254,35 @@ describe("prepareRun", () => {
     );
   });
 
-  it("throws when the workspace has no current_context_version_id", async () => {
-    const { client } = createFakeClient({ currentContextVersionId: null });
+  it("auto-seeds an empty context version when the workspace has none yet", async () => {
+    const { client, calls } = createFakeClient({ currentContextVersionId: null, sourceItems: [] });
 
-    await expect(
-      prepareRun({
-        workspaceId: ids.workspace,
-        triggerType: "manual",
-        sourceItemIds: [],
-        client,
-      }),
-    ).rejects.toThrow();
+    const runId = await prepareRun({
+      workspaceId: ids.workspace,
+      triggerType: "manual",
+      sourceItemIds: [],
+      client,
+    });
+
+    expect(runId).toBe(ids.run);
+    expect(calls.contextVersionInserts).toHaveLength(1);
+    const seeded = calls.contextVersionInserts[0];
+    expect(seeded.workspace_id).toBe(ids.workspace);
+    expect(seeded.version_number).toBe(1);
+    expect(seeded.documents_json).toEqual({});
+    expect(seeded.creation_reason).toBe("seed");
+    expect(typeof seeded.content_hash).toBe("string");
+    expect(seeded.content_hash).toMatch(/^[0-9a-f]{64}$/);
+
+    const workspacePointerUpdate = calls.updates.find((update) => update.table === "workspaces");
+    expect(workspacePointerUpdate?.payload.current_context_version_id).toBe(ids.seededVersion);
+    expect(workspacePointerUpdate?.id).toBe(ids.workspace);
+
+    const runInsert = calls.runInserts[0];
+    expect(runInsert.base_context_version_id).toBe(ids.seededVersion);
+    expect(calls.order[0]).toBe("sweep-select");
+    expect(calls.order).toContain("seed-context-version-insert");
+    expect(calls.order.indexOf("seed-context-version-insert")).toBeLessThan(calls.order.indexOf("run-insert"));
   });
 
   it("assigns position 0..n-1 to source items in the given order and pulls version/hash from source_items", async () => {

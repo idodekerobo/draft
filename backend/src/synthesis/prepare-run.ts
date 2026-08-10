@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FlySandboxRunReceipt } from "../sandbox";
+import { canonicalDocumentsHash } from "./context-version-files";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type { SourceItemRow, WorkspaceRow } from "../types/tables";
@@ -43,10 +44,30 @@ export async function prepareRun(
     WorkspaceRow,
     "current_context_version_id"
   >;
-  if (!workspace.current_context_version_id) {
-    throw new Error(
-      `Workspace ${options.workspaceId} has no current_context_version_id — cannot prepare a synthesis run without a base version`,
-    );
+  let baseContextVersionId = workspace.current_context_version_id;
+  if (!baseContextVersionId) {
+    // workspace can be empty at first run, seed an empty context version inline
+    const emptyDocumentsHash = canonicalDocumentsHash({});
+    const { data: seededVersion, error: seedError } = await client
+      .from("workspace_context_versions")
+      .insert({
+        workspace_id: options.workspaceId,
+        version_number: 1,
+        documents_json: {},
+        content_hash: emptyDocumentsHash,
+        creation_reason: "seed",
+        summary: "Empty workspace — no context yet",
+      })
+      .select("id")
+      .single();
+    if (seedError) throw seedError;
+    baseContextVersionId = (seededVersion as { id: string }).id;
+
+    const { error: pointerError } = await client
+      .from("workspaces")
+      .update({ current_context_version_id: baseContextVersionId })
+      .eq("id", options.workspaceId);
+    if (pointerError) throw pointerError;
   }
 
   const uniqueSourceItemIds = [...new Set(options.sourceItemIds)];
@@ -101,7 +122,7 @@ export async function prepareRun(
       idempotency_key: idempotencyKey,
       status: "preparing",
       trigger_type: options.triggerType,
-      base_context_version_id: workspace.current_context_version_id,
+      base_context_version_id: baseContextVersionId,
       attempt: 1,
       prompt_version: PROMPT_VERSION,
     })

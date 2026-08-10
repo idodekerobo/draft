@@ -129,9 +129,8 @@ export async function validateSynthesisResult(
     const documents = parsed.documents ?? {};
 
     for (const [path, content] of Object.entries(documents)) {
-      // Check 2: every document path must be one of the base version's real
-      // document keys, fetched fresh from Postgres (not a hardcoded list).
-      if (!allowedPaths.has(path)) {
+      // Check 2: once documents exist, only those exact keys may be written; a first run (empty allowlist) allows any path.
+      if (allowedPaths.size > 0 && !allowedPaths.has(path)) {
         throw new Error(`document path not in allowlist: ${path}`);
       }
 
