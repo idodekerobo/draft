@@ -1,6 +1,7 @@
 import * as firefliesWebhook from "../webhooks/fireflies/route";
 import * as connections from "./connections";
 import * as health from "./health";
+import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
@@ -13,6 +14,7 @@ import { OPTIONS, withCors } from "../auth/with-cors";
 export const routes = {
   "/health": { GET: health.GET },
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
+  "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
   "/workspaces/:id/context": { GET: workspaceContext.contextGET },
   "/workspaces/:id/connections": { GET: connections.GET, POST: connections.POST },
   "/workspaces/:id/connections/:provider": { PATCH: connections.PATCH, DELETE: connections.DELETE },

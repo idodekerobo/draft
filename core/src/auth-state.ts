@@ -11,6 +11,13 @@ export interface AuthState {
   workspace_id: string | null;
   /** True only after the account/workspace identity has been resolved by /whoami. */
   identity_resolved: boolean;
+  /**
+   * Server-side timestamp of when this user finished the desktop onboarding
+   * wizard, or null. Per-user (not per-workspace) since many users can
+   * share a workspace and each still needs their own device-level setup —
+   * see the users.onboarding_completed_at migration's comment.
+   */
+  onboarding_completed_at: string | null;
 }
 const PERSONAL_DIR = join(DRAFT_ROOT, "personal");
 const AUTH_FILE = join(PERSONAL_DIR, "auth.json");
@@ -26,6 +33,7 @@ export function normalizeAuthState(value: Partial<AuthState>): AuthState | null 
         workspace_id: value.workspace_id ?? null,
         // Legacy auth files predate identity hydration and must be recovered.
         identity_resolved: value.identity_resolved === true,
+        onboarding_completed_at: value.onboarding_completed_at ?? null,
       }
     : null;
 }

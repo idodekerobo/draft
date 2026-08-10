@@ -4,7 +4,7 @@ import type { UserRow } from "../types/tables";
 
 type UserIdentityRow = Pick<
   UserRow,
-  "id" | "email" | "display_name" | "organization_id" | "primary_team_id" | "organization_role" | "status"
+  "id" | "email" | "display_name" | "organization_id" | "primary_team_id" | "organization_role" | "status" | "onboarding_completed_at"
 > & { workspace_id: string | null };
 
 export const GET = withAuth(async (_req, caller) => {

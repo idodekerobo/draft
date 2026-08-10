@@ -30,6 +30,7 @@ export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSig
         team_id: null,
         workspace_id: null,
         identity_resolved: false,
+        onboarding_completed_at: null,
       };
       writeAuthState(authState);
       try {
@@ -42,6 +43,7 @@ export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSig
             organization_id: string | null;
             primary_team_id: string | null;
             workspace_id: string | null;
+            onboarding_completed_at: string | null;
           };
           writeAuthState({
             ...authState,
@@ -49,6 +51,7 @@ export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSig
             team_id: whoami.primary_team_id,
             workspace_id: whoami.workspace_id,
             identity_resolved: true,
+            onboarding_completed_at: whoami.onboarding_completed_at ?? null,
           });
         }
       } catch { /* non-fatal — sign-in still completes with uncached identity */ }

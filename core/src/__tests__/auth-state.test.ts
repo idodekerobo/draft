@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createAccessTokenProvider, normalizeAuthState, type AuthState } from "../auth-state";
 
-const auth = (overrides: Partial<AuthState> = {}): AuthState => ({ access_token: "old", refresh_token: "refresh", expires_at: 10, organization_id: "org", team_id: "team", workspace_id: "workspace", identity_resolved: true, ...overrides });
+const auth = (overrides: Partial<AuthState> = {}): AuthState => ({ access_token: "old", refresh_token: "refresh", expires_at: 10, organization_id: "org", team_id: "team", workspace_id: "workspace", identity_resolved: true, onboarding_completed_at: null, ...overrides });
 function harness(initial = auth(), fetcher: (calls: number) => Promise<Response> = async () => Response.json({ access_token: "new", refresh_token: "rotated", expires_in: 60 })) {
   let value: AuthState | null = initial; let calls = 0;
   const token = createAccessTokenProvider({ read: () => value, write: (next) => { value = next; }, fetch: async () => fetcher(++calls) });

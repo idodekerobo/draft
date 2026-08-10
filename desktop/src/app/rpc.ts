@@ -29,6 +29,7 @@ type EventMap = {
   };
   signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string };
   authStateChanged: { signedIn: boolean };
+  identityRefreshNeeded: Record<string, never>;
   daemonStopped: Record<string, never>;
   captureComplete: { source: string };
   badgeUpdate: { profile: string; count: number };

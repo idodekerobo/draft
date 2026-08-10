@@ -8,6 +8,7 @@ const NOT_SIGNED_IN: UserIdentity = {
   organizationId: null,
   teamId: null,
   workspaceId: null,
+  onboardingCompletedAt: null,
 };
 const SIGNED_OUT_HYDRATED: UserIdentity = { ...NOT_SIGNED_IN, hydrated: true };
 
@@ -47,12 +48,14 @@ export function UserIdentityProvider({ children }: { children: ReactNode }) {
       }
       else void refresh();
     });
+    const unsubscribeIdentityRefresh = events.on("identityRefreshNeeded", () => void refresh());
     return () => {
       live = false;
       generation++;
       if (timer) clearTimeout(timer);
       unsubscribeSignIn();
       unsubscribeAuth();
+      unsubscribeIdentityRefresh();
     };
   }, []);
 

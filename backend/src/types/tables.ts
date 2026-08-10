@@ -61,6 +61,7 @@ export interface UserRow {
   organization_role: UserOrgRole;
   status: UserStatus;
   last_seen_at: string | null;
+  onboarding_completed_at: string | null;
   created_at: string;
   updated_at: string;
 }

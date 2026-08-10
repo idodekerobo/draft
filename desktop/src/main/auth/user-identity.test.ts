@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createIdentityHydrator, hydrateUserIdentity, TransientIdentityError, type IdentityDeps } from "./user-identity";
 import { AuthRefreshError, type AuthState } from "draft-core/auth-state";
 
-const state = (resolved = false): AuthState => ({ access_token: "a", refresh_token: "r", expires_at: 9e9, organization_id: "o", team_id: "t", workspace_id: "w", identity_resolved: resolved });
+const state = (resolved = false): AuthState => ({ access_token: "a", refresh_token: "r", expires_at: 9e9, organization_id: "o", team_id: "t", workspace_id: "w", identity_resolved: resolved, onboarding_completed_at: null });
 function deps(initial: AuthState | null, responses: Response[] = []) {
   let value = initial; const calls: boolean[] = [];
   const result: IdentityDeps & { calls: boolean[] } = { calls, read: () => value, write: (v) => { value = v; }, clear: () => { value = null; }, token: async (force) => { calls.push(force); return force ? "b" : "a"; }, fetchWhoami: async () => responses.shift()! };

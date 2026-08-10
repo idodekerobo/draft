@@ -77,7 +77,7 @@ import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync
 import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
 import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
-import { clearAuthState, getCachedWorkspaceId, readAuthState } from "draft-core/auth-state";
+import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { fetchServer, fetchServerJSON } from "./main/server/server-client";
 
@@ -1835,6 +1835,21 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
       getUserIdentity: async () => {
         return getUserIdentity();
+      },
+      completeOnboarding: async () => {
+        try {
+          const result = await fetchServerJSON<{ onboarding_completed_at: string | null }>(
+            "onboarding-complete",
+            { method: "POST" },
+          );
+          const current = readAuthState();
+          if (current) writeAuthState({ ...current, onboarding_completed_at: result.onboarding_completed_at });
+          try { rpc.send.identityRefreshNeeded({}); } catch {}
+          return { ok: true, onboardingCompletedAt: result.onboarding_completed_at };
+        } catch (err) {
+          console.error("completeOnboarding: POST /onboarding-complete failed", err);
+          return { ok: false, error: err instanceof Error ? err.message : "Could not mark onboarding complete." };
+        }
       },
       checkGitHubJoinStatus: async () => {
         const workspace = getWorkspacePath(getActiveProfile());

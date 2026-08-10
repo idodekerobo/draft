@@ -18,6 +18,8 @@ export interface UserIdentity {
   organizationId: string | null;
   teamId: string | null;
   workspaceId: string | null;
+  /** Server timestamp of when this user finished the onboarding wizard, or null. */
+  onboardingCompletedAt: string | null;
 }
 
 // ── Shared payload types ───────────────────────────────────────────────────────
@@ -813,6 +815,14 @@ export type AppRPCType = {
       signOut: { params: void; response: ActionResult };
       getUserIdentity: { params: void; response: UserIdentity };
 
+      /**
+       * Mark the signed-in user's onboarding wizard as complete, server-side
+       * (POST /onboarding-complete). Called once, from the wizard's final
+       * "Let's go" step. Updates the cached identity in place so App.tsx's
+       * onboarding gate flips immediately without a full /whoami re-fetch.
+       */
+      completeOnboarding: { params: void; response: ActionResult & { onboardingCompletedAt?: string | null } };
+
       /** Poll join status — used by JoinTeamStep to offer a "finish joining?" resume prompt on mount. */
       checkGitHubJoinStatus: {
         params: void;
@@ -917,6 +927,9 @@ export type AppRPCType = {
 
       /** Local auth session was cleared by the main process. */
       authStateChanged: { signedIn: boolean };
+
+      /** Cached identity fields (e.g. onboardingCompletedAt) changed on disk — re-read without a /whoami round trip. */
+      identityRefreshNeeded: Record<string, never>;
 
       /** Progress from the native GitHub Device Flow join-team flow. */
       githubOAuthProgress: {
