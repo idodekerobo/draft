@@ -42,7 +42,6 @@ interface OnboardingOrchestratorProps {
 
 export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorProps) {
   const [step, setStep]               = useState<OnboardingStep>("welcome");
-  const [isStarting, setIsStarting]   = useState(false);
   const [consentSaving, setConsentSaving] = useState(false);
   const [consentAnswered, setConsentAnswered] = useState(false);
 
@@ -170,14 +169,11 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   }
 
   async function handleStart() {
-    setIsStarting(true);
     completedRef.current = true;
     track("onboarding_completed", { tools_selected: ["claude-code"] });
     try {
-      await rpc.request.startDaemon();
-      await rpc.request.startSkillWatcher();
+      await rpc.request.completeOnboarding();
     } finally {
-      setIsStarting(false);
       onComplete();
     }
   }
@@ -255,7 +251,6 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
           stepNum={stepNum}
           totalSteps={totalSteps}
           onBack={handleBack}
-          isStarting={isStarting}
           handleStart={handleStart}
           consentAnswered={consentAnswered}
           consentSaving={consentSaving}

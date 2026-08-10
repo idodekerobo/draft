@@ -22,7 +22,7 @@ export function CloudSignInStep({ stepNum, totalSteps, onBack, onNext }: CloudSi
         <button className="onboarding__back" onClick={onBack}>← Back</button>
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
-      <h1 className="onboarding__title">Connect Draft Cloud</h1>
+      <h1 className="onboarding__title">Connect Draft Account</h1>
       <p className="onboarding__desc">Sign in once to connect this desktop to your shared workspace. Your source connections and context stay available across devices.</p>
       <div className="onboarding__cloud-sign-in-panel">
         <span className="onboarding__cloud-sign-in-status" data-phase={cloudSignIn}>

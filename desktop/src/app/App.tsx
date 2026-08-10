@@ -21,7 +21,6 @@ import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
 import { OnboardingView } from "./components/views/OnboardingView";
-import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 import { SupportPanel } from "./components/SupportPanel";
 import { useCrispChat } from "./support/useCrispChat";
 
@@ -39,12 +38,11 @@ export function App() {
   const [isStarting, setIsStarting]     = useState(false);
   const [isStopping, setIsStopping]     = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
-  const [bypassSetup, setBypassSetup]   = useState(false);
   const [startError, setStartError]     = useState<string | null>(null);
-  // Latch: set true when status first indicates first-run, cleared only by onComplete.
-  // Kept separate from status so polling can't dismiss onboarding mid-flow if the
-  // daemon updates userState (e.g. after install completes).
-  const [onboardingActive, setOnboardingActive] = useState(false);
+  // Latch: set true the instant onboarding's "Let's go" fires, so the main
+  // app renders immediately instead of waiting on identityRefreshNeeded's
+  // async round trip to land before identity.onboardingCompletedAt updates.
+  const [justCompletedOnboarding, setJustCompletedOnboarding] = useState(false);
   // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
   // Cleared when the user navigates to the Context tab.
   const [contextHasNew, setContextHasNew] = useState(false);
@@ -56,13 +54,10 @@ export function App() {
   const [contextSnapshot, setContextSnapshot] = useState<{ workspaceId: string | null; files: ContextFileEntry[] }>({ workspaceId: null, files: [] });
   const [contextLoading, setContextLoading] = useState(false);
   const contextRequestRef = useRef(0);
-  const { workspaceId, hydrated: identityHydrated } = useUserIdentity();
+  const identity = useUserIdentity();
+  const { workspaceId, hydrated: identityHydrated } = identity;
   const workspaceIdRef = useRef(workspaceId);
   const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
-
-  useEffect(() => {
-    if (status?.appState?.userState === "no-profile") setOnboardingActive(true);
-  }, [status?.appState?.userState]);
 
   const { track } = useAnalytics();
   const hasLaunchedRef = useRef(false);
@@ -338,10 +333,10 @@ export function App() {
           {/* Settings is always reachable regardless of install/daemon state. */}
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} onOpenFeedback={() => setSupportOpen(true)} />
-          ) : (onboardingActive || status?.appState?.userState === "no-profile") ? (
-            <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); await reloadContextFiles(); }} />
-          ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
-            <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); await reloadContextFiles(); }} />
+          ) : !identityHydrated ? (
+            <div className="empty-state">Loading…</div>
+          ) : !justCompletedOnboarding && (!identity.signedIn || !identity.onboardingCompletedAt) ? (
+            <OnboardingView onComplete={async () => { setJustCompletedOnboarding(true); await fetchStatus(); await reloadContextFiles(); }} />
           ) : (
             <>
               {activeView === "proposals" && (
