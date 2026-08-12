@@ -7,7 +7,6 @@ import { runStatus, runStart, runStop, runLogs } from "./commands/daemon.ts";
 import { runAdd } from "./commands/add.ts";
 import { runSwitch } from "./commands/switch.ts";
 import { runProfiles } from "./commands/profiles.ts";
-import { runPublish, runLoad } from "./commands/sync.ts";
 import { runProposals } from "./commands/proposals.ts";
 import { runDoctor } from "./commands/doctor.ts";
 import { runCompletion } from "./commands/completion.ts";
@@ -51,12 +50,6 @@ if (!command || command === "--help" || command === "-h") {
       break;
     case "profiles":
       await runProfiles(rest);
-      break;
-    case "publish":
-      await runPublish(rest);
-      break;
-    case "load":
-      await runLoad(rest);
       break;
     case "proposals":
       await runProposals(rest);

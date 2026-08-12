@@ -39,8 +39,6 @@ export function printHelp(): void {
     ["add <tool>",          "Add Draft to a CLI tool (claude-code, codex, cursor)"],
     ["switch <name>",       "Activate a profile and swap its team assets"],
     ["profiles",            "Manage profiles (list, create, rename, delete)"],
-    ["publish",             "Publish context and team assets"],
-    ["load",                "Load context and team assets"],
     ["logs",                "Tail daemon logs (--follow, --errors)"],
     ["poll <integration>",  "Trigger an on-demand poll (github, granola, slack)"],
     ["dimension",           "Manage context dimensions (list, add)"],
