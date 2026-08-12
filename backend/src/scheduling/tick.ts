@@ -3,19 +3,7 @@ import { dispatchScheduledTask } from "./dispatch";
 import { computeNextDueAt } from "./next-due-at";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
-
-// Supabase errors (PostgrestError) aren't Error instances
-function describeError(value: unknown): string {
-  if (value instanceof Error) return value.message;
-  if (typeof value === "object" && value !== null && "message" in value) {
-    return String((value as { message: unknown }).message);
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
+import { recordError } from "../errors/record-error";
 
 export interface RunSchedulingTickOptions {
   client: SupabaseClient;
@@ -51,17 +39,16 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
         client: options.client,
       });
     } catch (dispatchError) {
-      const { error: errorInsertError } = await options.client.from("errors").insert({
-        workspace_id: task.workspace_id,
-        scheduled_task_id: task.id,
+      await recordError({
+        client: options.client,
+        workspaceId: task.workspace_id,
+        scheduledTaskId: task.id,
         operation: "scheduling",
         message: `Scheduled task ${task.id} (${task.task_type}) failed to dispatch`,
-        detail_json: {
-          task_type: task.task_type,
-          error: describeError(dispatchError),
-        },
+        code: "scheduled_task_dispatch_failed",
+        detail: { task_type: task.task_type },
+        error: dispatchError,
       });
-      if (errorInsertError) throw errorInsertError;
       // Not rethrown -- one task's failure shouldn't stop the rest of the batch.
     }
 

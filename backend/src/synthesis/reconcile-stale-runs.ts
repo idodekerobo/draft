@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SynthesisRunStatus } from "../types/enums";
+import { recordError } from "../errors/record-error";
 
 // A run stuck in any of these forever (crashed sandbox, dead tunnel) blocks
 // every future run for its workspace until swept.
@@ -69,14 +70,15 @@ export async function sweepStaleSynthesisRuns(
   if (updateError) throw updateError;
 
   for (const run of candidates) {
-    const { error: errorInsertError } = await client.from("errors").insert({
-      workspace_id: run.workspace_id,
-      synthesis_run_id: run.id,
+    await recordError({
+      client,
+      workspaceId: run.workspace_id,
+      synthesisRunId: run.id,
       operation: "execution",
       message: `Synthesis run ${run.id} swept as stale from status "${run.status}"`,
-      detail_json: { swept_from_status: run.status, cutoff: cutoffIso },
+      code: "synthesis_run_stale",
+      detail: { swept_from_status: run.status, cutoff: cutoffIso },
     });
-    if (errorInsertError) throw errorInsertError;
   }
 
   return candidates;

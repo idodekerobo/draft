@@ -114,7 +114,7 @@ describe("runSchedulingTick", () => {
     await runSchedulingTick({ client, config: fakeConfig, now: new Date("2026-08-05T10:00:30.000Z"), dispatch });
 
     expect(errorInserts[0].detail_json).toMatchObject({
-      error: "duplicate key value violates unique constraint",
+      error: { message: "duplicate key value violates unique constraint", code: "23505" },
     });
   });
 

@@ -14,6 +14,7 @@ import type {
   LaunchSynthesisRunResult,
 } from "./types";
 import { validateSynthesisResult } from "./validate-result";
+import { recordError } from "../errors/record-error";
 
 /**
  * Launch half of the loop: prepare the run row, load + validate its bundle from
@@ -28,42 +29,65 @@ export async function launchSynthesisRun(
 
   const admission = await checkRunAllowed(options.workspaceId, client);
   if (!admission.ok) {
-    const { error: errorInsertError } = await client.from("errors").insert({
-      workspace_id: options.workspaceId,
-      scheduled_task_id: options.scheduledTaskId ?? null,
+    await recordError({
+      client,
+      workspaceId: options.workspaceId,
+      scheduledTaskId: options.scheduledTaskId,
       operation: "scheduling",
       message: `Synthesis run denied by admission gate: ${admission.reason}`,
-      detail_json: { trigger_type: options.triggerType },
+      code: "synthesis_admission_denied",
+      detail: { trigger_type: options.triggerType, reason: admission.reason },
     });
-    if (errorInsertError) throw errorInsertError;
     throw new RunNotAllowedError(options.workspaceId, admission.reason);
   }
 
-  const runId = await prepareRun(options);
+  let stage = "preparation";
+  let runId: string | undefined;
+  try {
+    runId = await prepareRun(options);
 
-  const bundle = await loadValidatedRunBundle({
-    runId,
-    client: options.client,
-    limits: PILOT_RUN_BUNDLE_LIMITS,
-  });
+    stage = "bundle";
+    const bundle = await loadValidatedRunBundle({
+      runId,
+      client: options.client,
+      limits: PILOT_RUN_BUNDLE_LIMITS,
+    });
 
-  const claudeCodeOAuthToken = await resolveInferenceCredential(
-    options.workspaceId,
-    options.client,
-  );
-  const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions);
+    stage = "credential";
+    const claudeCodeOAuthToken = await resolveInferenceCredential(
+      options.workspaceId,
+      options.client,
+    );
+    stage = "prompt";
+    const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions);
 
-  const receipt = await launchFlySandboxRun({
-    bundle,
-    prompt,
-    jsonSchema,
-    claudeCodeOAuthToken,
-    config: options.config,
-  });
+    stage = "sandbox";
+    const receipt = await launchFlySandboxRun({
+      bundle,
+      prompt,
+      jsonSchema,
+      claudeCodeOAuthToken,
+      config: options.config,
+    });
 
-  await markRunLaunched(runId, receipt, options.client);
+    stage = "mark_launched";
+    await markRunLaunched(runId, receipt, options.client);
 
-  return { runId, machineId: receipt.machineId, bundleHash: receipt.bundleHash };
+    return { runId, machineId: receipt.machineId, bundleHash: receipt.bundleHash };
+  } catch (error) {
+    await recordError({
+      client,
+      workspaceId: options.workspaceId,
+      scheduledTaskId: options.scheduledTaskId,
+      synthesisRunId: runId,
+      operation: stage === "preparation" || stage === "bundle" ? "queue" : "execution",
+      message: `Synthesis launch failed during ${stage}`,
+      code: `synthesis_launch_${stage}_failed`,
+      detail: { stage, trigger_type: options.triggerType },
+      error,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -76,20 +100,48 @@ export async function completeSynthesisRunCallback(
   callbackSecret: string,
   client?: SupabaseClient,
 ): Promise<Response> {
-  const authenticated = await authenticateSandboxCallbackRequest(request, callbackSecret);
+  const resolvedClient = client ?? (await import("../db/client")).serviceClient;
+  let stage = "callback_auth";
+  let runId: string | undefined;
+  let workspaceId: string | null = null;
+  try {
+    const authenticated = await authenticateSandboxCallbackRequest(request, callbackSecret);
+    runId = authenticated.runId;
 
-  const validated = await validateSynthesisResult(
-    authenticated.runId,
-    authenticated.result,
-    client,
-  );
-  // validateSynthesisResult's frozen signature (runId, rawResult, client?) has
-  // no way to receive the bundle hash, so it returns a placeholder. The real
-  // value is only available here, from the authenticated callback request —
-  // fill it in before commit-result.ts (or anything else) relies on it.
-  validated.bundleHash = authenticated.bundleHash;
+    const { data: run } = await resolvedClient
+      .from("synthesis_runs")
+      .select("workspace_id")
+      .eq("id", runId)
+      .maybeSingle<{ workspace_id: string }>();
+    workspaceId = run?.workspace_id ?? null;
 
-  await commitSynthesisResult(validated, client);
+    stage = "validation";
+    const validated = await validateSynthesisResult(
+      runId,
+      authenticated.result,
+      client,
+    );
+    // validateSynthesisResult's frozen signature (runId, rawResult, client?) has
+    // no way to receive the bundle hash, so it returns a placeholder. The real
+    // value is only available here, from the authenticated callback request —
+    // fill it in before commit-result.ts (or anything else) relies on it.
+    validated.bundleHash = authenticated.bundleHash;
 
-  return new Response(null, { status: 204 });
+    stage = "commit";
+    await commitSynthesisResult(validated, client);
+
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    await recordError({
+      client: resolvedClient,
+      workspaceId,
+      synthesisRunId: runId,
+      operation: stage === "validation" ? "validation" : stage === "commit" ? "commit" : "auth",
+      message: `Synthesis callback failed during ${stage}`,
+      code: `synthesis_${stage}_failed`,
+      detail: { stage },
+      error,
+    });
+    throw error;
+  }
 }
