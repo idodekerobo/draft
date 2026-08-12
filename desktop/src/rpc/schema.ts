@@ -285,75 +285,12 @@ export interface ProfileList {
   details: ProfileDetail[];
 }
 
-export interface LoadDiffEntry {
-  dimension: string;
-  action: string;
-  summary: string;
-}
-
-export interface LoadDiffResult {
-  entries: LoadDiffEntry[];
-  cursorLine: number;
-  lastLoaded: string | null;
-}
-
-export type TeamStageErrorCode =
-  | "no_token" | "no_access" | "token_revoked" | "network" | "rate_limited"
-  | "archive_invalid" | "archive_too_large"
-  | "unpublished_local_changes" | "unpublished_team_assets"
-  | "local_asset_validation_failed" | "remote_asset_validation_failed"
-  | "clone_failed" | "unexpected";
-
-/** Serializable preview returned by the shared team-content staging lifecycle. */
-export type TeamDiffResult =
-  | {
-      ok: true;
-      collabConfigured: true;
-      /** Opaque loader capability. The renderer never receives a staging path. */
-      operationId: string;
-      entries: LoadDiffEntry[];
-      /** Display state only; promotion derives the cursor from operationId. */
-      cursorLine: number;
-    }
-  | { ok: false; collabConfigured: false; error: "not_configured" }
-  | { ok: false; collabConfigured: true; error: TeamStageErrorCode };
-
-export interface TeamLoadMissingSecret {
-  name: string;
-  requiredSecrets: string[];
-}
-
-export interface TeamLoadConflict {
-  kind: "skill" | "mcp";
-  name: string;
-  profile: string;
-  reason: "team-name-collision" | "personal-name-collision" | "target-modified";
-}
-
-export type TeamApplyErrorCode =
-  | "workspace_changed" | "stage_not_found" | "apply_failed" | "unexpected";
-
-export type TeamApplyResult =
-  | {
-      ok: true;
-      missingSecrets: TeamLoadMissingSecret[];
-      conflicts: TeamLoadConflict[];
-      installedSkills: string[];
-      installedMcps: string[];
-      removedSkills: string[];
-      removedMcps: string[];
-    }
-  | { ok: false; error: TeamApplyErrorCode };
-
 export interface LocalConfig {
-  teamLoadMode: "auto" | "review";
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
   disabledContextSections: string[];
   codexScanIntervalMinutes: number | null;
   claudeCodeSynthesis: boolean;
-  /** ISO timestamp of the last full publish to the team repo, or null if never published. */
-  lastPublished: string | null;
 }
 
 export interface UpdateInfo {
@@ -471,41 +408,6 @@ export interface ContextFileEntry {
   groupLabel: string;
 }
 
-/**
- * A single recorded version of a context file, from history.db.
- * Defined inline (mirrors draft-core/db/types FileVersion) rather than imported,
- * per this file's convention of staying free of Node/Bun-only modules.
- */
-export interface ContextFileVersion {
-  id: string;
-  filePath: string;
-  content: string;
-  createdAt: string;
-  source: "human-edit" | "team-load" | "initial" | "automated-maintainer";
-  author: string | null;
-  sessionId: string | null;
-  publishedAt: string | null;
-  changesEntryId: string | null;
-}
-
-export interface PublishResult {
-  ok: boolean;
-  published: boolean;
-  scoped: boolean;
-  files: string[];
-  error?: string;
-}
-
-// ── Team sync types ────────────────────────────────────────────────────────────
-
-/** Installed team skill entry — a slim view of the manifest for UI display. */
-export interface TeamSkillEntry {
-  id: string;
-  name: string;
-  profile: string;
-  source_path: string;
-}
-
 /** A team MCP that is waiting for the user to supply missing API credentials. */
 export interface PendingCredentialMcp {
   name: string;
@@ -556,16 +458,7 @@ export type AppRPCType = {
       /** Reject a manual proposal, or dismiss a flagged item. */
       rejectProposal: { params: { filename: string }; response: ActionResult };
 
-      /** Read CHANGES.jsonl delta since last cursor (from local workspace copy — what hook applied). */
-      loadDiff: { params: void; response: LoadDiffResult };
-
-      /** Stage team content and return a serializable preview plus opaque operation ID. */
-      getTeamDiff: { params: void; response: TeamDiffResult };
-
-      /** Promote previously staged team content using only its opaque operation ID. */
-      applyTeamDiff: { params: { operationId: string }; response: TeamApplyResult };
-
-      /** Read per-profile local config (teamLoadMode). */
+      /** Read per-profile local config. */
       getLocalConfig: { params: void; response: LocalConfig };
 
       /** Patch per-profile local config. */
@@ -573,42 +466,6 @@ export type AppRPCType = {
 
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
-
-      /**
-       * Scaffold a new custom dimension: context/<name>/index.md + log/.
-       * Mirrors `draft dimension add <name>` (cli/src/commands/dimension.ts) so the
-       * two entry points stay behaviorally identical.
-       */
-      addContextDimension: { params: { name: string }; response: ActionResult };
-
-      /**
-       * Write edited content to a context file on disk. Frequent/debounced tier —
-       * does not touch history.db. relativePath is relative to <workspace>/context/.
-       */
-      saveContextFile: { params: { relativePath: string; content: string }; response: ActionResult };
-
-      /**
-       * Record a history.db checkpoint from the file's current on-disk content.
-       * Infrequent tier — call only after saveContextFile resolves (blur/switch/close),
-       * never on an independent timer, so a row is never inserted for content that
-       * isn't actually durable on disk yet.
-       */
-      checkpointContextFile: { params: { relativePath: string }; response: ActionResult };
-
-      /** List version history for a context file, most recent first. */
-      getFileHistory: { params: { relativePath: string }; response: ContextFileVersion[] };
-
-      /** Fetch the full content of a specific historical version. */
-      getFileVersionContent: { params: { versionId: string }; response: { content: string } | null };
-
-      /** Publish a single context file to the team repo (scoped publish). */
-      publishContextFile: { params: { relativePath: string }; response: PublishResult };
-
-      /** Publish all context, skills, and mcp config to the team repo (full publish). */
-      publishAllContext: { params: void; response: PublishResult };
-
-      /** List relative context paths with an unpublished latest version in history.db. */
-      getUnpublishedContextPaths: { params: void; response: string[] };
 
       /** Rich connection status for all intelligence tools and input sources. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
@@ -771,45 +628,9 @@ export type AppRPCType = {
       /** List the last 50 activity runs for the active profile. */
       getActivityRuns: { params: void; response: ActivityRun[] };
 
-      /** Return all team skills installed for the active profile. */
-      getTeamSkillsInstalled: { params: void; response: { skills: TeamSkillEntry[] } };
-
-      /** Promote a user-owned skill to the team workspace (Flow A). */
-      promoteSkillToTeam: { params: { skillId: string }; response: ActionResult };
-
-      /** Promote a user-owned MCP to the team workspace (Flow A). */
-      promoteMcpToTeam: { params: { mcpId: string }; response: ActionResult };
-
-      /** Demote a team-shared skill back to personal (Flow A reversal). */
-      demoteSkillFromTeam: { params: { skillId: string }; response: ActionResult };
-
-      /** Demote a team-shared MCP back to personal (Flow A reversal). */
-      demoteMcpFromTeam: { params: { mcpId: string }; response: ActionResult };
-
       /** Supply a missing secret for a team MCP in pending-credentials state. */
       setMcpSecret: { params: { name: string; envVar: string; value: string }; response: ActionResult & { nowInstalled: boolean } };
 
-      /** Check if team collaboration is configured for the active profile. */
-      getCollabConfigured: { params: void; response: { configured: boolean } };
-
-      /**
-       * Whether the native GitHub join flow is available in this build —
-       * false for OSS/dev builds with no OAuth client id baked in, or when
-       * the build-time kill switch is off. Renderer never attempts an OAuth
-       * call it can't complete; it shows "not available in this build" instead.
-       */
-      getGitHubJoinConfig: { params: void; response: { enabled: boolean } };
-
-      /**
-       * Kick off the native GitHub Device Flow join-team flow. Fire-and-forget —
-       * returns almost immediately, well before the user has even seen the
-       * device code. All real progress (including the multi-minute wait for
-       * browser authorization) arrives via the githubOAuthProgress push.
-       */
-      startGitHubJoin: { params: { repoUrl: string }; response: ActionResult };
-
-      /** Cancel the in-flight device flow for the active workspace, if any. */
-      cancelGitHubJoin: { params: void; response: ActionResult };
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };
       signOut: { params: void; response: ActionResult };
@@ -822,20 +643,6 @@ export type AppRPCType = {
        * onboarding gate flips immediately without a full /whoami re-fetch.
        */
       completeOnboarding: { params: void; response: ActionResult & { onboardingCompletedAt?: string | null } };
-
-      /** Poll join status — used by JoinTeamStep to offer a "finish joining?" resume prompt on mount. */
-      checkGitHubJoinStatus: {
-        params: void;
-        response: { connected: boolean; pending: boolean; reason?: "no_access" | "token_revoked" | "network" };
-      };
-
-      /**
-       * Resume a pending join (LocalConfig.pending_join) after a crash or an
-       * earlier "no access yet" failure. Re-runs verifyRepoAccess + completeJoin
-       * against the already-issued token — no new device code needed. Same
-       * fire-and-forget contract as startGitHubJoin; progress via githubOAuthProgress.
-       */
-      resumeGitHubJoin: { params: void; response: ActionResult };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
@@ -855,10 +662,7 @@ export type AppRPCType = {
    * messages: bun sends → renderer handles (fire-and-forget)
    */
   webview: RPCSchema<{
-    requests: {
-      /** Bun asks renderer to show a confirm-load dialog. */
-      confirmLoad: { params: LoadDiffResult; response: boolean };
-    };
+    requests: {};
     messages: {
       /** New proposal(s) arrived from the daemon. */
       proposalAdded: { profile: string; source: string; count: number };
@@ -930,17 +734,6 @@ export type AppRPCType = {
 
       /** Cached identity fields (e.g. onboardingCompletedAt) changed on disk — re-read without a /whoami round trip. */
       identityRefreshNeeded: Record<string, never>;
-
-      /** Progress from the native GitHub Device Flow join-team flow. */
-      githubOAuthProgress: {
-        phase: "awaiting_user" | "verifying_access" | "complete" | "error";
-        userCode?: string;
-        verificationUri?: string;
-        label: string;
-        error?: string;
-        errorCode?: string;
-        resumable?: boolean;
-      };
     };
   }>;
 };

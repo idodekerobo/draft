@@ -18,15 +18,6 @@ type EventMap = {
   skillsChanged: { count: number };
   mcpsChanged: { count: number };
   headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
-  githubOAuthProgress: {
-    phase: "awaiting_user" | "verifying_access" | "complete" | "error";
-    userCode?: string;
-    verificationUri?: string;
-    label: string;
-    error?: string;
-    errorCode?: string;
-    resumable?: boolean;
-  };
   signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string };
   authStateChanged: { signedIn: boolean };
   identityRefreshNeeded: Record<string, never>;
@@ -69,10 +60,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
   // even though the main process completes successfully in the background.
   maxRequestTime: 30_000,
   handlers: {
-    requests: {
-      // TODO: Phase 4: bun asks renderer to confirm a load-team diff
-      confirmLoad: async () => false,
-    },
+    requests: {},
     messages: {
       // TODO: Phase 2: new proposal arrived from daemon
       proposalAdded: (data) => events.emit("proposalAdded", data),
@@ -81,7 +69,6 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       mcpsChanged: (data) => events.emit("mcpsChanged", data),
 
       headlessProgress: (data) => events.emit("headlessProgress", data),
-      githubOAuthProgress: (data) => events.emit("githubOAuthProgress", data),
       signInProgress: (data) => events.emit("signInProgress", data),
       authStateChanged: (data) => events.emit("authStateChanged", data),
 

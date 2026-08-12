@@ -5,11 +5,10 @@ import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import {
   createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
   detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
-  promoteSkillToTeam, demoteSkillFromTeam,
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readCollaboration, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
@@ -17,15 +16,9 @@ import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
-import {
-  cancelActiveDeviceFlow,
-  parseGitHubRepoUrl,
-  resumePendingJoin,
-  startGitHubDeviceFlow,
-} from "draft-core/integrations/github-oauth";
-import { homedir, userInfo } from "os";
+import { homedir } from "os";
 import { openActivityDb, queryRuns } from "draft-core/db/activity";
-import { openHistoryDb, insertFileVersion, queryFileVersions, getFileVersion, queryAutomatedRewriteDimensions } from "draft-core/db/history";
+import { openHistoryDb, queryAutomatedRewriteDimensions } from "draft-core/db/history";
 import {
   listProposals,
   acknowledgeFlaggedProposal,
@@ -43,7 +36,6 @@ import {
   getBundledDaemonBinPath,
   getBundledPluginDir,
 } from "./main/bundlePath";
-import { readLocalDiff } from "./main/sync/loadDiff";
 import { runInstall, syncExtractedBins } from "./main/installer";
 import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
@@ -62,8 +54,6 @@ import { startMcpWatch, stopMcpWatch, restartMcpWatchWithProfile } from "./main/
 import {
   detectMcpPending,
   approveMcps as approveMcpsCore,
-  promoteMcpToTeam,
-  demoteMcpFromTeam,
   setTeamMcpSecret,
 } from "draft-core/sync/mcp-sync";
 import {
@@ -72,9 +62,7 @@ import {
   tombstoneMcp,
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
-import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
-import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
-import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
+import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
 import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
@@ -82,16 +70,6 @@ import { getUserIdentity } from "./main/auth/user-identity";
 import { fetchServer, fetchServerJSON } from "./main/server/server-client";
 
 let browserSignInController: AbortController | null = null;
-
-async function preflightPublish(): Promise<{ ok: true; profile: string; workspace: string } | { ok: false; error: string }> {
-  const profile = getActiveProfile();
-  const workspace = getWorkspacePath(profile);
-  const validation = validateProfileAssets(profile);
-  if (!validation.ok) return { ok: false, error: `Team assets are invalid: ${validation.errors.map((e) => e.message).join("; ")}` };
-  const gh = await capture(["gh", "api", "user", "--jq", ".login"]);
-  if (gh.exitCode !== 0 || !gh.stdout.trim()) return { ok: false, error: "GitHub CLI not authenticated. Run `gh auth login` first." };
-  return { ok: true, profile, workspace };
-}
 
 const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
 const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
@@ -656,71 +634,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      loadDiff: async () => {
-        const result = readLocalDiff();
-        return result;
-      },
-
-      getTeamDiff: async () => {
-        const profile = getActiveProfile();
-        const workspace = getWorkspacePath(profile);
-        const collaboration = readCollaboration(workspace);
-        if (!collaboration.ok || !collaboration.collab.team_repo_url) {
-          return { ok: false, collabConfigured: false, error: "not_configured" };
-        }
-
-        try {
-          const result = await stageTeamContent({ workspace, profile });
-          if (!result.ok) {
-            return { ok: false, collabConfigured: true, error: result.error };
-          }
-          return {
-            ok: true,
-            collabConfigured: true,
-            operationId: result.staged.operationId,
-            entries: result.staged.entries,
-            cursorLine: result.staged.cursorLine,
-          };
-        } catch {
-          return { ok: false, collabConfigured: true, error: "unexpected" };
-        }
-      },
-
-      applyTeamDiff: async ({ operationId }) => {
-        try {
-          const result = await promoteStagedTeamContent(operationId);
-          if (!result.ok) return result;
-          return {
-            ok: true,
-            missingSecrets: result.missingSecrets,
-            conflicts: result.conflicts.map(({ kind, name, profile, reason }) => ({
-              kind,
-              name,
-              profile,
-              reason,
-            })),
-            installedSkills: result.installedSkills,
-            installedMcps: result.installedMcps,
-            removedSkills: result.removedSkills,
-            removedMcps: result.removedMcps,
-          };
-        } catch {
-          return { ok: false, error: "unexpected" };
-        }
-      },
-
       getLocalConfig: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
         const result = readLocalConfig(workspace);
         const c = result.ok ? result.config : {};
         return {
-          teamLoadMode:              c.teamLoadMode              ?? "auto",
           launchOnLogin:             c.launchOnLogin             ?? false,
           notificationsEnabled:      c.notificationsEnabled      ?? true,
           disabledContextSections:   c.disabledContextSections   ?? [],
           codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
           claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
-          lastPublished:             c.last_published            ?? null,
         };
       },
 
@@ -976,127 +899,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: err instanceof Error ? err.message : "Failed to reveal in Finder." };
         }
       },
-
-      addContextDimension: async ({ name }) => {
-        try {
-          if (!/^[a-z0-9-]+$/.test(name)) {
-            return { ok: false, error: "Dimension names may only contain lowercase letters, numbers, and hyphens." };
-          }
-          const workspace = getWorkspacePath(getActiveProfile());
-          const contextDir = join(workspace, "context");
-          const dimPath = join(contextDir, name);
-          const indexPath = join(dimPath, "index.md");
-          const logPath = join(dimPath, "log");
-
-          if (existsSync(indexPath)) {
-            return { ok: false, error: `Dimension '${name}' already exists.` };
-          }
-
-          mkdirSync(dimPath, { recursive: true });
-          mkdirSync(logPath, { recursive: true });
-          writeFileSync(
-            indexPath,
-            `---\nname: ${name}\ndescription: >\n  No information recorded yet.\nlast_updated: ""\nsource: ""\n---\n`,
-            "utf8"
-          );
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to create dimension." };
-        }
-      },
-
-      saveContextFile: async ({ relativePath, content }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const contextDir = join(workspace, "context");
-          const absPath = resolve(contextDir, relativePath);
-          if (absPath !== resolve(contextDir) && !absPath.startsWith(resolve(contextDir) + "/")) {
-            return { ok: false, error: "Invalid file path." };
-          }
-          writeFileSync(absPath, content, "utf8");
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to save file." };
-        }
-      },
-
-      checkpointContextFile: async ({ relativePath }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const contextDir = join(workspace, "context");
-          const absPath = resolve(contextDir, relativePath);
-          if (absPath !== resolve(contextDir) && !absPath.startsWith(resolve(contextDir) + "/")) {
-            return { ok: false, error: "Invalid file path." };
-          }
-          if (!existsSync(absPath)) {
-            return { ok: false, error: "File not found." };
-          }
-          const content = readFileSync(absPath, "utf8");
-          const db = openHistoryDb(workspace);
-          try {
-            insertFileVersion(db, {
-              filePath: relativePath,
-              content,
-              createdAt: new Date().toISOString(),
-              source: "human-edit",
-              author: userInfo().username,
-              sessionId: null,
-              publishedAt: null,
-              changesEntryId: null,
-            });
-          } finally {
-            db.close();
-          }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to checkpoint file." };
-        }
-      },
-
-      getFileHistory: async ({ relativePath }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const db = openHistoryDb(workspace);
-        try {
-          return queryFileVersions(db, relativePath);
-        } finally {
-          db.close();
-        }
-      },
-
-      getFileVersionContent: async ({ versionId }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const db = openHistoryDb(workspace);
-        try {
-          const version = getFileVersion(db, versionId);
-          return version ? { content: version.content } : null;
-        } finally {
-          db.close();
-        }
-      },
-
-      publishContextFile: async ({ relativePath }) => {
-        const pre = await preflightPublish();
-        if (!pre.ok) return { ok: false, published: false, scoped: true, files: [], error: pre.error };
-        try {
-          const result = await publishTeamContext(pre.workspace, pre.profile, { paths: [relativePath], capture });
-          return { ...result, ok: true };
-        } catch (err) {
-          return { ok: false, published: false, scoped: true, files: [], error: err instanceof Error ? err.message : "Publish failed." };
-        }
-      },
-
-      publishAllContext: async () => {
-        const pre = await preflightPublish();
-        if (!pre.ok) return { ok: false, published: false, scoped: false, files: [], error: pre.error };
-        try {
-          const result = await publishTeamContext(pre.workspace, pre.profile, { capture });
-          return { ...result, ok: true };
-        } catch (err) {
-          return { ok: false, published: false, scoped: false, files: [], error: err instanceof Error ? err.message : "Publish failed." };
-        }
-      },
-
-      getUnpublishedContextPaths: async () => listUnpublishedContextPaths(getWorkspacePath(getActiveProfile())),
 
       runInstall: async ({ tools }) => {
         console.log(`[rpc] runInstall called — tools: ${JSON.stringify(tools)}`);
@@ -1697,46 +1499,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getTeamSkillsInstalled: async () => {
-        const profile = getActiveProfile();
-        const manifest = readSkillManifest();
-        const skills = Object.entries(manifest.skills)
-          .filter(([, entry]) => entry.kind === "team" && entry.removed_at === null)
-          .map(([id, entry]) => ({
-            id,
-            name: entry.name,
-            profile,
-            source_path: entry.source_path,
-          }));
-        return { skills };
-      },
-
-      promoteSkillToTeam: async ({ skillId }) => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const result = promoteSkillToTeam(skillId, workspacePath, profile);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
-      promoteMcpToTeam: async ({ mcpId }) => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const result = promoteMcpToTeam(mcpId, workspacePath, profile);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
-      demoteSkillFromTeam: async ({ skillId }) => {
-        const result = demoteSkillFromTeam(skillId);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
-      demoteMcpFromTeam: async ({ mcpId }) => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const result = demoteMcpFromTeam(mcpId, workspacePath);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
       setMcpSecret: async ({ name, envVar, value }) => {
         const profile = getActiveProfile();
         // Team-MCP secrets are profile-scoped (same path resolvePaths uses in
@@ -1751,52 +1513,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           try { rebuildEnvSh(profile); } catch { /* non-fatal */ }
         }
         return { ok: true, nowInstalled: result.nowInstalled };
-      },
-
-      getCollabConfigured: async () => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const collabPath = join(workspacePath, "config", "collaboration.json");
-        try {
-          const raw = readFileSync(collabPath, "utf8");
-          const parsed = JSON.parse(raw);
-          return { configured: parsed?.mode === "github" };
-        } catch {
-          return { configured: false };
-        }
-      },
-
-      // ── native GitHub OAuth join-team flow ─────────────────────────────────
-      //
-      // Fire-and-forget — NOT awaited. The RPC response returns here, well
-      // before the user has even seen the device code, let alone authorized
-      // in a browser. All real progress (including the multi-minute wait for
-      // browser authorization) arrives via repeated githubOAuthProgress pushes.
-
-      getGitHubJoinConfig: async () => {
-        return { enabled: Boolean(process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID) && Boolean(process.env.DRAFT_GITHUB_JOIN_ENABLED) };
-      },
-
-      startGitHubJoin: async ({ repoUrl }) => {
-        if (!process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID || !process.env.DRAFT_GITHUB_JOIN_ENABLED) {
-          return { ok: false, error: "GitHub join isn't available in this build." };
-        }
-        const profile = getActiveProfile();
-        const workspace = getWorkspacePath(profile);
-        const parsed = parseGitHubRepoUrl(repoUrl);
-        if (!parsed) {
-          return { ok: false, error: "Enter a valid GitHub URL, e.g. https://github.com/owner/repo." };
-        }
-        void startGitHubDeviceFlow({
-          repoUrl, workspace, profile,
-          onProgress: (p) => { try { rpc.send.githubOAuthProgress(p); } catch {} },
-        });
-        return { ok: true };
-      },
-
-      cancelGitHubJoin: async () => {
-        cancelActiveDeviceFlow(getWorkspacePath(getActiveProfile()));
-        return { ok: true };
       },
 
       startBrowserSignIn: async () => {
@@ -1850,25 +1566,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           console.error("completeOnboarding: POST /onboarding-complete failed", err);
           return { ok: false, error: err instanceof Error ? err.message : "Could not mark onboarding complete." };
         }
-      },
-      checkGitHubJoinStatus: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const local = readLocalConfig(workspace);
-        const integrations = readIntegrations(workspace);
-        return {
-          connected: integrations.ok ? (integrations.integrations.github?.connected ?? false) : false,
-          pending: local.ok ? Boolean(local.config.pending_join) : false,
-        };
-      },
-
-      resumeGitHubJoin: async () => {
-        const profile = getActiveProfile();
-        const workspace = getWorkspacePath(profile);
-        void resumePendingJoin({
-          workspace, profile,
-          onProgress: (p) => { try { rpc.send.githubOAuthProgress(p); } catch {} },
-        });
-        return { ok: true };
       },
     },
     messages: {
