@@ -23,7 +23,6 @@ import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { SkillSyncSection } from "./settings/SkillSyncSection";
 import { McpSyncSection } from "./settings/McpSyncSection";
-import { PublishSection } from "./settings/PublishSection";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -620,29 +619,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
 
       <div className="settings__body">
 
-        {/* ── Context ────────────────────────────────────────────────────── */}
-        <section className="settings__section">
-          <h2 className="settings__section-label">Context</h2>
-          <div className="settings__rows">
-            <div className="settings__row settings__row--stacked">
-              <div className="settings__row-content">
-                <span className="settings__row-label">Apply team context</span>
-                <span className="settings__row-desc">
-                  How updates from your team's shared context are applied at session start
-                </span>
-              </div>
-              <SegmentControl
-                value={settings.teamLoadMode}
-                options={[
-                  { value: "auto",   label: "Automatically" },
-                  { value: "review", label: "Review first"  },
-                ]}
-                onChange={(v) => void patch({ teamLoadMode: v as "auto" | "review" })}
-              />
-            </div>
-          </div>
-        </section>
-
         {/* ── Session Context ─────────────────────────────────────────────── */}
         {sections.length > 0 && (
           <section className="settings__section">
@@ -669,9 +645,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
             </div>
           </section>
         )}
-
-        {/* ── Team Publishing ────────────────────────────────────────────── */}
-        <PublishSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
         <SkillSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />

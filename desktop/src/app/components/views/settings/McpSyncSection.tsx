@@ -247,15 +247,10 @@ function CredentialPrompt({ mcps, onSaved }: {
 
 // ── SyncedMcpGroup ────────────────────────────────────────────────────────────
 
-function SyncedMcpGroup({ mcps, onRemove, onPromote, onDemote, removingId, promotingId, demotingId, collabConfigured }: {
+function SyncedMcpGroup({ mcps, onRemove, removingId }: {
   mcps: McpManifestEntry[];
   onRemove: (mcp: McpManifestEntry) => void;
-  onPromote: (mcpId: string) => void;
-  onDemote: (mcpId: string) => void;
   removingId: string | null;
-  promotingId: string | null;
-  demotingId: string | null;
-  collabConfigured: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
@@ -295,7 +290,6 @@ function SyncedMcpGroup({ mcps, onRemove, onPromote, onDemote, removingId, promo
           <div className="skill-sync__section-items">
             {filtered.map((mcp) => {
               const syncTargets = Object.keys(mcp.synced_to) as Array<"claude-code" | "codex">;
-              const isTeam = mcp.kind === "team";
               const hasPendingSecrets = mcp.pending_secrets && mcp.pending_secrets.length > 0;
               return (
                 <div key={mcp.id} className="app-row">
@@ -304,11 +298,10 @@ function SyncedMcpGroup({ mcps, onRemove, onPromote, onDemote, removingId, promo
                     <div className="app-row__text">
                       <div className="app-row__name-row">
                         <span className="app-row__name">{mcp.name}</span>
-                        {isTeam && <span className="app-row__badge app-row__badge--team">Team</span>}
                       </div>
                       <span className="app-row__meta">
                         {mcpDisplayUrl(mcp.sync_canonical.url)}
-                        {!isTeam && <> · {AGENT_LABELS[mcp.source_agent]}</>}
+                        {" · "}{AGENT_LABELS[mcp.source_agent]}
                         {syncTargets.length > 0 && !hasPendingSecrets && (
                           <> · synced to {syncTargets.map((a) => AGENT_LABELS[a]).join(", ")}</>
                         )}
@@ -318,36 +311,15 @@ function SyncedMcpGroup({ mcps, onRemove, onPromote, onDemote, removingId, promo
                       </span>
                     </div>
                   </div>
-                  {isTeam ? (
-                    <div className="app-row__actions">
-                      <button
-                        className="app-row__disconnect"
-                        onClick={() => onDemote(mcp.id)}
-                        disabled={demotingId === mcp.id}
-                      >
-                        {demotingId === mcp.id ? "Removing…" : "Remove from team"}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="app-row__actions">
-                      {collabConfigured && (
-                        <button
-                          className="app-row__connect app-row__connect--secondary"
-                          onClick={() => onPromote(mcp.id)}
-                          disabled={promotingId === mcp.id}
-                        >
-                          {promotingId === mcp.id ? "Sharing…" : "Share with team"}
-                        </button>
-                      )}
-                      <button
-                        className="app-row__disconnect"
-                        onClick={() => onRemove(mcp)}
-                        disabled={removingId === mcp.id}
-                      >
-                        {removingId === mcp.id ? "Removing…" : "Remove"}
-                      </button>
-                    </div>
-                  )}
+                  <div className="app-row__actions">
+                    <button
+                      className="app-row__disconnect"
+                      onClick={() => onRemove(mcp)}
+                      disabled={removingId === mcp.id}
+                    >
+                      {removingId === mcp.id ? "Removing…" : "Remove"}
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -367,7 +339,7 @@ function SyncedMcpGroup({ mcps, onRemove, onPromote, onDemote, removingId, promo
 
 const ANIM_DURATION_MS = 260;
 
-export function McpSyncSection({ onError, onNotice }: McpSyncSectionProps) {
+export function McpSyncSection({ onError }: McpSyncSectionProps) {
   const [manifest, setManifest]               = useState<McpManifest | null>(null);
   const [pending, setPending]                 = useState<PendingMcpEntry[]>([]);
   const [conflicts, setConflicts]             = useState<McpConflict[]>([]);
@@ -375,23 +347,18 @@ export function McpSyncSection({ onError, onNotice }: McpSyncSectionProps) {
   const [approving, setApproving]             = useState(false);
   const [resolvingConflict, setResolvingConflict] = useState<string | null>(null);
   const [removingId, setRemovingId]           = useState<string | null>(null);
-  const [promotingId, setPromotingId]         = useState<string | null>(null);
-  const [demotingId, setDemotingId]           = useState<string | null>(null);
   const [exitingPendingIds, setExitingPendingIds] = useState<Set<string>>(new Set());
-  const [collabConfigured, setCollabConfigured] = useState(false);
 
   async function scan() {
     setScanning(true);
     try {
-      const [pendingResult, manifestResult, collabResult] = await Promise.all([
+      const [pendingResult, manifestResult] = await Promise.all([
         rpc.request.getMcpPending(),
         rpc.request.getMcpManifest(),
-        rpc.request.getCollabConfigured(),
       ]);
       setPending([...pendingResult.pending].sort((a, b) => a.name.localeCompare(b.name)));
       setConflicts(pendingResult.conflicts);
       setManifest(manifestResult);
-      setCollabConfigured(collabResult.configured);
     } catch {
       onError("Could not scan MCP configurations.");
     } finally {
@@ -444,33 +411,6 @@ export function McpSyncSection({ onError, onNotice }: McpSyncSectionProps) {
       onError("MCP removal failed.");
     } finally {
       setRemovingId(null);
-    }
-  }
-
-  async function handlePromote(mcpId: string) {
-    setPromotingId(mcpId);
-    try {
-      const result = await rpc.request.promoteMcpToTeam({ mcpId });
-      if (!result.ok) { onError(result.error ?? "Could not share MCP with team."); return; }
-      await scan();
-    } catch {
-      onError("Failed to share MCP with team.");
-    } finally {
-      setPromotingId(null);
-    }
-  }
-
-  async function handleDemote(mcpId: string) {
-    setDemotingId(mcpId);
-    try {
-      const result = await rpc.request.demoteMcpFromTeam({ mcpId });
-      if (!result.ok) { onError(result.error ?? "Could not remove MCP from team."); return; }
-      await scan();
-      onNotice("Removed from your team context. Run /draft-publish-team to push the change to your team.");
-    } catch {
-      onError("Failed to remove MCP from team.");
-    } finally {
-      setDemotingId(null);
     }
   }
 
@@ -545,12 +485,7 @@ export function McpSyncSection({ onError, onNotice }: McpSyncSectionProps) {
           <SyncedMcpGroup
             mcps={syncedMcps}
             onRemove={handleRemove}
-            onPromote={handlePromote}
-            onDemote={handleDemote}
             removingId={removingId}
-            promotingId={promotingId}
-            demotingId={demotingId}
-            collabConfigured={collabConfigured}
           />
         )}
 

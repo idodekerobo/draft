@@ -1375,6 +1375,7 @@ button {
   display: block;
   width: 100%;
   min-height: 100%;
+  margin: 0;
   border: none;
   outline: none;
   resize: none;
@@ -1383,7 +1384,8 @@ button {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  caret-color: var(--color-accent-blue);
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 /* ── Content toolbar — meta strip + save indicator + history toggle ─────────── */

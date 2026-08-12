@@ -43,9 +43,6 @@ export function App() {
   // app renders immediately instead of waiting on identityRefreshNeeded's
   // async round trip to land before identity.onboardingCompletedAt updates.
   const [justCompletedOnboarding, setJustCompletedOnboarding] = useState(false);
-  // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
-  // Cleared when the user navigates to the Context tab.
-  const [contextHasNew, setContextHasNew] = useState(false);
   const [updateReady, setUpdateReady]       = useState(false);
   const [updateVersion, setUpdateVersion]   = useState<string | null>(null);
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
@@ -168,11 +165,6 @@ export function App() {
   }, []);
 
   // ── Bootstrap synthesis run polling ───────────────────────────────────────
-  // Onboarding's "Let's go" can land the user in the main app before the
-  // cloud sandbox finishes the workspace's first synthesis run. There's no
-  // push from the backend when it completes, so poll the (already-existing)
-  // context endpoint until it goes from empty to non-empty, or give up after
-  // a timeout rather than polling forever.
   useEffect(() => {
     return events.on("bootstrapRunStarted", () => {
       if (bootstrapPollRef.current) bootstrapPollRef.current.cancelled = true; // supersede any earlier poll
@@ -347,7 +339,6 @@ export function App() {
   }
 
   function handleNavigate(view: View) {
-    if (view === "context") setContextHasNew(false);
     setActiveView(view);
     track("view_navigated", { view });
   }
@@ -371,7 +362,6 @@ export function App() {
           activeView={activeView}
           onNavigate={handleNavigate}
           proposalCount={proposalCount}
-          contextHasNew={contextHasNew}
           activeProfile={activeProfile}
           profiles={profiles}
           onSwitchProfile={handleSwitchProfile}
@@ -405,7 +395,6 @@ export function App() {
                 <ContextViewer
                   key={`${activeProfile}:${workspaceId ?? "signed-out"}`}
                   activeProfile={activeProfile}
-                  onNewChanges={setContextHasNew}
                   files={contextSnapshot.workspaceId === workspaceId ? contextSnapshot.files : []}
                   setFiles={(update) => setContextSnapshot((snapshot) => ({
                     workspaceId,

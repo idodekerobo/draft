@@ -11,7 +11,6 @@ interface SidebarProps {
   activeView: View;
   onNavigate: (view: View) => void;
   proposalCount: number;
-  contextHasNew: boolean;
   activeProfile: string;
   profiles: string[];
   onSwitchProfile: (profile: string) => Promise<void>;
@@ -52,7 +51,7 @@ const DAEMON_CONTROL_CONFIG: Record<DaemonControlVariant, DaemonControlConfig> =
   restarting: { dotClass: "loading",  label: "restarting…",  btnLabel: null,      btnVariant: null      },
 };
 
-export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew, activeProfile, profiles, onSwitchProfile, daemonVariant, onStartDaemon, onStopDaemon, onRestartDaemon, onOpenFeedback }: SidebarProps) {
+export function Sidebar({ activeView, onNavigate, proposalCount, activeProfile, profiles, onSwitchProfile, daemonVariant, onStartDaemon, onStopDaemon, onRestartDaemon, onOpenFeedback }: SidebarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos]   = useState<{ bottom: number; left: number } | null>(null);
   const chipRef     = useRef<HTMLButtonElement>(null);
@@ -110,7 +109,6 @@ export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew, 
         {NAV_ITEMS.map((item) => {
           const isActive  = item.id === activeView;
           const showBadge = item.id === "proposals" && proposalCount > 0;
-          const showDot   = item.id === "context" && contextHasNew && !isActive;
 
           return (
             <li
@@ -125,9 +123,6 @@ export function Sidebar({ activeView, onNavigate, proposalCount, contextHasNew, 
                 <span className="sidebar__badge" aria-label={`${proposalCount} pending`}>
                   {proposalCount > 99 ? "99+" : proposalCount}
                 </span>
-              )}
-              {showDot && (
-                <span className="sidebar__dot" aria-label="New team context" />
               )}
             </li>
           );
