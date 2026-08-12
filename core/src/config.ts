@@ -160,8 +160,6 @@ export type SecretsResult =
 
 export interface Collaboration {
   mode?: string;
-  team_repo_url?: string;
-  team_repo_subdir?: string;
   teammates?: string[];
 }
 
@@ -360,31 +358,11 @@ export function writeIntegrations(workspacePath: string, integrations: Integrati
 // ── Local (per-machine, per-profile) config ─────────────────────────────────────
 
 export interface LocalConfig {
-  teamLoadMode?: "auto" | "review";
   launchOnLogin?: boolean;
   notificationsEnabled?: boolean;
-  last_loaded?: string;
-  last_published?: string;
-  lastLoadCursor?: number;
   disabledContextSections?: string[];
   codexScanIntervalMinutes?: number | null;
   claudeCodeSynthesis?: boolean;
-  team_assets?: {
-    baseline?: {
-      skills_hash: string;
-      mcp_hash: string;
-    };
-    last_remote?: {
-      skills_hash: string;
-      mcp_hash: string;
-    };
-  };
-  /** Transport used to pull team content. Absent/"git" = clone via git/gh CLI. */
-  sync_method?: "git" | "github-api";
-  /** Default branch of the team repo, resolved via the GitHub API at join time. */
-  default_branch?: string;
-  /** Set once token exchange succeeds, cleared only once the join fully completes — enables restart-safe resume. */
-  pending_join?: { team_repo_url: string; owner: string; repo: string };
 }
 
 export type LocalConfigResult =
