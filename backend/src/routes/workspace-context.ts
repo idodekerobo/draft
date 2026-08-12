@@ -2,6 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import type { WorkspaceContextVersionRow } from "../types/tables";
+import { recordRouteError } from "../errors/route-error";
 
 type ContextRequest = Bun.BunRequest<"/workspaces/:id/context">;
 
@@ -16,7 +17,10 @@ export const contextGET = withAuth<ContextRequest>(async (req, caller) => {
     .order("version_number", { ascending: false })
     .limit(1)
     .maybeSingle<WorkspaceContextVersionRow>();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) {
+    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "workspace_context_read_failed", error });
+    return Response.json({ error: error.message }, { status: 500 });
+  }
   if (!version) return Response.json({ error: "no_context_yet" }, { status: 404 });
 
   return Response.json({

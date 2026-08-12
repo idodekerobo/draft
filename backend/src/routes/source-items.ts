@@ -9,6 +9,7 @@ import { PILOT_RUN_BUNDLE_LIMITS } from "../synthesis/load-run-bundle";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
+import { recordRouteError } from "../errors/route-error";
 
 type SourceItemsRequest = Bun.BunRequest<"/workspaces/:id/source-items">;
 
@@ -42,9 +43,9 @@ function isDimensionHint(value: unknown): value is DimensionHint {
   return typeof hint.dimensionName === "string" && typeof hint.dimensionDescription === "string";
 }
 
-function errorResponse(error: string, status = 500, detail?: unknown): Response {
+function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string): Response {
   if (status >= 500) {
-    console.error(`source-items route: ${error}`, detail ?? "");
+    recordRouteError({ workspaceId: workspaceId ?? null, operation: "ingestion", errorCode: error, error: detail });
   }
   return Response.json({ ok: false, error }, { status });
 }
@@ -110,7 +111,7 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
       connected_by_user_id: caller.userId,
     });
   } catch (err) {
-    return errorResponse("connection_upsert_failed", 500, err);
+    return errorResponse("connection_upsert_failed", 500, err, req.params.id);
   }
 
   const insertedIds: string[] = [];
@@ -130,7 +131,14 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
       });
       insertedIds.push(item.id);
     } catch (err) {
-      console.error(`source-items route: failed to upsert ${file.path}`, err);
+      recordRouteError({
+        workspaceId: req.params.id,
+        sourceConnectionId: sourceConnection.id,
+        operation: "ingestion",
+        errorCode: "source_item_upsert_failed",
+        error: err,
+        detail: { path: file.path },
+      });
       skipped.push(file.path);
     }
   }
@@ -164,9 +172,7 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
       : err instanceof RunNotAllowedError
         ? "run_not_allowed"
         : "launch_failed";
-    if (synthesisError === "launch_failed") {
-      console.error("source-items route: triggerSynthesis launch failed", err);
-    }
+    // launchSynthesisRun owns recording for unexpected stage failures.
     // Upload itself succeeded — don't mask that behind ok:false just
     // because the chained launch failed afterward.
     return Response.json({ ok: true, inserted: insertedIds.length, skipped, synthesisError });

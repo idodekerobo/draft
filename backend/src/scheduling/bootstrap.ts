@@ -1,6 +1,7 @@
 import { serviceClient } from "../db/client";
 import { loadSandboxDeploymentConfig } from "../sandbox";
 import { runSchedulingTick } from "./tick";
+import { recordError } from "../errors/record-error";
 
 const TICK_INTERVAL_MS = 30_000;
 
@@ -9,7 +10,13 @@ export function startScheduler(): void {
 
   setInterval(() => {
     runSchedulingTick({ client: serviceClient, config }).catch((error) => {
-      console.error("scheduling tick failed", error);
+      void recordError({
+        workspaceId: null,
+        operation: "scheduling",
+        message: "Scheduling tick failed before task-level dispatch",
+        code: "scheduling_tick_failed",
+        error,
+      });
     });
   }, TICK_INTERVAL_MS);
 }

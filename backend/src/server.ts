@@ -2,6 +2,7 @@ import { loadConfig } from "./config";
 import { startSlackListeners } from "./ingestion/slack/bootstrap";
 import { startScheduler } from "./scheduling/bootstrap";
 import { routes } from "./routes";
+import { recordError } from "./errors/record-error";
 
 const config = loadConfig();
 
@@ -14,7 +15,13 @@ Bun.serve({
 });
 
 startSlackListeners().catch((error) => {
-  console.error("failed to start Slack listeners", error);
+  void recordError({
+    workspaceId: null,
+    operation: "ingestion",
+    message: "Failed to start Slack listeners",
+    code: "slack_listener_startup_failed",
+    error,
+  });
 });
 startScheduler();
 

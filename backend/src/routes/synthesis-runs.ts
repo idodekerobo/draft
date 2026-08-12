@@ -7,6 +7,7 @@ import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
+import { recordRouteError } from "../errors/route-error";
 
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
 
@@ -26,9 +27,9 @@ function isSynthesisRunsBody(value: unknown): value is SynthesisRunsBody {
   return body.dimensions === undefined || (Array.isArray(body.dimensions) && body.dimensions.every(isDimensionHint));
 }
 
-function errorResponse(error: string, status = 500, detail?: unknown): Response {
+function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string): Response {
   if (status >= 500) {
-    console.error(`synthesis-runs route: ${error}`, detail ?? "");
+    recordRouteError({ workspaceId: workspaceId ?? null, operation: "execution", errorCode: error, error: detail });
   }
   return Response.json({ ok: false, error }, { status });
 }
@@ -73,6 +74,8 @@ export const POST = withAuth<SynthesisRunsRequest>(async (req, caller) => {
     if (err instanceof RunNotAllowedError) {
       return errorResponse("run_not_allowed", 403, err);
     }
-    return errorResponse("launch_failed", 500, err);
+    // launchSynthesisRun owns stage-aware recording; keep this boundary from
+    // creating a duplicate row while preserving the exact response shape.
+    return Response.json({ ok: false, error: "launch_failed" }, { status: 500 });
   }
 });

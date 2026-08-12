@@ -12,6 +12,7 @@ import { registerFirefliesReconciliationTask } from "../ingestion/fireflies/reco
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
 import type { SourceConnectionRow } from "../types/tables";
+import { recordRouteError } from "../errors/route-error";
 
 type ConnectionsRequest = Bun.BunRequest<"/workspaces/:id/connections">;
 type ConnectionProviderRequest = Bun.BunRequest<"/workspaces/:id/connections/:provider">;
@@ -96,9 +97,9 @@ function isChannelIds(value: unknown): value is string[] {
 }
 
 // Return safe error codes to clients; log details for server diagnostics.
-function errorResponse(error: string, status = 500, detail?: unknown): Response {
+function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string): Response {
   if (status >= 500) {
-    console.error(`connections route: ${error}`, detail ?? "");
+    recordRouteError({ workspaceId: workspaceId ?? null, operation: "auth", errorCode: error, error: detail });
   }
   return Response.json({ error }, { status });
 }
@@ -170,7 +171,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .select("provider, status, display_name, last_success_at, last_error_at, config_json")
     .eq("workspace_id", req.params.id)
     .in("provider", ["slack", "fireflies"]);
-  if (error) return errorResponse("lookup_failed", 500, error);
+  if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
   const connections: Array<{
     provider: string;
@@ -199,7 +200,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .select("inference_credential_id")
     .eq("id", req.params.id)
     .single();
-  if (workspaceError) return errorResponse("workspace_lookup_failed", 500, workspaceError);
+  if (workspaceError) return errorResponse("workspace_lookup_failed", 500, workspaceError, req.params.id);
 
   const inferenceCredentialId = (workspaceData as { inference_credential_id: string | null } | null)
     ?.inference_credential_id ?? null;
@@ -211,7 +212,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
       .eq("id", inferenceCredentialId)
       .eq("workspace_id", req.params.id)
       .maybeSingle();
-    if (credentialError) return errorResponse("credential_lookup_failed", 500, credentialError);
+    if (credentialError) return errorResponse("credential_lookup_failed", 500, credentialError, req.params.id);
     claudeCodeStatus = (credentialData as { status: string } | null)?.status ?? null;
   }
   connections.push({
@@ -240,7 +241,7 @@ export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, call
     .eq("provider", "slack")
     .eq("status", "active")
     .maybeSingle<Pick<SourceConnectionRow, "config_json">>();
-  if (error) return errorResponse("connection_lookup_failed", 500, error);
+  if (error) return errorResponse("connection_lookup_failed", 500, error, req.params.id);
   if (!connection) return errorResponse("not_found", 404);
 
   try {
@@ -257,7 +258,7 @@ export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, call
     });
   } catch (error) {
     const slackCode = (error as SlackApiError).slackCode;
-    return errorResponse(slackCode ? `slack_channel_list_failed:${slackCode}` : "slack_channel_list_failed", 502, error);
+    return errorResponse(slackCode ? `slack_channel_list_failed:${slackCode}` : "slack_channel_list_failed", 502, error, req.params.id);
   }
 });
 
@@ -291,7 +292,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       .eq("workspace_id", req.params.id)
       .eq("provider", "claude_code")
       .maybeSingle();
-    if (existingCredentialError) return errorResponse("credential_lookup_failed", 500, existingCredentialError);
+    if (existingCredentialError) return errorResponse("credential_lookup_failed", 500, existingCredentialError, req.params.id);
 
     let claudeCodeCredentialId: string;
     if (existingCredential) {
@@ -305,7 +306,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         })
         .eq("id", claudeCodeCredentialId)
         .eq("workspace_id", req.params.id);
-      if (updateError) return errorResponse("credential_update_failed", 500, updateError);
+      if (updateError) return errorResponse("credential_update_failed", 500, updateError, req.params.id);
     } else {
       const { data: insertedCredential, error: insertError } = await serviceClient
         .from("credentials")
@@ -318,7 +319,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         })
         .select("id")
         .single();
-      if (insertError || !insertedCredential) return errorResponse("credential_insert_failed", 500, insertError);
+      if (insertError || !insertedCredential) return errorResponse("credential_insert_failed", 500, insertError, req.params.id);
       claudeCodeCredentialId = insertedCredential.id;
     }
 
@@ -326,7 +327,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       .from("workspaces")
       .update({ inference_credential_id: claudeCodeCredentialId })
       .eq("id", req.params.id);
-    if (workspacePointerError) return errorResponse("workspace_update_failed", 500, workspacePointerError);
+    if (workspacePointerError) return errorResponse("workspace_update_failed", 500, workspacePointerError, req.params.id);
 
     return Response.json({ ok: true });
   }
@@ -343,7 +344,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       await joinPublicSlackChannels(body.bot_token, body.channel_ids);
     } catch (error) {
       const slackCode = (error as SlackApiError).slackCode;
-      return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error);
+      return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error, req.params.id);
     }
     plaintext = JSON.stringify({ bot_token: body.bot_token, app_token: body.app_token });
   } else {
@@ -357,7 +358,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     .eq("workspace_id", req.params.id)
     .eq("provider", body.provider)
     .maybeSingle();
-  if (existingError) return errorResponse("connection_lookup_failed", 500, existingError);
+  if (existingError) return errorResponse("connection_lookup_failed", 500, existingError, req.params.id);
 
   let connectionId: string;
   let connectionKey: string;
@@ -377,7 +378,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         .eq("workspace_id", req.params.id)
         .select("id");
       if (credentialError || !updatedCredential || updatedCredential.length === 0) {
-        return errorResponse("credential_update_failed", 500, credentialError ?? "zero_rows_updated");
+        return errorResponse("credential_update_failed", 500, credentialError ?? "zero_rows_updated", req.params.id);
       }
     } else {
       const { data: newCredential, error: credentialError } = await serviceClient
@@ -391,14 +392,14 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         })
         .select("id")
         .single();
-      if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError);
+      if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError, req.params.id);
 
       const { error: credentialLinkError } = await serviceClient
         .from("source_connections")
         .update({ credential_id: newCredential.id })
         .eq("id", existing.id)
         .eq("workspace_id", req.params.id);
-      if (credentialLinkError) return errorResponse("connection_update_failed", 500, credentialLinkError);
+      if (credentialLinkError) return errorResponse("connection_update_failed", 500, credentialLinkError, req.params.id);
     }
 
     const { error: connectionError } = await serviceClient
@@ -412,7 +413,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       .eq("workspace_id", req.params.id)
       .select("id, connection_key")
       .single();
-    if (connectionError) return errorResponse("connection_update_failed", 500, connectionError);
+    if (connectionError) return errorResponse("connection_update_failed", 500, connectionError, req.params.id);
   } else {
     const { data: newCredential, error: credentialError } = await serviceClient
       .from("credentials")
@@ -425,7 +426,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       })
       .select("id")
       .single();
-    if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError);
+    if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError, req.params.id);
 
     // A failed connection insert can leave an orphaned credential.
     connectionKey = randomUUID();
@@ -442,7 +443,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       })
       .select("id")
       .single();
-    if (connectionError || !newConnection) return errorResponse("connection_insert_failed", 500, connectionError);
+    if (connectionError || !newConnection) return errorResponse("connection_insert_failed", 500, connectionError, req.params.id);
     connectionId = newConnection.id;
   }
 
@@ -462,11 +463,11 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       return errorResponse("unsupported_provider", 400);
     }
   } catch (err) {
-    return errorResponse("schedule_registration_failed", 500, err);
+    return errorResponse("schedule_registration_failed", 500, err, req.params.id);
   }
 
   if (isFireflies) {
-    if (!webhookSecret) return errorResponse("webhook_secret_generation_failed");
+    if (!webhookSecret) return errorResponse("webhook_secret_generation_failed", 500, undefined, req.params.id);
     return Response.json({
       ok: true,
       webhookUrl: `${config.apiBaseUrl}/webhooks/fireflies/${connectionKey}`,
@@ -501,7 +502,7 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
     await joinPublicSlackChannels(credential.bot_token, channelIds);
   } catch (error) {
     const slackCode = (error as SlackApiError).slackCode;
-    return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error);
+    return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error, req.params.id);
   }
 
   const { data: connection, error } = await serviceClient
@@ -511,7 +512,7 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
     .eq("provider", "slack")
     .select("id")
     .maybeSingle();
-  if (error) return errorResponse("connection_update_failed", 500, error);
+  if (error) return errorResponse("connection_update_failed", 500, error, req.params.id);
   if (!connection) return errorResponse("not_found", 404);
   return Response.json({ ok: true });
 });
@@ -529,7 +530,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     .eq("workspace_id", req.params.id)
     .eq("provider", req.params.provider)
     .maybeSingle();
-  if (lookupError) return errorResponse("connection_lookup_failed", 500, lookupError);
+  if (lookupError) return errorResponse("connection_lookup_failed", 500, lookupError, req.params.id);
   if (!connection) return Response.json({ ok: true });
 
   const { error: connectionError } = await serviceClient
@@ -537,7 +538,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     .update({ status: "revoked" })
     .eq("id", connection.id)
     .eq("workspace_id", req.params.id);
-  if (connectionError) return errorResponse("disconnect_failed", 500, connectionError);
+  if (connectionError) return errorResponse("disconnect_failed", 500, connectionError, req.params.id);
 
   const { error: taskError } = await serviceClient
     .from("scheduled_tasks")
@@ -545,7 +546,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     .eq("workspace_id", req.params.id)
     .eq("task_type", "ingest_source")
     .eq("task_key", connection.id);
-  if (taskError) return errorResponse("disconnect_failed", 500, taskError);
+  if (taskError) return errorResponse("disconnect_failed", 500, taskError, req.params.id);
 
   if (req.params.provider === "slack") stopSlackListener(connection.id);
 
