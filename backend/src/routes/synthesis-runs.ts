@@ -8,8 +8,47 @@ import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
 import { recordRouteError } from "../errors/route-error";
+import type { SynthesisRunRow } from "../types/tables";
 
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
+
+const RUNS_LIST_LIMIT = 50;
+
+type SynthesisRunListRow = Pick<
+  SynthesisRunRow,
+  "id" | "status" | "outcome" | "trigger_type" | "result_summary" | "started_at" | "completed_at" | "created_at"
+>;
+
+export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
+  const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
+  if (denied) return denied;
+
+  const { data, error } = await serviceClient
+    .from("synthesis_runs")
+    .select("id, status, outcome, trigger_type, result_summary, started_at, completed_at, created_at")
+    .eq("workspace_id", req.params.id)
+    .order("created_at", { ascending: false })
+    .limit(RUNS_LIST_LIMIT)
+    .returns<SynthesisRunListRow[]>();
+
+  if (error) {
+    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "synthesis_runs_read_failed", error });
+    return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  return Response.json({
+    runs: (data ?? []).map((run) => ({
+      id: run.id,
+      status: run.status,
+      outcome: run.outcome,
+      triggerType: run.trigger_type,
+      resultSummary: run.result_summary,
+      startedAt: run.started_at,
+      completedAt: run.completed_at,
+      createdAt: run.created_at,
+    })),
+  });
+});
 
 interface SynthesisRunsBody {
   dimensions?: DimensionHint[];

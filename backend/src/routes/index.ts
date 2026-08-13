@@ -19,7 +19,7 @@ export const routes = {
   "/workspaces/:id/connections": { GET: connections.GET, POST: connections.POST },
   "/workspaces/:id/connections/:provider": { PATCH: connections.PATCH, DELETE: connections.DELETE },
   "/workspaces/:id/connections/:provider/channels": { GET: connections.CHANNELS_GET },
-  "/workspaces/:id/synthesis-runs": { POST: synthesisRuns.POST },
+  "/workspaces/:id/synthesis-runs": { GET: synthesisRuns.GET, POST: synthesisRuns.POST },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/invites/mine": { GET: invites.mineGET },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
