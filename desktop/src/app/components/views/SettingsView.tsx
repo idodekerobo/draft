@@ -2,7 +2,6 @@
 //
 // Sections (top → bottom):
 //   Context             — Apply team context mode
-//   Session Context     — per-section injection toggles (conditional)
 //   Intelligence Tools  — which coding tools have Draft installed (view-only)
 //   Input Sources       — which integrations are connected; disconnect action
 //   System              — Start on login, Enable notifications
@@ -14,7 +13,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppVersionInfo, ConnectedAppsStatus, ContextSection, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
+import type { AppVersionInfo, ConnectedAppsStatus, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
@@ -390,7 +389,6 @@ interface SettingsViewProps {
 export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProps) {
   const [settings, setSettings]           = useState<LocalConfig | null>(null);
   const [apps, setApps]                   = useState<ConnectedAppsStatus | null>(null);
-  const [sections, setSections]           = useState<ContextSection[]>([]);
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
@@ -415,14 +413,12 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     Promise.all([
       rpc.request.getLocalConfig(),
       rpc.request.getConnectedApps(),
-      rpc.request.getContextSections(),
       rpc.request.getAppVersion(),
       rpc.request.getCrispConfig(),
     ])
-      .then(([config, connectedApps, contextSections, appVersion, crispConfig]) => {
+      .then(([config, connectedApps, appVersion, crispConfig]) => {
         setSettings(config);
         setApps(connectedApps);
-        setSections(contextSections);
         setVersionInfo(appVersion);
         setCalUrl(crispConfig.cal_url);
       })
@@ -476,16 +472,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       setSaveError("Save failed.");
       setSettings(settings);
     }
-  }
-
-  // ── Session context section toggle ─────────────────────────────────────────
-  async function toggleSection(sectionName: string) {
-    if (!settings) return;
-    const current = settings.disabledContextSections;
-    const next = current.includes(sectionName)
-      ? current.filter((s) => s !== sectionName)
-      : [...current, sectionName];
-    await patch({ disabledContextSections: next });
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
@@ -618,33 +604,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       <SettingsHeader />
 
       <div className="settings__body">
-
-        {/* ── Session Context ─────────────────────────────────────────────── */}
-        {sections.length > 0 && (
-          <section className="settings__section">
-            <h2 className="settings__section-label">Session Context</h2>
-            <div className="settings__rows">
-              {sections.map((sec) => {
-                const enabled = !settings.disabledContextSections.includes(sec.name);
-                const modeLabel = sec.injectionMode === "full" ? "full content" : "frontmatter only";
-                return (
-                  <div key={sec.name} className="settings__row">
-                    <div className="settings__row-content">
-                      <span className="settings__row-label">{sec.label}</span>
-                      <span className="settings__row-desc">
-                        Inject {modeLabel} into session start prompt
-                      </span>
-                    </div>
-                    <Toggle
-                      checked={enabled}
-                      onChange={() => void toggleSection(sec.name)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {/* ── Skills ─────────────────────────────────────────────────────── */}
         <SkillSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
