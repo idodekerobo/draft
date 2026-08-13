@@ -16,7 +16,6 @@ import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfi
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
-import { GranolaConnectPanel } from "../shared/GranolaConnectPanel";
 import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 
@@ -34,83 +33,7 @@ function relativeTime(iso: string | null): string {
   return `${diffD}d ago`;
 }
 
-// ── Session synthesis helpers ──────────────────────────────────────────────────
-
-function codexIntervalToDisplay(minutes: number): { value: string; unit: "hours" | "minutes" } {
-  if (minutes % 60 === 0) return { value: String(minutes / 60), unit: "hours" };
-  return { value: String(minutes), unit: "minutes" };
-}
-
-function codexDisplayToMinutes(value: string, unit: "hours" | "minutes"): number {
-  const n = Math.max(1, parseInt(value, 10) || 1);
-  return unit === "hours" ? n * 60 : n;
-}
-
 // ── Sub-components: Controls ───────────────────────────────────────────────────
-
-interface IntervalUnitDropdownProps {
-  value: "hours" | "minutes";
-  onChange: (value: "hours" | "minutes") => void;
-}
-
-function IntervalUnitDropdown({ value, onChange }: IntervalUnitDropdownProps) {
-  const [open, setOpen] = useState(false);
-
-  const options: Array<"minutes" | "hours"> = ["minutes", "hours"];
-
-  return (
-    <div
-      className="settings__interval-unit-wrapper"
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          setOpen(false);
-        }
-      }}
-    >
-      <button
-        className="settings__interval-unit-btn"
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span>{value}</span>
-        <svg
-          className={`settings__interval-unit-chevron${open ? " settings__interval-unit-chevron--open" : ""}`}
-          width="8"
-          height="8"
-          viewBox="0 0 8 8"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path d="M1 2.5L4 5.5L7 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {open && (
-        <ul className="settings__interval-unit-list" role="listbox">
-          {options.map((opt) => (
-            <li
-              key={opt}
-              role="option"
-              aria-selected={opt === value}
-              className={`settings__interval-unit-option${opt === value ? " settings__interval-unit-option--selected" : ""}`}
-              onMouseDown={(e) => {
-                // mousedown fires before blur; prevent blur from closing before click registers
-                e.preventDefault();
-              }}
-              onClick={() => {
-                onChange(opt);
-                setOpen(false);
-              }}
-            >
-              {opt}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 interface ToggleProps {
   checked: boolean;
@@ -157,21 +80,17 @@ function SegmentControl({ value, options, onChange }: SegmentControlProps) {
 // ── Sub-components: Connected Apps ─────────────────────────────────────────────
 
 const SOURCE_LABELS: Record<string, string> = {
-  granola:   "Granola",
   slack:     "Slack",
-  github:    "GitHub",
   fireflies: "Fireflies",
 };
 
 interface InputSourceRowProps {
-  sourceKey: "granola" | "slack" | "github" | "fireflies";
+  sourceKey: "slack" | "fireflies";
   detail: IntegrationDetail;
   onDisconnect: () => void;
   onToggleConnect: () => void;
-  onConnectGitHub: () => void;
   isDisconnecting: boolean;
   isExpanded: boolean;
-  isConnectingGitHub: boolean;
   /** Shown next to Disconnect when already connected — e.g. "Update channels" for Slack. */
   connectedAction?: { label: string; onClick: () => void };
   children?: ReactNode;
@@ -182,15 +101,11 @@ function InputSourceRow({
   detail,
   onDisconnect,
   onToggleConnect,
-  onConnectGitHub,
   isDisconnecting,
   isExpanded,
-  isConnectingGitHub,
   connectedAction,
   children,
 }: InputSourceRowProps) {
-  const isGitHub = sourceKey === "github";
-  const isPending = isGitHub && isConnectingGitHub;
   const needsAttention = detail.connected && detail.healthStatus === "needs_attention";
 
   function buildMeta(): string {
@@ -198,9 +113,6 @@ function InputSourceRow({
     const parts: string[] = [];
     if (detail.mode)     parts.push(detail.mode);
     if (detail.channels) parts.push(`${detail.channels} channels`);
-    if (detail.repos.length > 0) {
-      parts.push(detail.repos.length === 1 ? detail.repos[0]! : `${detail.repos.length} repos`);
-    }
     const time = relativeTime(detail.lastConnected);
     if (time) parts.push(time);
     return parts.join(" · ");
@@ -210,38 +122,10 @@ function InputSourceRow({
     <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
       <div className="app-row__main">
         <div className="app-row__left">
-          <span className={`app-row__status-dot${needsAttention ? " app-row__status-dot--attention" : detail.connected ? " app-row__status-dot--on" : isPending ? " app-row__status-dot--pending" : ""}`} />
+          <span className={`app-row__status-dot${needsAttention ? " app-row__status-dot--attention" : detail.connected ? " app-row__status-dot--on" : ""}`} />
           <div className="app-row__text">
             <span className="app-row__name">{SOURCE_LABELS[sourceKey] ?? sourceKey}</span>
-            <span className="app-row__meta">
-              {isPending ? "Complete sign-in in your browser…" : buildMeta()}
-            </span>
-            {isGitHub && detail.connected && (
-              <>
-                <span className="app-row__hint">
-                  Tracks merged PRs, releases, and open PRs · polls hourly
-                </span>
-                {detail.ghCliStatus === "not_found" && (
-                  <span className="app-row__warning">
-                    gh CLI not installed — GitHub sync is paused.{" "}
-                    <button
-                      className="app-row__link-btn"
-                      onClick={() => rpc.send.openUrl({ url: "https://cli.github.com/" })}
-                    >
-                      Install at cli.github.com
-                    </button>
-                    {" "}and GitHub sync will resume automatically.
-                  </span>
-                )}
-                {detail.ghCliStatus === "not_authenticated" && (
-                  <span className="app-row__warning">
-                    gh CLI not authenticated — run{" "}
-                    <code className="app-row__code">gh auth login</code>
-                    {" "}in your terminal. GitHub sync will resume automatically.
-                  </span>
-                )}
-              </>
-            )}
+            <span className="app-row__meta">{buildMeta()}</span>
             {needsAttention && (
               <span className="app-row__warning">
                 Needs attention — {detail.healthMessage ?? "Draft cannot currently reach this source."} Reconnect the integration if this persists.
@@ -266,14 +150,6 @@ function InputSourceRow({
                 {isDisconnecting ? "Disconnecting…" : "Disconnect"}
               </button>
             </>
-          ) : isGitHub ? (
-            <button
-              className="app-row__connect"
-              onClick={onConnectGitHub}
-              disabled={isPending}
-            >
-              {isPending ? "Waiting…" : "Connect"}
-            </button>
           ) : (
             <button
               className="app-row__connect"
@@ -303,9 +179,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState<"granola" | "slack" | "github" | "fireflies" | null>(null);
-  const [connectingGitHub, setConnectingGitHub] = useState(false);
-  const [expandedSource, setExpandedSource] = useState<"granola" | "slack" | "fireflies" | null>(null);
+  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | null>(null);
+  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | null>(null);
   const [slackPanelMode, setSlackPanelMode] = useState<"connect" | "manage">("connect");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
@@ -386,7 +261,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
-  async function handleDisconnect(source: "granola" | "slack" | "github" | "fireflies") {
+  async function handleDisconnect(source: "slack" | "fireflies") {
     if (!apps) return;
     setDisconnecting(source);
     try {
@@ -432,45 +307,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     });
   }
 
-  // ── GitHub connect ─────────────────────────────────────────────────────────
-  // Fire-and-forget: opens browser OAuth, then polls getConnectedApps every 2s
-  // until github.connected flips to true.
-  async function handleConnectGitHub() {
-    setConnectingGitHub(true);
-    setSaveError(null);
-    try {
-      const result = await rpc.request.connectGitHub();
-      if (!result.ok) {
-        setSaveError(result.error ?? "GitHub connect failed.");
-        setConnectingGitHub(false);
-      }
-      // On ok:true, background process is running. Polling effect takes over.
-    } catch {
-      setSaveError("GitHub connect failed.");
-      setConnectingGitHub(false);
-    }
-  }
-
-  // Poll getConnectedApps while GitHub OAuth is in progress.
-  useEffect(() => {
-    if (!connectingGitHub) return;
-    const id = setInterval(async () => {
-      try {
-        const updated = await rpc.request.getConnectedApps();
-        if (updated.integrations.github.connected) {
-          setApps(updated);
-          setConnectingGitHub(false);
-        }
-      } catch { /* keep polling */ }
-    }, 2_000);
-    // Safety timeout — stop polling after 5 minutes.
-    const timeout = setTimeout(() => {
-      setConnectingGitHub(false);
-      setSaveError("GitHub sign-in timed out. Try again.");
-    }, 5 * 60 * 1_000);
-    return () => { clearInterval(id); clearTimeout(timeout); };
-  }, [connectingGitHub]);
-
   // ── Check for updates ──────────────────────────────────────────────────────
   function handleCheckForUpdates() {
     setUpdateCheckState("checking");
@@ -515,64 +351,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         <section className="settings__section">
           <h2 className="settings__section-label">Input Sources</h2>
           <div className="settings__rows">
-            {/* Claude Code sessions */}
-            <div className="settings__row">
-              <div className="settings__row-content">
-                <span className="settings__row-label">Claude Code sessions</span>
-                <span className="settings__row-desc">Synthesize context from Claude Code sessions</span>
-              </div>
-              <Toggle
-                checked={settings.claudeCodeSynthesis}
-                onChange={(v) => void patch({ claudeCodeSynthesis: v })}
-              />
-            </div>
-
-            {/* Codex sessions */}
-            {(() => {
-              const { value: codexVal, unit: codexUnit } =
-                codexIntervalToDisplay(settings.codexScanIntervalMinutes ?? 360);
-              return (
-                <div className="settings__row">
-                  <div className="settings__row-content">
-                    <span className="settings__row-label">Codex sessions</span>
-                    <span className="settings__row-desc">
-                      {settings.codexScanIntervalMinutes !== null
-                        ? `Scans every ${codexVal} ${codexUnit}`
-                        : "Synthesis disabled"}
-                    </span>
-                  </div>
-                  <div className="settings__row-control-stack">
-                    {settings.codexScanIntervalMinutes !== null && (
-                      <>
-                        <input
-                          className="settings__interval-input"
-                          type="number"
-                          min="1"
-                          value={codexVal}
-                          onChange={(e) => void patch({
-                            codexScanIntervalMinutes: codexDisplayToMinutes(e.target.value, codexUnit),
-                          })}
-                        />
-                        <IntervalUnitDropdown
-                          value={codexUnit}
-                          onChange={(newUnit) => {
-                            void patch({
-                              codexScanIntervalMinutes: codexDisplayToMinutes(codexVal, newUnit),
-                            });
-                          }}
-                        />
-                      </>
-                    )}
-                    <Toggle
-                      checked={settings.codexScanIntervalMinutes !== null}
-                      onChange={(v) => void patch({ codexScanIntervalMinutes: v ? 360 : null })}
-                    />
-                  </div>
-                </div>
-              );
-            })()}
-
-            {(["granola", "fireflies", "slack", "github"] as const).map((key) => (
+            {(["fireflies", "slack"] as const).map((key) => (
               <InputSourceRow
                 key={key}
                 sourceKey={key}
@@ -581,20 +360,14 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 onToggleConnect={() => {
                   if (key === "slack") {
                     toggleSlackPanel("connect");
-                  } else if (key !== "github") {
+                  } else {
                     setExpandedSource((current) => current === key ? null : key);
                   }
                 }}
-                onConnectGitHub={() => void handleConnectGitHub()}
                 isDisconnecting={disconnecting === key}
                 isExpanded={expandedSource === key}
-                isConnectingGitHub={connectingGitHub}
                 connectedAction={key === "slack" ? { label: "Update channels", onClick: () => toggleSlackPanel("manage") } : undefined}
               >
-                {key === "granola" && (
-                  <GranolaConnectPanel detail={apps.integrations.granola} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
-                )}
-
                 {key === "fireflies" && (
                   <FirefliesConnectPanel detail={apps.integrations.fireflies} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
                 )}
