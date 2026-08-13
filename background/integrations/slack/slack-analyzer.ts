@@ -6,7 +6,7 @@ import {
   routeAutomatedMaintainerOutput,
   type AutomatedMaintainerRouteResult,
 } from '../../automated-maintainer-router';
-import { recordTerminalActivity, startTerminalActivity } from '../../terminal-activity';
+import { startTerminalActivity } from '../../terminal-activity';
 
 export interface SlackAnalyzerDeps {
   rebuild(input: { channel: string; channelName: string; hours: number }): Promise<string | null>;
@@ -52,8 +52,6 @@ export function createSlackAnalyzer(config: {
       }
       if (!reconstructed.length) {
         deps.log?.('info', 'no reconstructed files — nothing to synthesize');
-        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
-          activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
         return 'empty';
       }
       const timestamp = activity.timestamp;
@@ -75,24 +73,14 @@ export function createSlackAnalyzer(config: {
       }
       if (routed.status === 'flagged') {
         deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
-        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
-          activity, endedAt: deps.now(), outcome: 'needs_input', log: deps.log });
         return 'flagged';
       }
       if (routed.outcome === 'rewrite') {
         deps.log?.('info', 'context updated automatically');
-        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
-          activity, endedAt: deps.now(), outcome: 'rewrite', log: deps.log });
         return 'applied';
       }
       deps.log?.('info', 'synthesizer found no team-relevant updates');
-      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
-        activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
       return 'empty';
-    } catch (error) {
-      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'slack',
-        activity, endedAt: deps.now(), error, log: deps.log });
-      throw error;
     } finally { running = false; }
   };
 }
