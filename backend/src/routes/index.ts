@@ -1,4 +1,5 @@
 import * as firefliesWebhook from "../webhooks/fireflies/route";
+import * as linearWebhook from "../webhooks/linear/route";
 import * as connections from "./connections";
 import * as health from "./health";
 import * as onboarding from "./onboarding";
@@ -29,4 +30,5 @@ export const routes = {
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
+  "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
 };
