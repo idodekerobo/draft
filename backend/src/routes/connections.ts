@@ -30,13 +30,18 @@ interface FirefliesConnectBody {
   api_token: string;
 }
 
+interface LinearConnectBody {
+  provider: "linear";
+  api_token: string;
+}
+
 interface ClaudeCodeConnectBody {
   provider: "claude_code";
   token: string;
 }
 
-type ConnectBody = SlackConnectBody | FirefliesConnectBody | ClaudeCodeConnectBody;
-type SupportedProvider = "slack" | "fireflies" | "claude_code";
+type ConnectBody = SlackConnectBody | FirefliesConnectBody | LinearConnectBody | ClaudeCodeConnectBody;
+type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code";
 
 interface SlackConnectResponse {
   ok: true;
@@ -46,6 +51,10 @@ interface FirefliesConnectResponse {
   ok: true;
   webhookUrl: string;
   webhookSecret: string;
+}
+
+interface LinearConnectResponse {
+  ok: true;
 }
 
 interface SlackChannel {
@@ -63,7 +72,7 @@ interface SlackApiError extends Error {
 const config = loadConfig();
 
 function isSupportedProvider(value: unknown): value is SupportedProvider {
-  return value === "slack" || value === "fireflies" || value === "claude_code";
+  return value === "slack" || value === "fireflies" || value === "linear" || value === "claude_code";
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -84,6 +93,12 @@ function isFirefliesConnectBody(value: unknown): value is FirefliesConnectBody {
   if (!value || typeof value !== "object") return false;
   const body = value as Partial<FirefliesConnectBody>;
   return body.provider === "fireflies" && isNonEmptyString(body.api_token);
+}
+
+function isLinearConnectBody(value: unknown): value is LinearConnectBody {
+  if (!value || typeof value !== "object") return false;
+  const body = value as Partial<LinearConnectBody>;
+  return body.provider === "linear" && isNonEmptyString(body.api_token);
 }
 
 function isClaudeCodeConnectBody(value: unknown): value is ClaudeCodeConnectBody {
@@ -162,6 +177,65 @@ async function joinPublicSlackChannels(botToken: string, channelIds: string[]): 
   }
 }
 
+const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql";
+const LINEAR_WEBHOOK_RESOURCE_TYPES = ["Issue", "Comment", "Project", "Cycle", "ProjectUpdate"];
+
+interface LinearApiError extends Error {
+  linearErrors?: string[];
+}
+
+// We generate the secret ourselves (like Fireflies) rather than reading one back.
+const CREATE_WEBHOOK_MUTATION = `
+  mutation CreateWebhook($url: String!, $resourceTypes: [String!]!, $secret: String!) {
+    webhookCreate(input: { url: $url, resourceTypes: $resourceTypes, allPublicTeams: true, secret: $secret }) {
+      success
+      webhook {
+        id
+        enabled
+      }
+    }
+  }
+`;
+
+async function createLinearWebhook(apiToken: string, url: string, secret: string): Promise<void> {
+  const response = await fetch(LINEAR_GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // Personal API keys are not prefixed "Bearer ", unlike OAuth tokens.
+      Authorization: apiToken,
+    },
+    body: JSON.stringify({
+      query: CREATE_WEBHOOK_MUTATION,
+      variables: { url, resourceTypes: LINEAR_WEBHOOK_RESOURCE_TYPES, secret },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Linear webhookCreate request failed: ${response.status} ${response.statusText} ${body}`);
+  }
+
+  const payload = await response.json() as {
+    data?: { webhookCreate?: { success: boolean; webhook?: { id: string; enabled: boolean } } };
+    errors?: { message: string }[];
+  };
+
+  console.log("[linear webhookCreate] response:", JSON.stringify(payload, null, 2));
+
+  if (payload.errors && payload.errors.length > 0) {
+    const error = new Error(
+      `Linear API returned errors creating webhook: ${payload.errors.map((e) => e.message).join("; ")}`,
+    ) as LinearApiError;
+    error.linearErrors = payload.errors.map((e) => e.message);
+    throw error;
+  }
+
+  if (!payload.data?.webhookCreate?.success) {
+    throw new Error("Linear webhookCreate did not report success");
+  }
+}
+
 export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
@@ -170,7 +244,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .from("source_connections")
     .select("provider, status, display_name, last_success_at, last_error_at, config_json")
     .eq("workspace_id", req.params.id)
-    .in("provider", ["slack", "fireflies"]);
+    .in("provider", ["slack", "fireflies", "linear"]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
   const connections: Array<{
@@ -276,7 +350,12 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   if (!body || typeof body !== "object" || !isSupportedProvider((body as { provider?: unknown }).provider)) {
     return errorResponse("invalid_provider", 400);
   }
-  if (!isSlackConnectBody(body) && !isFirefliesConnectBody(body) && !isClaudeCodeConnectBody(body)) {
+  if (
+    !isSlackConnectBody(body) &&
+    !isFirefliesConnectBody(body) &&
+    !isLinearConnectBody(body) &&
+    !isClaudeCodeConnectBody(body)
+  ) {
     return errorResponse("invalid_body", 400);
   }
 
@@ -334,6 +413,19 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
 
   const isFireflies = body.provider === "fireflies";
   const isSlack = body.provider === "slack";
+  const isLinear = body.provider === "linear";
+
+  const { data: existing, error: existingError } = await serviceClient
+    .from("source_connections")
+    .select("id, credential_id, connection_key")
+    .eq("workspace_id", req.params.id)
+    .eq("provider", body.provider)
+    .maybeSingle();
+  if (existingError) return errorResponse("connection_lookup_failed", 500, existingError, req.params.id);
+
+  // Needed before the webhookCreate call below, since the URL embeds it.
+  const connectionKey = existing?.connection_key ?? randomUUID();
+
   let webhookSecret: string | undefined;
   let plaintext: string;
   if (body.provider === "fireflies") {
@@ -347,25 +439,24 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error, req.params.id);
     }
     plaintext = JSON.stringify({ bot_token: body.bot_token, app_token: body.app_token });
+  } else if (body.provider === "linear") {
+    webhookSecret = randomBytes(32).toString("hex");
+    try {
+      const webhookUrl = `${config.apiBaseUrl}/webhooks/linear/${connectionKey}`;
+      await createLinearWebhook(body.api_token, webhookUrl, webhookSecret);
+    } catch (error) {
+      return errorResponse("linear_webhook_create_failed", 502, error, req.params.id);
+    }
+    plaintext = JSON.stringify({ api_token: body.api_token, webhook_secret: webhookSecret });
   } else {
     return errorResponse("unsupported_provider", 400);
   }
   const encrypted = encryptCredentialPayload(plaintext, CURRENT_CREDENTIAL_KEY_VERSION);
 
-  const { data: existing, error: existingError } = await serviceClient
-    .from("source_connections")
-    .select("id, credential_id, connection_key")
-    .eq("workspace_id", req.params.id)
-    .eq("provider", body.provider)
-    .maybeSingle();
-  if (existingError) return errorResponse("connection_lookup_failed", 500, existingError, req.params.id);
-
   let connectionId: string;
-  let connectionKey: string;
 
   if (existing) {
     connectionId = existing.id;
-    connectionKey = existing.connection_key;
 
     if (existing.credential_id) {
       const { data: updatedCredential, error: credentialError } = await serviceClient
@@ -429,7 +520,6 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError, req.params.id);
 
     // A failed connection insert can leave an orphaned credential.
-    connectionKey = randomUUID();
     const { data: newConnection, error: connectionError } = await serviceClient
       .from("source_connections")
       .insert({
@@ -459,6 +549,8 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         serviceClient,
       );
       await restartSlackListener(connectionId, serviceClient);
+    } else if (isLinear) {
+      // Webhooks only -- no reconciliation/polling backstop for Linear.
     } else {
       return errorResponse("unsupported_provider", 400);
     }
@@ -476,6 +568,9 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   }
   if (isSlack) {
     return Response.json({ ok: true } satisfies SlackConnectResponse);
+  }
+  if (isLinear) {
+    return Response.json({ ok: true } satisfies LinearConnectResponse);
   }
   return errorResponse("unsupported_provider", 400);
 });
