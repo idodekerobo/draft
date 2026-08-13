@@ -3,7 +3,7 @@
 // Sections (top → bottom):
 //   Context             — Apply team context mode
 //   Input Sources       — which integrations are connected; disconnect action
-//   System              — Start on login, Enable notifications
+//   System              — Draft Cloud sign-in, Enable notifications
 //   Privacy             — interaction recording opt-out
 //   Updates             — current version, check for updates
 //
@@ -410,18 +410,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                     ? "Sign out"
                     : "Sign in"}
               </button>
-            </div>
-            <div className="settings__row">
-              <div className="settings__row-content">
-                <span className="settings__row-label">Start on login</span>
-                <span className="settings__row-desc">
-                  Launch Draft automatically when you log in to your Mac
-                </span>
-              </div>
-              <Toggle
-                checked={settings.launchOnLogin}
-                onChange={(v) => void patch({ launchOnLogin: v })}
-              />
             </div>
             <div className="settings__row">
               <div className="settings__row-content">
