@@ -12,11 +12,18 @@ export interface SlackProviderCredential {
   app_token: string;
 }
 
+export interface LinearProviderCredential {
+  api_token: string;
+  webhook_secret: string;
+}
+
 export type ProviderCredential<P extends SourceConnectionProvider> = P extends "fireflies"
   ? FirefliesProviderCredential
   : P extends "slack"
     ? SlackProviderCredential
-    : string;
+    : P extends "linear"
+      ? LinearProviderCredential
+      : string;
 
 interface SourceConnectionCredentialRow {
   id: string;
@@ -31,11 +38,10 @@ interface CredentialSecretRow {
   encryption_key_version: string;
 }
 
-const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack"]);
+const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack", "linear"]);
 
-// Assumes one active source_connection per (workspaceId, provider). Fireflies
-// and Slack need more than one named secret per connection, so for those
-// providers encrypted_payload holds a JSON object rather than one string.
+// Assumes one active source_connection per (workspaceId, provider). Named-secret
+// providers store encrypted_payload as a JSON object rather than one string.
 export async function resolveProviderCredential<P extends SourceConnectionProvider>(
   workspaceId: string,
   provider: P,
