@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CredentialError, resolveProviderCredential } from "../../credentials/resolve-provider-credential";
 import type { SourceConnectionRow } from "../../types/tables";
+import { readBoundedBody } from "../shared/read-bounded-body";
 
 export const DEFAULT_FIREFLIES_WEBHOOK_BODY_LIMIT_BYTES = 1024 * 1024;
 
@@ -24,36 +25,6 @@ export class FirefliesWebhookAuthError extends Error {
 
 function reject(message: string): never {
   throw new FirefliesWebhookAuthError(message);
-}
-
-async function readBoundedBody(request: Request, maximum: number): Promise<Uint8Array> {
-  if (request.body === null) return new Uint8Array();
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maximum) {
-        await reader.cancel();
-        reject("Fireflies webhook body is too large");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const body = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
 }
 
 interface FirefliesWebhookPayload {
@@ -153,7 +124,7 @@ export async function authenticateFirefliesWebhookRequest(
     throw cause;
   }
 
-  const bodyBytes = await readBoundedBody(request, maximum);
+  const bodyBytes = await readBoundedBody(request, maximum, () => reject("Fireflies webhook body is too large"));
   verifySignature(request.headers.get("x-hub-signature"), webhookSecret, bodyBytes);
 
   const body = parseBody(bodyBytes);
