@@ -2,7 +2,6 @@
 //
 // Sections (top → bottom):
 //   Context             — Apply team context mode
-//   Intelligence Tools  — which coding tools have Draft installed (view-only)
 //   Input Sources       — which integrations are connected; disconnect action
 //   System              — Start on login, Enable notifications
 //   Privacy             — interaction recording opt-out
@@ -13,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppVersionInfo, ConnectedAppsStatus, InstallableTool, IntegrationDetail, LocalConfig, ToolDetail } from "../../../rpc/schema";
+import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
@@ -33,15 +32,6 @@ function relativeTime(iso: string | null): string {
   if (diffH < 24)   return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
   return `${diffD}d ago`;
-}
-
-function shortDate(iso: string | null): string {
-  if (!iso || iso === "migrated") return iso ?? "";
-  try {
-    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
 }
 
 // ── Session synthesis helpers ──────────────────────────────────────────────────
@@ -165,83 +155,6 @@ function SegmentControl({ value, options, onChange }: SegmentControlProps) {
 }
 
 // ── Sub-components: Connected Apps ─────────────────────────────────────────────
-
-const TOOL_LABELS: Record<string, string> = {
-  "claude-code": "Claude Code",
-  codex:         "Codex",
-  cursor:        "Cursor",
-  openclaw:      "OpenClaw",
-  hermes:        "Hermes",
-};
-
-const TOOL_COMMANDS: Record<string, string> = {
-  "claude-code": "draft add claude-code",
-  codex:         "draft add codex",
-  cursor:        "draft add cursor",
-  openclaw:      "draft add openclaw",
-  hermes:        "draft add hermes",
-};
-
-interface IntelligenceToolRowProps {
-  toolKey: string;
-  detail: ToolDetail;
-  onInstalled: () => void;
-}
-
-function IntelligenceToolRow({ toolKey, detail, onInstalled }: IntelligenceToolRowProps) {
-  const [installing, setInstalling] = useState(false);
-  const [installError, setInstallError] = useState<string | null>(null);
-
-  async function handleAdd() {
-    setInstalling(true);
-    setInstallError(null);
-    try {
-      const result = await rpc.request.runInstall({ tools: [toolKey as InstallableTool] });
-      if (result.ok) {
-        onInstalled();
-      } else {
-        const failed = result.steps.find((s) => !s.ok);
-        setInstallError(failed?.error ?? "Install failed.");
-      }
-    } catch {
-      setInstallError(`Install failed. Run: ${TOOL_COMMANDS[toolKey] ?? `draft add ${toolKey}`}`);
-    } finally {
-      setInstalling(false);
-    }
-  }
-
-  return (
-    <div className="app-row">
-      <div className="app-row__left">
-        <span className={`app-row__status-dot${detail.installed ? " app-row__status-dot--on" : ""}`} />
-        <div className="app-row__text">
-          <span className="app-row__name">{TOOL_LABELS[toolKey] ?? toolKey}</span>
-          {detail.installed ? (
-            <span className="app-row__meta">
-              Installed
-              {detail.addedAt && detail.addedAt !== "migrated" && (
-                <> · {shortDate(detail.addedAt)}</>
-              )}
-            </span>
-          ) : (
-            <span className="app-row__meta">Not set up</span>
-          )}
-          {installError && <span className="app-row__hint">{installError}</span>}
-        </div>
-      </div>
-
-      {!detail.installed && (
-        <button
-          className="app-row__connect"
-          onClick={() => void handleAdd()}
-          disabled={installing}
-        >
-          {installing ? "Adding…" : "Add"}
-        </button>
-      )}
-    </div>
-  );
-}
 
 const SOURCE_LABELS: Record<string, string> = {
   granola:   "Granola",
@@ -500,11 +413,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     }
   }
 
-  // ── Tool install (from Settings) ───────────────────────────────────────────
-  async function handleToolInstalled() {
-    await refreshConnectedApps();
-  }
-
   async function refreshConnectedApps() {
     try {
       const updated = await rpc.request.getConnectedApps();
@@ -602,16 +510,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       <SettingsHeader />
 
       <div className="settings__body">
-
-        {/* ── Intelligence Tools ─────────────────────────────────────────── */}
-        <section className="settings__section">
-          <h2 className="settings__section-label">Intelligence Tools</h2>
-          <div className="settings__rows">
-            {(["claude-code", "codex", "openclaw", "hermes"] as const).map((key) => (
-              <IntelligenceToolRow key={key} toolKey={key} detail={apps.tools[key]} onInstalled={handleToolInstalled} />
-            ))}
-          </div>
-        </section>
 
         {/* ── Input Sources ──────────────────────────────────────────────── */}
         <section className="settings__section">
