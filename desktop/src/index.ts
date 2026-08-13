@@ -704,7 +704,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
         type CloudConnectionStatus = {
-          provider: "slack" | "fireflies" | "claude_code";
+          provider: "slack" | "fireflies" | "linear" | "claude_code";
           status: string | null;
           last_success_at: string | null;
           last_error_at: string | null;
@@ -740,15 +740,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           }
         }
 
-        function integrationDetail(key: "granola" | "slack" | "github" | "fireflies"): IntegrationDetail {
-          const entry = int[key];
-          const cloud = (key === "slack" || key === "fireflies")
+        function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
+          const entry = key === "linear" ? undefined : int[key];
+          const cloud = (key === "slack" || key === "fireflies" || key === "linear")
             ? cloudConnections?.find((connection) => connection.provider === key)
             : undefined;
           const health = key === "granola" || key === "fireflies"
             ? integrationHealth(key)
             : { healthStatus: "unknown" as const, healthCheckedAt: null, healthMessage: null };
-          if (key === "slack" || key === "fireflies") {
+          if (key === "slack" || key === "fireflies" || key === "linear") {
             return {
               // Cloud-backed integrations must not fall back to stale local flags
               // when the server is unreachable or the user is signed out.
@@ -796,6 +796,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             slack:     integrationDetail("slack"),
             github:    githubDetail,
             fireflies: integrationDetail("fireflies"),
+            linear:    integrationDetail("linear"),
           },
           claudeCode: { connected: claudeCodeConnection?.status === "active" },
         };
@@ -803,7 +804,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       disconnectIntegration: async ({ source }) => {
         try {
-          if (source === "slack" || source === "fireflies") {
+          if (source === "slack" || source === "fireflies" || source === "linear") {
             const workspaceId = getCachedWorkspaceId();
             if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
             await fetchServer(`workspaces/${workspaceId}/connections/${source}`, { method: "DELETE" });
@@ -1131,6 +1132,21 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           });
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not connect Fireflies." };
+        }
+      },
+
+      connectLinear: async ({ apiKey }) => {
+        if (!apiKey.trim()) return { ok: false, error: "Enter your Linear API key." };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "linear", api_token: apiKey.trim() }),
+          });
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Linear." };
         }
       },
 

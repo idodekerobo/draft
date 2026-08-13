@@ -364,6 +364,7 @@ export interface ConnectedAppsStatus {
     slack: IntegrationDetail;
     github: IntegrationDetail;
     fireflies: IntegrationDetail;
+    linear: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
 }
@@ -465,7 +466,7 @@ export type AppRPCType = {
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
       /** Disconnect an input source by setting connected=false in integrations.json. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" }; response: ActionResult };
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" }; response: ActionResult };
 
       /**
        * Connect GitHub natively via `gh auth login --web`.
@@ -519,6 +520,9 @@ export type AppRPCType = {
 
       /** Persist Fireflies API credentials in Draft Cloud and return webhook setup values. */
       connectFireflies: { params: { apiKey: string }; response: ActionResult & { webhookUrl?: string; webhookSecret?: string } };
+
+      /** Persist a Linear personal API key in Draft Cloud; the server creates the webhook itself. */
+      connectLinear: { params: { apiKey: string }; response: ActionResult };
 
       /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
       connectClaudeCode: { params: { token: string }; response: ActionResult };

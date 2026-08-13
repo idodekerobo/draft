@@ -1,6 +1,7 @@
 import { useOptimistic, useState } from "react";
 import type { ConnectedAppsStatus } from "../../../../rpc/schema";
 import { FirefliesConnectPanel } from "../../shared/FirefliesConnectPanel";
+import { LinearConnectPanel } from "../../shared/LinearConnectPanel";
 // TODO: Granola and GitHub connect flows still work locally, but neither has
 // a backend ingestion pipeline in the new cloud model (backend/src/ingestion
 // only has fireflies/ and slack/) — connecting them can't get their data into
@@ -19,7 +20,7 @@ interface IntegrationSetupStepProps {
   loadConnections: () => Promise<void>;
 }
 
-type IntegrationName = "slack" | "fireflies";
+type IntegrationName = "slack" | "fireflies" | "linear";
 
 export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, connections, loadConnections }: IntegrationSetupStepProps) {
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
@@ -40,7 +41,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
 
   const allConnected = optimisticConnections
     && optimisticConnections.slack.connected
-    && optimisticConnections.fireflies.connected;
+    && optimisticConnections.fireflies.connected
+    && optimisticConnections.linear.connected;
 
   function toggle(name: IntegrationName, connected?: boolean) {
     if (connected) return;
@@ -50,6 +52,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
 
   const slack = optimisticConnections?.slack;
   const fireflies = optimisticConnections?.fireflies;
+  const linear = optimisticConnections?.linear;
 
   return (
     <div className="onboarding__body onboarding__body--wide">
@@ -82,6 +85,10 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
 
         <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies?.connected)}>
           <FirefliesConnectPanel detail={fireflies} classPrefix="onboarding" onConnected={() => handleConnected("fireflies")} />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>
+          <LinearConnectPanel detail={linear} classPrefix="onboarding" onConnected={() => handleConnected("linear")} />
         </IntegrationSetupCard>
       </div>
 
