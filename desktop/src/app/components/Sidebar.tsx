@@ -28,7 +28,8 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "context",   label: "Context"   },
-  { id: "proposals", label: "Proposals" },
+  // TODO: re-enable once the proposal pipeline is wired
+  // { id: "proposals", label: "Proposals" },
   { id: "activity",  label: "Activity"  },
   { id: "settings",  label: "Settings"  },
 ];
@@ -133,7 +134,9 @@ export function Sidebar({ activeView, onNavigate, proposalCount, activeProfile, 
         <button className="sidebar__feedback" onClick={onOpenFeedback}>
           Questions & Feedback
         </button>
-        <div className="daemon-control">
+        {/* Hidden: daemon start/stop control doesn't make sense under the
+            cloud backend model. Re-enable if local daemon control comes back. */}
+        {/* <div className="daemon-control">
           <span className={`daemon-control__dot daemon-control__dot--${cfg.dotClass}`} />
           <span className="daemon-control__label">{cfg.label}</span>
           {cfg.btnVariant && (
@@ -144,7 +147,7 @@ export function Sidebar({ activeView, onNavigate, proposalCount, activeProfile, 
               {cfg.btnLabel}
             </button>
           )}
-        </div>
+        </div> */}
         <button
           ref={chipRef}
           className={`profile-chip ${dropdownOpen ? "profile-chip--open" : ""}`}
