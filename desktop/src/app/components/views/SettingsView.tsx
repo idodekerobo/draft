@@ -20,8 +20,6 @@ import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
 import { GranolaConnectPanel } from "../shared/GranolaConnectPanel";
 import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
-import { SkillSyncSection } from "./settings/SkillSyncSection";
-import { McpSyncSection } from "./settings/McpSyncSection";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -604,12 +602,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       <SettingsHeader />
 
       <div className="settings__body">
-
-        {/* ── Skills ─────────────────────────────────────────────────────── */}
-        <SkillSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
-
-        {/* ── MCP Servers ─────────────────────────────────────────────────── */}
-        <McpSyncSection onError={(msg) => setSaveError(msg)} onNotice={(msg) => setSaveNotice(msg)} />
 
         {/* ── Intelligence Tools ─────────────────────────────────────────── */}
         <section className="settings__section">
