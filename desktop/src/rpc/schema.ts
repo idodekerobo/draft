@@ -28,22 +28,16 @@ export interface UserIdentity {
 
 export type DaemonState = "running" | "stopped" | "degraded";
 
-export interface ActivityRun {
+export interface WorkspaceRun {
   id: string;
-  profile: string;
-  source: string;
-  sessionId: string | null;
-  cwd: string | null;
-  startedAt: string;        // ISO 8601
-  endedAt: string | null;
-  status: "success" | "failed" | "skipped" | "timeout";
-  durationMs: number | null;
-  proposalsGenerated: number;
-  maintainerOutcome: "no_change" | "rewrite" | "needs_input" | null;
-  changedDimensions: string[];
-  skipReason: string | null;
-  errorMsg: string | null;
-  transcriptPath: string | null;
+  status: "queued" | "preparing" | "running" | "validating" | "committing" |
+          "succeeded" | "failed" | "stale" | "cancelled";
+  outcome: "changed" | "no_change" | "failure" | "stale" | null;
+  triggerType: "schedule" | "source_threshold" | "manual" | "retry" | "stale_requeue" | "seed_test";
+  resultSummary: string | null;
+  startedAt: string | null; // ISO 8601
+  completedAt: string | null;
+  createdAt: string;
 }
 
 export interface IntegrationStatus {
@@ -625,8 +619,8 @@ export type AppRPCType = {
       /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
       getAppVersion: { params: void; response: AppVersionInfo };
 
-      /** List the last 50 activity runs for the active profile. */
-      getActivityRuns: { params: void; response: ActivityRun[] };
+      /** List the last 50 cloud synthesis runs for the active workspace. Returns [] if signed out or the request fails. */
+      getWorkspaceRuns: { params: void; response: WorkspaceRun[] };
 
       /** Supply a missing secret for a team MCP in pending-credentials state. */
       setMcpSecret: { params: { name: string; envVar: string; value: string }; response: ActionResult & { nowInstalled: boolean } };

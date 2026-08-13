@@ -17,8 +17,6 @@ import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import { homedir } from "os";
-import { openActivityDb, queryRuns } from "draft-core/db/activity";
-import { openHistoryDb, queryAutomatedRewriteDimensions } from "draft-core/db/history";
 import {
   listProposals,
   acknowledgeFlaggedProposal,
@@ -63,7 +61,7 @@ import {
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
-import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption } from "./rpc/schema";
+import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption, WorkspaceRun } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
@@ -1469,31 +1467,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getActivityRuns: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
+      getWorkspaceRuns: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return [];
         try {
-          const db = openActivityDb(workspace);
-          const runs = queryRuns(db, 50);
-          db.close();
-          const historyPath = join(workspace, "history.db");
-          if (!existsSync(historyPath)) {
-            return runs.map(run => ({ ...run, changedDimensions: [] }));
-          }
-          let historyDb: ReturnType<typeof openHistoryDb> | undefined;
-          try {
-            const openedHistoryDb = openHistoryDb(workspace);
-            historyDb = openedHistoryDb;
-            return runs.map(run => ({
-              ...run,
-              changedDimensions: run.maintainerOutcome === "rewrite"
-                ? queryAutomatedRewriteDimensions(openedHistoryDb, run.sessionId ?? run.id)
-                : [],
-            }));
-          } catch {
-            return runs.map(run => ({ ...run, changedDimensions: [] }));
-          } finally {
-            historyDb?.close();
-          }
+          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs`);
+          return response.runs;
         } catch {
           return [];
         }
