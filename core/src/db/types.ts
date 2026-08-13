@@ -1,20 +1,3 @@
-export interface ActivityRun {
-  id: string;
-  profile: string;
-  source: string;
-  sessionId: string | null;
-  cwd: string | null;
-  startedAt: string;        // ISO 8601
-  endedAt: string | null;
-  status: "success" | "failed" | "skipped" | "timeout";
-  durationMs: number | null;
-  proposalsGenerated: number;
-  maintainerOutcome: "no_change" | "rewrite" | "needs_input" | null;
-  skipReason: string | null;
-  errorMsg: string | null;
-  transcriptPath: string | null;
-}
-
 export interface FileVersion {
   id: string;
   filePath: string;         // relative path under context/, e.g. "product/index.md"
