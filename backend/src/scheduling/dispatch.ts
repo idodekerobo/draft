@@ -96,11 +96,12 @@ export interface DispatchScheduledTaskOptions {
   client: SupabaseClient;
 }
 
-// Refetches the task fresh rather than trusting the tick's initial select.
+// Refetches the task fresh rather than trusting the tick's initial select,
+// and returns that row so the tick can recompute next_due_at from it too.
 export async function dispatchScheduledTask(
   options: DispatchScheduledTaskOptions,
   deps: DispatchDependencies = defaultDependencies,
-): Promise<void> {
+): Promise<ScheduledTaskRow | null> {
   const { data: freshData, error: freshError } = await options.client
     .from("scheduled_tasks")
     .select("*")
@@ -109,15 +110,15 @@ export async function dispatchScheduledTask(
     .maybeSingle();
   if (freshError) throw freshError;
   const fresh = freshData as ScheduledTaskRow | null;
-  if (!fresh || !fresh.enabled) return;
+  if (!fresh || !fresh.enabled) return fresh;
 
   if (fresh.task_type === "ingest_source") {
     await dispatchIngestSource(fresh, options.client, deps);
-    return;
+    return fresh;
   }
   if (fresh.task_type === "synthesize_workspace") {
     await dispatchSynthesizeWorkspace(fresh, options.occurrenceAt, options.config, options.client, deps);
-    return;
+    return fresh;
   }
   // rebuild_projection: no projection exists yet -- fail loud, don't silently succeed.
   throw new Error(`Unsupported scheduled task_type "${fresh.task_type}" for task ${fresh.id}`);

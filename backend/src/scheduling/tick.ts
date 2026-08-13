@@ -31,13 +31,16 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     // Not now() -- keeps the idempotency key stable across duplicate dispatches.
     const occurrenceAt = task.next_due_at ?? now.toISOString();
 
+    // Recompute from dispatch's fresh row, not this tick's stale select.
+    let dispatchedTask = task;
     try {
-      await dispatch({
+      const fresh = await dispatch({
         task,
         occurrenceAt,
         config: options.config,
         client: options.client,
       });
+      if (fresh) dispatchedTask = fresh;
     } catch (dispatchError) {
       await recordError({
         client: options.client,
@@ -54,7 +57,7 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
 
     // Always advance, success or failure, so a failing task retries next
     // occurrence instead of spinning every tick.
-    const nextDueAt = computeNextDueAt(task, now);
+    const nextDueAt = computeNextDueAt(dispatchedTask, now);
     const { error: advanceError } = await options.client
       .from("scheduled_tasks")
       .update({

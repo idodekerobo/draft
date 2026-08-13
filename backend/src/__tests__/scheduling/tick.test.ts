@@ -66,7 +66,7 @@ const fakeConfig = {} as never;
 
 describe("runSchedulingTick", () => {
   it("dispatches each due task and always advances next_due_at, even on success", async () => {
-    const dispatch = mock(async () => undefined);
+    const dispatch = mock(async () => null);
     const dueTask = task({ id: "task-a" });
     const { client, updates, errorInserts } = fakeClient([dueTask]);
     const now = new Date("2026-08-05T10:00:30.000Z");
@@ -121,6 +121,7 @@ describe("runSchedulingTick", () => {
   it("processes remaining due tasks even after an earlier one fails", async () => {
     const dispatch = mock(async (options: { task: ScheduledTaskRow }) => {
       if (options.task.id === "task-fail") throw new Error("boom");
+      return null;
     });
     const failing = task({ id: "task-fail" });
     const ok = task({ id: "task-ok" });
@@ -133,8 +134,22 @@ describe("runSchedulingTick", () => {
     expect(updates.map((u) => u.id)).toEqual(["task-fail", "task-ok"]);
   });
 
+  it("advances next_due_at from the schedule dispatch actually saw, not the tick's stale select", async () => {
+    // Fresh row (dispatch's refetch) has interval_seconds=60; tick's own stale copy still says 300.
+    const staleTask = task({ id: "task-a", interval_seconds: 300 });
+    const freshTask = task({ id: "task-a", interval_seconds: 60 });
+    const dispatch = mock(async () => freshTask);
+    const { client, updates } = fakeClient([staleTask]);
+    const now = new Date("2026-08-05T10:00:30.000Z");
+
+    await runSchedulingTick({ client, config: fakeConfig, now, dispatch });
+
+    // 60s from next_due_at (10:00:00) -> 10:01:00, not the stale 300s -> 10:05:00.
+    expect(updates[0].payload.next_due_at).toBe(new Date("2026-08-05T10:01:00.000Z").toISOString());
+  });
+
   it("does nothing when no tasks are due", async () => {
-    const dispatch = mock(async () => undefined);
+    const dispatch = mock(async () => null);
     const { client, updates } = fakeClient([]);
 
     await runSchedulingTick({ client, config: fakeConfig, now: new Date(), dispatch });
