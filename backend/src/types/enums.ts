@@ -20,8 +20,8 @@ export type CredentialProvider =
   | "fireflies"
   | "slack"
   | "granola"
-  | "claude_code"
-  | "reserved_other";
+  | "linear"
+  | "claude_code";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
 
@@ -29,10 +29,10 @@ export type SourceConnectionProvider =
   | "fireflies"
   | "slack"
   | "granola"
+  | "linear"
   | "claude_session"
   | "codex_session"
-  | "manual_upload"
-  | "reserved_other";
+  | "manual_upload";
 
 export type SourceConnectionStatus =
   | "pending"

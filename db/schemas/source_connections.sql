@@ -2,7 +2,7 @@ create table source_connections (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   provider                 text not null
-                              check (provider in ('fireflies', 'slack', 'granola', 'claude_session', 'codex_session', 'manual_upload', 'reserved_other')),
+                              check (provider in ('fireflies', 'slack', 'granola', 'linear', 'claude_session', 'codex_session', 'manual_upload')),
   connection_key           text not null,
   display_name             text,
   external_account_id      text,
