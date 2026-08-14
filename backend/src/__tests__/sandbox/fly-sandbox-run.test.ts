@@ -1,8 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import type { ValidatedRunBundle } from "../../synthesis/context-version-files";
 import { verifySandboxCallbackToken } from "../../sandbox/callback-token";
-import type { CreateFlyMachineInput } from "../../sandbox/fly-machines";
-import { launchFlySandboxRun } from "../../sandbox/fly-sandbox-run";
+import {
+  FlyMachineWaitTimeoutError,
+  type CreateFlyMachineInput,
+  type FlyMachine,
+} from "../../sandbox/fly-machines";
+import {
+  launchFlySandboxRun,
+  type FlySandboxRunClient,
+} from "../../sandbox/fly-sandbox-run";
 
 const bundleHash = "b".repeat(64);
 const image = `registry.fly.io/draft@sha256:${"a".repeat(64)}`;
@@ -13,6 +20,7 @@ const config = {
   flyRegion: "iad",
   callbackUrl: "https://api.example.test/sandbox/callback",
   callbackSecret: "callback-signing-secret",
+  supabaseUrl: "https://project.supabase.co",
 };
 const jsonSchema = {
   required: ["outcome"],
@@ -47,9 +55,50 @@ function bundle(files?: ValidatedRunBundle["files"]): ValidatedRunBundle {
   };
 }
 
+function fakeFlyClient(overrides: {
+  createState?: string;
+  waitForState?: FlySandboxRunClient["waitForState"];
+} = {}): { client: FlySandboxRunClient; forceDeleted: string[] } {
+  const forceDeleted: string[] = [];
+  const client: FlySandboxRunClient = {
+    create: async () => ({ id: "machine-1", state: overrides.createState ?? "created" }),
+    waitForState:
+      overrides.waitForState ??
+      (async (machineId: string): Promise<FlyMachine> => ({ id: machineId, state: "started" })),
+    forceDelete: async (machineId: string) => {
+      forceDeleted.push(machineId);
+    },
+  };
+  return { client, forceDeleted };
+}
+
+function fakeBundleUploader(signedUrl = "https://storage.example.test/signed") {
+  const calls: Array<{ organizationId: string; workspaceId: string; runId: string; files: Record<string, string> }> = [];
+  const uploader = async (input: {
+    organizationId: string;
+    workspaceId: string;
+    runId: string;
+    files: Record<string, string>;
+  }) => {
+    calls.push(input);
+    return { signedUrl, objectKey: `sandbox_uploads/${input.organizationId}/${input.workspaceId}/${input.runId}.json` };
+  };
+  return { uploader, calls };
+}
+
 describe("launchFlySandboxRun", () => {
-  it("maps the bundle and exact sandbox policy without leaking deployment secrets", async () => {
+  it("uploads the bundle instead of embedding it, and maps sandbox policy without leaking secrets", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader, calls } = fakeBundleUploader("https://storage.example.test/abc");
     let launched: CreateFlyMachineInput | undefined;
+    const wrappedClient: FlySandboxRunClient = {
+      ...client,
+      create: async (input) => {
+        launched = input;
+        return client.create(input);
+      },
+    };
+
     const receipt = await launchFlySandboxRun({
       bundle: bundle(),
       prompt: "Synthesize this workspace.\n",
@@ -57,40 +106,48 @@ describe("launchFlySandboxRun", () => {
       claudeCodeOAuthToken: "claude-oauth-secret",
       config,
     }, {
-      flyClient: {
-        create: async (input) => {
-          launched = input;
-          return { id: "machine-1", state: "created" };
-        },
-      },
+      flyClient: wrappedClient,
+      bundleUploader: uploader,
       now: () => 1_000,
       nonce: () => "nonce-123",
     });
 
     expect(receipt).toEqual({
       machineId: "machine-1",
-      state: "created",
+      state: "started",
       runId: "run-123",
       bundleHash,
       callbackExpiresAt: 1_801_000,
     });
-    expect(launched).toBeDefined();
+
+    // Core regression: no bundle content in the Fly Machines create payload.
+    expect(launched!.files).toEqual({});
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      organizationId: "organization",
+      workspaceId: "workspace",
+      runId: "run-123",
+      files: {
+        "input/context/product/index.md": "# Product\n",
+        "input/run.json": '{"run":true}\n',
+        "input/prompt.md": "Synthesize this workspace.\n",
+        "input/output-schema.json":
+          '{"additionalProperties":false,"properties":{"outcome":{"type":"string"}},"required":["outcome"],"type":"object"}\n',
+      },
+    });
+
     expect(launched!.image).toBe(image);
     expect(launched!.region).toBe("iad");
     expect(launched!.guest).toEqual({ cpu_kind: "shared", cpus: 1, memory_mb: 512 });
     expect(launched!.metadata).toEqual({ run_id: "run-123", bundle_hash: bundleHash });
-    expect(launched!.files).toEqual({
-      "input/context/product/index.md": "# Product\n",
-      "input/run.json": '{"run":true}\n',
-      "input/prompt.md": "Synthesize this workspace.\n",
-      "input/output-schema.json":
-        '{"additionalProperties":false,"properties":{"outcome":{"type":"string"}},"required":["outcome"],"type":"object"}\n',
-    });
     expect(Object.keys(launched!.env!).sort()).toEqual([
       "CLAUDE_CODE_OAUTH_TOKEN",
       "DRAFT_BUNDLE_HASH",
+      "DRAFT_BUNDLE_URL",
       "DRAFT_CALLBACK_TOKEN",
       "DRAFT_CALLBACK_URL",
+      "DRAFT_EGRESS_HOSTS",
       "DRAFT_OUTPUT_SCHEMA_PATH",
       "DRAFT_PROMPT_PATH",
       "DRAFT_RUN_ID",
@@ -99,6 +156,8 @@ describe("launchFlySandboxRun", () => {
     expect(launched!.env).toMatchObject({
       DRAFT_RUN_ID: "run-123",
       DRAFT_BUNDLE_HASH: bundleHash,
+      DRAFT_BUNDLE_URL: "https://storage.example.test/abc",
+      DRAFT_EGRESS_HOSTS: "project.supabase.co",
       DRAFT_CALLBACK_URL: config.callbackUrl,
       CLAUDE_CODE_OAUTH_TOKEN: "claude-oauth-secret",
       DRAFT_PROMPT_PATH: "/run/input/prompt.md",
@@ -119,24 +178,68 @@ describe("launchFlySandboxRun", () => {
     });
   });
 
+  it("confirms the machine reaches started via waitForState", async () => {
+    let waited: string | undefined;
+    const { client } = fakeFlyClient({
+      waitForState: async (machineId) => {
+        waited = machineId;
+        return { id: machineId, state: "started" };
+      },
+    });
+    const { uploader } = fakeBundleUploader();
+
+    const receipt = await launchFlySandboxRun({
+      bundle: bundle(), prompt: "prompt", jsonSchema, claudeCodeOAuthToken: "token", config,
+    }, { flyClient: client, bundleUploader: uploader });
+
+    expect(waited).toBe("machine-1");
+    expect(receipt.state).toBe("started");
+  });
+
+  it("force-deletes and rethrows on a boot timeout, without masking the original error", async () => {
+    const timeoutError = new FlyMachineWaitTimeoutError({
+      machineId: "machine-1",
+      desiredState: "started",
+      lastState: "starting",
+      timeoutMs: 60_000,
+    });
+    const { client, forceDeleted } = fakeFlyClient({
+      waitForState: async () => {
+        throw timeoutError;
+      },
+    });
+    const { uploader } = fakeBundleUploader();
+
+    await expect(launchFlySandboxRun({
+      bundle: bundle(), prompt: "prompt", jsonSchema, claudeCodeOAuthToken: "token", config,
+    }, { flyClient: client, bundleUploader: uploader })).rejects.toBe(timeoutError);
+
+    expect(forceDeleted).toEqual(["machine-1"]);
+  });
+
   it("rejects empty prompts and OAuth tokens before launching", async () => {
     let launches = 0;
-    const flyClient = {
-      create: async () => {
+    const { client } = fakeFlyClient();
+    const flyClient: FlySandboxRunClient = {
+      ...client,
+      create: async (input) => {
         launches += 1;
-        return { id: "unexpected", state: "created" };
+        return client.create(input);
       },
     };
+    const { uploader } = fakeBundleUploader();
     await expect(launchFlySandboxRun({
       bundle: bundle(), prompt: " ", jsonSchema, claudeCodeOAuthToken: "token", config,
-    }, { flyClient })).rejects.toThrow("prompt must not be empty");
+    }, { flyClient, bundleUploader: uploader })).rejects.toThrow("prompt must not be empty");
     await expect(launchFlySandboxRun({
       bundle: bundle(), prompt: "prompt", jsonSchema, claudeCodeOAuthToken: " ", config,
-    }, { flyClient })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
+    }, { flyClient, bundleUploader: uploader })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
     expect(launches).toBe(0);
   });
 
   it("rejects a bundle collision with the reserved prompt path", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
     await expect(launchFlySandboxRun({
       bundle: bundle({
         "input/prompt.md": { content: "forged", sha256: "3".repeat(64), bytes: 6 },
@@ -145,12 +248,12 @@ describe("launchFlySandboxRun", () => {
       jsonSchema,
       claudeCodeOAuthToken: "token",
       config,
-    }, {
-      flyClient: { create: async () => ({ id: "unexpected", state: "created" }) },
-    })).rejects.toThrow("reserved prompt path");
+    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("reserved prompt path");
   });
 
   it("rejects a bundle collision with the reserved output schema path", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
     await expect(launchFlySandboxRun({
       bundle: bundle({
         "input/output-schema.json": {
@@ -163,8 +266,6 @@ describe("launchFlySandboxRun", () => {
       jsonSchema,
       claudeCodeOAuthToken: "token",
       config,
-    }, {
-      flyClient: { create: async () => ({ id: "unexpected", state: "created" }) },
-    })).rejects.toThrow("reserved output schema path");
+    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("reserved output schema path");
   });
 });

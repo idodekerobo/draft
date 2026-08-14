@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { ValidatedRunBundle } from "../synthesis/context-version-files";
 import { createSandboxCallbackToken } from "./callback-token";
+import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import {
   FlyMachinesClient,
+  FlyMachineWaitTimeoutError,
   type CreateFlyMachineInput,
   type FlyMachine,
+  type FlyMachineState,
+  type WaitForStateOptions,
 } from "./fly-machines";
 import {
   type SandboxDeploymentConfig,
@@ -15,6 +19,7 @@ const PROMPT_PATH = "input/prompt.md";
 const OUTPUT_SCHEMA_PATH = "input/output-schema.json";
 const SANDBOX_TIMEOUT_SECONDS = 20 * 60;
 const CALLBACK_TOKEN_TTL_MS = 30 * 60 * 1_000;
+const BOOT_TIMEOUT_MS = 60_000;
 const SANDBOX_GUEST = {
   cpu_kind: "shared" as const,
   cpus: 1,
@@ -44,10 +49,24 @@ function serializeJsonSchema(schema: Record<string, unknown>): string {
 
 export interface FlySandboxRunClient {
   create(input: CreateFlyMachineInput): Promise<FlyMachine>;
+  waitForState(
+    machineId: string,
+    desiredState: FlyMachineState,
+    options?: WaitForStateOptions,
+  ): Promise<FlyMachine>;
+  forceDelete(machineId: string): Promise<void>;
 }
+
+export type BundleUploader = (input: {
+  organizationId: string;
+  workspaceId: string;
+  runId: string;
+  files: Record<string, string>;
+}) => Promise<UploadedBundle>;
 
 export interface LaunchFlySandboxRunDependencies {
   flyClient?: FlySandboxRunClient;
+  bundleUploader?: BundleUploader;
   now?: () => number;
   nonce?: () => string;
 }
@@ -97,19 +116,32 @@ export async function launchFlySandboxRun(
     config.callbackSecret,
   );
 
-  const files = Object.fromEntries(
+  const filesForUpload = Object.fromEntries(
     Object.entries(input.bundle.files).map(([path, file]) => [path, file.content]),
   );
-  files[PROMPT_PATH] = input.prompt;
-  files[OUTPUT_SCHEMA_PATH] = `${serializedSchema}\n`;
+  filesForUpload[PROMPT_PATH] = input.prompt;
+  filesForUpload[OUTPUT_SCHEMA_PATH] = `${serializedSchema}\n`;
 
-  const client = dependencies.flyClient ?? new FlyMachinesClient({
-    app: config.flyAppName,
-    token: config.flyApiToken,
+  const bundleUploader = dependencies.bundleUploader ?? uploadRunBundle;
+  const uploaded = await bundleUploader({
+    organizationId: input.bundle.organizationId,
+    workspaceId: input.bundle.workspaceId,
+    runId: input.bundle.runId,
+    files: filesForUpload,
   });
+  const storageHost = new URL(config.supabaseUrl).hostname;
+
+  const client: FlySandboxRunClient =
+    dependencies.flyClient ??
+    new FlyMachinesClient({
+      app: config.flyAppName,
+      token: config.flyApiToken,
+    });
   const env: Record<string, string> = {
     DRAFT_RUN_ID: input.bundle.runId,
     DRAFT_BUNDLE_HASH: input.bundle.bundleHash,
+    DRAFT_BUNDLE_URL: uploaded.signedUrl,
+    DRAFT_EGRESS_HOSTS: storageHost,
     DRAFT_CALLBACK_URL: config.callbackUrl,
     DRAFT_CALLBACK_TOKEN: callbackToken,
     CLAUDE_CODE_OAUTH_TOKEN: input.claudeCodeOAuthToken,
@@ -117,9 +149,9 @@ export async function launchFlySandboxRun(
     DRAFT_OUTPUT_SCHEMA_PATH: `/run/${OUTPUT_SCHEMA_PATH}`,
     DRAFT_TIMEOUT_SECONDS: String(SANDBOX_TIMEOUT_SECONDS),
   };
-  const machine = await client.create({
+  const created = await client.create({
     image: config.flySandboxImage,
-    files,
+    files: {},
     region: config.flyRegion,
     guest: SANDBOX_GUEST,
     metadata: {
@@ -128,6 +160,18 @@ export async function launchFlySandboxRun(
     },
     env,
   });
+
+  let machine: FlyMachine;
+  try {
+    machine = await client.waitForState(created.id, "started", {
+      timeoutMs: BOOT_TIMEOUT_MS,
+    });
+  } catch (error) {
+    if (error instanceof FlyMachineWaitTimeoutError) {
+      await client.forceDelete(created.id).catch(() => undefined);
+    }
+    throw error;
+  }
 
   return {
     machineId: machine.id,
