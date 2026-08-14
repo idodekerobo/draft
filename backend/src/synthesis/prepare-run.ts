@@ -187,3 +187,26 @@ export async function markRunLaunched(
     .eq("id", runId);
   if (error) throw error;
 }
+
+// Marks a run failed immediately rather than leaving it stuck in an
+// active-writer status until the 30-minute stale sweep catches it. Mirrors
+// the fields sweepStaleSynthesisRuns sets on its bulk update.
+export async function markRunFailed(
+  runId: string,
+  reason: string,
+  client?: SupabaseClient,
+): Promise<void> {
+  const resolvedClient =
+    client ?? (await import("../db/client")).serviceClient;
+
+  const { error } = await resolvedClient
+    .from("synthesis_runs")
+    .update({
+      status: "failed",
+      outcome: "failure",
+      result_summary: reason,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", runId);
+  if (error) throw error;
+}
