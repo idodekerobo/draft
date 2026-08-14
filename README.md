@@ -245,17 +245,13 @@ This uses your local `gh` credentials and the separate-clone pattern — the Dra
 
 ```bash
 draft --help                        # full command reference
-draft init                          # set up a new workspace
-draft status                        # show daemon status + active profile
-draft proposals                     # review pending proposals
-draft publish                       # accept + push context to team repo
-draft profiles                      # list profiles
-draft switch <profile>              # activate a named profile
-draft add <tool>                    # install plugin into claude-code | codex | cursor
-draft daemon start|stop             # control the background daemon
-draft connect                       # configure integrations
-draft dimension list|add <name>     # manage context dimensions
-draft import <source>               # import context from local dir or GitHub repo
+draft add <tool>                    # install plugin into claude-code | codex | cursor | openclaw | hermes
+draft auth login                    # sign in via device pairing
+draft auth whoami                   # show the current signed-in identity
+draft auth logout                   # sign out and clear local credentials
+draft context list                  # list available context dimensions
+draft context read --dimension <name>  # print one or more context dimensions
+draft context read --all            # print every context dimension
 ```
 
 ---
