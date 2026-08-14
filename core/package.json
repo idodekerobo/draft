@@ -5,6 +5,7 @@
   "exports": {
     "./config":               "./src/config.ts",
     "./auth-state":           "./src/auth-state.ts",
+    "./device-pairing":       "./src/device-pairing.ts",
     "./exec":                 "./src/exec.ts",
     "./runtime":              "./src/runtime.ts",
     "./status":               "./src/status.ts",
