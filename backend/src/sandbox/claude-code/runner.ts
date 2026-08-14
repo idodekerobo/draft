@@ -1,4 +1,5 @@
 // Trusted one-shot sandbox lifecycle and callback runner.
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   chownSync,
@@ -47,7 +48,8 @@ export type RunnerFailureCode =
   | "output_too_large"
   | "claude_error"
   | "claude_exit"
-  | "incomplete_result";
+  | "incomplete_result"
+  | "bundle_fetch_failed";
 
 export interface FinalDiagnosticInput {
   timedOut: boolean;
@@ -316,6 +318,85 @@ async function callback(
   throw new Error(lastError);
 }
 
+async function reportAndExit(input: {
+  finalResult: unknown;
+  success: boolean;
+  failureCode: RunnerFailureCode | "none";
+  callbackUrl: string;
+  callbackToken: string;
+  runId: string;
+  bundleHash: string;
+}): Promise<void> {
+  mkdirSync("/run/output", { recursive: true });
+  chownSync("/run/output", 0, 0);
+  chmodSync("/run/output", 0o750);
+  atomicWriteJson(OUTPUT_PATH, input.finalResult);
+  await callback(input.callbackUrl, input.callbackToken, input.runId, input.bundleHash, input.finalResult);
+
+  runnerLog("final", {
+    run_id: input.runId,
+    status: input.success ? "completed" : "failed",
+    failure_code: input.failureCode,
+  });
+  if (!input.success) process.exitCode = 1;
+}
+
+export function assertWithinInputRoot(target: string, inputRoot: string, path: string): void {
+  const resolvedRoot = resolve(inputRoot);
+  const resolvedTarget = resolve(target);
+  if (!resolvedTarget.startsWith(`${resolvedRoot}/`)) {
+    throw new Error(`bundle file path escapes input root: ${path}`);
+  }
+}
+
+export function recomputeBundleHash(
+  files: Record<string, string>,
+  reservedPaths: ReadonlySet<string>,
+): string {
+  const entries = Object.entries(files)
+    .filter(([path]) => !reservedPaths.has(path))
+    .map(([path, content]) => {
+      const bytes = Buffer.from(content, "utf8");
+      return [path, createHash("sha256").update(bytes).digest("hex"), bytes.byteLength] as const;
+    })
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+export async function fetchAndWriteBundle(
+  bundleUrl: string,
+  bundleHash: string,
+  inputRoot: string,
+  bundleRoot: string,
+  reservedPaths: ReadonlySet<string>,
+): Promise<void> {
+  const response = await fetch(bundleUrl, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`bundle fetch returned HTTP ${response.status}`);
+  const payload: unknown = await response.json();
+  if (!isObject(payload) || !isObject(payload.files)) {
+    throw new Error("bundle payload must be a JSON object with a files map");
+  }
+  const downloadedFiles = payload.files as Record<string, string>;
+  for (const [path, content] of Object.entries(downloadedFiles)) {
+    if (typeof content !== "string") throw new Error(`bundle file content must be a string: ${path}`);
+  }
+
+  const recomputedHash = recomputeBundleHash(downloadedFiles, reservedPaths);
+  if (recomputedHash !== bundleHash) {
+    throw new Error("bundle content does not match DRAFT_BUNDLE_HASH");
+  }
+
+  // Bundle keys (e.g. "input/prompt.md") already carry the "input/" segment,
+  // so they're relative to bundleRoot (/run), not inputRoot (/run/input) —
+  // joining against inputRoot would double it to /run/input/input/....
+  for (const [path, content] of Object.entries(downloadedFiles)) {
+    const target = join(bundleRoot, path);
+    assertWithinInputRoot(target, inputRoot, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content, "utf8");
+  }
+}
+
 export async function main(): Promise<void> {
   const runId = required("DRAFT_RUN_ID");
   const bundleHash = required("DRAFT_BUNDLE_HASH");
@@ -324,15 +405,50 @@ export async function main(): Promise<void> {
   }
   const callbackUrl = required("DRAFT_CALLBACK_URL");
   const callbackToken = required("DRAFT_CALLBACK_TOKEN");
+  const bundleUrl = required("DRAFT_BUNDLE_URL");
+  new URL(bundleUrl);
   const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
   const outputSchemaPath = process.env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH;
   const timeoutMs = parseTimeoutSeconds(process.env.DRAFT_TIMEOUT_SECONDS) * 1_000;
   const inputRoot = "/run/input";
+  // Bundle file keys (e.g. "input/prompt.md", "input/sources/x.md") already
+  // carry the "input/" segment, so they're relative to /run, one level above
+  // inputRoot — not to inputRoot itself.
+  const bundleRoot = dirname(inputRoot);
+  const reservedPaths = new Set([
+    promptPath.startsWith(`${bundleRoot}/`) ? promptPath.slice(bundleRoot.length + 1) : "input/prompt.md",
+    outputSchemaPath.startsWith(`${bundleRoot}/`)
+      ? outputSchemaPath.slice(bundleRoot.length + 1)
+      : "input/output-schema.json",
+  ]);
 
   new URL(callbackUrl);
   mkdirSync("/run/output", { recursive: true });
   mkdirSync("/run/scratch", { recursive: true });
-  if (!existsSync(inputRoot)) throw new Error("/run/input is required");
+  mkdirSync(inputRoot, { recursive: true });
+  try {
+    await fetchAndWriteBundle(bundleUrl, bundleHash, inputRoot, bundleRoot, reservedPaths);
+  } catch (fetchError) {
+    runnerLog("bundle_fetch_failed", {
+      run_id: runId,
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+    });
+    await reportAndExit({
+      finalResult: {
+        error: "bundle_fetch_failed",
+        diagnostics: {
+          reason: fetchError instanceof Error ? fetchError.message : String(fetchError),
+        },
+      },
+      success: false,
+      failureCode: "bundle_fetch_failed",
+      callbackUrl,
+      callbackToken,
+      runId,
+      bundleHash,
+    });
+    return;
+  }
   const inputStats = secureInputTree(inputRoot);
   if (!existsSync(promptPath) || !resolve(promptPath).startsWith(`${inputRoot}/`)) {
     throw new Error("DRAFT_PROMPT_PATH must name a file beneath /run/input");
@@ -437,17 +553,15 @@ export async function main(): Promise<void> {
     ? payload
     : { error: failure!.failureCode, diagnostics: failure! };
 
-  chownSync("/run/output", 0, 0);
-  chmodSync("/run/output", 0o750);
-  atomicWriteJson(OUTPUT_PATH, finalResult);
-  await callback(callbackUrl, callbackToken, runId, bundleHash, finalResult);
-
-  runnerLog("final", {
-    run_id: runId,
-    status: success ? "completed" : "failed",
-    failure_code: failure?.failureCode ?? "none",
+  await reportAndExit({
+    finalResult,
+    success,
+    failureCode: failure?.failureCode ?? "none",
+    callbackUrl,
+    callbackToken,
+    runId,
+    bundleHash,
   });
-  if (!success) process.exitCode = 1;
 }
 
 const invokedPath = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";

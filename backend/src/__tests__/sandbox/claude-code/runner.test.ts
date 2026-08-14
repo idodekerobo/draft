@@ -1,17 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  assertWithinInputRoot,
   buildFailureDiagnostics,
   classifyClaudeEnvelopeFailure,
   classifyClaudeFailureChunk,
   extractStructuredOutput,
   claudeCommandArgs,
+  fetchAndWriteBundle,
   parseCompletedClaudeEnvelope,
   parseResultPayload,
   readOutputSchema,
   parseTimeoutSeconds,
+  recomputeBundleHash,
   sanitizedClaudeEnv,
   shouldRetryCallback,
 } from "../../../sandbox/claude-code/runner";
@@ -150,5 +154,141 @@ describe("safe Claude diagnostics", () => {
       failureCode: "timeout",
     });
     expect(buildFailureDiagnostics({ ...base, payloadValid: true })).toBeNull();
+  });
+});
+
+describe("bundle path safety", () => {
+  test("accepts a path that resolves beneath the input root", () => {
+    expect(() => assertWithinInputRoot("/run/input/a/b.md", "/run/input", "a/b.md")).not.toThrow();
+  });
+
+  test("rejects a path that escapes the input root", () => {
+    expect(() => assertWithinInputRoot("/run/other/b.md", "/run/input", "../other/b.md"))
+      .toThrow("bundle file path escapes input root");
+  });
+});
+
+describe("bundle hash recomputation", () => {
+  test("matches context-version-files.ts's sha256([path, sha256, bytes]) algorithm, excluding reserved paths", () => {
+    const files = {
+      "input/context/product/index.md": "# Product\n",
+      "input/prompt.md": "the prompt",
+      "input/output-schema.json": '{"type":"object"}\n',
+    };
+    const reserved = new Set(["input/prompt.md", "input/output-schema.json"]);
+    const expected = createHash("sha256")
+      .update(JSON.stringify([[
+        "input/context/product/index.md",
+        createHash("sha256").update(Buffer.from("# Product\n", "utf8")).digest("hex"),
+        Buffer.byteLength("# Product\n", "utf8"),
+      ]]))
+      .digest("hex");
+    expect(recomputeBundleHash(files, reserved)).toBe(expected);
+  });
+
+  test("changes when non-reserved content changes", () => {
+    const reserved = new Set<string>();
+    const a = recomputeBundleHash({ "input/run.json": "{}" }, reserved);
+    const b = recomputeBundleHash({ "input/run.json": "{ }" }, reserved);
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("fetchAndWriteBundle", () => {
+  test("writes verified files beneath the input root", async () => {
+    const inputRoot = mkdtempSync(join(tmpdir(), "draft-bundle-"));
+    const files = {
+      "input/context/product/index.md": "# Product\n",
+      "input/prompt.md": "the prompt",
+      "input/output-schema.json": '{"type":"object"}\n',
+    };
+    const reserved = new Set(["input/prompt.md", "input/output-schema.json"]);
+    const bundleHash = recomputeBundleHash(files, reserved);
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ files }), { status: 200 })) as unknown as typeof fetch;
+    try {
+      await fetchAndWriteBundle(
+        "https://storage.example.test/signed",
+        bundleHash,
+        inputRoot,
+        inputRoot,
+        reserved,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(existsSync(join(inputRoot, "input/context/product/index.md"))).toBe(true);
+    expect(readFileSync(join(inputRoot, "input/prompt.md"), "utf8")).toBe("the prompt");
+  });
+
+  test("places files at inputRoot (not bundleRoot/input/input) when bundleRoot is inputRoot's parent, mirroring /run vs /run/input", async () => {
+    const bundleRoot = mkdtempSync(join(tmpdir(), "draft-bundle-"));
+    const inputRoot = join(bundleRoot, "input");
+    const files = {
+      "input/context/product/index.md": "# Product\n",
+      "input/prompt.md": "the prompt",
+    };
+    const reserved = new Set(["input/prompt.md", "input/output-schema.json"]);
+    const bundleHash = recomputeBundleHash(files, reserved);
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ files }), { status: 200 })) as unknown as typeof fetch;
+    try {
+      await fetchAndWriteBundle(
+        "https://storage.example.test/signed",
+        bundleHash,
+        inputRoot,
+        bundleRoot,
+        reserved,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(readFileSync(join(inputRoot, "prompt.md"), "utf8")).toBe("the prompt");
+    expect(existsSync(join(inputRoot, "input", "prompt.md"))).toBe(false);
+  });
+
+  test("rejects a non-OK fetch response", async () => {
+    const inputRoot = mkdtempSync(join(tmpdir(), "draft-bundle-"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response("", { status: 500 })) as unknown as typeof fetch;
+    try {
+      await expect(
+        fetchAndWriteBundle(
+          "https://storage.example.test/signed",
+          "0".repeat(64),
+          inputRoot,
+          inputRoot,
+          new Set(),
+        ),
+      ).rejects.toThrow("bundle fetch returned HTTP 500");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("rejects content that does not match the expected hash", async () => {
+    const inputRoot = mkdtempSync(join(tmpdir(), "draft-bundle-"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ files: { "input/run.json": "{}" } }), { status: 200 })) as unknown as typeof fetch;
+    try {
+      await expect(
+        fetchAndWriteBundle(
+          "https://storage.example.test/signed",
+          "0".repeat(64),
+          inputRoot,
+          inputRoot,
+          new Set(),
+        ),
+      ).rejects.toThrow("bundle content does not match DRAFT_BUNDLE_HASH");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
