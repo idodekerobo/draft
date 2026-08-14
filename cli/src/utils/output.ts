@@ -22,7 +22,7 @@ export function printHelp(): void {
   console.log("");
   console.log("Commands:");
   const cmds: [string, string][] = [
-    ["add <tool>",                 "Add Draft to a CLI tool (claude-code, codex, cursor, openclaw, hermes)"],
+    ["add <tool> [--dir <path>...]", "Configure a project's instruction file for an agent tool"],
     ["auth login",                 "Sign in via device pairing"],
     ["auth logout",                "Sign out and clear local credentials"],
     ["auth whoami",                "Show the current signed-in identity"],

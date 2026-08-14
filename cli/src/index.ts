@@ -20,7 +20,7 @@ if (!command || command === "--help" || command === "-h") {
 (async () => {
   switch (command) {
     case "add":
-      await runAdd(rest);
+      process.exitCode = await runAdd(rest);
       break;
     case "auth":
       process.exitCode = await runAuth(rest);
