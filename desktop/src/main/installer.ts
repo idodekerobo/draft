@@ -1,16 +1,22 @@
 // desktop/src/main/installer.ts — first-launch installer for Draft.app
 //
 // Called from the onboarding wizard when appState.userState === "no-profile".
-// Extracts the bundled draft binary, symlinks it to /usr/local/bin/draft,
-// then delegates all tool installs to `draft add <tool>` (single source of truth).
+// Extracts the bundled draft binary and symlinks it to /usr/local/bin/draft.
+//
+// `draft add <tool>` is no longer invoked automatically here — as of the
+// Stage 2 CLI rebuild it only configures a project-local instruction file
+// (CLAUDE.md/AGENTS.md/HERMES.md) and requires an explicit --dir, so it has
+// nothing useful to do at desktop first-launch time. What (if anything)
+// replaces the old plugin/skill/daemon install step this used to trigger is
+// an open desktop-architecture question, tracked separately — not decided
+// here. See TODOS.md.
 //
 // Idempotent — safe to call if partially or fully installed.
 
 import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import Electrobun from "electrobun/bun";
-import { getBundledBinPath, getBundledBackgroundDir, getBundledPluginDir, getBundledBunPath, getBundledTmuxPath } from "./bundlePath";
-import { capture } from "../exec";
+import { getBundledBinPath, getBundledBunPath, getBundledTmuxPath } from "./bundlePath";
 
 const LOG_FILE = `${process.env.HOME}/.draft/logs/desktop-installer.log`;
 
@@ -82,10 +88,12 @@ function writeBinVersionStamp(buildId: string): void {
 }
 
 /**
- * Full first-launch install:
+ * First-launch install:
  *   1. Extract compiled draft binary from the .app bundle → ~/.draft/bin/draft
  *   2. Symlink ~/.draft/bin/draft → /usr/local/bin/draft
- *   3. For each selected tool: run `draft add <tool>`
+ *
+ * `tools` is accepted for caller compatibility but no longer drives a
+ * `draft add <tool>` step — see the file header note.
  *
  * In dev mode (no bundled binary), falls back to calling `draft` from PATH.
  */
@@ -94,7 +102,7 @@ export async function runInstall(
   buildId?: string,
 ): Promise<InstallResult> {
   const steps: InstallStep[] = [];
-  log(`runInstall called — tools: ${JSON.stringify(tools)}`);
+  log(`runInstall called — tools: ${JSON.stringify(tools)} (tool install step is currently a no-op)`);
 
   const resolvedBuildId = buildId ?? (await resolveBuildIdentity())?.buildId ?? null;
 
@@ -106,13 +114,6 @@ export async function runInstall(
   if (draftBin) {
     await symlinkBinary(draftBin, steps);
     log(`symlinkBinary done`);
-  }
-
-  // ── Step 3: Install selected tools ───────────────────────────────────────────
-  for (const tool of tools) {
-    log(`installTool starting — tool: ${tool}`);
-    await installTool(tool, draftBin, steps);
-    log(`installTool done — tool: ${tool}`);
   }
 
   const ok = steps.every((s) => s.ok);
@@ -297,66 +298,6 @@ async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<vo
         error: `Could not write to ${profile}. Run manually: echo 'export PATH="$HOME/.draft/bin:$PATH"' >> ${profile}`,
       });
     }
-  }
-}
-
-async function installTool(
-  tool: InstallableTool,
-  draftBin: string | null,
-  steps: InstallStep[],
-): Promise<void> {
-  // Resolve which binary to use: extracted from bundle, or fall back to PATH
-  const bin = draftBin ?? "draft";
-  log(`capture starting — cmd: [${bin}, add, ${tool}]`);
-
-  // In bundle mode, the compiled `draft` binary can't walk up import.meta.dir
-  // to find the repo root (it's a Bun virtual path, not a real filesystem path).
-  // Pass the bundled asset dirs explicitly so add.ts can skip getRepoRoot().
-  const env: Record<string, string> | undefined = draftBin
-    ? {
-        DRAFT_BACKGROUND_DIR: getBundledBackgroundDir(),
-        DRAFT_PLUGIN_ROOT:    getBundledPluginDir(),
-      }
-    : undefined;
-  if (env) {
-    log(`  env: DRAFT_BACKGROUND_DIR=${env.DRAFT_BACKGROUND_DIR}`);
-    log(`  env: DRAFT_PLUGIN_ROOT=${env.DRAFT_PLUGIN_ROOT}`);
-  }
-
-  const label = toolLabel(tool);
-  try {
-    const startMs = Date.now();
-    const result = await capture([bin, "add", tool], { env, timeoutMs: 25_000 });
-    const elapsedMs = Date.now() - startMs;
-    log(`capture done — tool: ${tool}, exitCode: ${result.exitCode}, elapsed: ${elapsedMs}ms`);
-    if (result.stdout) log(`  stdout: ${result.stdout.slice(0, 500)}`);
-    if (result.stderr) log(`  stderr: ${result.stderr.slice(0, 500)}`);
-    if (result.exitCode === 0) {
-      steps.push({ label, ok: true });
-    } else {
-      steps.push({
-        label,
-        ok: false,
-        error: result.stderr.trim() || `draft add ${tool} exited with code ${result.exitCode}`,
-      });
-    }
-  } catch (err) {
-    log(`capture threw — tool: ${tool}, err: ${err instanceof Error ? err.message : String(err)}`);
-    steps.push({
-      label,
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-function toolLabel(tool: InstallableTool): string {
-  switch (tool) {
-    case "claude-code": return "Install Claude Code plugin";
-    case "codex":       return "Install Codex plugin";
-    case "cursor":      return "Install Cursor plugin";
-    case "openclaw":    return "Install OpenClaw plugin";
-    case "hermes":      return "Install Hermes plugin";
   }
 }
 
