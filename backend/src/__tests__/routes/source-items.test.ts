@@ -110,6 +110,7 @@ process.env.FLY_APP_NAME = "app";
 process.env.FLY_SANDBOX_IMAGE = `registry.fly.io/app@sha256:${"0".repeat(64)}`;
 process.env.FLY_REGION = "ewr";
 process.env.SANDBOX_CALLBACK_SECRET = "secret";
+process.env.SUPABASE_URL = "https://project.supabase.co";
 mock.module("../../synthesis/orchestrate-run", () => ({
   launchSynthesisRun: async (options: { workspaceId: string; sourceItemIds: string[] }) => {
     launchCalls.push({ workspaceId: options.workspaceId, sourceItemIds: options.sourceItemIds });
@@ -166,7 +167,7 @@ describe("POST /workspaces/:id/source-items", () => {
   it("skips a single file over the per-file byte cap without failing the batch", async () => {
     const response = await routeModule.POST(
       request({ files: [
-        { path: "big.md", content: "x".repeat(1_000_001) },
+        { path: "big.md", content: "x".repeat(5_000_001) },
         { path: "small.md", content: "ok" },
       ] }) as never,
     );
@@ -182,7 +183,7 @@ describe("POST /workspaces/:id/source-items", () => {
   it("rejects the whole batch when total bytes exceed the cap", async () => {
     // Each file is under the per-file cap on its own; only the sum exceeds
     // the total cap, so this exercises the batch-level check specifically.
-    const files = Array.from({ length: 11 }, (_, i) => ({ path: `file-${i}.md`, content: "x".repeat(950_000) }));
+    const files = Array.from({ length: 11 }, (_, i) => ({ path: `file-${i}.md`, content: "x".repeat(4_750_000) }));
     const response = await routeModule.POST(request({ files }) as never);
 
     expect(response.status).toBe(400);

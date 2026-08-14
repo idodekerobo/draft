@@ -13,8 +13,8 @@ import type {
 } from "../types/tables";
 
 export const PILOT_RUN_BUNDLE_LIMITS: Readonly<RunBundleLimits> = {
-  maxFileBytes: 1_000_000,
-  maxTotalBytes: 10_000_000,
+  maxFileBytes: 5_000_000,
+  maxTotalBytes: 50_000_000,
 };
 
 export interface LoadRunBundleOptions {
