@@ -53,7 +53,10 @@
       "Bash(cd *)",
       "Bash(git -C /Users/idodekerobo/Documents/baby_mogul/Young_Zuckerberg/product-manager-agent status --short backend/src/routes/index.ts)",
       "Bash(xargs -I{} echo {})",
-      "WebFetch(domain:fly.io)"
+      "WebFetch(domain:fly.io)",
+      "WebFetch(domain:linear.app)",
+      "WebFetch(domain:e2b.dev)",
+      "WebFetch(domain:docs.e2b.dev)"
     ]
   }
 }
