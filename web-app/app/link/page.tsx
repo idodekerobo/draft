@@ -19,7 +19,7 @@ export default async function LinkPage({
   } = await client.auth.getUser();
   return (
     <main className="card">
-      <h1>Connect Draft Desktop</h1>
+      <h1>Connect Draft</h1>
       {user ? (
         <ApprovePairing code={code} />
       ) : (

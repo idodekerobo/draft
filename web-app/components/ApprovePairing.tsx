@@ -31,11 +31,11 @@ export function ApprovePairing({ code }: { code: string }) {
     setState(r.ok ? "done" : "error");
   }
   if (state === "done")
-    return <p>Draft Desktop is signed in. You can close this window.</p>;
+    return <p>Your device is signed in. You can close this window.</p>;
   return (
     <>
       <button disabled={state === "working"} onClick={approve}>
-        Approve sign-in for Draft Desktop
+        Approve sign-in
       </button>
       {state === "error" && (
         <p className="error">This pairing code is invalid or expired.</p>
