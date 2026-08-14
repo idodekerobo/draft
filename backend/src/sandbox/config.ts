@@ -9,6 +9,7 @@ export interface SandboxDeploymentConfig {
   flyRegion: string;
   callbackUrl: string;
   callbackSecret: string;
+  supabaseUrl: string;
 }
 
 export type SandboxEnvironment = Readonly<Record<string, string | undefined>>;
@@ -45,6 +46,16 @@ export function validateSandboxDeploymentConfig(
     );
   }
 
+  let supabaseUrl: URL;
+  try {
+    supabaseUrl = new URL(config.supabaseUrl);
+  } catch {
+    throw new Error("SUPABASE_URL must be a valid HTTPS URL");
+  }
+  if (supabaseUrl.protocol !== "https:") {
+    throw new Error("SUPABASE_URL must be a valid HTTPS URL");
+  }
+
   return { ...config };
 }
 
@@ -67,5 +78,6 @@ export function loadSandboxDeploymentConfig(
     flyRegion: required(env, "FLY_REGION"),
     callbackUrl,
     callbackSecret: required(env, "SANDBOX_CALLBACK_SECRET"),
+    supabaseUrl: required(env, "SUPABASE_URL"),
   });
 }

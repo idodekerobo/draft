@@ -12,6 +12,7 @@ const environment = {
   FLY_REGION: "iad",
   API_BASE_URL: "https://api.example.test",
   SANDBOX_CALLBACK_SECRET: "signing-secret",
+  SUPABASE_URL: "https://project.supabase.co",
 };
 
 describe("sandbox deployment config", () => {
@@ -23,6 +24,7 @@ describe("sandbox deployment config", () => {
       flyRegion: "iad",
       callbackUrl: "https://api.example.test/sandbox/callback",
       callbackSecret: "signing-secret",
+      supabaseUrl: "https://project.supabase.co",
     });
   });
 
@@ -38,6 +40,13 @@ describe("sandbox deployment config", () => {
       ...environment,
       API_BASE_URL: "http://api.example.test",
     })).toThrow("valid HTTPS URL");
+  });
+
+  it("rejects a non-HTTPS Supabase URL", () => {
+    expect(() => loadSandboxDeploymentConfig({
+      ...environment,
+      SUPABASE_URL: "http://project.supabase.co",
+    })).toThrow("SUPABASE_URL must be a valid HTTPS URL");
   });
 
   it("rejects mutable, malformed, and uppercase image digests", () => {
