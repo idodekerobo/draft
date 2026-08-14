@@ -202,6 +202,7 @@ const UPLOAD_BINARY_EXTENSIONS = new Set([
   ".woff", ".woff2", ".ttf", ".otf",
   ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
 ]);
+const UPLOAD_IGNORED_DIR_NAMES = new Set(["build", "dist", "out"]);
 
 // Walks directory-by-directory, pruning ignored directory names (.git,
 // node_modules, dotfiles) BEFORE descending into them
@@ -212,7 +213,13 @@ async function collectUploadFiles(rootDir: string): Promise<{ path: string; cont
   function walk(dir: string, relativeDir: string): void {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name === ".git" || entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      if (
+        entry.name === ".git" ||
+        entry.name === "node_modules" ||
+        entry.name.startsWith(".") ||
+        UPLOAD_IGNORED_DIR_NAMES.has(entry.name) ||
+        entry.name.endsWith(".app")
+      ) continue;
       const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
