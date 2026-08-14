@@ -1,12 +1,12 @@
 {
   "name": "draft-cli",
   "version": "0.1.0",
-  "description": "Draft CLI — control plane for the Draft daemon",
+  "description": "Draft CLI — hosted control plane client",
   "module": "src/index.ts",
   "type": "module",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build --compile src/index.ts --outfile ../draft-bin",
+    "build": "bun run scripts/build.ts",
     "test": "bun test"
   },
   "dependencies": {
