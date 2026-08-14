@@ -70,21 +70,46 @@ Pass one or more `--dimension <name>` flags, or `--all` — exactly one selectio
 
 ---
 
-## Tool setup
+## Project setup
 
-### `draft add <tool>`
+### `draft add <tool> [--dir <path>...] [--json]`
 
-Installs Draft into an agent tool. Run once per tool. Safe to re-run after updates (idempotent).
+Configures a project so its coding agent can discover Draft and the commands it may call (`draft auth login`, `draft context list`, `draft context read`). It does **not** install the `draft` CLI binary (installed separately — see [Running from source](../README.md#running-from-source)), does not run or bootstrap a background daemon, and does not touch global tool configuration. It writes to exactly one file, in exactly the directories you pass.
 
 ```bash
-draft add claude-code
-draft add codex
-draft add cursor
-draft add openclaw
-draft add hermes
+draft add claude-code --dir ~/code/my-app
+draft add codex --dir ~/code/my-app --dir ~/code/another-app
+draft add cursor --dir .
+draft add openclaw --dir . --json
 ```
 
-See [Agent plugins](./agent-plugins.md) for full details on each tool.
+`--dir` is repeatable — pass it once per project you want to configure. If you omit it in an interactive terminal, you're prompted for one or more directories (defaulting to the current directory). Without a TTY (e.g. in a script or CI), a missing `--dir` fails immediately with exit code `2` — it never waits on stdin.
+
+Each directory must already exist; a missing path, a path that isn't a directory, or an instruction-file target that is a symlink is rejected for that directory without touching it.
+
+**Tool → instruction file:**
+
+| Tool | File |
+| --- | --- |
+| `claude-code` | `CLAUDE.md` |
+| `codex` | `AGENTS.md` |
+| `cursor` | `AGENTS.md` |
+| `openclaw` | `AGENTS.md` |
+| `hermes` | `HERMES.md` |
+
+`draft add` appends or updates one short, sentinel-delimited Draft-managed block in that file — it only points the agent at the CLI commands above, it never copies or embeds context content into the file. Everything outside the sentinels (your own instructions) is preserved byte-for-byte. The block is identical across tools, so `draft add codex --dir .` followed by `draft add cursor --dir .` converge on the same `AGENTS.md` block rather than duplicating it, and running the same command twice makes no write once the block is already current.
+
+```bash
+draft add codex --dir ./my-repo
+draft add cursor --dir ./my-repo   # updates the same AGENTS.md block, no duplicate
+```
+
+```json
+$ draft add claude-code --dir ./my-repo --json
+{"schema_version":1,"status":"ok","tool":"claude-code","results":[{"dir":"./my-repo","ok":true,"file":"/abs/path/my-repo/CLAUDE.md","changed":true}]}
+```
+
+If any of the given directories fail validation, `status` is `partial_error`, each directory's own result reports `ok` and, on failure, a `code` (`directory_not_found`, `not_a_directory`, or `symlink_target`) and `message` — directories that did validate are still written. Exit code is `1` if any directory failed, `0` if all succeeded.
 
 ---
 

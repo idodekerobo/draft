@@ -90,7 +90,7 @@ bash install.sh
 2. Installs TypeScript dependencies for the CLI workspace (`cli/`)
 3. Copies the `draft` wrapper script to `~/bin/` (or `/usr/local/bin/`)
 4. Installs shell tab completion (zsh or bash)
-5. Runs `draft add claude-code` to wire the plugin and daemon into Claude Code
+5. Prints the `draft add <tool> --dir <path>` command to run next, per project
 
 After install, run `draft --help` to verify everything is on PATH.
 
@@ -245,7 +245,7 @@ This uses your local `gh` credentials and the separate-clone pattern — the Dra
 
 ```bash
 draft --help                        # full command reference
-draft add <tool>                    # install plugin into claude-code | codex | cursor | openclaw | hermes
+draft add <tool> --dir <path>       # configure a project's instruction file for claude-code | codex | cursor | openclaw | hermes
 draft auth login                    # sign in via device pairing
 draft auth whoami                   # show the current signed-in identity
 draft auth logout                   # sign out and clear local credentials
