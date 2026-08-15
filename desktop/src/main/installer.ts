@@ -302,10 +302,9 @@ async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<vo
 }
 
 /**
- * Quick check for the onboarding wizard: is the system already installed?
- * Returns true when the daemon plist exists (background/install.sh has run).
+ * Quick check for the onboarding wizard: has this machine completed setup?
+ * Returns true when the draft CLI binary has been extracted to ~/.draft/bin.
  */
 export function isAlreadyInstalled(): boolean {
-  const plistPath = `${process.env.HOME}/Library/LaunchAgents/com.draft.daemon.plist`;
-  return existsSync(plistPath);
+  return existsSync(DRAFT_BIN_PATH);
 }

@@ -4,14 +4,6 @@
 
 export type View = "context" | "proposals" | "activity" | "settings";
 
-export type DaemonControlVariant =
-  | "running"
-  | "degraded"
-  | "stopped"
-  | "starting"
-  | "stopping"
-  | "restarting";
-
 export type OnboardingStep =
   | "welcome"
   | "cloud-sign-in"

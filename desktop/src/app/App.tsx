@@ -6,7 +6,6 @@
 //   - Active profile state (updated by profileChanged events + switchProfile RPC)
 //   - Profile list (loaded on mount, refreshed on profileChanged)
 //   - Proposal badge count (from badgeUpdate push; filtered by active profile)
-//   - Daemon start state + error toast (auto-dismissing)
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ContextFileEntry, DaemonStatus } from "../rpc/schema";
@@ -14,7 +13,7 @@ import { events, rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
 import { useUserIdentity } from "./identity/UserIdentityContext";
 import { StatusBar } from "./components/StatusBar";
-import type { DaemonControlVariant, View } from "./types";
+import type { View } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
@@ -35,10 +34,6 @@ export function App() {
   const [proposalCount, setProposalCount] = useState(0);
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
-  const [isStarting, setIsStarting]     = useState(false);
-  const [isStopping, setIsStopping]     = useState(false);
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [startError, setStartError]     = useState<string | null>(null);
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
   // app renders immediately instead of waiting on identityRefreshNeeded's
   // async round trip to land before identity.onboardingCompletedAt updates.
@@ -66,8 +61,6 @@ export function App() {
   useEffect(() => { activeProfileRef.current = activeProfile; }, [activeProfile]);
 
   // ── Shared status fetch ────────────────────────────────────────────────────
-  // Called by both the poll interval and handleStartDraft (for an immediate
-  // refresh after a daemon start, without waiting up to 5s for the next tick).
   async function fetchStatus() {
     const s = await rpc.request.getStatus();
     setStatus(s);
@@ -210,13 +203,6 @@ export function App() {
     return () => clearTimeout(id);
   }, [syncToast]);
 
-  // ── Start error auto-dismiss ───────────────────────────────────────────────
-  useEffect(() => {
-    if (!startError) return;
-    const id = setTimeout(() => setStartError(null), 4_000);
-    return () => clearTimeout(id);
-  }, [startError]);
-
   // ── Update events ──────────────────────────────────────────────────────────
   useEffect(() => {
     const unsubs = [
@@ -251,80 +237,6 @@ export function App() {
     }
   }
 
-
-
-  // ── Daemon start ───────────────────────────────────────────────────────────
-  // startDaemon RPC fires start.sh and returns immediately (avoids Electrobun's
-  // short renderer-side RPC timeout racing start.sh's internal sleep).
-  // We poll getStatus() here in the renderer — each call is fast, no timeout risk.
-  async function handleStartDraft() {
-    setIsStarting(true);
-    track("daemon_start_attempted", {});
-    const startedAt = Date.now();
-    try {
-      await rpc.request.startDaemon();
-
-      const POLL_MS    = 500;
-      const TIMEOUT_MS = 20_000;
-      const deadline   = Date.now() + TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        await new Promise<void>((r) => setTimeout(r, POLL_MS));
-        const s = await rpc.request.getStatus();
-        setStatus(s);
-        if (s.state !== "stopped") {
-          track("daemon_start_succeeded", { duration_ms: Date.now() - startedAt });
-          return;
-        }
-      }
-      track("daemon_start_failed", { error_code: "timeout" });
-      setStartError("Daemon did not start. Check ~/.draft/background/logs/daemon-error.log");
-    } catch {
-      track("daemon_start_failed", { error_code: "rpc_error" });
-      setStartError("Failed to start Draft.");
-    } finally {
-      setIsStarting(false);
-    }
-  }
-
-  // ── Daemon stop ────────────────────────────────────────────────────────────
-  async function handleStopDraft() {
-    setIsStopping(true);
-    try {
-      await rpc.request.stopDaemon();
-      await new Promise<void>((r) => setTimeout(r, 800));
-      await fetchStatus();
-    } catch {
-      // Non-fatal — poll will pick up the new state
-    } finally {
-      setIsStopping(false);
-    }
-  }
-
-  // ── Daemon restart ──────────────────────────────────────────────────────────
-  async function handleRestartDaemon() {
-    setIsRestarting(true);
-    try {
-      await rpc.request.stopDaemon();
-      await new Promise<void>((r) => setTimeout(r, 1_500));
-      await rpc.request.startDaemon();
-
-      const POLL_MS    = 500;
-      const TIMEOUT_MS = 20_000;
-      const deadline   = Date.now() + TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        await new Promise<void>((r) => setTimeout(r, POLL_MS));
-        const s = await rpc.request.getStatus();
-        setStatus(s);
-        if (s.state !== "stopped") return;
-      }
-      setStartError("Daemon did not restart. Check ~/.draft/background/logs/daemon-error.log");
-    } catch {
-      setStartError("Failed to restart Draft.");
-    } finally {
-      setIsRestarting(false);
-    }
-  }
-
   // ── Profile switch ─────────────────────────────────────────────────────────
   async function handleSwitchProfile(profile: string) {
     try {
@@ -343,15 +255,6 @@ export function App() {
     track("view_navigated", { view });
   }
 
-  // ── Derived daemon control variant ────────────────────────────────────────
-  const daemonVariant: DaemonControlVariant =
-    isRestarting                           ? "restarting" :
-    isStarting                             ? "starting"   :
-    isStopping                             ? "stopping"   :
-    !status || status.state === "stopped"  ? "stopped"    :
-    status.state === "degraded"            ? "degraded"   :
-    "running";
-
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app">
@@ -365,15 +268,11 @@ export function App() {
           activeProfile={activeProfile}
           profiles={profiles}
           onSwitchProfile={handleSwitchProfile}
-          daemonVariant={daemonVariant}
-          onStartDaemon={handleStartDraft}
-          onStopDaemon={handleStopDraft}
-          onRestartDaemon={handleRestartDaemon}
           onOpenFeedback={() => setSupportOpen(true)}
         />
 
         <main className="content">
-          {/* Settings is always reachable regardless of install/daemon state. */}
+          {/* Settings is always reachable regardless of daemon state. */}
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} onOpenFeedback={() => setSupportOpen(true)} />
           ) : !identityHydrated ? (
@@ -435,12 +334,6 @@ export function App() {
         <div className={`toast toast--${updateToast.type}`} role={updateToast.type === "error" ? "alert" : "status"}>
           <span>{updateToast.msg}</span>
           <button className="toast__dismiss" onClick={() => setUpdateToast(null)} aria-label="Dismiss">✕</button>
-        </div>
-      )}
-      {startError && (
-        <div className="toast toast--error" role="alert">
-          <span>{startError}</span>
-          <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
       {syncToast && (

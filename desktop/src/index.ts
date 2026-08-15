@@ -300,15 +300,11 @@ async function findRunnerBin(name: string): Promise<string | null> {
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
-function setAppMenu(daemonRunning: boolean) {
+function setAppMenu() {
   ApplicationMenu.setApplicationMenu([
     {
       submenu: [
         { label: "Check for Updates", action: "check-for-updates" },
-        { type: "separator" },
-        daemonRunning
-          ? { label: "Stop Draft",  action: "stop-draft"  }
-          : { label: "Start Draft", action: "start-draft" },
         { type: "separator" },
         { label: "Quit Draft",       action: "quit-app",        accelerator: "q" },
         { label: "Quit Completely",  action: "quit-completely"                   },
@@ -331,15 +327,7 @@ function setAppMenu(daemonRunning: boolean) {
   ]);
 }
 
-async function refreshAppMenu() {
-  try {
-    const s = await getDaemonStatus();
-    setAppMenu(s.state === "running");
-  } catch { /* non-fatal */ }
-}
-
-// Render with default state immediately; startup check corrects it.
-setAppMenu(true);
+setAppMenu();
 
 Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
@@ -347,25 +335,6 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   if (action === "check-for-updates") {
     try { rpc.send.updateCheckStarted({}); } catch {}
     void checkAndDownloadUpdate(false);
-  }
-
-  if (action === "stop-draft") {
-    capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`])
-      .then(() => {
-        setTimeout(refreshAppMenu, 500);
-        try { rpc.send.requestStatusRefresh({}); } catch {}
-      })
-      .catch(() => {});
-  }
-
-  if (action === "start-draft") {
-    if (existsSync(PLIST_PATH)) {
-      Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
-        stdin: "ignore", stdout: "ignore", stderr: "ignore",
-      });
-      setTimeout(refreshAppMenu, 1500);
-      try { rpc.send.requestStatusRefresh({}); } catch {}
-    }
   }
 
   if (action === "quit-app") {
@@ -390,27 +359,15 @@ Electrobun.events.on("reopen", () => {
 
 const tray = new Tray({ title: "Draft" });
 
-function setTrayMenu(daemonRunning: boolean) {
+function setTrayMenu() {
   tray.setMenu([
     { type: "normal",  label: "Open Draft",                                   action: "open"        },
-    { type: "divider"                                                                                 },
-    daemonRunning
-      ? { type: "normal", label: "Stop Draft",  action: "tray-stop-draft"  }
-      : { type: "normal", label: "Start Draft", action: "tray-start-draft" },
     { type: "divider"                                                                                 },
     { type: "normal",  label: "Quit Completely",                              action: "quit"        },
   ]);
 }
 
-async function refreshTrayMenu() {
-  try {
-    const s = await getDaemonStatus();
-    setTrayMenu(s.state === "running");
-  } catch { /* non-fatal */ }
-}
-
-// Render with default state immediately; startup check corrects it.
-setTrayMenu(true);
+setTrayMenu();
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
 // watcherHandlers is forward-declared here so switchProfile can reference it.
@@ -554,56 +511,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         ok: false,
         error: "not implemented — Phase 3",
       }),
-
-      startDaemon: async () => {
-        // Delegates to start.sh (same as `draft start` in the CLI).
-        // We ignore start.sh's own exit code as the success signal — its
-        // internal sleep 1 + verify check races the daemon's actual startup
-        // and produces false-negative exits even when the daemon does start.
-        // Plist missing = not installed. Fast check before spawning anything.
-        if (!existsSync(PLIST_PATH)) {
-          return { ok: false, error: "Draft is not installed. Run install.sh first." };
-        }
-
-        // Spawn start.sh but only wait 300ms for it to exit.
-        // Fast-fail branches (bad config, etc.) finish in < 100ms — we surface those.
-        // The launchctl load + sleep 1 slow path takes > 1s, so we let it keep
-        // running and return ok:true immediately. The renderer polls getStatus()
-        // independently, avoiding Electrobun's short renderer-side RPC timeout.
-        let proc: ReturnType<typeof Bun.spawn>;
-        try {
-          proc = Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
-            stdin: "ignore",
-            stdout: "pipe",
-            stderr: "pipe",
-          });
-        } catch {
-          return { ok: false, error: "Failed to launch start.sh." };
-        }
-
-        const timedOut = await Promise.race([
-          proc.exited.then(() => false),
-          Bun.sleep(300).then(() => true),
-        ]);
-
-        if (!timedOut) {
-          const code = await proc.exited; // already resolved — instant
-          if (code !== 0) {
-            const stderr = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
-            return { ok: false, error: stderr.trim() || "Failed to start Draft." };
-          }
-        }
-
-        // Slow path still running, or fast success — renderer polls getStatus().
-        setTimeout(refreshAppMenu, 1500);
-        return { ok: true };
-      },
-
-      stopDaemon: async () => {
-        const result = await capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`]);
-        refreshAppMenu().catch(() => {});
-        return { ok: result.exitCode === 0, error: result.stderr || undefined };
-      },
 
       acceptProposal: async ({ filename }) => {
         try {
@@ -1877,27 +1784,6 @@ tray.on("tray-clicked", (e) => {
     try { win.show(); } catch (err) { console.error("[draft-desktop] tray open failed:", err); }
   }
 
-  if (action === "tray-stop-draft") {
-    capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`])
-      .then(() => {
-        setTimeout(refreshTrayMenu, 500);
-        setTimeout(refreshAppMenu, 500);
-        try { rpc.send.requestStatusRefresh({}); } catch {}
-      })
-      .catch(() => {});
-  }
-
-  if (action === "tray-start-draft") {
-    if (existsSync(PLIST_PATH)) {
-      Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
-        stdin: "ignore", stdout: "ignore", stderr: "ignore",
-      });
-      setTimeout(refreshTrayMenu, 1500);
-      setTimeout(refreshAppMenu, 1500);
-      try { rpc.send.requestStatusRefresh({}); } catch {}
-    }
-  }
-
   if (action === "quit") {
     stopHeartbeatWatch();
     stopProposalWatch();
@@ -1913,17 +1799,10 @@ tray.on("tray-clicked", (e) => {
 // webview.messages once the dom-ready event is wired.
 
 setTimeout(async () => {
-  await syncBundledAssets(); // must run before daemon status poll
+  await syncBundledAssets();
 
-  try {
-    const status  = await getDaemonStatus();
-    const profile = getActiveProfile();
-    console.log(`[draft-desktop] daemon=${status.state} profile=${profile}`);
-    setAppMenu(status.state === "running");
-    setTrayMenu(status.state === "running");
-  } catch (err) {
-    console.error("[draft-desktop] startup status check failed:", err);
-  }
+  const profile = getActiveProfile();
+  console.log(`[draft-desktop] profile=${profile}`);
 
   // Apply persisted notification preference before starting any watchers so
   // the first heartbeat check already respects the user's setting.
