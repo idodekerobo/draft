@@ -1,51 +1,81 @@
 // StatusBar.tsx — compact single-line toolbar at the top of the main window
 //
-// Dot color thresholds (per DESIGN.md):
-//   Green  = running + last capture < 30min ago
-//   Yellow = running + last capture 30min–2hr ago, OR daemon degraded
-//   Red    = daemon stopped, OR last capture > 2hr ago, OR never synced
-//
-// Status line format (sidebar daemon control owns start/stop action):
-//   Running  — "N connected"        (dot speaks for running, count is unique signal)
-//   Degraded — "degraded · Xh ago"  (age makes the yellow state actionable)
-//   Stopped  — dot only             (sidebar button handles the CTA)
+// Self-polls cloud data (same pattern as ActivityView.tsx):
+//   Connected count — from getConnectedApps's cloud connections
+//     (slack/fireflies/linear; claudeCode counted separately)
+//   Last sync — most recent run from getWorkspaceRuns
 
-import type { DaemonStatus } from "../../rpc/schema";
+import { useEffect, useRef, useState } from "react";
+import type { ConnectedAppsStatus, WorkspaceRun } from "../../rpc/schema";
+import { events, rpc } from "../rpc";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function getConnectedCount(status: DaemonStatus | null): number {
-  if (!status?.integrations) return 0;
-  return [
-    status.integrations.granola,
-    status.integrations.slack,
-    status.integrations.github,
-  ].filter(Boolean).length;
+function getConnectedCount(apps: ConnectedAppsStatus | null): number {
+  if (!apps) return 0;
+  const { slack, fireflies, linear } = apps.integrations;
+  return [slack.connected, fireflies.connected, linear.connected, apps.claudeCode.connected]
+    .filter(Boolean).length;
 }
 
-function getStatusLine(status: DaemonStatus | null, connectedCount: number): string | null {
-  if (!status) return "Connecting…";
-  if (status.state === "stopped") return null;
-  if (status.state === "degraded") {
-    if (!status.lastSync) return "degraded";
-    const diffMins = (Date.now() - new Date(status.lastSync).getTime()) / 60_000;
-    if (diffMins >= 60) return `degraded · ${Math.floor(diffMins / 60)}h ago`;
-    return `degraded · ${Math.round(diffMins)}m ago`;
-  }
-  // running
-  if (connectedCount > 0) return `${connectedCount} connected`;
-  return null;
+function getLastSyncLabel(run: WorkspaceRun | null): string | null {
+  const ts = run?.completedAt ?? run?.startedAt ?? null;
+  if (!ts) return null;
+  const diffMins = (Date.now() - new Date(ts).getTime()) / 60_000;
+  if (diffMins < 1) return "synced just now";
+  if (diffMins < 60) return `synced ${Math.round(diffMins)}m ago`;
+  return `synced ${Math.floor(diffMins / 60)}h ago`;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-interface StatusBarProps {
-  status: DaemonStatus | null;
-}
+const POLL_INTERVAL_MS = 30_000;
 
-export function StatusBar({ status }: StatusBarProps) {
-  const connectedCount = getConnectedCount(status);
-  const statusLine     = getStatusLine(status, connectedCount);
+export function StatusBar() {
+  const [apps, setApps]           = useState<ConnectedAppsStatus | null>(null);
+  const [lastRun, setLastRun]     = useState<WorkspaceRun | null>(null);
+  const isMounted                 = useRef(true);
+
+  async function refresh() {
+    try {
+      const [appsResult, runs] = await Promise.all([
+        rpc.request.getConnectedApps(),
+        rpc.request.getWorkspaceRuns(),
+      ]);
+      if (!isMounted.current) return;
+      setApps(appsResult);
+      setLastRun(runs[0] ?? null);
+    } catch {
+      // Non-fatal — bar just shows nothing until the next poll succeeds.
+    }
+  }
+
+  useEffect(() => {
+    isMounted.current = true;
+    void refresh();
+
+    const offProfile = events.on("profileChanged", () => void refresh());
+
+    function onVisibility() {
+      if (document.visibilityState === "visible") void refresh();
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
+
+    return () => {
+      isMounted.current = false;
+      offProfile();
+      document.removeEventListener("visibilitychange", onVisibility);
+      clearInterval(timer);
+    };
+  }, []);
+
+  const connectedCount = getConnectedCount(apps);
+  const lastSyncLabel  = getLastSyncLabel(lastRun);
+  const statusLine     = connectedCount > 0
+    ? `${connectedCount} connected${lastSyncLabel ? ` · ${lastSyncLabel}` : ""}`
+    : lastSyncLabel;
 
   return (
     <header className="status-bar electrobun-webkit-app-region-drag">

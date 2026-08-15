@@ -258,7 +258,7 @@ export function App() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app">
-      <StatusBar status={status} />
+      <StatusBar />
 
       <div className="layout">
         <Sidebar
