@@ -26,8 +26,6 @@ export interface UserIdentity {
 // Defined inline here (not imported from draft-core) so the renderer can safely
 // import this file without pulling in any Node/Bun-only modules.
 
-export type DaemonState = "running" | "stopped" | "degraded";
-
 export interface WorkspaceRun {
   id: string;
   status: "queued" | "preparing" | "running" | "validating" | "committing" |
@@ -40,12 +38,6 @@ export interface WorkspaceRun {
   createdAt: string;
 }
 
-export interface IntegrationStatus {
-  granola: boolean;
-  slack: boolean;
-  github: boolean;
-}
-
 /** Coding tools that have been set up with `draft add <tool>`. */
 export interface InstalledToolsStatus {
   "claude-code": boolean;
@@ -55,19 +47,9 @@ export interface InstalledToolsStatus {
   hermes: boolean;
 }
 
-export interface DaemonStatus {
-  state: DaemonState;
-  pid: string | null;
-  lastExit: string | null;
-  isRegistered: boolean;
-  /** Active profile name — read from last-heartbeat JSON. Null if daemon never ran. */
-  profile: string | null;
-  /** ISO timestamp of last synthesis run — read from last-heartbeat JSON. Null if no sync yet. */
-  lastSync: string | null;
+export interface AppStatus {
   /** First-run/setup-ready state for renderer routing and setup copy. */
   appState: AppState;
-  /** Which integrations are connected — read from integrations.json for the active profile. */
-  integrations: IntegrationStatus;
   /** Which coding tools have been set up with `draft add` — read from config.json. */
   installedTools: InstalledToolsStatus;
 }
@@ -100,26 +82,6 @@ export interface AppState {
   daemonState: "running" | "stopped" | "never-started";
   heartbeatAgeMs: number | null;
   activeProfile: string;
-}
-
-export interface ProposalSummary {
-  /** Stable ID relative to proposals/ (flagged IDs start with "flagged/"). */
-  filename: string;
-  kind: "manual" | "flagged";
-  outcome: string;
-  needsInputReason: string;
-  source: string;
-  dimension: string;
-  action: string;
-  timestamp: string;
-  summary: string;
-  createdAt: string;
-  body: string;
-  currentContent: string;
-  /** Full file text including YAML frontmatter — shown by "View raw". */
-  rawContent: string;
-  /** Content of the first context_update — used for diff preview. */
-  content: string;
 }
 
 export interface SessionLaunchConfig {
@@ -420,11 +382,8 @@ export type AppRPCType = {
    */
   bun: RPCSchema<{
     requests: {
-      /** Get current daemon state. */
-      getStatus: { params: void; response: DaemonStatus };
-
-      /** List pending proposals for the active workspace. */
-      getProposals: { params: void; response: ProposalSummary[] };
+      /** Get current app state. */
+      getStatus: { params: void; response: AppStatus };
 
       /** List available profiles and the active profile. */
       getProfiles: { params: void; response: ProfileList };
@@ -440,12 +399,6 @@ export type AppRPCType = {
 
       /** Start the cross-agent skill watcher. Called after onboarding completes. */
       startSkillWatcher: { params: void; response: void };
-
-      /** Accept a manual proposal, or acknowledge a flagged item. */
-      acceptProposal: { params: { filename: string }; response: ActionResult };
-
-      /** Reject a manual proposal, or dismiss a flagged item. */
-      rejectProposal: { params: { filename: string }; response: ActionResult };
 
       /** Read per-profile local config. */
       getLocalConfig: { params: void; response: LocalConfig };
@@ -656,9 +609,6 @@ export type AppRPCType = {
   webview: RPCSchema<{
     requests: {};
     messages: {
-      /** New proposal(s) arrived from the daemon. */
-      proposalAdded: { profile: string; source: string; count: number };
-
       /** A newly installed skill was made available to the other agent. */
       skillsChanged: { count: number };
 
@@ -683,20 +633,11 @@ export type AppRPCType = {
       /** Status update from the headless context-setup process. */
       headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
 
-      /** Daemon heartbeat went stale — daemon has stopped. Phase 1. */
-      daemonStopped: Record<string, never>;
-
       /** Daemon completed a capture cycle. */
       captureComplete: { source: string };
 
-      /** Update the proposal badge count in the UI. */
-      badgeUpdate: { profile: string; count: number };
-
       /** Active profile changed outside or inside desktop. */
       profileChanged: { profile: string };
-
-      /** Bun asks renderer to re-fetch status immediately (e.g. after a menu start/stop action). */
-      requestStatusRefresh: Record<string, never>;
 
       /** Bun started an update check. */
       updateCheckStarted: Record<string, never>;

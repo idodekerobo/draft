@@ -421,7 +421,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
               <div className="settings__row-content">
                 <span className="settings__row-label">Enable notifications</span>
                 <span className="settings__row-desc">
-                  Show alerts when new proposals arrive or the daemon stops
+                  Show desktop alerts for background activity
                 </span>
               </div>
               <Toggle

@@ -1,21 +1,19 @@
 // App.tsx — root React component
 //
 // Owns:
-//   - Status polling loop (getStatus RPC every 5s)
+//   - Status polling loop (getStatus RPC every 5s, for appState only)
 //   - Active view state (sidebar navigation)
 //   - Active profile state (updated by profileChanged events + switchProfile RPC)
 //   - Profile list (loaded on mount, refreshed on profileChanged)
-//   - Proposal badge count (from badgeUpdate push; filtered by active profile)
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { ContextFileEntry, DaemonStatus } from "../rpc/schema";
+import type { ContextFileEntry } from "../rpc/schema";
 import { events, rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
 import { useUserIdentity } from "./identity/UserIdentityContext";
 import { StatusBar } from "./components/StatusBar";
 import type { View } from "./types";
 import { Sidebar } from "./components/Sidebar";
-import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
@@ -29,9 +27,7 @@ const STATUS_POLL_MS = 5_000;
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [status, setStatus]             = useState<DaemonStatus | null>(null);
   const [activeView, setActiveView]     = useState<View>("context");
-  const [proposalCount, setProposalCount] = useState(0);
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
@@ -63,7 +59,6 @@ export function App() {
   // ── Shared status fetch ────────────────────────────────────────────────────
   async function fetchStatus() {
     const s = await rpc.request.getStatus();
-    setStatus(s);
     // Seed activeProfile from status on first load only.
     if (!activeProfileRef.current && s.appState.activeProfile) {
       setActiveProfile(s.appState.activeProfile);
@@ -136,23 +131,10 @@ export function App() {
     if (workspaceId) void reloadContextFiles();
   }, [workspaceId, reloadContextFiles]);
 
-  // ── Push: badge updates (filtered by active profile) ──────────────────────
-  useEffect(() => {
-    return events.on("badgeUpdate", ({ profile, count }) => {
-      if (profile === activeProfileRef.current) setProposalCount(count);
-    });
-  }, []);
-
-  // ── Push: immediate status refresh (e.g. after menu start/stop action) ───
-  useEffect(() => {
-    return events.on("requestStatusRefresh", () => { void fetchStatus(); });
-  }, []);
-
   // ── Push: profile changed (CLI-driven or desktop-driven) ──────────────────
   useEffect(() => {
     return events.on("profileChanged", ({ profile }) => {
       setActiveProfile(profile);
-      setProposalCount(0); // Clear badge — new profile's watcher will push the real count.
       void loadProfiles();  // Refresh list in case a new profile was created.
     });
   }, []);
@@ -243,7 +225,6 @@ export function App() {
       const result = await rpc.request.switchProfile({ profile });
       if (result.ok && result.active) {
         setActiveProfile(result.active);
-        setProposalCount(0);
       }
     } catch {
       // Non-fatal — current profile remains active.
@@ -264,7 +245,6 @@ export function App() {
         <Sidebar
           activeView={activeView}
           onNavigate={handleNavigate}
-          proposalCount={proposalCount}
           activeProfile={activeProfile}
           profiles={profiles}
           onSwitchProfile={handleSwitchProfile}
@@ -281,14 +261,6 @@ export function App() {
             <OnboardingView onComplete={async () => { setJustCompletedOnboarding(true); await fetchStatus(); await reloadContextFiles(); }} />
           ) : (
             <>
-              {activeView === "proposals" && (
-                <ProposalInbox
-                  key={activeProfile}
-                  activeProfile={activeProfile}
-                  onCountChange={setProposalCount}
-                  daemonStopped={!status || status.state === "stopped"}
-                />
-              )}
               {activeView === "context" && (
                 !identityHydrated ? <div className="empty-state">Loading workspace…</div> :
                 <ContextViewer

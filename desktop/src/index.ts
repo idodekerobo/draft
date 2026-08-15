@@ -1,7 +1,7 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
-import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
+import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import {
   createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
   detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
@@ -17,15 +17,6 @@ import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import { homedir } from "os";
-import {
-  listProposals,
-  acknowledgeFlaggedProposal,
-  acceptProposal as acceptCoreProposal,
-  dismissFlaggedProposal,
-  proposalArchiveDirs,
-  rejectProposal as rejectCoreProposal,
-  applyProposalLocally,
-} from "draft-core/proposals";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
 import { extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
@@ -35,14 +26,8 @@ import {
   getBundledPluginDir,
 } from "./main/bundlePath";
 import { runInstall, syncExtractedBins } from "./main/installer";
-import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
+import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
-import {
-  startProposalWatch,
-  restartProposalWatch,
-  stopProposalWatch,
-  type ProposalWatchHandlers,
-} from "./main/watchers/proposals";
 import {
   startActiveProfileWatch,
   stopActiveProfileWatch,
@@ -342,8 +327,6 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "quit-completely") {
-    stopHeartbeatWatch();
-    stopProposalWatch();
     stopActiveProfileWatch();
     stopSkillWatch();
     process.exit(0);
@@ -370,11 +353,6 @@ function setTrayMenu() {
 setTrayMenu();
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
-// watcherHandlers is forward-declared here so switchProfile can reference it.
-// It is assigned immediately after rpc is constructed — before any handler fires.
-
-// eslint-disable-next-line prefer-const
-let watcherHandlers!: ProposalWatchHandlers;
 
 const rpc = BrowserView.defineRPC<AppRPCType>({
   // Team staging can spend up to 60s cloning; promotion can then wait up to
@@ -384,35 +362,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   handlers: {
     requests: {
       getStatus: async () => {
-        const daemonStatus = await getDaemonStatus();
         const appState = getAppState();
-
-        // Enrich with heartbeat JSON for profile + lastSync display
-        let profile: string | null = null;
-        let lastSync: string | null = null;
-        try {
-          const heartbeatPath = `${process.env.HOME}/.draft/background/state/last-heartbeat`;
-          const raw = await Bun.file(heartbeatPath).text();
-          const hb = JSON.parse(raw) as {
-            pid?: number;
-            profile?: string;
-            ts?: string;
-            last_sync?: string;
-          };
-          profile  = hb.profile  ?? null;
-          lastSync = hb.last_sync || null; // empty string → null
-        } catch {
-          // file missing or malformed — daemon hasn't run yet
-        }
-
-        const workspace = getWorkspacePath(getActiveProfile());
-        const intResult = readIntegrations(workspace);
-        const int = intResult.ok ? intResult.integrations : {};
-        const integrations = {
-          granola: int.granola?.connected ?? false,
-          slack:   int.slack?.connected   ?? false,
-          github:  int.github?.connected  ?? false,
-        };
 
         const toolList = getInstalledTools();
         const installedTools = {
@@ -423,27 +373,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           hermes:        toolList.includes("hermes"),
         };
 
-        return { ...daemonStatus, profile, lastSync, appState, integrations, installedTools };
-      },
-
-      getProposals: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        return listProposals(workspace).map((proposal) => ({
-          filename: proposal.filename,
-          kind: proposal.kind,
-          outcome: proposal.outcome,
-          needsInputReason: proposal.needsInputReason,
-          source: proposal.source,
-          dimension: proposal.dimension,
-          action: proposal.action,
-          timestamp: proposal.timestamp,
-          summary: proposal.summary,
-          createdAt: proposal.createdAt,
-          body: proposal.body,
-          currentContent: readContextFile(workspace, proposal.dimension),
-          rawContent: proposal.rawContent,
-          content: proposal.content,
-        }));
+        return { appState, installedTools };
       },
 
       getProfiles: async () => getProfiles(),
@@ -465,7 +395,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             } catch {}
           }
 
-          restartProposalWatch(profile, watcherHandlers);
           restartSkillWatchWithProfile(profile);
           restartMcpWatchWithProfile(profile);
 
@@ -500,7 +429,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch (error) {
           return { ok: false, error: `Created workspace but could not activate it: ${error instanceof Error ? error.message : String(error)}` };
         }
-        restartProposalWatch(created.name, watcherHandlers);
         restartSkillWatchWithProfile(created.name);
         restartMcpWatchWithProfile(created.name);
         try { rpc.send.profileChanged({ profile: created.name }); } catch {}
@@ -511,40 +439,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         ok: false,
         error: "not implemented — Phase 3",
       }),
-
-      acceptProposal: async ({ filename }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const proposal = listProposals(workspace).find((item) => item.filename === filename);
-          if (!proposal) return { ok: false, error: "Proposal not found" };
-          if (proposal.kind === "flagged") {
-            acknowledgeFlaggedProposal(proposal, workspace);
-          } else {
-            // Manual/import proposals keep their existing apply-on-accept behavior.
-            applyProposalLocally(proposal, workspace);
-            acceptCoreProposal(proposal, proposalArchiveDirs(workspace).accepted);
-          }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Accept failed" };
-        }
-      },
-
-      rejectProposal: async ({ filename }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const proposal = listProposals(workspace).find((item) => item.filename === filename);
-          if (!proposal) return { ok: false, error: "Proposal not found" };
-          if (proposal.kind === "flagged") {
-            dismissFlaggedProposal(proposal, workspace);
-          } else {
-            rejectCoreProposal(proposal, proposalArchiveDirs(workspace).rejected);
-          }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Reject failed" };
-        }
-      },
 
       getLocalConfig: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
@@ -1731,17 +1625,6 @@ async function checkAndDownloadUpdate(silent: boolean) {
   }
 }
 
-// Assign after rpc is constructed so rpc.send is available in the closures,
-// but before any handler or watcher fires.
-watcherHandlers = {
-  onBadgeUpdate: (profile, count) => {
-    try { rpc.send.badgeUpdate({ profile, count }); } catch {}
-  },
-  onProposalAdded: (profile, source, count) => {
-    try { rpc.send.proposalAdded({ profile, source, count }); } catch {}
-  },
-};
-
 // ── Main window ────────────────────────────────────────────────────────────────
 
 // Native close can't be intercepted (no preventDefault hook like beforeQuit),
@@ -1763,17 +1646,6 @@ function createMainWindow(hidden: boolean) {
 
 let win = createMainWindow(false);
 
-function readContextFile(workspace: string, dimension: string): string {
-  if (!dimension || dimension === "unknown") return "";
-  const contextPath = join(workspace, "context", dimension, "index.md");
-  if (!existsSync(contextPath)) return "";
-  try {
-    return readFileSync(contextPath, "utf8");
-  } catch {
-    return "";
-  }
-}
-
 // ── Tray event handling ────────────────────────────────────────────────────────
 
 tray.on("tray-clicked", (e) => {
@@ -1785,8 +1657,6 @@ tray.on("tray-clicked", (e) => {
   }
 
   if (action === "quit") {
-    stopHeartbeatWatch();
-    stopProposalWatch();
     stopActiveProfileWatch();
     stopSkillWatch();
     stopMcpWatch();
@@ -1804,18 +1674,12 @@ setTimeout(async () => {
   const profile = getActiveProfile();
   console.log(`[draft-desktop] profile=${profile}`);
 
-  // Apply persisted notification preference before starting any watchers so
-  // the first heartbeat check already respects the user's setting.
+  // Apply persisted notification preference before starting any watchers.
   const wsPath = getWorkspacePath(getActiveProfile());
   const localCfg = readLocalConfig(wsPath);
   if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
     setNotificationsEnabled(false);
   }
-
-  // Start heartbeat staleness watcher.
-  // 500ms delay ensures app is fully initialised before the initial mtime check.
-  startHeartbeatWatch();
-  startProposalWatch(getActiveProfile(), watcherHandlers);
 
   // Skill and MCP watchers auto-sync between agents. Defer during onboarding so the
   // scan-import step controls what gets synced. For returning users, start immediately.
@@ -1864,7 +1728,6 @@ setTimeout(async () => {
         // The CLI may already have completed the idempotent lifecycle. Watchers
         // still need to follow the active profile if a later rescan is required.
       }).finally(() => {
-        restartProposalWatch(profile, watcherHandlers);
         restartSkillWatchWithProfile(profile);
         restartMcpWatchWithProfile(profile);
         try { rpc.send.profileChanged({ profile }); } catch {}

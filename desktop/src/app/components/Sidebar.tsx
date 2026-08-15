@@ -10,7 +10,6 @@ import type { View } from "../types";
 interface SidebarProps {
   activeView: View;
   onNavigate: (view: View) => void;
-  proposalCount: number;
   activeProfile: string;
   profiles: string[];
   onSwitchProfile: (profile: string) => Promise<void>;
@@ -24,13 +23,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "context",   label: "Context"   },
-  // TODO: re-enable once the proposal pipeline is wired
-  // { id: "proposals", label: "Proposals" },
   { id: "activity",  label: "Activity"  },
   { id: "settings",  label: "Settings"  },
 ];
 
-export function Sidebar({ activeView, onNavigate, proposalCount, activeProfile, profiles, onSwitchProfile, onOpenFeedback }: SidebarProps) {
+export function Sidebar({ activeView, onNavigate, activeProfile, profiles, onSwitchProfile, onOpenFeedback }: SidebarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos]   = useState<{ bottom: number; left: number } | null>(null);
   const chipRef     = useRef<HTMLButtonElement>(null);
@@ -79,8 +76,7 @@ export function Sidebar({ activeView, onNavigate, proposalCount, activeProfile, 
     <nav className="sidebar">
       <ul className="sidebar__nav" role="tablist">
         {NAV_ITEMS.map((item) => {
-          const isActive  = item.id === activeView;
-          const showBadge = item.id === "proposals" && proposalCount > 0;
+          const isActive = item.id === activeView;
 
           return (
             <li
@@ -91,11 +87,6 @@ export function Sidebar({ activeView, onNavigate, proposalCount, activeProfile, 
               onClick={() => onNavigate(item.id)}
             >
               {item.label}
-              {showBadge && (
-                <span className="sidebar__badge" aria-label={`${proposalCount} pending`}>
-                  {proposalCount > 99 ? "99+" : proposalCount}
-                </span>
-              )}
             </li>
           );
         })}

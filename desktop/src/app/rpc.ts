@@ -10,22 +10,17 @@ import { Electroview } from "electrobun/view";
 import type { AppRPCType, HeadlessSetupPhase } from "../rpc/schema";
 
 // ── Event bus for webview push messages ────────────────────────────────────────
-// TODO: components subscribe to these events to react to bun-initiated
-// pushes (new proposal, daemon stopped, badge update).
+// Components subscribe to these events to react to bun-initiated pushes.
 
 type EventMap = {
-  proposalAdded: { profile: string; source: string; count: number };
   skillsChanged: { count: number };
   mcpsChanged: { count: number };
   headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
   signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string };
   authStateChanged: { signedIn: boolean };
   identityRefreshNeeded: Record<string, never>;
-  daemonStopped: Record<string, never>;
   captureComplete: { source: string };
-  badgeUpdate: { profile: string; count: number };
   profileChanged: { profile: string };
-  requestStatusRefresh: Record<string, never>;
   updateCheckStarted: Record<string, never>;
   updateAvailable: { version: string };
   updateNotAvailable: Record<string, never>;
@@ -60,9 +55,6 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
   handlers: {
     requests: {},
     messages: {
-      // TODO: Phase 2: new proposal arrived from daemon
-      proposalAdded: (data) => events.emit("proposalAdded", data),
-
       skillsChanged: (data) => events.emit("skillsChanged", data),
       mcpsChanged: (data) => events.emit("mcpsChanged", data),
 
@@ -70,17 +62,9 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       signInProgress: (data) => events.emit("signInProgress", data),
       authStateChanged: (data) => events.emit("authStateChanged", data),
 
-      // TODO: Phase 2: heartbeat went stale — daemon stopped
-      daemonStopped: (data) => events.emit("daemonStopped", data),
-
-      // TODO: Phase 2: daemon completed a capture cycle
       captureComplete: (data) => events.emit("captureComplete", data),
 
-      // TODO: Phase 2: update badge count in nav
-      badgeUpdate: (data) => events.emit("badgeUpdate", data),
-
       profileChanged: (data) => events.emit("profileChanged", data),
-      requestStatusRefresh: (data) => events.emit("requestStatusRefresh", data),
       updateCheckStarted: (data) => events.emit("updateCheckStarted", data),
       updateAvailable: (data) => events.emit("updateAvailable", data),
       updateNotAvailable: (data) => events.emit("updateNotAvailable", data),
