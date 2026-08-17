@@ -10,7 +10,7 @@ beforeAll(() => {
   process.env.FLY_APP_NAME = "draft-sandbox";
   process.env.FLY_SANDBOX_IMAGE = digest;
   process.env.FLY_REGION = "iad";
-  process.env.API_BASE_URL = "https://api.example.test";
+  process.env.DRAFT_API_BASE_URL = "https://api.example.test";
   process.env.SANDBOX_CALLBACK_SECRET = "signing-secret";
 });
 

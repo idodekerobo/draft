@@ -104,7 +104,7 @@ mock.module("../../auth/workspace-access", () => ({
   assertWorkspaceAccess: async () => accessResult,
 }));
 mock.module("../../db/client", () => ({ serviceClient: createFakeClient() }));
-process.env.API_BASE_URL = "https://example.test";
+process.env.DRAFT_API_BASE_URL = "https://example.test";
 process.env.FLY_API_TOKEN = "token";
 process.env.FLY_APP_NAME = "app";
 process.env.FLY_SANDBOX_IMAGE = `registry.fly.io/app@sha256:${"0".repeat(64)}`;

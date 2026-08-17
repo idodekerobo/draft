@@ -1,7 +1,9 @@
 export type SlackConfigEnvironment = Readonly<Record<string, string | undefined>>;
 
 // DRAFT_API_BASE_URL isn't needed by Socket Mode itself -- it's here for a
-// future webhook-URL display/health-check surface.
+// future webhook-URL display/health-check surface. It's also the backend's
+// own public base URL, shared with backend/src/config.ts and
+// backend/src/sandbox/config.ts.
 
 export interface SlackListenerConfig {
   draftApiBaseUrl: string;

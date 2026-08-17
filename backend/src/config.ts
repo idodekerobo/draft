@@ -25,6 +25,6 @@ export function loadConfig(): BackendConfig {
     supabaseSecretKey: requireEnv("SUPABASE_SECRET_KEY"),
     port,
     appUrl: process.env.APP_URL ?? "https://app.draftai.us",
-    apiBaseUrl: process.env.API_BASE_URL ?? `http://localhost:${port}`,
+    apiBaseUrl: process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`,
   };
 }

@@ -182,7 +182,7 @@ function createFakeClient() {
 process.env.SUPABASE_URL = "https://supabase.example.test";
 process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
 process.env.SUPABASE_SECRET_KEY = "service-key";
-process.env.API_BASE_URL = "https://api.example.test";
+process.env.DRAFT_API_BASE_URL = "https://api.example.test";
 process.env.INFERENCE_CREDENTIAL_KEK_V1 = Buffer.alloc(32, 7).toString("base64");
 
 let accessResult: Response | null = null;

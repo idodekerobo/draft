@@ -35,10 +35,10 @@ export function validateSandboxDeploymentConfig(
   try {
     callbackUrl = new URL(config.callbackUrl);
   } catch {
-    throw new Error("API_BASE_URL must be a valid HTTPS URL");
+    throw new Error("DRAFT_API_BASE_URL must be a valid HTTPS URL");
   }
   if (callbackUrl.protocol !== "https:") {
-    throw new Error("API_BASE_URL must be a valid HTTPS URL");
+    throw new Error("DRAFT_API_BASE_URL must be a valid HTTPS URL");
   }
   if (!FLY_IMAGE_DIGEST_PATTERN.test(config.flySandboxImage)) {
     throw new Error(
@@ -63,12 +63,12 @@ export function validateSandboxDeploymentConfig(
 export function loadSandboxDeploymentConfig(
   env: SandboxEnvironment = process.env,
 ): SandboxDeploymentConfig {
-  const baseUrl = required(env, "API_BASE_URL");
+  const baseUrl = required(env, "DRAFT_API_BASE_URL");
   let callbackUrl: string;
   try {
     callbackUrl = new URL(CALLBACK_PATH, baseUrl).toString();
   } catch {
-    throw new Error("API_BASE_URL must be a valid URL");
+    throw new Error("DRAFT_API_BASE_URL must be a valid URL");
   }
 
   return validateSandboxDeploymentConfig({
