@@ -30,7 +30,7 @@ _draft_completion() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="status start stop add switch profiles publish load logs proposals doctor completion uninstall"
+  commands="add auth context completion"
 
   case "\$prev" in
     draft)
@@ -38,24 +38,15 @@ _draft_completion() {
       return 0
       ;;
     add)
-      COMPREPLY=( $(compgen -W "claude-code codex cursor" -- "\$cur") )
+      COMPREPLY=( $(compgen -W "claude-code codex cursor openclaw hermes" -- "\$cur") )
       return 0
       ;;
-    switch)
-      # Complete with profile names from ~/.draft/workspaces/
-      local profiles=""
-      if [ -d "\$HOME/.draft/workspaces" ]; then
-        profiles=$(ls "\$HOME/.draft/workspaces" 2>/dev/null)
-      fi
-      COMPREPLY=( $(compgen -W "\$profiles" -- "\$cur") )
+    auth)
+      COMPREPLY=( $(compgen -W "login logout whoami" -- "\$cur") )
       return 0
       ;;
-    profiles)
-      COMPREPLY=( $(compgen -W "list create rename delete" -- "\$cur") )
-      return 0
-      ;;
-    logs)
-      COMPREPLY=( $(compgen -W "--follow --errors" -- "\$cur") )
+    context)
+      COMPREPLY=( $(compgen -W "list read" -- "\$cur") )
       return 0
       ;;
     completion)
@@ -88,39 +79,26 @@ _draft() {
   case \$state in
     command)
       local commands=(
-        'status:Show daemon status and integration health'
-        'start:Start the background daemon'
-        'stop:Stop the background daemon'
         'add:Add Draft to a CLI tool'
-        'switch:Activate a named profile'
-        'profiles:Manage profiles'
-        'publish:Push context to shared team repo'
-        'load:Pull team context from shared repo'
-        'logs:Tail daemon logs'
-        'proposals:Review AI-generated context proposals'
-        'doctor:Diagnose configuration and dependency issues'
+        'auth:Authenticate with the Draft control plane'
+        'context:Read workspace context'
         'completion:Generate shell completion script'
-        'uninstall:Remove all of Draft and configuration'
       )
       _describe 'command' commands
       ;;
     args)
       case \$words[2] in
         add)
-          local tools=('claude-code:Add Draft to Claude Code' 'codex:Add Draft to Codex' 'cursor:Add Draft to Cursor')
+          local tools=('claude-code:Add Draft to Claude Code' 'codex:Add Draft to Codex' 'cursor:Add Draft to Cursor' 'openclaw:Add Draft to OpenClaw' 'hermes:Add Draft to Hermes')
           _describe 'tool' tools
           ;;
-        switch)
-          local profiles
-          profiles=(\${(f)"\$(ls \$HOME/.draft/workspaces 2>/dev/null)"})
-          _describe 'profile' profiles
-          ;;
-        profiles)
-          local subcmds=('list:List all profiles' 'create:Create a new profile' 'rename:Rename a profile' 'delete:Delete a profile')
+        auth)
+          local subcmds=('login:Sign in' 'logout:Sign out' 'whoami:Show the current identity')
           _describe 'subcommand' subcmds
           ;;
-        logs)
-          _arguments '--follow[Stream logs live]' '--errors[Show stderr log]'
+        context)
+          local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions')
+          _describe 'subcommand' subcmds
           ;;
         completion)
           _arguments '--bash[Generate bash completion]' '--zsh[Generate zsh completion]'

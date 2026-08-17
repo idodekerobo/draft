@@ -7,6 +7,7 @@ import { EVENTS } from "@/lib/analytics";
 const DOWNLOAD_URL =
   "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
 const GITHUB_URL = "https://github.com/idodekerobo/draft";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
 export default function CTASection() {
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -130,6 +131,7 @@ export default function CTASection() {
             flexWrap: "wrap",
           }}
         >
+          <a href={`${APP_URL}/signup`} style={{ display: "inline-flex", padding: "1rem 2rem", border: "1px solid var(--color-accent)", borderRadius: "8px", color: "var(--color-accent)", textDecoration: "none", fontWeight: 700 }}>Get started</a>
           <a
             href={DOWNLOAD_URL}
             onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "cta_section" })}

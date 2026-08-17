@@ -90,7 +90,7 @@ bash install.sh
 2. Installs TypeScript dependencies for the CLI workspace (`cli/`)
 3. Copies the `draft` wrapper script to `~/bin/` (or `/usr/local/bin/`)
 4. Installs shell tab completion (zsh or bash)
-5. Runs `draft add claude-code` to wire the plugin and daemon into Claude Code
+5. Prints the `draft add <tool> --dir <path>` command to run next, per project
 
 After install, run `draft --help` to verify everything is on PATH.
 
@@ -119,6 +119,34 @@ This is a Bun monorepo. Install all workspace dependencies from the root:
 ```bash
 bun install
 ```
+
+### Run the local application stack
+
+The repository-level local entrypoint starts the web app, landing page,
+backend, and desktop app together:
+
+```bash
+cp .env.example .env.local
+# Fill in the private values in .env.local.
+make run-local
+```
+
+The root env file is organized by scope. Set `DRAFT_APP_URL` to the browser
+origin and `DRAFT_API_BASE_URL` to the backend URL reachable by browsers,
+desktop, and webhooks. For an ngrok backend, use the same ngrok URL for
+`DRAFT_API_BASE_URL`; the backend can still listen locally on
+`DRAFT_BACKEND_PORT`.
+
+The current backend scheduler requires `DRAFT_API_BASE_URL` to be an HTTPS
+URL, so a public tunnel such as ngrok is required for the full local stack.
+`make run-local` validates the required URLs, ports, Supabase values, Fly
+deployment values, and `SANDBOX_CALLBACK_SECRET` before starting anything. If
+one is missing, it exits with the exact variable name that must be added.
+
+`make run-local` currently preserves the app-local `.env.local` files as a
+temporary fallback while configuration is migrated. Those files are not
+deleted automatically. See each app README for standalone development and
+self-hosting variables.
 
 ### CLI
 
@@ -217,17 +245,13 @@ This uses your local `gh` credentials and the separate-clone pattern — the Dra
 
 ```bash
 draft --help                        # full command reference
-draft init                          # set up a new workspace
-draft status                        # show daemon status + active profile
-draft proposals                     # review pending proposals
-draft publish                       # accept + push context to team repo
-draft profiles                      # list profiles
-draft switch <profile>              # activate a named profile
-draft add <tool>                    # install plugin into claude-code | codex | cursor
-draft daemon start|stop             # control the background daemon
-draft connect                       # configure integrations
-draft dimension list|add <name>     # manage context dimensions
-draft import <source>               # import context from local dir or GitHub repo
+draft add <tool> --dir <path>       # configure a project's instruction file for claude-code | codex | cursor | openclaw | hermes
+draft auth login                    # sign in via device pairing
+draft auth whoami                   # show the current signed-in identity
+draft auth logout                   # sign out and clear local credentials
+draft context list                  # list available context dimensions
+draft context read --dimension <name>  # print one or more context dimensions
+draft context read --all            # print every context dimension
 ```
 
 ---

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { openActivityDb, queryRuns, type ActivityRun } from 'draft-core/db/activity';
 import { synthesize } from '../synthesize';
 
 const ROOT = `/tmp/draft-synthesize-router-${process.pid}`;
@@ -40,15 +39,6 @@ function createRun(output: string, jobOverrides: Record<string, unknown> = {}): 
   };
 }
 
-function activityRows(workspace: string): ActivityRun[] {
-  const db = openActivityDb(workspace);
-  try {
-    return queryRuns(db);
-  } finally {
-    db.close();
-  }
-}
-
 function rewriteOutput(before: string, content = 'new product context\n'): string {
   const hash = createHash('sha256').update(before).digest('hex');
   return `---
@@ -68,12 +58,6 @@ describe('synthesize automated maintainer routing', () => {
     const testRun = createRun('---\noutcome: no_change\n---\n');
 
     expect(await testRun.run()).toEqual({ status: 'success', proposalsGenerated: 0 });
-    expect(activityRows(testRun.workspace)).toMatchObject([{
-      status: 'success',
-      proposalsGenerated: 0,
-      maintainerOutcome: 'no_change',
-      errorMsg: null,
-    }]);
   });
 
   it('applies rewrites automatically and records zero proposals', async () => {
@@ -85,11 +69,6 @@ describe('synthesize automated maintainer routing', () => {
 
     expect(await testRun.run()).toEqual({ status: 'success', proposalsGenerated: 0 });
     expect(readFileSync(target, 'utf8')).toBe('new product context\n');
-    expect(activityRows(testRun.workspace)[0]).toMatchObject({
-      status: 'success',
-      proposalsGenerated: 0,
-      maintainerOutcome: 'rewrite',
-    });
   });
 
   it('stages needs_input for review and counts one generated proposal', async () => {
@@ -101,11 +80,6 @@ describe('synthesize automated maintainer routing', () => {
     const flaggedDir = join(testRun.workspace, 'proposals', 'flagged');
     expect(existsSync(flaggedDir)).toBe(true);
     expect(readdirSync(flaggedDir).filter(name => name.endsWith('.md'))).toHaveLength(1);
-    expect(activityRows(testRun.workspace)[0]).toMatchObject({
-      status: 'success',
-      proposalsGenerated: 1,
-      maintainerOutcome: 'needs_input',
-    });
   });
 
   it('records invalid output as failed without a success checkpoint', async () => {
@@ -115,26 +89,12 @@ describe('synthesize automated maintainer routing', () => {
     expect(result.status).toBe('failed');
     expect(result.proposalsGenerated).toBe(0);
     expect(result.errorMsg).toContain('invalid maintainer output');
-    const rows = activityRows(testRun.workspace);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      status: 'failed',
-      proposalsGenerated: 0,
-      maintainerOutcome: null,
-    });
-    expect(rows.some(row => row.status === 'success')).toBe(false);
   });
 
   it('records empty adapter output as a success no-op, not a contract violation', async () => {
     const testRun = createRun('');
 
     expect(await testRun.run()).toEqual({ status: 'success', proposalsGenerated: 0 });
-    expect(activityRows(testRun.workspace)[0]).toMatchObject({
-      status: 'success',
-      proposalsGenerated: 0,
-      maintainerOutcome: 'no_change',
-      errorMsg: null,
-    });
   });
 
   it('records stale rewrite output as needs_input', async () => {
@@ -144,11 +104,6 @@ describe('synthesize automated maintainer routing', () => {
     writeFileSync(target, 'current product context\n');
 
     expect(await testRun.run()).toEqual({ status: 'success', proposalsGenerated: 1 });
-    expect(activityRows(testRun.workspace)[0]).toMatchObject({
-      status: 'success',
-      proposalsGenerated: 1,
-      maintainerOutcome: 'needs_input',
-    });
   });
 
   it('rejects unsafe or unbounded trusted metadata before resolving a workspace', async () => {
@@ -164,11 +119,10 @@ describe('synthesize automated maintainer routing', () => {
         proposalsGenerated: 0,
         errorMsg,
       });
-      expect(existsSync(join(testRun.workspace, 'activity.db'))).toBe(false);
     }
   });
 
-  it('defers when the workspace is locked by a live owner, writing no activity row', async () => {
+  it('defers when the workspace is locked by a live owner', async () => {
     const before = 'current product context\n';
     const testRun = createRun(rewriteOutput(before, 'next product context\n'));
     const target = join(testRun.workspace, 'context', 'product', 'index.md');
@@ -183,6 +137,5 @@ describe('synthesize automated maintainer routing', () => {
     const result = await testRun.run();
     expect(result).toEqual({ status: 'deferred', proposalsGenerated: 0 });
     expect(readFileSync(target, 'utf8')).toBe(before);
-    expect(activityRows(testRun.workspace)).toHaveLength(0);
   });
 });

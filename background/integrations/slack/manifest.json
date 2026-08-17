@@ -2,7 +2,7 @@
   "display_information": {
     "name": "Draft Context",
     "description": "Passive listener — captures team context for AI sessions",
-    "background_color": "#1a1a1a"
+    "background_color": "#e39a12"
   },
   "features": {
     "bot_user": {
@@ -14,9 +14,12 @@
     "scopes": {
       "bot": [
         "channels:history",
+        "channels:join",
         "channels:read",
         "groups:history",
         "groups:read",
+        "im:read",
+        "mpim:read",
         "users:read",
         "reactions:read",
         "files:read"

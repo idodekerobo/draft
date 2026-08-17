@@ -1,322 +1,138 @@
 # CLI Reference
 
-The `draft` CLI is a compiled Bun binary installed to `/usr/local/bin/draft` (symlinked from `~/.draft/bin/draft`). It provides terminal access to everything in the desktop app, plus a few power-user commands only available via CLI.
+The `draft` CLI is a thin client for the hosted Draft control plane. It authenticates via device pairing and reads your workspace's context. It does not run a local daemon and does not store your context locally — reads always go through the hosted API.
 
 Run `draft --help` for a quick reference.
 
 ---
 
-## Daemon commands
+## Authentication
 
-### `draft status`
+### `draft auth login`
 
-Shows the current state of the daemon and all configured integrations.
-
-```
-  Draft daemon
-  ────────────────────────────────────
-  ●  Daemon        running (pid 12345)
-  ◯  Profile       acme
-
-  Integrations
-  ●  Granola       connected (mcp)
-  ◯  Slack         not connected
-  ●  GitHub        connected
-```
-
-### `draft start`
-
-Starts the background daemon. Delegates to `background/start.sh`, which loads the LaunchAgent plist via `launchctl`. The daemon must be installed first (`draft add claude-code`).
+Signs in via device pairing: opens a pairing URL, polls until you approve it in the browser, then stores credentials locally at `~/.draft/personal/cli-auth.json`.
 
 ```bash
-draft start
+draft auth login
+draft auth login --force    # start a new pairing flow even if a session is already stored
+draft auth login --json     # JSON Lines: one pairing_required line, then one terminal line
 ```
 
-### `draft stop`
+If a stored session is already valid, `login` reuses it (a live `whoami` call) instead of starting a new pairing flow. `--force` always starts fresh.
 
-Stops the background daemon by unloading the LaunchAgent via `launchctl`. The daemon will not restart until you run `draft start` or reboot (the plist uses `KeepAlive: true`, but unloading overrides it).
+Never prompts for a password and never blocks on stdin — pairing is approved in the browser.
+
+### `draft auth whoami`
+
+Shows the current signed-in identity. Always makes a live API call — cached identity is never treated as authoritative on its own.
 
 ```bash
-draft stop
+draft auth whoami
+draft auth whoami --json
 ```
 
-### `draft logs`
+### `draft auth logout`
 
-Tails the daemon log.
+Revokes the local Supabase session and clears `~/.draft/personal/cli-auth.json`.
 
 ```bash
-draft logs              # show last 50 lines
-draft logs --follow     # stream live (Ctrl+C to stop)
-draft logs -f           # same as --follow
-draft logs --errors     # show the stderr log instead
+draft auth logout
+draft auth logout --json
 ```
 
-Log files are at `~/.draft/background/logs/daemon.log` and `daemon-error.log`.
+If the remote revoke fails, local credentials are still cleared, but the command exits nonzero (`partial_logout`) since the remote token may remain valid until it expires.
 
 ---
 
-## Tool setup
+## Context
 
-### `draft add <tool>`
+### `draft context list`
 
-Installs Draft into an agent tool. Run once per tool. Safe to re-run after updates (idempotent).
+Lists the context dimensions available in your workspace (e.g. `company`, `product`, `team`) — discovered dynamically from the latest context snapshot, not a fixed set.
 
 ```bash
-draft add claude-code
-draft add codex
-draft add cursor
-draft add openclaw
-draft add hermes
+draft context list
+draft context list --json
 ```
 
-For `claude-code`, this:
-1. Installs the background daemon (runs `install.sh` if not yet installed).
-2. Prompts for a workspace profile name on first install.
-3. Populates `~/.draft/shared/` with skills, agents, and hook scripts.
-4. Symlinks skills into `~/.claude/skills/` and agents into `~/.claude/agents/`.
-5. Merges hooks, env vars, and permissions into `~/.claude/settings.json`.
-6. Registers the tool in `~/.draft/config.json`.
+### `draft context read`
 
-For `codex` and `cursor`, delegates to the tool-specific setup scripts.
+Prints one or more context dimensions.
 
-For `openclaw`, this:
-1. Merges `~/.draft/shared/skills/` into `skills.load.extraDirs` and `allowSymlinkTargets` in `openclaw.json`.
-2. Registers `draft-learner` and `draft-researcher` in `agents.list[]` in `openclaw.json`.
-3. Appends a managed context block to `~/.openclaw/workspace/AGENTS.md`.
-4. Installs the OpenClaw lifecycle plugin (`session_start` injection + `session_end` synthesis trigger).
+```bash
+draft context read --dimension product
+draft context read --dimension product --dimension team
+draft context read --all
+draft context read --dimension product --json
+```
 
-For `hermes`, this:
-1. Merges `~/.draft/shared/skills/` into `skills.external_dirs` in `~/.hermes/config.yaml`.
-2. Appends a managed context block to `~/.hermes/SOUL.md`.
-3. Copies the Hermes plugin to `~/.hermes/plugins/draft/` (`on_session_start` env injection + `on_session_end` synthesis trigger).
-
-See [Agent plugins](./agent-plugins.md) for full details on each tool.
+Pass one or more `--dimension <name>` flags, or `--all` — exactly one selection mode is required. Unknown dimension names fail atomically (no content is printed, and the error lists both the requested and available names) before anything is printed.
 
 ---
 
-## Profile management
+## Project setup
 
-### `draft switch <name>`
+### `draft add <tool> [--dir <path>...] [--json]`
 
-Validates and activates a named workspace profile, removes team assets owned by
-the old profile, and installs the new profile's team skills and MCP servers into
-Claude Code and Codex.
+Configures a project so its coding agent can discover Draft and the commands it may call (`draft auth login`, `draft context list`, `draft context read`). It does **not** install the `draft` CLI binary (installed separately — see [Running from source](../README.md#running-from-source)), does not run or bootstrap a background daemon, and does not touch global tool configuration. It writes to exactly one file, in exactly the directories you pass.
 
 ```bash
-draft switch acme
-draft switch acme --json
+draft add claude-code --dir ~/code/my-app
+draft add codex --dir ~/code/my-app --dir ~/code/another-app
+draft add cursor --dir .
+draft add openclaw --dir . --json
 ```
 
-Missing MCP credentials and personal-name collisions produce a successful
-partial activation: the profile becomes active, unaffected assets install, and
-personal assets are preserved. Restart active agent sessions after switching.
+`--dir` is repeatable — pass it once per project you want to configure. If you omit it in an interactive terminal, you're prompted for one or more directories (defaulting to the current directory). Without a TTY (e.g. in a script or CI), a missing `--dir` fails immediately with exit code `2` — it never waits on stdin.
 
-### `draft profiles`
+Each directory must already exist; a missing path, a path that isn't a directory, or an instruction-file target that is a symlink is rejected for that directory without touching it.
 
-Subcommands for managing profiles.
+**Tool → instruction file:**
+
+| Tool | File |
+| --- | --- |
+| `claude-code` | `CLAUDE.md` |
+| `codex` | `AGENTS.md` |
+| `cursor` | `AGENTS.md` |
+| `openclaw` | `AGENTS.md` |
+| `hermes` | `HERMES.md` |
+
+`draft add` appends or updates one short, sentinel-delimited Draft-managed block in that file — it only points the agent at the CLI commands above, it never copies or embeds context content into the file. Everything outside the sentinels (your own instructions) is preserved byte-for-byte. The block is identical across tools, so `draft add codex --dir .` followed by `draft add cursor --dir .` converge on the same `AGENTS.md` block rather than duplicating it, and running the same command twice makes no write once the block is already current.
 
 ```bash
-draft profiles list                    # list all profiles (* marks active)
-draft profiles create <name>           # create a new blank profile
-draft profiles rename <old> <new>      # rename a profile
-draft profiles delete <name>           # delete a profile
-draft profiles delete <name> --force   # delete the active profile
+draft add codex --dir ./my-repo
+draft add cursor --dir ./my-repo   # updates the same AGENTS.md block, no duplicate
 ```
 
-Profile names may only contain letters, numbers, hyphens, and underscores.
-
-Deleting the active profile requires `--force`. Consider switching to another profile first.
-
----
-
-## Dimension management
-
-### `draft dimension`
-
-Manage context dimensions in the active workspace.
-
-```bash
-draft dimension list              # list all dimensions and their status
-draft dimension add <name>        # scaffold a new dimension
+```json
+$ draft add claude-code --dir ./my-repo --json
+{"schema_version":1,"status":"ok","tool":"claude-code","results":[{"dir":"./my-repo","ok":true,"file":"/abs/path/my-repo/CLAUDE.md","changed":true}]}
 ```
 
-`draft dimension list` shows all subdirectories of `context/`, marking each as initialized (has an `index.md`) or uninitialized (folder exists but no `index.md`).
-
-`draft dimension add <name>` creates `context/<name>/index.md` with a blank frontmatter template and `context/<name>/log/`. Safe to run on an existing folder — only adds missing files, never overwrites. Dimension names may only contain lowercase letters, numbers, and hyphens.
-
-Equivalent skill: `/draft:add-dimension <name>` (AI-powered — also seeds initial context).
-
----
-
-## Proposals
-
-### `draft proposals`
-
-Interactively review pending AI-generated context proposals — the output of synthesis after a session ends or an integration poll runs.
-
-```bash
-draft proposals
-```
-
-Displays proposals one at a time with a diff preview. Keypresses:
-
-| Key | Action |
-|-----|--------|
-| `a` | Accept — moves to `accepted/`, attempts immediate publish to team repo |
-| `r` | Reject — moves to `rejected/` |
-| `s` | Skip — leaves proposal in `proposals/` for later |
-| `q` | Quit |
-
-If `gh` is authenticated and a team repo is configured, accepted proposals are immediately committed to the shared repo. If not, they wait in `accepted/` until `draft publish` is run.
-
----
-
-## Team sync
-
-### `draft publish`
-
-Publishes accepted proposals, current context, profile-owned `skills/`, and
-`config/mcp.json` in one repository transaction. Deletions are included.
-
-```bash
-draft publish
-draft publish --json
-```
-
-Requires collaboration to be configured and `gh` to be authenticated.
-`config/secrets.json` and `config/local.json` are never copied. Accepted files,
-publish timestamps, and team-asset baselines are updated only after the push
-succeeds.
-
-### `draft load`
-
-Pulls the latest team context and profile-owned assets from the shared GitHub
-repo, mirrors additions and deletions into the active profile, then installs the
-active team assets.
-
-```bash
-draft load
-draft load --json
-draft load --discard-team-assets
-```
-
-Load stops if profile-owned assets differ from the last published/loaded
-baseline. Publish those edits first, or explicitly discard them with
-`--discard-team-assets`. Personal Claude Code and Codex assets never block load
-and win name collisions.
-
-SessionStart runs `draft load --session-start`. This mode never prompts, never
-discards unpublished assets, writes a notification for skipped or partial
-loads, and does not block agent startup.
-
-Team MCP credentials are stored per profile in `config/secrets.json` and are
-never published. Missing credentials leave the MCP pending while the rest of
-the profile remains usable.
-
----
-
-## Import
-
-### `draft import`
-
-Import markdown content from a local directory or private GitHub repo into your workspace as a reviewable proposal.
-
-```bash
-draft import ~/notes                    # import from local directory
-draft import owner/private-repo         # import from GitHub repo
-draft import ~/notes --preview          # preview without writing
-```
-
-Files are mapped to Draft dimensions using directory name and filename heuristics (e.g. a `product/` subdirectory maps to the `product` dimension). Files that don't map to any known dimension are listed as unmapped in the proposal.
-
-For GitHub repos, requires `gh` CLI to be authenticated (`gh auth login`). The repo is cloned to a temp directory, read, and deleted — nothing persists outside your workspace.
-
-The import is always staged as a proposal — run `draft proposals` to review and accept or reject before any context files are changed.
-
-Equivalent skill: `/draft:import <source>` (AI-powered — uses judgment for dimension mapping instead of heuristics).
-
----
-
-## Integration polling
-
-### `draft poll <integration>`
-
-Triggers an on-demand poll for a connected integration, without waiting for the daemon's scheduled interval.
-
-```bash
-draft poll github
-draft poll granola
-draft poll slack
-```
-
-Useful when you want to pull in new data immediately — for example, after a meeting ends or after merging a PR. Run `draft proposals` afterward to review any new context updates.
-
----
-
-## Diagnostics
-
-### `draft doctor`
-
-Runs a full health check across six groups and prints pass/fail for each, with suggested fixes for anything broken.
-
-```bash
-draft doctor
-```
-
-**Checks:**
-
-| Group | What it checks |
-|-------|---------------|
-| Runtime dependencies | `tmux`, `claude` CLI, `bun`, `gh` CLI |
-| Daemon | LaunchAgent plist exists, daemon registered, daemon running, log dir writable |
-| Config | `active-profile` readable, workspace dir exists, `secrets.json` valid JSON and `chmod 600` |
-| Integrations | Granola MCP registered (if MCP mode), Slack capture process running |
-| Installed tools | Tools registered in `config.json` with marker files present |
-| Plugin files | `~/.draft/shared/` present, symlinks in `~/.claude/skills/` and `~/.claude/agents/` not broken |
-
-Run `draft doctor` after initial setup and any time something isn't working to get a diagnosis.
-
----
-
-## Updates
-
-### `draft update`
-
-Updates Draft to the latest version.
-
-```bash
-draft update
-```
-
-1. `git pull origin main` from the repo.
-2. Runs `bun install` to update dependencies.
-3. Re-runs `draft add <tool>` for each installed tool to refresh plugin files.
-4. Writes the new version to `~/.draft/config.json` and `~/.draft/version`.
-
-Never touches workspace context files (`~/.draft/workspaces/`). Safe to run at any time.
+If any of the given directories fail validation, `status` is `partial_error`, each directory's own result reports `ok` and, on failure, a `code` (`directory_not_found`, `not_a_directory`, or `symlink_target`) and `message` — directories that did validate are still written. Exit code is `1` if any directory failed, `0` if all succeeded.
 
 ---
 
 ## Other commands
 
-### `draft uninstall`
-
-Removes Draft from the system. Unloads the daemon, removes the LaunchAgent plist, and optionally removes the `~/.draft/` directory and tool config entries.
-
-```bash
-draft uninstall
-```
-
 ### `draft completion`
 
-Outputs shell completion script for `draft` commands.
+Outputs a shell completion script for `draft` commands.
 
 ```bash
-draft completion bash   # bash completion
-draft completion zsh    # zsh completion
+draft completion            # bash completion
+draft completion --zsh      # zsh completion
 ```
 
 Follow the printed instructions to install into your shell profile.
+
+---
+
+## Machine-readable output
+
+Every command accepts `--json`. Except `auth login` (which streams JSON Lines — one `pairing_required` object, then one terminal object), every `--json` invocation writes exactly one JSON object to stdout with `schema_version: 1`. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
+
+**Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C during `auth login`).
 
 ---
 
@@ -324,4 +140,3 @@ Follow the printed instructions to install into your shell profile.
 
 - [Architecture](./architecture.md)
 - [Agent plugins](./agent-plugins.md)
-- [Setting up collaboration](./setting-up-collaboration.md)

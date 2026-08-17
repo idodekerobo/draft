@@ -20,6 +20,7 @@ export type FirefliesResult =
 const MCP_ENV = { PATH: GUI_PATH, DRAFT_SUPPRESS_SESSION_END_HOOK: "1" };
 
 export async function registerFirefliesMCP(apiKey: string, workspace: string): Promise<FirefliesResult> {
+  // TODO: Decide whether this legacy local-storage helper remains in the self-hosted path.
   const check = await capture(["claude", "mcp", "list"], { env: MCP_ENV, cwd: workspace });
   const existing = findMcpServer(check.stdout, "fireflies");
   if (existing?.state === "connected") return { ok: true, mcpServerId: existing.id };
@@ -51,6 +52,7 @@ export async function registerFirefliesMCP(apiKey: string, workspace: string): P
 }
 
 export function writeFirefliesConfig(workspace: string, apiKey: string, mcpServerId: string): void {
+  // TODO: Decide whether this legacy local-storage helper remains in the self-hosted path.
   writeSecrets(workspace, { fireflies_api_token: apiKey });
 
   const existing = readIntegrations(workspace);

@@ -54,6 +54,7 @@ export function writeGranolaConfig(
   apiKey?: string,
   mcpServerId?: string,
 ): void {
+  // TODO: Cloud-ingest Granola into source_items with notes in content_markdown, the sanitized response in sanitized_raw_json, routing metadata, and a markdown+raw revision hash.
   const secretsPatch: Parameters<typeof writeSecrets>[1] = { granola_mode: mode };
   if (mode === "api" && apiKey) secretsPatch.granola_api_token = apiKey;
 

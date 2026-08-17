@@ -2,18 +2,11 @@
 //
 // These are domain types that multiple parts of the app reference.
 
-export type View = "context" | "proposals" | "activity" | "settings";
-
-export type DaemonControlVariant =
-  | "running"
-  | "degraded"
-  | "stopped"
-  | "starting"
-  | "stopping"
-  | "restarting";
+export type View = "context" | "activity" | "settings";
 
 export type OnboardingStep =
   | "welcome"
+  | "cloud-sign-in"
   | "path-choice"         // new — join-team fork, right after welcome
   | "profile"
   | "intelligence-tools"

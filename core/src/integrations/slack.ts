@@ -121,11 +121,16 @@ export type SlackChannelResult =
   | { ok: true; channels: SlackChannel[] }
   | { ok: false; error: string };
 
-export async function fetchSlackChannels(botToken: string): Promise<SlackChannelResult> {
+export type SlackConversationTypes = "public_channel" | "public_channel,private_channel";
+
+export async function fetchSlackChannels(
+  botToken: string,
+  types: SlackConversationTypes = "public_channel,private_channel",
+): Promise<SlackChannelResult> {
   let resp: Response;
   try {
     resp = await fetch(
-      "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200&exclude_archived=true",
+      `https://slack.com/api/conversations.list?types=${types}&limit=200&exclude_archived=true`,
       { headers: { Authorization: `Bearer ${botToken}` } },
     );
   } catch {
@@ -136,9 +141,22 @@ export async function fetchSlackChannels(botToken: string): Promise<SlackChannel
     ok: boolean;
     channels?: Array<{ id: string; name: string; num_members?: number; is_member?: boolean }>;
     error?: string;
+    needed?: string;
+    provided?: string;
   };
 
   if (!data.ok) {
+    if (data.error === "missing_scope") {
+      const requiredForRequest = types === "public_channel"
+        ? "channels:read"
+        : "channels:read, groups:read";
+      const slackMethodScopes = data.needed ?? "not reported";
+      const provided = data.provided ?? "none reported";
+      return {
+        ok: false,
+        error: `Slack rejected this bot token for conversations.list (${types}). Required for this request: ${requiredForRequest}. Slack's method-level scope list: ${slackMethodScopes}. Granted to this token: ${provided}. The app manifest and the token's granted scopes can differ; paste the bot token from the same Slack installation.`,
+      };
+    }
     return { ok: false, error: `Could not fetch channels: ${data.error ?? "unknown"}` };
   }
 
@@ -160,6 +178,7 @@ export interface WriteSlackConfigOpts {
 }
 
 export function writeSlackConfig(opts: WriteSlackConfigOpts): void {
+  // TODO: Decide whether this legacy local-storage helper remains in the self-hosted path.
   writeSecrets(opts.workspace, {
     slack_bot_token: opts.botToken,
     slack_app_token: opts.appToken,
@@ -180,6 +199,7 @@ export function writeSlackConfig(opts: WriteSlackConfigOpts): void {
 
 /** Read the bot token already saved for this workspace, or undefined if Slack isn't connected. */
 export function readStoredSlackBotToken(workspace: string): string | undefined {
+  // TODO: Decide whether this legacy local-storage helper remains in the self-hosted path.
   const secrets = readSecrets(workspace);
   return secrets.ok ? secrets.secrets.slack_bot_token : undefined;
 }
@@ -196,6 +216,7 @@ export type UpdateSlackChannelsResult =
  * bot token already on disk; does not touch stored tokens.
  */
 export async function updateSlackChannels(workspace: string, channelIds: string[]): Promise<UpdateSlackChannelsResult> {
+  // TODO: Decide whether this legacy local-storage helper remains in the self-hosted path.
   const botToken = readStoredSlackBotToken(workspace);
   if (!botToken) return { ok: false, error: "Slack is not connected yet." };
 
@@ -232,6 +253,7 @@ export async function updateSlackChannels(workspace: string, channelIds: string[
  * preserving existing user role entries and any names already recorded there.
  */
 export function writeSlackRolesChannels(workspace: string, channels: Record<string, string>): void {
+  // TODO: Decide whether this legacy local-storage helper remains in the self-hosted path.
   const rolesPath = join(workspace, "config", "slack-roles.json");
   let roles: Record<string, unknown> = {};
   try {

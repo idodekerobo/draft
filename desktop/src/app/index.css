@@ -206,24 +206,6 @@ button {
   font-weight: 500;
 }
 
-/* Proposal count badge — only shown when count > 0 */
-.sidebar__badge {
-  margin-left: auto;
-  background: var(--color-accent-blue);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-}
-
 /* ── Main content area ───────────────────────────────────────────────────────── */
 
 .content {
@@ -1375,6 +1357,7 @@ button {
   display: block;
   width: 100%;
   min-height: 100%;
+  margin: 0;
   border: none;
   outline: none;
   resize: none;
@@ -1383,7 +1366,8 @@ button {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  caret-color: var(--color-accent-blue);
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 /* ── Content toolbar — meta strip + save indicator + history toggle ─────────── */
@@ -2092,94 +2076,6 @@ button {
   color: var(--color-text-primary);
 }
 
-/* ── Daemon control row ───────────────────────────────────────────────────────── */
-/* Status dot + label + action button. Sits above the profile chip.               */
-
-.daemon-control {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 7px;
-  margin-bottom: 7px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.daemon-control__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  transition: background 0.4s ease;
-}
-
-.daemon-control__dot--running {
-  background: var(--color-status-green);
-  animation: dot-pulse 2.5s ease-in-out infinite;
-}
-
-.daemon-control__dot--degraded {
-  background: var(--color-status-yellow);
-}
-
-.daemon-control__dot--stopped {
-  background: var(--color-status-red);
-}
-
-.daemon-control__dot--loading {
-  background: var(--color-status-yellow);
-  animation: dot-pulse 1.2s ease-in-out infinite;
-}
-
-.daemon-control__label {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.daemon-control__btn {
-  flex-shrink: 0;
-  height: 18px;
-  padding: 0 7px;
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  font-family: var(--font-ui);
-  cursor: pointer;
-  transition: background 100ms, border-color 100ms, color 100ms;
-}
-
-/* Stop — muted at rest, red hint on hover */
-.daemon-control__btn--stop:hover {
-  background: rgba(255, 69, 58, 0.08);
-  border-color: rgba(255, 69, 58, 0.4);
-  color: var(--color-status-red);
-}
-
-/* Restart — same destructive hint as stop */
-.daemon-control__btn--restart:hover {
-  background: rgba(255, 69, 58, 0.08);
-  border-color: rgba(255, 69, 58, 0.4);
-  color: var(--color-status-red);
-}
-
-/* Start — green accent at rest to signal available action */
-.daemon-control__btn--start {
-  border-color: rgba(48, 209, 88, 0.35);
-  color: var(--color-status-green);
-}
-
-.daemon-control__btn--start:hover {
-  background: rgba(48, 209, 88, 0.08);
-  border-color: rgba(48, 209, 88, 0.55);
-  color: var(--color-status-green);
-}
-
 /* ── Settings view ───────────────────────────────────────────────────────────── */
 
 .settings {
@@ -2759,14 +2655,174 @@ button {
   font: var(--font-size-secondary) var(--font-ui);
 }
 
-.app-row__panel-action {
+.app-row__panel-action,
+.onboarding__panel-action {
   height: 28px;
+}
+
+.app-row__required-callout,
+.onboarding__required-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(100%, 520px);
+  margin: 4px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 214, 10, 0.45);
+  border-left: 4px solid var(--color-status-yellow);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 214, 10, 0.08);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-secondary);
+  line-height: 1.45;
+}
+
+.app-row__required-callout strong,
+.onboarding__required-callout strong {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+}
+
+.app-row__required-callout-label,
+.onboarding__required-callout-label {
+  color: var(--color-status-yellow);
+  font-size: var(--font-size-micro);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-row__copy-row,
+.onboarding__copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.app-row__copy-row code,
+.onboarding__copy-row code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sidebar);
+  color: var(--color-text-secondary);
+  font: 11px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-row__copy-row button,
+.onboarding__copy-row button {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: var(--font-size-micro) var(--font-ui);
+  cursor: pointer;
+}
+
+.app-row__copy-row button:hover,
+.onboarding__copy-row button:hover {
+  border-color: var(--color-accent-blue);
+  color: var(--color-text-primary);
+}
+
+.onboarding__connect-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.onboarding__panel-label,
+.onboarding__field-label {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.onboarding__panel-help,
+.onboarding__hint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-secondary);
+  line-height: 1.5;
+}
+
+.onboarding__hint {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-micro);
+}
+
+.onboarding__input {
+  width: 100%;
+  height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-sidebar);
+  color: var(--color-text-primary);
+  font: var(--font-size-secondary) var(--font-ui);
+}
+
+.onboarding__connect {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-accent-blue);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-blue);
+  color: var(--color-text-primary);
+  font: var(--font-size-secondary) var(--font-ui);
+  cursor: pointer;
+}
+
+.onboarding__connect:disabled,
+.app-row__connect:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.onboarding__validation {
+  color: var(--color-status-yellow);
+  font-size: var(--font-size-secondary);
+  line-height: 1.4;
+}
+
+.onboarding__cloud-sign-in-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sidebar);
+}
+
+.onboarding__cloud-sign-in-status {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-body);
+  font-weight: 500;
 }
 
 /* Secondary ghost action inside a connect panel — e.g. "Open X Developer Settings".
    Distinct from .app-row__connect (primary blue CTA) so the external-link step
-   reads as a lesser action than the Connect button below it. */
-.app-row__panel-link {
+   reads as a lesser action than the Connect button below it. Shared with the
+   "onboarding" classPrefix variant used by onboarding steps (FirefliesConnectPanel,
+   ConnectClaudeCodeStep, HeadlessSetupStep) — same visual treatment, different prefix. */
+.app-row__panel-link,
+.onboarding__panel-link {
   align-self: flex-start;
   padding: 0 10px;
   background: transparent;
@@ -2780,7 +2836,8 @@ button {
   white-space: nowrap;
 }
 
-.app-row__panel-link:hover {
+.app-row__panel-link:hover,
+.onboarding__panel-link:hover {
   border-color: var(--color-accent-blue);
   color: var(--color-accent-blue);
 }
@@ -4682,4 +4739,32 @@ button {
 .support-panel__send:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.settings__action-button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings__action-button:hover:not(:disabled) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-accent-blue);
+}
+.settings__action-button:focus-visible {
+  outline: 2px solid var(--color-accent-blue);
+  outline-offset: 2px;
+}
+.settings__action-button:disabled {
+  color: var(--color-text-tertiary);
+  cursor: default;
+  opacity: 0.65;
 }

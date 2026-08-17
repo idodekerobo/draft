@@ -134,9 +134,30 @@ export function HeadlessProgress({ label }: { label: string }) {
 // (drop defaults, add their own) before headless setup runs. Mirrors the
 // scaffold shape used by `draft dimension add` / the draft-add-dimension skill.
 
-const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];
+export const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];
 
-function DimensionPicker({ dimensions, onChange }: { dimensions: string[]; onChange: (next: string[]) => void }) {
+// Mirrors core/src/agents/prompts/setup.ts's DIMENSION_GUIDANCE — kept as a
+// separate copy since the desktop app doesn't depend on core/.
+export const DEFAULT_DIMENSION_DESCRIPTIONS: Record<string, string> = {
+  company: "name, what they build, business model, stage, target market, key constraints",
+  product: "product name, problem it solves, target user, key features, current state, open hypotheses",
+  team: "who's on the team, roles, structure, how decisions get made",
+  priorities: "active TODOs, current sprint goal, blockers, what success looks like",
+};
+
+export interface DimensionHint {
+  dimensionName: string;
+  dimensionDescription: string;
+}
+
+export function toDimensionHints(names: string[]): DimensionHint[] {
+  return names.map((name) => ({
+    dimensionName: name,
+    dimensionDescription: DEFAULT_DIMENSION_DESCRIPTIONS[name] ?? `User-defined dimension: ${name}`,
+  }));
+}
+
+export function DimensionPicker({ dimensions, onChange }: { dimensions: string[]; onChange: (next: string[]) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [newName, setNewName] = useState("");
 
@@ -222,8 +243,9 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
     void rpc.request.getAvailableRunners().then((result) => {
       const installed = result.runners.filter((r) => r.installed).map((r) => r.name);
       setAvailableRunners(installed);
-      if (installed.length > 0 && !installed.includes(selectedRunner)) {
-        setSelectedRunner(installed[0]);
+      const firstInstalled = installed[0];
+      if (firstInstalled && !installed.includes(selectedRunner)) {
+        setSelectedRunner(firstInstalled);
       }
       setRunnersLoaded(true);
     }).catch(() => setRunnersLoaded(true));
@@ -355,7 +377,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
         <p className="onboarding__headless-success">{label}</p>
         {files.length > 0 && <p className="onboarding__hint">Created or updated: {files.slice(0, 4).map((file) => file.label).join(", ")}{files.length > 4 ? ", and more" : ""}.</p>}
         <div className="onboarding__actions" style={{ marginTop: 20 }}>
-          <button className="onboarding__skip" onClick={() => rpc.send.openWorkspaceInFinder()}>Open in Finder</button>
+          <button className="onboarding__skip" onClick={() => rpc.send.openWorkspaceInFinder({})}>Open in Finder</button>
           <button className="empty-state__cta onboarding__cta" onClick={onComplete}>{completeLabel}</button>
         </div>
       </>}

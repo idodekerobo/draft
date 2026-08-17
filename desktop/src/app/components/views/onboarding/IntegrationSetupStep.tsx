@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
-import type { ConnectedAppsStatus, IntegrationDetail } from "../../../../rpc/schema";
-import { useAnalytics } from "../../../analytics/AnalyticsContext";
-import { rpc } from "../../../rpc";
-import { SlackChannelPicker } from "../../shared/SlackChannelPicker";
+import { useOptimistic, useState } from "react";
+import type { ConnectedAppsStatus } from "../../../../rpc/schema";
+import { FirefliesConnectPanel } from "../../shared/FirefliesConnectPanel";
+import { LinearConnectPanel } from "../../shared/LinearConnectPanel";
+// TODO: Granola and GitHub connect flows still work locally, but neither has
+// a backend ingestion pipeline in the new cloud model (backend/src/ingestion
+// only has fireflies/ and slack/) — connecting them can't get their data into
+// source_items at all right now. Cards commented out below rather than
+// removed until ingestion exists for them.
+// import { GranolaConnectPanel } from "../../shared/GranolaConnectPanel";
+import { SlackConnectPanel } from "../../shared/SlackConnectPanel";
 import { IntegrationSetupCard } from "./shared";
 
 interface IntegrationSetupStepProps {
@@ -10,150 +16,43 @@ interface IntegrationSetupStepProps {
   totalSteps: number;
   onBack: () => void;
   onNext: () => void;
+  connections: ConnectedAppsStatus["integrations"] | null;
+  loadConnections: () => Promise<void>;
 }
 
-type IntegrationName = "granola" | "slack" | "github" | "fireflies";
+type IntegrationName = "slack" | "fireflies" | "linear";
 
-export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: IntegrationSetupStepProps) {
-  const { track } = useAnalytics();
-  const [connections, setConnections] = useState<ConnectedAppsStatus["integrations"] | null>(null);
+export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, connections, loadConnections }: IntegrationSetupStepProps) {
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
-  const [granolaMode, setGranolaMode] = useState<"mcp" | "api">("mcp");
-  const [granolaKey, setGranolaKey] = useState("");
-  const [firefliesKey, setFirefliesKey] = useState("");
-  const [slackStep, setSlackStep] = useState<1 | 2 | 3>(1);
-  const [botToken, setBotToken] = useState("");
-  const [appToken, setAppToken] = useState("");
-  const [slackChannelIds, setSlackChannelIds] = useState<string[]>([]);
-  const [slackConnected, setSlackConnected] = useState(false);
-  const [saving, setSaving] = useState<IntegrationName | null>(null);
-  const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadConnections() {
-    try {
-      const result = await rpc.request.getConnectedApps();
-      setConnections(result.integrations);
-    } catch {
-      setError("Could not load integration status. You can still connect an integration.");
-    }
+  // Optimistic overlay so a successful connect shows "connected"
+  // instead of flashing back to the pre-connect state while loadConnections() runs
+  const [optimisticConnections, markConnected] = useOptimistic(
+    connections,
+    (current, name: IntegrationName) =>
+      current ? { ...current, [name]: { ...current[name], connected: true } } : current,
+  );
+
+  function handleConnected(name: IntegrationName) {
+    markConnected(name);
+    void loadConnections().then(() => setExpanded(null));
   }
 
-  useEffect(() => { void loadConnections(); }, []);
+  const allConnected = optimisticConnections
+    && optimisticConnections.slack.connected
+    && optimisticConnections.fireflies.connected
+    && optimisticConnections.linear.connected;
 
-  useEffect(() => {
-    if (!connectingGitHub) return;
-    const interval = setInterval(async () => {
-      try {
-        const result = await rpc.request.getConnectedApps();
-        setConnections(result.integrations);
-        if (result.integrations.github.connected) {
-          setConnectingGitHub(false);
-          track("integration_connected", { source: "github" });
-        }
-      } catch { /* Keep polling while the browser flow is active. */ }
-    }, 2_000);
-    const timeout = setTimeout(() => {
-      setConnectingGitHub(false);
-      setError("GitHub sign-in timed out. Try again.");
-    }, 5 * 60 * 1_000);
-    return () => { clearInterval(interval); clearTimeout(timeout); };
-  }, [connectingGitHub, track]);
-
-  const allConnected = connections
-    && connections.granola.connected
-    && connections.slack.connected
-    && connections.github.connected;
-
-  function toggle(name: IntegrationName, detail?: IntegrationDetail) {
-    if (detail?.connected) return;
+  function toggle(name: IntegrationName, connected?: boolean) {
+    if (connected) return;
     setError(null);
     setExpanded((current) => current === name ? null : name);
   }
 
-  async function connectGranola() {
-    setSaving("granola");
-    setError(null);
-    try {
-      const result = granolaMode === "mcp"
-        ? await rpc.request.connectGranolaMCP()
-        : await rpc.request.connectGranolaAPI({ apiKey: granolaKey });
-      if (!result.ok) {
-        const msg = granolaMode === "mcp"
-          ? "MCP registration failed. Try API key instead."
-          : "Invalid token. Check Settings → API → Personal access token in Granola.";
-        setError(result.error ?? msg);
-        return;
-      }
-      track("integration_connected", { source: "granola" });
-      await loadConnections();
-      setExpanded(null);
-    } catch {
-      setError(granolaMode === "mcp"
-        ? "MCP registration failed. Try API key instead."
-        : "Could not connect Granola. Try again.");
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  async function connectFireflies() {
-    setSaving("fireflies");
-    setError(null);
-    try {
-      const result = await rpc.request.connectFireflies({ apiKey: firefliesKey });
-      if (!result.ok) {
-        setError(result.error ?? "Could not connect Fireflies. Check your API key.");
-        return;
-      }
-      track("integration_connected", { source: "fireflies" });
-      await loadConnections();
-      setExpanded(null);
-    } catch {
-      setError("Could not connect Fireflies. Try again.");
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  async function connectSlack() {
-    setSaving("slack");
-    setError(null);
-    try {
-      const result = await rpc.request.connectSlack({ botToken, appToken, channelIds: slackChannelIds });
-      if (!result.ok) {
-        setError(result.error ?? "Could not connect Slack. Check bot permissions.");
-        return;
-      }
-      track("integration_connected", { source: "slack" });
-      await loadConnections();
-      setSlackConnected(true);
-    } catch {
-      setError("Could not connect Slack. Try again.");
-    } finally {
-      setSaving(null);
-    }
-  }
-
-  async function connectGitHub() {
-    setError(null);
-    setConnectingGitHub(true);
-    try {
-      const result = await rpc.request.connectGitHub();
-      if (!result.ok) {
-        setError(result.error ?? "GitHub connect failed.");
-        setConnectingGitHub(false);
-      }
-    } catch {
-      setError("GitHub connect failed.");
-      setConnectingGitHub(false);
-    }
-  }
-
-  const granola = connections?.granola;
-  const slack = connections?.slack;
-  const github = connections?.github;
-  const fireflies = connections?.fireflies;
+  const slack = optimisticConnections?.slack;
+  const fireflies = optimisticConnections?.fireflies;
+  const linear = optimisticConnections?.linear;
 
   return (
     <div className="onboarding__body onboarding__body--wide">
@@ -165,99 +64,31 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext }: In
       <p className="onboarding__desc">
         {allConnected
           ? "All integrations are connected. Draft will check them for updates and synthesize new context automatically."
-          : "Draft routinely checks connected integrations — meeting notes, channel activity, repository changes — and synthesizes updates into your workspace. Select which to set up now."}
+          : "Draft routinely checks connected integrations — meeting notes and channel activity — and synthesizes updates into your workspace. Select which to set up now."}
       </p>
       {error && <p className="onboarding__error">{error}</p>}
 
       <div className="onboarding__integration-list">
-        <IntegrationSetupCard title="Granola" description="Import your meeting notes" hint="1 step" connected={granola?.connected ?? false} expanded={expanded === "granola"} onToggle={() => toggle("granola", granola)}>
-          <p className="onboarding__integration-step-indicator">Connection method</p>
-          <div className="onboarding__mode-picker">
-            <button className={granolaMode === "mcp" ? "onboarding__mode--selected" : ""} onClick={() => setGranolaMode("mcp")}>MCP (recommended)</button>
-            <button className={granolaMode === "api" ? "onboarding__mode--selected" : ""} onClick={() => setGranolaMode("api")}>API key</button>
-          </div>
-          {granolaMode === "mcp" ? (
-            <p className="onboarding__integration-help">Register Granola with Claude Code automatically. Authenticate in Claude Code on your next session.</p>
-          ) : (
-            <input className="onboarding__integration-input" type="password" value={granolaKey} onChange={(event) => setGranolaKey(event.target.value)} placeholder="Granola API key" aria-label="Granola API key" />
-          )}
-          {error && saving === null && expanded === "granola" && granolaMode === "mcp" && (
-            <button className="onboarding__mode-switch" onClick={() => setGranolaMode("api")}>Try API key instead</button>
-          )}
-          <button className="empty-state__cta onboarding__cta" onClick={() => void connectGranola()} disabled={saving === "granola" || (granolaMode === "api" && !granolaKey.trim())}>
-            {saving === "granola" ? "Connecting…" : "Connect Granola"}
-          </button>
-        </IntegrationSetupCard>
+        {/* TODO: Granola card — see file-header note */}
 
-        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack)}>
-          <p className="onboarding__integration-step-indicator">Step {slackStep} of 3</p>
-          {slackStep === 1 && <>
-            <p className="onboarding__integration-help">Draft creates a read-only Slack app in your workspace to capture channel activity. You'll pick the workspace, create the app, then copy two tokens back here.</p>
-            <button className="empty-state__cta onboarding__cta" onClick={async () => {
-              const result = await rpc.request.getSlackManifestUrl();
-              if (result.ok && result.url) {
-                rpc.send.openUrl({ url: result.url });
-              } else {
-                rpc.send.openUrl({ url: "https://api.slack.com/apps" });
-                setError(result.error ?? "Could not load manifest. Create the app manually.");
-              }
-              setSlackStep(2);
-            }}>Create Slack app</button>
-          </>}
-          {slackStep === 2 && <>
-            <p className="onboarding__integration-help">In the browser window that just opened:</p>
-            <ol className="onboarding__integration-steps">
-              <li>Pick your workspace and click <strong>Next</strong> → review the manifest → <strong>Create</strong></li>
-              <li>In the sidebar, go to <strong>OAuth &amp; Permissions</strong> → click <strong>Install to Workspace</strong> → <strong>Allow</strong></li>
-            </ol>
-            <p className="onboarding__integration-label">App-level token</p>
-            <p className="onboarding__integration-hint">Found in <strong>Basic Information</strong> → under <strong>App-Level Tokens</strong> → click <strong>Generate Token and Scopes</strong> → add scope <code>connections:write</code> → <strong>Generate</strong></p>
-            <input className="onboarding__integration-input" type="password" value={appToken} onChange={(event) => setAppToken(event.target.value)} placeholder="xapp-..." aria-label="Slack app-level token" />
-            {appToken.length > 0 && !appToken.startsWith("xapp-") && (
-              <p className="onboarding__integration-validation">App-level tokens start with xapp-.</p>
-            )}
-            <p className="onboarding__integration-label">Bot token</p>
-            <p className="onboarding__integration-hint">Found in <strong>OAuth &amp; Permissions</strong> → under <strong>OAuth Tokens</strong></p>
-            <input className="onboarding__integration-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder="xoxb-..." aria-label="Slack bot token" />
-            {botToken.length > 0 && !botToken.startsWith("xoxb-") && (
-              <p className="onboarding__integration-validation">Bot tokens start with xoxb-.</p>
-            )}
-            <button className="empty-state__cta onboarding__cta" onClick={() => setSlackStep(3)} disabled={!botToken.startsWith("xoxb-") || !appToken.startsWith("xapp-")}>
-              Next
-            </button>
-          </>}
-          {slackStep === 3 && <>
-            <p className="onboarding__integration-help">Pick which channels Draft should capture. You can update this later in Settings.</p>
-            <SlackChannelPicker
-              botToken={botToken}
-              selected={slackChannelIds}
-              onChange={setSlackChannelIds}
-              onLoaded={(channels) => setSlackChannelIds((current) =>
-                current.length > 0 ? current : channels.filter((c) => c.allowlisted).map((c) => c.id))}
-            />
-            <button className="empty-state__cta onboarding__cta" onClick={() => void connectSlack()} disabled={saving === "slack" || slackChannelIds.length === 0}>
-              {saving === "slack" ? "Connecting…" : "Connect Slack"}
-            </button>
-          </>}
+        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack?.connected)}>
+          <SlackConnectPanel detail={slack} classPrefix="onboarding" onConnected={() => handleConnected("slack")} />
         </IntegrationSetupCard>
-        {slackConnected && (
+        {slack?.connected && (
           <p className="onboarding__integration-help">
             Invite the bot to each channel you selected — run <code>/invite @Draft Context</code> in Slack.
             The bot reads messages but never posts; this is required for capture to work.
           </p>
         )}
 
-        <IntegrationSetupCard title="GitHub" description="Track repositories and pull requests" hint="1 step" connected={github?.connected ?? false} expanded={false} onToggle={() => void connectGitHub()} action={connectingGitHub ? "Waiting…" : "Connect"} />
+        {/* TODO: GitHub card — see file-header note */}
 
-        <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies)}>
-          <p className="onboarding__integration-help">Open Fireflies Developer Settings, then copy your API Key.</p>
-          <button className="empty-state__cta onboarding__cta" onClick={() => rpc.send.openUrl({ url: "https://app.fireflies.ai/settings/developer-settings" })}>
-            Open Fireflies Developer Settings
-          </button>
-          <input className="onboarding__integration-input" type="password" value={firefliesKey} onChange={(event) => setFirefliesKey(event.target.value)} placeholder="Fireflies API key" aria-label="Fireflies API key" />
-          <button className="empty-state__cta onboarding__cta" onClick={() => void connectFireflies()} disabled={saving === "fireflies" || !firefliesKey.trim()}>
-            {saving === "fireflies" ? "Connecting…" : "Connect Fireflies"}
-          </button>
+        <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies?.connected)}>
+          <FirefliesConnectPanel detail={fireflies} classPrefix="onboarding" onConnected={() => handleConnected("fireflies")} />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>
+          <LinearConnectPanel detail={linear} classPrefix="onboarding" onConnected={() => handleConnected("linear")} />
         </IntegrationSetupCard>
       </div>
 

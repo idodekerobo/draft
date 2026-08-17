@@ -1,4 +1,7 @@
-// CollabStep.tsx — step 5: team collaboration awareness
+// CollabStep.tsx — invite a teammate to this org/team's workspace
+
+import { useEffect, useState } from "react";
+import { rpc } from "../../../rpc";
 
 interface CollabStepProps {
   stepNum: number;
@@ -8,6 +11,29 @@ interface CollabStepProps {
 }
 
 export function CollabStep({ stepNum, totalSteps, onBack, onNext }: CollabStepProps) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    rpc.request.getInviteLink()
+      .then((result) => {
+        if (!live) return;
+        if (result.ok && result.url) setUrl(result.url);
+        else setError(result.error ?? "Could not load your invite link.");
+      })
+      .catch(() => { if (live) setError("Could not load your invite link."); });
+    return () => { live = false; };
+  }, []);
+
+  async function copy() {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_500);
+  }
+
   return (
     <div className="onboarding__body">
       <div className="onboarding__nav">
@@ -16,24 +42,22 @@ export function CollabStep({ stepNum, totalSteps, onBack, onNext }: CollabStepPr
       </div>
       <h1 className="onboarding__title">Working with a team?</h1>
       <p className="onboarding__desc">
-        Draft can share your context layer across your whole team. Everyone's
-        sessions start with the same shared product knowledge, kept fresh as
-        things change.
+        Share this link with teammates — they sign in and land in this same workspace.
+        It works for anyone on your team, any number of times.
       </p>
 
-      <div className="onboarding__collab-section">
-        <p className="onboarding__section-label">SET UP IN CLAUDE CODE OR CODEX</p>
-        <p className="onboarding__section-body">
-          Run{" "}
-          <code className="onboarding__code">/draft-setup-collab</code>
-          {" "}— it walks you through connecting a private GitHub repo as a
-          shared context layer in about 5 minutes. One person sets it up;
-          teammates connect with a URL.
-        </p>
-        <p className="onboarding__section-body" style={{ marginTop: 6, color: "var(--color-text-tertiary)", fontSize: "var(--font-size-micro)" }}>
-          Note: this uses a dedicated GitHub repo as a sync layer — separate from
-          connecting your GitHub account as an input source in step 4.
-        </p>
+      <div className="onboarding__connect-panel">
+        {error && <span className="onboarding__validation">{error}</span>}
+        {url && (
+          <>
+            <label className="onboarding__panel-label">Invite link</label>
+            <div className="onboarding__copy-row">
+              <code>{url}</code>
+              <button type="button" onClick={() => void copy()}>{copied ? "Copied" : "Copy"}</button>
+            </div>
+          </>
+        )}
+        {!url && !error && <span className="onboarding__desc">Loading your invite link…</span>}
       </div>
 
       <button

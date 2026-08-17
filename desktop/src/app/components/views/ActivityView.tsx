@@ -1,7 +1,7 @@
-// ActivityView.tsx — synthesis run history
+// ActivityView.tsx — cloud synthesis run history
 
 import { useState, useEffect, useRef } from "react";
-import type { ActivityRun } from "../../../rpc/schema";
+import type { WorkspaceRun } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 
 // ── Format helpers ─────────────────────────────────────────────────────────────
@@ -14,80 +14,57 @@ function formatTimestamp(iso: string): string {
   return `${month} ${day} AT ${time}`;
 }
 
-function formatDuration(ms: number | null): string {
-  if (ms === null) return "";
+function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt || !completedAt) return "";
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "";
   return (ms / 1000).toFixed(1) + "s";
 }
 
-function cwdShort(cwd: string | null): string {
-  if (!cwd) return "";
-  const parts = cwd.replace(/\/$/, "").split("/").filter(Boolean);
-  if (parts.length === 0) return cwd;
-  return parts.slice(-2).join("/");
+// ── Status → display mapping ─────────────────────────────────────────────────
+// synthesis_runs.status is a 9-state lifecycle; the tab only needs three
+// visual buckets: still working, finished cleanly, or finished badly.
+
+type DisplayStatus = "in_progress" | "succeeded" | "failed";
+
+const IN_PROGRESS_STATUSES: ReadonlySet<WorkspaceRun["status"]> =
+  new Set(["queued", "preparing", "running", "validating", "committing"]);
+
+function displayStatus(run: WorkspaceRun): DisplayStatus {
+  if (IN_PROGRESS_STATUSES.has(run.status)) return "in_progress";
+  if (run.status === "succeeded") return "succeeded";
+  return "failed"; // failed, stale, cancelled
 }
 
-const DOT_COLOR: Record<ActivityRun["status"], string> = {
-  success: "var(--color-status-green)",
-  skipped: "var(--color-status-yellow)",
-  failed:  "var(--color-status-red)",
-  timeout: "var(--color-status-red)",
+// Reuses the existing activity-run__dot / __badge color classes (success =
+// green, skipped = yellow, failed/timeout = red) rather than adding new CSS.
+const DOT_COLOR: Record<DisplayStatus, string> = {
+  succeeded:   "var(--color-status-green)",
+  in_progress: "var(--color-status-yellow)",
+  failed:      "var(--color-status-red)",
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  "claude-code-session": "Claude Code",
-  "codex-session":       "Codex",
-  "granola":             "Granola",
-  "slack":               "Slack",
-  "github":              "GitHub",
-  "fireflies":           "Fireflies",
+const BADGE_CLASS: Record<DisplayStatus, string> = {
+  succeeded:   "activity-run__badge--success",
+  in_progress: "activity-run__badge--skipped",
+  failed:      "activity-run__badge--failed",
 };
 
-function sourceLabel(source: string): string {
-  return SOURCE_LABELS[source] ?? source;
-}
-
-const SKIP_REASON_LABELS: Record<string, string> = {
-  other:                        "Session ended early",
-  clear:                        "Session cleared",
-  resume:                       "Session resumed",
-  logout:                       "User logged out",
-  bypass_permissions_disabled:  "Permissions mode changed",
-  unknown:                      "Session ended unexpectedly",
-  missing_transcript_path:      "Transcript path missing",
-  missing_transcript:           "Transcript file not found",
-  transcript_changed:           "Transcript still changing",
+const BADGE_LABEL: Record<DisplayStatus, string> = {
+  succeeded:   "Succeeded",
+  in_progress: "In progress",
+  failed:      "Failed",
 };
 
-const ERROR_LABELS: Record<string, string> = {
-  "invalid job JSON":           "Invalid session data",
-  "timed out after 300s":       "Synthesis timed out",
+const OUTCOME_LABELS: Record<NonNullable<WorkspaceRun["outcome"]>, string> = {
+  changed:    "Context updated",
+  no_change:  "No changes",
+  failure:    "Failed",
+  stale:      "Stale",
 };
 
-function friendlySkipReason(raw: string | null): string {
-  if (!raw) return "Session skipped";
-  return SKIP_REASON_LABELS[raw] ?? "Session skipped";
-}
-
-function friendlyError(raw: string | null): string {
-  if (!raw) return "Something went wrong";
-  if (ERROR_LABELS[raw]) return ERROR_LABELS[raw];
-  if (raw.startsWith("adapter exited")) return "Synthesis failed";
-  if (raw.startsWith("source adapter not found")) return "Synthesis not configured";
-  return "Something went wrong";
-}
-
-const OUTCOME_LABELS: Record<NonNullable<ActivityRun["maintainerOutcome"]>, string> = {
-  no_change: "No context changes",
-  rewrite: "Context updated",
-  needs_input: "Needs input/review",
-};
-
-function successDescription(run: ActivityRun): string {
-  if (run.maintainerOutcome) return OUTCOME_LABELS[run.maintainerOutcome];
-  if (run.proposalsGenerated === 0) return "No updates found";
-  return run.proposalsGenerated === 1
-    ? "Synthesized 1 proposal"
-    : `Synthesized ${run.proposalsGenerated} proposals`;
+function outcomeLabel(run: WorkspaceRun): string | null {
+  return run.outcome ? OUTCOME_LABELS[run.outcome] : null;
 }
 
 // ── Empty state ────────────────────────────────────────────────────────────────
@@ -97,54 +74,28 @@ function ActivityEmptyPrompt() {
     <div className="empty-state">
       <div className="empty-state__icon">◎</div>
       <p className="empty-state__title">No activity yet</p>
-      <p className="empty-state__body">Draft will log synthesis runs here.</p>
+      <p className="empty-state__body">Sandbox synthesis runs will show up here.</p>
     </div>
   );
 }
 
-// ── Status summary helpers ─────────────────────────────────────────────────────
-
-const STATUS_BADGE_LABEL: Record<ActivityRun["status"], string> = {
-  success: "Success",
-  skipped: "Skipped",
-  failed:  "Failed",
-  timeout: "Failed",
-};
-
-function statusDescription(run: ActivityRun): string | null {
-  if (run.status === "success") {
-    return successDescription(run);
-  }
-  if (run.status === "skipped") return friendlySkipReason(run.skipReason);
-  if (run.status === "timeout") return "Synthesis timed out";
-  return friendlyError(run.errorMsg);
-}
-
 // ── Accordion detail ───────────────────────────────────────────────────────────
 
-function ActivityRunDetail({ run }: { run: ActivityRun }) {
-  const description = statusDescription(run);
+function ActivityRunDetail({ run }: { run: WorkspaceRun }) {
+  const status = displayStatus(run);
 
   return (
     <div className="activity-run__detail">
       <div className="activity-run__detail-top">
-        <span className={`activity-run__badge activity-run__badge--${run.status}`}>
-          {STATUS_BADGE_LABEL[run.status]}
+        <span className={`activity-run__badge ${BADGE_CLASS[status]}`}>
+          {BADGE_LABEL[status]}
         </span>
-        {description && (
-          <span className="activity-run__detail-desc">{description}</span>
+        {outcomeLabel(run) && (
+          <span className="activity-run__detail-desc">{outcomeLabel(run)}</span>
         )}
       </div>
-      {run.cwd && (
-        <span className="activity-run__project-path">{run.cwd}</span>
-      )}
-      {run.transcriptPath && (
-        <span className="activity-run__project-path activity-run__transcript-path">{run.transcriptPath}</span>
-      )}
-      {run.maintainerOutcome === "rewrite" && run.changedDimensions.length > 0 && (
-        <span className="activity-run__project-path">
-          Changed: {run.changedDimensions.join(", ")}
-        </span>
+      {run.resultSummary && (
+        <span className="activity-run__project-path">{run.resultSummary}</span>
       )}
     </div>
   );
@@ -152,32 +103,15 @@ function ActivityRunDetail({ run }: { run: ActivityRun }) {
 
 // ── Run row ────────────────────────────────────────────────────────────────────
 
-function ActivityRunRow({ run }: { run: ActivityRun }) {
+function ActivityRunRow({ run }: { run: WorkspaceRun }) {
   const [expanded, setExpanded] = useState(false);
+  const status = displayStatus(run);
 
-  const primaryRight = cwdShort(run.cwd);
-  const primaryLine = primaryRight
-    ? `${sourceLabel(run.source)} · ${primaryRight}`
-    : sourceLabel(run.source);
+  const primaryLine = outcomeLabel(run) ?? BADGE_LABEL[status];
 
-  let metaLine: string;
-  const ts = formatTimestamp(run.startedAt);
-
-  if (run.status === "success") {
-    const dur = formatDuration(run.durationMs);
-    const outcome = run.maintainerOutcome
-      ? OUTCOME_LABELS[run.maintainerOutcome]
-      : run.proposalsGenerated === 1
-        ? "1 proposal"
-        : `${run.proposalsGenerated} proposals`;
-    metaLine = [ts, dur, outcome].filter(Boolean).join(" · ");
-  } else if (run.status === "skipped") {
-    metaLine = `${ts} · ${friendlySkipReason(run.skipReason)}`;
-  } else if (run.status === "failed") {
-    metaLine = `${ts} · ${friendlyError(run.errorMsg)}`;
-  } else {
-    metaLine = `${ts} · ${friendlyError("timed out after 300s")}`;
-  }
+  const ts = run.startedAt ? formatTimestamp(run.startedAt) : formatTimestamp(run.createdAt);
+  const dur = formatDuration(run.startedAt, run.completedAt);
+  const metaLine = [ts, dur].filter(Boolean).join(" · ");
 
   return (
     <div className={`activity-run${expanded ? " activity-run--expanded" : ""}`}>
@@ -188,7 +122,7 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
       >
         <span
           className="activity-run__dot"
-          style={{ background: DOT_COLOR[run.status] }}
+          style={{ background: DOT_COLOR[status] }}
         />
         <span className="activity-run__content">
           <span className="activity-run__primary">{primaryLine}</span>
@@ -206,20 +140,20 @@ function ActivityRunRow({ run }: { run: ActivityRun }) {
 const POLL_INTERVAL_MS = 30_000;
 
 export function ActivityView() {
-  const [runs, setRuns]       = useState<ActivityRun[]>([]);
+  const [runs, setRuns]       = useState<WorkspaceRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const isMounted             = useRef(true);
 
   async function refresh() {
     try {
-      const next = await rpc.request.getActivityRuns();
+      const next = await rpc.request.getWorkspaceRuns();
       if (!isMounted.current) return;
       setRuns(next);
       setError(null);
     } catch {
       if (!isMounted.current) return;
-      setError("Could not load activity — check daemon.log");
+      setError("Could not load activity.");
     } finally {
       if (isMounted.current) setLoading(false);
     }

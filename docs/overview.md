@@ -16,7 +16,7 @@ Draft is three things that work together:
 A native macOS app that runs as a tray icon. Browse your context files, review and accept or reject proposed context updates, manage profiles, and start or stop the background daemon. Install once; it launches at login.
 
 **CLI (`draft`)**
-A compiled binary installed to `/usr/local/bin/draft`. Every feature in the desktop app is also a CLI command: manage profiles, check daemon status, review proposals, publish team context, add integrations. Run `draft --help` to explore.
+A thin client for the hosted Draft control plane, installed to `/usr/local/bin/draft`. Sign in with `draft auth login`, then read your workspace's context with `draft context list` / `draft context read` — useful for scripting and for giving coding agents direct terminal access to context without going through the desktop app. Also runs `draft add <tool>` to install the plugin. Run `draft --help` to explore. See [CLI reference](./cli.md).
 
 **Plugin**
 Installed into Claude Code, Codex, Cursor, OpenClaw, or Hermes via `draft add <tool>`. At the start of every agent session, the plugin injects your current workspace context — company, product, team, priorities, decisions — directly into the agent's system prompt. At session end, it queues a job so the daemon can extract and propose updates. No copy-pasting. No re-explaining.
@@ -104,12 +104,7 @@ The only data that ever leaves your machine is optional, anonymous usage analyti
 
 A profile is a named workspace — a directory at `~/.draft/workspaces/<name>/`. You can have multiple profiles for different clients, projects, or roles.
 
-```bash
-draft profiles             # list profiles
-draft switch acme          # switch to the "acme" profile
-```
-
-The active profile determines which context gets injected at session start and which proposals inbox you're looking at. The desktop app shows and manages profiles in the status bar.
+The active profile determines which context gets injected at session start and which proposals inbox you're looking at. The desktop app shows and manages profiles in the status bar. Profile management (`switch`, `profiles list/create/rename/delete`) is a desktop-app feature, not currently exposed in the CLI — see [CLI reference](./cli.md) for what the CLI supports today.
 
 ---
 
@@ -125,6 +120,7 @@ See [Setting up collaboration](./setting-up-collaboration.md).
 
 ## See also
 
+- [CLI reference](./cli.md)
 - [How context injection works](./how-context-injection-works.md)
 - [How proposals work](./proposals.md)
 - [Architecture](./architecture.md)

@@ -2,10 +2,10 @@ import type { ElectrobunConfig } from "electrobun";
 
 // Read PostHog key + host from build-config.json at config evaluation time.
 // Absent for OSS builds → empty string → phTrack no-ops in the main process.
-let _buildCfg: { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string; github_oauth_client_id?: string; github_join_enabled?: boolean } = {};
+let _buildCfg: { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string; github_oauth_client_id?: string; github_join_enabled?: boolean; draft_api_base_url?: string; draft_app_url?: string; supabase_url?: string; supabase_publishable_key?: string } = {};
 try {
   const raw = await Bun.file(new URL("./src/build-config.json", import.meta.url).pathname).text();
-  _buildCfg = JSON.parse(raw) as { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string; github_oauth_client_id?: string; github_join_enabled?: boolean };
+  _buildCfg = JSON.parse(raw) as { posthog_key?: string; api_host?: string; crisp_website_id?: string; crisp_history_endpoint?: string; crisp_history_secret?: string; cal_url?: string; github_oauth_client_id?: string; github_join_enabled?: boolean; draft_api_base_url?: string; draft_app_url?: string; supabase_url?: string; supabase_publishable_key?: string };
 } catch { /* no build-config.json — OSS build */ }
 
 const isDev               = process.argv.includes("dev");
@@ -17,6 +17,13 @@ const _crispHistorySecret = JSON.stringify(_buildCfg.crisp_history_secret       
 const _calUrl             = JSON.stringify(_buildCfg.cal_url                          ?? "");
 const _ghClientId         = JSON.stringify(_buildCfg.github_oauth_client_id           ?? "");
 const _ghJoinEnabled      = JSON.stringify(_buildCfg.github_join_enabled              ?? false);
+// `make run-local` supplies the root .env.local values for desktop dev. Keep
+// release builds tied to build-config.json so local URLs cannot accidentally
+// be baked into a distributable bundle.
+const _draftApiBaseUrl    = JSON.stringify(isDev ? (process.env.DRAFT_API_BASE_URL ?? _buildCfg.draft_api_base_url) : (_buildCfg.draft_api_base_url ?? "https://api.draftai.us"));
+const _draftAppUrl        = JSON.stringify(isDev ? (process.env.DRAFT_APP_URL ?? _buildCfg.draft_app_url) : (_buildCfg.draft_app_url ?? "https://app.draftai.us"));
+const _supabaseUrl        = JSON.stringify(isDev ? (process.env.DRAFT_SUPABASE_URL ?? _buildCfg.supabase_url) : (_buildCfg.supabase_url ?? "http://localhost:54321"));
+const _supabasePublishableKey = JSON.stringify(isDev ? (process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY ?? _buildCfg.supabase_publishable_key) : (_buildCfg.supabase_publishable_key ?? ""));
 
 export default {
   app: {
@@ -43,6 +50,10 @@ export default {
         "process.env.DRAFT_CAL_URL":                _calUrl,
         "process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID": _ghClientId,
         "process.env.DRAFT_GITHUB_JOIN_ENABLED":    _ghJoinEnabled,
+        "process.env.DRAFT_API_BASE_URL":           _draftApiBaseUrl,
+        "process.env.DRAFT_APP_URL":                _draftAppUrl,
+        "process.env.DRAFT_SUPABASE_URL":            _supabaseUrl,
+        "process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY": _supabasePublishableKey,
       },
     },
     views: {
@@ -64,7 +75,10 @@ export default {
     },
   },
   scripts: {
-    postBuild: "scripts/postbuild.ts",
+    // `electrobun dev --watch` runs without generated release binaries. The
+    // explicit build:dev/canary/stable commands still run postBuild after
+    // prebuild.sh and package those binaries normally.
+    postBuild: isDev ? "" : "scripts/postbuild.ts",
     // Fires after the outer self-extracting wrapper bundle is assembled, before
     // it is codesigned. Lowers Contents/MacOS/launcher's macOS deployment floor.
     postWrap: "scripts/postwrap.ts",

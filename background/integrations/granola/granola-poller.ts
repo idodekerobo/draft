@@ -8,7 +8,7 @@ import {
   routeAutomatedMaintainerOutput,
   type AutomatedMaintainerRouteResult,
 } from '../../automated-maintainer-router';
-import { recordTerminalActivity, startTerminalActivity } from '../../terminal-activity';
+import { startTerminalActivity } from '../../terminal-activity';
 import { prepareMcpIntegration, type McpVerification } from '../mcp-runtime-health';
 import { parseSourceUnavailable, SourceUnavailableError } from '../../synthesizers/source-result';
 
@@ -108,24 +108,14 @@ export function createGranolaPoller(config: {
       deps.log?.('info', `state updated (last_checked_at=${timestamp}, new_ids=${ids.length})`);
       if (routed.status === 'flagged') {
         deps.log?.('warn', `flagged for review at ${routed.flaggedPath}`);
-        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
-          activity, endedAt: deps.now(), outcome: 'needs_input', log: deps.log });
         return 'flagged';
       }
       if (routed.outcome === 'rewrite') {
         deps.log?.('info', 'context updated automatically');
-        recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
-          activity, endedAt: deps.now(), outcome: 'rewrite', log: deps.log });
         return 'applied';
       }
       deps.log?.('info', 'no team-relevant updates');
-      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
-        activity, endedAt: deps.now(), outcome: 'no_change', log: deps.log });
       return 'empty';
-    } catch (error) {
-      recordTerminalActivity({ workspace: config.workspace, profile: config.profile, source: 'granola',
-        activity, endedAt: deps.now(), error, log: deps.log });
-      throw error;
     } finally { running = false; }
   };
 }

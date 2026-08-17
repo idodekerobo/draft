@@ -3,20 +3,10 @@
 
 import { printHelp, red } from "./utils/output.ts";
 
-import { runStatus, runStart, runStop, runLogs } from "./commands/daemon.ts";
 import { runAdd } from "./commands/add.ts";
-import { runSwitch } from "./commands/switch.ts";
-import { runProfiles } from "./commands/profiles.ts";
-import { runPublish, runLoad } from "./commands/sync.ts";
-import { runProposals } from "./commands/proposals.ts";
-import { runDoctor } from "./commands/doctor.ts";
+import { runAuth } from "./commands/auth.ts";
+import { runContext } from "./commands/context.ts";
 import { runCompletion } from "./commands/completion.ts";
-import { runUninstall } from "./commands/uninstall.ts";
-import { runUpdate } from "./commands/update.ts";
-import { runPoll } from "./commands/poll.ts";
-import { runDimension } from "./commands/dimension.ts";
-import { runImport } from "./commands/import.ts";
-import { runMigrations } from "draft-core/migrations/runner";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -28,64 +18,23 @@ if (!command || command === "--help" || command === "-h") {
 }
 
 (async () => {
-  await runMigrations();
-
   switch (command) {
-    case "status":
-      await runStatus(rest);
-      break;
-    case "start":
-      await runStart(rest);
-      break;
-    case "stop":
-      await runStop(rest);
-      break;
-    case "logs":
-      await runLogs(rest);
-      break;
     case "add":
-      await runAdd(rest);
+      process.exitCode = await runAdd(rest);
       break;
-    case "switch":
-      await runSwitch(rest);
+    case "auth":
+      process.exitCode = await runAuth(rest);
       break;
-    case "profiles":
-      await runProfiles(rest);
-      break;
-    case "publish":
-      await runPublish(rest);
-      break;
-    case "load":
-      await runLoad(rest);
-      break;
-    case "proposals":
-      await runProposals(rest);
-      break;
-    case "doctor":
-      await runDoctor(rest);
+    case "context":
+      process.exitCode = await runContext(rest);
       break;
     case "completion":
       await runCompletion(rest);
       break;
-    case "uninstall":
-      await runUninstall(rest);
-      break;
-    case "update":
-      await runUpdate(rest);
-      break;
-    case "poll":
-      await runPoll(rest);
-      break;
-    case "dimension":
-      await runDimension(rest);
-      break;
-    case "import":
-      await runImport(rest);
-      break;
     default:
       console.error(red(`Unknown command: ${command}`));
       console.error(`Run ${"`draft`"} to see the full command list.`);
-      process.exit(1);
+      process.exitCode = 2;
   }
 })().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

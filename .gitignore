@@ -4,6 +4,7 @@ research/
 DESIGN.md
 .env.*
 .env
+!.env.example
 .env.development.local
 .env.test.local
 .env.production.local
@@ -66,3 +67,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 desktop/src/build-config.json
 
 internal-apps/
+
+# Local backend validation scripts — never include in the public repository.
+backend/scripts/

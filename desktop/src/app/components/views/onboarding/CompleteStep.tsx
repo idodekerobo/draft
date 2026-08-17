@@ -1,11 +1,10 @@
-// CompleteStep.tsx — final consent + daemon start screen
+// CompleteStep.tsx — final consent screen
 
 interface CompleteStepProps {
   stepNum: number;
   totalSteps: number;
   onBack: () => void;
-  isStarting: boolean;
-  handleStart: () => void;
+  handleStart: () => void | Promise<void>;
   consentAnswered: boolean;
   consentSaving: boolean;
   handleConsent: (granted: boolean) => void;
@@ -15,7 +14,6 @@ export function CompleteStep({
   stepNum,
   totalSteps,
   onBack,
-  isStarting,
   handleStart,
   consentAnswered,
   consentSaving,
@@ -44,50 +42,18 @@ export function CompleteStep({
         <button className="onboarding__back" onClick={onBack}>← Back</button>
         <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
       </div>
-      <h1 className="onboarding__title">One last thing — then you're running.</h1>
-
-      <div className="onboarding__education">
-        <div className="onboarding__education-text">
-          <strong>Context setup</strong>
-          <span>
-            If you skipped setup, open Claude Code or Codex and run{" "}
-            <code className="onboarding__code">/draft-setup</code>
-            {" "}any time. Otherwise, you can refine the context Draft just created as your product evolves.
-          </span>
-        </div>
-      </div>
-
-      <div className="onboarding__education" style={{ marginTop: 10 }}>
-        <div className="onboarding__education-text">
-          <strong>Draft is also a CLI</strong>
-          <span>
-            Run{" "}
-            <code className="onboarding__code">draft --help</code>
-            {" "}in your terminal. Every feature in this app is also available
-            as commands — manage workspaces, switch profiles, check status.
-          </span>
-        </div>
-      </div>
-
-      <div className="onboarding__education" style={{ marginTop: 10 }}>
-        <div className="onboarding__education-text">
-          <strong>Runs in the background</strong>
-          <span>
-            Draft runs while your Mac is on — the desktop app doesn't need to
-            stay open. Close it anytime and Draft keeps capturing context. You'll
-            find Draft in your menu bar, and you can start, stop, and control it
-            from there or from your terminal.
-          </span>
-        </div>
-      </div>
+      <h1 className="onboarding__title">You're all set.</h1>
+      <p className="onboarding__desc">
+        If you started a synthesis run, it's running in the cloud now — check the Context tab
+        in a few minutes to see it land. Claude Code will use it from then on, no extra setup needed.
+      </p>
 
       <button
         className="empty-state__cta onboarding__cta"
         style={{ marginTop: 24 }}
-        onClick={handleStart}
-        disabled={isStarting}
+        onClick={() => void handleStart()}
       >
-        {isStarting ? "Starting…" : "Start Draft"}
+        Let's go
       </button>
     </div>
   );

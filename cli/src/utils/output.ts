@@ -15,49 +15,29 @@ export const green = (s: string) => `${GREEN}${s}${RESET}`;
 export const yellow = (s: string) => `${YELLOW}${s}${RESET}`;
 export const cyan = (s: string) => `${CYAN}${s}${RESET}`;
 
-export type DotState = "running" | "stopped" | "degraded" | "unknown";
-
-export function dot(state: DotState): string {
-  switch (state) {
-    case "running":  return green("●");
-    case "stopped":  return red("◯");
-    case "degraded": return yellow("⚠");
-    case "unknown":  return dim("◯");
-  }
-}
-
 export function printHelp(): void {
-  console.log(`${bold("Draft")} — Shared context layer for Claude Code, Codex, and Cursor`);
+  console.log(`${bold("Draft")} — hosted control plane client for Claude Code, Codex, and Cursor`);
   console.log("");
   console.log(`Usage: ${cyan("draft")} <command> [args]`);
   console.log("");
   console.log("Commands:");
   const cmds: [string, string][] = [
-    ["status",              "Show daemon status and integration health"],
-    ["start",               "Start the background daemon"],
-    ["stop",                "Stop the background daemon"],
-    ["add <tool>",          "Add Draft to a CLI tool (claude-code, codex, cursor)"],
-    ["switch <name>",       "Activate a profile and swap its team assets"],
-    ["profiles",            "Manage profiles (list, create, rename, delete)"],
-    ["publish",             "Publish context and team assets"],
-    ["load",                "Load context and team assets"],
-    ["logs",                "Tail daemon logs (--follow, --errors)"],
-    ["poll <integration>",  "Trigger an on-demand poll (github, granola, slack)"],
-    ["dimension",           "Manage context dimensions (list, add)"],
-    ["import <source>",     "Import context from a local directory or GitHub repo"],
-    ["proposals",           "Review and approve/reject AI-generated context updates"],
-    ["doctor",              "Diagnose configuration and dependency issues"],
-    ["completion",          "Generate shell tab completion script"],
-    ["update",              "Pull latest from repo and reinstall plugin files"],
-    ["uninstall",           "Remove all of Draft and configuration (not just one tool)"],
+    ["add <tool> [--dir <path>...]", "Configure a project's instruction file for an agent tool"],
+    ["auth login",                 "Sign in via device pairing"],
+    ["auth logout",                "Sign out and clear local credentials"],
+    ["auth whoami",                "Show the current signed-in identity"],
+    ["context list",               "List available context dimensions"],
+    ["context read --dimension <name>", "Print one or more context dimensions"],
+    ["context read --all",         "Print every context dimension"],
+    ["completion",                 "Generate shell tab completion script"],
   ];
   for (const [cmd, desc] of cmds) {
-    console.log(`  ${cyan(cmd.padEnd(26))}${desc}`);
+    console.log(`  ${cyan(cmd.padEnd(36))}${desc}`);
   }
   console.log("");
-  console.log(`Getting started: run ${cyan("draft add claude-code")} to add Draft to Claude Code,`);
-  console.log(`then open Claude Code and run ${cyan("/draft:setup")} to initialize your workspace.`);
+  console.log(`Getting started: run ${cyan("draft auth login")} to sign in,`);
+  console.log(`then ${cyan("draft context list")} to see what's available.`);
   console.log("");
-  console.log(`Run ${cyan("draft <command> --help")} for details.`);
-  console.log(`Exit codes: 0=success  1=user error  2=config error  3=dep/daemon failure`);
+  console.log(`Run ${cyan("draft <command> --json")} for machine-readable output.`);
+  console.log(`Exit codes: 0=success  1=auth/API error  2=invalid usage  130=interrupted`);
 }

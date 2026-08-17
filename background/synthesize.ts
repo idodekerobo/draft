@@ -1,11 +1,9 @@
 // background/synthesize.ts — Draft synthesis router
 //
 // Reads a job file, checks eligibility, delegates to the source adapter bash script,
-// handles timeout, routes validated output through the trusted maintainer, and
-// records the run in activity.db.
+// handles timeout, and routes validated output through the trusted maintainer.
 // Job file cleanup (unlinkSync/renameSync) is the caller's responsibility.
 
-import { openActivityDb, insertRun, type ActivityRun } from 'draft-core/db/activity';
 import { BACKGROUND_DIR, getWorkspacePath } from 'draft-core/config';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, statSync } from 'fs';
@@ -72,24 +70,12 @@ function slog(level: 'info' | 'warn' | 'error', msg: string) {
   try { appendFileSync(LOG_PATH, line); } catch {}
 }
 
-function writeActivityRow(workspace: string, run: ActivityRun): void {
-  try {
-    mkdirSync(workspace, { recursive: true });
-    const db = openActivityDb(workspace);
-    insertRun(db, run);
-    db.close();
-  } catch (e) {
-    slog('warn', `synthesize: failed to write activity row: ${e}`);
-  }
-}
-
 export async function synthesize(
   jobPath: string,
   deps: SynthesizeDeps = {},
 ): Promise<SynthesizeResult> {
   const startedAt = new Date().toISOString();
-  const startTime = Date.now();
-  // Job UUID from filename — used as row id so duplicate job runs are idempotent
+  // Job UUID from filename — used as the job id when the job file doesn't carry one
   const fallbackJobId = basename(jobPath).replace(/^job-/, '').replace(/\.json$/, '');
 
   // ── Parse job ──────────────────────────────────────────────────────────────
@@ -129,7 +115,6 @@ export async function synthesize(
     return { status: 'failed', proposalsGenerated: 0, errorMsg: 'invalid synthesis source' };
   }
   const source         = rawSource;
-  const cwd            = job.cwd             ?? null;
   const transcriptPath: string | null = job.transcript_path ?? null;
   const sessionShort   = sessionId ? sessionId.slice(0, 8) : 'unknown';
   const workspace      = (deps.getWorkspacePath ?? getWorkspacePath)(profile);
@@ -140,12 +125,6 @@ export async function synthesize(
   const SKIP_REASONS = new Set(['clear', 'resume', 'logout', 'bypass_permissions_disabled']);
   if (SKIP_REASONS.has(reason)) {
     slog('info', `synthesize: skipping job (reason=${reason} session=${sessionShort} profile=${profile})`);
-    writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd, transcriptPath,
-      startedAt, endedAt: new Date().toISOString(), status: 'skipped',
-      durationMs: Date.now() - startTime,
-      proposalsGenerated: 0, maintainerOutcome: null, skipReason: reason, errorMsg: null,
-    });
     return { status: 'skipped', proposalsGenerated: 0, skipReason: reason };
   }
 
@@ -156,12 +135,6 @@ export async function synthesize(
     if (!transcriptPath || !existsSync(transcriptPath)) {
       const why = !transcriptPath ? 'missing_transcript_path' : 'missing_transcript';
       slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
-      writeActivityRow(workspace, {
-        id: jobId, profile, source, sessionId, cwd, transcriptPath,
-        startedAt, endedAt: new Date().toISOString(), status: 'skipped',
-        durationMs: Date.now() - startTime,
-        proposalsGenerated: 0, maintainerOutcome: null, skipReason: why, errorMsg: null,
-      });
       return { status: 'skipped', proposalsGenerated: 0, skipReason: why };
     }
   }
@@ -175,12 +148,6 @@ export async function synthesize(
     if (currentFingerprint !== job.transcript_fingerprint) {
       const why = 'transcript_changed';
       slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
-      writeActivityRow(workspace, {
-        id: jobId, profile, source, sessionId, cwd, transcriptPath,
-        startedAt, endedAt: new Date().toISOString(), status: 'skipped',
-        durationMs: Date.now() - startTime,
-        proposalsGenerated: 0, maintainerOutcome: null, skipReason: why, errorMsg: null,
-      });
       return { status: 'skipped', proposalsGenerated: 0, skipReason: why };
     }
   }
@@ -200,12 +167,6 @@ export async function synthesize(
     if (!adapter) {
       const msg = `source adapter not found for "${source}" (tried .js, .ts, and .sh; session=${sessionShort})`;
       slog('error', `synthesize: ${msg}`);
-      writeActivityRow(workspace, {
-        id: jobId, profile, source, sessionId, cwd, transcriptPath,
-        startedAt, endedAt: new Date().toISOString(), status: 'failed',
-        durationMs: Date.now() - startTime,
-        proposalsGenerated: 0, maintainerOutcome: null, skipReason: null, errorMsg: msg,
-      });
       return { status: 'failed', proposalsGenerated: 0, errorMsg: msg };
     }
 
@@ -245,25 +206,12 @@ export async function synthesize(
 
   if (timedOut) {
     slog('error', `synthesize: timeout after 300s (session=${sessionShort})`);
-    writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd, transcriptPath,
-      startedAt, endedAt: new Date().toISOString(), status: 'timeout',
-      durationMs: Date.now() - startTime,
-      proposalsGenerated: 0, maintainerOutcome: null, skipReason: null,
-      errorMsg: 'timed out after 300s',
-    });
     return { status: 'timeout', proposalsGenerated: 0, errorMsg: 'timed out after 300s' };
   }
 
   if (exitCode !== 0) {
     const errorMsg = `adapter exited ${exitCode}`;
     slog('error', `synthesize: ${errorMsg} (session=${sessionShort})`);
-    writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd, transcriptPath,
-      startedAt, endedAt: new Date().toISOString(), status: 'failed',
-      durationMs: Date.now() - startTime,
-      proposalsGenerated: 0, maintainerOutcome: null, skipReason: null, errorMsg,
-    });
     return { status: 'failed', proposalsGenerated: 0, errorMsg };
   }
 
@@ -271,12 +219,6 @@ export async function synthesize(
     // A source adapter can legitimately produce nothing (e.g. a Codex transcript with
     // no conversation turns). That is a no-op run, not a contract violation.
     slog('info', `synthesize: empty output (session=${sessionShort}) — no changes`);
-    writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd, transcriptPath,
-      startedAt, endedAt: new Date().toISOString(), status: 'success',
-      durationMs: Date.now() - startTime,
-      proposalsGenerated: 0, maintainerOutcome: 'no_change', skipReason: null, errorMsg: null,
-    });
     return { status: 'success', proposalsGenerated: 0 };
   }
 
@@ -303,36 +245,18 @@ export async function synthesize(
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     slog('error', `synthesize: ${errorMsg} (source=${source} session=${sessionShort})`);
-    writeActivityRow(workspace, {
-      id: jobId, profile, source, sessionId, cwd, transcriptPath,
-      startedAt, endedAt: new Date().toISOString(), status: 'failed',
-      durationMs: Date.now() - startTime,
-      proposalsGenerated: 0, maintainerOutcome: null, skipReason: null, errorMsg,
-    });
     return { status: 'failed', proposalsGenerated: 0, errorMsg };
   }
 
   if (routed.status === 'locked') {
-    // Another run holds the workspace writer. No activity row: this job has not
-    // happened yet, and the daemon will re-queue it.
+    // Another run holds the workspace writer: this job has not happened yet,
+    // and the daemon will re-queue it.
     slog('info', `synthesize: workspace locked — deferring (session=${sessionShort})`);
     return { status: 'deferred', proposalsGenerated: 0 };
   }
 
-  // ── Record success row ─────────────────────────────────────────────────────
   const proposalsGenerated = routed.status === 'flagged' ? 1 : 0;
-  const maintainerOutcome: ActivityRun['maintainerOutcome'] = routed.status === 'flagged'
-    ? 'needs_input'
-    : routed.outcome === 'rewrite'
-      ? 'rewrite'
-      : 'no_change';
   slog('info', `synthesize: ${routed.outcome} (session=${sessionShort} profile=${profile})`);
-  writeActivityRow(workspace, {
-    id: jobId, profile, source, sessionId, cwd, transcriptPath,
-    startedAt, endedAt: new Date().toISOString(), status: 'success',
-    durationMs: Date.now() - startTime,
-    proposalsGenerated, maintainerOutcome, skipReason: null, errorMsg: null,
-  });
 
   return { status: 'success', proposalsGenerated };
 }

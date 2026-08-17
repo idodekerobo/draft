@@ -12,34 +12,30 @@
 
 import type { RPCSchema } from "electrobun/bun";
 
+export interface UserIdentity {
+  signedIn: boolean;
+  hydrated: boolean;
+  organizationId: string | null;
+  teamId: string | null;
+  workspaceId: string | null;
+  /** Server timestamp of when this user finished the onboarding wizard, or null. */
+  onboardingCompletedAt: string | null;
+}
+
 // ── Shared payload types ───────────────────────────────────────────────────────
 // Defined inline here (not imported from draft-core) so the renderer can safely
 // import this file without pulling in any Node/Bun-only modules.
 
-export type DaemonState = "running" | "stopped" | "degraded";
-
-export interface ActivityRun {
+export interface WorkspaceRun {
   id: string;
-  profile: string;
-  source: string;
-  sessionId: string | null;
-  cwd: string | null;
-  startedAt: string;        // ISO 8601
-  endedAt: string | null;
-  status: "success" | "failed" | "skipped" | "timeout";
-  durationMs: number | null;
-  proposalsGenerated: number;
-  maintainerOutcome: "no_change" | "rewrite" | "needs_input" | null;
-  changedDimensions: string[];
-  skipReason: string | null;
-  errorMsg: string | null;
-  transcriptPath: string | null;
-}
-
-export interface IntegrationStatus {
-  granola: boolean;
-  slack: boolean;
-  github: boolean;
+  status: "queued" | "preparing" | "running" | "validating" | "committing" |
+          "succeeded" | "failed" | "stale" | "cancelled";
+  outcome: "changed" | "no_change" | "failure" | "stale" | null;
+  triggerType: "schedule" | "source_threshold" | "manual" | "retry" | "stale_requeue" | "seed_test";
+  resultSummary: string | null;
+  startedAt: string | null; // ISO 8601
+  completedAt: string | null;
+  createdAt: string;
 }
 
 /** Coding tools that have been set up with `draft add <tool>`. */
@@ -51,19 +47,9 @@ export interface InstalledToolsStatus {
   hermes: boolean;
 }
 
-export interface DaemonStatus {
-  state: DaemonState;
-  pid: string | null;
-  lastExit: string | null;
-  isRegistered: boolean;
-  /** Active profile name — read from last-heartbeat JSON. Null if daemon never ran. */
-  profile: string | null;
-  /** ISO timestamp of last synthesis run — read from last-heartbeat JSON. Null if no sync yet. */
-  lastSync: string | null;
+export interface AppStatus {
   /** First-run/setup-ready state for renderer routing and setup copy. */
   appState: AppState;
-  /** Which integrations are connected — read from integrations.json for the active profile. */
-  integrations: IntegrationStatus;
   /** Which coding tools have been set up with `draft add` — read from config.json. */
   installedTools: InstalledToolsStatus;
 }
@@ -96,26 +82,6 @@ export interface AppState {
   daemonState: "running" | "stopped" | "never-started";
   heartbeatAgeMs: number | null;
   activeProfile: string;
-}
-
-export interface ProposalSummary {
-  /** Stable ID relative to proposals/ (flagged IDs start with "flagged/"). */
-  filename: string;
-  kind: "manual" | "flagged";
-  outcome: string;
-  needsInputReason: string;
-  source: string;
-  dimension: string;
-  action: string;
-  timestamp: string;
-  summary: string;
-  createdAt: string;
-  body: string;
-  currentContent: string;
-  /** Full file text including YAML frontmatter — shown by "View raw". */
-  rawContent: string;
-  /** Content of the first context_update — used for diff preview. */
-  content: string;
 }
 
 export interface SessionLaunchConfig {
@@ -275,75 +241,12 @@ export interface ProfileList {
   details: ProfileDetail[];
 }
 
-export interface LoadDiffEntry {
-  dimension: string;
-  action: string;
-  summary: string;
-}
-
-export interface LoadDiffResult {
-  entries: LoadDiffEntry[];
-  cursorLine: number;
-  lastLoaded: string | null;
-}
-
-export type TeamStageErrorCode =
-  | "no_token" | "no_access" | "token_revoked" | "network" | "rate_limited"
-  | "archive_invalid" | "archive_too_large"
-  | "unpublished_local_changes" | "unpublished_team_assets"
-  | "local_asset_validation_failed" | "remote_asset_validation_failed"
-  | "clone_failed" | "unexpected";
-
-/** Serializable preview returned by the shared team-content staging lifecycle. */
-export type TeamDiffResult =
-  | {
-      ok: true;
-      collabConfigured: true;
-      /** Opaque loader capability. The renderer never receives a staging path. */
-      operationId: string;
-      entries: LoadDiffEntry[];
-      /** Display state only; promotion derives the cursor from operationId. */
-      cursorLine: number;
-    }
-  | { ok: false; collabConfigured: false; error: "not_configured" }
-  | { ok: false; collabConfigured: true; error: TeamStageErrorCode };
-
-export interface TeamLoadMissingSecret {
-  name: string;
-  requiredSecrets: string[];
-}
-
-export interface TeamLoadConflict {
-  kind: "skill" | "mcp";
-  name: string;
-  profile: string;
-  reason: "team-name-collision" | "personal-name-collision" | "target-modified";
-}
-
-export type TeamApplyErrorCode =
-  | "workspace_changed" | "stage_not_found" | "apply_failed" | "unexpected";
-
-export type TeamApplyResult =
-  | {
-      ok: true;
-      missingSecrets: TeamLoadMissingSecret[];
-      conflicts: TeamLoadConflict[];
-      installedSkills: string[];
-      installedMcps: string[];
-      removedSkills: string[];
-      removedMcps: string[];
-    }
-  | { ok: false; error: TeamApplyErrorCode };
-
 export interface LocalConfig {
-  teamLoadMode: "auto" | "review";
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
   disabledContextSections: string[];
   codexScanIntervalMinutes: number | null;
   claudeCodeSynthesis: boolean;
-  /** ISO timestamp of the last full publish to the team repo, or null if never published. */
-  lastPublished: string | null;
 }
 
 export interface UpdateInfo {
@@ -402,6 +305,8 @@ export interface IntegrationDetail {
   mode: string | null;
   /** Slack: number of configured channels. Null for other sources. */
   channels: number | null;
+  /** Slack: configured channel IDs returned by the cloud connection status. */
+  channelIds?: string[];
   /** GitHub: list of watched repos. Empty for other sources. */
   repos: string[];
   /** GitHub only: local gh CLI availability/authentication. Null for other sources. */
@@ -421,7 +326,9 @@ export interface ConnectedAppsStatus {
     slack: IntegrationDetail;
     github: IntegrationDetail;
     fireflies: IntegrationDetail;
+    linear: IntegrationDetail;
   };
+  claudeCode: { connected: boolean };
 }
 
 /**
@@ -458,41 +365,6 @@ export interface ContextFileEntry {
   groupLabel: string;
 }
 
-/**
- * A single recorded version of a context file, from history.db.
- * Defined inline (mirrors draft-core/db/types FileVersion) rather than imported,
- * per this file's convention of staying free of Node/Bun-only modules.
- */
-export interface ContextFileVersion {
-  id: string;
-  filePath: string;
-  content: string;
-  createdAt: string;
-  source: "human-edit" | "team-load" | "initial" | "automated-maintainer";
-  author: string | null;
-  sessionId: string | null;
-  publishedAt: string | null;
-  changesEntryId: string | null;
-}
-
-export interface PublishResult {
-  ok: boolean;
-  published: boolean;
-  scoped: boolean;
-  files: string[];
-  error?: string;
-}
-
-// ── Team sync types ────────────────────────────────────────────────────────────
-
-/** Installed team skill entry — a slim view of the manifest for UI display. */
-export interface TeamSkillEntry {
-  id: string;
-  name: string;
-  profile: string;
-  source_path: string;
-}
-
 /** A team MCP that is waiting for the user to supply missing API credentials. */
 export interface PendingCredentialMcp {
   name: string;
@@ -510,11 +382,8 @@ export type AppRPCType = {
    */
   bun: RPCSchema<{
     requests: {
-      /** Get current daemon state. */
-      getStatus: { params: void; response: DaemonStatus };
-
-      /** List pending proposals for the active workspace. */
-      getProposals: { params: void; response: ProposalSummary[] };
+      /** Get current app state. */
+      getStatus: { params: void; response: AppStatus };
 
       /** List available profiles and the active profile. */
       getProfiles: { params: void; response: ProfileList };
@@ -528,31 +397,10 @@ export type AppRPCType = {
       /** Launch a terminal session for the given tool + profile. */
       launchSession: { params: SessionLaunchConfig; response: LaunchResult };
 
-      /** Start the background daemon via launchctl. */
-      startDaemon: { params: void; response: ActionResult };
-
       /** Start the cross-agent skill watcher. Called after onboarding completes. */
       startSkillWatcher: { params: void; response: void };
 
-      /** Stop the background daemon via launchctl. */
-      stopDaemon: { params: void; response: ActionResult };
-
-      /** Accept a manual proposal, or acknowledge a flagged item. */
-      acceptProposal: { params: { filename: string }; response: ActionResult };
-
-      /** Reject a manual proposal, or dismiss a flagged item. */
-      rejectProposal: { params: { filename: string }; response: ActionResult };
-
-      /** Read CHANGES.jsonl delta since last cursor (from local workspace copy — what hook applied). */
-      loadDiff: { params: void; response: LoadDiffResult };
-
-      /** Stage team content and return a serializable preview plus opaque operation ID. */
-      getTeamDiff: { params: void; response: TeamDiffResult };
-
-      /** Promote previously staged team content using only its opaque operation ID. */
-      applyTeamDiff: { params: { operationId: string }; response: TeamApplyResult };
-
-      /** Read per-profile local config (teamLoadMode). */
+      /** Read per-profile local config. */
       getLocalConfig: { params: void; response: LocalConfig };
 
       /** Patch per-profile local config. */
@@ -561,47 +409,11 @@ export type AppRPCType = {
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
 
-      /**
-       * Scaffold a new custom dimension: context/<name>/index.md + log/.
-       * Mirrors `draft dimension add <name>` (cli/src/commands/dimension.ts) so the
-       * two entry points stay behaviorally identical.
-       */
-      addContextDimension: { params: { name: string }; response: ActionResult };
-
-      /**
-       * Write edited content to a context file on disk. Frequent/debounced tier —
-       * does not touch history.db. relativePath is relative to <workspace>/context/.
-       */
-      saveContextFile: { params: { relativePath: string; content: string }; response: ActionResult };
-
-      /**
-       * Record a history.db checkpoint from the file's current on-disk content.
-       * Infrequent tier — call only after saveContextFile resolves (blur/switch/close),
-       * never on an independent timer, so a row is never inserted for content that
-       * isn't actually durable on disk yet.
-       */
-      checkpointContextFile: { params: { relativePath: string }; response: ActionResult };
-
-      /** List version history for a context file, most recent first. */
-      getFileHistory: { params: { relativePath: string }; response: ContextFileVersion[] };
-
-      /** Fetch the full content of a specific historical version. */
-      getFileVersionContent: { params: { versionId: string }; response: { content: string } | null };
-
-      /** Publish a single context file to the team repo (scoped publish). */
-      publishContextFile: { params: { relativePath: string }; response: PublishResult };
-
-      /** Publish all context, skills, and mcp config to the team repo (full publish). */
-      publishAllContext: { params: void; response: PublishResult };
-
-      /** List relative context paths with an unpublished latest version in history.db. */
-      getUnpublishedContextPaths: { params: void; response: string[] };
-
       /** Rich connection status for all intelligence tools and input sources. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
       /** Disconnect an input source by setting connected=false in integrations.json. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" }; response: ActionResult };
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" }; response: ActionResult };
 
       /**
        * Connect GitHub natively via `gh auth login --web`.
@@ -653,16 +465,25 @@ export type AppRPCType = {
       /** Persist a Granola API key and connection status for the daemon. */
       connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
 
-      /** Register Fireflies' MCP server (with bearer-token auth) and persist connection status. */
-      connectFireflies: { params: { apiKey: string }; response: ActionResult };
+      /** Persist Fireflies API credentials in Draft Cloud and return webhook setup values. */
+      connectFireflies: { params: { apiKey: string }; response: ActionResult & { webhookUrl?: string; webhookSecret?: string } };
+
+      /** Persist a Linear personal API key in Draft Cloud; the server creates the webhook itself. */
+      connectLinear: { params: { apiKey: string }; response: ActionResult };
+
+      /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
+      connectClaudeCode: { params: { token: string }; response: ActionResult };
+
+      /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
+      getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };
 
       /** Build and return the Slack app creation URL with the manifest pre-filled. */
       getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };
 
       /**
-       * List the bot's visible Slack channels (public + private) via conversations.list.
-       * Omit botToken to use the token already saved for an already-connected integration
-       * (the Settings "Update channels" flow).
+       * List public Slack channels during initial setup via conversations.list.
+       * Omit botToken to ask the server to use the stored credential for the
+       * Settings "Update channels" flow.
        */
       listSlackChannels: { params: { botToken?: string }; response: { ok: boolean; channels?: SlackChannelOption[]; error?: string } };
 
@@ -684,6 +505,40 @@ export type AppRPCType = {
 
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
+
+      /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
+      getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };
+
+      /** Trigger a cloud synthesis run against whatever source items are currently ready. */
+      triggerSynthesisRun: { params: void; response: ActionResult & { runId?: string; machineId?: string; reason?: string } };
+
+      /** Open the native folder picker for uploading local files as source items for the cloud sandbox to read. */
+      selectUploadFolder: { params: void; response: { folderPath: string | null } };
+
+      /**
+       * Upload a local folder's file contents as source items. When
+       * triggerSynthesis is true, the server chains straight into launching
+       * a synthesis run scoped to exactly the items this call inserts (not
+       * every ready item in the workspace) — one request/response instead
+       * of a separate triggerSynthesisRun call with plumbed-through IDs.
+       */
+      uploadSourceItems: {
+        params: { folderPath: string; triggerSynthesis?: boolean };
+        response: ActionResult & { inserted?: number; skipped?: string[]; runId?: string; machineId?: string; reason?: string; synthesisError?: string };
+      };
+
+      /**
+       * Onboarding's single entrypoint for starting a workspace's first
+       * synthesis run: uploads a local folder's contents as source items
+       * (if given) then launches synthesis, always passing dimension hints
+       * for the bootstrap prompt. Internally still calls the same
+       * source-items / synthesis-runs backend routes as uploadSourceItems /
+       * triggerSynthesisRun.
+       */
+      bootstrapWorkspaceContext: {
+        params: { folderPath?: string; dimensions: { dimensionName: string; dimensionDescription: string }[] };
+        response: ActionResult & { inserted?: number; skipped?: string[]; runId?: string; machineId?: string; reason?: string; synthesisError?: string };
+      };
 
       /**
        * Run inject-context.sh and return the full text that would be injected
@@ -715,62 +570,24 @@ export type AppRPCType = {
       /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
       getAppVersion: { params: void; response: AppVersionInfo };
 
-      /** List the last 50 activity runs for the active profile. */
-      getActivityRuns: { params: void; response: ActivityRun[] };
-
-      /** Return all team skills installed for the active profile. */
-      getTeamSkillsInstalled: { params: void; response: { skills: TeamSkillEntry[] } };
-
-      /** Promote a user-owned skill to the team workspace (Flow A). */
-      promoteSkillToTeam: { params: { skillId: string }; response: ActionResult };
-
-      /** Promote a user-owned MCP to the team workspace (Flow A). */
-      promoteMcpToTeam: { params: { mcpId: string }; response: ActionResult };
-
-      /** Demote a team-shared skill back to personal (Flow A reversal). */
-      demoteSkillFromTeam: { params: { skillId: string }; response: ActionResult };
-
-      /** Demote a team-shared MCP back to personal (Flow A reversal). */
-      demoteMcpFromTeam: { params: { mcpId: string }; response: ActionResult };
+      /** List the last 50 cloud synthesis runs for the active workspace. Returns [] if signed out or the request fails. */
+      getWorkspaceRuns: { params: void; response: WorkspaceRun[] };
 
       /** Supply a missing secret for a team MCP in pending-credentials state. */
       setMcpSecret: { params: { name: string; envVar: string; value: string }; response: ActionResult & { nowInstalled: boolean } };
 
-      /** Check if team collaboration is configured for the active profile. */
-      getCollabConfigured: { params: void; response: { configured: boolean } };
+      startBrowserSignIn: { params: void; response: ActionResult };
+      cancelBrowserSignIn: { params: void; response: ActionResult };
+      signOut: { params: void; response: ActionResult };
+      getUserIdentity: { params: void; response: UserIdentity };
 
       /**
-       * Whether the native GitHub join flow is available in this build —
-       * false for OSS/dev builds with no OAuth client id baked in, or when
-       * the build-time kill switch is off. Renderer never attempts an OAuth
-       * call it can't complete; it shows "not available in this build" instead.
+       * Mark the signed-in user's onboarding wizard as complete, server-side
+       * (POST /onboarding-complete). Called once, from the wizard's final
+       * "Let's go" step. Updates the cached identity in place so App.tsx's
+       * onboarding gate flips immediately without a full /whoami re-fetch.
        */
-      getGitHubJoinConfig: { params: void; response: { enabled: boolean } };
-
-      /**
-       * Kick off the native GitHub Device Flow join-team flow. Fire-and-forget —
-       * returns almost immediately, well before the user has even seen the
-       * device code. All real progress (including the multi-minute wait for
-       * browser authorization) arrives via the githubOAuthProgress push.
-       */
-      startGitHubJoin: { params: { repoUrl: string }; response: ActionResult };
-
-      /** Cancel the in-flight device flow for the active workspace, if any. */
-      cancelGitHubJoin: { params: void; response: ActionResult };
-
-      /** Poll join status — used by JoinTeamStep to offer a "finish joining?" resume prompt on mount. */
-      checkGitHubJoinStatus: {
-        params: void;
-        response: { connected: boolean; pending: boolean; reason?: "no_access" | "token_revoked" | "network" };
-      };
-
-      /**
-       * Resume a pending join (LocalConfig.pending_join) after a crash or an
-       * earlier "no access yet" failure. Re-runs verifyRepoAccess + completeJoin
-       * against the already-issued token — no new device code needed. Same
-       * fire-and-forget contract as startGitHubJoin; progress via githubOAuthProgress.
-       */
-      resumeGitHubJoin: { params: void; response: ActionResult };
+      completeOnboarding: { params: void; response: ActionResult & { onboardingCompletedAt?: string | null } };
     };
     messages: {
       /** Renderer asks bun to fire a macOS notification. */
@@ -790,14 +607,8 @@ export type AppRPCType = {
    * messages: bun sends → renderer handles (fire-and-forget)
    */
   webview: RPCSchema<{
-    requests: {
-      /** Bun asks renderer to show a confirm-load dialog. */
-      confirmLoad: { params: LoadDiffResult; response: boolean };
-    };
+    requests: {};
     messages: {
-      /** New proposal(s) arrived from the daemon. */
-      proposalAdded: { profile: string; source: string; count: number };
-
       /** A newly installed skill was made available to the other agent. */
       skillsChanged: { count: number };
 
@@ -822,20 +633,11 @@ export type AppRPCType = {
       /** Status update from the headless context-setup process. */
       headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
 
-      /** Daemon heartbeat went stale — daemon has stopped. Phase 1. */
-      daemonStopped: Record<string, never>;
-
       /** Daemon completed a capture cycle. */
       captureComplete: { source: string };
 
-      /** Update the proposal badge count in the UI. */
-      badgeUpdate: { profile: string; count: number };
-
       /** Active profile changed outside or inside desktop. */
       profileChanged: { profile: string };
-
-      /** Bun asks renderer to re-fetch status immediately (e.g. after a menu start/stop action). */
-      requestStatusRefresh: Record<string, never>;
 
       /** Bun started an update check. */
       updateCheckStarted: Record<string, never>;
@@ -855,15 +657,16 @@ export type AppRPCType = {
       /** One or more team MCPs are missing credentials after profile switch or load-team. */
       mcpsPendingCredentials: { mcps: PendingCredentialMcp[] };
 
-      /** Progress from the native GitHub Device Flow join-team flow. */
-      githubOAuthProgress: {
-        phase: "awaiting_user" | "verifying_access" | "complete" | "error";
-        userCode?: string;
-        verificationUri?: string;
-        label: string;
+      signInProgress: {
+        phase: "awaiting_approval" | "complete" | "error";
         error?: string;
-        errorCode?: string;
       };
+
+      /** Local auth session was cleared by the main process. */
+      authStateChanged: { signedIn: boolean };
+
+      /** Cached identity fields (e.g. onboardingCompletedAt) changed on disk — re-read without a /whoami round trip. */
+      identityRefreshNeeded: Record<string, never>;
     };
   }>;
 };

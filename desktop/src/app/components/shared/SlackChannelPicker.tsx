@@ -9,6 +9,8 @@ import { rpc } from "../../rpc";
 export interface SlackChannelPickerProps {
   /** Omit to use the token already saved for an already-connected integration. */
   botToken?: string;
+  /** Existing cloud configuration used to preselect channels in Settings. */
+  configuredChannelIds?: string[];
   selected: string[];
   onChange: (next: string[]) => void;
   /**
@@ -20,14 +22,21 @@ export interface SlackChannelPickerProps {
   onLoaded?: (channels: SlackChannelOption[]) => void;
 }
 
-export function SlackChannelPicker({ botToken, selected, onChange, onLoaded }: SlackChannelPickerProps) {
+export function SlackChannelPicker({ botToken, configuredChannelIds, selected, onChange, onLoaded }: SlackChannelPickerProps) {
   const [channels, setChannels] = useState<SlackChannelOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const configuredKey = configuredChannelIds?.join(",") ?? "";
+  const isManageMode = configuredChannelIds !== undefined;
 
   useEffect(() => {
     let cancelled = false;
     setChannels(null);
     setError(null);
+    if (!botToken && !isManageMode) {
+      setChannels([]);
+      setError("No configured Slack channels found. Connect Slack again to choose channels.");
+      return () => { cancelled = true; };
+    }
     rpc.request.listSlackChannels({ botToken })
       .then((result) => {
         if (cancelled) return;
@@ -46,8 +55,8 @@ export function SlackChannelPicker({ botToken, selected, onChange, onLoaded }: S
         }
       });
     return () => { cancelled = true; };
-    // onLoaded intentionally excluded — it must fire once per fetch (keyed on botToken), not re-run on every parent render.
-  }, [botToken]);
+    // onLoaded intentionally excluded — it must fire once per channel-source change, not on every parent render.
+  }, [botToken, configuredKey, isManageMode]);
 
   function toggle(id: string) {
     onChange(selected.includes(id) ? selected.filter((c) => c !== id) : [...selected, id]);

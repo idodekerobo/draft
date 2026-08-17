@@ -10,7 +10,7 @@
 #   3. Copies the `draft` wrapper script to ~/bin/ (or /usr/local/bin/)
 #   4. Verifies `draft` is reachable in PATH
 #   5. Installs shell tab completion (zsh or bash)
-#   6. Runs `draft add claude-code` to install the plugin and daemon
+#   6. Prints the `draft add <tool> --dir <path>` command to run next
 #
 # Safe to re-run — all steps are idempotent.
 
@@ -85,7 +85,7 @@ if ! command -v draft &>/dev/null; then
     warn "  export PATH=\"$INSTALL_DIR:\$PATH\""
     warn "  (Add that line to ~/.zshrc or ~/.bashrc to make it permanent)"
     echo ""
-    warn "Then run: draft add claude-code"
+    warn "Then run: draft add claude-code --dir <path-to-your-project>"
     echo ""
     log "Install complete — PATH update required before first use."
     exit 0
@@ -126,21 +126,15 @@ else
     warn "Unknown shell ($SHELL_NAME) — run 'draft completion --help' to set up tab completion manually"
 fi
 
-# ── 6. Install plugin + daemon ────────────────────────────────────────────────
-
-echo ""
-log "Running: draft add claude-code"
-echo ""
-draft add claude-code
-
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""
 bold "Install complete."
 echo ""
-echo "  draft status       — check daemon and integration health"
-echo "  draft doctor       — diagnose any issues"
-echo "  draft --help       — see all commands"
+echo "  draft auth login                              — sign in via device pairing"
+echo "  draft context list                            — see available context dimensions"
+echo "  draft add <tool> --dir <path>                  — configure a project for claude-code, codex, cursor, openclaw, or hermes"
+echo "  draft --help                                   — see all commands"
 echo ""
 echo "──────────────────────────────────────"
 echo ""

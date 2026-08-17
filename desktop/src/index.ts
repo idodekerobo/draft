@@ -1,59 +1,33 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
-import { getDaemonStatus, PLIST_LABEL, PLIST_PATH } from "draft-core/status";
+import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import {
   createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
   detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
-  promoteSkillToTeam, demoteSkillFromTeam,
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readCollaboration, readIntegrations, writeIntegrations, readSecrets, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
-import { registerFirefliesMCP, writeFirefliesConfig } from "draft-core/integrations/fireflies";
-import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels, readStoredSlackBotToken, writeSlackConfig, writeSlackRolesChannels, updateSlackChannels } from "draft-core/integrations/slack";
+import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
 import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
-import {
-  cancelActiveDeviceFlow,
-  parseGitHubRepoUrl,
-  resumePendingJoin,
-  startGitHubDeviceFlow,
-} from "draft-core/integrations/github-oauth";
-import { homedir, userInfo } from "os";
-import { openActivityDb, queryRuns } from "draft-core/db/activity";
-import { openHistoryDb, insertFileVersion, queryFileVersions, getFileVersion, queryAutomatedRewriteDimensions } from "draft-core/db/history";
-import {
-  listProposals,
-  acknowledgeFlaggedProposal,
-  acceptProposal as acceptCoreProposal,
-  dismissFlaggedProposal,
-  proposalArchiveDirs,
-  rejectProposal as rejectCoreProposal,
-  applyProposalLocally,
-} from "draft-core/proposals";
+import { homedir } from "os";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
-import { join, resolve } from "path";
+import { extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
   getBundledBackgroundDir,
   getBundledDaemonBinPath,
   getBundledPluginDir,
 } from "./main/bundlePath";
-import { readLocalDiff } from "./main/sync/loadDiff";
 import { runInstall, syncExtractedBins } from "./main/installer";
-import { startHeartbeatWatch, stopHeartbeatWatch, setNotificationsEnabled } from "./main/notifications";
+import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
-import {
-  startProposalWatch,
-  restartProposalWatch,
-  stopProposalWatch,
-  type ProposalWatchHandlers,
-} from "./main/watchers/proposals";
 import {
   startActiveProfileWatch,
   stopActiveProfileWatch,
@@ -63,8 +37,6 @@ import { startMcpWatch, stopMcpWatch, restartMcpWatchWithProfile } from "./main/
 import {
   detectMcpPending,
   approveMcps as approveMcpsCore,
-  promoteMcpToTeam,
-  demoteMcpFromTeam,
   setTeamMcpSecret,
 } from "draft-core/sync/mcp-sync";
 import {
@@ -73,25 +45,199 @@ import {
   tombstoneMcp,
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
-import { rebuildEnvSh, switchProfileAssets, validateProfileAssets } from "draft-core/sync/team-assets";
-import { publishTeamContext, listUnpublishedContextPaths } from "draft-core/sync/publish";
-import { promoteStagedTeamContent, stageTeamContent } from "draft-core/sync/team-load";
-import type { AppRPCType, IntegrationDetail } from "./rpc/schema";
+import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
+import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption, WorkspaceRun } from "./rpc/schema";
+import { startBrowserSignIn } from "./main/auth/browser-sign-in";
+import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
+import { getUserIdentity } from "./main/auth/user-identity";
+import { fetchServer, fetchServerJSON } from "./main/server/server-client";
 
-async function preflightPublish(): Promise<{ ok: true; profile: string; workspace: string } | { ok: false; error: string }> {
-  const profile = getActiveProfile();
-  const workspace = getWorkspacePath(profile);
-  const validation = validateProfileAssets(profile);
-  if (!validation.ok) return { ok: false, error: `Team assets are invalid: ${validation.errors.map((e) => e.message).join("; ")}` };
-  const gh = await capture(["gh", "api", "user", "--jq", ".login"]);
-  if (gh.exitCode !== 0 || !gh.stdout.trim()) return { ok: false, error: "GitHub CLI not authenticated. Run `gh auth login` first." };
-  return { ok: true, profile, workspace };
+let browserSignInController: AbortController | null = null;
+
+const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
+const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
+
+function capitalize(str: string): string {
+  return str.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function slugToLabel(slug: string): string {
+  return capitalize(slug.replace(/[-_]/g, " "));
+}
+
+function splitFrontmatter(content: string): { frontmatterRaw: string; body: string } {
+  if (!content.startsWith("---")) return { frontmatterRaw: "", body: content };
+  const end = content.indexOf("\n---", 3);
+  if (end === -1) return { frontmatterRaw: "", body: content };
+  const body = content.slice(end + 4).replace(/^\n/, "");
+  return { frontmatterRaw: content.slice(0, content.length - body.length), body };
+}
+
+function logEntryLabel(filename: string): string {
+  const base = filename.replace(/\.md$/, "");
+  // Expect prefix like 20260514_ or 20260514-
+  const match = base.match(/^(\d{4})(\d{2})(\d{2})[_-]/);
+  if (match) {
+    const [, year, month, day] = match;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  }
+  return slugToLabel(base);
+}
+
+function toContextFileEntry(relativePath: string, content: string): ContextFileEntry | null {
+  const segments = relativePath.split("/");
+  const [group, second, third] = segments;
+  if (!group || CONTEXT_SKIP_ROOT.has(group) || !relativePath.endsWith(".md")) return null;
+
+  const split = splitFrontmatter(content);
+  if (segments.length === 1) {
+    const base = relativePath.replace(/\.md$/, "");
+    return {
+      relativePath,
+      label: slugToLabel(base),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "standalone",
+      group: base,
+      groupLabel: slugToLabel(base),
+    };
+  }
+
+  if (segments.length === 2 && second === "index.md") {
+    return {
+      relativePath,
+      label: slugToLabel(group),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "dim",
+      group,
+      groupLabel: slugToLabel(group),
+    };
+  }
+
+  if (segments.length === 3 && second === "log" && third) {
+    return {
+      relativePath,
+      label: logEntryLabel(third),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "log",
+      group,
+      groupLabel: slugToLabel(group),
+    };
+  }
+
+  if (segments.length === 2 && second) {
+    const base = second.replace(/\.md$/, "");
+    return {
+      relativePath,
+      label: slugToLabel(base),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "group-child",
+      group,
+      groupLabel: slugToLabel(group),
+    };
+  }
+
+  return null;
+}
+
+function sortContextFileEntries(entries: ContextFileEntry[]): ContextFileEntry[] {
+  return entries.sort((a, b) => {
+    function sortKey(e: ContextFileEntry): [number, number, string, string] {
+      const stdIdx = CONTEXT_DIMENSION_ORDER.indexOf(e.group);
+      if (e.kind === "dim") {
+        return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 0, e.group, ""];
+      }
+      if (e.kind === "log") {
+        return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
+      }
+      if (e.kind === "standalone") return [200, 0, e.group, ""];
+      return [300, 0, e.group, e.relativePath];
+    }
+
+    const ka = sortKey(a);
+    const kb = sortKey(b);
+    for (let i = 0; i < ka.length; i++) {
+      const av = ka[i];
+      const bv = kb[i];
+      if (av === undefined || bv === undefined) break;
+      if (av < bv) return -1;
+      if (av > bv) return 1;
+    }
+    return 0;
+  });
 }
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
 // Falls back to empty string for OSS builds (no build-config.json).
 const _phKey          = process.env.DRAFT_PH_KEY           ?? "";
 const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.posthog.com";
+// Mirrors backend's PILOT_RUN_BUNDLE_LIMITS (backend/src/synthesis/load-run-bundle.ts) —
+// client-side filtering is a UX nicety; the server re-validates these limits itself.
+const UPLOAD_MAX_FILE_BYTES = 1_000_000;
+const UPLOAD_MAX_TOTAL_BYTES = 10_000_000;
+const UPLOAD_BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
+  ".zip", ".tar", ".gz", ".tgz", ".rar", ".7z",
+  ".exe", ".dll", ".so", ".dylib", ".bin",
+  ".mp3", ".mp4", ".mov", ".wav", ".avi",
+  ".woff", ".woff2", ".ttf", ".otf",
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+]);
+const UPLOAD_IGNORED_DIR_NAMES = new Set(["build", "dist", "out"]);
+
+// Walks directory-by-directory, pruning ignored directory names (.git,
+// node_modules, dotfiles) BEFORE descending into them
+async function collectUploadFiles(rootDir: string): Promise<{ path: string; content: string }[]> {
+  const files: { path: string; content: string }[] = [];
+  let totalBytes = 0;
+
+  function walk(dir: string, relativeDir: string): void {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (
+        entry.name === ".git" ||
+        entry.name === "node_modules" ||
+        entry.name.startsWith(".") ||
+        UPLOAD_IGNORED_DIR_NAMES.has(entry.name) ||
+        entry.name.endsWith(".app")
+      ) continue;
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath, relativePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (UPLOAD_BINARY_EXTENSIONS.has(extname(entry.name).toLowerCase())) continue;
+
+      const stat = statSync(fullPath, { throwIfNoEntry: false });
+      if (!stat) continue;
+      if (stat.size > UPLOAD_MAX_FILE_BYTES || totalBytes + stat.size > UPLOAD_MAX_TOTAL_BYTES) continue;
+
+      pending.push({ relativePath, fullPath, bytes: stat.size });
+      totalBytes += stat.size;
+    }
+  }
+
+  const pending: { relativePath: string; fullPath: string; bytes: number }[] = [];
+  walk(rootDir, "");
+
+  for (const item of pending) {
+    try {
+      const content = await Bun.file(item.fullPath).text();
+      files.push({ path: item.relativePath, content });
+    } catch {
+      // Not valid UTF-8 text (likely a binary file the extension filter missed) — skip it.
+    }
+  }
+
+  return files;
+}
+
 const _crispWebsiteId      = process.env.DRAFT_CRISP_WEBSITE_ID       ?? "";
 const _crispHistoryUrl     = process.env.DRAFT_CRISP_HISTORY_ENDPOINT  ?? "";
 const _crispHistorySecret  = process.env.DRAFT_CRISP_HISTORY_SECRET    ?? "";
@@ -139,15 +285,11 @@ async function findRunnerBin(name: string): Promise<string | null> {
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
-function setAppMenu(daemonRunning: boolean) {
+function setAppMenu() {
   ApplicationMenu.setApplicationMenu([
     {
       submenu: [
         { label: "Check for Updates", action: "check-for-updates" },
-        { type: "separator" },
-        daemonRunning
-          ? { label: "Stop Draft",  action: "stop-draft"  }
-          : { label: "Start Draft", action: "start-draft" },
         { type: "separator" },
         { label: "Quit Draft",       action: "quit-app",        accelerator: "q" },
         { label: "Quit Completely",  action: "quit-completely"                   },
@@ -170,15 +312,7 @@ function setAppMenu(daemonRunning: boolean) {
   ]);
 }
 
-async function refreshAppMenu() {
-  try {
-    const s = await getDaemonStatus();
-    setAppMenu(s.state === "running");
-  } catch { /* non-fatal */ }
-}
-
-// Render with default state immediately; startup check corrects it.
-setAppMenu(true);
+setAppMenu();
 
 Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
@@ -188,32 +322,11 @@ Electrobun.events.on("application-menu-clicked", (event) => {
     void checkAndDownloadUpdate(false);
   }
 
-  if (action === "stop-draft") {
-    capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`])
-      .then(() => {
-        setTimeout(refreshAppMenu, 500);
-        try { rpc.send.requestStatusRefresh({}); } catch {}
-      })
-      .catch(() => {});
-  }
-
-  if (action === "start-draft") {
-    if (existsSync(PLIST_PATH)) {
-      Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
-        stdin: "ignore", stdout: "ignore", stderr: "ignore",
-      });
-      setTimeout(refreshAppMenu, 1500);
-      try { rpc.send.requestStatusRefresh({}); } catch {}
-    }
-  }
-
   if (action === "quit-app") {
     win.hide();
   }
 
   if (action === "quit-completely") {
-    stopHeartbeatWatch();
-    stopProposalWatch();
     stopActiveProfileWatch();
     stopSkillWatch();
     process.exit(0);
@@ -229,34 +342,17 @@ Electrobun.events.on("reopen", () => {
 
 const tray = new Tray({ title: "Draft" });
 
-function setTrayMenu(daemonRunning: boolean) {
+function setTrayMenu() {
   tray.setMenu([
     { type: "normal",  label: "Open Draft",                                   action: "open"        },
-    { type: "divider"                                                                                 },
-    daemonRunning
-      ? { type: "normal", label: "Stop Draft",  action: "tray-stop-draft"  }
-      : { type: "normal", label: "Start Draft", action: "tray-start-draft" },
     { type: "divider"                                                                                 },
     { type: "normal",  label: "Quit Completely",                              action: "quit"        },
   ]);
 }
 
-async function refreshTrayMenu() {
-  try {
-    const s = await getDaemonStatus();
-    setTrayMenu(s.state === "running");
-  } catch { /* non-fatal */ }
-}
-
-// Render with default state immediately; startup check corrects it.
-setTrayMenu(true);
+setTrayMenu();
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
-// watcherHandlers is forward-declared here so switchProfile can reference it.
-// It is assigned immediately after rpc is constructed — before any handler fires.
-
-// eslint-disable-next-line prefer-const
-let watcherHandlers!: ProposalWatchHandlers;
 
 const rpc = BrowserView.defineRPC<AppRPCType>({
   // Team staging can spend up to 60s cloning; promotion can then wait up to
@@ -266,35 +362,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   handlers: {
     requests: {
       getStatus: async () => {
-        const daemonStatus = await getDaemonStatus();
         const appState = getAppState();
-
-        // Enrich with heartbeat JSON for profile + lastSync display
-        let profile: string | null = null;
-        let lastSync: string | null = null;
-        try {
-          const heartbeatPath = `${process.env.HOME}/.draft/background/state/last-heartbeat`;
-          const raw = await Bun.file(heartbeatPath).text();
-          const hb = JSON.parse(raw) as {
-            pid?: number;
-            profile?: string;
-            ts?: string;
-            last_sync?: string;
-          };
-          profile  = hb.profile  ?? null;
-          lastSync = hb.last_sync || null; // empty string → null
-        } catch {
-          // file missing or malformed — daemon hasn't run yet
-        }
-
-        const workspace = getWorkspacePath(getActiveProfile());
-        const intResult = readIntegrations(workspace);
-        const int = intResult.ok ? intResult.integrations : {};
-        const integrations = {
-          granola: int.granola?.connected ?? false,
-          slack:   int.slack?.connected   ?? false,
-          github:  int.github?.connected  ?? false,
-        };
 
         const toolList = getInstalledTools();
         const installedTools = {
@@ -305,27 +373,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           hermes:        toolList.includes("hermes"),
         };
 
-        return { ...daemonStatus, profile, lastSync, appState, integrations, installedTools };
-      },
-
-      getProposals: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        return listProposals(workspace).map((proposal) => ({
-          filename: proposal.filename,
-          kind: proposal.kind,
-          outcome: proposal.outcome,
-          needsInputReason: proposal.needsInputReason,
-          source: proposal.source,
-          dimension: proposal.dimension,
-          action: proposal.action,
-          timestamp: proposal.timestamp,
-          summary: proposal.summary,
-          createdAt: proposal.createdAt,
-          body: proposal.body,
-          currentContent: readContextFile(workspace, proposal.dimension),
-          rawContent: proposal.rawContent,
-          content: proposal.content,
-        }));
+        return { appState, installedTools };
       },
 
       getProfiles: async () => getProfiles(),
@@ -347,7 +395,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             } catch {}
           }
 
-          restartProposalWatch(profile, watcherHandlers);
           restartSkillWatchWithProfile(profile);
           restartMcpWatchWithProfile(profile);
 
@@ -382,7 +429,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch (error) {
           return { ok: false, error: `Created workspace but could not activate it: ${error instanceof Error ? error.message : String(error)}` };
         }
-        restartProposalWatch(created.name, watcherHandlers);
         restartSkillWatchWithProfile(created.name);
         restartMcpWatchWithProfile(created.name);
         try { rpc.send.profileChanged({ profile: created.name }); } catch {}
@@ -394,155 +440,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         error: "not implemented — Phase 3",
       }),
 
-      startDaemon: async () => {
-        // Delegates to start.sh (same as `draft start` in the CLI).
-        // We ignore start.sh's own exit code as the success signal — its
-        // internal sleep 1 + verify check races the daemon's actual startup
-        // and produces false-negative exits even when the daemon does start.
-        // Plist missing = not installed. Fast check before spawning anything.
-        if (!existsSync(PLIST_PATH)) {
-          return { ok: false, error: "Draft is not installed. Run install.sh first." };
-        }
-
-        // Spawn start.sh but only wait 300ms for it to exit.
-        // Fast-fail branches (bad config, etc.) finish in < 100ms — we surface those.
-        // The launchctl load + sleep 1 slow path takes > 1s, so we let it keep
-        // running and return ok:true immediately. The renderer polls getStatus()
-        // independently, avoiding Electrobun's short renderer-side RPC timeout.
-        let proc: ReturnType<typeof Bun.spawn>;
-        try {
-          proc = Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
-            stdin: "ignore",
-            stdout: "pipe",
-            stderr: "pipe",
-          });
-        } catch {
-          return { ok: false, error: "Failed to launch start.sh." };
-        }
-
-        const timedOut = await Promise.race([
-          proc.exited.then(() => false),
-          Bun.sleep(300).then(() => true),
-        ]);
-
-        if (!timedOut) {
-          const code = await proc.exited; // already resolved — instant
-          if (code !== 0) {
-            const stderr = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
-            return { ok: false, error: stderr.trim() || "Failed to start Draft." };
-          }
-        }
-
-        // Slow path still running, or fast success — renderer polls getStatus().
-        setTimeout(refreshAppMenu, 1500);
-        return { ok: true };
-      },
-
-      stopDaemon: async () => {
-        const result = await capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`]);
-        refreshAppMenu().catch(() => {});
-        return { ok: result.exitCode === 0, error: result.stderr || undefined };
-      },
-
-      acceptProposal: async ({ filename }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const proposal = listProposals(workspace).find((item) => item.filename === filename);
-          if (!proposal) return { ok: false, error: "Proposal not found" };
-          if (proposal.kind === "flagged") {
-            acknowledgeFlaggedProposal(proposal, workspace);
-          } else {
-            // Manual/import proposals keep their existing apply-on-accept behavior.
-            applyProposalLocally(proposal, workspace);
-            acceptCoreProposal(proposal, proposalArchiveDirs(workspace).accepted);
-          }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Accept failed" };
-        }
-      },
-
-      rejectProposal: async ({ filename }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const proposal = listProposals(workspace).find((item) => item.filename === filename);
-          if (!proposal) return { ok: false, error: "Proposal not found" };
-          if (proposal.kind === "flagged") {
-            dismissFlaggedProposal(proposal, workspace);
-          } else {
-            rejectCoreProposal(proposal, proposalArchiveDirs(workspace).rejected);
-          }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Reject failed" };
-        }
-      },
-
-      loadDiff: async () => {
-        const result = readLocalDiff();
-        return result;
-      },
-
-      getTeamDiff: async () => {
-        const profile = getActiveProfile();
-        const workspace = getWorkspacePath(profile);
-        const collaboration = readCollaboration(workspace);
-        if (!collaboration.ok || !collaboration.collab.team_repo_url) {
-          return { ok: false, collabConfigured: false, error: "not_configured" };
-        }
-
-        try {
-          const result = await stageTeamContent({ workspace, profile });
-          if (!result.ok) {
-            return { ok: false, collabConfigured: true, error: result.error };
-          }
-          return {
-            ok: true,
-            collabConfigured: true,
-            operationId: result.staged.operationId,
-            entries: result.staged.entries,
-            cursorLine: result.staged.cursorLine,
-          };
-        } catch {
-          return { ok: false, collabConfigured: true, error: "unexpected" };
-        }
-      },
-
-      applyTeamDiff: async ({ operationId }) => {
-        try {
-          const result = await promoteStagedTeamContent(operationId);
-          if (!result.ok) return result;
-          return {
-            ok: true,
-            missingSecrets: result.missingSecrets,
-            conflicts: result.conflicts.map(({ kind, name, profile, reason }) => ({
-              kind,
-              name,
-              profile,
-              reason,
-            })),
-            installedSkills: result.installedSkills,
-            installedMcps: result.installedMcps,
-            removedSkills: result.removedSkills,
-            removedMcps: result.removedMcps,
-          };
-        } catch {
-          return { ok: false, error: "unexpected" };
-        }
-      },
-
       getLocalConfig: async () => {
         const workspace = getWorkspacePath(getActiveProfile());
         const result = readLocalConfig(workspace);
         const c = result.ok ? result.config : {};
         return {
-          teamLoadMode:              c.teamLoadMode              ?? "auto",
           launchOnLogin:             c.launchOnLogin             ?? false,
           notificationsEnabled:      c.notificationsEnabled      ?? true,
           disabledContextSections:   c.disabledContextSections   ?? [],
           codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
           claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
-          lastPublished:             c.last_published            ?? null,
         };
       },
 
@@ -563,169 +470,28 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getContextFiles: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const contextDir = join(workspace, "context");
-        if (!existsSync(contextDir)) return [];
-
-        const SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
-        const DIMENSION_ORDER = ["company", "product", "team", "priorities"];
-
-        function capitalize(str: string): string {
-          return str.replace(/\b\w/g, (c) => c.toUpperCase());
-        }
-
-        function slugToLabel(slug: string): string {
-          return capitalize(slug.replace(/[-_]/g, " "));
-        }
-
-        function splitFrontmatter(content: string): { frontmatterRaw: string; body: string } {
-          if (!content.startsWith("---")) return { frontmatterRaw: "", body: content };
-          const end = content.indexOf("\n---", 3);
-          if (end === -1) return { frontmatterRaw: "", body: content };
-          const body = content.slice(end + 4).replace(/^\n/, "");
-          return { frontmatterRaw: content.slice(0, content.length - body.length), body };
-        }
-
-        function logEntryLabel(filename: string): string {
-          const base = filename.replace(/\.md$/, "");
-          // Expect prefix like 20260514_ or 20260514-
-          const match = base.match(/^(\d{4})(\d{2})(\d{2})[_-]/);
-          if (match) {
-            const [, year, month, day] = match;
-            const date = new Date(Number(year), Number(month) - 1, Number(day));
-            return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
-          }
-          return slugToLabel(base);
-        }
-
-        const entries: import("./rpc/schema").ContextFileEntry[] = [];
-
-        let topLevel: string[];
         try {
-          topLevel = readdirSync(contextDir);
+          // Currently assumes one team_default workspace. A real workspace list and
+          // picker are needed before supporting teams with multiple workspaces.
+          const workspaceId = getCachedWorkspaceId();
+          if (!workspaceId) return [];
+
+          // This RPC always reads the current cloud snapshot. The renderer owns
+          // the session-lifetime snapshot used to survive Context tab remounts;
+          // a persistent local cache/mirror remains deferred.
+          const context = await fetchServerJSON<{
+            documents: Record<string, { content: string; sha256: string }>;
+          }>(`workspaces/${workspaceId}/context`);
+
+          return sortContextFileEntries(
+            Object.entries(context.documents).flatMap(([path, document]) => {
+              const entry = toContextFileEntry(path, document.content);
+              return entry ? [entry] : [];
+            }),
+          );
         } catch {
           return [];
         }
-
-        for (const name of topLevel) {
-          if (SKIP_ROOT.has(name)) continue;
-          const fullPath = join(contextDir, name);
-          let stat;
-          try { stat = statSync(fullPath); } catch { continue; }
-
-          if (stat.isDirectory()) {
-            const indexPath = join(fullPath, "index.md");
-            const hasIndex = existsSync(indexPath);
-
-            if (hasIndex) {
-              // Dimension dir — emit index.md as "dim" entry
-              let content = "";
-              try { content = readFileSync(indexPath, "utf8"); } catch { /* empty */ }
-              const { frontmatterRaw, body } = splitFrontmatter(content);
-              entries.push({
-                relativePath: `${name}/index.md`,
-                label: slugToLabel(name),
-                content: body,
-                frontmatterRaw,
-                kind: "dim",
-                group: name,
-                groupLabel: slugToLabel(name),
-              });
-
-              // Walk log/ subdir for log entries
-              const logDir = join(fullPath, "log");
-              if (existsSync(logDir)) {
-                let logFiles: string[];
-                try { logFiles = readdirSync(logDir); } catch { logFiles = []; }
-                const mdLogFiles = logFiles.filter((f) => f.endsWith(".md")).sort().reverse();
-                for (const lf of mdLogFiles) {
-                  const lfPath = join(logDir, lf);
-                  let lfContent = "";
-                  try { lfContent = readFileSync(lfPath, "utf8"); } catch { continue; }
-                  const lfSplit = splitFrontmatter(lfContent);
-                  entries.push({
-                    relativePath: `${name}/log/${lf}`,
-                    label: logEntryLabel(lf),
-                    content: lfSplit.body,
-                    frontmatterRaw: lfSplit.frontmatterRaw,
-                    kind: "log",
-                    group: name,
-                    groupLabel: slugToLabel(name),
-                  });
-                }
-              }
-            } else {
-              // Group dir — all .md files as group-child entries
-              let children: string[];
-              try { children = readdirSync(fullPath); } catch { continue; }
-              const mdChildren = children.filter((c) => c.endsWith(".md")).sort();
-              for (const child of mdChildren) {
-                const childPath = join(fullPath, child);
-                let childContent = "";
-                try { childContent = readFileSync(childPath, "utf8"); } catch { continue; }
-                const childBase = child.replace(/\.md$/, "");
-                const childSplit = splitFrontmatter(childContent);
-                entries.push({
-                  relativePath: `${name}/${child}`,
-                  label: slugToLabel(childBase),
-                  content: childSplit.body,
-                  frontmatterRaw: childSplit.frontmatterRaw,
-                  kind: "group-child",
-                  group: name,
-                  groupLabel: slugToLabel(name),
-                });
-              }
-            }
-          } else if (name.endsWith(".md")) {
-            let fileContent = "";
-            try { fileContent = readFileSync(fullPath, "utf8"); } catch { continue; }
-            const base = name.replace(/\.md$/, "");
-            const fileSplit = splitFrontmatter(fileContent);
-            entries.push({
-              relativePath: name,
-              label: slugToLabel(base),
-              content: fileSplit.body,
-              frontmatterRaw: fileSplit.frontmatterRaw,
-              kind: "standalone",
-              group: base,
-              groupLabel: slugToLabel(base),
-            });
-          }
-        }
-
-        // Sort order:
-        //   1. Standard dims (company → product → team → priorities), then their log entries
-        //   2. Other dims with index.md (alphabetical), then their log entries
-        //   3. Standalone files
-        //   4. Group-child entries (by group, then filename)
-        entries.sort((a, b) => {
-          function sortKey(e: import("./rpc/schema").ContextFileEntry): [number, number, string, string] {
-            const stdIdx = DIMENSION_ORDER.indexOf(e.group);
-            if (e.kind === "dim") {
-              return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 0, e.group, ""];
-            }
-            if (e.kind === "log") {
-              return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
-            }
-            if (e.kind === "standalone") {
-              return [200, 0, e.group, ""];
-            }
-            // group-child
-            return [300, 0, e.group, e.relativePath];
-          }
-          const ka = sortKey(a);
-          const kb = sortKey(b);
-          for (let i = 0; i < ka.length; i++) {
-            const av = ka[i];
-            const bv = kb[i];
-            if (av === undefined || bv === undefined) break;
-            if (av < bv) return -1;
-            if (av > bv) return 1;
-          }
-          return 0;
-        });
-
-        return entries;
       },
 
       getConnectedApps: async () => {
@@ -745,6 +511,26 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspace  = getWorkspacePath(getActiveProfile());
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
+        type CloudConnectionStatus = {
+          provider: "slack" | "fireflies" | "linear" | "claude_code";
+          status: string | null;
+          last_success_at: string | null;
+          last_error_at: string | null;
+          channel_ids?: string[];
+          connected?: boolean;
+        };
+        let cloudConnections: CloudConnectionStatus[] | null = null;
+        const cloudWorkspaceId = getCachedWorkspaceId();
+        if (cloudWorkspaceId) {
+          try {
+            const response = await fetchServerJSON<{ connections: CloudConnectionStatus[] }>(
+              `workspaces/${cloudWorkspaceId}/connections`,
+            );
+            cloudConnections = response.connections;
+          } catch {
+            cloudConnections = null;
+          }
+        }
 
         function integrationHealth(key: "granola" | "fireflies"): Pick<IntegrationDetail, "healthStatus" | "healthCheckedAt" | "healthMessage"> {
           try {
@@ -762,17 +548,37 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           }
         }
 
-        function integrationDetail(key: "granola" | "slack" | "github" | "fireflies"): IntegrationDetail {
-          const entry = int[key];
+        function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
+          const entry = key === "linear" ? undefined : int[key];
+          const cloud = (key === "slack" || key === "fireflies" || key === "linear")
+            ? cloudConnections?.find((connection) => connection.provider === key)
+            : undefined;
           const health = key === "granola" || key === "fireflies"
             ? integrationHealth(key)
             : { healthStatus: "unknown" as const, healthCheckedAt: null, healthMessage: null };
+          if (key === "slack" || key === "fireflies" || key === "linear") {
+            return {
+              // Cloud-backed integrations must not fall back to stale local flags
+              // when the server is unreachable or the user is signed out.
+              connected: cloud?.status === "active",
+              healthStatus: cloud?.status === "active" ? "healthy" : cloud?.status === "degraded" || cloud?.status === "error" ? "needs_attention" : "unknown",
+              healthCheckedAt: cloud?.last_success_at ?? null,
+              healthMessage: cloud?.last_error_at ? "The cloud ingestion worker reported an error." : null,
+              lastConnected: cloud?.last_success_at ?? null,
+              mode: null,
+              channels: key === "slack" ? (cloud?.channel_ids?.length ?? 0) : null,
+              channelIds: key === "slack" ? (cloud?.channel_ids ?? []) : undefined,
+              repos: [],
+              ghCliStatus: null,
+            };
+          }
           return {
             connected:     entry?.connected    ?? false,
             ...health,
             lastConnected: entry?.last_connected ?? null,
             mode:          entry?.mode          ?? null,
             channels:      entry?.channels      ?? null,
+            channelIds:    undefined,
             repos:         entry?.repos         ?? [],
             ghCliStatus:    null,
           };
@@ -782,6 +588,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         githubDetail.ghCliStatus = githubDetail.connected
           ? await checkGhCli()
           : null;
+
+        const claudeCodeConnection = cloudConnections?.find((connection) => connection.provider === "claude_code");
 
         return {
           tools: {
@@ -796,12 +604,20 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             slack:     integrationDetail("slack"),
             github:    githubDetail,
             fireflies: integrationDetail("fireflies"),
+            linear:    integrationDetail("linear"),
           },
+          claudeCode: { connected: claudeCodeConnection?.status === "active" },
         };
       },
 
       disconnectIntegration: async ({ source }) => {
         try {
+          if (source === "slack" || source === "fireflies" || source === "linear") {
+            const workspaceId = getCachedWorkspaceId();
+            if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+            await fetchServer(`workspaces/${workspaceId}/connections/${source}`, { method: "DELETE" });
+            return { ok: true };
+          }
           const workspace = getWorkspacePath(getActiveProfile());
           const result    = readIntegrations(workspace);
           const current   = result.ok ? result.integrations : {};
@@ -890,127 +706,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: err instanceof Error ? err.message : "Failed to reveal in Finder." };
         }
       },
-
-      addContextDimension: async ({ name }) => {
-        try {
-          if (!/^[a-z0-9-]+$/.test(name)) {
-            return { ok: false, error: "Dimension names may only contain lowercase letters, numbers, and hyphens." };
-          }
-          const workspace = getWorkspacePath(getActiveProfile());
-          const contextDir = join(workspace, "context");
-          const dimPath = join(contextDir, name);
-          const indexPath = join(dimPath, "index.md");
-          const logPath = join(dimPath, "log");
-
-          if (existsSync(indexPath)) {
-            return { ok: false, error: `Dimension '${name}' already exists.` };
-          }
-
-          mkdirSync(dimPath, { recursive: true });
-          mkdirSync(logPath, { recursive: true });
-          writeFileSync(
-            indexPath,
-            `---\nname: ${name}\ndescription: >\n  No information recorded yet.\nlast_updated: ""\nsource: ""\n---\n`,
-            "utf8"
-          );
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to create dimension." };
-        }
-      },
-
-      saveContextFile: async ({ relativePath, content }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const contextDir = join(workspace, "context");
-          const absPath = resolve(contextDir, relativePath);
-          if (absPath !== resolve(contextDir) && !absPath.startsWith(resolve(contextDir) + "/")) {
-            return { ok: false, error: "Invalid file path." };
-          }
-          writeFileSync(absPath, content, "utf8");
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to save file." };
-        }
-      },
-
-      checkpointContextFile: async ({ relativePath }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const contextDir = join(workspace, "context");
-          const absPath = resolve(contextDir, relativePath);
-          if (absPath !== resolve(contextDir) && !absPath.startsWith(resolve(contextDir) + "/")) {
-            return { ok: false, error: "Invalid file path." };
-          }
-          if (!existsSync(absPath)) {
-            return { ok: false, error: "File not found." };
-          }
-          const content = readFileSync(absPath, "utf8");
-          const db = openHistoryDb(workspace);
-          try {
-            insertFileVersion(db, {
-              filePath: relativePath,
-              content,
-              createdAt: new Date().toISOString(),
-              source: "human-edit",
-              author: userInfo().username,
-              sessionId: null,
-              publishedAt: null,
-              changesEntryId: null,
-            });
-          } finally {
-            db.close();
-          }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to checkpoint file." };
-        }
-      },
-
-      getFileHistory: async ({ relativePath }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const db = openHistoryDb(workspace);
-        try {
-          return queryFileVersions(db, relativePath);
-        } finally {
-          db.close();
-        }
-      },
-
-      getFileVersionContent: async ({ versionId }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const db = openHistoryDb(workspace);
-        try {
-          const version = getFileVersion(db, versionId);
-          return version ? { content: version.content } : null;
-        } finally {
-          db.close();
-        }
-      },
-
-      publishContextFile: async ({ relativePath }) => {
-        const pre = await preflightPublish();
-        if (!pre.ok) return { ok: false, published: false, scoped: true, files: [], error: pre.error };
-        try {
-          const result = await publishTeamContext(pre.workspace, pre.profile, { paths: [relativePath], capture });
-          return { ...result, ok: true };
-        } catch (err) {
-          return { ok: false, published: false, scoped: true, files: [], error: err instanceof Error ? err.message : "Publish failed." };
-        }
-      },
-
-      publishAllContext: async () => {
-        const pre = await preflightPublish();
-        if (!pre.ok) return { ok: false, published: false, scoped: false, files: [], error: pre.error };
-        try {
-          const result = await publishTeamContext(pre.workspace, pre.profile, { capture });
-          return { ...result, ok: true };
-        } catch (err) {
-          return { ok: false, published: false, scoped: false, files: [], error: err instanceof Error ? err.message : "Publish failed." };
-        }
-      },
-
-      getUnpublishedContextPaths: async () => listUnpublishedContextPaths(getWorkspacePath(getActiveProfile())),
 
       runInstall: async ({ tools }) => {
         console.log(`[rpc] runInstall called — tools: ${JSON.stringify(tools)}`);
@@ -1235,61 +930,105 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       connectFireflies: async ({ apiKey }) => {
         if (!apiKey.trim()) return { ok: false, error: "Enter your Fireflies API key." };
-        const workspace = getWorkspacePath(getActiveProfile());
-        const reg = await registerFirefliesMCP(apiKey.trim(), workspace);
-        if (!reg.ok) return reg;
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          writeFirefliesConfig(workspace, apiKey.trim(), reg.mcpServerId);
-          return { ok: true };
+          return await fetchServerJSON<{ ok: true; webhookUrl: string; webhookSecret: string }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "fireflies", api_token: apiKey.trim() }),
+          });
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Fireflies connection." };
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Fireflies." };
+        }
+      },
+
+      connectLinear: async ({ apiKey }) => {
+        if (!apiKey.trim()) return { ok: false, error: "Enter your Linear API key." };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "linear", api_token: apiKey.trim() }),
+          });
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Linear." };
+        }
+      },
+
+      connectClaudeCode: async ({ token }) => {
+        if (!token.trim()) return { ok: false, error: "Paste your Claude Code OAuth token." };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "claude_code", token: token.trim() }),
+          });
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Claude Code." };
+        }
+      },
+
+      getInviteLink: async () => {
+        try {
+          const response = await fetchServerJSON<{ url: string; expiresAt: string }>("invites/mine");
+          return { ok: true as const, ...response };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not load the invite link." };
         }
       },
 
       getSlackManifestUrl: async () => buildSlackManifestUrl(),
 
       listSlackChannels: async ({ botToken }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const token = botToken || readStoredSlackBotToken(workspace);
-        if (!token) return { ok: false, error: "Slack is not connected yet." };
-        const result = await fetchSlackChannels(token);
-        if (!result.ok) return { ok: false, error: result.error };
+        if (botToken) {
+          // Initial channel selection is public-only. Private channels are not
+          // discoverable until the bot has been invited to them in Slack.
+          const result = await fetchSlackChannels(botToken, "public_channel");
+          if (!result.ok) return { ok: false, error: result.error };
+          return { ok: true, channels: result.channels.map((channel) => ({ ...channel, allowlisted: false })) };
+        }
 
-        const secrets = readSecrets(workspace);
-        const allowlist = new Set(secrets.ok ? (secrets.secrets.slack_allowlist_channels ?? []) : []);
-        const channels = result.channels.map((channel) => ({ ...channel, allowlisted: allowlist.has(channel.id) }));
-
-        return { ok: true, channels };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: true; channels: SlackChannelOption[] }>(
+            `workspaces/${workspaceId}/connections/slack/channels`,
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not load Slack channels." };
+        }
       },
 
       connectSlack: async ({ botToken, appToken, channelIds }) => {
         const fmt = validateSlackTokenFormat(botToken, appToken);
         if (!fmt.ok) return fmt;
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          writeSlackConfig({ workspace, botToken, appToken, channelIds });
-
-          // Resolve names for the selected channels so slack-rebuild.ts can label
-          // captured messages — connectSlack only receives IDs from the picker.
-          const listResult = await fetchSlackChannels(botToken);
-          if (listResult.ok) {
-            const selectedNames = Object.fromEntries(
-              listResult.channels
-                .filter((channel) => channelIds.includes(channel.id))
-                .map((channel) => [channel.id, channel.name]),
-            );
-            writeSlackRolesChannels(workspace, selectedNames);
-          }
-
-          return { ok: true };
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "slack", bot_token: botToken, app_token: appToken, channel_ids: channelIds }),
+          });
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Slack connection." };
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Slack." };
         }
       },
 
       updateSlackChannels: async ({ channelIds }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          return await updateSlackChannels(getWorkspacePath(getActiveProfile()), channelIds);
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections/slack`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ channel_ids: channelIds }),
+          });
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not update Slack channels." };
         }
@@ -1308,6 +1047,106 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      selectUploadFolder: async () => {
+        try {
+          const [folderPath] = await Utils.openFileDialog({
+            canChooseFiles: false,
+            canChooseDirectory: true,
+            allowsMultipleSelection: false,
+          });
+          return { folderPath: folderPath || null };
+        } catch {
+          return { folderPath: null };
+        }
+      },
+
+      uploadSourceItems: async ({ folderPath, triggerSynthesis }) => {
+        if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+          return { ok: false, error: "Choose a valid local folder to upload." };
+        }
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+
+        let files: { path: string; content: string }[];
+        try {
+          files = await collectUploadFiles(folderPath);
+        } catch (err) {
+          console.error("uploadSourceItems: failed to walk selected folder", folderPath, err);
+          return { ok: false, error: err instanceof Error ? `Could not read the selected folder: ${err.message}` : "Could not read the selected folder." };
+        }
+
+        if (files.length === 0) {
+          return { ok: false, error: "No eligible files found in that folder." };
+        }
+
+        try {
+          return await fetchServerJSON<{
+            ok: true; inserted: number; skipped: string[];
+            runId?: string; machineId?: string; reason?: string; synthesisError?: string;
+          }>(
+            `workspaces/${workspaceId}/source-items`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ files, triggerSynthesis }),
+            },
+          );
+        } catch (err) {
+          console.error("uploadSourceItems: POST /source-items failed", err);
+          return { ok: false, error: err instanceof Error ? err.message : "Could not upload files." };
+        }
+      },
+
+      bootstrapWorkspaceContext: async ({ folderPath, dimensions }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+
+        if (folderPath) {
+          if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+            return { ok: false, error: "Choose a valid local folder to upload." };
+          }
+          let files: { path: string; content: string }[];
+          try {
+            files = await collectUploadFiles(folderPath);
+          } catch (err) {
+            console.error("bootstrapWorkspaceContext: failed to walk selected folder", folderPath, err);
+            return { ok: false, error: err instanceof Error ? `Could not read the selected folder: ${err.message}` : "Could not read the selected folder." };
+          }
+          if (files.length === 0) {
+            return { ok: false, error: "No eligible files found in that folder." };
+          }
+          try {
+            return await fetchServerJSON<{
+              ok: true; inserted: number; skipped: string[];
+              runId?: string; machineId?: string; reason?: string; synthesisError?: string;
+            }>(
+              `workspaces/${workspaceId}/source-items`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files, triggerSynthesis: true, dimensions }),
+              },
+            );
+          } catch (err) {
+            console.error("bootstrapWorkspaceContext: POST /source-items failed", err);
+            return { ok: false, error: err instanceof Error ? err.message : "Could not upload files." };
+          }
+        }
+
+        try {
+          return await fetchServerJSON<{ ok: boolean; runId?: string; machineId?: string; reason?: string; error?: string }>(
+            `workspaces/${workspaceId}/synthesis-runs`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dimensions }),
+            },
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not start the workspace synthesis run." };
+        }
+      },
+
       getAvailableRunners: async () => {
         const [claudePath, codexPath] = await Promise.all([
           findRunnerBin("claude"),
@@ -1319,6 +1158,31 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             { name: "codex" as const, installed: codexPath !== null },
           ],
         };
+      },
+
+      getWorkspaceContextStatus: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { hasContext: false };
+        try {
+          await fetchServerJSON(`workspaces/${workspaceId}/context`);
+          return { hasContext: true };
+        } catch {
+          // Covers both the expected "no_context_yet" 404 and any other failure
+          return { hasContext: false };
+        }
+      },
+
+      triggerSynthesisRun: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          return await fetchServerJSON<{ ok: boolean; runId?: string; machineId?: string; reason?: string; error?: string }>(
+            `workspaces/${workspaceId}/synthesis-runs`,
+            { method: "POST" },
+          );
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not start the workspace synthesis run." };
+        }
       },
 
       runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner, dimensions }) => {
@@ -1427,74 +1291,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getActivityRuns: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
+      getWorkspaceRuns: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return [];
         try {
-          const db = openActivityDb(workspace);
-          const runs = queryRuns(db, 50);
-          db.close();
-          const historyPath = join(workspace, "history.db");
-          if (!existsSync(historyPath)) {
-            return runs.map(run => ({ ...run, changedDimensions: [] }));
-          }
-          let historyDb: ReturnType<typeof openHistoryDb> | undefined;
-          try {
-            const openedHistoryDb = openHistoryDb(workspace);
-            historyDb = openedHistoryDb;
-            return runs.map(run => ({
-              ...run,
-              changedDimensions: run.maintainerOutcome === "rewrite"
-                ? queryAutomatedRewriteDimensions(openedHistoryDb, run.sessionId ?? run.id)
-                : [],
-            }));
-          } catch {
-            return runs.map(run => ({ ...run, changedDimensions: [] }));
-          } finally {
-            historyDb?.close();
-          }
+          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs`);
+          return response.runs;
         } catch {
           return [];
         }
-      },
-
-      getTeamSkillsInstalled: async () => {
-        const profile = getActiveProfile();
-        const manifest = readSkillManifest();
-        const skills = Object.entries(manifest.skills)
-          .filter(([, entry]) => entry.kind === "team" && entry.removed_at === null)
-          .map(([id, entry]) => ({
-            id,
-            name: entry.name,
-            profile,
-            source_path: entry.source_path,
-          }));
-        return { skills };
-      },
-
-      promoteSkillToTeam: async ({ skillId }) => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const result = promoteSkillToTeam(skillId, workspacePath, profile);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
-      promoteMcpToTeam: async ({ mcpId }) => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const result = promoteMcpToTeam(mcpId, workspacePath, profile);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
-      demoteSkillFromTeam: async ({ skillId }) => {
-        const result = demoteSkillFromTeam(skillId);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
-
-      demoteMcpFromTeam: async ({ mcpId }) => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const result = demoteMcpFromTeam(mcpId, workspacePath);
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
       },
 
       setMcpSecret: async ({ name, envVar, value }) => {
@@ -1513,70 +1318,57 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return { ok: true, nowInstalled: result.nowInstalled };
       },
 
-      getCollabConfigured: async () => {
-        const profile = getActiveProfile();
-        const workspacePath = getWorkspacePath(profile);
-        const collabPath = join(workspacePath, "config", "collaboration.json");
+      startBrowserSignIn: async () => {
+        browserSignInController?.abort();
+        browserSignInController = new AbortController();
+        void startBrowserSignIn(browserSignInController.signal, {
+          openUrl: (url) =>
+            Bun.spawn(["open", url], {
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "ignore",
+            }),
+          progress: (value) => {
+            try {
+              rpc.send.signInProgress(value);
+            } catch {}
+          },
+        });
+        return { ok: true };
+      },
+      cancelBrowserSignIn: async () => {
+        browserSignInController?.abort();
+        browserSignInController = null;
+        return { ok: true };
+      },
+      signOut: async () => {
+        browserSignInController?.abort();
+        browserSignInController = null;
         try {
-          const raw = readFileSync(collabPath, "utf8");
-          const parsed = JSON.parse(raw);
-          return { configured: parsed?.mode === "github" };
+          clearAuthState();
         } catch {
-          return { configured: false };
+          return { ok: false, error: "Could not sign out" };
         }
-      },
-
-      // ── native GitHub OAuth join-team flow ─────────────────────────────────
-      //
-      // Fire-and-forget — NOT awaited. The RPC response returns here, well
-      // before the user has even seen the device code, let alone authorized
-      // in a browser. All real progress (including the multi-minute wait for
-      // browser authorization) arrives via repeated githubOAuthProgress pushes.
-
-      getGitHubJoinConfig: async () => {
-        return { enabled: Boolean(process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID) && Boolean(process.env.DRAFT_GITHUB_JOIN_ENABLED) };
-      },
-
-      startGitHubJoin: async ({ repoUrl }) => {
-        if (!process.env.DRAFT_GITHUB_OAUTH_CLIENT_ID || !process.env.DRAFT_GITHUB_JOIN_ENABLED) {
-          return { ok: false, error: "GitHub join isn't available in this build." };
-        }
-        const profile = getActiveProfile();
-        const workspace = getWorkspacePath(profile);
-        const parsed = parseGitHubRepoUrl(repoUrl);
-        if (!parsed) {
-          return { ok: false, error: "Enter a valid GitHub URL, e.g. https://github.com/owner/repo." };
-        }
-        void startGitHubDeviceFlow({
-          repoUrl, workspace, profile,
-          onProgress: (p) => { try { rpc.send.githubOAuthProgress(p); } catch {} },
-        });
+        try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
         return { ok: true };
       },
-
-      cancelGitHubJoin: async () => {
-        cancelActiveDeviceFlow(getWorkspacePath(getActiveProfile()));
-        return { ok: true };
+      getUserIdentity: async () => {
+        return getUserIdentity();
       },
-
-      checkGitHubJoinStatus: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const local = readLocalConfig(workspace);
-        const integrations = readIntegrations(workspace);
-        return {
-          connected: integrations.ok ? (integrations.integrations.github?.connected ?? false) : false,
-          pending: local.ok ? Boolean(local.config.pending_join) : false,
-        };
-      },
-
-      resumeGitHubJoin: async () => {
-        const profile = getActiveProfile();
-        const workspace = getWorkspacePath(profile);
-        void resumePendingJoin({
-          workspace, profile,
-          onProgress: (p) => { try { rpc.send.githubOAuthProgress(p); } catch {} },
-        });
-        return { ok: true };
+      completeOnboarding: async () => {
+        try {
+          const result = await fetchServerJSON<{ onboarding_completed_at: string | null }>(
+            "onboarding-complete",
+            { method: "POST" },
+          );
+          const current = readAuthState();
+          if (current) writeAuthState({ ...current, onboarding_completed_at: result.onboarding_completed_at });
+          try { rpc.send.identityRefreshNeeded({}); } catch {}
+          return { ok: true, onboardingCompletedAt: result.onboarding_completed_at };
+        } catch (err) {
+          console.error("completeOnboarding: POST /onboarding-complete failed", err);
+          return { ok: false, error: err instanceof Error ? err.message : "Could not mark onboarding complete." };
+        }
       },
     },
     messages: {
@@ -1833,17 +1625,6 @@ async function checkAndDownloadUpdate(silent: boolean) {
   }
 }
 
-// Assign after rpc is constructed so rpc.send is available in the closures,
-// but before any handler or watcher fires.
-watcherHandlers = {
-  onBadgeUpdate: (profile, count) => {
-    try { rpc.send.badgeUpdate({ profile, count }); } catch {}
-  },
-  onProposalAdded: (profile, source, count) => {
-    try { rpc.send.proposalAdded({ profile, source, count }); } catch {}
-  },
-};
-
 // ── Main window ────────────────────────────────────────────────────────────────
 
 // Native close can't be intercepted (no preventDefault hook like beforeQuit),
@@ -1865,17 +1646,6 @@ function createMainWindow(hidden: boolean) {
 
 let win = createMainWindow(false);
 
-function readContextFile(workspace: string, dimension: string): string {
-  if (!dimension || dimension === "unknown") return "";
-  const contextPath = join(workspace, "context", dimension, "index.md");
-  if (!existsSync(contextPath)) return "";
-  try {
-    return readFileSync(contextPath, "utf8");
-  } catch {
-    return "";
-  }
-}
-
 // ── Tray event handling ────────────────────────────────────────────────────────
 
 tray.on("tray-clicked", (e) => {
@@ -1886,30 +1656,7 @@ tray.on("tray-clicked", (e) => {
     try { win.show(); } catch (err) { console.error("[draft-desktop] tray open failed:", err); }
   }
 
-  if (action === "tray-stop-draft") {
-    capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`])
-      .then(() => {
-        setTimeout(refreshTrayMenu, 500);
-        setTimeout(refreshAppMenu, 500);
-        try { rpc.send.requestStatusRefresh({}); } catch {}
-      })
-      .catch(() => {});
-  }
-
-  if (action === "tray-start-draft") {
-    if (existsSync(PLIST_PATH)) {
-      Bun.spawn(["bash", `${BACKGROUND_DIR}/start.sh`], {
-        stdin: "ignore", stdout: "ignore", stderr: "ignore",
-      });
-      setTimeout(refreshTrayMenu, 1500);
-      setTimeout(refreshAppMenu, 1500);
-      try { rpc.send.requestStatusRefresh({}); } catch {}
-    }
-  }
-
   if (action === "quit") {
-    stopHeartbeatWatch();
-    stopProposalWatch();
     stopActiveProfileWatch();
     stopSkillWatch();
     stopMcpWatch();
@@ -1922,30 +1669,17 @@ tray.on("tray-clicked", (e) => {
 // webview.messages once the dom-ready event is wired.
 
 setTimeout(async () => {
-  await syncBundledAssets(); // must run before daemon status poll
+  await syncBundledAssets();
 
-  try {
-    const status  = await getDaemonStatus();
-    const profile = getActiveProfile();
-    console.log(`[draft-desktop] daemon=${status.state} profile=${profile}`);
-    setAppMenu(status.state === "running");
-    setTrayMenu(status.state === "running");
-  } catch (err) {
-    console.error("[draft-desktop] startup status check failed:", err);
-  }
+  const profile = getActiveProfile();
+  console.log(`[draft-desktop] profile=${profile}`);
 
-  // Apply persisted notification preference before starting any watchers so
-  // the first heartbeat check already respects the user's setting.
+  // Apply persisted notification preference before starting any watchers.
   const wsPath = getWorkspacePath(getActiveProfile());
   const localCfg = readLocalConfig(wsPath);
   if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
     setNotificationsEnabled(false);
   }
-
-  // Start heartbeat staleness watcher.
-  // 500ms delay ensures app is fully initialised before the initial mtime check.
-  startHeartbeatWatch();
-  startProposalWatch(getActiveProfile(), watcherHandlers);
 
   // Skill and MCP watchers auto-sync between agents. Defer during onboarding so the
   // scan-import step controls what gets synced. For returning users, start immediately.
@@ -1994,7 +1728,6 @@ setTimeout(async () => {
         // The CLI may already have completed the idempotent lifecycle. Watchers
         // still need to follow the active profile if a later rescan is required.
       }).finally(() => {
-        restartProposalWatch(profile, watcherHandlers);
         restartSkillWatchWithProfile(profile);
         restartMcpWatchWithProfile(profile);
         try { rpc.send.profileChanged({ profile }); } catch {}

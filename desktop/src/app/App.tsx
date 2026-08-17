@@ -1,26 +1,23 @@
 // App.tsx — root React component
 //
 // Owns:
-//   - Status polling loop (getStatus RPC every 5s)
+//   - Status polling loop (getStatus RPC every 5s, for appState only)
 //   - Active view state (sidebar navigation)
 //   - Active profile state (updated by profileChanged events + switchProfile RPC)
 //   - Profile list (loaded on mount, refreshed on profileChanged)
-//   - Proposal badge count (from badgeUpdate push; filtered by active profile)
-//   - Daemon start state + error toast (auto-dismissing)
 
-import { useState, useEffect, useRef } from "react";
-import type { DaemonStatus } from "../rpc/schema";
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { ContextFileEntry } from "../rpc/schema";
 import { events, rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
+import { useUserIdentity } from "./identity/UserIdentityContext";
 import { StatusBar } from "./components/StatusBar";
-import type { DaemonControlVariant, View } from "./types";
+import type { View } from "./types";
 import { Sidebar } from "./components/Sidebar";
-import { ProposalInbox } from "./components/views/ProposalInbox";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
 import { OnboardingView } from "./components/views/OnboardingView";
-import { SetupIncompleteView } from "./components/views/SetupIncompleteView";
 import { SupportPanel } from "./components/SupportPanel";
 import { useCrispChat } from "./support/useCrispChat";
 
@@ -30,33 +27,27 @@ const STATUS_POLL_MS = 5_000;
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [status, setStatus]             = useState<DaemonStatus | null>(null);
   const [activeView, setActiveView]     = useState<View>("context");
-  const [proposalCount, setProposalCount] = useState(0);
   const [activeProfile, setActiveProfile] = useState<string>("");
   const [profiles, setProfiles]         = useState<string[]>([]);
-  const [isStarting, setIsStarting]     = useState(false);
-  const [isStopping, setIsStopping]     = useState(false);
-  const [isRestarting, setIsRestarting] = useState(false);
-  const [bypassSetup, setBypassSetup]   = useState(false);
-  const [startError, setStartError]     = useState<string | null>(null);
-  // Latch: set true when status first indicates first-run, cleared only by onComplete.
-  // Kept separate from status so polling can't dismiss onboarding mid-flow if the
-  // daemon updates userState (e.g. after install completes).
-  const [onboardingActive, setOnboardingActive] = useState(false);
-  // Blue dot on Context sidebar item — set by ContextViewer when loadDiff finds new entries.
-  // Cleared when the user navigates to the Context tab.
-  const [contextHasNew, setContextHasNew] = useState(false);
+  // Latch: set true the instant onboarding's "Let's go" fires, so the main
+  // app renders immediately instead of waiting on identityRefreshNeeded's
+  // async round trip to land before identity.onboardingCompletedAt updates.
+  const [justCompletedOnboarding, setJustCompletedOnboarding] = useState(false);
   const [updateReady, setUpdateReady]       = useState(false);
   const [updateVersion, setUpdateVersion]   = useState<string | null>(null);
   const [isApplyingUpdate, setIsApplyingUpdate] = useState(false);
   const [updateToast, setUpdateToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [syncToast, setSyncToast] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const bootstrapPollRef = useRef<{ cancelled: boolean } | null>(null);
   const [supportOpen, setSupportOpen]           = useState(false);
+  const [contextSnapshot, setContextSnapshot] = useState<{ workspaceId: string | null; files: ContextFileEntry[] }>({ workspaceId: null, files: [] });
+  const [contextLoading, setContextLoading] = useState(false);
+  const contextRequestRef = useRef(0);
+  const identity = useUserIdentity();
+  const { workspaceId, hydrated: identityHydrated } = identity;
+  const workspaceIdRef = useRef(workspaceId);
   const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
-
-  useEffect(() => {
-    if (status?.appState?.userState === "no-profile") setOnboardingActive(true);
-  }, [status?.appState?.userState]);
 
   const { track } = useAnalytics();
   const hasLaunchedRef = useRef(false);
@@ -66,11 +57,8 @@ export function App() {
   useEffect(() => { activeProfileRef.current = activeProfile; }, [activeProfile]);
 
   // ── Shared status fetch ────────────────────────────────────────────────────
-  // Called by both the poll interval and handleStartDraft (for an immediate
-  // refresh after a daemon start, without waiting up to 5s for the next tick).
   async function fetchStatus() {
     const s = await rpc.request.getStatus();
-    setStatus(s);
     // Seed activeProfile from status on first load only.
     if (!activeProfileRef.current && s.appState.activeProfile) {
       setActiveProfile(s.appState.activeProfile);
@@ -115,33 +103,87 @@ export function App() {
 
   useEffect(() => { void loadProfiles(); }, []);
 
-  // ── Push: badge updates (filtered by active profile) ──────────────────────
-  useEffect(() => {
-    return events.on("badgeUpdate", ({ profile, count }) => {
-      if (profile === activeProfileRef.current) setProposalCount(count);
-    });
+  useEffect(() => { workspaceIdRef.current = workspaceId; }, [workspaceId]);
+
+  const reloadContextFiles = useCallback(async () => {
+    const requestedWorkspaceId = workspaceIdRef.current;
+    if (!requestedWorkspaceId) return;
+    const requestId = ++contextRequestRef.current;
+    try {
+      const files = await rpc.request.getContextFiles();
+      if (requestId === contextRequestRef.current && workspaceIdRef.current === requestedWorkspaceId) {
+        setContextSnapshot({ workspaceId: requestedWorkspaceId, files });
+        setContextLoading(false);
+      }
+    } catch {
+      if (requestId === contextRequestRef.current && workspaceIdRef.current === requestedWorkspaceId) {
+        setContextSnapshot({ workspaceId: requestedWorkspaceId, files: [] });
+        setContextLoading(false);
+      }
+    }
   }, []);
 
-  // ── Push: immediate status refresh (e.g. after menu start/stop action) ───
+  // Keying the snapshot by cloud workspace prevents ui flicker while new request is in flight
   useEffect(() => {
-    return events.on("requestStatusRefresh", () => { void fetchStatus(); });
-  }, []);
+    contextRequestRef.current += 1;
+    setContextSnapshot({ workspaceId, files: [] });
+    setContextLoading(Boolean(workspaceId));
+    if (workspaceId) void reloadContextFiles();
+  }, [workspaceId, reloadContextFiles]);
 
   // ── Push: profile changed (CLI-driven or desktop-driven) ──────────────────
   useEffect(() => {
     return events.on("profileChanged", ({ profile }) => {
       setActiveProfile(profile);
-      setProposalCount(0); // Clear badge — new profile's watcher will push the real count.
       void loadProfiles();  // Refresh list in case a new profile was created.
     });
   }, []);
 
-  // ── Start error auto-dismiss ───────────────────────────────────────────────
+  // ── Bootstrap synthesis run polling ───────────────────────────────────────
   useEffect(() => {
-    if (!startError) return;
-    const id = setTimeout(() => setStartError(null), 4_000);
+    return events.on("bootstrapRunStarted", () => {
+      if (bootstrapPollRef.current) bootstrapPollRef.current.cancelled = true; // supersede any earlier poll
+      const token = { cancelled: false };
+      bootstrapPollRef.current = token;
+      const startedForWorkspaceId = workspaceIdRef.current;
+
+      const POLL_MS = 10_000;
+      const TIMEOUT_MS = 10 * 60_000;
+      const deadline = Date.now() + TIMEOUT_MS;
+
+      void (async () => {
+        while (!token.cancelled && workspaceIdRef.current === startedForWorkspaceId && Date.now() < deadline) {
+          await new Promise<void>((resolve) => setTimeout(resolve, POLL_MS));
+          if (token.cancelled || workspaceIdRef.current !== startedForWorkspaceId) return;
+          let files: ContextFileEntry[];
+          try {
+            files = await rpc.request.getContextFiles();
+          } catch {
+            continue;
+          }
+          if (token.cancelled || workspaceIdRef.current !== startedForWorkspaceId) return;
+          if (files.length > 0) {
+            await reloadContextFiles();
+            setSyncToast({ type: "success", msg: "Your workspace context is ready." });
+            return;
+          }
+        }
+        if (!token.cancelled && workspaceIdRef.current === startedForWorkspaceId) {
+          setSyncToast({ type: "error", msg: "Still setting up your workspace — check the Context tab again shortly." });
+        }
+      })();
+    });
+  }, [reloadContextFiles]);
+
+  useEffect(() => {
+    return () => { if (bootstrapPollRef.current) bootstrapPollRef.current.cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!syncToast) return;
+    const id = setTimeout(() => setSyncToast(null), 5_000);
     return () => clearTimeout(id);
-  }, [startError]);
+  }, [syncToast]);
 
   // ── Update events ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -177,87 +219,12 @@ export function App() {
     }
   }
 
-
-
-  // ── Daemon start ───────────────────────────────────────────────────────────
-  // startDaemon RPC fires start.sh and returns immediately (avoids Electrobun's
-  // short renderer-side RPC timeout racing start.sh's internal sleep).
-  // We poll getStatus() here in the renderer — each call is fast, no timeout risk.
-  async function handleStartDraft() {
-    setIsStarting(true);
-    track("daemon_start_attempted", {});
-    const startedAt = Date.now();
-    try {
-      await rpc.request.startDaemon();
-
-      const POLL_MS    = 500;
-      const TIMEOUT_MS = 20_000;
-      const deadline   = Date.now() + TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        await new Promise<void>((r) => setTimeout(r, POLL_MS));
-        const s = await rpc.request.getStatus();
-        setStatus(s);
-        if (s.state !== "stopped") {
-          track("daemon_start_succeeded", { duration_ms: Date.now() - startedAt });
-          return;
-        }
-      }
-      track("daemon_start_failed", { error_code: "timeout" });
-      setStartError("Daemon did not start. Check ~/.draft/background/logs/daemon-error.log");
-    } catch {
-      track("daemon_start_failed", { error_code: "rpc_error" });
-      setStartError("Failed to start Draft.");
-    } finally {
-      setIsStarting(false);
-    }
-  }
-
-  // ── Daemon stop ────────────────────────────────────────────────────────────
-  async function handleStopDraft() {
-    setIsStopping(true);
-    try {
-      await rpc.request.stopDaemon();
-      await new Promise<void>((r) => setTimeout(r, 800));
-      await fetchStatus();
-    } catch {
-      // Non-fatal — poll will pick up the new state
-    } finally {
-      setIsStopping(false);
-    }
-  }
-
-  // ── Daemon restart ──────────────────────────────────────────────────────────
-  async function handleRestartDaemon() {
-    setIsRestarting(true);
-    try {
-      await rpc.request.stopDaemon();
-      await new Promise<void>((r) => setTimeout(r, 1_500));
-      await rpc.request.startDaemon();
-
-      const POLL_MS    = 500;
-      const TIMEOUT_MS = 20_000;
-      const deadline   = Date.now() + TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        await new Promise<void>((r) => setTimeout(r, POLL_MS));
-        const s = await rpc.request.getStatus();
-        setStatus(s);
-        if (s.state !== "stopped") return;
-      }
-      setStartError("Daemon did not restart. Check ~/.draft/background/logs/daemon-error.log");
-    } catch {
-      setStartError("Failed to restart Draft.");
-    } finally {
-      setIsRestarting(false);
-    }
-  }
-
   // ── Profile switch ─────────────────────────────────────────────────────────
   async function handleSwitchProfile(profile: string) {
     try {
       const result = await rpc.request.switchProfile({ profile });
       if (result.ok && result.active) {
         setActiveProfile(result.active);
-        setProposalCount(0);
       }
     } catch {
       // Non-fatal — current profile remains active.
@@ -265,64 +232,49 @@ export function App() {
   }
 
   function handleNavigate(view: View) {
-    if (view === "context") setContextHasNew(false);
     setActiveView(view);
     track("view_navigated", { view });
   }
 
-  // ── Derived daemon control variant ────────────────────────────────────────
-  const daemonVariant: DaemonControlVariant =
-    isRestarting                           ? "restarting" :
-    isStarting                             ? "starting"   :
-    isStopping                             ? "stopping"   :
-    !status || status.state === "stopped"  ? "stopped"    :
-    status.state === "degraded"            ? "degraded"   :
-    "running";
-
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="app">
-      <StatusBar status={status} />
+      <StatusBar />
 
       <div className="layout">
         <Sidebar
           activeView={activeView}
           onNavigate={handleNavigate}
-          proposalCount={proposalCount}
-          contextHasNew={contextHasNew}
           activeProfile={activeProfile}
           profiles={profiles}
           onSwitchProfile={handleSwitchProfile}
-          daemonVariant={daemonVariant}
-          onStartDaemon={handleStartDraft}
-          onStopDaemon={handleStopDraft}
-          onRestartDaemon={handleRestartDaemon}
           onOpenFeedback={() => setSupportOpen(true)}
         />
 
         <main className="content">
-          {/* Settings is always reachable regardless of install/daemon state. */}
+          {/* Settings is always reachable regardless of daemon state. */}
           {activeView === "settings" ? (
             <SettingsView key={activeProfile} activeProfile={activeProfile} onOpenFeedback={() => setSupportOpen(true)} />
-          ) : (onboardingActive || status?.appState?.userState === "no-profile") ? (
-            <OnboardingView onComplete={async () => { setOnboardingActive(false); await fetchStatus(); }} />
-          ) : status?.appState?.userState === "no-context" && !bypassSetup ? (
-            <SetupIncompleteView onComplete={async () => { setBypassSetup(true); await fetchStatus(); }} />
+          ) : !identityHydrated ? (
+            <div className="empty-state">Loading…</div>
+          ) : !justCompletedOnboarding && (!identity.signedIn || !identity.onboardingCompletedAt) ? (
+            <OnboardingView onComplete={async () => { setJustCompletedOnboarding(true); await fetchStatus(); await reloadContextFiles(); }} />
           ) : (
             <>
-              {activeView === "proposals" && (
-                <ProposalInbox
-                  key={activeProfile}
-                  activeProfile={activeProfile}
-                  onCountChange={setProposalCount}
-                  daemonStopped={!status || status.state === "stopped"}
-                />
-              )}
               {activeView === "context" && (
+                !identityHydrated ? <div className="empty-state">Loading workspace…</div> :
                 <ContextViewer
-                  key={activeProfile}
+                  key={`${activeProfile}:${workspaceId ?? "signed-out"}`}
                   activeProfile={activeProfile}
-                  onNewChanges={setContextHasNew}
+                  files={contextSnapshot.workspaceId === workspaceId ? contextSnapshot.files : []}
+                  setFiles={(update) => setContextSnapshot((snapshot) => ({
+                    workspaceId,
+                    files: typeof update === "function"
+                      ? update(snapshot.workspaceId === workspaceId ? snapshot.files : [])
+                      : update,
+                  }))}
+                  reloadFiles={reloadContextFiles}
+                  loading={contextLoading || contextSnapshot.workspaceId !== workspaceId}
                 />
               )}
               {activeView === "activity" && (
@@ -356,10 +308,10 @@ export function App() {
           <button className="toast__dismiss" onClick={() => setUpdateToast(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
-      {startError && (
-        <div className="toast toast--error" role="alert">
-          <span>{startError}</span>
-          <button className="toast__dismiss" onClick={() => setStartError(null)} aria-label="Dismiss">✕</button>
+      {syncToast && (
+        <div className={`toast toast--${syncToast.type}`} role={syncToast.type === "error" ? "alert" : "status"}>
+          <span>{syncToast.msg}</span>
+          <button className="toast__dismiss" onClick={() => setSyncToast(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
       <SupportPanel

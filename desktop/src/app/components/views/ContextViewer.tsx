@@ -1,27 +1,16 @@
-// ContextViewer.tsx — context browser with team sync visibility
+// ContextViewer.tsx — context file browser
 //
-// Layout (top → bottom):
-//   TeamSyncBar  — last loaded time, change count, Load button (hidden when collab not configured)
-//   ChangelogPanel — diff entries; Apply action in HITL mode (hidden when no entries)
-//   context-viewer__body — file tree (left) + markdown content (right)
+// Layout: context-viewer__body — file tree (left) + markdown content (right)
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
-import { diffLines, type Change } from "diff";
 import type {
   ContextFileEntry,
-  ContextFileVersion,
-  LoadDiffEntry,
-  LocalConfig,
   SessionPreview,
-  TeamApplyResult,
-  TeamDiffResult,
-  TeamStageErrorCode,
 } from "../../../rpc/schema";
 import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { ContextEditor, RawEditor, type EditorHandle } from "./ContextEditor";
-import { HistoryPanel, DiffLines } from "./HistoryPanel";
+import { ContextEditor, RawEditor } from "./ContextEditor";
 
 // ── Compact nudge ─────────────────────────────────────────────────────────────
 
@@ -29,191 +18,6 @@ const COMPACT_THRESHOLD = 500;
 
 function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
-
-// ── Relative time helper ───────────────────────────────────────────────────────
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "never";
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
-function teamStageErrorCopy(error: TeamStageErrorCode): string {
-  switch (error) {
-    case "no_token":
-      return "GitHub connection is missing. Reconnect GitHub in Settings.";
-    case "token_revoked":
-      return "GitHub access expired. Reconnect GitHub in Settings.";
-    case "no_access":
-      return "Draft can't access the team repository. Check your GitHub access.";
-    case "network":
-      return "Couldn't reach the team repository. Check your connection and try again.";
-    case "rate_limited":
-      return "GitHub's request limit was reached. Try again later.";
-    case "archive_invalid":
-      return "The downloaded team archive is invalid.";
-    case "archive_too_large":
-      return "The team archive is too large for Draft to load.";
-    case "unpublished_local_changes":
-      return "Publish or revert your local context changes before loading from the team.";
-    case "unpublished_team_assets":
-      return "Publish or revert your local team skill and MCP changes before loading.";
-    case "local_asset_validation_failed":
-      return "Your local team skills or MCP configuration is invalid. Fix it before loading.";
-    case "remote_asset_validation_failed":
-      return "The repository contains an invalid team skill or MCP configuration.";
-    case "clone_failed":
-      return "Couldn't clone the team repository. Check GitHub authentication and try again.";
-    case "unexpected":
-      return "Couldn't prepare the team update. Try again.";
-  }
-}
-
-function teamApplyErrorCopy(error: Exclude<TeamApplyResult, { ok: true }>["error"]): string {
-  switch (error) {
-    case "workspace_changed":
-      return "The active profile changed. Load the team update again.";
-    case "stage_not_found":
-      return "This preview expired. Load the team update again.";
-    case "apply_failed":
-      return "Draft couldn't apply the team update. Your existing context was restored.";
-    case "unexpected":
-      return "Couldn't apply the team update. Try again.";
-  }
-}
-
-function teamApplyNotice(result: Extract<TeamApplyResult, { ok: true }>): string {
-  const installedCount = result.installedSkills.length + result.installedMcps.length;
-  const removedCount = result.removedSkills.length + result.removedMcps.length;
-  const details: string[] = [];
-  if (installedCount > 0) details.push(`${installedCount} team ${installedCount === 1 ? "asset" : "assets"} installed`);
-  if (removedCount > 0) details.push(`${removedCount} team ${removedCount === 1 ? "asset" : "assets"} removed`);
-  if (result.missingSecrets.length > 0) {
-    const count = result.missingSecrets.length;
-    details.push(`${count} MCP ${count === 1 ? "connection needs" : "connections need"} credentials in Settings`);
-  }
-  if (result.conflicts.length > 0) {
-    const count = result.conflicts.length;
-    details.push(`${count} team asset ${count === 1 ? "conflict needs" : "conflicts need"} review`);
-  }
-  return details.length > 0
-    ? `Loaded. ${details.join("; ")}.`
-    : "Loaded team context and assets.";
-}
-
-function isTrackedTeamResyncError(
-  error: TeamStageErrorCode,
-): error is "token_revoked" | "no_access" | "network" | "rate_limited" {
-  return error === "token_revoked"
-    || error === "no_access"
-    || error === "network"
-    || error === "rate_limited";
-}
-
-// ── TeamSyncBar ────────────────────────────────────────────────────────────────
-
-type SyncStatus = "idle" | "loading" | "loaded" | "applying" | "error";
-
-interface TeamSyncBarProps {
-  lastLoaded: string | null;
-  pendingCount: number;
-  status: SyncStatus;
-  errorMsg: string;
-  noticeMsg: string;
-  onLoad: () => void;
-}
-
-function TeamSyncBar({ lastLoaded, pendingCount, status, errorMsg, noticeMsg, onLoad }: TeamSyncBarProps) {
-  const isWorking = status === "loading" || status === "applying";
-
-  return (
-    <div className="sync-bar">
-      <div className="sync-bar__left">
-        {status === "error" ? (
-          <span className="sync-bar__error">{errorMsg}</span>
-        ) : noticeMsg ? (
-          <span className="sync-bar__timestamp">{noticeMsg}</span>
-        ) : (
-          <>
-            <span className="sync-bar__timestamp">
-              Last loaded {relativeTime(lastLoaded)}
-            </span>
-            {pendingCount > 0 && (
-              <>
-                <span className="sync-bar__sep">·</span>
-                <span className="sync-bar__count">
-                  {pendingCount} {pendingCount === 1 ? "change" : "changes"}
-                </span>
-              </>
-            )}
-          </>
-        )}
-      </div>
-      <button
-        className="sync-bar__btn"
-        onClick={onLoad}
-        disabled={isWorking}
-        aria-label="Load from team"
-      >
-        {status === "loading" ? "Loading…" : status === "applying" ? "Applying…" : "Load from team"}
-      </button>
-    </div>
-  );
-}
-
-// ── ChangelogPanel ─────────────────────────────────────────────────────────────
-
-interface ChangelogPanelProps {
-  entries: LoadDiffEntry[];
-  mode: "auto" | "review";
-  isApplying: boolean;
-  onApply: () => void;
-  onDismiss: () => void;
-}
-
-function ChangelogPanel({ entries, mode, isApplying, onApply, onDismiss }: ChangelogPanelProps) {
-  return (
-    <div className="changelog-panel">
-      {entries.length === 0 ? (
-        <p className="changelog-panel__empty">
-          No context changelog entries since last load. Applying may still refresh team skills and MCPs.
-        </p>
-      ) : (
-        <ul className="changelog-panel__list">
-          {entries.map((e, i) => (
-            <li key={i} className="changelog-entry">
-              <span className="changelog-entry__pill">{e.dimension || "context"}</span>
-              <span className="changelog-entry__action">{e.action}</span>
-              <span className="changelog-entry__summary">{e.summary}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {mode === "review" && (
-        <div className="changelog-actions">
-          <button
-            className="proposal-action proposal-action--primary changelog-actions__apply"
-            onClick={onApply}
-            disabled={isApplying}
-          >
-            {isApplying ? "Applying…" : "Apply"}
-          </button>
-          <button
-            className="proposal-action proposal-action--ghost"
-            onClick={onDismiss}
-            disabled={isApplying}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── Empty state ────────────────────────────────────────────────────────────────
@@ -374,84 +178,6 @@ function GroupSection({
   );
 }
 
-// ── Add dimension row ────────────────────────────────────────────────────────
-// Inline affordance at the bottom of the tree for scaffolding a custom dimension
-// (context/<name>/index.md + log/) without leaving the desktop app. Mirrors
-// `draft dimension add <name>` / the draft-add-dimension skill's scaffold step.
-
-function AddDimensionRow({
-  onAdd,
-}: {
-  onAdd: (name: string) => Promise<{ ok: boolean; error?: string }>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
-
-  function close() {
-    setOpen(false);
-    setValue("");
-    setError(null);
-  }
-
-  async function submit() {
-    const slug = value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-    if (!slug) {
-      setError("Enter a name.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    const result = await onAdd(slug);
-    setSubmitting(false);
-    if (result.ok) {
-      close();
-    } else {
-      setError(result.error ?? "Failed to create dimension.");
-    }
-  }
-
-  if (!open) {
-    return (
-      <button className="context-tree__add-dim-trigger" onClick={() => setOpen(true)}>
-        + New dimension
-      </button>
-    );
-  }
-
-  return (
-    <div className="context-tree__add-dim-form">
-      <input
-        ref={inputRef}
-        className="context-tree__add-dim-input"
-        value={value}
-        placeholder="Dimension Name"
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-          if (e.key === "Escape") close();
-        }}
-        disabled={submitting}
-      />
-      <div className="context-tree__add-dim-actions">
-        <button className="context-tree__add-dim-confirm" onClick={submit} disabled={submitting}>
-          {submitting ? "Adding…" : "Add"}
-        </button>
-        <button className="context-tree__add-dim-cancel" onClick={close} disabled={submitting}>
-          Cancel
-        </button>
-      </div>
-      {error && <p className="context-tree__add-dim-error">{error}</p>}
-    </div>
-  );
-}
-
 // ── Context tree ──────────────────────────────────────────────────────────────
 
 function ContextTree({
@@ -463,7 +189,6 @@ function ContextTree({
   onToggleDim,
   onToggleGroup,
   onContextMenu,
-  onAddDimension,
 }: {
   files: ContextFileEntry[];
   selectedPath: string;
@@ -473,7 +198,6 @@ function ContextTree({
   onToggleDim: (group: string) => void;
   onToggleGroup: (group: string) => void;
   onContextMenu?: (e: React.MouseEvent, path: string) => void;
-  onAddDimension: (name: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const dims = files.filter((f) => f.kind === "dim");
   const standalones = files.filter((f) => f.kind === "standalone");
@@ -539,8 +263,6 @@ function ContextTree({
           />
         );
       })}
-
-      <AddDimensionRow onAdd={onAddDimension} />
     </aside>
   );
 }
@@ -643,32 +365,16 @@ function ContextContent({
   entry,
   isDismissed,
   onDismiss,
-  historyOpen,
-  onToggleHistory,
-  onSaved,
 }: {
   entry: ContextFileEntry;
   isDismissed: boolean;
   onDismiss: () => void;
-  historyOpen: boolean;
-  onToggleHistory: () => void;
-  onSaved: (relativePath: string, content: string, frontmatterRaw?: string) => void;
 }) {
   const { name, last_updated, source } = parseFrontmatterFields(entry.frontmatterRaw);
   const hasMeta = name || last_updated || source;
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<EditorHandle>(null);
   const [copied, setCopied] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [rawOpen, setRawOpen] = useState(false);
-  const [publishStatus, setPublishStatus] = useState<PublishStatus>("idle");
-  const [publishError, setPublishError] = useState<string | undefined>(undefined);
-  const [publishConfirm, setPublishConfirm] = useState<PublishConfirmState | null>(null);
-  const [collabConfigured, setCollabConfigured] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    rpc.request.getCollabConfigured().then((result) => setCollabConfigured(result.configured)).catch(() => setCollabConfigured(false));
-  }, []);
 
   const wc = wordCount(entry.content);
   const showNudge = entry.kind === "dim" && wc > COMPACT_THRESHOLD && !isDismissed;
@@ -704,63 +410,6 @@ function ContextContent({
     source ? `source: ${source}` : undefined,
   ].filter(Boolean) as string[];
 
-  async function handlePublish() {
-    if (collabConfigured === false) {
-      setPublishConfirm({ kind: "not-configured" });
-      return;
-    }
-
-    await editorRef.current?.flushAndCheckpoint();
-
-    const versions = await rpc.request.getFileHistory({ relativePath: entry.relativePath });
-    const lastPublishedIndex = versions.findIndex((v) => v.publishedAt);
-    const lastPublished = lastPublishedIndex === -1 ? null : versions[lastPublishedIndex];
-    const newest = versions[0] ?? null;
-
-    if (lastPublished && newest && lastPublished.id === newest.id) {
-      setPublishConfirm({ kind: "nothing-to-publish" });
-      return;
-    }
-
-    const beforeContent = lastPublished
-      ? (await rpc.request.getFileVersionContent({ versionId: lastPublished.id }))?.content ?? ""
-      : "";
-    const afterContent = newest
-      ? (await rpc.request.getFileVersionContent({ versionId: newest.id }))?.content ?? ""
-      : entry.content;
-
-    if (beforeContent === afterContent) {
-      setPublishConfirm({ kind: "nothing-to-publish" });
-      return;
-    }
-
-    setPublishConfirm({ kind: "diff", diffParts: diffLines(beforeContent, afterContent) });
-  }
-
-  async function confirmPublish() {
-    setPublishConfirm(null);
-    setPublishStatus("publishing");
-    const result = await rpc.request.publishContextFile({ relativePath: entry.relativePath });
-    if (result.ok) {
-      setPublishStatus("published");
-      setTimeout(() => setPublishStatus("idle"), 2500);
-    } else {
-      setPublishError(result.error ?? "Publish failed.");
-      setPublishStatus("error");
-      setTimeout(() => setPublishStatus("idle"), 4000);
-    }
-  }
-
-  if (publishConfirm) {
-    return (
-      <PublishConfirmView
-        state={publishConfirm}
-        onConfirm={confirmPublish}
-        onCancel={() => setPublishConfirm(null)}
-      />
-    );
-  }
-
   return (
     <div className="context-content" ref={containerRef}>
       <div className="context-content__toolbar">
@@ -775,32 +424,15 @@ function ContextContent({
           </div>
         )}
         <div className="context-content__toolbar-right">
-          <SaveIndicator status={saveStatus} />
-          <PublishIndicator status={publishStatus} error={publishError} />
           <button
             className={`context-content__history-toggle${rawOpen ? " context-content__history-toggle--active" : ""}`}
             onClick={() => setRawOpen((prev) => !prev)}
           >
             {rawOpen ? "View rendered" : "View raw"}
           </button>
-          <button
-            className={`context-content__history-toggle${historyOpen ? " context-content__history-toggle--active" : ""}`}
-            onClick={onToggleHistory}
-          >
-            History
-          </button>
-          <button
-            className="context-content__publish-button"
-            onClick={handlePublish}
-            disabled={publishStatus === "publishing"}
-          >
-            Publish file
-          </button>
           <ToolbarMenu
             items={[
               { label: rawOpen ? "View rendered" : "View raw", onClick: () => setRawOpen((prev) => !prev), active: rawOpen },
-              { label: "History", onClick: onToggleHistory, active: historyOpen },
-              { label: "Publish file", onClick: handlePublish, active: publishStatus !== "idle" },
             ]}
           />
         </div>
@@ -827,195 +459,15 @@ function ContextContent({
         {rawOpen ? (
           <RawEditor
             key={entry.relativePath}
-            ref={editorRef}
             relativePath={entry.relativePath}
             initialRawContent={entry.frontmatterRaw + entry.content}
-            onSaveStatusChange={setSaveStatus}
-            onSaved={onSaved}
           />
         ) : (
           <ContextEditor
             key={entry.relativePath}
-            ref={editorRef}
             relativePath={entry.relativePath}
             initialContent={entry.content}
-            frontmatterRaw={entry.frontmatterRaw}
-            onSaveStatusChange={setSaveStatus}
-            onSaved={onSaved}
           />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── History diff view ───────────────────────────────────────────────────────
-// Renders inline in the main content area (in place of the editor) when a
-// version is selected in the History sidebar — diffed against the previous
-// version in that file's history.
-
-function HistoryDiffView({
-  relativePath,
-  selectedVersionId,
-  onClose,
-}: {
-  relativePath: string;
-  selectedVersionId: string;
-  onClose: () => void;
-}) {
-  const [versions, setVersions] = useState<ContextFileVersion[]>([]);
-  const [diffParts, setDiffParts] = useState<Change[] | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    rpc.request.getFileHistory({ relativePath }).then((result) => {
-      if (!cancelled) setVersions(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [relativePath]);
-
-  const index = versions.findIndex((v) => v.id === selectedVersionId);
-  const current = index === -1 ? null : versions[index];
-  // versions is ordered newest-first, so the previous edit is the next entry in the list.
-  const previous = index === -1 ? null : (versions[index + 1] ?? null);
-
-  useEffect(() => {
-    if (index === -1) return;
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      previous ? rpc.request.getFileVersionContent({ versionId: previous.id }) : Promise.resolve(null),
-      rpc.request.getFileVersionContent({ versionId: selectedVersionId }),
-    ]).then(([before, after]) => {
-      if (cancelled) return;
-      setDiffParts(diffLines(before?.content ?? "", after?.content ?? ""));
-      setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVersionId, previous?.id, index]);
-
-  return (
-    <div className="context-content">
-      <div className="context-content__toolbar">
-        <div className="context-meta-strip">
-          {current ? `Version from ${relativeTime(current.createdAt)}` : "Version"}
-          {current && !previous && (
-            <>
-              <span className="context-meta-strip__sep"> · </span>
-              initial version
-            </>
-          )}
-        </div>
-        <div className="context-content__toolbar-right">
-          <button className="context-content__history-toggle" onClick={onClose}>
-            Back to editor
-          </button>
-        </div>
-      </div>
-      <div className="context-content__scroll">
-        {loading || !diffParts ? (
-          <div className="history-panel__loading">Loading diff…</div>
-        ) : (
-          <pre className="proposal-diff" aria-label="Version diff">
-            <DiffLines parts={diffParts} />
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Save status indicator ────────────────────────────────────────────────────
-
-type SaveStatus = "idle" | "saving" | "saved";
-
-function SaveIndicator({ status }: { status: SaveStatus }) {
-  if (status === "idle") return null;
-  return (
-    <span className={`context-save-indicator context-save-indicator--${status}`}>
-      <span className="context-save-indicator__dot" />
-      {status === "saving" ? "Saving…" : "Saved"}
-    </span>
-  );
-}
-
-// ── Publish status indicator ─────────────────────────────────────────────────
-
-type PublishStatus = "idle" | "publishing" | "published" | "error";
-
-function PublishIndicator({ status, error }: { status: PublishStatus; error?: string }) {
-  if (status === "idle") return null;
-  const label = status === "publishing" ? "Publishing…"
-    : status === "published" ? "Published"
-    : `Publish failed: ${error ?? "unknown error"}`;
-  return (
-    <span
-      className={`context-publish-indicator context-publish-indicator--${status}`}
-      title={status === "error" ? label : undefined}
-    >
-      <span className="context-publish-indicator__dot" />
-      <span className="context-publish-indicator__label">{label}</span>
-    </span>
-  );
-}
-
-// ── Publish confirm view ─────────────────────────────────────────────────────
-// Renders inline in the main content area (same slot HistoryDiffView uses) when
-// the user clicks "Publish file" — shows a diff of last-published vs. current
-// content before actually publishing, reusing DiffLines/diffLines rather than
-// a new diff engine.
-
-type PublishConfirmState =
-  | { kind: "diff"; diffParts: Change[] }
-  | { kind: "nothing-to-publish" }
-  | { kind: "not-configured" };
-
-function PublishConfirmView({
-  state,
-  onConfirm,
-  onCancel,
-}: {
-  state: PublishConfirmState;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const title = state.kind === "diff" ? "Publish preview"
-    : state.kind === "nothing-to-publish" ? "Nothing to publish since last publish"
-    : "Team collaboration not set up";
-
-  return (
-    <div className="context-content">
-      <div className="context-content__toolbar">
-        <div className="context-meta-strip">{title}</div>
-        <div className="context-content__toolbar-right">
-          {state.kind === "diff" && (
-            <button className="context-content__publish-button" onClick={onConfirm}>
-              Publish
-            </button>
-          )}
-          <button className="context-content__history-toggle" onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
-      </div>
-      <div className="context-content__scroll">
-        {state.kind === "nothing-to-publish" ? (
-          <p className="changelog-panel__empty">This file has no changes since it was last published.</p>
-        ) : state.kind === "not-configured" ? (
-          <p className="changelog-panel__empty">
-            This profile isn't connected to a shared team repository yet. Run the{" "}
-            <code>draft-setup-collab</code> skill inside your agent session to connect one before publishing.
-          </p>
-        ) : (
-          <pre className="proposal-diff" aria-label="Publish diff">
-            <DiffLines parts={state.diffParts} />
-          </pre>
         )}
       </div>
     </div>
@@ -1121,14 +573,16 @@ function ContextMenu({ state, onReveal, onClose }: {
 
 interface ContextViewerProps {
   activeProfile: string;
-  onNewChanges: (hasNew: boolean) => void;
+  files: ContextFileEntry[];
+  setFiles: Dispatch<SetStateAction<ContextFileEntry[]>>;
+  reloadFiles: () => Promise<void>;
+  loading: boolean;
 }
 
-export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProps) {
+export function ContextViewer({ activeProfile, files, setFiles, reloadFiles, loading }: ContextViewerProps) {
   const { track } = useAnalytics();
 
   // ── File tree state ──────────────────────────────────────────────────────────
-  const [files, setFiles] = useState<ContextFileEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string>("");
   const [expandedDims, setExpandedDims] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -1144,43 +598,11 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
   // ── Compact nudge dismissed dims (per-session) ────────────────────────────────
   const [dismissedDims, setDismissedDims] = useState<Set<string>>(new Set());
 
-  // ── History sidebar ──────────────────────────────────────────────────────────
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-
-  // Clear the selected diff whenever the sidebar closes, so re-opening starts fresh.
-  useEffect(() => {
-    if (!historyOpen) setSelectedVersionId(null);
-  }, [historyOpen]);
-
-  // ── Sync state ───────────────────────────────────────────────────────────────
-  const [localConfig, setLocalConfig] = useState<LocalConfig>({ teamLoadMode: "auto", launchOnLogin: false, notificationsEnabled: true, disabledContextSections: [], codexScanIntervalMinutes: 360, claudeCodeSynthesis: true, lastPublished: null });
-  const [collabConfigured, setCollabConfigured] = useState(false);
-  const [lastLoaded, setLastLoaded] = useState<string | null>(null);
-  const [localEntries, setLocalEntries] = useState<LoadDiffEntry[]>([]);
-  const [localCursor, setLocalCursor] = useState(0);
-
-  // Staged remote diff (HITL mode — held between getTeamDiff and applyTeamDiff)
-  const [stagedDiff, setStagedDiff] = useState<Extract<TeamDiffResult, { ok: true }> | null>(null);
-  const [showChangelog, setShowChangelog] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
-  const [syncError, setSyncError] = useState("");
-  const [syncNotice, setSyncNotice] = useState("");
-
   // ── Reset view state when profile switches ───────────────────────────────────
   useEffect(() => {
     setMode("browse");
     setSessionPreview(null);
     setCtxMenu(null);
-    setStagedDiff(null);
-    setShowChangelog(false);
-    setSyncStatus("idle");
-    setSyncError("");
-    setSyncNotice("");
-    setLocalEntries([]);
-    setLocalCursor(0);
-    setLastLoaded(null);
-    setCollabConfigured(false);
   }, [activeProfile]);
 
   // ── Session preview ───────────────────────────────────────────────────────────
@@ -1203,161 +625,20 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
     setCtxMenu({ x: e.clientX, y: e.clientY, relativePath });
   }
 
-  // ── Load context files ───────────────────────────────────────────────────────
-  function loadFiles() {
-    rpc.request.getContextFiles().then((result) => {
-      setFiles(result);
-      if (result.length > 0) {
-        const firstSelectable = result.find(
-          (f) => f.kind === "dim" || f.kind === "standalone" || f.kind === "group-child"
-        );
-        setSelectedPath((prev) => prev || (firstSelectable?.relativePath ?? result[0]?.relativePath ?? ""));
-      }
-    }).catch(() => setFiles([]));
-  }
-
-  // ── Sync a saved edit back into tree state ───────────────────────────────────
-  // Without this, `files` stays frozen at whatever loadFiles() last returned. Switch
-  // away from an edited file and back, and ContextEditor remounts with the stale
-  // pre-edit body as initialContent — silently reverting the save on the next
-  // autosave/blur. See plans/0025 write-path notes on ContextEditor.
-  function handleFileSaved(relativePath: string, content: string, frontmatterRaw?: string) {
-    setFiles((prev) => prev.map((f) => (
-      f.relativePath === relativePath
-        ? { ...f, content, ...(frontmatterRaw !== undefined ? { frontmatterRaw } : {}) }
-        : f
-    )));
-  }
-
-  // ── Load local diff (option B: check on mount, not on poll) ─────────────────
-  function refreshLocalDiff() {
-    rpc.request.loadDiff().then((result) => {
-      setLastLoaded(result.lastLoaded);
-      setLocalEntries(result.entries);
-      setLocalCursor(result.cursorLine);
-      // Signal App.tsx: new entries exist that haven't been seen yet
-      onNewChanges(result.entries.length > 0);
-    }).catch(() => {});
-  }
-
-  // ── On mount ─────────────────────────────────────────────────────────────────
+  // Reconcile selection whenever the shared snapshot changes. This covers first
+  // load, removals, profile switches, and explicit reloads after mutations.
   useEffect(() => {
-    loadFiles();
-    refreshLocalDiff();
-
-    rpc.request.getLocalConfig().then((cfg) => setLocalConfig(cfg)).catch(() => {});
-
-    // Check if collab is configured via getTeamDiff probe (collabConfigured field)
-    // We don't clone — just need to know whether to show the sync bar.
-    // Use getLocalConfig as proxy; check collaboration via a lightweight path.
-    // For now: attempt loadDiff — if it returns a lastLoaded timestamp, collab was used at least once.
-    // Full collabConfigured truth comes from the first getTeamDiff call.
-    // Show sync bar speculatively if last_loaded is set.
-    rpc.request.loadDiff().then((result) => {
-      if (result.lastLoaded) setCollabConfigured(true);
-    }).catch(() => {});
-  }, []);
-
-  // ── "Load from team" handler ─────────────────────────────────────────────────
-  const handleLoad = useCallback(async () => {
-    setSyncStatus("loading");
-    setSyncError("");
-    setSyncNotice("");
-    setStagedDiff(null);
-
-    try {
-      const diff = await rpc.request.getTeamDiff();
-      setCollabConfigured(diff.collabConfigured);
-
-      if (!diff.ok) {
-        if (diff.collabConfigured) {
-          if (isTrackedTeamResyncError(diff.error)) {
-            track("team_resync_failed", { error_code: diff.error, surface: "desktop_pull" });
-          }
-          setSyncError(teamStageErrorCopy(diff.error));
-          setSyncStatus("error");
-          return;
-        }
-        setSyncStatus("idle");
-        return;
-      }
-
-      if (localConfig.teamLoadMode === "review") {
-        // HITL: stage the diff, show changelog with Apply button
-        setStagedDiff(diff);
-        setShowChangelog(true);
-        setSyncStatus("loaded");
-      } else {
-        // Auto: apply immediately
-        setSyncStatus("applying");
-        const apply = await rpc.request.applyTeamDiff({ operationId: diff.operationId });
-        if (!apply.ok) {
-          setSyncError(teamApplyErrorCopy(apply.error));
-          setSyncStatus("error");
-          return;
-        }
-        setLastLoaded(new Date().toISOString());
-        setLocalEntries(diff.entries);
-        setLocalCursor(diff.cursorLine);
-        setSyncNotice(teamApplyNotice(apply));
-        setShowChangelog(diff.entries.length > 0);
-        setSyncStatus("loaded");
-        onNewChanges(false); // user triggered this — they're seeing it now
-        loadFiles(); // refresh tree with newly applied context
-      }
-    } catch (err) {
-      setSyncStatus("error");
-      setSyncError(err instanceof Error ? err.message : "Sync failed.");
-    }
-  }, [localConfig.teamLoadMode, track]);
-
-  // ── HITL Apply ───────────────────────────────────────────────────────────────
-  async function handleApply() {
-    if (!stagedDiff) return;
-    setSyncStatus("applying");
-    setSyncError("");
-    setSyncNotice("");
-    try {
-      const result = await rpc.request.applyTeamDiff({
-        operationId: stagedDiff.operationId,
-      });
-      if (!result.ok) {
-        setStagedDiff(null);
-        setShowChangelog(false);
-        setSyncError(teamApplyErrorCopy(result.error));
-        setSyncStatus("error");
-        return;
-      }
-      setLastLoaded(new Date().toISOString());
-      setLocalCursor(stagedDiff.cursorLine);
-      setLocalEntries(stagedDiff.entries);
-      setSyncNotice(teamApplyNotice(result));
-      setStagedDiff(null);
-      setShowChangelog(false);
-      setSyncStatus("loaded");
-      onNewChanges(false);
-      loadFiles();
-    } catch (err) {
-      setSyncStatus("error");
-      setSyncError(err instanceof Error ? err.message : "Apply failed.");
-    }
-  }
-
-  function handleDismiss() {
-    setStagedDiff(null);
-    setShowChangelog(false);
-    setSyncStatus("idle");
-    setSyncNotice("");
-  }
-
-  // ── Mode toggle (called from settings, reflected immediately) ────────────────
-  // ContextViewer doesn't expose a toggle directly — Settings tab calls setLocalConfig.
-  // Re-read on focus via a storage event is v2. For now, Settings changes take effect
-  // on next "Load from team" press (mode is read at handleLoad time).
+    setSelectedPath((previous) => {
+      if (files.some((file) => file.relativePath === previous)) return previous;
+      const firstSelectable = files.find(
+        (file) => file.kind === "dim" || file.kind === "standalone" || file.kind === "group-child",
+      );
+      return firstSelectable?.relativePath ?? files[0]?.relativePath ?? "";
+    });
+  }, [files]);
 
   function handleSelectDoc(path: string) {
     setSelectedPath(path);
-    setHistoryOpen(false);
     const entry = files.find((f) => f.relativePath === path);
     if (entry) {
       track("context_doc_viewed", { kind: entry.kind, group: entry.group });
@@ -1375,17 +656,6 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
     if (expanding) track("context_doc_expanded", { group });
   }
 
-  // ── Add dimension handler ─────────────────────────────────────────────────────
-  async function handleAddDimension(name: string): Promise<{ ok: boolean; error?: string }> {
-    const result = await rpc.request.addContextDimension({ name });
-    if (result.ok) {
-      track("context_dimension_added", {});
-      loadFiles();
-      setSelectedPath(`${name}/index.md`);
-    }
-    return result;
-  }
-
   function toggleGroup(group: string) {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -1397,23 +667,13 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
 
   const selectedEntry = files.find((f) => f.relativePath === selectedPath) ?? null;
 
-  const changelogEntries = stagedDiff ? stagedDiff.entries : localEntries;
-  const pendingCount = stagedDiff ? stagedDiff.entries.length : localEntries.length;
-  const isApplying = syncStatus === "applying";
+  if (loading && files.length === 0) {
+    return <div className="empty-state">Loading context…</div>;
+  }
 
   if (files.length === 0) {
     return (
       <div className="context-viewer">
-        {collabConfigured && (
-          <TeamSyncBar
-            lastLoaded={lastLoaded}
-            pendingCount={pendingCount}
-            status={syncStatus}
-            errorMsg={syncError}
-            noticeMsg={syncNotice}
-            onLoad={handleLoad}
-          />
-        )}
         <ContextEmptyState />
       </div>
     );
@@ -1439,27 +699,6 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
         </div>
       </div>
 
-      {collabConfigured && (
-        <TeamSyncBar
-          lastLoaded={lastLoaded}
-          pendingCount={pendingCount}
-          status={syncStatus}
-          errorMsg={syncError}
-          noticeMsg={syncNotice}
-          onLoad={handleLoad}
-        />
-      )}
-
-      {showChangelog && (
-        <ChangelogPanel
-          entries={changelogEntries}
-          mode={localConfig.teamLoadMode}
-          isApplying={isApplying}
-          onApply={handleApply}
-          onDismiss={handleDismiss}
-        />
-      )}
-
       {mode === "session" ? (
         <SessionPreviewPanel preview={sessionPreview} loading={sessionLoading} />
       ) : (
@@ -1473,34 +712,13 @@ export function ContextViewer({ activeProfile, onNewChanges }: ContextViewerProp
             onToggleDim={toggleDim}
             onToggleGroup={toggleGroup}
             onContextMenu={handleContextMenu}
-            onAddDimension={handleAddDimension}
           />
           {selectedEntry && (
-            selectedVersionId ? (
-              <HistoryDiffView
-                key={selectedEntry.relativePath}
-                relativePath={selectedEntry.relativePath}
-                selectedVersionId={selectedVersionId}
-                onClose={() => setSelectedVersionId(null)}
-              />
-            ) : (
-              <ContextContent
-                key={selectedEntry.relativePath}
-                entry={selectedEntry}
-                isDismissed={dismissedDims.has(selectedEntry.group)}
-                onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
-                historyOpen={historyOpen}
-                onToggleHistory={() => setHistoryOpen((prev) => !prev)}
-                onSaved={handleFileSaved}
-              />
-            )
-          )}
-          {historyOpen && selectedEntry && (
-            <HistoryPanel
-              relativePath={selectedEntry.relativePath}
-              selectedVersionId={selectedVersionId}
-              onSelectVersion={setSelectedVersionId}
-              onClose={() => setHistoryOpen(false)}
+            <ContextContent
+              key={selectedEntry.relativePath}
+              entry={selectedEntry}
+              isDismissed={dismissedDims.has(selectedEntry.group)}
+              onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
             />
           )}
         </div>
