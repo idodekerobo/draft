@@ -29,7 +29,7 @@ SUPABASE_SECRET_KEY=
 ```env
 PORT=8787
 APP_URL=http://localhost:3000
-API_BASE_URL=http://localhost:8787
+DRAFT_API_BASE_URL=http://localhost:8787
 
 FLY_API_TOKEN="FlyV1 ..."
 FLY_APP_NAME=
@@ -37,24 +37,34 @@ FLY_SANDBOX_IMAGE=
 FLY_REGION=
 SANDBOX_CALLBACK_SECRET=
 INFERENCE_CREDENTIAL_KEK_V1=
-CLAUDE_CODE_OAUTH_TOKEN=
 ```
 
-`APP_URL` is the exact browser origin permitted by CORS. `API_BASE_URL` is the
-public/reachable backend URL used when constructing webhook and callback URLs;
-it may be an ngrok URL while `PORT` remains `8787` locally.
+`APP_URL` is the exact browser origin permitted by CORS. `DRAFT_API_BASE_URL`
+is the single public/reachable backend URL used for webhook/callback URLs
+(sandbox config), the Slack listener's own base URL, and as the fallback
+`apiBaseUrl` in `config.ts`; it may be an ngrok URL while `PORT` remains
+`8787` locally. (`API_BASE_URL` was consolidated into this single var —
+do not set both.)
 
 The Slack listener additionally uses:
 
 ```env
-DRAFT_API_BASE_URL=
 SLACK_BATCH_MAX_CONTENT_BYTES=
 SLACK_BATCH_MAX_MESSAGES=
 SLACK_BATCH_MAX_SPAN_HOURS=
 ```
 
-`SUPABASE_DB_PASSWORD`, `SPIKE2_CALLBACK_PORT`, and the Slack limit variables
-are only needed for the corresponding local tooling/features.
+`SUPABASE_DB_PASSWORD` and `SPIKE2_CALLBACK_PORT` are only needed for the
+corresponding local tooling/features; the Slack limit variables are optional
+overrides.
+
+`CLAUDE_CODE_OAUTH_TOKEN` is **not** read by the deployed server. Each
+synthesis run resolves a per-workspace token from the encrypted `credentials`
+table (`synthesis/resolve-credential.ts`) and injects it directly into the
+disposable Fly sandbox Machine — the backend process's own env is never
+consulted. Only the local spike scripts under `backend/scripts/` (e.g.
+`spike3-round-trip.ts`) read this var from `process.env` directly; set it in
+your shell only when running those.
 
 For deployment, provide backend variables through the deployment environment;
 do not copy the complete root local env into a public web service.
