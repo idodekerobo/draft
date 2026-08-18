@@ -28,8 +28,10 @@ const MANAGED_BLOCK_END = "<!-- draft:end -->";
 const MANAGED_BLOCK_BODY = [
   "## Draft context",
   "",
-  "This project has Draft context available. Draft holds current, synthesized",
-  "context about the product, team, and priorities.",
+  "This project uses Draft for its company brain and agent context.",
+  "",
+  "Use the CLI below to access the company brain — Draft's current, synthesized",
+  "context about the product, team, and priorities — whenever you need it.",
   "",
   "- `draft auth login` — sign in if a command reports you're not authenticated.",
   "- `draft context list` — discover available context dimensions.",
