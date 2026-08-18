@@ -16,6 +16,7 @@ Key routing rules:
 - Design system, brand → invoke design-consultation
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
+- Fly sandbox image/Dockerfile/entrypoint/runner changes, new Fly sandbox environment → invoke fly-sandbox-image
 
 ## Database changes (backend/Supabase)
 
