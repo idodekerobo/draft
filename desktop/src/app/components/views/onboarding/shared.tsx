@@ -150,26 +150,44 @@ export interface DimensionHint {
   dimensionDescription: string;
 }
 
-export function toDimensionHints(names: string[]): DimensionHint[] {
+export function toDimensionHints(names: string[], descriptions?: Record<string, string>): DimensionHint[] {
   return names.map((name) => ({
     dimensionName: name,
-    dimensionDescription: DEFAULT_DIMENSION_DESCRIPTIONS[name] ?? `User-defined dimension: ${name}`,
+    dimensionDescription: descriptions?.[name]?.trim() || DEFAULT_DIMENSION_DESCRIPTIONS[name] || `User-defined dimension: ${name}`,
   }));
 }
 
-export function DimensionPicker({ dimensions, onChange }: { dimensions: string[]; onChange: (next: string[]) => void }) {
+/** Seeds a descriptions map for the given dimension names, pre-filled with the
+ *  default guidance where one exists (empty string for custom dims). */
+export function defaultDimensionDescriptions(names: string[]): Record<string, string> {
+  return Object.fromEntries(names.map((name) => [name, DEFAULT_DIMENSION_DESCRIPTIONS[name] ?? ""]));
+}
+
+export function DimensionPicker({ dimensions, onChange, descriptions, onDescriptionsChange }: {
+  dimensions: string[];
+  onChange: (next: string[]) => void;
+  descriptions: Record<string, string>;
+  onDescriptionsChange: (next: Record<string, string>) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
 
   function toggleDefault(name: string) {
     onChange(dimensions.includes(name) ? dimensions.filter((d) => d !== name) : [...dimensions, name]);
+  }
+
+  function updateDescription(name: string, value: string) {
+    onDescriptionsChange({ ...descriptions, [name]: value });
   }
 
   function addCustom() {
     const slug = newName.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
     if (!slug || dimensions.includes(slug)) return;
     onChange([...dimensions, slug]);
+    if (newDescription.trim()) onDescriptionsChange({ ...descriptions, [slug]: newDescription.trim() });
     setNewName("");
+    setNewDescription("");
   }
 
   const customDims = dimensions.filter((d) => !DEFAULT_SETUP_DIMENSIONS.includes(d));
@@ -183,17 +201,42 @@ export function DimensionPicker({ dimensions, onChange }: { dimensions: string[]
       {expanded && (
         <div className="onboarding__dim-picker-body">
           {DEFAULT_SETUP_DIMENSIONS.map((name) => (
-            <label key={name} className="onboarding__dim-picker-row">
-              <input type="checkbox" checked={dimensions.includes(name)} onChange={() => toggleDefault(name)} />
-              <span>{name}</span>
-            </label>
+            <div key={name} className="onboarding__dim-picker-item">
+              <input
+                id={`dim-${name}`}
+                type="checkbox"
+                checked={dimensions.includes(name)}
+                onChange={() => toggleDefault(name)}
+              />
+              <div className="onboarding__dim-picker-content">
+                <label htmlFor={`dim-${name}`} className="onboarding__dim-picker-name">{name}</label>
+                {dimensions.includes(name) && (
+                  <input
+                    className="onboarding__dim-picker-desc-input"
+                    value={descriptions[name] ?? ""}
+                    placeholder="What should Draft look for?"
+                    onChange={(e) => updateDescription(name, e.target.value)}
+                  />
+                )}
+              </div>
+            </div>
           ))}
           {customDims.map((name) => (
-            <label key={name} className="onboarding__dim-picker-row">
-              <input type="checkbox" checked readOnly />
-              <span>{name}</span>
-              <button className="onboarding__dim-picker-remove" onClick={() => onChange(dimensions.filter((d) => d !== name))} aria-label={`Remove ${name}`}>✕</button>
-            </label>
+            <div key={name} className="onboarding__dim-picker-item">
+              <input id={`dim-${name}`} type="checkbox" checked readOnly />
+              <div className="onboarding__dim-picker-content">
+                <div className="onboarding__dim-picker-name-row">
+                  <label htmlFor={`dim-${name}`} className="onboarding__dim-picker-name">{name}</label>
+                  <button className="onboarding__dim-picker-remove" onClick={() => onChange(dimensions.filter((d) => d !== name))} aria-label={`Remove ${name}`}>✕</button>
+                </div>
+                <input
+                  className="onboarding__dim-picker-desc-input"
+                  value={descriptions[name] ?? ""}
+                  placeholder="What should Draft look for?"
+                  onChange={(e) => updateDescription(name, e.target.value)}
+                />
+              </div>
+            </div>
           ))}
           <div className="onboarding__dim-picker-add">
             <input
@@ -201,6 +244,13 @@ export function DimensionPicker({ dimensions, onChange }: { dimensions: string[]
               value={newName}
               placeholder="dimension name"
               onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
+            />
+            <input
+              className="onboarding__dim-picker-add-input"
+              value={newDescription}
+              placeholder="short description (optional)"
+              onChange={(e) => setNewDescription(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") addCustom(); }}
             />
             <button className="onboarding__dim-picker-add-btn" onClick={addCustom}>Add</button>
@@ -238,6 +288,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
   const [selectedRunner, setSelectedRunner] = useState<Runner>("claude");
   const [runnersLoaded, setRunnersLoaded] = useState(false);
   const [dimensions, setDimensions] = useState<string[]>(DEFAULT_SETUP_DIMENSIONS);
+  const [dimensionDescriptions, setDimensionDescriptions] = useState<Record<string, string>>(defaultDimensionDescriptions(DEFAULT_SETUP_DIMENSIONS));
 
   useEffect(() => {
     void rpc.request.getAvailableRunners().then((result) => {
@@ -312,7 +363,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
           </div>
         )}
 
-        <DimensionPicker dimensions={dimensions} onChange={setDimensions} />
+        <DimensionPicker dimensions={dimensions} onChange={setDimensions} descriptions={dimensionDescriptions} onDescriptionsChange={setDimensionDescriptions} />
 
         <div className="onboarding__setup-options">
           <button

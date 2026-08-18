@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { events, rpc } from "../../../rpc";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
-import { DEFAULT_SETUP_DIMENSIONS, DimensionPicker, toDimensionHints } from "./shared";
+import { DEFAULT_SETUP_DIMENSIONS, DimensionPicker, defaultDimensionDescriptions, toDimensionHints } from "./shared";
 
 interface HeadlessSetupStepProps {
   stepNum: number;
@@ -20,6 +20,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState<string[]>(DEFAULT_SETUP_DIMENSIONS);
+  const [dimensionDescriptions, setDimensionDescriptions] = useState<Record<string, string>>(defaultDimensionDescriptions(DEFAULT_SETUP_DIMENSIONS));
 
   const ready = identity.hydrated && identity.signedIn && identity.workspaceId !== null;
 
@@ -49,7 +50,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
     try {
       const result = await rpc.request.bootstrapWorkspaceContext({
         folderPath: folderPath ?? undefined,
-        dimensions: toDimensionHints(dimensions),
+        dimensions: toDimensionHints(dimensions, dimensionDescriptions),
       });
       if (!result.ok) {
         setError(result.error ?? "Could not start the workspace synthesis run.");
@@ -116,7 +117,7 @@ export function HeadlessSetupStep({ stepNum, totalSteps, onBack, onNext }: Headl
         </button>
       </div>
 
-      <DimensionPicker dimensions={dimensions} onChange={setDimensions} />
+      <DimensionPicker dimensions={dimensions} onChange={setDimensions} descriptions={dimensionDescriptions} onDescriptionsChange={setDimensionDescriptions} />
 
       <div className="onboarding__connect-panel" style={{ marginTop: 12 }}>
         <span className="onboarding__panel-label">Start the first synthesis run</span>

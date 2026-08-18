@@ -3239,8 +3239,15 @@ button {
 .onboarding__dim-picker-toggle { width: 100%; padding: 6px 0; background: transparent; border: 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-family: var(--font-ui); text-align: left; cursor: pointer; }
 .onboarding__dim-picker-toggle:hover { color: var(--color-text-primary); }
 .onboarding__dim-picker-subtitle { margin: 0 0 6px; color: var(--color-text-tertiary); font-size: var(--font-size-micro); line-height: 1.4; }
-.onboarding__dim-picker-body { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.02); }
-.onboarding__dim-picker-row { display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-family: var(--font-ui); }
+.onboarding__dim-picker-body { display: flex; flex-direction: column; gap: 20px; padding: 12px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.02); }
+.onboarding__dim-picker-item { display: flex; align-items: center; gap: 10px; }
+.onboarding__dim-picker-item > input[type="checkbox"] { flex-shrink: 0; }
+.onboarding__dim-picker-content { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.onboarding__dim-picker-name-row { display: flex; align-items: center; gap: 8px; }
+.onboarding__dim-picker-name { color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-family: var(--font-ui); cursor: pointer; }
+.onboarding__dim-picker-desc-input { width: 100%; box-sizing: border-box; height: 26px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-bg-sidebar); color: var(--color-text-secondary); font-size: var(--font-size-micro); font-family: var(--font-ui); }
+.onboarding__dim-picker-desc-input:focus { color: var(--color-text-primary); border-color: var(--color-border-strong); outline: none; }
+.onboarding__dim-picker-desc-input::placeholder { color: var(--color-text-tertiary); }
 .onboarding__dim-picker-remove { margin-left: auto; padding: 2px 6px; background: transparent; border: 0; color: var(--color-text-tertiary); font-size: var(--font-size-micro); cursor: pointer; }
 .onboarding__dim-picker-remove:hover { color: var(--color-status-red); }
 .onboarding__dim-picker-add { display: flex; gap: 6px; margin-top: 2px; }
