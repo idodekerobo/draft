@@ -12,14 +12,6 @@ import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { ContextEditor, RawEditor } from "./ContextEditor";
 
-// ── Compact nudge ─────────────────────────────────────────────────────────────
-
-const COMPACT_THRESHOLD = 500;
-
-function wordCount(text: string): number {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
-
 // ── Empty state ────────────────────────────────────────────────────────────────
 
 function ContextEmptyState() {
@@ -71,7 +63,6 @@ function DimRow({
   onToggle,
   onSelect,
   onContextMenu,
-  wc,
 }: {
   dim: ContextFileEntry;
   logs: ContextFileEntry[];
@@ -80,7 +71,6 @@ function DimRow({
   onToggle: () => void;
   onSelect: (path: string) => void;
   onContextMenu?: (e: React.MouseEvent, path: string) => void;
-  wc: number;
 }) {
   const hasLogs = logs.length > 0;
 
@@ -94,11 +84,6 @@ function DimRow({
           title={dim.label}
         >
           <span className="context-tree__item-label">{dim.label}</span>
-          {wc > COMPACT_THRESHOLD && (
-            <span className="context-dim__word-count context-dim__word-count--warn">
-              {wc}w
-            </span>
-          )}
         </button>
 
         {hasLogs && (
@@ -232,7 +217,6 @@ function ContextTree({
           onToggle={() => onToggleDim(dim.group)}
           onSelect={onSelect}
           onContextMenu={onContextMenu}
-          wc={wordCount(dim.content)}
         />
       ))}
 
@@ -363,21 +347,13 @@ function ToolbarMenu({ items }: { items: Array<{ label: string; onClick: () => v
 
 function ContextContent({
   entry,
-  isDismissed,
-  onDismiss,
 }: {
   entry: ContextFileEntry;
-  isDismissed: boolean;
-  onDismiss: () => void;
 }) {
   const { name, last_updated, source } = parseFrontmatterFields(entry.frontmatterRaw);
   const hasMeta = name || last_updated || source;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
-
-  const wc = wordCount(entry.content);
-  const showNudge = entry.kind === "dim" && wc > COMPACT_THRESHOLD && !isDismissed;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -396,13 +372,6 @@ function ContextContent({
     el.addEventListener("click", handleClick);
     return () => el.removeEventListener("click", handleClick);
   }, []);
-
-  function handleCopy() {
-    navigator.clipboard.writeText(`/draft:compact ${entry.group}`).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {});
-  }
 
   const metaParts = [
     name,
@@ -438,24 +407,6 @@ function ContextContent({
         </div>
       </div>
       <div className="context-content__scroll">
-        {showNudge && (
-          <div className="compact-nudge">
-            <div className="compact-nudge__body">
-              <p className="compact-nudge__text">
-                <strong>{entry.label}</strong> is getting long ({wc} words).
-              </p>
-              <span className="compact-nudge__cmd-label">Run in Claude Code:</span>
-              <button className="compact-nudge__cmd" onClick={handleCopy} title="Click to copy">
-                <span className="compact-nudge__cmd-text">/draft:compact {entry.group}</span>
-                {copied
-                  ? <span className="compact-nudge__cmd-copied">✓</span>
-                  : <span className="compact-nudge__cmd-icon">⎘</span>
-                }
-              </button>
-            </div>
-            <button className="compact-nudge__dismiss" onClick={onDismiss} aria-label="Dismiss">✕</button>
-          </div>
-        )}
         {rawOpen ? (
           <RawEditor
             key={entry.relativePath}
@@ -595,9 +546,6 @@ export function ContextViewer({ activeProfile, files, setFiles, reloadFiles, loa
   // ── Context menu ─────────────────────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
 
-  // ── Compact nudge dismissed dims (per-session) ────────────────────────────────
-  const [dismissedDims, setDismissedDims] = useState<Set<string>>(new Set());
-
   // ── Reset view state when profile switches ───────────────────────────────────
   useEffect(() => {
     setMode("browse");
@@ -717,8 +665,6 @@ export function ContextViewer({ activeProfile, files, setFiles, reloadFiles, loa
             <ContextContent
               key={selectedEntry.relativePath}
               entry={selectedEntry}
-              isDismissed={dismissedDims.has(selectedEntry.group)}
-              onDismiss={() => setDismissedDims((prev) => new Set(prev).add(selectedEntry.group))}
             />
           )}
         </div>
