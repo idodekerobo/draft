@@ -12,6 +12,12 @@ function fetchErrorPayload(code: string) {
   return errorPayload(code, "Could not fetch workspace context right now. Retry shortly.");
 }
 
+function printFetchError(command: string, code: string, json: boolean): void {
+  const payload = fetchErrorPayload(code);
+  if (json) { printJsonLine(payload); return; }
+  console.error(red(`${command}: ${payload.message}${payload.action ? ` Run \`${payload.action}\`.` : ""}`));
+}
+
 export async function runContextList(args: string[]): Promise<number> {
   const json = args.includes("--json");
   const unknown = args.find((a) => a !== "--json");
@@ -23,8 +29,7 @@ export async function runContextList(args: string[]): Promise<number> {
 
   const result = await fetchWorkspaceContext();
   if (!result.ok) {
-    if (json) printJsonLine(fetchErrorPayload(result.code));
-    else console.error(red(`draft context list: ${result.code}`));
+    printFetchError("draft context list", result.code, json);
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -105,8 +110,7 @@ export async function runContextRead(args: string[]): Promise<number> {
 
   const result = await fetchWorkspaceContext();
   if (!result.ok) {
-    if (parsed.json) printJsonLine(fetchErrorPayload(result.code));
-    else console.error(red(`draft context read: ${result.code}`));
+    printFetchError("draft context read", result.code, parsed.json);
     return EXIT_OPERATIONAL_ERROR;
   }
 
