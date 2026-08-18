@@ -3557,6 +3557,7 @@ button {
 
 .onboarding__section-group {
   width: 100%;
+  margin-top: 28px;
   margin-bottom: 20px;
 }
 
@@ -3565,14 +3566,49 @@ button {
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--color-text-tertiary);
-  margin-bottom: 4px;
+  margin-bottom: 12px;
 }
 
-.onboarding__section-body {
+/* Ordered step within a category (CompleteStep's how-to-use list) — label +   */
+/* command tight together, more room between one step and the next so the     */
+/* sequence reads as distinct actions rather than a flat list.                */
+.onboarding__howto-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.onboarding__howto-step:first-of-type {
+  margin-top: 4px;
+}
+
+/* Agent → command table (CompleteStep, `draft add` step) — hairline rows,    */
+/* no cards/shadows, matching the Activity run row separator convention.     */
+.onboarding__agent-table {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.onboarding__agent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.onboarding__agent-row:last-child {
+  border-bottom: none;
+}
+
+.onboarding__agent-name {
   font-size: var(--font-size-secondary);
   color: var(--color-text-secondary);
-  line-height: 1.55;
-  margin-bottom: 2px;
 }
 
 /* ── Input source rows (inputs step) ─────────────────────────────────────────── */
