@@ -16,13 +16,15 @@ export type WorkspaceAccessMode = "team_default" | "restricted";
 
 // No DB CHECK constraint backs this one (see db/schemas/credentials.sql) --
 // this type is the only source of truth for allowed values.
+// "claude_session_ingest" is INBOUND-only
 export type CredentialProvider =
   | "fireflies"
   | "slack"
   | "granola"
   | "linear"
   | "github"
-  | "claude_code";
+  | "claude_code"
+  | "claude_session_ingest";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
 

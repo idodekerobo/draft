@@ -31,6 +31,11 @@ create table source_items (
   )
 );
 
+-- For a future `sessions search` (step 7) — index only, no search command
+-- built yet.
+create index source_items_content_markdown_gin_idx
+  on source_items using gin (to_tsvector('english', content_markdown));
+
 alter table source_items enable row level security;
 
 create policy source_items_select on source_items
