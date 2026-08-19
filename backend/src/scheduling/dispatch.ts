@@ -4,6 +4,7 @@ import { reconcileFirefliesConnection } from "../ingestion/fireflies/reconcile";
 import { materializeSlackBatches } from "../ingestion/slack/materialize-batches";
 import { getReadySourceItemIds } from "../synthesis/get-ready-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
+import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 
@@ -14,6 +15,7 @@ export interface DispatchDependencies {
   materializeSlackBatches: typeof materializeSlackBatches;
   launchSynthesisRun: typeof launchSynthesisRun;
   getReadySourceItemIds: typeof getReadySourceItemIds;
+  launchSummarizationBatch: typeof launchSummarizationBatch;
 }
 
 const defaultDependencies: DispatchDependencies = {
@@ -21,6 +23,7 @@ const defaultDependencies: DispatchDependencies = {
   materializeSlackBatches,
   launchSynthesisRun,
   getReadySourceItemIds,
+  launchSummarizationBatch,
 };
 
 // No retry -- both handlers already re-run every interval_seconds, and both
@@ -89,6 +92,22 @@ async function dispatchSynthesizeWorkspace(
   }
 }
 
+// No retry here either -- summarization sessions are individually leased
+// (agent_sessions.summary_status/summary_lease_until), so a crash just
+// leaves them for the next tick's claim to pick back up.
+async function dispatchSummarizeSessions(
+  task: ScheduledTaskRow,
+  config: SandboxDeploymentConfig,
+  client: SupabaseClient,
+  deps: DispatchDependencies,
+): Promise<void> {
+  await deps.launchSummarizationBatch({
+    workspaceId: task.workspace_id,
+    config,
+    client,
+  });
+}
+
 export interface DispatchScheduledTaskOptions {
   task: ScheduledTaskRow;
   occurrenceAt: string;
@@ -118,6 +137,10 @@ export async function dispatchScheduledTask(
   }
   if (fresh.task_type === "synthesize_workspace") {
     await dispatchSynthesizeWorkspace(fresh, options.occurrenceAt, options.config, options.client, deps);
+    return fresh;
+  }
+  if (fresh.task_type === "summarize_sessions") {
+    await dispatchSummarizeSessions(fresh, options.config, options.client, deps);
     return fresh;
   }
   // rebuild_projection: no projection exists yet -- fail loud, don't silently succeed.

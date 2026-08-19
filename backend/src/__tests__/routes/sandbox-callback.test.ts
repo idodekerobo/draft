@@ -14,11 +14,11 @@ beforeAll(() => {
   process.env.SANDBOX_CALLBACK_SECRET = "signing-secret";
 });
 
-function callbackRequest(): Request {
+function callbackRequest(runId = "run-1"): Request {
   return new Request("http://internal.test/sandbox/callback", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ run_id: "run-1", bundle_hash: "a".repeat(64), result: {} }),
+    headers: { "content-type": "application/json", "x-draft-run-id": runId },
+    body: JSON.stringify({ run_id: runId, bundle_hash: "a".repeat(64), result: {} }),
   });
 }
 
@@ -85,5 +85,22 @@ describe("POST /sandbox/callback", () => {
     } finally {
       process.env.SANDBOX_CALLBACK_SECRET = previous;
     }
+  });
+
+  it("routes a summarize:-prefixed run id to completeSummarizationRunCallback", async () => {
+    mock.module("../../synthesis/orchestrate-run", () => ({
+      completeSynthesisRunCallback: async () => {
+        throw new Error("should not be called for a summarization run id");
+      },
+    }));
+    mock.module("../../summarization/complete-summarization-callback", () => ({
+      SUMMARIZATION_RUN_ID_PREFIX: "summarize:",
+      completeSummarizationRunCallback: async () => new Response(null, { status: 204 }),
+    }));
+
+    const routeModule = await import("../../routes/sandbox-callback");
+    const response = await routeModule.POST(callbackRequest("summarize:workspace-1:uuid-1"));
+
+    expect(response.status).toBe(204);
   });
 });
