@@ -1,12 +1,13 @@
 import { useOptimistic, useState } from "react";
 import type { ConnectedAppsStatus } from "../../../../rpc/schema";
 import { FirefliesConnectPanel } from "../../shared/FirefliesConnectPanel";
+import { GithubConnectPanel } from "../../shared/GithubConnectPanel";
 import { LinearConnectPanel } from "../../shared/LinearConnectPanel";
-// TODO: Granola and GitHub connect flows still work locally, but neither has
-// a backend ingestion pipeline in the new cloud model (backend/src/ingestion
-// only has fireflies/ and slack/) — connecting them can't get their data into
-// source_items at all right now. Cards commented out below rather than
-// removed until ingestion exists for them.
+// TODO: Granola still works locally but has no backend ingestion pipeline in
+// the new cloud model (backend/src/ingestion only has fireflies/slack/
+// linear/github) — connecting it can't get its data into source_items at
+// all right now. GitHub is done (backend/src/ingestion/github); this card
+// stays commented out until Granola gets the same treatment.
 // import { GranolaConnectPanel } from "../../shared/GranolaConnectPanel";
 import { SlackConnectPanel } from "../../shared/SlackConnectPanel";
 import { IntegrationSetupCard } from "./shared";
@@ -20,7 +21,7 @@ interface IntegrationSetupStepProps {
   loadConnections: () => Promise<void>;
 }
 
-type IntegrationName = "slack" | "fireflies" | "linear";
+type IntegrationName = "slack" | "fireflies" | "linear" | "github";
 
 export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, connections, loadConnections }: IntegrationSetupStepProps) {
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
@@ -42,7 +43,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
   const allConnected = optimisticConnections
     && optimisticConnections.slack.connected
     && optimisticConnections.fireflies.connected
-    && optimisticConnections.linear.connected;
+    && optimisticConnections.linear.connected
+    && optimisticConnections.github.connected;
 
   function toggle(name: IntegrationName, connected?: boolean) {
     if (connected) return;
@@ -53,6 +55,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
   const slack = optimisticConnections?.slack;
   const fireflies = optimisticConnections?.fireflies;
   const linear = optimisticConnections?.linear;
+  const github = optimisticConnections?.github;
 
   return (
     <div className="onboarding__body onboarding__body--wide">
@@ -81,7 +84,9 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
           </p>
         )}
 
-        {/* TODO: GitHub card — see file-header note */}
+        <IntegrationSetupCard title="GitHub" description="Track pull request and commit activity" hint="1 step" connected={github?.connected ?? false} expanded={expanded === "github"} onToggle={() => toggle("github", github?.connected)}>
+          <GithubConnectPanel detail={github} classPrefix="onboarding" onConnected={() => handleConnected("github")} />
+        </IntegrationSetupCard>
 
         <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies?.connected)}>
           <FirefliesConnectPanel detail={fireflies} classPrefix="onboarding" onConnected={() => handleConnected("fireflies")} />
