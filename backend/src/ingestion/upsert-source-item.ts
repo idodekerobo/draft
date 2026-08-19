@@ -67,57 +67,45 @@ export interface UpsertSourceItemResult {
   supersededItemIds: string[];
 }
 
-// A changed external_version is always a new row (content is never mutated
-// once a row is ready), so any prior ready revision of the same external_id
-// gets marked superseded here -- otherwise both stay 'ready' and a
-// synthesis run reconciles against duplicate content for one item.
+interface UpsertSourceItemRpcResult {
+  item_id: string;
+  changed: boolean;
+  superseded_item_ids: string[];
+}
+
+// Supersede logic lives in the upsert_source_item Postgres function
+// (db/functions/upsert_source_item.sql), not here.
 export async function upsertSourceItem(
   client: SupabaseClient,
   input: UpsertSourceItemInput,
 ): Promise<UpsertSourceItemResult> {
-  const lifecycleStatus = input.lifecycle_status ?? "ready";
+  const { data: rpcData, error: rpcError } = await client
+    .rpc("upsert_source_item", {
+      p_workspace_id: input.workspace_id,
+      p_source_connection_id: input.source_connection_id,
+      p_item_type: input.item_type,
+      p_external_id: input.external_id,
+      p_external_version: input.external_version,
+      p_occurred_at: input.occurred_at,
+      p_content_markdown: input.content_markdown,
+      p_content_hash: input.content_hash,
+      p_metadata_json: input.metadata_json ?? {},
+      p_sanitized_raw_json: input.sanitized_raw_json ?? null,
+      p_lifecycle_status: input.lifecycle_status ?? "ready",
+    });
+  if (rpcError) throw rpcError;
 
-  const { data: priorReadyRevisions, error: priorError } = await client
-    .from("source_items")
-    .select("id, external_version")
-    .eq("source_connection_id", input.source_connection_id)
-    .eq("external_id", input.external_id)
-    .eq("lifecycle_status", "ready")
-    .neq("external_version", input.external_version);
-  if (priorError) throw priorError;
+  const result = rpcData as UpsertSourceItemRpcResult;
 
   const { data: itemData, error: itemError } = await client
     .from("source_items")
-    .upsert(
-      {
-        workspace_id: input.workspace_id,
-        source_connection_id: input.source_connection_id,
-        item_type: input.item_type,
-        external_id: input.external_id,
-        external_version: input.external_version,
-        lifecycle_status: lifecycleStatus,
-        occurred_at: input.occurred_at,
-        normalized_at: new Date().toISOString(),
-        content_markdown: input.content_markdown,
-        content_hash: input.content_hash,
-        metadata_json: input.metadata_json ?? {},
-        sanitized_raw_json: input.sanitized_raw_json ?? null,
-        supersedes_source_item_id: priorReadyRevisions?.[0]?.id ?? null,
-      },
-      { onConflict: "source_connection_id,external_id,external_version" },
-    )
     .select()
+    .eq("id", result.item_id)
     .single();
   if (itemError) throw itemError;
 
-  const supersededItemIds = (priorReadyRevisions ?? []).map((r) => r.id as string);
-  if (supersededItemIds.length > 0) {
-    const { error: supersedeError } = await client
-      .from("source_items")
-      .update({ lifecycle_status: "superseded" })
-      .in("id", supersededItemIds);
-    if (supersedeError) throw supersedeError;
-  }
-
-  return { item: itemData as SourceItemRow, supersededItemIds };
+  return {
+    item: itemData as SourceItemRow,
+    supersededItemIds: result.superseded_item_ids ?? [],
+  };
 }

@@ -197,39 +197,65 @@ function createFakeClient(messages: SlackMessageRow[], cursorJson: Record<string
 
   function execSourceItems(qb: FakeQueryBuilder) {
     if (qb.type === "select") {
-      const rows = applyFilters(store.sourceItems, qb.filters).map((r) => ({
-        id: r.id,
-        external_version: r.external_version,
-      }));
+      const rows = applyFilters(store.sourceItems, qb.filters);
+      if (qb.singleMode === "single") {
+        return { data: rows[0] ?? null, error: rows[0] ? null : { message: "not found" } };
+      }
       return { data: rows, error: null };
     }
-    if (qb.type === "upsert") {
-      const p = qb.payload!;
-      const idx = store.sourceItems.findIndex(
-        (r) =>
-          r.source_connection_id === p.source_connection_id &&
-          r.external_id === p.external_id &&
-          r.external_version === p.external_version,
-      );
-      let row: Row;
-      if (idx >= 0) {
-        row = { ...store.sourceItems[idx], ...p };
-        store.sourceItems[idx] = row;
-      } else {
-        row = { id: `item-${store.sourceItems.length + 1}`, ...p };
-        store.sourceItems.push(row);
-      }
-      return { data: row, error: null };
-    }
-    if (qb.type === "update") {
-      const inFilter = qb.filters.find((f) => f.op === "in" && f.col === "id");
-      const ids: string[] = inFilter?.val ?? [];
-      for (const row of store.sourceItems) {
-        if (ids.includes(row.id)) Object.assign(row, qb.payload);
-      }
-      return { data: null, error: null };
-    }
     throw new Error(`unsupported source_items op: ${qb.type}`);
+  }
+
+  // Reimplements just enough of upsert_source_item (db/functions/upsert_source_item.sql)
+  // against store.sourceItems to exercise the batching behaviour under test.
+  function execUpsertSourceItemRpc(params: Row) {
+    const priorReady = store.sourceItems.filter(
+      (r) =>
+        r.source_connection_id === params.p_source_connection_id &&
+        r.external_id === params.p_external_id &&
+        r.lifecycle_status === "ready" &&
+        r.external_version !== params.p_external_version,
+    );
+    const priorIds = priorReady.map((r) => r.id as string);
+
+    const idx = store.sourceItems.findIndex(
+      (r) =>
+        r.source_connection_id === params.p_source_connection_id &&
+        r.external_id === params.p_external_id &&
+        r.external_version === params.p_external_version,
+    );
+
+    const payload: Row = {
+      workspace_id: params.p_workspace_id,
+      source_connection_id: params.p_source_connection_id,
+      item_type: params.p_item_type,
+      external_id: params.p_external_id,
+      external_version: params.p_external_version,
+      lifecycle_status: params.p_lifecycle_status ?? "ready",
+      occurred_at: params.p_occurred_at,
+      normalized_at: new Date().toISOString(),
+      content_markdown: params.p_content_markdown,
+      content_hash: params.p_content_hash,
+      metadata_json: params.p_metadata_json,
+      sanitized_raw_json: params.p_sanitized_raw_json,
+      supersedes_source_item_id: priorIds[0] ?? null,
+    };
+
+    let row: Row;
+    if (idx >= 0) {
+      row = { ...store.sourceItems[idx], ...payload };
+      store.sourceItems[idx] = row;
+    } else {
+      row = { id: `item-${store.sourceItems.length + 1}`, ...payload };
+      store.sourceItems.push(row);
+    }
+
+    for (const prior of priorReady) prior.lifecycle_status = "superseded";
+
+    return {
+      data: { item_id: row.id, changed: true, superseded_item_ids: priorIds },
+      error: null,
+    };
   }
 
   function execWorkspaceEvents(qb: FakeQueryBuilder) {
@@ -282,6 +308,12 @@ function createFakeClient(messages: SlackMessageRow[], cursorJson: Record<string
   const client = {
     from(table: string) {
       return new FakeQueryBuilder(table, dispatch);
+    },
+    rpc(fnName: string, params: Row) {
+      if (fnName === "upsert_source_item") {
+        return Promise.resolve(execUpsertSourceItemRpc(params));
+      }
+      throw new Error(`unexpected rpc: ${fnName}`);
     },
   } as unknown as SupabaseClient;
 

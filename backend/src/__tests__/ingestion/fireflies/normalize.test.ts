@@ -77,30 +77,12 @@ function createFakeClient(priorReadyRevisions: { id: string; external_version: s
     if (table === "source_items") {
       return {
         select: () => ({
-          eq: () => ({
-            eq: () => ({
-              eq: () => ({
-                neq: async () => ({ data: state.priorReadyRevisions, error: null }),
-              }),
+          eq: (_col: string, val: string) => ({
+            single: async () => ({
+              data: { id: val, ...state.upsertedItem },
+              error: null,
             }),
           }),
-        }),
-        upsert: (payload: Record<string, unknown>) => {
-          state.upsertedItem = payload;
-          return {
-            select: () => ({
-              single: async () => ({
-                data: { id: "new-item-id", ...payload },
-                error: null,
-              }),
-            }),
-          };
-        },
-        update: () => ({
-          in: async (_col: string, idsArg: string[]) => {
-            state.supersedeCalls.push(idsArg);
-            return { error: null };
-          },
         }),
       };
     }
@@ -126,7 +108,36 @@ function createFakeClient(priorReadyRevisions: { id: string; external_version: s
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
-  return { client: { from } as unknown as SupabaseClient, state };
+  // Reimplements just enough of upsert_source_item (db/functions/upsert_source_item.sql)
+  // against priorReadyRevisions to keep these ingestion-level assertions meaningful.
+  function rpc(fnName: string, params: Record<string, unknown>) {
+    if (fnName !== "upsert_source_item") {
+      throw new Error(`Unexpected rpc in fake client: ${fnName}`);
+    }
+
+    const priorIds = state.priorReadyRevisions.map((r) => r.id);
+    state.upsertedItem = {
+      workspace_id: params.p_workspace_id,
+      source_connection_id: params.p_source_connection_id,
+      item_type: params.p_item_type,
+      external_id: params.p_external_id,
+      external_version: params.p_external_version,
+      occurred_at: params.p_occurred_at,
+      content_markdown: params.p_content_markdown,
+      content_hash: params.p_content_hash,
+      metadata_json: params.p_metadata_json,
+      sanitized_raw_json: params.p_sanitized_raw_json,
+      supersedes_source_item_id: priorIds[0] ?? null,
+    };
+    if (priorIds.length > 0) state.supersedeCalls.push(priorIds);
+
+    return Promise.resolve({
+      data: { item_id: "new-item-id", changed: true, superseded_item_ids: priorIds },
+      error: null,
+    });
+  }
+
+  return { client: { from, rpc } as unknown as SupabaseClient, state };
 }
 
 describe("ingestFirefliesMeeting", () => {

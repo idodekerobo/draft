@@ -83,24 +83,12 @@ function createFakeClient(): { client: SupabaseClient; state: FakeState } {
     if (table === "source_items") {
       return {
         select: () => ({
-          eq: () => ({
-            eq: () => ({
-              eq: () => ({
-                neq: async () => ({ data: [], error: null }),
-              }),
-            }),
-          }),
-        }),
-        upsert: (payload: Record<string, unknown>) => ({
-          select: () => ({
+          eq: (_col: string, val: string) => ({
             single: async () => ({
-              data: { id: `item-${payload.external_id}`, ...payload },
+              data: { id: val },
               error: null,
             }),
           }),
-        }),
-        update: () => ({
-          in: async () => ({ error: null }),
         }),
       };
     }
@@ -132,7 +120,21 @@ function createFakeClient(): { client: SupabaseClient; state: FakeState } {
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
-  return { client: { from } as unknown as SupabaseClient, state };
+  function rpc(fnName: string, params: Record<string, unknown>) {
+    if (fnName !== "upsert_source_item") {
+      throw new Error(`Unexpected rpc in fake client: ${fnName}`);
+    }
+    return Promise.resolve({
+      data: {
+        item_id: `item-${params.p_external_id}`,
+        changed: true,
+        superseded_item_ids: [],
+      },
+      error: null,
+    });
+  }
+
+  return { client: { from, rpc } as unknown as SupabaseClient, state };
 }
 
 function transcriptPayload(id: string) {
