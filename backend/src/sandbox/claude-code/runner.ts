@@ -397,77 +397,22 @@ export async function fetchAndWriteBundle(
   }
 }
 
-export async function main(): Promise<void> {
-  const runId = required("DRAFT_RUN_ID");
-  const bundleHash = required("DRAFT_BUNDLE_HASH");
-  if (!/^[0-9a-f]{64}$/.test(bundleHash)) {
-    throw new Error("DRAFT_BUNDLE_HASH must be lowercase SHA-256");
-  }
-  const callbackUrl = required("DRAFT_CALLBACK_URL");
-  const callbackToken = required("DRAFT_CALLBACK_TOKEN");
-  const bundleUrl = required("DRAFT_BUNDLE_URL");
-  new URL(bundleUrl);
-  const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
-  const outputSchemaPath = process.env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH;
-  const timeoutMs = parseTimeoutSeconds(process.env.DRAFT_TIMEOUT_SECONDS) * 1_000;
-  const inputRoot = "/run/input";
-  // Bundle file keys (e.g. "input/prompt.md", "input/sources/x.md") already
-  // carry the "input/" segment, so they're relative to /run, one level above
-  // inputRoot — not to inputRoot itself.
-  const bundleRoot = dirname(inputRoot);
-  const reservedPaths = new Set([
-    promptPath.startsWith(`${bundleRoot}/`) ? promptPath.slice(bundleRoot.length + 1) : "input/prompt.md",
-    outputSchemaPath.startsWith(`${bundleRoot}/`)
-      ? outputSchemaPath.slice(bundleRoot.length + 1)
-      : "input/output-schema.json",
-  ]);
+export interface RunClaudeOnceResult {
+  success: boolean;
+  finalResult: unknown;
+  failureCode: RunnerFailureCode | "none";
+  diagnostics: FinalDiagnosticInput;
+}
 
-  new URL(callbackUrl);
-  mkdirSync("/run/output", { recursive: true });
-  mkdirSync("/run/scratch", { recursive: true });
-  mkdirSync(inputRoot, { recursive: true });
-  try {
-    await fetchAndWriteBundle(bundleUrl, bundleHash, inputRoot, bundleRoot, reservedPaths);
-  } catch (fetchError) {
-    runnerLog("bundle_fetch_failed", {
-      run_id: runId,
-      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-    });
-    await reportAndExit({
-      finalResult: {
-        error: "bundle_fetch_failed",
-        diagnostics: {
-          reason: fetchError instanceof Error ? fetchError.message : String(fetchError),
-        },
-      },
-      success: false,
-      failureCode: "bundle_fetch_failed",
-      callbackUrl,
-      callbackToken,
-      runId,
-      bundleHash,
-    });
-    return;
-  }
-  const inputStats = secureInputTree(inputRoot);
-  if (!existsSync(promptPath) || !resolve(promptPath).startsWith(`${inputRoot}/`)) {
-    throw new Error("DRAFT_PROMPT_PATH must name a file beneath /run/input");
-  }
-  const prompt = readFileSync(promptPath, "utf8");
-  if (!prompt.trim()) throw new Error("prompt is empty");
-  const serializedSchema = readOutputSchema(outputSchemaPath, inputRoot);
-  runnerLog("input_ready", {
-    run_id: runId,
-    file_count: inputStats.fileCount,
-    total_bytes: inputStats.totalBytes,
-    prompt_bytes: Buffer.byteLength(prompt),
-  });
-
-  chownSync("/run/output", AGENT_UID, AGENT_GID);
-  chmodSync("/run/output", 0o750);
-  chownSync("/run/scratch", AGENT_UID, AGENT_GID);
-  chmodSync("/run/scratch", 0o700);
-
+// scratchStdoutPath must be unique per invocation within a run -- it's
+// opened with the "wx" flag (fails if it already exists).
+export async function runClaudeOnce(
+  prompt: string,
+  serializedSchema: string,
+  timeoutMs: number,
+  runId: string,
+  scratchStdoutPath: string = SCRATCH_STDOUT_PATH,
+): Promise<RunClaudeOnceResult> {
   const { spawn } = await import("node:child_process");
   const childEnv = sanitizedClaudeEnv(process.env);
   const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
@@ -485,7 +430,7 @@ export async function main(): Promise<void> {
     timeout_ms: timeoutMs,
   });
 
-  const stdoutFile = createWriteStream(SCRATCH_STDOUT_PATH, { flags: "wx", mode: 0o600 });
+  const stdoutFile = createWriteStream(scratchStdoutPath, { flags: "wx", mode: 0o600 });
   let stdout = "";
   let stdoutBytes = 0;
   let stderrBytes = 0;
@@ -553,10 +498,211 @@ export async function main(): Promise<void> {
     ? payload
     : { error: failure!.failureCode, diagnostics: failure! };
 
-  await reportAndExit({
-    finalResult,
+  return {
     success,
+    finalResult,
     failureCode: failure?.failureCode ?? "none",
+    diagnostics: diagnosticsInput,
+  };
+}
+
+const MAX_BATCH_ENTRIES = 25;
+const BATCH_WALL_CLOCK_BUDGET_MS = 18 * 60 * 1_000;
+
+export interface BatchManifestEntry {
+  id: string;
+  promptPath: string;
+}
+
+export interface BatchResultItem {
+  sessionId: string;
+  ok: boolean;
+  payload?: unknown;
+  error?: unknown;
+}
+
+export function parseBatchManifest(raw: string): BatchManifestEntry[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("DRAFT_MANIFEST_PATH must contain valid JSON");
+  }
+  if (!Array.isArray(parsed)) throw new Error("batch manifest must be a JSON array");
+  const entries: BatchManifestEntry[] = [];
+  for (const raw_entry of parsed) {
+    if (
+      !isObject(raw_entry) ||
+      typeof raw_entry.id !== "string" ||
+      !raw_entry.id ||
+      typeof raw_entry.promptPath !== "string" ||
+      !raw_entry.promptPath
+    ) {
+      throw new Error("batch manifest entries must have a nonempty id and promptPath");
+    }
+    entries.push({ id: raw_entry.id, promptPath: raw_entry.promptPath });
+  }
+  return entries.slice(0, MAX_BATCH_ENTRIES);
+}
+
+async function runBatch(input: {
+  runId: string;
+  bundleHash: string;
+  manifestPath: string;
+  serializedSchema: string;
+  inputRoot: string;
+  bundleRoot: string;
+  timeoutMs: number;
+  callbackUrl: string;
+  callbackToken: string;
+}): Promise<void> {
+  if (!existsSync(input.manifestPath) || !resolve(input.manifestPath).startsWith(`${input.inputRoot}/`)) {
+    throw new Error("DRAFT_MANIFEST_PATH must name a file beneath /run/input");
+  }
+  const entries = parseBatchManifest(readFileSync(input.manifestPath, "utf8"));
+
+  const items: BatchResultItem[] = [];
+  const batchStartedAt = Date.now();
+  for (const [index, entry] of entries.entries()) {
+    if (Date.now() - batchStartedAt >= BATCH_WALL_CLOCK_BUDGET_MS) {
+      runnerLog("batch_budget_exceeded", { run_id: input.runId, remaining: entries.length - index });
+      break;
+    }
+
+    const promptTarget = join(input.bundleRoot, entry.promptPath);
+    assertWithinInputRoot(promptTarget, input.inputRoot, entry.promptPath);
+    if (!existsSync(promptTarget)) {
+      items.push({ sessionId: entry.id, ok: false, error: { error: "prompt_missing" } });
+      continue;
+    }
+    const prompt = readFileSync(promptTarget, "utf8");
+
+    const scratchStdoutPath = `/run/scratch/claude.stdout.${index}.json`;
+    const result = await runClaudeOnce(
+      prompt,
+      input.serializedSchema,
+      input.timeoutMs,
+      input.runId,
+      scratchStdoutPath,
+    );
+    items.push(
+      result.success
+        ? { sessionId: entry.id, ok: true, payload: result.finalResult }
+        : { sessionId: entry.id, ok: false, error: result.finalResult },
+    );
+  }
+
+  await reportAndExit({
+    finalResult: { items },
+    success: true,
+    failureCode: "none",
+    callbackUrl: input.callbackUrl,
+    callbackToken: input.callbackToken,
+    runId: input.runId,
+    bundleHash: input.bundleHash,
+  });
+}
+
+export async function main(): Promise<void> {
+  const runId = required("DRAFT_RUN_ID");
+  const bundleHash = required("DRAFT_BUNDLE_HASH");
+  if (!/^[0-9a-f]{64}$/.test(bundleHash)) {
+    throw new Error("DRAFT_BUNDLE_HASH must be lowercase SHA-256");
+  }
+  const callbackUrl = required("DRAFT_CALLBACK_URL");
+  const callbackToken = required("DRAFT_CALLBACK_TOKEN");
+  const bundleUrl = required("DRAFT_BUNDLE_URL");
+  new URL(bundleUrl);
+  const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
+  const outputSchemaPath = process.env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH;
+  const timeoutMs = parseTimeoutSeconds(process.env.DRAFT_TIMEOUT_SECONDS) * 1_000;
+  const runMode = process.env.DRAFT_RUN_MODE === "batch" ? "batch" : "single";
+  const inputRoot = "/run/input";
+  // Bundle file keys (e.g. "input/prompt.md", "input/sources/x.md") already
+  // carry the "input/" segment, so they're relative to /run, one level above
+  // inputRoot — not to inputRoot itself.
+  const bundleRoot = dirname(inputRoot);
+  const reservedPaths = new Set([
+    promptPath.startsWith(`${bundleRoot}/`) ? promptPath.slice(bundleRoot.length + 1) : "input/prompt.md",
+    outputSchemaPath.startsWith(`${bundleRoot}/`)
+      ? outputSchemaPath.slice(bundleRoot.length + 1)
+      : "input/output-schema.json",
+  ]);
+
+  new URL(callbackUrl);
+  mkdirSync("/run/output", { recursive: true });
+  mkdirSync("/run/scratch", { recursive: true });
+  mkdirSync(inputRoot, { recursive: true });
+  try {
+    await fetchAndWriteBundle(bundleUrl, bundleHash, inputRoot, bundleRoot, reservedPaths);
+  } catch (fetchError) {
+    runnerLog("bundle_fetch_failed", {
+      run_id: runId,
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+    });
+    await reportAndExit({
+      finalResult: {
+        error: "bundle_fetch_failed",
+        diagnostics: {
+          reason: fetchError instanceof Error ? fetchError.message : String(fetchError),
+        },
+      },
+      success: false,
+      failureCode: "bundle_fetch_failed",
+      callbackUrl,
+      callbackToken,
+      runId,
+      bundleHash,
+    });
+    return;
+  }
+  const inputStats = secureInputTree(inputRoot);
+  const serializedSchema = readOutputSchema(outputSchemaPath, inputRoot);
+
+  // Batch mode carries a per-session prompt file per manifest entry instead
+  // of one shared prompt at promptPath -- see runBatch.
+  let prompt = "";
+  if (runMode !== "batch") {
+    if (!existsSync(promptPath) || !resolve(promptPath).startsWith(`${inputRoot}/`)) {
+      throw new Error("DRAFT_PROMPT_PATH must name a file beneath /run/input");
+    }
+    prompt = readFileSync(promptPath, "utf8");
+    if (!prompt.trim()) throw new Error("prompt is empty");
+  }
+  runnerLog("input_ready", {
+    run_id: runId,
+    file_count: inputStats.fileCount,
+    total_bytes: inputStats.totalBytes,
+    prompt_bytes: Buffer.byteLength(prompt),
+  });
+
+  chownSync("/run/output", AGENT_UID, AGENT_GID);
+  chmodSync("/run/output", 0o750);
+  chownSync("/run/scratch", AGENT_UID, AGENT_GID);
+  chmodSync("/run/scratch", 0o700);
+
+  if (runMode === "batch") {
+    const manifestPath = required("DRAFT_MANIFEST_PATH");
+    await runBatch({
+      runId,
+      bundleHash,
+      manifestPath,
+      serializedSchema,
+      inputRoot,
+      bundleRoot,
+      timeoutMs,
+      callbackUrl,
+      callbackToken,
+    });
+    return;
+  }
+
+  const result = await runClaudeOnce(prompt, serializedSchema, timeoutMs, runId);
+
+  await reportAndExit({
+    finalResult: result.finalResult,
+    success: result.success,
+    failureCode: result.failureCode,
     callbackUrl,
     callbackToken,
     runId,

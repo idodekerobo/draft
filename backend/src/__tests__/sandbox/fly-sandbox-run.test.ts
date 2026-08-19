@@ -268,4 +268,40 @@ describe("launchFlySandboxRun", () => {
       config,
     }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("reserved output schema path");
   });
+
+  it("launches in batch mode without a top-level prompt, wiring DRAFT_RUN_MODE/DRAFT_MANIFEST_PATH", async () => {
+    const { client } = fakeFlyClient();
+    let launched: CreateFlyMachineInput | undefined;
+    const wrappedClient: FlySandboxRunClient = {
+      ...client,
+      create: async (input) => {
+        launched = input;
+        return client.create(input);
+      },
+    };
+    const { uploader, calls } = fakeBundleUploader();
+
+    await launchFlySandboxRun({
+      bundle: bundle(),
+      jsonSchema,
+      claudeCodeOAuthToken: "claude-oauth-secret",
+      config,
+      mode: "batch",
+      manifestPath: "input/manifest.json",
+    }, { flyClient: wrappedClient, bundleUploader: uploader });
+
+    expect(calls[0].files["input/prompt.md"]).toBeUndefined();
+    expect(launched!.env).toMatchObject({
+      DRAFT_RUN_MODE: "batch",
+      DRAFT_MANIFEST_PATH: "/run/input/manifest.json",
+    });
+  });
+
+  it("requires manifestPath when mode is batch", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    await expect(launchFlySandboxRun({
+      bundle: bundle(), jsonSchema, claudeCodeOAuthToken: "token", config, mode: "batch",
+    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow('manifestPath is required when mode is "batch"');
+  });
 });
