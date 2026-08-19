@@ -103,6 +103,13 @@ export type WorkspaceEventType =
   | "context_restored"
   | "manual_edit";
 
+export type AgentSessionSummaryStatus =
+  | "pending"
+  | "leased"
+  | "ok"
+  | "failed"
+  | "skipped";
+
 export type ErrorOperation =
   | "ingestion"
   | "scheduling"

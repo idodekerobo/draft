@@ -1,4 +1,5 @@
 import type {
+  AgentSessionSummaryStatus,
   ContextVersionCreationReason,
   CredentialProvider,
   CredentialStatus,
@@ -216,6 +217,48 @@ export interface WorkspaceEventRow {
   summary: string;
   payload_json: Record<string, unknown>;
   occurred_at: string;
+  created_at: string;
+}
+
+export interface SessionContributorRow {
+  id: string;
+  workspace_id: string;
+  git_email: string;
+  git_display_name: string | null;
+  claimed_user_id: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+// Carries exactly one of user_id / contributor_id (XOR, not OR).
+export interface AgentSessionRow {
+  id: string;
+  workspace_id: string;
+  provider: string;
+  user_id: string | null;
+  contributor_id: string | null;
+  external_session_id: string;
+  project: string | null;
+  cwd: string | null;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  summary_status: AgentSessionSummaryStatus;
+  summary_attempts: number;
+  summary_lease_until: string | null;
+  summary_last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Immutable feed row: no updated_at.
+export interface AgentMessageRow {
+  id: string;
+  session_id: string;
+  workspace_id: string;
+  seq: number;
+  role: string;
+  content: string;
   created_at: string;
 }
 
