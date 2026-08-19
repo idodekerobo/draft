@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",
-    "cron-parser": "^5.7.0"
+    "cron-parser": "^5.7.0",
+    "jose": "^6.2.9"
   },
   "devDependencies": {
     "@types/bun": "latest",
