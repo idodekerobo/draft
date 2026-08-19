@@ -12,6 +12,7 @@ export interface UpsertSourceConnectionInput {
   provider: SourceConnectionProvider;
   connection_key: string;
   display_name?: string | null;
+  external_account_id?: string | null;
   status?: SourceConnectionStatus;
   credential_id?: string | null;
   config_json?: Record<string, unknown>;
@@ -31,6 +32,7 @@ export async function upsertSourceConnection(
         provider: input.provider,
         connection_key: input.connection_key,
         display_name: input.display_name ?? null,
+        external_account_id: input.external_account_id ?? null,
         status: input.status ?? "active",
         credential_id: input.credential_id ?? null,
         config_json: input.config_json ?? {},

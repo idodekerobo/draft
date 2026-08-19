@@ -41,7 +41,7 @@ interface ClaudeCodeConnectBody {
 }
 
 type ConnectBody = SlackConnectBody | FirefliesConnectBody | LinearConnectBody | ClaudeCodeConnectBody;
-type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code";
+type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github";
 
 interface SlackConnectResponse {
   ok: true;
@@ -72,7 +72,13 @@ interface SlackApiError extends Error {
 const config = loadConfig();
 
 function isSupportedProvider(value: unknown): value is SupportedProvider {
-  return value === "slack" || value === "fireflies" || value === "linear" || value === "claude_code";
+  return (
+    value === "slack" ||
+    value === "fireflies" ||
+    value === "linear" ||
+    value === "claude_code" ||
+    value === "github"
+  );
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -244,7 +250,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .from("source_connections")
     .select("provider, status, display_name, last_success_at, last_error_at, config_json")
     .eq("workspace_id", req.params.id)
-    .in("provider", ["slack", "fireflies", "linear"]);
+    .in("provider", ["slack", "fireflies", "linear", "github"]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
   const connections: Array<{
@@ -350,6 +356,9 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   if (!body || typeof body !== "object" || !isSupportedProvider((body as { provider?: unknown }).provider)) {
     return errorResponse("invalid_provider", 400);
   }
+  // No isGithubConnectBody: GitHub connects via the dedicated install-session
+  // routes (github-install.ts), not a pasted token here -- a "github" body
+  // falls through every shape check below and correctly 400s as invalid_body.
   if (
     !isSlackConnectBody(body) &&
     !isFirefliesConnectBody(body) &&
