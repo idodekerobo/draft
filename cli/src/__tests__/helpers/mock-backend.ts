@@ -8,6 +8,11 @@ export interface MockBackendState {
   contextResponse: (workspaceId: string) => Response | Promise<Response>;
   refreshResponse: () => Response | Promise<Response>;
   logoutResponse: () => Response | Promise<Response>;
+  sessionTokensResponse: (workspaceId: string) => Response | Promise<Response>;
+  sessionsListResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
+  sessionReadResponse: (workspaceId: string, sessionId: string, url: URL) => Response | Promise<Response>;
+  sessionsIngestRequests: { url: string; headers: Record<string, string>; body: string }[];
+  sessionsIngestResponse: () => Response | Promise<Response>;
 }
 
 export function defaultWhoami(overrides: Partial<{ organization_id: string | null; primary_team_id: string | null; workspace_id: string | null; onboarding_completed_at: string | null }> = {}) {
@@ -22,6 +27,11 @@ export function createMockBackend() {
     contextResponse: () => Response.json({ versionId: "v1", versionNumber: 1, contentHash: "hash1", creationReason: "synthesis", createdAt: "2026-01-01T00:00:00.000Z", documents: {} }),
     refreshResponse: () => Response.json({ access_token: "refreshed-at", refresh_token: "refreshed-rt", expires_in: 3600 }),
     logoutResponse: () => new Response(null, { status: 204 }),
+    sessionTokensResponse: () => Response.json({ id: "cred-1", token: "draft_sit_cred-1_secret" }),
+    sessionsListResponse: () => Response.json({ sessions: [] }),
+    sessionReadResponse: () => Response.json({ summary: null }),
+    sessionsIngestRequests: [],
+    sessionsIngestResponse: () => Response.json({ ok: true, sessionId: "session-1" }),
   };
 
   const server = Bun.serve({
@@ -40,6 +50,22 @@ export function createMockBackend() {
       }
       if (req.method === "POST" && url.pathname === "/auth/v1/token") return state.refreshResponse();
       if (req.method === "POST" && url.pathname === "/auth/v1/logout") return state.logoutResponse();
+      if (req.method === "POST" && /^\/workspaces\/[^/]+\/sessions\/tokens$/.test(url.pathname)) {
+        return state.sessionTokensResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/sessions$/.test(url.pathname)) {
+        return state.sessionsListResponse(url.pathname.split("/")[2]!, url);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/sessions\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.sessionReadResponse(parts[2]!, parts[4]!, url);
+      }
+      if (req.method === "POST" && url.pathname === "/sessions/ingest") {
+        const headers: Record<string, string> = {};
+        req.headers.forEach((value, key) => { headers[key] = value; });
+        state.sessionsIngestRequests.push({ url: req.url, headers, body: await req.text() });
+        return state.sessionsIngestResponse();
+      }
       return new Response("not found", { status: 404 });
     },
   });

@@ -6,6 +6,7 @@ import { printHelp, red } from "./utils/output.ts";
 import { runAdd } from "./commands/add.ts";
 import { runAuth } from "./commands/auth.ts";
 import { runContext } from "./commands/context.ts";
+import { runSessions } from "./commands/sessions.ts";
 import { runCompletion } from "./commands/completion.ts";
 
 const args = process.argv.slice(2);
@@ -27,6 +28,9 @@ if (!command || command === "--help" || command === "-h") {
       break;
     case "context":
       process.exitCode = await runContext(rest);
+      break;
+    case "sessions":
+      process.exitCode = await runSessions(rest);
       break;
     case "completion":
       await runCompletion(rest);

@@ -162,6 +162,92 @@ export async function fetchWorkspaceContext(): Promise<ContextFetchResult> {
   };
 }
 
+export interface SessionListItem {
+  id: string;
+  provider: string;
+  verified: boolean;
+  display: string | null;
+  project: string | null;
+  cwd: string | null;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  summary_status: string;
+  has_summary: boolean;
+}
+
+export type FetchResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; code: "not_authenticated" | "auth_busy" | "session_refresh_transient" | "whoami_failed" | "no_workspace" | "request_failed" };
+
+async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true; token: string; workspaceId: string; response: Response } | { ok: false; code: FetchResult<never>["code"] }> {
+  const tokenResult = await requireAccessToken();
+  if (!tokenResult.ok) return tokenResult;
+
+  const identityResult = await refreshIdentity();
+  if (!identityResult.ok) return identityResult;
+  if (!identityResult.identity.workspace_id) return { ok: false, code: "no_workspace" };
+
+  const config = getCliRuntimeConfig();
+  let response: Response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}/workspaces/${encodeURIComponent(identityResult.identity.workspace_id)}${path}`, {
+      ...init,
+      headers: { ...init?.headers, Authorization: `Bearer ${tokenResult.token}` },
+    });
+  } catch {
+    return { ok: false, code: "session_refresh_transient" };
+  }
+  return { ok: true, token: tokenResult.token, workspaceId: identityResult.identity.workspace_id, response };
+}
+
+export async function mintSessionIngestToken(label: string | null): Promise<FetchResult<{ id: string; token: string; workspaceId: string }>> {
+  const result = await authedFetch("/sessions/tokens", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!result.ok) return result;
+  if (!result.response.ok) return { ok: false, code: "request_failed" };
+  const body = await result.response.json() as { id: string; token: string };
+  return { ok: true, value: { id: body.id, token: body.token, workspaceId: result.workspaceId } };
+}
+
+export interface ListSessionsFilters {
+  provider?: string;
+  user?: string;
+  since?: string;
+}
+
+export async function fetchSessions(filters: ListSessionsFilters = {}): Promise<FetchResult<SessionListItem[]>> {
+  const query = new URLSearchParams();
+  if (filters.provider) query.set("provider", filters.provider);
+  if (filters.user) query.set("user", filters.user);
+  if (filters.since) query.set("since", filters.since);
+  const qs = query.toString();
+
+  const result = await authedFetch(`/sessions${qs ? `?${qs}` : ""}`);
+  if (!result.ok) return result;
+  if (!result.response.ok) return { ok: false, code: "request_failed" };
+  const body = await result.response.json() as { sessions: SessionListItem[] };
+  return { ok: true, value: body.sessions };
+}
+
+export type SessionReadResult =
+  | { kind: "summary"; summary: string | null; occurred_at?: string }
+  | { kind: "transcript"; messages: { seq: number; role: string; content: string; created_at: string }[] };
+
+export async function fetchSessionRead(sessionId: string, mode: "summary" | "transcript"): Promise<FetchResult<SessionReadResult>> {
+  const result = await authedFetch(`/sessions/${encodeURIComponent(sessionId)}?${mode}`);
+  if (!result.ok) return result;
+  if (result.response.status === 404) return { ok: false, code: "request_failed" };
+  if (!result.response.ok) return { ok: false, code: "request_failed" };
+  const body = await result.response.json();
+  return mode === "transcript"
+    ? { ok: true, value: { kind: "transcript", messages: body.messages } }
+    : { ok: true, value: { kind: "summary", summary: body.summary, occurred_at: body.occurred_at } };
+}
+
 const DIMENSION_INDEX_PATTERN = /^([^/]+)\/index\.md$/;
 
 export function discoverDimensions(documents: Record<string, WorkspaceDocument>): { name: string; path: string }[] {

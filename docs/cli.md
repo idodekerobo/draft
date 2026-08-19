@@ -70,6 +70,59 @@ Pass one or more `--dimension <name>` flags, or `--all` — exactly one selectio
 
 ---
 
+## Sessions
+
+Captures Claude Code coding sessions from a project into your workspace, so they're readable from the CLI (and, later, summarized and searchable). Only `claude-code` has a real install path today — other agent names in the `add`/`sessions` vocabulary (`codex`, `cursor`, `openclaw`, `hermes`) are accepted but rejected with a clear "not yet supported" error.
+
+### `draft sessions enable <agent> [--dir <path>] [--json]`
+
+Turns on session capture for one project: mints a repo-scoped ingest token, writes `.claude/draft/config.json` and `.claude/draft/capture-session.sh`, and adds a `SessionEnd` hook entry to `.claude/settings.json` (preserving any hooks already there). It never runs `git add`/`git commit` — review the diff and commit it yourself.
+
+```bash
+draft sessions enable claude-code --dir ~/code/my-app
+draft sessions enable claude-code --dir . --json
+```
+
+Re-running is idempotent: the hook entry is only added once (`hookChanged: false` on a no-op rerun).
+
+### `draft sessions disable [--dir <path>] [--json]`
+
+Removes the `SessionEnd` hook entry from `.claude/settings.json`. The repo's ingest token stays active server-side — revoking it isn't wired up yet (no settings UI to drive it from).
+
+```bash
+draft sessions disable --dir ~/code/my-app
+```
+
+### `draft sessions status [--dir <path>] [--json]`
+
+Reports whether a project has session capture configured and whether the `SessionEnd` hook is installed.
+
+```bash
+draft sessions status --dir ~/code/my-app
+```
+
+### `draft sessions list [--provider <name>] [--user <id>] [--since <iso8601>] [--json]`
+
+Lists captured sessions in your workspace, most recent first.
+
+```bash
+draft sessions list
+draft sessions list --provider claude-code-session --json
+```
+
+### `draft sessions read <id> [--summary | --transcript] [--json]`
+
+Prints one session's summary (default) or its raw transcript.
+
+```bash
+draft sessions read <session-id>
+draft sessions read <session-id> --transcript
+```
+
+A session that hasn't been summarized yet (session summarization isn't built yet) prints `(no summary yet)`; `--transcript` always works off the raw captured messages, regardless of summary state.
+
+---
+
 ## Project setup
 
 ### `draft add <tool> [--dir <path>...] [--json]`
