@@ -6,7 +6,7 @@ create table scheduled_tasks (
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   source_connection_id     uuid,
   task_type                text not null
-                              check (task_type in ('ingest_source', 'synthesize_workspace', 'rebuild_projection')),
+                              check (task_type in ('ingest_source', 'synthesize_workspace', 'rebuild_projection', 'summarize_sessions')),
   task_key                 text not null,
   schedule_kind            text not null check (schedule_kind in ('cron', 'interval')),
   cron_expression          text,

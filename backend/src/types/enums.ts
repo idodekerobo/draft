@@ -70,7 +70,8 @@ export type ContextVersionCreationReason =
 export type ScheduledTaskType =
   | "ingest_source"
   | "synthesize_workspace"
-  | "rebuild_projection";
+  | "rebuild_projection"
+  | "summarize_sessions";
 
 export type ScheduleKind = "cron" | "interval";
 
