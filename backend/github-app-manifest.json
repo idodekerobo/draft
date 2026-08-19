@@ -1,0 +1,20 @@
+{
+  "name": "Draft Context (dev)",
+  "url": "https://draftai.us",
+  "hook_attributes": {
+    "url": "https://example.com/webhooks/github"
+  },
+  "redirect_url": "http://localhost:4756/callback",
+  "setup_url": "https://example.com/workspaces/github/callback",
+  "setup_on_update": true,
+  "public": false,
+  "default_permissions": {
+    "metadata": "read",
+    "pull_requests": "read",
+    "contents": "read"
+  },
+  "default_events": [
+    "pull_request",
+    "push"
+  ]
+}
