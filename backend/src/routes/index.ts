@@ -1,4 +1,5 @@
 import * as firefliesWebhook from "../webhooks/fireflies/route";
+import * as githubWebhook from "../webhooks/github/route";
 import * as linearWebhook from "../webhooks/linear/route";
 import * as connections from "./connections";
 import * as health from "./health";
@@ -31,4 +32,5 @@ export const routes = {
   "/sandbox/callback": { POST: sandboxCallback.POST },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
+  "/webhooks/github": { POST: githubWebhook.POST },
 };
