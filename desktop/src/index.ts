@@ -1,6 +1,6 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
-import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Tray, Utils } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import {
   createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
@@ -329,6 +329,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   if (action === "quit-completely") {
     stopActiveProfileWatch();
     stopSkillWatch();
+    stopMcpWatch();
     process.exit(0);
   }
 });
@@ -336,21 +337,6 @@ Electrobun.events.on("application-menu-clicked", (event) => {
 Electrobun.events.on("reopen", () => {
   try { win.show(); } catch (err) { console.error("[draft-desktop] reopen failed:", err); }
 });
-
-// ── Tray ───────────────────────────────────────────────────────────────────────
-// TODO: Replace with image asset before Phase 1 ship (put image in "views://assets/tray-icon-template.png")
-
-const tray = new Tray({ title: "Draft" });
-
-function setTrayMenu() {
-  tray.setMenu([
-    { type: "normal",  label: "Open Draft",                                   action: "open"        },
-    { type: "divider"                                                                                 },
-    { type: "normal",  label: "Quit Completely",                              action: "quit"        },
-  ]);
-}
-
-setTrayMenu();
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
 
@@ -1645,24 +1631,6 @@ function createMainWindow(hidden: boolean) {
 }
 
 let win = createMainWindow(false);
-
-// ── Tray event handling ────────────────────────────────────────────────────────
-
-tray.on("tray-clicked", (e) => {
-  const { action } = (e as { data: { id?: string; action: string } }).data;
-
-  if (action === "open" || action === "") {
-    // action === "" fires when the tray icon itself is clicked (not a menu item).
-    try { win.show(); } catch (err) { console.error("[draft-desktop] tray open failed:", err); }
-  }
-
-  if (action === "quit") {
-    stopActiveProfileWatch();
-    stopSkillWatch();
-    stopMcpWatch();
-    process.exit(0);
-  }
-});
 
 // ── Startup log ───────────────────────────────────────────────────────────────
 // Quick sanity check on startup. Phase 1 will push this to renderer via
