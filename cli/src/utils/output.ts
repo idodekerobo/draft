@@ -29,6 +29,8 @@ export function printHelp(): void {
     ["context list",               "List available context dimensions"],
     ["context read --dimension <name>", "Print one or more context dimensions"],
     ["context read --all",         "Print every context dimension"],
+    ["integrations list",          "List hosted integration status"],
+    ["integrations disconnect <provider>", "Disconnect GitHub, Fireflies, Linear, or Slack"],
     ["sessions enable claude-code", "Capture this repo's Claude Code sessions"],
     ["sessions disable",           "Stop capturing this repo's sessions"],
     ["sessions status",            "Show this repo's session-capture state"],

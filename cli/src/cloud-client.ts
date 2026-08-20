@@ -444,6 +444,9 @@ export function listConnections(): Promise<FetchResult<{ connections: HostedConn
     if (!body || !Array.isArray(body.connections)) return null;
     const connections: HostedConnectionTransport[] = [];
     for (const raw of body.connections) {
+      const row = recordValue(raw);
+      if (!row || typeof row.provider !== "string") return null;
+      if (!BACKEND_PROVIDERS.has(row.provider as BackendConnectionProvider)) continue;
       const connection = decodeConnection(raw);
       if (!connection) return null;
       connections.push(connection);

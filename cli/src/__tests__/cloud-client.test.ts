@@ -83,7 +83,10 @@ function validConnection(overrides: Record<string, unknown> = {}) {
 describe("hosted provider wrappers", () => {
   it("uses exact methods, paths, bodies, and one coherent bearer for all six wrappers", async () => {
     backend.state.connectionsListResponse = () => Response.json({
-      connections: [validConnection({ internal_id: "must-not-pass-through" })],
+      connections: [
+        { provider: "future_provider", raw: "must-not-pass-through" },
+        validConnection({ internal_id: "must-not-pass-through" }),
+      ],
     });
     backend.state.connectionsConnectResponse = () => Response.json({
       ok: true,
