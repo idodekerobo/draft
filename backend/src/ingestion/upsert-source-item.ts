@@ -33,7 +33,13 @@ export async function upsertSourceConnection(
         connection_key: input.connection_key,
         display_name: input.display_name ?? null,
         external_account_id: input.external_account_id ?? null,
-        status: input.status ?? "active",
+        // Omitted entirely (not defaulted to "active") when the caller
+        // doesn't pass one, so PostgREST's merge-duplicates upsert leaves
+        // an existing row's status untouched on conflict -- only a column
+        // present in the payload gets written into the ON CONFLICT DO
+        // UPDATE SET clause. New rows still get the table's default
+        // ('pending') via the column list omission on INSERT.
+        ...(input.status !== undefined ? { status: input.status } : {}),
         credential_id: input.credential_id ?? null,
         config_json: input.config_json ?? {},
         cursor_json: input.cursor_json ?? {},

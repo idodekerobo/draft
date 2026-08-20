@@ -1,12 +1,10 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { upsertSourceConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
 import type { AgentSessionRow } from "../types/tables";
 import type { SessionSummaryPayload } from "./types";
 
-// The FK anchor claude session summaries need to exist at all -- not the
-// workspace-facing toggle from Decision 9 (see step 10).
-const CLAUDE_SESSION_CONNECTION_KEY = "agent-sessions";
 const MAX_SUMMARY_ATTEMPTS = 3;
 
 export type MaterializeSummaryResult =

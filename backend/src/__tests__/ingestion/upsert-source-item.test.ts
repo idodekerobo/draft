@@ -97,8 +97,38 @@ describe("upsertSourceConnection", () => {
       workspace_id: ids.workspace,
       provider: "fireflies",
       connection_key: "founder-primary",
+    });
+  });
+
+  it("omits status entirely when the caller doesn't pass one, so a conflict leaves an existing row's status untouched", async () => {
+    const { client, state } = createFakeClient({
+      item_id: "unused",
+      changed: true,
+      superseded_item_ids: [],
+    });
+    await upsertSourceConnection(client, {
+      workspace_id: ids.workspace,
+      provider: "claude_session",
+      connection_key: "agent-sessions",
+    });
+
+    expect(state.connectionUpsertPayload).not.toHaveProperty("status");
+  });
+
+  it("includes status in the payload when the caller passes one explicitly", async () => {
+    const { client, state } = createFakeClient({
+      item_id: "unused",
+      changed: true,
+      superseded_item_ids: [],
+    });
+    await upsertSourceConnection(client, {
+      workspace_id: ids.workspace,
+      provider: "manual_upload",
+      connection_key: "manual-upload",
       status: "active",
     });
+
+    expect(state.connectionUpsertPayload).toMatchObject({ status: "active" });
   });
 });
 
