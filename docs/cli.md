@@ -201,6 +201,30 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 
 ---
 
+## Installing and updating
+
+The CLI installs standalone — no repo clone, no bun, no desktop app required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idodekerobo/draft/main/scripts/install-cli.sh | bash
+```
+
+This downloads the platform-matched `draft` binary from the latest GitHub release (the same release `make desktop-release` cuts for the desktop app) to `~/.draft/bin/draft` and links it onto `PATH` — the same layout the desktop app's own first-launch installer uses, so either install path works interchangeably with `draft update`.
+
+### `draft update`
+
+Downloads the latest release binary for your platform and replaces the running `draft` in place.
+
+```bash
+draft update            # install the latest version
+draft update --check    # report whether an update is available, without installing
+draft update --json
+```
+
+Every other command also does a cheap, cached, non-blocking staleness check in the background and prints a one-line notice to stderr (`Update available: vX → vY — run draft update`) when a newer release is cached as available — nothing waits on the network to run your actual command. `draft --version` prints the installed version. Not available when running from source (`bun run src/index.ts`) — only applies to a compiled release binary.
+
+---
+
 ## Other commands
 
 ### `draft completion`
