@@ -52,7 +52,7 @@ function escapeHtml(value: string): string {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const manifestPath = args.manifest ?? "backend/github-app-manifest.json";
+  const manifestPath = args.manifest ?? "backend/src/ingestion/github/github-app-manifest.json";
   const manifest = await Bun.file(manifestPath).json();
 
   if (args.name) manifest.name = args.name;
