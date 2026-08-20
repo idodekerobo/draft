@@ -10,13 +10,7 @@ export interface RecordAgentQueryLogInput {
   resultBytes: number;
 }
 
-/**
- * Best-effort telemetry for Decision 5's "calls per question" instrumentation
- * gate -- never blocks or fails the request it's called from. Scoped to
- * exactly list/read/search (the agent-driven query surface), not
- * enable/disable/status/ingest, which are a different, much higher-volume
- * signal that would pollute this read.
- */
+/** Best-effort: never blocks or fails the request it's called from. */
 export async function recordAgentQueryLog(client: SupabaseClient, input: RecordAgentQueryLogInput): Promise<void> {
   try {
     const { error } = await client.from("agent_query_log").insert({

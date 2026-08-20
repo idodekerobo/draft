@@ -7,12 +7,7 @@ export interface ResolvedUserFilter {
   matchedNothing: boolean;
 }
 
-/**
- * Resolves `--user <email>` against both `users.email` (authenticated path)
- * and `session_contributors.git_email` (fallback path) -- the same two
- * identity tiers `sessions-ingest.ts` writes into. Shared by `sessions list`
- * and `sessions search` so both commands resolve email the same way.
- */
+/** Resolves `--user <email>` against both users.email and session_contributors.git_email. */
 export async function resolveUserFilter(
   client: SupabaseClient,
   workspaceId: string,

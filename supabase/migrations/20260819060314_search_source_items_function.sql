@@ -1,7 +1,6 @@
--- Backs `draft sessions search` (Decision 5, step 7a). Filters directly on
--- coding_session source_items' metadata_json (provider/user_id/contributor_id
--- are already denormalized there by materialize-summary.ts) rather than
--- joining agent_sessions -- one table, one GIN-indexed full text query.
+-- Backs `draft sessions search`. Filters directly on coding_session
+-- source_items' metadata_json (already denormalized by
+-- materialize-summary.ts) rather than joining agent_sessions.
 create or replace function search_source_items(
   p_workspace_id uuid,
   p_query text,

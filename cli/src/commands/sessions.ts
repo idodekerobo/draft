@@ -1,9 +1,5 @@
-// commands/sessions.ts — draft sessions enable|disable|status|ingest|list|read
-//
-// enable/disable/status/list/read are the documented surface. `ingest` is
-// hook-only: installed as a project's Claude Code SessionEnd hook by
-// `enable`, reads hook JSON from stdin, and never blocks Claude Code (always
-// exits 0, logging failures to a local file instead).
+// commands/sessions.ts — draft sessions enable|disable|status|ingest|list|read|search
+// `ingest` is hook-only: installed as the project's Claude Code SessionEnd hook.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "fs";
 import { dirname, isAbsolute, join, resolve } from "path";

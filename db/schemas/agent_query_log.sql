@@ -13,8 +13,7 @@ create index agent_query_log_workspace_occurred_idx
   on agent_query_log (workspace_id, occurred_at);
 
 -- Backend-internal telemetry, written by the service role only. No select
--- policy for `authenticated` yet -- no client reads this back in this phase
--- (queried directly via SQL/dashboard for Decision 5's two-week evaluation).
+-- policy for `authenticated` yet -- queried directly via SQL/dashboard.
 alter table agent_query_log enable row level security;
 
 grant insert on table agent_query_log to service_role;

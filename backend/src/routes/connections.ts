@@ -434,9 +434,8 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   }
 
   if (body.provider === "claude_session") {
-    // Decision 9's workspace toggle: no credential, no webhook -- just a
-    // status flip on the same connection_key materialize-summary.ts
-    // auto-creates, so the toggle and the summarizer's row are one row.
+    // No credential, no webhook -- just a status flip on the same
+    // connection_key materialize-summary.ts auto-creates.
     try {
       await upsertSourceConnection(serviceClient, {
         workspace_id: req.params.id,
@@ -675,9 +674,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     .eq("workspace_id", req.params.id);
   if (connectionError) return errorResponse("disconnect_failed", 500, connectionError, req.params.id);
 
-  // claude_session ingestion is push-based via /sessions/ingest, not
-  // scheduled_tasks-driven -- explicit skip rather than relying on "no
-  // matching row" to make that a no-op.
+  // claude_session ingestion is push-based, not scheduled_tasks-driven.
   if (req.params.provider !== "claude_session") {
     const { error: taskError } = await serviceClient
       .from("scheduled_tasks")

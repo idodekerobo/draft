@@ -107,8 +107,7 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
   const source = params.get("source") || CLAUDE_CODE_SESSION_SOURCE;
   const project = cwd ? basename(cwd) : null;
 
-  // The ingest token is valid -- this is a workspace policy rejection
-  // (Decision 9's toggle), not an auth failure.
+  // The ingest token is valid -- this is a workspace policy rejection, not an auth failure.
   if (!(await isSessionTrackingEnabled(workspaceId, source))) {
     return errorResponse("session_tracking_disabled", 403, undefined, workspaceId);
   }

@@ -1,10 +1,5 @@
 // sessions-search.ts — GET /workspaces/:id/sessions/search?q=<pattern>
-//
-// Separate from sessions.ts: this queries source_items (session summaries),
-// a different table/shape than agent_sessions/agent_messages. Corpus:
-// source_items.content_markdown, matched via websearch_to_tsquery against
-// the GIN tsvector index on that column. Never returns full content_markdown
-// -- only a ts_headline snippet, per Decision 5.
+// Searches session summaries (source_items); never returns full content_markdown.
 
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
@@ -62,10 +57,6 @@ export const GET = withAuth<SessionsSearchRequest>(async (req, caller) => {
     p_query: q,
     p_since: since,
     p_provider: provider,
-    // Search matches either identity tier via two nullable params rather
-    // than an OR clause -- resolveUserFilter can return both when a user
-    // has both an authenticated account and a contributor row, but the RPC
-    // only needs whichever the caller narrowed the request to.
     p_user_id: userId,
     p_contributor_id: contributorId,
     p_limit: limit,
