@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CredentialError, resolveProviderCredential } from "../../credentials/resolve-provider-credential";
+import {
+  CredentialError,
+  resolveProviderCredentialById,
+} from "../../credentials/resolve-provider-credential";
 import type { SourceConnectionRow } from "../../types/tables";
 import { readBoundedBody } from "../shared/read-bounded-body";
 
@@ -12,6 +15,7 @@ export interface AuthenticateFirefliesWebhookRequestOptions {
 
 export interface AuthenticatedFirefliesWebhookRequest {
   connection: Pick<SourceConnectionRow, "id" | "workspace_id">;
+  credentialId: string;
   event: string;
   meetingId: string;
 }
@@ -102,22 +106,30 @@ export async function authenticateFirefliesWebhookRequest(
 
   const { data, error } = await db
     .from("source_connections")
-    .select("id, workspace_id")
+    .select("id, workspace_id, credential_id")
     .eq("connection_key", connectionKey)
     .eq("provider", "fireflies")
     .in("status", ["active", "degraded"])
     .maybeSingle();
   if (error) reject("Fireflies webhook connection lookup failed");
 
-  const connection = data as Pick<SourceConnectionRow, "id" | "workspace_id"> | null;
-  if (!connection) {
+  const connection = data as Pick<
+    SourceConnectionRow,
+    "id" | "workspace_id" | "credential_id"
+  > | null;
+  if (!connection || !connection.credential_id) {
     reject(`Fireflies webhook has no matching connection for key "${connectionKey}"`);
   }
 
   let webhookSecret: string;
   try {
-    const credential = await resolveProviderCredential(connection.workspace_id, "fireflies", db);
-    webhookSecret = credential.webhook_secret;
+    const resolved = await resolveProviderCredentialById(
+      connection.workspace_id,
+      "fireflies",
+      connection.credential_id,
+      db,
+    );
+    webhookSecret = resolved.webhook_secret;
   } catch (cause) {
     if (cause instanceof CredentialError) {
       return reject(`Fireflies webhook credential resolution failed: ${cause.message}`);
@@ -131,7 +143,8 @@ export async function authenticateFirefliesWebhookRequest(
   const body = parseBody(bodyBytes);
 
   return {
-    connection,
+    connection: { id: connection.id, workspace_id: connection.workspace_id },
+    credentialId: connection.credential_id,
     event: body.event,
     meetingId: body.meeting_id,
   };

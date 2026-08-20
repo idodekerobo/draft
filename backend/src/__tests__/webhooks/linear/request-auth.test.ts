@@ -74,7 +74,9 @@ function createFakeClient(options: FakeClientOptions = {}) {
         select: () => ({
           eq: () => ({
             eq: () => ({
-              maybeSingle: async () => ({ data: options.credential ?? null, error: null }),
+              eq: () => ({
+                maybeSingle: async () => ({ data: options.credential ?? null, error: null }),
+              }),
             }),
           }),
         }),

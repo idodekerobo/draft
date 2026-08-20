@@ -231,6 +231,45 @@ function createFakeClient() {
       return builder;
     },
     async rpc(functionName: string, params: Record<string, unknown>) {
+      if (functionName === "rotate_fireflies_connection_credential") {
+        if (firefliesRotationError) return { data: null, error: firefliesRotationError };
+        const connection = state.connections.find((candidate) =>
+          candidate.id === params.p_connection_id &&
+          candidate.workspace_id === params.p_workspace_id &&
+          candidate.provider === "fireflies"
+        );
+        if (!connection) {
+          return { data: null, error: { code: "P0001", message: "fireflies_connection_conflict" } };
+        }
+
+        const priorCredential = connection.credential_id
+          ? state.credentials.find((candidate) => candidate.id === connection.credential_id)
+          : undefined;
+        const credential: Credential = {
+          id: `fireflies-credential-${state.credentials.length + 1}`,
+          workspace_id: String(params.p_workspace_id),
+          provider: "fireflies",
+          encrypted_payload: String(params.p_encrypted_payload),
+          encryption_key_version: String(params.p_encryption_key_version),
+          status: "active",
+        };
+        state.credentials.push(credential);
+        connection.credential_id = credential.id;
+        connection.status = "active";
+        connection.last_success_at = null;
+        connection.last_error_at = null;
+        if (priorCredential) priorCredential.status = "revoked";
+
+        return {
+          data: {
+            connection_id: connection.id,
+            connection_key: connection.connection_key,
+            credential_id: credential.id,
+          },
+          error: null,
+        };
+      }
+
       if (functionName === "disconnect_source_connection") {
         if (disconnectRpcError) return { data: null, error: disconnectRpcError };
         const connection = state.connections.find((candidate) =>
@@ -357,9 +396,9 @@ process.env.GITHUB_APP_SLUG = "draft-context-test";
 process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\\ntest\\n-----END RSA PRIVATE KEY-----";
 process.env.GITHUB_APP_WEBHOOK_SECRET = "webhook-secret";
 
-const realResolveProviderCredential = (
-  await import("../../credentials/resolve-provider-credential")
-).resolveProviderCredential;
+const realCredentialResolverModule = await import("../../credentials/resolve-provider-credential");
+const realResolveProviderCredential = realCredentialResolverModule.resolveProviderCredential;
+const realResolveProviderCredentialById = realCredentialResolverModule.resolveProviderCredentialById;
 
 let accessResult: Response | null = null;
 const fakeClient = createFakeClient();
@@ -378,6 +417,7 @@ let sourceConnectionBeforeUpdate: ((input: {
 let sourceConnectionUpdateError: { message: string } | null = null;
 let sourceConnectionUpdateCount = 0;
 let errorsInsertError: { message: string } | null = null;
+let firefliesRotationError: { message: string } | null = null;
 let disconnectRpcError: { message: string } | null = null;
 let linearCommitError: { code?: string; message: string } | null = null;
 let linearCommitCount = 0;
@@ -402,6 +442,7 @@ mock.module("../../auth/workspace-access", () => ({
 mock.module("../../db/client", () => ({ serviceClient: fakeClient }));
 mock.module("../../credentials/resolve-provider-credential", () => ({
   resolveProviderCredential: async () => ({ bot_token: "xoxb-stored", app_token: "xapp-stored" }),
+  resolveProviderCredentialById: realResolveProviderCredentialById,
 }));
 mock.module("../../ingestion/slack/bootstrap", () => ({
   restartSlackListener: async (connectionId: string) => { restartedSlackListeners.push(connectionId); },
@@ -413,6 +454,7 @@ const routeModule = await import("../../routes/connections");
 afterAll(() => {
   mock.module("../../credentials/resolve-provider-credential", () => ({
     resolveProviderCredential: realResolveProviderCredential,
+    resolveProviderCredentialById: realResolveProviderCredentialById,
   }));
 });
 
@@ -429,6 +471,7 @@ beforeEach(() => {
   sourceConnectionUpdateError = null;
   sourceConnectionUpdateCount = 0;
   errorsInsertError = null;
+  firefliesRotationError = null;
   disconnectRpcError = null;
   linearCommitError = null;
   linearCommitCount = 0;
@@ -665,6 +708,103 @@ describe("workspace connection routes", () => {
       api_token: "fireflies-api-token",
       webhook_secret: body.webhookSecret,
     });
+  });
+
+  it("clears prior Fireflies webhook readiness evidence when rotating credentials", async () => {
+    state.connections = [{
+      id: "fireflies-connection",
+      provider: "fireflies",
+      credential_id: "fireflies-credential",
+      connection_key: "fireflies-key",
+      status: "degraded",
+      display_name: "Fireflies",
+      last_success_at: "2026-08-20T12:00:00.000Z",
+      last_error_at: "2026-08-20T13:00:00.000Z",
+      config_json: {},
+      workspace_id: workspaceId,
+      updated_at: "2026-08-20T14:00:00.000000+00:00",
+    }];
+    state.credentials = [{
+      id: "fireflies-credential",
+      workspace_id: workspaceId,
+      provider: "fireflies",
+      encrypted_payload: "old",
+      encryption_key_version: "v1",
+      status: "active",
+    }];
+    state.scheduledTasks = [];
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "fireflies",
+        api_token: "fireflies-api-token-rotated",
+      }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.connections[0]).toMatchObject({
+      id: "fireflies-connection",
+      credential_id: "fireflies-credential-2",
+      status: "active",
+      last_success_at: null,
+      last_error_at: null,
+    });
+    expect(state.credentials[0]?.status).toBe("revoked");
+    const rotatedCredential = state.credentials.find(
+      (credential) => credential.id === state.connections[0]?.credential_id,
+    );
+    expect(JSON.parse(decryptCredentialPayload(rotatedCredential?.encrypted_payload, "v1"))).toMatchObject({
+      api_token: "fireflies-api-token-rotated",
+    });
+  });
+
+  it("leaves Fireflies credential and readiness state unchanged when rotation fails", async () => {
+    state.connections = [{
+      id: "fireflies-connection",
+      provider: "fireflies",
+      credential_id: "fireflies-credential",
+      connection_key: "fireflies-key",
+      status: "degraded",
+      display_name: "Fireflies",
+      last_success_at: "2026-08-20T12:00:00.000Z",
+      last_error_at: "2026-08-20T13:00:00.000Z",
+      config_json: {},
+      workspace_id: workspaceId,
+      updated_at: "2026-08-20T14:00:00.000000+00:00",
+    }];
+    state.credentials = [{
+      id: "fireflies-credential",
+      workspace_id: workspaceId,
+      provider: "fireflies",
+      encrypted_payload: "old-encrypted-payload",
+      encryption_key_version: "v1",
+      status: "active",
+    }];
+    firefliesRotationError = { message: "rotation transaction failed" };
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "fireflies",
+        api_token: "fireflies-api-token-rotated",
+      }) as never,
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "connection_update_failed" });
+    expect(state.connections[0]).toMatchObject({
+      credential_id: "fireflies-credential",
+      status: "degraded",
+      last_success_at: "2026-08-20T12:00:00.000Z",
+      last_error_at: "2026-08-20T13:00:00.000Z",
+    });
+    expect(state.credentials).toEqual([{
+      id: "fireflies-credential",
+      workspace_id: workspaceId,
+      provider: "fireflies",
+      encrypted_payload: "old-encrypted-payload",
+      encryption_key_version: "v1",
+      status: "active",
+    }]);
   });
 
   it("fresh-connects Linear after provider webhook creation succeeds", async () => {
@@ -904,6 +1044,7 @@ describe("workspace connection routes", () => {
     const originalCredentialId = state.credentials[0]?.id;
 
     state.connections[0]!.status = "error";
+    state.connections[0]!.last_success_at = "2026-08-20T12:00:00.000Z";
     const response = await routeModule.POST(
       request("POST", { id: workspaceId }, {
         provider: "slack",
@@ -918,6 +1059,7 @@ describe("workspace connection routes", () => {
     expect(state.connections[0]?.id).toBe(originalConnectionId);
     expect(state.connections[0]?.credential_id).toBe(originalCredentialId);
     expect(state.connections[0]?.status).toBe("active");
+    expect(state.connections[0]?.last_success_at).toBe("2026-08-20T12:00:00.000Z");
     expect(state.connections[0]?.config_json).toEqual({ channel_ids: ["C-new"] });
     expect(slackJoinCalls).toEqual(["C-new"]);
     expect(restartedSlackListeners).toEqual(["slack-connection"]);

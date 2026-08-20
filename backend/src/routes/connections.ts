@@ -545,7 +545,26 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
 
   let connectionId: string;
 
-  if (existing) {
+  if (existing && body.provider === "fireflies") {
+    const { data: rotationData, error: rotationError } = await serviceClient.rpc(
+      "rotate_fireflies_connection_credential",
+      {
+        p_workspace_id: req.params.id,
+        p_connection_id: existing.id,
+        p_encrypted_payload: encrypted,
+        p_encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+        p_connected_by_user_id: caller.userId,
+      },
+    );
+    if (rotationError) {
+      return errorResponse("connection_update_failed", 500, rotationError, req.params.id);
+    }
+    const rotation = rotationData as { connection_id?: unknown } | null;
+    if (!rotation || rotation.connection_id !== existing.id) {
+      return errorResponse("connection_update_failed", 500, "invalid_rotation_result", req.params.id);
+    }
+    connectionId = existing.id;
+  } else if (existing) {
     connectionId = existing.id;
 
     if (existing.credential_id) {

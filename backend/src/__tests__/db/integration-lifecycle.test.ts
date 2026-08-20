@@ -187,7 +187,9 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
           'upsert_source_item',
           'upsert_slack_message_if_connection_active',
           'disconnect_source_connection',
-          'commit_linear_connection_swap'
+          'commit_linear_connection_swap',
+          'mark_fireflies_webhook_success',
+          'rotate_fireflies_connection_credential'
         )
       order by p.proname
     `;
@@ -195,6 +197,8 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     expect(rows.map((row) => row.name)).toEqual([
       "commit_linear_connection_swap",
       "disconnect_source_connection",
+      "mark_fireflies_webhook_success",
+      "rotate_fireflies_connection_credential",
       "upsert_slack_message_if_connection_active",
       "upsert_source_item",
     ]);
@@ -205,6 +209,123 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       expect(row.authenticated_execute).toBe(false);
       expect(row.service_execute).toBe(true);
     }
+  });
+
+  test("Fireflies rotation is atomic and readiness is credential-generation gated", async () => {
+    const fixture = await createWorkspace();
+    const [priorCredential] = await db()<[{ id: string }]>`
+      insert into credentials (
+        workspace_id, provider, encrypted_payload, encryption_key_version, status
+      ) values (
+        ${fixture.workspaceId}, 'fireflies', decode('0102', 'hex'), 'v1', 'active'
+      )
+      returning id
+    `;
+    const [connection] = await db()<[{ id: string }]>`
+      insert into source_connections (
+        workspace_id, provider, connection_key, credential_id, status,
+        last_success_at, last_error_at
+      ) values (
+        ${fixture.workspaceId}, 'fireflies', ${randomUUID()}, ${priorCredential.id},
+        'degraded', '2026-08-20T12:00:00Z', '2026-08-20T13:00:00Z'
+      )
+      returning id
+    `;
+
+    const [rotation] = await db()<[{ result: { credential_id: string; connection_id: string } }]>`
+      select rotate_fireflies_connection_credential(
+        ${fixture.workspaceId}, ${connection.id}, decode('aabb', 'hex'), 'v2', null::uuid
+      ) as result
+    `;
+    expect(rotation.result.connection_id).toBe(connection.id);
+    expect(rotation.result.credential_id).not.toBe(priorCredential.id);
+
+    const [rotated] = await db()<[
+      {
+        credential_id: string;
+        status: string;
+        last_success_at: string | null;
+        last_error_at: string | null;
+        payload: string;
+        key_version: string;
+        prior_status: string;
+      }
+    ]>`
+      select
+        sc.credential_id,
+        sc.status,
+        sc.last_success_at::text as last_success_at,
+        sc.last_error_at::text as last_error_at,
+        encode(current_credential.encrypted_payload, 'hex') as payload,
+        current_credential.encryption_key_version as key_version,
+        prior_credential.status as prior_status
+      from source_connections sc
+      join credentials current_credential on current_credential.id = sc.credential_id
+      join credentials prior_credential on prior_credential.id = ${priorCredential.id}
+      where sc.id = ${connection.id}
+    `;
+    expect(rotated).toMatchObject({
+      credential_id: rotation.result.credential_id,
+      status: "active",
+      last_success_at: null,
+      last_error_at: null,
+      payload: "aabb",
+      key_version: "v2",
+      prior_status: "revoked",
+    });
+
+    const [staleEvidence] = await db()<[{ advanced: boolean }]>`
+      select mark_fireflies_webhook_success(
+        ${fixture.workspaceId}, ${connection.id}, ${priorCredential.id},
+        '2026-08-20T14:00:00Z'
+      ) as advanced
+    `;
+    expect(staleEvidence.advanced).toBe(false);
+
+    const [currentEvidence] = await db()<[{ advanced: boolean }]>`
+      select mark_fireflies_webhook_success(
+        ${fixture.workspaceId}, ${connection.id}, ${rotation.result.credential_id},
+        '2026-08-20T15:00:00Z'
+      ) as advanced
+    `;
+    expect(currentEvidence.advanced).toBe(true);
+
+    const [beforeFailure] = await db()<
+      [{ credential_id: string; status: string; last_success_at: string; credential_count: number }]
+    >`
+      select
+        sc.credential_id,
+        sc.status,
+        sc.last_success_at::text as last_success_at,
+        count(c.id)::int as credential_count
+      from source_connections sc
+      join credentials c on c.workspace_id = sc.workspace_id and c.provider = 'fireflies'
+      where sc.id = ${connection.id}
+      group by sc.id
+    `;
+    await expectPostgresError(
+      db()`
+        select rotate_fireflies_connection_credential(
+          ${fixture.workspaceId}, ${connection.id}, decode('ccdd', 'hex'), 'v3',
+          ${randomUUID()}::uuid
+        )
+      `,
+      { code: "23503" },
+    );
+    const [afterFailure] = await db()<
+      [{ credential_id: string; status: string; last_success_at: string; credential_count: number }]
+    >`
+      select
+        sc.credential_id,
+        sc.status,
+        sc.last_success_at::text as last_success_at,
+        count(c.id)::int as credential_count
+      from source_connections sc
+      join credentials c on c.workspace_id = sc.workspace_id and c.provider = 'fireflies'
+      where sc.id = ${connection.id}
+      group by sc.id
+    `;
+    expect(afterFailure).toEqual(beforeFailure);
   });
 
   test("allows only one non-revoked GitHub connection per workspace", async () => {
