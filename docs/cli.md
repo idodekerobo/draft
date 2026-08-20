@@ -101,13 +101,14 @@ Reports whether a project has session capture configured and whether the `Sessio
 draft sessions status --dir ~/code/my-app
 ```
 
-### `draft sessions list [--provider <name>] [--user <id>] [--since <iso8601>] [--json]`
+### `draft sessions list [--provider <name>] [--user <email>] [--since <iso8601>] [--json]`
 
-Lists captured sessions in your workspace, most recent first.
+Lists captured sessions in your workspace, most recent first. `--user` takes an email address, resolved against both an authenticated user's `users.email` and an unverified contributor's `session_contributors.git_email` — not a raw user id.
 
 ```bash
 draft sessions list
 draft sessions list --provider claude-code-session --json
+draft sessions list --user ada@example.com
 ```
 
 ### `draft sessions read <id> [--summary | --transcript] [--json]`
@@ -119,7 +120,41 @@ draft sessions read <session-id>
 draft sessions read <session-id> --transcript
 ```
 
-A session that hasn't been summarized yet (session summarization isn't built yet) prints `(no summary yet)`; `--transcript` always works off the raw captured messages, regardless of summary state.
+A session that hasn't been summarized yet prints `(no summary yet)`; `--transcript` always works off the raw captured messages, regardless of summary state.
+
+#### `--grep`, `--context`, `--max-bytes` (transcript only)
+
+Filter a transcript before reading it back, instead of fetching the whole thing:
+
+```bash
+draft sessions read <session-id> --transcript --grep "database migration"
+draft sessions read <session-id> --transcript --grep "error" --context 3
+draft sessions read <session-id> --transcript --max-bytes 20000
+```
+
+- `--grep "<pattern>"` — case-insensitive regex match against raw message content. A malformed pattern returns a usage error, not a crash.
+- `--context <n>` — include `n` messages before/after each match (default 0). Requires `--grep`. Overlapping windows are merged; the JSON response's `windows: [{start_seq, end_seq}]` array marks the returned ranges explicitly, since the result usually isn't a contiguous transcript.
+- `--max-bytes <n>` — cap the serialized response size, truncating from the end. Composes with `--grep`: filtering happens first, then truncation if the filtered result is still too large. `truncated_bytes` in the JSON response reports how much was cut.
+
+These three flags only apply with `--transcript` — combining any of them with `--summary` is a usage error.
+
+### `draft sessions search "<pattern>"  [--provider <name>] [--user <email>] [--since <iso8601>] [--json]`
+
+Searches session **summaries** by keyword — a different corpus than `sessions read --transcript --grep`:
+
+| Command | Corpus | Backed by |
+|---|---|---|
+| `sessions search` | summaries (`source_items.content_markdown`) | GIN tsvector index |
+| `sessions read --transcript --grep` | raw turns (`agent_messages.content`) | sequential scan, one session |
+
+`search` never returns full summary text — only a short snippet around each match, so it stays cheap to skim across many sessions. Use `sessions read <id>` to fetch a session's full summary once you've found the one you want.
+
+```bash
+draft sessions search "database migration"
+draft sessions search "auth bug" --since 2026-08-01
+```
+
+List sessions and read summaries first. Fetch a full transcript, or use `--grep`, only when the summary is missing, stale, or insufficient.
 
 ---
 
