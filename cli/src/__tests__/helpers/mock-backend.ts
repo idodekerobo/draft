@@ -11,6 +11,7 @@ export interface MockBackendState {
   sessionTokensResponse: (workspaceId: string) => Response | Promise<Response>;
   sessionsListResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   sessionReadResponse: (workspaceId: string, sessionId: string, url: URL) => Response | Promise<Response>;
+  sessionsSearchResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   sessionsIngestRequests: { url: string; headers: Record<string, string>; body: string }[];
   sessionsIngestResponse: () => Response | Promise<Response>;
 }
@@ -30,6 +31,7 @@ export function createMockBackend() {
     sessionTokensResponse: () => Response.json({ id: "cred-1", token: "draft_sit_cred-1_secret" }),
     sessionsListResponse: () => Response.json({ sessions: [] }),
     sessionReadResponse: () => Response.json({ summary: null }),
+    sessionsSearchResponse: () => Response.json({ sessions: [] }),
     sessionsIngestRequests: [],
     sessionsIngestResponse: () => Response.json({ ok: true, sessionId: "session-1" }),
   };
@@ -55,6 +57,9 @@ export function createMockBackend() {
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/sessions$/.test(url.pathname)) {
         return state.sessionsListResponse(url.pathname.split("/")[2]!, url);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/sessions\/search$/.test(url.pathname)) {
+        return state.sessionsSearchResponse(url.pathname.split("/")[2]!, url);
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/sessions\/[^/]+$/.test(url.pathname)) {
         const parts = url.pathname.split("/");

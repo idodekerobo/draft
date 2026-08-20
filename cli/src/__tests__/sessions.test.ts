@@ -193,4 +193,81 @@ describe("draft sessions read", () => {
     const result = await runCli(["sessions", "read"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(2);
   });
+
+  test("--grep/--context/--max-bytes with --summary is invalid usage", async () => {
+    const result = await runCli(["sessions", "read", "s1", "--summary", "--grep", "x"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("--context without --grep is invalid usage", async () => {
+    const result = await runCli(["sessions", "read", "s1", "--transcript", "--context", "2"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("--transcript --grep passes grep/context/maxBytes through to the backend and prints truncation notice", async () => {
+    let requestedUrl: URL | null = null;
+    backend.state.sessionReadResponse = (_workspaceId, _sessionId, url) => {
+      requestedUrl = url;
+      return Response.json({
+        messages: [{ seq: 1, role: "user", content: "error found", created_at: "x" }],
+        windows: [{ start_seq: 0, end_seq: 2 }],
+        truncated_bytes: 42,
+      });
+    };
+    const result = await runCli(
+      ["sessions", "read", "s1", "--transcript", "--grep", "error", "--context", "1", "--max-bytes", "500"],
+      { home, apiUrl: backend.url },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(requestedUrl?.searchParams.get("grep")).toBe("error");
+    expect(requestedUrl?.searchParams.get("context")).toBe("1");
+    expect(requestedUrl?.searchParams.get("maxBytes")).toBe("500");
+    expect(result.stdout).toContain("[user] error found");
+    expect(result.stdout).toContain("truncated 42 bytes");
+  });
+});
+
+describe("draft sessions search", () => {
+  test("human mode prints matches with snippets", async () => {
+    backend.state.sessionsSearchResponse = () => Response.json({
+      sessions: [{ session_id: "item-1", agent_session_id: "s1", provider: "claude-code-session", verified: true, display: "Ada", occurred_at: "2026-01-01T00:00:00Z", snippet: "...database migration..." }],
+    });
+    const result = await runCli(["sessions", "search", "migration"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("item-1");
+    expect(result.stdout).toContain("database migration");
+  });
+
+  test("JSON mode returns the sessions array verbatim", async () => {
+    backend.state.sessionsSearchResponse = () => Response.json({ sessions: [] });
+    const result = await runCli(["sessions", "search", "migration", "--json"], { home, apiUrl: backend.url });
+    expect(JSON.parse(result.stdout)).toEqual({ schema_version: 1, sessions: [] });
+  });
+
+  test("no matches reports plainly in human mode", async () => {
+    backend.state.sessionsSearchResponse = () => Response.json({ sessions: [] });
+    const result = await runCli(["sessions", "search", "migration"], { home, apiUrl: backend.url });
+    expect(result.stdout).toBe("No matching sessions found.");
+  });
+
+  test("missing pattern is invalid usage", async () => {
+    const result = await runCli(["sessions", "search"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("passes --provider/--user/--since through as query params", async () => {
+    let requestedUrl: URL | null = null;
+    backend.state.sessionsSearchResponse = (_workspaceId, url) => {
+      requestedUrl = url;
+      return Response.json({ sessions: [] });
+    };
+    await runCli(
+      ["sessions", "search", "migration", "--provider", "claude-code-session", "--user", "ada@example.com", "--since", "2026-01-01"],
+      { home, apiUrl: backend.url },
+    );
+    expect(requestedUrl?.searchParams.get("q")).toBe("migration");
+    expect(requestedUrl?.searchParams.get("provider")).toBe("claude-code-session");
+    expect(requestedUrl?.searchParams.get("user")).toBe("ada@example.com");
+    expect(requestedUrl?.searchParams.get("since")).toBe("2026-01-01");
+  });
 });

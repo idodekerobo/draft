@@ -235,17 +235,61 @@ export async function fetchSessions(filters: ListSessionsFilters = {}): Promise<
 
 export type SessionReadResult =
   | { kind: "summary"; summary: string | null; occurred_at?: string }
-  | { kind: "transcript"; messages: { seq: number; role: string; content: string; created_at: string }[] };
+  | { kind: "transcript"; messages: { seq: number; role: string; content: string; created_at: string }[]; windows?: { start_seq: number; end_seq: number }[]; truncated_bytes?: number };
 
-export async function fetchSessionRead(sessionId: string, mode: "summary" | "transcript"): Promise<FetchResult<SessionReadResult>> {
-  const result = await authedFetch(`/sessions/${encodeURIComponent(sessionId)}?${mode}`);
+export interface ReadTranscriptOptions {
+  grep?: string;
+  context?: number;
+  maxBytes?: number;
+}
+
+export async function fetchSessionRead(sessionId: string, mode: "summary" | "transcript", options: ReadTranscriptOptions = {}): Promise<FetchResult<SessionReadResult>> {
+  const query = new URLSearchParams();
+  query.set(mode, "");
+  if (mode === "transcript") {
+    if (options.grep) query.set("grep", options.grep);
+    if (options.context) query.set("context", String(options.context));
+    if (options.maxBytes) query.set("maxBytes", String(options.maxBytes));
+  }
+  const result = await authedFetch(`/sessions/${encodeURIComponent(sessionId)}?${query.toString()}`);
   if (!result.ok) return result;
   if (result.response.status === 404) return { ok: false, code: "request_failed" };
   if (!result.response.ok) return { ok: false, code: "request_failed" };
   const body = await result.response.json();
   return mode === "transcript"
-    ? { ok: true, value: { kind: "transcript", messages: body.messages } }
+    ? { ok: true, value: { kind: "transcript", messages: body.messages, windows: body.windows, truncated_bytes: body.truncated_bytes } }
     : { ok: true, value: { kind: "summary", summary: body.summary, occurred_at: body.occurred_at } };
+}
+
+export interface SessionSearchItem {
+  session_id: string;
+  agent_session_id: string | null;
+  provider: string | null;
+  verified: boolean;
+  display: string | null;
+  occurred_at: string;
+  snippet: string;
+}
+
+export interface SearchSessionsFilters {
+  q: string;
+  provider?: string;
+  user?: string;
+  since?: string;
+}
+
+export async function fetchSessionsSearch(filters: SearchSessionsFilters): Promise<FetchResult<SessionSearchItem[]>> {
+  const query = new URLSearchParams();
+  query.set("q", filters.q);
+  if (filters.provider) query.set("provider", filters.provider);
+  if (filters.user) query.set("user", filters.user);
+  if (filters.since) query.set("since", filters.since);
+
+  const result = await authedFetch(`/sessions/search?${query.toString()}`);
+  if (!result.ok) return result;
+  if (!result.response.ok) return { ok: false, code: "request_failed" };
+  const body = await result.response.json() as { sessions: SessionSearchItem[] };
+  return { ok: true, value: body.sessions };
 }
 
 const DIMENSION_INDEX_PATTERN = /^([^/]+)\/index\.md$/;

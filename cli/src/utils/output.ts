@@ -34,6 +34,7 @@ export function printHelp(): void {
     ["sessions status",            "Show this repo's session-capture state"],
     ["sessions list",              "List captured coding sessions"],
     ["sessions read <id>",         "Print a session's summary or transcript"],
+    ["sessions search \"<pattern>\"", "Search session summaries by keyword"],
     ["completion",                 "Generate shell tab completion script"],
   ];
   for (const [cmd, desc] of cmds) {

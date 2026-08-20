@@ -10,6 +10,7 @@ import { dirname, isAbsolute, join, resolve } from "path";
 import {
   fetchSessionRead,
   fetchSessions,
+  fetchSessionsSearch,
   mintSessionIngestToken,
   requireAccessToken,
 } from "../cloud-client.ts";
@@ -444,7 +445,25 @@ export async function runSessionsRead(args: string[]): Promise<number> {
   const json = args.includes("--json");
   const wantsTranscript = args.includes("--transcript");
   const wantsSummary = args.includes("--summary");
-  const positional = args.filter((a) => !a.startsWith("--"));
+
+  let grep: string | undefined;
+  let context: number | undefined;
+  let maxBytes: number | undefined;
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--json" || arg === "--transcript" || arg === "--summary") continue;
+    if (arg === "--grep") { grep = args[++i]; continue; }
+    if (arg === "--context") { context = Number.parseInt(args[++i] ?? "", 10); continue; }
+    if (arg === "--max-bytes") { maxBytes = Number.parseInt(args[++i] ?? "", 10); continue; }
+    if (arg?.startsWith("--")) {
+      const message = `unknown flag: ${arg}`;
+      if (json) printJsonLine(errorPayload("invalid_usage", message));
+      else console.error(red(`draft sessions read: ${message}`));
+      return EXIT_USAGE_ERROR;
+    }
+    positional.push(arg!);
+  }
 
   if (wantsTranscript && wantsSummary) {
     const message = "--summary and --transcript are mutually exclusive";
@@ -458,24 +477,92 @@ export async function runSessionsRead(args: string[]): Promise<number> {
     else console.error(red(`draft sessions read: ${message}`));
     return EXIT_USAGE_ERROR;
   }
+  if (!wantsTranscript && (grep !== undefined || context !== undefined || maxBytes !== undefined)) {
+    const message = "--grep, --context, and --max-bytes only apply with --transcript";
+    if (json) printJsonLine(errorPayload("invalid_usage", message));
+    else console.error(red(`draft sessions read: ${message}`));
+    return EXIT_USAGE_ERROR;
+  }
+  if (context !== undefined && grep === undefined) {
+    const message = "--context requires --grep";
+    if (json) printJsonLine(errorPayload("invalid_usage", message));
+    else console.error(red(`draft sessions read: ${message}`));
+    return EXIT_USAGE_ERROR;
+  }
 
   const mode = wantsTranscript ? "transcript" : "summary";
-  const result = await fetchSessionRead(positional[0]!, mode);
+  const result = await fetchSessionRead(positional[0]!, mode, { grep, context, maxBytes });
   if (!result.ok) {
     printFetchError("draft sessions read", result.code, json);
     return EXIT_OPERATIONAL_ERROR;
   }
 
   if (json) {
-    printJsonLine(result.value.kind === "transcript" ? { messages: result.value.messages } : { summary: result.value.summary, occurred_at: result.value.occurred_at });
+    printJsonLine(result.value.kind === "transcript"
+      ? { messages: result.value.messages, windows: result.value.windows, truncated_bytes: result.value.truncated_bytes }
+      : { summary: result.value.summary, occurred_at: result.value.occurred_at });
     return EXIT_SUCCESS;
   }
 
   if (result.value.kind === "transcript") {
     for (const message of result.value.messages) console.log(`[${message.role}] ${message.content}`);
+    if (result.value.truncated_bytes) console.log(dim(`(truncated ${result.value.truncated_bytes} bytes)`));
     return EXIT_SUCCESS;
   }
   console.log(result.value.summary ?? "(no summary yet)");
+  return EXIT_SUCCESS;
+}
+
+// ── search ───────────────────────────────────────────────────────────────
+
+export async function runSessionsSearch(args: string[]): Promise<number> {
+  const json = args.includes("--json");
+  let provider: string | undefined;
+  let user: string | undefined;
+  let since: string | undefined;
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--json") continue;
+    if (arg === "--provider") { provider = args[++i]; continue; }
+    if (arg === "--user") { user = args[++i]; continue; }
+    if (arg === "--since") { since = args[++i]; continue; }
+    if (arg?.startsWith("--")) {
+      const message = `unknown flag: ${arg}`;
+      if (json) printJsonLine(errorPayload("invalid_usage", message));
+      else console.error(red(`draft sessions search: ${message}`));
+      return EXIT_USAGE_ERROR;
+    }
+    positional.push(arg!);
+  }
+
+  if (positional.length !== 1) {
+    const message = "expected exactly one search pattern";
+    if (json) printJsonLine(errorPayload("invalid_usage", message));
+    else console.error(red(`draft sessions search: ${message}`));
+    return EXIT_USAGE_ERROR;
+  }
+
+  const result = await fetchSessionsSearch({ q: positional[0]!, provider, user, since });
+  if (!result.ok) {
+    printFetchError("draft sessions search", result.code, json);
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  if (json) {
+    printJsonLine({ sessions: result.value });
+    return EXIT_SUCCESS;
+  }
+
+  if (result.value.length === 0) {
+    console.log("No matching sessions found.");
+    return EXIT_SUCCESS;
+  }
+  for (const session of result.value) {
+    const who = session.verified ? session.display ?? "verified" : `${session.display ?? "unknown"} (unverified)`;
+    console.log(`${session.session_id}  ${session.occurred_at}  ${session.provider ?? "-"}  ${who}`);
+    console.log(`  ${session.snippet.replace(/\n/g, " ")}`);
+  }
   return EXIT_SUCCESS;
 }
 
@@ -490,8 +577,9 @@ export async function runSessions(args: string[]): Promise<number> {
     case "ingest": return runSessionsIngest();
     case "list": return runSessionsList(rest);
     case "read": return runSessionsRead(rest);
+    case "search": return runSessionsSearch(rest);
     default:
-      console.error(red(`draft sessions: unknown subcommand${sub ? ` "${sub}"` : ""}. Use enable, disable, status, list, or read.`));
+      console.error(red(`draft sessions: unknown subcommand${sub ? ` "${sub}"` : ""}. Use enable, disable, status, list, read, or search.`));
       return EXIT_USAGE_ERROR;
   }
 }
