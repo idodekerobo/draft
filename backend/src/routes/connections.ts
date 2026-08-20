@@ -4,6 +4,7 @@ import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import {
   CURRENT_CREDENTIAL_KEY_VERSION,
+  decryptCredentialPayload,
   encryptCredentialPayload,
 } from "../credentials/crypto";
 import { resolveProviderCredential } from "../credentials/resolve-provider-credential";
@@ -15,9 +16,14 @@ import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materi
 import {
   joinPublicSlackChannels,
   listPublicSlackChannels,
+  reconcileSlackChannels,
   SlackProviderError,
 } from "../ingestion/slack/provider";
-import { createLinearWebhook, LinearProviderError } from "../ingestion/linear/provider";
+import {
+  createLinearWebhook,
+  deleteLinearWebhook,
+  LinearProviderError,
+} from "../ingestion/linear/provider";
 import { upsertSourceConnection } from "../ingestion/upsert-source-item";
 import type { SourceConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
@@ -59,6 +65,18 @@ interface SlackConnectResponse {
   ok: true;
 }
 
+interface SlackMembershipResponse {
+  ok: boolean;
+  channel_ids: string[];
+  joined: string[];
+  left: string[];
+  failed: Array<{
+    channel_id: string;
+    operation: "join" | "leave";
+    code: "slack_channel_join_failed" | "slack_channel_leave_failed";
+  }>;
+}
+
 interface FirefliesConnectResponse {
   ok: true;
   webhookUrl: string;
@@ -67,9 +85,11 @@ interface FirefliesConnectResponse {
 
 interface LinearConnectResponse {
   ok: true;
+  cleanup_pending?: true;
 }
 
 const config = loadConfig();
+const MAX_SLACK_RECONCILE_ATTEMPTS = 3;
 
 function isSupportedProvider(value: unknown): value is SupportedProvider {
   return (
@@ -121,6 +141,12 @@ function isClaudeSessionConnectBody(value: unknown): value is ClaudeSessionConne
 
 function isChannelIds(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((channelId) => isNonEmptyString(channelId));
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
 }
 
 // Return safe error codes to clients; log details for server diagnostics.
@@ -216,14 +242,9 @@ export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, call
   try {
     const credential = await resolveProviderCredential(req.params.id, "slack", serviceClient);
     const channels = await listPublicSlackChannels(credential.bot_token);
-    const allowlist = new Set(
-      Array.isArray(connection.config_json?.channel_ids)
-        ? connection.config_json.channel_ids.filter((value): value is string => typeof value === "string")
-        : [],
-    );
     return Response.json({
       ok: true,
-      channels: channels.map((channel) => ({ ...channel, allowlisted: allowlist.has(channel.id) })),
+      channels,
     });
   } catch (error) {
     const errorCode = error instanceof SlackProviderError
@@ -331,18 +352,176 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
 
   const isFireflies = body.provider === "fireflies";
   const isSlack = body.provider === "slack";
-  const isLinear = body.provider === "linear";
 
   const { data: existing, error: existingError } = await serviceClient
     .from("source_connections")
-    .select("id, credential_id, connection_key")
+    .select("id, credential_id, connection_key, config_json, updated_at")
     .eq("workspace_id", req.params.id)
     .eq("provider", body.provider)
     .maybeSingle();
   if (existingError) return errorResponse("connection_lookup_failed", 500, existingError, req.params.id);
 
-  // Needed before the webhookCreate call below, since the URL embeds it.
   const connectionKey = existing?.connection_key ?? randomUUID();
+
+  if (body.provider === "linear") {
+    const existingConfig = existing?.config_json
+      && typeof existing.config_json === "object"
+      && !Array.isArray(existing.config_json)
+      ? existing.config_json as Record<string, unknown>
+      : {};
+    const pendingWebhookIds = stringArray(existingConfig.linear_cleanup_pending_webhook_ids);
+    let priorApiToken: string | null = null;
+
+    if (existing?.credential_id) {
+      const { data: priorCredential, error: priorCredentialError } = await serviceClient
+        .from("credentials")
+        .select("encrypted_payload, encryption_key_version")
+        .eq("id", existing.credential_id)
+        .eq("workspace_id", req.params.id)
+        .maybeSingle();
+      if (priorCredentialError) {
+        return errorResponse("credential_lookup_failed", 500, priorCredentialError, req.params.id);
+      }
+      if (priorCredential) {
+        try {
+          const parsed = JSON.parse(decryptCredentialPayload(
+            priorCredential.encrypted_payload,
+            priorCredential.encryption_key_version,
+          )) as { api_token?: unknown };
+          if (typeof parsed.api_token === "string" && parsed.api_token.length > 0) {
+            priorApiToken = parsed.api_token;
+          }
+        } catch {
+          priorApiToken = null;
+        }
+      }
+    }
+
+    const webhookSecret = randomBytes(32).toString("hex");
+    const encrypted = encryptCredentialPayload(
+      JSON.stringify({ api_token: body.api_token, webhook_secret: webhookSecret }),
+      CURRENT_CREDENTIAL_KEY_VERSION,
+    );
+    let newWebhookId: string;
+    try {
+      const webhookUrl = `${config.apiBaseUrl}/webhooks/linear/${connectionKey}`;
+      newWebhookId = (await createLinearWebhook(body.api_token, webhookUrl, webhookSecret)).id;
+    } catch (error) {
+      const errorCode = error instanceof LinearProviderError
+        ? error.code
+        : "linear_webhook_create_failed";
+      return errorResponse(errorCode, 502, error, req.params.id);
+    }
+
+    const { data: commitData, error: commitError } = await serviceClient.rpc(
+      "commit_linear_connection_swap",
+      {
+        p_workspace_id: req.params.id,
+        p_expected_updated_at: existing?.updated_at ?? null,
+        p_connection_key: connectionKey,
+        p_encrypted_payload: encrypted,
+        p_encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+        p_linear_webhook_id: newWebhookId,
+        p_connected_by_user_id: caller.userId,
+      },
+    );
+    if (commitError) {
+      try {
+        await deleteLinearWebhook(body.api_token, newWebhookId);
+      } catch (cleanupError) {
+        recordRouteError({
+          workspaceId: req.params.id,
+          operation: "auth",
+          errorCode: "linear_webhook_compensation_failed",
+          error: cleanupError,
+          detail: { linear_webhook_id: newWebhookId },
+        });
+      }
+      const conflict = (commitError as { message?: unknown }).message === "linear_connection_conflict";
+      return errorResponse(
+        conflict ? "linear_connection_conflict" : "linear_connection_commit_failed",
+        conflict ? 409 : 500,
+        commitError,
+        req.params.id,
+      );
+    }
+
+    const commit = commitData as {
+      connection_id?: unknown;
+      prior_webhook_id?: unknown;
+      updated_at?: unknown;
+    } | null;
+    if (!commit || typeof commit.connection_id !== "string" || typeof commit.updated_at !== "string") {
+      return errorResponse("linear_connection_commit_result_invalid", 500, undefined, req.params.id);
+    }
+
+    const priorWebhookId = typeof commit.prior_webhook_id === "string"
+      ? commit.prior_webhook_id
+      : null;
+    const cleanupCandidates = [...new Set([
+      ...(priorWebhookId ? [priorWebhookId] : []),
+      ...pendingWebhookIds,
+    ])].filter((webhookId) => webhookId !== newWebhookId);
+    const cleanupPending: string[] = [];
+    for (const webhookId of cleanupCandidates) {
+      if (!priorApiToken) {
+        cleanupPending.push(webhookId);
+        continue;
+      }
+      try {
+        await deleteLinearWebhook(priorApiToken, webhookId);
+      } catch (cleanupError) {
+        cleanupPending.push(webhookId);
+        recordRouteError({
+          workspaceId: req.params.id,
+          sourceConnectionId: commit.connection_id,
+          operation: "auth",
+          errorCode: "linear_webhook_cleanup_pending",
+          error: cleanupError,
+        });
+      }
+    }
+
+    let cleanupStateFailed = false;
+    if (cleanupCandidates.length > 0) {
+      const nextConfig: Record<string, unknown> = {
+        ...existingConfig,
+        linear_webhook_id: newWebhookId,
+      };
+      delete nextConfig.linear_cleanup_pending_webhook_ids;
+      if (cleanupPending.length > 0) {
+        nextConfig.linear_cleanup_pending_webhook_ids = cleanupPending;
+      }
+      const { data: cleanupState, error: cleanupStateError } = await serviceClient
+        .from("source_connections")
+        .update({
+          config_json: nextConfig,
+          ...(cleanupPending.length > 0
+            ? { status: "degraded", last_error_at: new Date().toISOString() }
+            : {}),
+        })
+        .eq("id", commit.connection_id)
+        .eq("workspace_id", req.params.id)
+        .eq("updated_at", commit.updated_at)
+        .select("id")
+        .maybeSingle();
+      if (cleanupStateError || !cleanupState) {
+        cleanupStateFailed = true;
+        recordRouteError({
+          workspaceId: req.params.id,
+          sourceConnectionId: commit.connection_id,
+          operation: "auth",
+          errorCode: "linear_cleanup_state_failed",
+          error: cleanupStateError ?? "linear_cleanup_state_conflict",
+        });
+      }
+    }
+
+    return Response.json({
+      ok: true,
+      ...(cleanupPending.length > 0 || cleanupStateFailed ? { cleanup_pending: true as const } : {}),
+    } satisfies LinearConnectResponse);
+  }
 
   let webhookSecret: string | undefined;
   let plaintext: string;
@@ -359,18 +538,6 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       return errorResponse(errorCode, 502, error, req.params.id);
     }
     plaintext = JSON.stringify({ bot_token: body.bot_token, app_token: body.app_token });
-  } else if (body.provider === "linear") {
-    webhookSecret = randomBytes(32).toString("hex");
-    try {
-      const webhookUrl = `${config.apiBaseUrl}/webhooks/linear/${connectionKey}`;
-      await createLinearWebhook(body.api_token, webhookUrl, webhookSecret);
-    } catch (error) {
-      const errorCode = error instanceof LinearProviderError
-        ? error.code
-        : "linear_webhook_create_failed";
-      return errorResponse(errorCode, 502, error, req.params.id);
-    }
-    plaintext = JSON.stringify({ api_token: body.api_token, webhook_secret: webhookSecret });
   } else {
     return errorResponse("unsupported_provider", 400);
   }
@@ -472,8 +639,6 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         serviceClient,
       );
       await restartSlackListener(connectionId, serviceClient);
-    } else if (isLinear) {
-      // Webhooks only -- no reconciliation/polling backstop for Linear.
     } else {
       return errorResponse("unsupported_provider", 400);
     }
@@ -491,9 +656,6 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   }
   if (isSlack) {
     return Response.json({ ok: true } satisfies SlackConnectResponse);
-  }
-  if (isLinear) {
-    return Response.json({ ok: true } satisfies LinearConnectResponse);
   }
   return errorResponse("unsupported_provider", 400);
 });
@@ -514,27 +676,72 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
     return errorResponse("invalid_body", 400);
   }
 
-  const channelIds = (body as { channel_ids: string[] }).channel_ids;
-  try {
-    const credential = await resolveProviderCredential(req.params.id, "slack", serviceClient);
-    await joinPublicSlackChannels(credential.bot_token, channelIds);
-  } catch (error) {
-    const errorCode = error instanceof SlackProviderError
-      ? error.code
-      : "slack_channel_join_failed";
-    return errorResponse(errorCode, 502, error, req.params.id);
+  const desiredChannelIds = (body as { channel_ids: string[] }).channel_ids;
+  let botToken: string | null = null;
+
+  for (let attempt = 0; attempt < MAX_SLACK_RECONCILE_ATTEMPTS; attempt += 1) {
+    const { data: connection, error: connectionError } = await serviceClient
+      .from("source_connections")
+      .select("id, config_json, updated_at")
+      .eq("workspace_id", req.params.id)
+      .eq("provider", "slack")
+      .in("status", ["active", "degraded"])
+      .maybeSingle();
+    if (connectionError) {
+      return errorResponse("connection_lookup_failed", 500, connectionError, req.params.id);
+    }
+    if (!connection) return errorResponse("not_found", 404);
+
+    if (!botToken) {
+      try {
+        const credential = await resolveProviderCredential(req.params.id, "slack", serviceClient);
+        botToken = credential.bot_token;
+      } catch (error) {
+        const errorCode = error instanceof SlackProviderError
+          ? error.code
+          : "slack_channel_reconcile_failed";
+        return errorResponse(errorCode, 502, error, req.params.id);
+      }
+    }
+
+    const reconciliation = await reconcileSlackChannels(
+      botToken,
+      stringArray(connection.config_json?.channel_ids),
+      desiredChannelIds,
+    );
+    const existingConfig = connection.config_json
+      && typeof connection.config_json === "object"
+      && !Array.isArray(connection.config_json)
+      ? connection.config_json
+      : {};
+    const { data: updatedConnection, error: updateError } = await serviceClient
+      .from("source_connections")
+      .update({
+        config_json: { ...existingConfig, channel_ids: reconciliation.channelIds },
+      })
+      .eq("id", connection.id)
+      .eq("workspace_id", req.params.id)
+      .eq("updated_at", connection.updated_at)
+      .in("status", ["active", "degraded"])
+      .select("id")
+      .maybeSingle();
+    if (updateError) return errorResponse("connection_update_failed", 500, updateError, req.params.id);
+    if (!updatedConnection) continue;
+
+    return Response.json({
+      ok: reconciliation.failed.length === 0,
+      channel_ids: reconciliation.channelIds,
+      joined: reconciliation.joined,
+      left: reconciliation.left,
+      failed: reconciliation.failed.map((failure) => ({
+        channel_id: failure.channelId,
+        operation: failure.operation,
+        code: failure.code,
+      })),
+    } satisfies SlackMembershipResponse);
   }
 
-  const { data: connection, error } = await serviceClient
-    .from("source_connections")
-    .update({ config_json: { channel_ids: channelIds } })
-    .eq("workspace_id", req.params.id)
-    .eq("provider", "slack")
-    .select("id")
-    .maybeSingle();
-  if (error) return errorResponse("connection_update_failed", 500, error, req.params.id);
-  if (!connection) return errorResponse("not_found", 404);
-  return Response.json({ ok: true });
+  return errorResponse("connection_update_conflict", 409);
 });
 
 export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) => {

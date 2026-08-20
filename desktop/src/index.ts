@@ -45,7 +45,14 @@ import {
 } from "draft-core/sync/manifest";
 import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
-import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption, WorkspaceRun } from "./rpc/schema";
+import type {
+  AppRPCType,
+  ContextFileEntry,
+  IntegrationDetail,
+  SlackChannelOption,
+  SlackMembershipReconcileResult,
+  WorkspaceRun,
+} from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
@@ -1086,7 +1093,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // discoverable until the bot has been invited to them in Slack.
           const result = await fetchSlackChannels(botToken, "public_channel");
           if (!result.ok) return { ok: false, error: result.error };
-          return { ok: true, channels: result.channels.map((channel) => ({ ...channel, allowlisted: false })) };
+          return { ok: true, channels: result.channels };
         }
 
         const workspaceId = getCachedWorkspaceId();
@@ -1118,15 +1125,50 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       updateSlackChannels: async ({ channelIds }) => {
         const workspaceId = getCachedWorkspaceId();
-        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        if (!workspaceId) return {
+          ok: false,
+          channelIds: [],
+          joined: [],
+          left: [],
+          failed: [],
+          error: "Sign in to Draft Cloud first.",
+        };
         try {
-          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections/slack`, {
+          const result = await fetchServerJSON<{
+            ok: boolean;
+            channel_ids: string[];
+            joined: string[];
+            left: string[];
+            failed: Array<{
+              channel_id: string;
+              operation: "join" | "leave";
+              code: "slack_channel_join_failed" | "slack_channel_leave_failed";
+            }>;
+          }>(`workspaces/${workspaceId}/connections/slack`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ channel_ids: channelIds }),
           });
+          return {
+            ok: result.ok,
+            channelIds: result.channel_ids,
+            joined: result.joined,
+            left: result.left,
+            failed: result.failed.map((failure) => ({
+              channelId: failure.channel_id,
+              operation: failure.operation,
+              code: failure.code,
+            })),
+          } satisfies SlackMembershipReconcileResult;
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not update Slack channels." };
+          return {
+            ok: false,
+            channelIds: [],
+            joined: [],
+            left: [],
+            failed: [],
+            error: err instanceof Error ? err.message : "Could not update Slack channels.",
+          };
         }
       },
 

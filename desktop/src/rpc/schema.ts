@@ -303,9 +303,9 @@ export interface IntegrationDetail {
   lastConnected: string | null;
   /** "mcp"|"api" for Granola; "passive"|"tagged" for Slack; null otherwise. Fireflies has no mode — always null. */
   mode: string | null;
-  /** Slack: number of configured channels. Null for other sources. */
+  /** Slack: number of channels in the persisted bot membership set. Null for other sources. */
   channels: number | null;
-  /** Slack: configured channel IDs returned by the cloud connection status. */
+  /** Slack: persisted bot membership returned by the cloud connection status. */
   channelIds?: string[];
 }
 
@@ -340,8 +340,19 @@ export interface SlackChannelOption {
   memberCount: number;
   /** True if the bot is already a member — e.g. invited directly in Slack. */
   isMember: boolean;
-  /** True if this channel is currently in slack_allowlist_channels — distinct from isMember, which reflects Slack-side membership and can diverge from Draft's allowlist. */
-  allowlisted: boolean;
+}
+
+export interface SlackMembershipReconcileResult {
+  ok: boolean;
+  channelIds: string[];
+  joined: string[];
+  left: string[];
+  error?: string;
+  failed: Array<{
+    channelId: string;
+    operation: "join" | "leave";
+    code: "slack_channel_join_failed" | "slack_channel_leave_failed";
+  }>;
 }
 
 export interface ContextFileEntry {
@@ -495,11 +506,14 @@ export type AppRPCType = {
        */
       listSlackChannels: { params: { botToken?: string }; response: { ok: boolean; channels?: SlackChannelOption[]; error?: string } };
 
-      /** Persist Slack bot and app credentials, connection status, and the selected channel allowlist for the daemon. */
+      /** Persist Slack credentials and join the selected public channels. */
       connectSlack: { params: { botToken: string; appToken: string; channelIds: string[] }; response: ActionResult };
 
-      /** Update the channel allowlist for an already-connected Slack integration, using the saved bot token. */
-      updateSlackChannels: { params: { channelIds: string[] }; response: ActionResult };
+      /** Reconcile saved Slack membership to the selected public channels. */
+      updateSlackChannels: {
+        params: { channelIds: string[] };
+        response: SlackMembershipReconcileResult;
+      };
 
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };

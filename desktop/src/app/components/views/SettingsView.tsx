@@ -118,7 +118,7 @@ function InputSourceRow({
     if (!detail.connected) return "Not connected";
     const parts: string[] = [];
     if (detail.mode)     parts.push(detail.mode);
-    if (detail.channels) parts.push(`${detail.channels} channels`);
+    if (detail.channels !== null) parts.push(`${detail.channels} channels`);
     const time = relativeTime(detail.lastConnected);
     if (time) parts.push(time);
     return parts.length > 0 ? parts.join(" · ") : "On";
@@ -373,7 +373,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 isDisconnecting={disconnecting === key}
                 isExpanded={expandedSource === key}
                 connectedAction={
-                  key === "slack" ? { label: "Update channels", onClick: () => toggleSlackPanel("manage") } :
+                  key === "slack" ? { label: "Manage channels", onClick: () => toggleSlackPanel("manage") } :
                   key === "claude_session" ? { label: "Setup guide", onClick: () => setExpandedSource((current) => current === "claude_session" ? null : "claude_session") } :
                   undefined
                 }
@@ -387,7 +387,13 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 )}
 
                 {key === "slack" && (
-                  <SlackConnectPanel detail={apps.integrations.slack} mode={slackPanelMode} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
+                  <SlackConnectPanel
+                    detail={apps.integrations.slack}
+                    mode={slackPanelMode}
+                    classPrefix="app-row"
+                    onMembershipUpdated={refreshConnectedApps}
+                    onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }}
+                  />
                 )}
 
                 {key === "github" && (

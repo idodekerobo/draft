@@ -21,6 +21,7 @@ declare
   v_connection source_connections%rowtype;
   v_credential_id uuid;
   v_prior_webhook_id text;
+  v_pending_webhook_ids jsonb := '[]'::jsonb;
 begin
   -- A provider row cannot be locked before the first connection exists, so
   -- serialize creation by locking its workspace. This also makes the lookup
@@ -53,6 +54,22 @@ begin
     end if;
 
     v_prior_webhook_id := v_connection.config_json ->> 'linear_webhook_id';
+    select coalesce(jsonb_agg(webhook_id order by first_position), '[]'::jsonb)
+    into v_pending_webhook_ids
+    from (
+      select webhook_id, min(item_order) as first_position
+      from jsonb_array_elements_text(
+        case
+          when jsonb_typeof(v_connection.config_json -> 'linear_cleanup_pending_webhook_ids') = 'array'
+            then v_connection.config_json -> 'linear_cleanup_pending_webhook_ids'
+          else '[]'::jsonb
+        end || jsonb_build_array(v_prior_webhook_id)
+      ) with ordinality as pending(webhook_id, item_order)
+      where webhook_id is not null
+        and webhook_id <> ''
+        and webhook_id <> p_linear_webhook_id
+      group by webhook_id
+    ) deduplicated;
     v_credential_id := v_connection.credential_id;
 
     if v_credential_id is null then
@@ -82,8 +99,13 @@ begin
     update source_connections
     set connection_key = p_connection_key,
         credential_id = v_credential_id,
-        config_json = coalesce(config_json, '{}'::jsonb)
-          || jsonb_build_object('linear_webhook_id', p_linear_webhook_id),
+        config_json = (coalesce(config_json, '{}'::jsonb) - 'linear_cleanup_pending_webhook_ids')
+          || jsonb_build_object('linear_webhook_id', p_linear_webhook_id)
+          || case
+            when jsonb_array_length(v_pending_webhook_ids) > 0 then
+              jsonb_build_object('linear_cleanup_pending_webhook_ids', v_pending_webhook_ids)
+            else '{}'::jsonb
+          end,
         status = 'active',
         connected_by_user_id = coalesce(p_connected_by_user_id, connected_by_user_id),
         last_error_at = null

@@ -627,17 +627,28 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     expect(initial.result.prior_webhook_id).toBeNull();
 
     const [observed] = await db()<
-      [{ id: string; credential_id: string; updated_at: string; config_json: { linear_webhook_id: string } }]
+      [{ id: string; credential_id: string; updated_at: string; config_json: Record<string, unknown> }]
     >`
       select id, credential_id, updated_at::text as updated_at, config_json
       from source_connections
       where workspace_id = ${fixture.workspaceId} and provider = 'linear'
     `;
     expect(observed.config_json.linear_webhook_id).toBe("webhook-1");
+    expect(observed.config_json).not.toHaveProperty("linear_cleanup_pending_webhook_ids");
+
+    const [observedForSwap] = await db()<[{ updated_at: string }]>`
+      update source_connections
+      set config_json = config_json || jsonb_build_object(
+        'linear_cleanup_pending_webhook_ids',
+        jsonb_build_array('webhook-1', 'webhook-other', 'webhook-1')
+      )
+      where id = ${observed.id}
+      returning updated_at::text as updated_at
+    `;
 
     const [replacement] = await db()<[{ result: Record<string, unknown> }]>`
       select commit_linear_connection_swap(
-        ${fixture.workspaceId}, ${observed.updated_at}, 'linear-key-2',
+        ${fixture.workspaceId}, ${observedForSwap.updated_at}, 'linear-key-2',
         '\\x0304'::bytea, 'v2', 'webhook-2', null
       ) as result
     `;
@@ -648,7 +659,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     await expectPostgresError(
       db()`
         select commit_linear_connection_swap(
-          ${fixture.workspaceId}, ${observed.updated_at}, 'linear-key-stale',
+          ${fixture.workspaceId}, ${observedForSwap.updated_at}, 'linear-key-stale',
           '\\x0506'::bytea, 'v3', 'webhook-stale', null
         )
       `,
@@ -656,13 +667,21 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     );
 
     const [committed] = await db()<
-      [{ connection_key: string; status: string; last_error_at: Date | null; webhook_id: string; payload: string }]
+      [{
+        connection_key: string;
+        status: string;
+        last_error_at: Date | null;
+        webhook_id: string;
+        pending_webhook_ids: string[];
+        payload: string;
+      }]
     >`
       select
         sc.connection_key,
         sc.status,
         sc.last_error_at,
         sc.config_json ->> 'linear_webhook_id' as webhook_id,
+        sc.config_json -> 'linear_cleanup_pending_webhook_ids' as pending_webhook_ids,
         encode(c.encrypted_payload, 'hex') as payload
       from source_connections sc
       join credentials c on c.id = sc.credential_id
@@ -673,6 +692,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       status: "active",
       last_error_at: null,
       webhook_id: "webhook-2",
+      pending_webhook_ids: ["webhook-1", "webhook-other"],
       payload: "0304",
     });
   });
