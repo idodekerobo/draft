@@ -499,7 +499,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
         type CloudConnectionStatus = {
-          provider: "slack" | "fireflies" | "linear" | "github" | "claude_code";
+          provider: "slack" | "fireflies" | "linear" | "github" | "claude_code" | "claude_session";
           status: string | null;
           last_success_at: string | null;
           last_error_at: string | null;
@@ -568,6 +568,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
 
         const claudeCodeConnection = cloudConnections?.find((connection) => connection.provider === "claude_code");
+        const claudeSessionConnection = cloudConnections?.find((connection) => connection.provider === "claude_session");
+        const claudeSessionDetail: IntegrationDetail = {
+          connected: claudeSessionConnection?.status === "active",
+          healthStatus: "unknown",
+          healthCheckedAt: null,
+          healthMessage: null,
+          lastConnected: claudeSessionConnection?.last_success_at ?? null,
+          mode: null,
+          channels: null,
+        };
 
         return {
           tools: {
@@ -578,11 +588,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             hermes:        toolDetail("hermes"),
           },
           integrations: {
-            granola:   integrationDetail("granola"),
-            slack:     integrationDetail("slack"),
-            github:    integrationDetail("github"),
-            fireflies: integrationDetail("fireflies"),
-            linear:    integrationDetail("linear"),
+            granola:       integrationDetail("granola"),
+            slack:         integrationDetail("slack"),
+            github:        integrationDetail("github"),
+            fireflies:     integrationDetail("fireflies"),
+            linear:        integrationDetail("linear"),
+            claudeSession: claudeSessionDetail,
           },
           claudeCode: { connected: claudeCodeConnection?.status === "active" },
         };
@@ -968,6 +979,25 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           });
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not connect Claude Code." };
+        }
+      },
+
+      setSessionTrackingEnabled: async ({ enabled }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          if (enabled) {
+            await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ provider: "claude_session" }),
+            });
+          } else {
+            await fetchServer(`workspaces/${workspaceId}/connections/claude_session`, { method: "DELETE" });
+          }
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not update session tracking." };
         }
       },
 

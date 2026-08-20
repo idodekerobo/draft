@@ -3,6 +3,7 @@ import type { ConnectedAppsStatus } from "../../../../rpc/schema";
 import { FirefliesConnectPanel } from "../../shared/FirefliesConnectPanel";
 import { GithubConnectPanel } from "../../shared/GithubConnectPanel";
 import { LinearConnectPanel } from "../../shared/LinearConnectPanel";
+import { SessionTrackingPanel } from "../../shared/SessionTrackingPanel";
 // TODO: Granola still works locally but has no backend ingestion pipeline in
 // the new cloud model (backend/src/ingestion only has fireflies/slack/
 // linear/github) — connecting it can't get its data into source_items at
@@ -95,6 +96,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
         <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>
           <LinearConnectPanel detail={linear} classPrefix="onboarding" onConnected={() => handleConnected("linear")} />
         </IntegrationSetupCard>
+
+        <SessionTrackingPanel detail={optimisticConnections?.claudeSession} onChanged={loadConnections} variant="onboarding" />
       </div>
 
       <div className="onboarding__actions" style={{ marginTop: 20 }}>

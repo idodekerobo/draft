@@ -18,6 +18,7 @@ import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
 import { GithubConnectPanel } from "../shared/GithubConnectPanel";
 import { LinearConnectPanel } from "../shared/LinearConnectPanel";
+import { SessionTrackingPanel } from "../shared/SessionTrackingPanel";
 import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 
@@ -389,6 +390,14 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 )}
               </InputSourceRow>
             ))}
+          </div>
+        </section>
+
+        {/* ── Coding Sessions ────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Coding Sessions</h2>
+          <div className="settings__rows">
+            <SessionTrackingPanel detail={apps.integrations.claudeSession} onChanged={refreshConnectedApps} variant="settings" />
           </div>
         </section>
 

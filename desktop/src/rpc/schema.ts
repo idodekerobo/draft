@@ -323,6 +323,8 @@ export interface ConnectedAppsStatus {
     github: IntegrationDetail;
     fireflies: IntegrationDetail;
     linear: IntegrationDetail;
+    /** Decision 9's workspace-wide coding-session-capture toggle. Not a credentialed integration -- just a status flip. */
+    claudeSession: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
 }
@@ -470,6 +472,14 @@ export type AppRPCType = {
 
       /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
       connectClaudeCode: { params: { token: string }; response: ActionResult };
+
+      /**
+       * Turn Decision 9's workspace-wide coding-session-capture toggle on or off.
+       * No credential -- just a status flip on the workspace's claude_session
+       * source_connections row. When off, /sessions/ingest rejects new sessions
+       * from every repo, even ones with `draft sessions enable` configured.
+       */
+      setSessionTrackingEnabled: { params: { enabled: boolean }; response: ActionResult };
 
       /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
       getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };
