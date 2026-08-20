@@ -8,6 +8,8 @@ import { runAuth } from "./commands/auth.ts";
 import { runContext } from "./commands/context.ts";
 import { runSessions } from "./commands/sessions.ts";
 import { runCompletion } from "./commands/completion.ts";
+import { runUpdate, getCachedUpdateNotice, checkForUpdateBackground } from "./commands/update.ts";
+import { CLI_VERSION } from "./version.ts";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -15,6 +17,11 @@ const rest = args.slice(1);
 
 if (!command || command === "--help" || command === "-h") {
   printHelp();
+  process.exit(0);
+}
+
+if (command === "--version" || command === "-v") {
+  console.log(CLI_VERSION);
   process.exit(0);
 }
 
@@ -32,6 +39,9 @@ if (!command || command === "--help" || command === "-h") {
     case "sessions":
       process.exitCode = await runSessions(rest);
       break;
+    case "update":
+      process.exitCode = await runUpdate(rest);
+      break;
     case "completion":
       await runCompletion(rest);
       break;
@@ -39,6 +49,13 @@ if (!command || command === "--help" || command === "-h") {
       console.error(red(`Unknown command: ${command}`));
       console.error(`Run ${"`draft`"} to see the full command list.`);
       process.exitCode = 2;
+  }
+
+  // Skip for `update` (redundant), `completion` (stdout must be pure shell), and --json.
+  if (command !== "update" && command !== "completion" && !rest.includes("--json")) {
+    const notice = getCachedUpdateNotice();
+    if (notice) console.error(notice);
+    checkForUpdateBackground();
   }
 })().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
