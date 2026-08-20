@@ -1,6 +1,9 @@
 import * as firefliesWebhook from "../webhooks/fireflies/route";
+import * as githubWebhook from "../webhooks/github/route";
 import * as linearWebhook from "../webhooks/linear/route";
 import * as connections from "./connections";
+import * as githubCallback from "./github-callback";
+import * as githubInstall from "./github-install";
 import * as health from "./health";
 import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
@@ -22,6 +25,9 @@ export const routes = {
   "/workspaces/:id/connections/:provider/channels": { GET: connections.CHANNELS_GET },
   "/workspaces/:id/synthesis-runs": { GET: synthesisRuns.GET, POST: synthesisRuns.POST },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
+  "/workspaces/:id/github/install-sessions": { POST: githubInstall.createPOST },
+  "/workspaces/:id/github/install-sessions/:code": { GET: githubInstall.pollGET },
+  "/workspaces/github/callback": { GET: githubCallback.GET },
   "/invites/mine": { GET: invites.mineGET },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },
@@ -31,4 +37,5 @@ export const routes = {
   "/sandbox/callback": { POST: sandboxCallback.POST },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
+  "/webhooks/github": { POST: githubWebhook.POST },
 };

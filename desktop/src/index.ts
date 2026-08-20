@@ -15,7 +15,6 @@ import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
-import { checkGhCli, connectGitHub as connectGitHubCore } from "draft-core/integrations/github";
 import { homedir } from "os";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
 import { extname, join, resolve } from "path";
@@ -48,11 +47,13 @@ import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
 import type { AppRPCType, ContextFileEntry, IntegrationDetail, SlackChannelOption, WorkspaceRun } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
+import { startGithubInstall } from "./main/auth/github-install";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { fetchServer, fetchServerJSON } from "./main/server/server-client";
 
 let browserSignInController: AbortController | null = null;
+let githubInstallController: AbortController | null = null;
 
 const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
 const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
@@ -498,7 +499,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
         type CloudConnectionStatus = {
-          provider: "slack" | "fireflies" | "linear" | "claude_code";
+          provider: "slack" | "fireflies" | "linear" | "github" | "claude_code";
           status: string | null;
           last_success_at: string | null;
           last_error_at: string | null;
@@ -535,14 +536,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
 
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
-          const entry = key === "linear" ? undefined : int[key];
-          const cloud = (key === "slack" || key === "fireflies" || key === "linear")
+          const entry = key === "linear" || key === "github" ? undefined : int[key];
+          const cloud = (key === "slack" || key === "fireflies" || key === "linear" || key === "github")
             ? cloudConnections?.find((connection) => connection.provider === key)
             : undefined;
           const health = key === "granola" || key === "fireflies"
             ? integrationHealth(key)
             : { healthStatus: "unknown" as const, healthCheckedAt: null, healthMessage: null };
-          if (key === "slack" || key === "fireflies" || key === "linear") {
+          if (key === "slack" || key === "fireflies" || key === "linear" || key === "github") {
             return {
               // Cloud-backed integrations must not fall back to stale local flags
               // when the server is unreachable or the user is signed out.
@@ -554,8 +555,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
               mode: null,
               channels: key === "slack" ? (cloud?.channel_ids?.length ?? 0) : null,
               channelIds: key === "slack" ? (cloud?.channel_ids ?? []) : undefined,
-              repos: [],
-              ghCliStatus: null,
             };
           }
           return {
@@ -565,15 +564,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             mode:          entry?.mode          ?? null,
             channels:      entry?.channels      ?? null,
             channelIds:    undefined,
-            repos:         entry?.repos         ?? [],
-            ghCliStatus:    null,
           };
         }
-
-        const githubDetail = integrationDetail("github");
-        githubDetail.ghCliStatus = githubDetail.connected
-          ? await checkGhCli()
-          : null;
 
         const claudeCodeConnection = cloudConnections?.find((connection) => connection.provider === "claude_code");
 
@@ -588,7 +580,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           integrations: {
             granola:   integrationDetail("granola"),
             slack:     integrationDetail("slack"),
-            github:    githubDetail,
+            github:    integrationDetail("github"),
             fireflies: integrationDetail("fireflies"),
             linear:    integrationDetail("linear"),
           },
@@ -598,7 +590,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       disconnectIntegration: async ({ source }) => {
         try {
-          if (source === "slack" || source === "fireflies" || source === "linear") {
+          if (source === "slack" || source === "fireflies" || source === "linear" || source === "github") {
             const workspaceId = getCachedWorkspaceId();
             if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
             await fetchServer(`workspaces/${workspaceId}/connections/${source}`, { method: "DELETE" });
@@ -618,10 +610,30 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      connectGitHub: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        // Renderer polls getConnectedApps until github.connected === true.
-        return connectGitHubCore({ workspace });
+      startGithubInstall: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        githubInstallController?.abort();
+        githubInstallController = new AbortController();
+        void startGithubInstall(workspaceId, githubInstallController.signal, {
+          openUrl: (url) =>
+            Bun.spawn(["open", url], {
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "ignore",
+            }),
+          progress: (value) => {
+            try {
+              rpc.send.githubInstallProgress(value);
+            } catch {}
+          },
+        });
+        return { ok: true };
+      },
+      cancelGithubInstall: async () => {
+        githubInstallController?.abort();
+        githubInstallController = null;
+        return { ok: true };
       },
 
       getSessionPreview: async () => {

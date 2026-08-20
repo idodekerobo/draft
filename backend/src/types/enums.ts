@@ -21,6 +21,7 @@ export type CredentialProvider =
   | "slack"
   | "granola"
   | "linear"
+  | "github"
   | "claude_code";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
@@ -30,6 +31,7 @@ export type SourceConnectionProvider =
   | "slack"
   | "granola"
   | "linear"
+  | "github"
   | "claude_session"
   | "codex_session"
   | "manual_upload";

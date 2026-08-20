@@ -16,6 +16,7 @@ import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfi
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
+import { GithubConnectPanel } from "../shared/GithubConnectPanel";
 import { LinearConnectPanel } from "../shared/LinearConnectPanel";
 import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
@@ -84,10 +85,11 @@ const SOURCE_LABELS: Record<string, string> = {
   slack:     "Slack",
   fireflies: "Fireflies",
   linear:    "Linear",
+  github:    "GitHub",
 };
 
 interface InputSourceRowProps {
-  sourceKey: "slack" | "fireflies" | "linear";
+  sourceKey: "slack" | "fireflies" | "linear" | "github";
   detail: IntegrationDetail;
   onDisconnect: () => void;
   onToggleConnect: () => void;
@@ -181,8 +183,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | null>(null);
-  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | null>(null);
+  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | "github" | null>(null);
+  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | "github" | null>(null);
   const [slackPanelMode, setSlackPanelMode] = useState<"connect" | "manage">("connect");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
@@ -263,7 +265,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
-  async function handleDisconnect(source: "slack" | "fireflies" | "linear") {
+  async function handleDisconnect(source: "slack" | "fireflies" | "linear" | "github") {
     if (!apps) return;
     setDisconnecting(source);
     try {
@@ -353,7 +355,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         <section className="settings__section">
           <h2 className="settings__section-label">Input Sources</h2>
           <div className="settings__rows">
-            {(["fireflies", "linear", "slack"] as const).map((key) => (
+            {(["fireflies", "linear", "slack", "github"] as const).map((key) => (
               <InputSourceRow
                 key={key}
                 sourceKey={key}
@@ -380,6 +382,10 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
 
                 {key === "slack" && (
                   <SlackConnectPanel detail={apps.integrations.slack} mode={slackPanelMode} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
+                )}
+
+                {key === "github" && (
+                  <GithubConnectPanel detail={apps.integrations.github} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
                 )}
               </InputSourceRow>
             ))}

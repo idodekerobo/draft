@@ -307,10 +307,6 @@ export interface IntegrationDetail {
   channels: number | null;
   /** Slack: configured channel IDs returned by the cloud connection status. */
   channelIds?: string[];
-  /** GitHub: list of watched repos. Empty for other sources. */
-  repos: string[];
-  /** GitHub only: local gh CLI availability/authentication. Null for other sources. */
-  ghCliStatus: "ok" | "not_found" | "not_authenticated" | null;
 }
 
 export interface ConnectedAppsStatus {
@@ -416,12 +412,13 @@ export type AppRPCType = {
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" }; response: ActionResult };
 
       /**
-       * Connect GitHub natively via `gh auth login --web`.
-       * Spawns the OAuth flow in the browser (fire-and-forget) and returns immediately.
-       * Writes connected=true to integrations.json when gh auth completes.
-       * Renderer should poll getConnectedApps until github.connected === true.
+       * Connect GitHub via the GitHub App install flow: opens the system
+       * browser to GitHub's install-consent screen and polls the backend
+       * install session (fire-and-forget; progress arrives via the
+       * githubInstallProgress webview message).
        */
-      connectGitHub: { params: void; response: ActionResult };
+      startGithubInstall: { params: void; response: ActionResult };
+      cancelGithubInstall: { params: void; response: ActionResult };
 
       /** First-launch install: extract binary, symlink to PATH, run `draft add` for each tool. */
       runInstall: { params: { tools: InstallableTool[] }; response: InstallResult };
@@ -659,6 +656,11 @@ export type AppRPCType = {
 
       signInProgress: {
         phase: "awaiting_approval" | "complete" | "error";
+        error?: string;
+      };
+
+      githubInstallProgress: {
+        phase: "awaiting_approval" | "connected" | "error";
         error?: string;
       };
 

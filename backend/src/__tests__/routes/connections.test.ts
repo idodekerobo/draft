@@ -184,6 +184,10 @@ process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
 process.env.SUPABASE_SECRET_KEY = "service-key";
 process.env.DRAFT_API_BASE_URL = "https://api.example.test";
 process.env.INFERENCE_CREDENTIAL_KEK_V1 = Buffer.alloc(32, 7).toString("base64");
+process.env.GITHUB_APP_ID = "123456";
+process.env.GITHUB_APP_SLUG = "draft-context-test";
+process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\\ntest\\n-----END RSA PRIVATE KEY-----";
+process.env.GITHUB_APP_WEBHOOK_SECRET = "webhook-secret";
 
 let accessResult: Response | null = null;
 const fakeClient = createFakeClient();
@@ -545,5 +549,56 @@ describe("workspace connection routes", () => {
     );
     expect(secondResponse.status).toBe(200);
     expect(await secondResponse.json()).toEqual({ ok: true });
+  });
+
+  it("includes a connected github source in GET", async () => {
+    state.connections.push({
+      id: "github-connection",
+      provider: "github" as unknown as Connection["provider"],
+      credential_id: null,
+      connection_key: "555",
+      status: "active",
+      display_name: "acme",
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+    });
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = (await response.json()) as { connections: Array<{ provider: string; status: string | null }> };
+    const github = body.connections.find((connection) => connection.provider === "github");
+    expect(github).toMatchObject({ provider: "github", status: "active" });
+  });
+
+  it("locally revokes a github connection without a credential to clean up", async () => {
+    state.connections.push({
+      id: "github-connection",
+      provider: "github" as unknown as Connection["provider"],
+      credential_id: null,
+      connection_key: "555",
+      status: "active",
+      display_name: "acme",
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+    });
+
+    const response = await routeModule.DELETE(
+      request("DELETE", { id: workspaceId, provider: "github" }) as never,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    const githubConnection = state.connections.find((connection) => connection.id === "github-connection");
+    expect(githubConnection?.status).toBe("revoked");
+  });
+
+  it("rejects POST with provider: github -- it connects via install-session routes, not this endpoint", async () => {
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, { provider: "github" }) as never,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_body" });
   });
 });
