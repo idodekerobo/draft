@@ -17,7 +17,7 @@ import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
 import { homedir } from "os";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
-import { extname, join, resolve } from "path";
+import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
   getBundledBackgroundDir,
@@ -50,13 +50,21 @@ import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
-import { fetchServer, fetchServerJSON } from "./main/server/server-client";
+import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
 const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
 const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
+
+// Mirrors the CLI's `draft sessions enable claude-code` hook script (cli/src/commands/sessions.ts).
+const SESSION_END_HOOK_COMMAND = `"\${CLAUDE_PROJECT_DIR}/.claude/draft/capture-session.sh"`;
+const SESSION_CAPTURE_SCRIPT = `#!/usr/bin/env bash
+# Installed by Draft — do not edit by hand, re-run setup instead.
+draft sessions ingest >/dev/null 2>&1
+exit 0
+`;
 
 function capitalize(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -593,7 +601,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             github:        integrationDetail("github"),
             fireflies:     integrationDetail("fireflies"),
             linear:        integrationDetail("linear"),
-            claudeSession: claudeSessionDetail,
+            claude_session: claudeSessionDetail,
           },
           claudeCode: { connected: claudeCodeConnection?.status === "active" },
         };
@@ -601,7 +609,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       disconnectIntegration: async ({ source }) => {
         try {
-          if (source === "slack" || source === "fireflies" || source === "linear" || source === "github") {
+          if (source === "slack" || source === "fireflies" || source === "linear" || source === "github" || source === "claude_session") {
             const workspaceId = getCachedWorkspaceId();
             if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
             await fetchServer(`workspaces/${workspaceId}/connections/${source}`, { method: "DELETE" });
@@ -982,22 +990,82 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      setSessionTrackingEnabled: async ({ enabled }) => {
+      connectSessionTracking: async () => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          if (enabled) {
-            await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ provider: "claude_session" }),
-            });
-          } else {
-            await fetchServer(`workspaces/${workspaceId}/connections/claude_session`, { method: "DELETE" });
-          }
+          await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "claude_session" }),
+          });
           return { ok: true };
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not update session tracking." };
+          return { ok: false, error: err instanceof Error ? err.message : "Could not turn on coding sessions." };
+        }
+      },
+
+      selectSessionRepoFolder: async () => {
+        try {
+          const [folderPath] = await Utils.openFileDialog({
+            canChooseFiles: false,
+            canChooseDirectory: true,
+            allowsMultipleSelection: false,
+          });
+          return { folderPath: folderPath || null };
+        } catch {
+          return { folderPath: null };
+        }
+      },
+
+      enableSessionCaptureForRepo: async ({ folderPath }) => {
+        if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+          return { ok: false, error: "Not a valid directory." };
+        }
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+
+        let minted: { id: string; token: string };
+        try {
+          minted = await fetchServerJSON<{ id: string; token: string }>(`workspaces/${workspaceId}/sessions/tokens`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ label: basename(folderPath) }),
+          });
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not mint an ingest token." };
+        }
+
+        try {
+          const draftDir = join(folderPath, ".claude", "draft");
+          mkdirSync(draftDir, { recursive: true });
+          writeFileSync(
+            join(draftDir, "config.json"),
+            `${JSON.stringify({ backendUrl: apiUrl, workspaceId, ingestToken: minted.token }, null, 2)}\n`,
+            { mode: 0o600 },
+          );
+          const hookPath = join(draftDir, "capture-session.sh");
+          writeFileSync(hookPath, SESSION_CAPTURE_SCRIPT, { mode: 0o755 });
+          chmodSync(hookPath, 0o755);
+
+          const settingsPath = join(folderPath, ".claude", "settings.json");
+          const settings = existsSync(settingsPath)
+            ? JSON.parse(readFileSync(settingsPath, "utf8")) as { hooks?: { SessionEnd?: Array<{ hooks: Array<{ type: string; command: string; timeout?: number }> }> } }
+            : {};
+          settings.hooks ??= {};
+          settings.hooks.SessionEnd ??= [];
+          const alreadyInstalled = settings.hooks.SessionEnd.some((entry) =>
+            entry.hooks.some((h) => h.command === SESSION_END_HOOK_COMMAND));
+          let hookChanged = false;
+          if (!alreadyInstalled) {
+            settings.hooks.SessionEnd.push({ hooks: [{ type: "command", command: SESSION_END_HOOK_COMMAND, timeout: 60 }] });
+            mkdirSync(join(folderPath, ".claude"), { recursive: true });
+            writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+            hookChanged = true;
+          }
+          return { ok: true, hookChanged };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not write session-capture files." };
         }
       },
 

@@ -92,7 +92,7 @@ export function CollapsibleSection({ label, count, expanded, onToggle, onSelectA
 
 // ── IntegrationSetupCard ──────────────────────────────────────────────────────
 
-export function IntegrationSetupCard({ title, description, hint, connected, expanded, onToggle, children, action }: {
+export function IntegrationSetupCard({ title, description, hint, connected, expanded, onToggle, children, action, keepContentWhenConnected }: {
   title: string;
   description: string;
   hint: string;
@@ -101,10 +101,12 @@ export function IntegrationSetupCard({ title, description, hint, connected, expa
   onToggle: () => void;
   children?: ReactNode;
   action?: string;
+  /** Credential-less integrations (e.g. Coding Sessions) stay revisitable post-connect, unlike Slack/Fireflies/Linear whose header locks once connected. */
+  keepContentWhenConnected?: boolean;
 }) {
   return (
     <section className="onboarding__integration-card" aria-expanded={expanded}>
-      <button className="onboarding__integration-header" onClick={onToggle} aria-expanded={expanded} disabled={connected}>
+      <button className="onboarding__integration-header" onClick={onToggle} aria-expanded={expanded} disabled={connected && !keepContentWhenConnected}>
         <span className="onboarding__integration-title"><span>{title}</span><small>{description}</small></span>
         <span className="onboarding__integration-status">
           {connected
@@ -113,7 +115,7 @@ export function IntegrationSetupCard({ title, description, hint, connected, expa
             : <><small>{hint}</small>{action ?? (expanded ? "▲" : "▼")}</>}
         </span>
       </button>
-      {!connected && expanded && <div className="onboarding__integration-content">{children}</div>}
+      {(keepContentWhenConnected ? expanded : !connected && expanded) && <div className="onboarding__integration-content">{children}</div>}
     </section>
   );
 }

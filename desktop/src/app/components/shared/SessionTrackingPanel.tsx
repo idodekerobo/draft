@@ -5,71 +5,115 @@ import { rpc } from "../../rpc";
 
 interface SessionTrackingPanelProps {
   detail: IntegrationDetail | undefined;
-  onChanged: () => void | Promise<void>;
-  variant: "settings" | "onboarding";
+  onConnected: () => void | Promise<void>;
+  classPrefix: "onboarding" | "app-row";
 }
 
-const DESCRIPTION = "Capture Claude Code sessions from repos with session capture enabled, so Draft can summarize and search them. Turning this off stops new sessions from any repo from being accepted, even if a repo already has session capture configured.";
+const ENABLE_COMMAND = "draft sessions enable claude-code";
 
-// Structurally mirrors FirefliesConnectPanel but simpler: Decision 9's
-// workspace toggle has no credential input and no webhook round-trip, just
-// a status flip on the workspace's claude_session source_connections row.
-export function SessionTrackingPanel({ detail, onChanged, variant }: SessionTrackingPanelProps) {
+interface RepoResult {
+  path: string;
+  ok: boolean;
+  message: string;
+}
+
+// Structurally mirrors FirefliesConnectPanel, but with no credential input.
+export function SessionTrackingPanel({ detail, onConnected, classPrefix }: SessionTrackingPanelProps) {
   const { track } = useAnalytics();
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const checked = detail?.connected ?? false;
+  const [copied, setCopied] = useState(false);
+  const [enabling, setEnabling] = useState(false);
+  const [repoResults, setRepoResults] = useState<RepoResult[]>([]);
+  // Flips instantly on click, independent of detail prop; rolled back on failure.
+  const [optimisticConnected, setOptimisticConnected] = useState<boolean | null>(null);
+  const connected = optimisticConnected ?? detail?.connected ?? false;
 
-  async function toggle(next: boolean) {
-    setSaving(true);
+  async function turnOn() {
+    setOptimisticConnected(true);
     setError(null);
     try {
-      const result = await rpc.request.setSessionTrackingEnabled({ enabled: next });
+      const result = await rpc.request.connectSessionTracking();
       if (!result.ok) {
-        setError(result.error ?? "Could not update session tracking.");
+        setOptimisticConnected(false);
+        setError(result.error ?? "Could not turn on coding sessions.");
         return;
       }
-      if (next) track("integration_connected", { source: "claude_session" });
-      await onChanged();
+      track("integration_connected", { source: "claude_session" });
+      // Awaited so the optimistic override below isn't released before the real state lands.
+      await onConnected();
     } catch {
-      setError("Could not update session tracking.");
+      setOptimisticConnected(false);
+      setError("Could not turn on coding sessions. Try again.");
     } finally {
-      setSaving(false);
+      setOptimisticConnected((current) => (current === true ? null : current));
     }
   }
 
-  const toggleButton = (
-    <button
-      className={`toggle${checked ? " toggle--on" : ""}${saving ? " toggle--disabled" : ""}`}
-      role="switch"
-      aria-checked={checked}
-      disabled={saving}
-      onClick={() => void toggle(!checked)}
-    >
-      <span className="toggle__thumb" />
-    </button>
-  );
+  async function addRepo() {
+    const { folderPath } = await rpc.request.selectSessionRepoFolder();
+    if (!folderPath) return;
+    setEnabling(true);
+    try {
+      const result = await rpc.request.enableSessionCaptureForRepo({ folderPath });
+      setRepoResults((current) => [
+        ...current,
+        { path: folderPath, ok: result.ok, message: result.ok ? "Enabled" : (result.error ?? "Could not enable this repo.") },
+      ]);
+      if (result.ok) track("integration_connected", { source: "claude_session_repo" });
+    } finally {
+      setEnabling(false);
+    }
+  }
 
-  if (variant === "settings") {
+  async function copy() {
+    await navigator.clipboard.writeText(ENABLE_COMMAND);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_500);
+  }
+
+  if (connected) {
     return (
-      <div className="settings__row">
-        <div className="settings__row-content">
-          <span className="settings__row-label">Coding sessions</span>
-          <span className="settings__row-desc">{DESCRIPTION}</span>
-          {error && <span className="settings__save-error" role="alert">{error}</span>}
+      <div className={`${classPrefix}__connect-panel`}>
+        <span className={`${classPrefix}__panel-label`}>Set up each repo</span>
+        <span className={`${classPrefix}__panel-help`}>
+          Coding sessions are on for this workspace. Pick a repo on this Mac to enable it directly:
+        </span>
+        <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void addRepo()} disabled={enabling}>
+          {enabling ? "Enabling…" : "Choose a repo…"}
+        </button>
+        {repoResults.length > 0 && (
+          <ul className={`${classPrefix}__repo-list`}>
+            {repoResults.map((repo) => (
+              <li key={repo.path} className={repo.ok ? undefined : `${classPrefix}__validation`}>
+                {repo.path.split("/").pop()} — {repo.message}
+              </li>
+            ))}
+          </ul>
+        )}
+        <span className={`${classPrefix}__panel-help`}>
+          You — or your coding agent — can also enable it via the CLI. Run this in the repo:
+        </span>
+        <div className={`${classPrefix}__copy-row`}>
+          <code>{ENABLE_COMMAND}</code>
+          <button type="button" onClick={() => void copy()}>{copied ? "Copied" : "Copy"}</button>
         </div>
-        {toggleButton}
+        <span className={`${classPrefix}__panel-help`}>
+          Sessions show up in Settings once captured — summarized and searchable from the CLI via <code>draft sessions list</code>.
+        </span>
       </div>
     );
   }
 
   return (
-    <section className="onboarding__integration-card">
-      <div className="onboarding__integration-header">
-        <span className="onboarding__integration-title"><span>Coding Sessions</span><small>{DESCRIPTION}</small></span>
-        <span className="onboarding__integration-status">{toggleButton}</span>
-      </div>
-      {error && <div className="onboarding__integration-content"><span className="onboarding__error">{error}</span></div>}
-    </section>
+    <div className={`${classPrefix}__connect-panel`}>
+      <span className={`${classPrefix}__panel-label`}>Turn on coding sessions</span>
+      <span className={`${classPrefix}__panel-help`}>
+        Draft can capture, summarize, and search Claude Code sessions from your repos.
+      </span>
+      {error && <span className={`${classPrefix}__validation`}>{error}</span>}
+      <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void turnOn()}>
+        Turn on
+      </button>
+    </div>
   );
 }

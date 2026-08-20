@@ -1,6 +1,6 @@
 import { getFreshAccessToken } from "draft-core/auth-state";
 
-const apiUrl = process.env.DRAFT_API_BASE_URL ?? "https://api.draftai.us";
+export const apiUrl = process.env.DRAFT_API_BASE_URL ?? "https://api.draftai.us";
 
 export async function fetchServer(path: string, init?: RequestInit): Promise<Response> {
   const accessToken = await getFreshAccessToken({

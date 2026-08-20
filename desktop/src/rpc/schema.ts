@@ -323,8 +323,8 @@ export interface ConnectedAppsStatus {
     github: IntegrationDetail;
     fireflies: IntegrationDetail;
     linear: IntegrationDetail;
-    /** Decision 9's workspace-wide coding-session-capture toggle. Not a credentialed integration -- just a status flip. */
-    claudeSession: IntegrationDetail;
+    /** Workspace-wide coding-session-capture toggle. Not a credentialed integration -- just a status flip. */
+    claude_session: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
 }
@@ -410,8 +410,8 @@ export type AppRPCType = {
       /** Rich connection status for all intelligence tools and input sources. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
-      /** Disconnect an input source by setting connected=false in integrations.json. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" }; response: ActionResult };
+      /** Disconnect an input source. granola/github flip connected=false in integrations.json; slack/fireflies/linear/claude_session revoke the workspace's cloud source_connections row. */
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "claude_session" }; response: ActionResult };
 
       /**
        * Connect GitHub via the GitHub App install flow: opens the system
@@ -473,13 +473,14 @@ export type AppRPCType = {
       /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
       connectClaudeCode: { params: { token: string }; response: ActionResult };
 
-      /**
-       * Turn Decision 9's workspace-wide coding-session-capture toggle on or off.
-       * No credential -- just a status flip on the workspace's claude_session
-       * source_connections row. When off, /sessions/ingest rejects new sessions
-       * from every repo, even ones with `draft sessions enable` configured.
-       */
-      setSessionTrackingEnabled: { params: { enabled: boolean }; response: ActionResult };
+      /** Turn on the workspace-wide coding-session-capture toggle (no credential). Turn off via disconnectIntegration. */
+      connectSessionTracking: { params: void; response: ActionResult };
+
+      /** Open the native folder picker for choosing a repo to enable coding-session capture in. */
+      selectSessionRepoFolder: { params: void; response: { folderPath: string | null } };
+
+      /** Desktop-native equivalent of `draft sessions enable claude-code --dir <folderPath>` (CLI has a separate auth store). */
+      enableSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult & { hookChanged?: boolean } };
 
       /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
       getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };
