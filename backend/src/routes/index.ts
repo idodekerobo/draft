@@ -8,6 +8,7 @@ import * as health from "./health";
 import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionsIngest from "./sessions-ingest";
+import * as sessionsSearch from "./sessions-search";
 import * as sessionTokens from "./session-tokens";
 import * as sessions from "./sessions";
 import * as sourceItems from "./source-items";
@@ -33,6 +34,7 @@ export const routes = {
   "/workspaces/github/callback": { GET: githubCallback.GET },
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
   "/workspaces/:id/sessions": { GET: sessions.GET },
+  "/workspaces/:id/sessions/search": { GET: sessionsSearch.GET },
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
   "/sessions/ingest": { POST: sessionsIngest.POST },
   "/invites/mine": { GET: invites.mineGET },
