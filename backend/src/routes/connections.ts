@@ -12,6 +12,12 @@ import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/const
 import { registerFirefliesReconciliationTask } from "../ingestion/fireflies/reconcile";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
+import {
+  joinPublicSlackChannels,
+  listPublicSlackChannels,
+  SlackProviderError,
+} from "../ingestion/slack/provider";
+import { createLinearWebhook, LinearProviderError } from "../ingestion/linear/provider";
 import { upsertSourceConnection } from "../ingestion/upsert-source-item";
 import type { SourceConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
@@ -61,18 +67,6 @@ interface FirefliesConnectResponse {
 
 interface LinearConnectResponse {
   ok: true;
-}
-
-interface SlackChannel {
-  id: string;
-  name: string;
-  memberCount: number;
-  isMember: boolean;
-  allowlisted: boolean;
-}
-
-interface SlackApiError extends Error {
-  slackCode?: string;
 }
 
 const config = loadConfig();
@@ -135,123 +129,6 @@ function errorResponse(error: string, status = 500, detail?: unknown, workspaceI
     recordRouteError({ workspaceId: workspaceId ?? null, operation: "auth", errorCode: error, error: detail });
   }
   return Response.json({ error }, { status });
-}
-
-async function listPublicSlackChannels(botToken: string): Promise<Omit<SlackChannel, "allowlisted">[]> {
-  const channels: Omit<SlackChannel, "allowlisted">[] = [];
-  let cursor = "";
-
-  do {
-    const query = new URLSearchParams({
-      types: "public_channel",
-      limit: "200",
-      exclude_archived: "true",
-    });
-    if (cursor) query.set("cursor", cursor);
-
-    const response = await fetch(`https://slack.com/api/conversations.list?${query.toString()}`, {
-      headers: { Authorization: `Bearer ${botToken}` },
-    });
-    const data = await response.json() as {
-      ok: boolean;
-      error?: string;
-      channels?: Array<{ id: string; name: string; num_members?: number; is_member?: boolean }>;
-      response_metadata?: { next_cursor?: string };
-    };
-    if (!data.ok) {
-      const error = new Error(`conversations.list failed: ${data.error ?? "unknown"}`) as SlackApiError;
-      error.slackCode = data.error;
-      throw error;
-    }
-
-    channels.push(...(data.channels ?? []).map((channel) => ({
-      id: channel.id,
-      name: channel.name,
-      memberCount: channel.num_members ?? 0,
-      isMember: channel.is_member ?? false,
-    })));
-    cursor = data.response_metadata?.next_cursor ?? "";
-  } while (cursor);
-
-  return channels.sort((a, b) => b.memberCount - a.memberCount);
-}
-
-async function joinPublicSlackChannels(botToken: string, channelIds: string[]): Promise<void> {
-  for (const channelId of channelIds) {
-    const response = await fetch("https://slack.com/api/conversations.join", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ channel: channelId }),
-    });
-    const data = await response.json() as { ok: boolean; error?: string };
-    if (!data.ok && data.error !== "already_in_channel") {
-      const error = new Error(`conversations.join failed for ${channelId}: ${data.error ?? "unknown"}`) as SlackApiError;
-      error.slackCode = data.error;
-      throw error;
-    }
-  }
-}
-
-const LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql";
-const LINEAR_WEBHOOK_RESOURCE_TYPES = ["Issue", "Comment", "Project", "Cycle", "ProjectUpdate"];
-
-interface LinearApiError extends Error {
-  linearErrors?: string[];
-}
-
-// We generate the secret ourselves (like Fireflies) rather than reading one back.
-const CREATE_WEBHOOK_MUTATION = `
-  mutation CreateWebhook($url: String!, $resourceTypes: [String!]!, $secret: String!) {
-    webhookCreate(input: { url: $url, resourceTypes: $resourceTypes, allPublicTeams: true, secret: $secret }) {
-      success
-      webhook {
-        id
-        enabled
-      }
-    }
-  }
-`;
-
-async function createLinearWebhook(apiToken: string, url: string, secret: string): Promise<void> {
-  const response = await fetch(LINEAR_GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Personal API keys are not prefixed "Bearer ", unlike OAuth tokens.
-      Authorization: apiToken,
-    },
-    body: JSON.stringify({
-      query: CREATE_WEBHOOK_MUTATION,
-      variables: { url, resourceTypes: LINEAR_WEBHOOK_RESOURCE_TYPES, secret },
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Linear webhookCreate request failed: ${response.status} ${response.statusText} ${body}`);
-  }
-
-  const payload = await response.json() as {
-    data?: { webhookCreate?: { success: boolean; webhook?: { id: string; enabled: boolean } } };
-    errors?: { message: string }[];
-  };
-
-  console.log("[linear webhookCreate] response:", JSON.stringify(payload, null, 2));
-
-  if (payload.errors && payload.errors.length > 0) {
-    const error = new Error(
-      `Linear API returned errors creating webhook: ${payload.errors.map((e) => e.message).join("; ")}`,
-    ) as LinearApiError;
-    error.linearErrors = payload.errors.map((e) => e.message);
-    throw error;
-  }
-
-  if (!payload.data?.webhookCreate?.success) {
-    throw new Error("Linear webhookCreate did not report success");
-  }
 }
 
 export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
@@ -349,8 +226,10 @@ export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, call
       channels: channels.map((channel) => ({ ...channel, allowlisted: allowlist.has(channel.id) })),
     });
   } catch (error) {
-    const slackCode = (error as SlackApiError).slackCode;
-    return errorResponse(slackCode ? `slack_channel_list_failed:${slackCode}` : "slack_channel_list_failed", 502, error, req.params.id);
+    const errorCode = error instanceof SlackProviderError
+      ? error.code
+      : "slack_channel_list_failed";
+    return errorResponse(errorCode, 502, error, req.params.id);
   }
 });
 
@@ -474,8 +353,10 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     try {
       await joinPublicSlackChannels(body.bot_token, body.channel_ids);
     } catch (error) {
-      const slackCode = (error as SlackApiError).slackCode;
-      return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error, req.params.id);
+      const errorCode = error instanceof SlackProviderError
+        ? error.code
+        : "slack_channel_join_failed";
+      return errorResponse(errorCode, 502, error, req.params.id);
     }
     plaintext = JSON.stringify({ bot_token: body.bot_token, app_token: body.app_token });
   } else if (body.provider === "linear") {
@@ -484,7 +365,10 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       const webhookUrl = `${config.apiBaseUrl}/webhooks/linear/${connectionKey}`;
       await createLinearWebhook(body.api_token, webhookUrl, webhookSecret);
     } catch (error) {
-      return errorResponse("linear_webhook_create_failed", 502, error, req.params.id);
+      const errorCode = error instanceof LinearProviderError
+        ? error.code
+        : "linear_webhook_create_failed";
+      return errorResponse(errorCode, 502, error, req.params.id);
     }
     plaintext = JSON.stringify({ api_token: body.api_token, webhook_secret: webhookSecret });
   } else {
@@ -635,8 +519,10 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
     const credential = await resolveProviderCredential(req.params.id, "slack", serviceClient);
     await joinPublicSlackChannels(credential.bot_token, channelIds);
   } catch (error) {
-    const slackCode = (error as SlackApiError).slackCode;
-    return errorResponse(slackCode ? `slack_channel_join_failed:${slackCode}` : "slack_channel_join_failed", 502, error, req.params.id);
+    const errorCode = error instanceof SlackProviderError
+      ? error.code
+      : "slack_channel_join_failed";
+    return errorResponse(errorCode, 502, error, req.params.id);
   }
 
   const { data: connection, error } = await serviceClient

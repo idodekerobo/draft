@@ -218,6 +218,11 @@ let restartedSlackListeners: string[] = [];
 let stoppedSlackListeners: string[] = [];
 let slackJoinCalls: string[] = [];
 let slackJoinError: string | null = null;
+let linearWebhookRequests: Array<{
+  authorization: string | null;
+  body: { query: string; variables: Record<string, unknown> };
+}> = [];
+let linearWebhookFailureBody: string | null = null;
 
 mock.module("../../auth/withAuth", () => ({
   withAuth: (handler: (request: Request, authenticatedCaller: typeof caller) => unknown) =>
@@ -243,8 +248,27 @@ beforeEach(() => {
   stoppedSlackListeners = [];
   slackJoinCalls = [];
   slackJoinError = null;
+  linearWebhookRequests = [];
+  linearWebhookFailureBody = null;
   globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
+    if (url === "https://api.linear.app/graphql") {
+      linearWebhookRequests.push({
+        authorization: new Headers(init?.headers).get("authorization"),
+        body: JSON.parse(String(init?.body)),
+      });
+      if (linearWebhookFailureBody !== null) {
+        return new Response(linearWebhookFailureBody, { status: 502 });
+      }
+      return Response.json({
+        data: {
+          webhookCreate: {
+            success: true,
+            webhook: { id: "linear-webhook-new", enabled: true },
+          },
+        },
+      });
+    }
     if (url.startsWith("https://slack.com/api/conversations.list")) {
       return Response.json({
         ok: true,
@@ -357,6 +381,60 @@ describe("workspace connection routes", () => {
       api_token: "fireflies-api-token",
       webhook_secret: body.webhookSecret,
     });
+  });
+
+  it("fresh-connects Linear after provider webhook creation succeeds", async () => {
+    state.connections = [];
+    state.credentials = [];
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "linear",
+        api_token: "linear-api-token",
+      }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(linearWebhookRequests).toHaveLength(1);
+    expect(linearWebhookRequests[0]?.authorization).toBe("linear-api-token");
+    const variables = linearWebhookRequests[0]?.body.variables as {
+      url: string;
+      secret: string;
+    };
+    expect(variables.url).toMatch(/^https:\/\/api\.example\.test\/webhooks\/linear\/[0-9a-f-]{36}$/);
+    expect(variables.secret).toMatch(/^[0-9a-f]{64}$/);
+    expect(state.connections).toHaveLength(1);
+    expect(state.connections[0]?.provider).toBe("linear");
+    const credential = state.credentials[0];
+    expect(JSON.parse(decryptCredentialPayload(credential?.encrypted_payload, "v1"))).toEqual({
+      api_token: "linear-api-token",
+      webhook_secret: variables.secret,
+    });
+  });
+
+  it("returns a safe Linear create failure without raw response or signing secret", async () => {
+    state.connections = [];
+    state.credentials = [];
+    const rawProviderBody = "canary-linear-provider-body";
+    linearWebhookFailureBody = rawProviderBody;
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "linear",
+        api_token: "linear-api-token",
+      }) as never,
+    );
+    const responseText = await response.text();
+    const signingSecret = linearWebhookRequests[0]?.body.variables.secret as string;
+
+    expect(response.status).toBe(502);
+    expect(JSON.parse(responseText)).toEqual({ error: "linear_webhook_create_failed" });
+    expect(responseText).not.toContain(rawProviderBody);
+    expect(responseText).not.toContain("linear-api-token");
+    expect(responseText).not.toContain(signingSecret);
+    expect(state.connections).toHaveLength(0);
+    expect(state.credentials).toHaveLength(0);
   });
 
   it("reconnects in place and reactivates the existing connection", async () => {
@@ -544,7 +622,7 @@ describe("workspace connection routes", () => {
     );
 
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: "slack_channel_join_failed:missing_scope" });
+    expect(await response.json()).toEqual({ error: "slack_channel_join_failed" });
     expect(state.connections).toHaveLength(0);
     expect(state.credentials).toHaveLength(0);
   });
