@@ -1,7 +1,7 @@
 // shared.tsx — shared UI components for onboarding steps
 
 import { useEffect, useState, type ReactNode } from "react";
-import type { ContextFileEntry, HeadlessSetupPhase } from "../../../../rpc/schema";
+import type { ContextFileEntry, HeadlessSetupPhase, IntegrationDetail } from "../../../../rpc/schema";
 import { events, rpc } from "../../../rpc";
 import { formatTokens } from "../../shared/skills";
 
@@ -92,16 +92,17 @@ export function CollapsibleSection({ label, count, expanded, onToggle, onSelectA
 
 // ── IntegrationSetupCard ──────────────────────────────────────────────────────
 
-export function IntegrationSetupCard({ title, description, hint, connected, expanded, onToggle, children, action, keepContentWhenConnected }: {
+export function IntegrationSetupCard({ title, description, hint, connected, status, expanded, onToggle, children, action, keepContentWhenConnected }: {
   title: string;
   description: string;
   hint: string;
   connected: boolean;
+  status?: IntegrationDetail["status"];
   expanded: boolean;
   onToggle: () => void;
   children?: ReactNode;
   action?: string;
-  /** Credential-less integrations (e.g. Coding Sessions) stay revisitable post-connect, unlike Slack/Fireflies/Linear whose header locks once connected. */
+  /** Keep setup or handoff content visible while its parent card remains expanded. */
   keepContentWhenConnected?: boolean;
 }) {
   return (
@@ -112,6 +113,10 @@ export function IntegrationSetupCard({ title, description, hint, connected, expa
           {connected
             ? <><span className="onboarding__status-dot onboarding__status-dot--green" />
                 <span className="onboarding__integration-badge onboarding__integration-badge--connected">Connected</span></>
+            : status === "pending"
+              ? <><span className="onboarding__status-dot" />
+                  <span className="onboarding__integration-badge">Pending</span>
+                  <small>{expanded ? "▲" : "▼"}</small></>
             : <><small>{hint}</small>{action ?? (expanded ? "▲" : "▼")}</>}
         </span>
       </button>

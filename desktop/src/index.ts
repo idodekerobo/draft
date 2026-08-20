@@ -15,6 +15,10 @@ import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
+import {
+  normalizeHostedConnections,
+  type RawHostedConnectionSummary,
+} from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
 import { basename, extname, join, resolve } from "path";
@@ -513,19 +517,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspace  = getWorkspacePath(getActiveProfile());
         const intResult  = readIntegrations(workspace);
         const int        = intResult.ok ? intResult.integrations : {};
-        type CloudConnectionStatus = {
-          provider: "slack" | "fireflies" | "linear" | "github" | "claude_code" | "claude_session";
-          status: string | null;
-          last_success_at: string | null;
-          last_error_at: string | null;
-          channel_ids?: string[];
-          connected?: boolean;
-        };
-        let cloudConnections: CloudConnectionStatus[] | null = null;
+        let cloudConnections: unknown = null;
         const cloudWorkspaceId = getCachedWorkspaceId();
         if (cloudWorkspaceId) {
           try {
-            const response = await fetchServerJSON<{ connections: CloudConnectionStatus[] }>(
+            const response = await fetchServerJSON<{ connections: unknown }>(
               `workspaces/${cloudWorkspaceId}/connections`,
             );
             cloudConnections = response.connections;
@@ -533,6 +529,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             cloudConnections = null;
           }
         }
+        const hostedConnections = normalizeHostedConnections(cloudConnections ?? []);
 
         function integrationHealth(key: "granola" | "fireflies"): Pick<IntegrationDetail, "healthStatus" | "healthCheckedAt" | "healthMessage"> {
           try {
@@ -553,7 +550,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
           const entry = key === "linear" || key === "github" ? undefined : int[key];
           const cloud = (key === "slack" || key === "fireflies" || key === "linear" || key === "github")
-            ? cloudConnections?.find((connection) => connection.provider === key)
+            ? hostedConnections.find((connection) => connection.provider === key)
             : undefined;
           const health = key === "granola" || key === "fireflies"
             ? integrationHealth(key)
@@ -562,8 +559,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             return {
               // Cloud-backed integrations must not fall back to stale local flags
               // when the server is unreachable or the user is signed out.
-              connected: cloud?.status === "active",
-              healthStatus: cloud?.status === "active" ? "healthy" : cloud?.status === "degraded" || cloud?.status === "error" ? "needs_attention" : "unknown",
+              connected: cloud?.connected ?? false,
+              status: cloud?.status ?? "disconnected",
+              healthStatus: cloud?.status === "connected" ? "healthy" : cloud?.status === "degraded" || cloud?.status === "error" ? "needs_attention" : "unknown",
               healthCheckedAt: cloud?.last_success_at ?? null,
               healthMessage: cloud?.last_error_at ? "The cloud ingestion worker reported an error." : null,
               lastConnected: cloud?.last_success_at ?? null,
@@ -574,6 +572,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           }
           return {
             connected:     entry?.connected    ?? false,
+            status: entry?.connected ? "connected" : "disconnected",
             ...health,
             lastConnected: entry?.last_connected ?? null,
             mode:          entry?.mode          ?? null,
@@ -582,14 +581,26 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           };
         }
 
-        const claudeCodeConnection = cloudConnections?.find((connection) => connection.provider === "claude_code");
-        const claudeSessionConnection = cloudConnections?.find((connection) => connection.provider === "claude_session");
+        const claudeCodeConnection = hostedConnections.find((connection) => connection.provider === "claude-code");
+        const claudeSessionConnection = Array.isArray(cloudConnections)
+          ? cloudConnections.find((connection): connection is RawHostedConnectionSummary =>
+              typeof connection === "object" &&
+              connection !== null &&
+              !Array.isArray(connection) &&
+              "provider" in connection &&
+              connection.provider === "claude_session"
+            )
+          : undefined;
+        const claudeSessionConnected = claudeSessionConnection?.status === "active";
         const claudeSessionDetail: IntegrationDetail = {
-          connected: claudeSessionConnection?.status === "active",
+          connected: claudeSessionConnected,
+          status: claudeSessionConnected ? "connected" : "disconnected",
           healthStatus: "unknown",
           healthCheckedAt: null,
           healthMessage: null,
-          lastConnected: claudeSessionConnection?.last_success_at ?? null,
+          lastConnected: typeof claudeSessionConnection?.last_success_at === "string"
+            ? claudeSessionConnection.last_success_at
+            : null,
           mode: null,
           channels: null,
         };
@@ -610,7 +621,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             linear:        integrationDetail("linear"),
             claude_session: claudeSessionDetail,
           },
-          claudeCode: { connected: claudeCodeConnection?.status === "active" },
+          claudeCode: { connected: claudeCodeConnection?.connected ?? false },
         };
       },
 

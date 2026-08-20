@@ -6,7 +6,7 @@ const workspaceId = "workspace-1";
 
 interface Connection {
   id: string;
-  provider: "slack" | "fireflies" | "linear" | "claude_session";
+  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session";
   credential_id: string | null;
   connection_key: string;
   status: string;
@@ -1105,8 +1105,6 @@ describe("workspace connection routes", () => {
           display_name: null,
           last_success_at: null,
           last_error_at: null,
-          channel_ids: [],
-          connected: false,
         },
       ],
     });
@@ -1127,12 +1125,10 @@ describe("workspace connection routes", () => {
     const body = await response.json() as {
       connections: Array<{
         provider: string;
-        connected?: boolean;
         status: string | null;
         display_name: string | null;
         last_success_at: string | null;
         last_error_at: string | null;
-        channel_ids: string[];
       }>;
     };
     const claudeCode = body.connections.find((connection) => connection.provider === "claude_code");
@@ -1142,8 +1138,172 @@ describe("workspace connection routes", () => {
       display_name: null,
       last_success_at: null,
       last_error_at: null,
-      channel_ids: [],
-      connected: true,
+    });
+  });
+
+  it.each([
+    ["pending", null, "pending"],
+    ["active", null, "active"],
+    ["active", "2026-08-20T12:00:00.000Z", "active"],
+    ["degraded", "2026-08-20T12:00:00.000Z", "degraded"],
+    ["error", null, "error"],
+    ["revoked", null, "revoked"],
+  ] as const)(
+    "returns Fireflies %s state with webhook evidence %s for shared normalization",
+    async (status, lastSuccessAt, expectedStatus) => {
+      state.connections = [{
+        id: `fireflies-${status}`,
+        provider: "fireflies",
+        credential_id: "fireflies-credential",
+        connection_key: "fireflies-internal-key",
+        status,
+        display_name: "Fireflies",
+        last_success_at: lastSuccessAt,
+        last_error_at: status === "degraded" || status === "error"
+          ? "2026-08-20T13:00:00.000Z"
+          : null,
+        config_json: { internal: "not-public" },
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T14:00:00.000000+00:00",
+      }];
+
+      const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+      const body = await response.json() as { connections: Array<Record<string, unknown>> };
+      const fireflies = body.connections.find((connection) => connection.provider === "fireflies");
+
+      expect(fireflies).toEqual({
+        provider: "fireflies",
+        status: expectedStatus,
+        display_name: "Fireflies",
+        last_success_at: lastSuccessAt,
+        last_error_at: status === "degraded" || status === "error"
+          ? "2026-08-20T13:00:00.000Z"
+          : null,
+      });
+    },
+  );
+
+  it("omits an absent source provider while preserving synthesized Claude Code state", async () => {
+    state.connections = [];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<{ provider: string }> };
+
+    expect(body.connections.map(({ provider }) => provider)).toEqual(["claude_code"]);
+  });
+
+  it("selects one deterministic GitHub row without exposing internal fields", async () => {
+    state.connections = [
+      {
+        id: "github-revoked-newest",
+        provider: "github",
+        credential_id: "credential-canary",
+        connection_key: "connection-key-canary",
+        status: "revoked",
+        display_name: "Historical revoked",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: { installation_id: "internal-config-canary" },
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T18:00:00.000000+00:00",
+      },
+      {
+        id: "github-active",
+        provider: "github",
+        credential_id: null,
+        connection_key: "active-internal-key",
+        status: "active",
+        display_name: "Live GitHub",
+        last_success_at: "2026-08-20T14:00:00.000Z",
+        last_error_at: null,
+        config_json: { installation_id: "active-internal-config" },
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T15:00:00.000000+00:00",
+      },
+      {
+        id: "github-degraded-tie-z",
+        provider: "github",
+        credential_id: null,
+        connection_key: "degraded-internal-key",
+        status: "degraded",
+        display_name: "Tie winner",
+        last_success_at: "2026-08-20T13:00:00.000Z",
+        last_error_at: "2026-08-20T14:00:00.000Z",
+        config_json: {},
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T15:00:00.000000+00:00",
+      },
+    ];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<Record<string, unknown>> };
+    const githubRows = body.connections.filter((connection) => connection.provider === "github");
+
+    expect(githubRows).toEqual([{
+      provider: "github",
+      status: "degraded",
+      display_name: "Tie winner",
+      last_success_at: "2026-08-20T13:00:00.000Z",
+      last_error_at: "2026-08-20T14:00:00.000Z",
+    }]);
+    const serialized = JSON.stringify(githubRows);
+    expect(serialized).not.toContain("connection-key-canary");
+    expect(serialized).not.toContain("credential-canary");
+    expect(serialized).not.toContain("internal-config-canary");
+    expect(githubRows[0]).not.toHaveProperty("id");
+    expect(githubRows[0]).not.toHaveProperty("updated_at");
+    expect(githubRows[0]).not.toHaveProperty("config_json");
+  });
+
+  it("prefers the newest non-ingestible singleton row, then the descending id tie-break", async () => {
+    state.connections = [
+      {
+        id: "linear-error-a",
+        provider: "linear",
+        credential_id: null,
+        connection_key: "linear-a",
+        status: "error",
+        display_name: "Older error",
+        last_success_at: null,
+        last_error_at: "2026-08-20T14:00:00.000Z",
+        config_json: {},
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T15:00:00.000000+00:00",
+      },
+      {
+        id: "linear-pending-y",
+        provider: "linear",
+        credential_id: null,
+        connection_key: "linear-y",
+        status: "pending",
+        display_name: "Tie loser",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T16:00:00.000000+00:00",
+      },
+      {
+        id: "linear-pending-z",
+        provider: "linear",
+        credential_id: null,
+        connection_key: "linear-z",
+        status: "pending",
+        display_name: "Tie winner",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        updated_at: "2026-08-20T16:00:00.000000+00:00",
+      },
+    ];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<Record<string, unknown>> };
+
+    expect(body.connections.find((connection) => connection.provider === "linear")).toMatchObject({
+      status: "pending",
+      display_name: "Tie winner",
     });
   });
 
@@ -1379,7 +1539,7 @@ describe("workspace connection routes", () => {
   it("includes a connected github source in GET", async () => {
     state.connections.push({
       id: "github-connection",
-      provider: "github" as unknown as Connection["provider"],
+      provider: "github",
       credential_id: null,
       connection_key: "555",
       status: "active",
@@ -1399,7 +1559,7 @@ describe("workspace connection routes", () => {
   it("locally revokes a github connection without a credential to clean up", async () => {
     state.connections.push({
       id: "github-connection",
-      provider: "github" as unknown as Connection["provider"],
+      provider: "github",
       credential_id: null,
       connection_key: "555",
       status: "active",

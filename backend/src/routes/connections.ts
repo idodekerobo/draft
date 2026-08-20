@@ -90,6 +90,44 @@ interface LinearConnectResponse {
 
 const config = loadConfig();
 const MAX_SLACK_RECONCILE_ATTEMPTS = 3;
+const SINGLETON_CONNECTION_PROVIDERS = [
+  "slack",
+  "fireflies",
+  "linear",
+  "github",
+  "claude_session",
+] as const;
+
+type ListedConnectionRow = Pick<
+  SourceConnectionRow,
+  | "id"
+  | "provider"
+  | "status"
+  | "display_name"
+  | "last_success_at"
+  | "last_error_at"
+  | "config_json"
+  | "updated_at"
+>;
+
+function connectionSelectionRank(status: SourceConnectionRow["status"]): number {
+  if (status === "active" || status === "degraded") return 0;
+  if (status === "pending" || status === "error") return 1;
+  if (status === "revoked") return 2;
+  return 3;
+}
+
+function preferredConnection(
+  current: ListedConnectionRow | undefined,
+  candidate: ListedConnectionRow,
+): ListedConnectionRow {
+  if (!current) return candidate;
+  const rankDifference = connectionSelectionRank(candidate.status) - connectionSelectionRank(current.status);
+  if (rankDifference !== 0) return rankDifference < 0 ? candidate : current;
+  const updatedDifference = (candidate.updated_at ?? "").localeCompare(current.updated_at ?? "");
+  if (updatedDifference !== 0) return updatedDifference > 0 ? candidate : current;
+  return candidate.id.localeCompare(current.id) > 0 ? candidate : current;
+}
 
 function isSupportedProvider(value: unknown): value is SupportedProvider {
   return (
@@ -163,10 +201,18 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
 
   const { data, error } = await serviceClient
     .from("source_connections")
-    .select("provider, status, display_name, last_success_at, last_error_at, config_json")
+    .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, updated_at")
     .eq("workspace_id", req.params.id)
-    .in("provider", ["slack", "fireflies", "linear", "github", "claude_session"]);
+    .in("provider", [...SINGLETON_CONNECTION_PROVIDERS]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
+
+  const selectedByProvider = new Map<string, ListedConnectionRow>();
+  for (const connection of (data ?? []) as ListedConnectionRow[]) {
+    selectedByProvider.set(
+      connection.provider,
+      preferredConnection(selectedByProvider.get(connection.provider), connection),
+    );
+  }
 
   const connections: Array<{
     provider: string;
@@ -174,21 +220,27 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     display_name: string | null;
     last_success_at: string | null;
     last_error_at: string | null;
-    channel_ids: string[];
-    connected?: boolean;
-  }> = ((data ?? []) as Array<Pick<
-    SourceConnectionRow,
-    "provider" | "status" | "display_name" | "last_success_at" | "last_error_at" | "config_json"
-  >>).map((connection) => ({
-    provider: connection.provider,
-    status: connection.status,
-    display_name: connection.display_name,
-    last_success_at: connection.last_success_at,
-    last_error_at: connection.last_error_at,
-    channel_ids: Array.isArray(connection.config_json?.channel_ids)
-      ? connection.config_json.channel_ids.filter((value): value is string => typeof value === "string")
-      : [],
-  }));
+    channel_ids?: string[];
+  }> = SINGLETON_CONNECTION_PROVIDERS.flatMap((provider) => {
+    const connection = selectedByProvider.get(provider);
+    if (!connection) return [];
+    return [{
+      provider: connection.provider,
+      status: connection.status,
+      display_name: connection.display_name,
+      last_success_at: connection.last_success_at,
+      last_error_at: connection.last_error_at,
+      ...(connection.provider === "slack"
+        ? {
+            channel_ids: Array.isArray(connection.config_json?.channel_ids)
+              ? connection.config_json.channel_ids.filter(
+                  (value): value is string => typeof value === "string",
+                )
+              : [],
+          }
+        : {}),
+    }];
+  });
 
   const { data: workspaceData, error: workspaceError } = await serviceClient
     .from("workspaces")
@@ -216,8 +268,6 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     display_name: null,
     last_success_at: null,
     last_error_at: null,
-    channel_ids: [],
-    connected: claudeCodeStatus === "active",
   });
 
   return Response.json({ connections });

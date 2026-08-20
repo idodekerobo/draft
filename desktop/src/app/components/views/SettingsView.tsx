@@ -115,6 +115,9 @@ function InputSourceRow({
   const needsAttention = detail.connected && detail.healthStatus === "needs_attention";
 
   function buildMeta(): string {
+    if (detail.status === "pending") {
+      return sourceKey === "fireflies" ? "Pending webhook verification" : "Setup pending";
+    }
     if (!detail.connected) return "Not connected";
     const parts: string[] = [];
     if (detail.mode)     parts.push(detail.mode);
@@ -161,7 +164,7 @@ function InputSourceRow({
               className="app-row__connect"
               onClick={onToggleConnect}
             >
-              {isExpanded ? "Close" : "Connect"}
+              {isExpanded ? "Close" : detail.status === "pending" ? "Finish setup" : "Connect"}
             </button>
           )}
         </div>
@@ -294,11 +297,18 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     }
   }
 
-  async function refreshConnectedApps() {
+  async function tryRefreshConnectedApps(): Promise<boolean> {
     try {
       const updated = await rpc.request.getConnectedApps();
       setApps(updated);
-    } catch { /* non-fatal */ }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refreshConnectedApps() {
+    await tryRefreshConnectedApps();
   }
 
   function toggleSlackPanel(mode: "connect" | "manage") {
@@ -379,7 +389,12 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 }
               >
                 {key === "fireflies" && (
-                  <FirefliesConnectPanel detail={apps.integrations.fireflies} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
+                  <FirefliesConnectPanel
+                    detail={apps.integrations.fireflies}
+                    classPrefix="app-row"
+                    onStatusRefresh={tryRefreshConnectedApps}
+                    onDone={() => setExpandedSource(null)}
+                  />
                 )}
 
                 {key === "linear" && (

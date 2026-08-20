@@ -22,6 +22,7 @@
     "./agents/prompts/setup": "./src/agents/prompts/setup.ts",
     "./integrations/granola": "./src/integrations/granola.ts",
     "./integrations/fireflies": "./src/integrations/fireflies.ts",
+    "./integrations/hosted-connections": "./src/integrations/hosted-connections.ts",
     "./integrations/mcp-health": "./src/integrations/mcp-health.ts",
     "./integrations/slack": "./src/integrations/slack.ts",
     "./agents/mcp": "./src/agents/mcp.ts",

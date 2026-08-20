@@ -75,3 +75,18 @@ bun test
 ~~~
 
 Database migrations live in supabase/migrations/. Current-state schema snapshots live under db/.
+
+For deployment, provide backend variables through the deployment environment;
+do not copy the complete root local env into a public web service.
+
+## Pilot deployment topology
+
+The pilot requires exactly one long-lived backend replica to own Slack Socket
+Mode. A rolling deploy can briefly overlap the old and new replicas and may
+therefore duplicate a delivery. Connection-status and final-write gates reduce
+that risk, but they do not guarantee single delivery during the overlap.
+
+Do not horizontally scale the backend until Slack listener ownership uses a
+distributed lease or equivalent shared coordination. GitHub install sessions
+must also move from process memory to shared storage before multiple replicas
+serve install and callback traffic.

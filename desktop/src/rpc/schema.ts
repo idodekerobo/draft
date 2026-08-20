@@ -296,6 +296,7 @@ export interface ToolDetail {
 /** Detail for a single input source integration (granola, slack, github, fireflies). */
 export interface IntegrationDetail {
   connected: boolean;
+  status: "disconnected" | "pending" | "connected" | "degraded" | "error";
   /** Runtime source health. Setup intent remains represented by connected. */
   healthStatus: "unknown" | "healthy" | "needs_attention";
   healthCheckedAt: string | null;
