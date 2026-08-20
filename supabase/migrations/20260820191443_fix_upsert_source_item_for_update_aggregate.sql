@@ -1,8 +1,7 @@
--- Locks the exact-match row (if any) and every prior 'ready' revision of
--- the same external_id before writing, so a crash or race between finding
--- prior revisions and superseding them can never leave two 'ready' rows for
--- one external_id. Supersedes all matched prior rows and links
--- supersedes_source_item_id to the most recently normalized one.
+-- Postgres rejects FOR UPDATE combined with an aggregate function in the
+-- same query (error 0A000), which made every call to upsert_source_item
+-- fail unconditionally. Split the row lock into a CTE, then aggregate the
+-- locked ids outside it -- same locking/superseding semantics, valid SQL.
 create or replace function upsert_source_item(
   p_workspace_id uuid,
   p_source_connection_id uuid,
@@ -43,9 +42,7 @@ begin
 
   -- Lock every prior ready revision of this logical item before deciding
   -- anything else, so a concurrent caller can never observe -- or leave
-  -- behind -- two 'ready' rows for the same external_id. Postgres rejects
-  -- FOR UPDATE combined directly with an aggregate, so the lock happens in
-  -- a CTE and array_agg runs over the already-locked rows outside it.
+  -- behind -- two 'ready' rows for the same external_id.
   with locked as (
     select id, normalized_at, created_at
     from source_items
