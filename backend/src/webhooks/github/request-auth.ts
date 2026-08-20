@@ -83,6 +83,7 @@ export async function authenticateGithubWebhookRequest(
     .select("id, workspace_id")
     .eq("connection_key", String(installation.id))
     .eq("provider", "github")
+    .in("status", ["active", "degraded"])
     .maybeSingle();
   if (error) reject("GitHub webhook connection lookup failed");
 

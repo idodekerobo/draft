@@ -30,7 +30,10 @@ function makeRequest(body: string, signature: string | null, eventType: string |
   return new Request("http://internal.test/webhooks/github", { method: "POST", headers, body });
 }
 
-function createFakeClient(connection: { id: string; workspace_id: string } | null) {
+function createFakeClient(
+  connection: { id: string; workspace_id: string } | null,
+  connectionStatus = "active",
+) {
   const calls: { connectionKey: string }[] = [];
   function from(table: string) {
     if (table !== "source_connections") throw new Error(`Unexpected table: ${table}`);
@@ -39,7 +42,14 @@ function createFakeClient(connection: { id: string; workspace_id: string } | nul
         eq: (_col: string, value: string) => {
           calls.push({ connectionKey: value });
           return {
-            eq: () => ({ maybeSingle: async () => ({ data: connection, error: null }) }),
+            eq: () => ({
+              in: (_column: string, statuses: string[]) => ({
+                maybeSingle: async () => ({
+                  data: statuses.includes(connectionStatus) ? connection : null,
+                  error: null,
+                }),
+              }),
+            }),
           };
         },
       }),
@@ -98,4 +108,17 @@ describe("authenticateGithubWebhookRequest", () => {
     const result = await authenticateGithubWebhookRequest(request, client);
     expect(result.connection).toBeNull();
   });
+
+  it.each(["pending", "error", "revoked"])(
+    "returns connection: null for an inactive %s installation just like a missing row",
+    async (status) => {
+      const connection = { id: "conn-1", workspace_id: "ws-1" };
+      const { client } = createFakeClient(connection, status);
+      const body = JSON.stringify({ installation: { id: INSTALLATION_ID } });
+      const request = makeRequest(body, sign(body, WEBHOOK_SECRET));
+
+      const result = await authenticateGithubWebhookRequest(request, client);
+      expect(result.connection).toBeNull();
+    },
+  );
 });

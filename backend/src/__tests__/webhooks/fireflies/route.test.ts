@@ -19,20 +19,23 @@ const RealFirefliesWebhookAuthError = realRequestAuthModule.FirefliesWebhookAuth
 const realAuthenticateFirefliesWebhookRequest = realRequestAuthModule.authenticateFirefliesWebhookRequest;
 const realIngestFirefliesMeeting = realNormalizeModule.ingestFirefliesMeeting;
 
+function restoreRealModules() {
+  mock.module("../../../webhooks/fireflies/request-auth", () => ({
+    FirefliesWebhookAuthError: RealFirefliesWebhookAuthError,
+    authenticateFirefliesWebhookRequest: realAuthenticateFirefliesWebhookRequest,
+  }));
+  mock.module("../../../ingestion/fireflies/normalize", () => ({
+    ingestFirefliesMeeting: realIngestFirefliesMeeting,
+  }));
+}
+
 describe("POST /webhooks/fireflies/:connectionKey", () => {
   afterEach(() => {
     mock.restore();
+    restoreRealModules();
   });
 
-  afterAll(() => {
-    mock.module("../../../webhooks/fireflies/request-auth", () => ({
-      FirefliesWebhookAuthError: RealFirefliesWebhookAuthError,
-      authenticateFirefliesWebhookRequest: realAuthenticateFirefliesWebhookRequest,
-    }));
-    mock.module("../../../ingestion/fireflies/normalize", () => ({
-      ingestFirefliesMeeting: realIngestFirefliesMeeting,
-    }));
-  });
+  afterAll(restoreRealModules);
 
   it("returns 401 with no body when authentication fails", async () => {
     mock.module("../../../webhooks/fireflies/request-auth", () => ({

@@ -40,7 +40,7 @@ async function dispatchIngestSource(
 
   const { data: connectionData, error: connectionError } = await client
     .from("source_connections")
-    .select("id, workspace_id, provider, cursor_json")
+    .select("id, workspace_id, provider, status, cursor_json")
     .eq("id", task.source_connection_id)
     .eq("workspace_id", task.workspace_id)
     .single();
@@ -49,8 +49,13 @@ async function dispatchIngestSource(
     id: string;
     workspace_id: string;
     provider: string;
+    status: string;
     cursor_json: Record<string, unknown>;
   };
+
+  // Disconnect can disable a schedule after this task was claimed; the write
+  // RPCs remain the final backstop after this early stale-work check.
+  if (connection.status !== "active" && connection.status !== "degraded") return;
 
   if (connection.provider === "fireflies") {
     await deps.reconcileFirefliesConnection(connection, client);

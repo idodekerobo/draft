@@ -544,34 +544,20 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const { data: connection, error: lookupError } = await serviceClient
-    .from("source_connections")
-    .select("id")
-    .eq("workspace_id", req.params.id)
-    .eq("provider", req.params.provider)
-    .maybeSingle();
-  if (lookupError) return errorResponse("connection_lookup_failed", 500, lookupError, req.params.id);
-  if (!connection) return Response.json({ ok: true });
+  const { data, error } = await serviceClient.rpc("disconnect_source_connection", {
+    p_workspace_id: req.params.id,
+    p_provider: req.params.provider,
+  });
+  if (error) return errorResponse("disconnect_failed", 500, error, req.params.id);
 
-  const { error: connectionError } = await serviceClient
-    .from("source_connections")
-    .update({ status: "revoked" })
-    .eq("id", connection.id)
-    .eq("workspace_id", req.params.id);
-  if (connectionError) return errorResponse("disconnect_failed", 500, connectionError, req.params.id);
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    connection_id: string | null;
+    transitioned: boolean;
+  } | null;
 
-  // claude_session ingestion is push-based, not scheduled_tasks-driven.
-  if (req.params.provider !== "claude_session") {
-    const { error: taskError } = await serviceClient
-      .from("scheduled_tasks")
-      .update({ enabled: false })
-      .eq("workspace_id", req.params.id)
-      .eq("task_type", "ingest_source")
-      .eq("task_key", connection.id);
-    if (taskError) return errorResponse("disconnect_failed", 500, taskError, req.params.id);
+  if (req.params.provider === "slack" && result?.transitioned && result.connection_id) {
+    await stopSlackListener(result.connection_id);
   }
-
-  if (req.params.provider === "slack") stopSlackListener(connection.id);
 
   return Response.json({ ok: true });
 });

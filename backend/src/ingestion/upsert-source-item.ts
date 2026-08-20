@@ -75,6 +75,12 @@ interface UpsertSourceItemRpcResult {
   superseded_item_ids: string[];
 }
 
+export function isConnectionInactiveError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return candidate.code === "P0001" && candidate.message === "connection_inactive";
+}
+
 // Supersede logic lives in the upsert_source_item Postgres function
 // (db/functions/upsert_source_item.sql), not here.
 export async function upsertSourceItem(

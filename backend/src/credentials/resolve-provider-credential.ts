@@ -28,6 +28,7 @@ export type ProviderCredential<P extends SourceConnectionProvider> = P extends "
 interface SourceConnectionCredentialRow {
   id: string;
   credential_id: string | null;
+  status: string;
 }
 
 interface CredentialSecretRow {
@@ -51,7 +52,7 @@ export async function resolveProviderCredential<P extends SourceConnectionProvid
 
   const { data: connectionData, error: connectionError } = await db
     .from("source_connections")
-    .select("id, credential_id")
+    .select("id, credential_id, status")
     .eq("workspace_id", workspaceId)
     .eq("provider", provider)
     .maybeSingle();
@@ -61,6 +62,12 @@ export async function resolveProviderCredential<P extends SourceConnectionProvid
   if (!connection || !connection.credential_id) {
     throw new CredentialError(
       `Workspace ${workspaceId} has no ${provider} source connection with a credential configured`,
+      "missing",
+    );
+  }
+  if (connection.status !== "active" && connection.status !== "degraded") {
+    throw new CredentialError(
+      `Workspace ${workspaceId} has no ingestible ${provider} source connection`,
       "missing",
     );
   }

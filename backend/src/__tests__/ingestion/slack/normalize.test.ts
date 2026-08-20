@@ -12,21 +12,17 @@ const ctx: SlackMessageEventContext = {
 };
 
 interface FakeState {
-  upserts: Array<{ table: string; payload: Record<string, unknown>; options: unknown }>;
+  rpcCalls: Array<{ functionName: string; params: Record<string, unknown> }>;
   uploads: Array<{ bucket: string; path: string; options: unknown }>;
 }
 
-function createFakeClient(): { client: SupabaseClient; state: FakeState } {
-  const state: FakeState = { upserts: [], uploads: [] };
+function createFakeClient(rpcError: unknown = null): { client: SupabaseClient; state: FakeState } {
+  const state: FakeState = { rpcCalls: [], uploads: [] };
 
   const client = {
-    from(table: string) {
-      return {
-        upsert: async (payload: Record<string, unknown>, options: unknown) => {
-          state.upserts.push({ table, payload, options });
-          return { error: null };
-        },
-      };
+    async rpc(functionName: string, params: Record<string, unknown>) {
+      state.rpcCalls.push({ functionName, params });
+      return { data: rpcError ? null : { message_id: "message-1" }, error: rpcError };
     },
     storage: {
       from(bucket: string) {
@@ -50,7 +46,7 @@ afterEach(() => {
 });
 
 describe("handleSlackMessageEvent — ordinary messages", () => {
-  it("upserts a slack_messages row with source_item_id null and message_version = ts", async () => {
+  it("writes through the active-gated Slack message RPC", async () => {
     const { client, state } = createFakeClient();
 
     await handleSlackMessageEvent(
@@ -66,24 +62,41 @@ describe("handleSlackMessageEvent — ordinary messages", () => {
       client,
     );
 
-    expect(state.upserts).toHaveLength(1);
-    const [{ table, payload, options }] = state.upserts;
-    expect(table).toBe("slack_messages");
-    expect(payload).toMatchObject({
-      workspace_id: "workspace-1",
-      source_connection_id: "conn-1",
-      source_item_id: null,
-      channel_id: "C123",
-      message_ts: "1700000000.000100",
-      message_version: "1700000000.000100",
-      slack_user_id: "U1",
-      text: "hello team",
-      subtype: null,
-      is_deleted: false,
+    expect(state.rpcCalls).toHaveLength(1);
+    const [{ functionName, params }] = state.rpcCalls;
+    expect(functionName).toBe("upsert_slack_message_if_connection_active");
+    expect(params).toMatchObject({
+      p_workspace_id: "workspace-1",
+      p_source_connection_id: "conn-1",
+      p_channel_id: "C123",
+      p_message_ts: "1700000000.000100",
+      p_message_version: "1700000000.000100",
+      p_slack_user_id: "U1",
+      p_text: "hello team",
+      p_subtype: null,
+      p_is_deleted: false,
     });
-    expect(options).toMatchObject({
-      onConflict: "source_connection_id,channel_id,message_ts,message_version",
-    });
+  });
+
+  it("treats connection_inactive from the final RPC as a stale-delivery skip", async () => {
+    const { client, state } = createFakeClient({ code: "P0001", message: "connection_inactive" });
+
+    await expect(handleSlackMessageEvent(
+      { type: "message", channel: "C123", ts: "1700000000.000150", text: "stale" },
+      ctx,
+      client,
+    )).resolves.toBeUndefined();
+    expect(state.rpcCalls).toHaveLength(1);
+  });
+
+  it("still propagates non-lifecycle RPC failures", async () => {
+    const { client } = createFakeClient({ code: "XX000", message: "database unavailable" });
+
+    await expect(handleSlackMessageEvent(
+      { type: "message", channel: "C123", ts: "1700000000.000175", text: "fail" },
+      ctx,
+      client,
+    )).rejects.toMatchObject({ code: "XX000" });
   });
 
   it("skips noise subtypes (e.g. channel_join) without writing a row", async () => {
@@ -95,7 +108,7 @@ describe("handleSlackMessageEvent — ordinary messages", () => {
       client,
     );
 
-    expect(state.upserts).toHaveLength(0);
+    expect(state.rpcCalls).toHaveLength(0);
   });
 
   it.each(["channel_name", "channel_purpose", "channel_topic"])(
@@ -116,11 +129,11 @@ describe("handleSlackMessageEvent — ordinary messages", () => {
         client,
       );
 
-      expect(state.upserts).toHaveLength(1);
-      const [{ payload }] = state.upserts;
-      expect(payload).toMatchObject({
-        subtype,
-        text: `<@U1> has updated the channel ${subtype}`,
+      expect(state.rpcCalls).toHaveLength(1);
+      const [{ params }] = state.rpcCalls;
+      expect(params).toMatchObject({
+        p_subtype: subtype,
+        p_text: `<@U1> has updated the channel ${subtype}`,
       });
     },
   );
@@ -157,8 +170,8 @@ describe("handleSlackMessageEvent — ordinary messages", () => {
     expect(state.uploads[0].bucket).toBe("slack-attachments");
     expect(state.uploads[0].path).toBe("slack/org-1/workspace-1/C123/F1-report_final__v2_.csv");
 
-    const [{ payload }] = state.upserts;
-    const files = payload.files_json as Array<Record<string, unknown>>;
+    const [{ params }] = state.rpcCalls;
+    const files = params.p_files_json as Array<Record<string, unknown>>;
     expect(files).toHaveLength(1);
     expect(files[0]).toMatchObject({
       file_id: "F1",
@@ -207,7 +220,7 @@ describe("handleSlackMessageEvent — message_changed / message_deleted (the bug
       client,
     );
 
-    expect(state.upserts).toHaveLength(0);
+    expect(state.rpcCalls).toHaveLength(0);
     expect(logSpy).toHaveBeenCalledTimes(1);
     const logged = JSON.parse((logSpy.mock.calls[0] as unknown[])[0] as string);
     expect(logged).toMatchObject({
@@ -236,7 +249,7 @@ describe("handleSlackMessageEvent — message_changed / message_deleted (the bug
       client,
     );
 
-    expect(state.upserts).toHaveLength(0);
+    expect(state.rpcCalls).toHaveLength(0);
     expect(logSpy).toHaveBeenCalledTimes(1);
     const logged = JSON.parse((logSpy.mock.calls[0] as unknown[])[0] as string);
     expect(logged).toMatchObject({

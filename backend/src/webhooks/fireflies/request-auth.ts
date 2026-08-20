@@ -105,6 +105,7 @@ export async function authenticateFirefliesWebhookRequest(
     .select("id, workspace_id")
     .eq("connection_key", connectionKey)
     .eq("provider", "fireflies")
+    .in("status", ["active", "degraded"])
     .maybeSingle();
   if (error) reject("Fireflies webhook connection lookup failed");
 

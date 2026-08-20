@@ -32,6 +32,7 @@ interface FakeClientOptions {
     encryption_key_version: string;
   } | null;
   connectionCredentialId?: string | null;
+  connectionStatus?: string;
 }
 
 function createFakeClient(options: FakeClientOptions) {
@@ -40,8 +41,8 @@ function createFakeClient(options: FakeClientOptions) {
       return {
         select: (columns: string) => ({
           eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => {
+            eq: () => {
+              const maybeSingle = async () => {
                 if (columns.includes("workspace_id") && !columns.includes("credential_id")) {
                   return {
                     data:
@@ -52,11 +53,23 @@ function createFakeClient(options: FakeClientOptions) {
                   };
                 }
                 return {
-                  data: { id: ids.connection, credential_id: options.connectionCredentialId ?? ids.credential },
+                  data: {
+                    id: ids.connection,
+                    credential_id: options.connectionCredentialId ?? ids.credential,
+                    status: options.connectionStatus ?? "active",
+                  },
                   error: null,
                 };
-              },
-            }),
+              };
+              return {
+                maybeSingle,
+                in: (_column: string, statuses: string[]) => ({
+                  maybeSingle: async () => statuses.includes(options.connectionStatus ?? "active")
+                    ? maybeSingle()
+                    : { data: null, error: null },
+                }),
+              };
+            },
           }),
         }),
       };
@@ -160,6 +173,18 @@ describe("authenticateFirefliesWebhookRequest", () => {
       authenticateFirefliesWebhookRequest(request, "unknown-key", client),
     ).rejects.toBeInstanceOf(FirefliesWebhookAuthError);
   });
+
+  it.each(["pending", "error", "revoked"])(
+    "rejects an inactive %s connection exactly like a missing key",
+    async (connectionStatus) => {
+      const client = createFakeClient({ connectionStatus });
+      const request = makeRequest(validPayload, sign(validPayload, WEBHOOK_SECRET));
+
+      await expect(
+        authenticateFirefliesWebhookRequest(request, CONNECTION_KEY, client),
+      ).rejects.toBeInstanceOf(FirefliesWebhookAuthError);
+    },
+  );
 
   it("rejects a tampered body (bit-flip after signing)", async () => {
     const client = defaultClient();

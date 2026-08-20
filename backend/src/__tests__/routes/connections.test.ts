@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { decryptCredentialPayload } from "../../credentials/crypto";
 
 const caller = { userId: "user-1", accessToken: "token-1" };
@@ -28,6 +28,7 @@ interface Credential {
 
 interface ScheduledTask {
   workspace_id: string;
+  source_connection_id?: string;
   task_type: string;
   task_key: string;
   enabled: boolean;
@@ -199,6 +200,31 @@ function createFakeClient() {
       };
       return builder;
     },
+    async rpc(functionName: string, params: Record<string, unknown>) {
+      if (functionName !== "disconnect_source_connection") {
+        throw new Error(`Unexpected fake RPC: ${functionName}`);
+      }
+      if (disconnectRpcError) return { data: null, error: disconnectRpcError };
+      const connection = state.connections.find((candidate) =>
+        candidate.workspace_id === params.p_workspace_id &&
+        candidate.provider === params.p_provider &&
+        candidate.status !== "revoked"
+      );
+      if (!connection) {
+        return { data: [{ connection_id: null, transitioned: false }], error: null };
+      }
+      connection.status = "revoked";
+      for (const task of state.scheduledTasks) {
+        if (task.workspace_id === connection.workspace_id &&
+            (task.source_connection_id === connection.id || task.task_key === connection.id)) {
+          task.enabled = false;
+        }
+      }
+      return {
+        data: [{ connection_id: connection.id, transitioned: true }],
+        error: null,
+      };
+    },
   };
 }
 
@@ -212,12 +238,17 @@ process.env.GITHUB_APP_SLUG = "draft-context-test";
 process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\\ntest\\n-----END RSA PRIVATE KEY-----";
 process.env.GITHUB_APP_WEBHOOK_SECRET = "webhook-secret";
 
+const realResolveProviderCredential = (
+  await import("../../credentials/resolve-provider-credential")
+).resolveProviderCredential;
+
 let accessResult: Response | null = null;
 const fakeClient = createFakeClient();
 let restartedSlackListeners: string[] = [];
 let stoppedSlackListeners: string[] = [];
 let slackJoinCalls: string[] = [];
 let slackJoinError: string | null = null;
+let disconnectRpcError: { message: string } | null = null;
 let linearWebhookRequests: Array<{
   authorization: string | null;
   body: { query: string; variables: Record<string, unknown> };
@@ -242,12 +273,19 @@ mock.module("../../ingestion/slack/bootstrap", () => ({
 
 const routeModule = await import("../../routes/connections");
 
+afterAll(() => {
+  mock.module("../../credentials/resolve-provider-credential", () => ({
+    resolveProviderCredential: realResolveProviderCredential,
+  }));
+});
+
 beforeEach(() => {
   accessResult = null;
   restartedSlackListeners = [];
   stoppedSlackListeners = [];
   slackJoinCalls = [];
   slackJoinError = null;
+  disconnectRpcError = null;
   linearWebhookRequests = [];
   linearWebhookFailureBody = null;
   globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
@@ -311,7 +349,13 @@ beforeEach(() => {
     },
   ];
   state.scheduledTasks = [
-    { workspace_id: workspaceId, task_type: "ingest_source", task_key: "slack-connection", enabled: true },
+    {
+      workspace_id: workspaceId,
+      source_connection_id: "slack-connection",
+      task_type: "ingest_source",
+      task_key: "slack-connection",
+      enabled: true,
+    },
   ];
   state.workspaces = [
     { id: workspaceId, inference_credential_id: null },
@@ -650,6 +694,21 @@ describe("workspace connection routes", () => {
     );
     expect(secondResponse.status).toBe(200);
     expect(await secondResponse.json()).toEqual({ ok: true });
+    expect(stoppedSlackListeners).toEqual(["slack-connection"]);
+  });
+
+  it("does not stop the Slack listener when the disconnect RPC fails", async () => {
+    disconnectRpcError = { message: "database unavailable" };
+
+    const response = await routeModule.DELETE(
+      request("DELETE", { id: workspaceId, provider: "slack" }) as never,
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "disconnect_failed" });
+    expect(state.connections[0]?.status).toBe("active");
+    expect(state.scheduledTasks[0]?.enabled).toBe(true);
+    expect(stoppedSlackListeners).toEqual([]);
   });
 
   it("includes a connected github source in GET", async () => {

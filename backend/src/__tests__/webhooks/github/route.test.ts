@@ -11,11 +11,25 @@ const realRequestAuthModule = await import("../../../webhooks/github/request-aut
 const realNormalizeModule = await import("../../../ingestion/github/normalize");
 const realInstallationSyncModule = await import("../../../ingestion/github/installation-sync");
 const RealGithubWebhookAuthError = realRequestAuthModule.GithubWebhookAuthError;
+const realAuthenticateGithubWebhookRequest = realRequestAuthModule.authenticateGithubWebhookRequest;
+const realIngestGithubPullRequestEvent = realNormalizeModule.ingestGithubPullRequestEvent;
+const realIngestGithubPushEvent = realNormalizeModule.ingestGithubPushEvent;
+const realHandleInstallationEvent = realInstallationSyncModule.handleInstallationEvent;
+const realHandleInstallationRepositoriesEvent = realInstallationSyncModule.handleInstallationRepositoriesEvent;
 
 function restoreRealModules() {
-  mock.module("../../../webhooks/github/request-auth", () => realRequestAuthModule);
-  mock.module("../../../ingestion/github/normalize", () => realNormalizeModule);
-  mock.module("../../../ingestion/github/installation-sync", () => realInstallationSyncModule);
+  mock.module("../../../webhooks/github/request-auth", () => ({
+    GithubWebhookAuthError: RealGithubWebhookAuthError,
+    authenticateGithubWebhookRequest: realAuthenticateGithubWebhookRequest,
+  }));
+  mock.module("../../../ingestion/github/normalize", () => ({
+    ingestGithubPullRequestEvent: realIngestGithubPullRequestEvent,
+    ingestGithubPushEvent: realIngestGithubPushEvent,
+  }));
+  mock.module("../../../ingestion/github/installation-sync", () => ({
+    handleInstallationEvent: realHandleInstallationEvent,
+    handleInstallationRepositoriesEvent: realHandleInstallationRepositoriesEvent,
+  }));
 }
 
 describe("POST /webhooks/github", () => {

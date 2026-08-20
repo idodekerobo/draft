@@ -113,6 +113,7 @@ describe("dispatchScheduledTask", () => {
       id: "conn-1",
       workspace_id: task.workspace_id,
       provider: "fireflies",
+      status: "active",
       cursor_json: {},
     });
     const deps = neverCalledDeps();
@@ -136,6 +137,7 @@ describe("dispatchScheduledTask", () => {
       id: "conn-2",
       workspace_id: task.workspace_id,
       provider: "slack",
+      status: "active",
       cursor_json: {},
     });
     const deps = neverCalledDeps();
@@ -159,6 +161,7 @@ describe("dispatchScheduledTask", () => {
       id: "conn-1",
       workspace_id: task.workspace_id,
       provider: "fireflies",
+      status: "active",
       cursor_json: {},
     });
     const deps = neverCalledDeps();
@@ -174,6 +177,32 @@ describe("dispatchScheduledTask", () => {
 
     expect(calls).toBe(1);
   });
+
+  it.each(["pending", "error", "revoked"])(
+    "no-ops a stale ingest_source task for an inactive %s connection",
+    async (status) => {
+      const task = baseTask({
+        task_type: "ingest_source",
+        source_connection_id: "conn-stale",
+        schedule_kind: "interval",
+        cron_expression: null,
+        interval_seconds: 300,
+      });
+      const client = fakeClient(task, {
+        id: "conn-stale",
+        workspace_id: task.workspace_id,
+        provider: "slack",
+        status,
+        cursor_json: {},
+      });
+      const deps = neverCalledDeps();
+
+      await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+      expect(deps.materializeSlackBatches).not.toHaveBeenCalled();
+      expect(deps.reconcileFirefliesConnection).not.toHaveBeenCalled();
+    },
+  );
 
   it("no-ops a synthesize_workspace dispatch when there are no ready source items", async () => {
     const task = baseTask({ task_type: "synthesize_workspace" });
