@@ -44,8 +44,12 @@ export interface AnalyticsConfig {
 export interface DraftConfig {
   version: string;
   plugin_version?: string;
+  /** Version of the installed `draft` CLI binary at ~/.draft/bin/draft. */
+  cli_version?: string;
   tools: Partial<Record<InstalledTool, ToolEntry>>;
   last_update_check?: UpdateCheckEntry;
+  /** Separate from last_update_check (plugin) — tracks the CLI binary release channel. */
+  last_cli_update_check?: UpdateCheckEntry;
   analytics?: AnalyticsConfig;
   last_migration?: number;
 }
