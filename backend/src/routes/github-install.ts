@@ -32,5 +32,9 @@ export const pollGET = withAuth<PollInstallSessionRequest>(async (req, caller) =
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   if (session.status === "pending") return Response.json({ status: "pending" });
-  return Response.json({ status: session.status, errorMessage: session.errorMessage });
+  return Response.json({
+    status: session.status,
+    errorCode: session.errorCode,
+    errorMessage: session.errorMessage,
+  });
 });
