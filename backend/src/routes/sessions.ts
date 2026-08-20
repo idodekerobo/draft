@@ -3,6 +3,8 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import type { AgentMessageRow, AgentSessionRow, SourceItemRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
+import { recordAgentQueryLog } from "../observability/record-query-log";
+import { resolveUserFilter } from "./sessions-identity";
 
 type SessionsRequest = Bun.BunRequest<"/workspaces/:id/sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/sessions/:sessionId">;
@@ -20,7 +22,7 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
 
   const url = new URL(req.url);
   const provider = url.searchParams.get("provider");
-  const userId = url.searchParams.get("user");
+  const userEmail = url.searchParams.get("user");
   const since = url.searchParams.get("since");
 
   let query = serviceClient
@@ -29,8 +31,16 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
     .eq("workspace_id", req.params.id)
     .order("started_at", { ascending: false });
   if (provider) query = query.eq("provider", provider);
-  if (userId) query = query.eq("user_id", userId);
   if (since) query = query.gte("started_at", since);
+
+  if (userEmail) {
+    const resolved = await resolveUserFilter(serviceClient, req.params.id, userEmail);
+    if (resolved.matchedNothing) return Response.json({ sessions: [] });
+    const clauses: string[] = [];
+    if (resolved.userId) clauses.push(`user_id.eq.${resolved.userId}`);
+    if (resolved.contributorId) clauses.push(`contributor_id.eq.${resolved.contributorId}`);
+    query = query.or(clauses.join(","));
+  }
 
   const { data, error } = await query;
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
@@ -62,7 +72,7 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
       .map((c) => [c.id, c.git_display_name ?? c.git_email]),
   );
 
-  return Response.json({
+  const body = {
     sessions: rows.map((row) => ({
       id: row.id,
       provider: row.provider,
@@ -80,7 +90,16 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
       summary_status: row.summary_status,
       has_summary: row.summary_status === "ok",
     })),
+  };
+  const responseText = JSON.stringify(body);
+  void recordAgentQueryLog(serviceClient, {
+    workspaceId: req.params.id,
+    userId: caller.userId,
+    command: "sessions.list",
+    argsJson: { provider, user: userEmail, since },
+    resultBytes: Buffer.byteLength(responseText, "utf8"),
   });
+  return new Response(responseText, { headers: { "Content-Type": "application/json" } });
 });
 
 async function loadSession(workspaceId: string, sessionId: string): Promise<Pick<AgentSessionRow, "id" | "workspace_id"> | null> {
@@ -91,6 +110,44 @@ async function loadSession(workspaceId: string, sessionId: string): Promise<Pick
     .eq("workspace_id", workspaceId)
     .maybeSingle<Pick<AgentSessionRow, "id" | "workspace_id">>();
   return data ?? null;
+}
+
+type TranscriptMessage = Pick<AgentMessageRow, "seq" | "role" | "content" | "created_at">;
+
+interface Window {
+  start_seq: number;
+  end_seq: number;
+}
+
+// Merges overlapping/adjacent context windows so the response's `windows`
+// field never implies a contiguous transcript when gaps exist between matches.
+function mergeWindows(seqs: number[], context: number): Window[] {
+  if (seqs.length === 0) return [];
+  const sorted = [...seqs].sort((a, b) => a - b);
+  const windows: Window[] = [];
+  for (const seq of sorted) {
+    const start = seq - context;
+    const end = seq + context;
+    const last = windows[windows.length - 1];
+    if (last && start <= last.end_seq + 1) {
+      last.end_seq = Math.max(last.end_seq, end);
+    } else {
+      windows.push({ start_seq: start, end_seq: end });
+    }
+  }
+  return windows;
+}
+
+// Drops trailing messages until the serialized array fits maxBytes.
+// truncatedBytes reports how many bytes were cut, 0 when nothing was.
+function truncateToMaxBytes(messages: TranscriptMessage[], maxBytes: number): { messages: TranscriptMessage[]; truncatedBytes: number } {
+  const originalBytes = Buffer.byteLength(JSON.stringify(messages), "utf8");
+  if (originalBytes <= maxBytes) return { messages, truncatedBytes: 0 };
+  let truncated = messages;
+  while (truncated.length > 0 && Buffer.byteLength(JSON.stringify(truncated), "utf8") > maxBytes) {
+    truncated = truncated.slice(0, -1);
+  }
+  return { messages: truncated, truncatedBytes: originalBytes - Buffer.byteLength(JSON.stringify(truncated), "utf8") };
 }
 
 export const READ = withAuth<SessionRequest>(async (req, caller) => {
@@ -106,16 +163,68 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
   const wantsTranscript = url.searchParams.has("transcript");
 
   if (wantsTranscript) {
-    const { data, error } = await serviceClient
-      .from("agent_messages")
-      .select("seq, role, content, created_at")
-      .eq("session_id", session.id)
-      .eq("workspace_id", req.params.id)
-      .order("seq", { ascending: true });
-    if (error) return errorResponse("transcript_lookup_failed", 500, error, req.params.id);
-    return Response.json({
-      messages: ((data ?? []) as Pick<AgentMessageRow, "seq" | "role" | "content" | "created_at">[]),
+    const grep = url.searchParams.get("grep");
+    const contextParam = url.searchParams.get("context");
+    const context = contextParam ? Math.max(0, Number.parseInt(contextParam, 10) || 0) : 0;
+    const maxBytesParam = url.searchParams.get("maxBytes");
+    const maxBytes = maxBytesParam ? Number.parseInt(maxBytesParam, 10) : null;
+
+    let windows: Window[] | undefined;
+    let messages: TranscriptMessage[];
+
+    if (grep) {
+      const { data: matchData, error: matchError } = await serviceClient
+        .from("agent_messages")
+        .select("seq")
+        .eq("session_id", session.id)
+        .eq("workspace_id", req.params.id)
+        .filter("content", "imatch", grep);
+      if (matchError) return errorResponse("invalid_grep_pattern", 400, matchError, req.params.id);
+
+      const matchedSeqs = ((matchData ?? []) as { seq: number }[]).map((r) => r.seq);
+      windows = mergeWindows(matchedSeqs, context);
+
+      const { data: fullData, error: fullError } = await serviceClient
+        .from("agent_messages")
+        .select("seq, role, content, created_at")
+        .eq("session_id", session.id)
+        .eq("workspace_id", req.params.id)
+        .order("seq", { ascending: true });
+      if (fullError) return errorResponse("transcript_lookup_failed", 500, fullError, req.params.id);
+
+      const fullMessages = (fullData ?? []) as TranscriptMessage[];
+      messages = fullMessages.filter((m) => windows!.some((w) => m.seq >= w.start_seq && m.seq <= w.end_seq));
+    } else {
+      const { data, error } = await serviceClient
+        .from("agent_messages")
+        .select("seq, role, content, created_at")
+        .eq("session_id", session.id)
+        .eq("workspace_id", req.params.id)
+        .order("seq", { ascending: true });
+      if (error) return errorResponse("transcript_lookup_failed", 500, error, req.params.id);
+      messages = (data ?? []) as TranscriptMessage[];
+    }
+
+    let truncatedBytes = 0;
+    if (maxBytes !== null && maxBytes > 0) {
+      const truncated = truncateToMaxBytes(messages, maxBytes);
+      messages = truncated.messages;
+      truncatedBytes = truncated.truncatedBytes;
+    }
+
+    const body: { messages: TranscriptMessage[]; windows?: Window[]; truncated_bytes?: number } = { messages };
+    if (windows) body.windows = windows;
+    if (truncatedBytes > 0) body.truncated_bytes = truncatedBytes;
+
+    const responseText = JSON.stringify(body);
+    void recordAgentQueryLog(serviceClient, {
+      workspaceId: req.params.id,
+      userId: caller.userId,
+      command: "sessions.read",
+      argsJson: { sessionId: req.params.sessionId, transcript: true, grep, context, maxBytes },
+      resultBytes: Buffer.byteLength(responseText, "utf8"),
     });
+    return new Response(responseText, { headers: { "Content-Type": "application/json" } });
   }
 
   const { data, error } = await serviceClient
@@ -127,7 +236,24 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
     .contains("metadata_json", { agent_session_id: session.id })
     .maybeSingle<Pick<SourceItemRow, "content_markdown" | "occurred_at" | "metadata_json">>();
   if (error) return errorResponse("summary_lookup_failed", 500, error, req.params.id);
-  if (!data) return Response.json({ summary: null });
+  if (!data) {
+    void recordAgentQueryLog(serviceClient, {
+      workspaceId: req.params.id,
+      userId: caller.userId,
+      command: "sessions.read",
+      argsJson: { sessionId: req.params.sessionId, transcript: false },
+      resultBytes: 0,
+    });
+    return Response.json({ summary: null });
+  }
 
-  return Response.json({ summary: data.content_markdown, occurred_at: data.occurred_at });
+  const responseBody = { summary: data.content_markdown, occurred_at: data.occurred_at };
+  void recordAgentQueryLog(serviceClient, {
+    workspaceId: req.params.id,
+    userId: caller.userId,
+    command: "sessions.read",
+    argsJson: { sessionId: req.params.sessionId, transcript: false },
+    resultBytes: Buffer.byteLength(JSON.stringify(responseBody), "utf8"),
+  });
+  return Response.json(responseBody);
 });
