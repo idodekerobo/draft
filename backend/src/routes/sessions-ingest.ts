@@ -2,9 +2,26 @@ import { basename } from "node:path";
 import { publishableClient, serviceClient } from "../db/client";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { resolveWorkspaceFromIngestToken } from "../credentials/session-ingest-token";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { parseClaudeCodeJsonl } from "../ingestion/claude-code/parse-transcript";
 import { persistAgentSession } from "../ingestion/agent-sessions/persist-session";
 import { recordRouteError } from "../errors/route-error";
+
+// The ingest route's `source` literal for Claude Code sessions -- same
+// fragile-but-scoped string match already implicit elsewhere in this path.
+const CLAUDE_CODE_SESSION_SOURCE = "claude-code-session";
+
+async function isSessionTrackingEnabled(workspaceId: string, source: string): Promise<boolean> {
+  if (source !== CLAUDE_CODE_SESSION_SOURCE) return true;
+  const { data } = await serviceClient
+    .from("source_connections")
+    .select("status")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "claude_session")
+    .eq("connection_key", CLAUDE_SESSION_CONNECTION_KEY)
+    .maybeSingle<{ status: string }>();
+  return data?.status === "active" || data?.status === "pending";
+}
 
 type SessionsIngestRequest = Bun.BunRequest<"/sessions/ingest">;
 
@@ -87,8 +104,14 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
   const cwd = params.get("cwd");
   const displayName = params.get("displayName")?.trim() || null;
   const status = params.get("status") || "unknown";
-  const source = params.get("source") || "claude-code-session";
+  const source = params.get("source") || CLAUDE_CODE_SESSION_SOURCE;
   const project = cwd ? basename(cwd) : null;
+
+  // The ingest token is valid -- this is a workspace policy rejection
+  // (Decision 9's toggle), not an auth failure.
+  if (!(await isSessionTrackingEnabled(workspaceId, source))) {
+    return errorResponse("session_tracking_disabled", 403, undefined, workspaceId);
+  }
 
   const userToken = req.headers.get("x-draft-user-token");
   const identity = await resolveIdentity(workspaceId, userToken, gitEmail, displayName);

@@ -8,9 +8,11 @@ import {
 } from "../credentials/crypto";
 import { resolveProviderCredential } from "../credentials/resolve-provider-credential";
 import { loadConfig } from "../config";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { registerFirefliesReconciliationTask } from "../ingestion/fireflies/reconcile";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
+import { upsertSourceConnection } from "../ingestion/upsert-source-item";
 import type { SourceConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 
@@ -40,8 +42,12 @@ interface ClaudeCodeConnectBody {
   token: string;
 }
 
-type ConnectBody = SlackConnectBody | FirefliesConnectBody | LinearConnectBody | ClaudeCodeConnectBody;
-type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github";
+interface ClaudeSessionConnectBody {
+  provider: "claude_session";
+}
+
+type ConnectBody = SlackConnectBody | FirefliesConnectBody | LinearConnectBody | ClaudeCodeConnectBody | ClaudeSessionConnectBody;
+type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session";
 
 interface SlackConnectResponse {
   ok: true;
@@ -77,7 +83,8 @@ function isSupportedProvider(value: unknown): value is SupportedProvider {
     value === "fireflies" ||
     value === "linear" ||
     value === "claude_code" ||
-    value === "github"
+    value === "github" ||
+    value === "claude_session"
   );
 }
 
@@ -111,6 +118,11 @@ function isClaudeCodeConnectBody(value: unknown): value is ClaudeCodeConnectBody
   if (!value || typeof value !== "object") return false;
   const body = value as Partial<ClaudeCodeConnectBody>;
   return body.provider === "claude_code" && isNonEmptyString(body.token);
+}
+
+function isClaudeSessionConnectBody(value: unknown): value is ClaudeSessionConnectBody {
+  if (!value || typeof value !== "object") return false;
+  return (value as Partial<ClaudeSessionConnectBody>).provider === "claude_session";
 }
 
 function isChannelIds(value: unknown): value is string[] {
@@ -250,7 +262,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .from("source_connections")
     .select("provider, status, display_name, last_success_at, last_error_at, config_json")
     .eq("workspace_id", req.params.id)
-    .in("provider", ["slack", "fireflies", "linear", "github"]);
+    .in("provider", ["slack", "fireflies", "linear", "github", "claude_session"]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
   const connections: Array<{
@@ -363,7 +375,8 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     !isSlackConnectBody(body) &&
     !isFirefliesConnectBody(body) &&
     !isLinearConnectBody(body) &&
-    !isClaudeCodeConnectBody(body)
+    !isClaudeCodeConnectBody(body) &&
+    !isClaudeSessionConnectBody(body)
   ) {
     return errorResponse("invalid_body", 400);
   }
@@ -417,6 +430,24 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       .eq("id", req.params.id);
     if (workspacePointerError) return errorResponse("workspace_update_failed", 500, workspacePointerError, req.params.id);
 
+    return Response.json({ ok: true });
+  }
+
+  if (body.provider === "claude_session") {
+    // Decision 9's workspace toggle: no credential, no webhook -- just a
+    // status flip on the same connection_key materialize-summary.ts
+    // auto-creates, so the toggle and the summarizer's row are one row.
+    try {
+      await upsertSourceConnection(serviceClient, {
+        workspace_id: req.params.id,
+        provider: "claude_session",
+        connection_key: CLAUDE_SESSION_CONNECTION_KEY,
+        status: "active",
+        connected_by_user_id: caller.userId,
+      });
+    } catch (err) {
+      return errorResponse("connection_upsert_failed", 500, err, req.params.id);
+    }
     return Response.json({ ok: true });
   }
 
@@ -644,13 +675,18 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     .eq("workspace_id", req.params.id);
   if (connectionError) return errorResponse("disconnect_failed", 500, connectionError, req.params.id);
 
-  const { error: taskError } = await serviceClient
-    .from("scheduled_tasks")
-    .update({ enabled: false })
-    .eq("workspace_id", req.params.id)
-    .eq("task_type", "ingest_source")
-    .eq("task_key", connection.id);
-  if (taskError) return errorResponse("disconnect_failed", 500, taskError, req.params.id);
+  // claude_session ingestion is push-based via /sessions/ingest, not
+  // scheduled_tasks-driven -- explicit skip rather than relying on "no
+  // matching row" to make that a no-op.
+  if (req.params.provider !== "claude_session") {
+    const { error: taskError } = await serviceClient
+      .from("scheduled_tasks")
+      .update({ enabled: false })
+      .eq("workspace_id", req.params.id)
+      .eq("task_type", "ingest_source")
+      .eq("task_key", connection.id);
+    if (taskError) return errorResponse("disconnect_failed", 500, taskError, req.params.id);
+  }
 
   if (req.params.provider === "slack") stopSlackListener(connection.id);
 

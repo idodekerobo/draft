@@ -25,10 +25,21 @@ let nextId = 0;
 let ingestTokenWorkspace: string | null = workspaceId;
 let userLookup: { userId: string } | null = null;
 let accessResult: Response | null = null;
+/** Mirrors source_connections' claude_session/agent-sessions row status. `undefined` = no row (opt-in default: blocked). */
+let sessionTrackingStatus: string | undefined = "active";
 
 function createFakeServiceClient() {
   return {
     from(table: string) {
+      if (table === "source_connections") {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          async maybeSingle() {
+            return { data: sessionTrackingStatus ? { status: sessionTrackingStatus } : null, error: null };
+          },
+        };
+      }
       if (table === "session_contributors") {
         const filters: Record<string, unknown> = {};
         let updatePayload: Record<string, unknown> | undefined;
@@ -117,6 +128,7 @@ beforeEach(() => {
   ingestTokenWorkspace = workspaceId;
   userLookup = null;
   accessResult = null;
+  sessionTrackingStatus = "active";
 });
 
 function transcriptFor(messages: { role: "user" | "assistant"; text: string }[]): string {
@@ -213,5 +225,27 @@ describe("POST /sessions/ingest", () => {
       new Request("https://internal.test/sessions/ingest", { method: "POST", headers: { authorization: "Bearer good" }, body: "x" }) as never,
     );
     expect(response.status).toBe(400);
+  });
+
+  it("rejects with session_tracking_disabled when no source_connections row exists (opt-in default)", async () => {
+    sessionTrackingStatus = undefined;
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ ok: false, error: "session_tracking_disabled" });
+    expect(state.sessions).toHaveLength(0);
+  });
+
+  it("rejects with session_tracking_disabled when the row is revoked", async () => {
+    sessionTrackingStatus = "revoked";
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
+    expect(response.status).toBe(403);
+    expect(state.sessions).toHaveLength(0);
+  });
+
+  it("allows ingestion when the row is pending", async () => {
+    sessionTrackingStatus = "pending";
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
+    expect(response.status).toBe(200);
+    expect(state.sessions).toHaveLength(1);
   });
 });
