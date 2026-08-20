@@ -29,6 +29,14 @@ export function printHelp(): void {
     ["context list",               "List available context dimensions"],
     ["context read --dimension <name>", "Print one or more context dimensions"],
     ["context read --all",         "Print every context dimension"],
+    ["sessions enable claude-code", "Capture this repo's Claude Code sessions"],
+    ["sessions disable",           "Stop capturing this repo's sessions"],
+    ["sessions status",            "Show this repo's session-capture state"],
+    ["sessions list",              "List captured coding sessions"],
+    ["sessions read <id>",         "Print a session's summary or transcript"],
+    ["sessions search \"<pattern>\"", "Search session summaries by keyword"],
+    ["update",                     "Update the draft CLI to the latest release"],
+    ["update --check",             "Check for an update without installing it"],
     ["completion",                 "Generate shell tab completion script"],
   ];
   for (const [cmd, desc] of cmds) {
@@ -39,5 +47,6 @@ export function printHelp(): void {
   console.log(`then ${cyan("draft context list")} to see what's available.`);
   console.log("");
   console.log(`Run ${cyan("draft <command> --json")} for machine-readable output.`);
+  console.log(`Run ${cyan("draft --version")} to print the installed CLI version.`);
   console.log(`Exit codes: 0=success  1=auth/API error  2=invalid usage  130=interrupted`);
 }

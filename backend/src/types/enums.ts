@@ -16,13 +16,15 @@ export type WorkspaceAccessMode = "team_default" | "restricted";
 
 // No DB CHECK constraint backs this one (see db/schemas/credentials.sql) --
 // this type is the only source of truth for allowed values.
+// "claude_session_ingest" is INBOUND-only
 export type CredentialProvider =
   | "fireflies"
   | "slack"
   | "granola"
   | "linear"
   | "github"
-  | "claude_code";
+  | "claude_code"
+  | "claude_session_ingest";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
 
@@ -68,7 +70,8 @@ export type ContextVersionCreationReason =
 export type ScheduledTaskType =
   | "ingest_source"
   | "synthesize_workspace"
-  | "rebuild_projection";
+  | "rebuild_projection"
+  | "summarize_sessions";
 
 export type ScheduleKind = "cron" | "interval";
 
@@ -102,6 +105,13 @@ export type WorkspaceEventType =
   | "source_delayed"
   | "context_restored"
   | "manual_edit";
+
+export type AgentSessionSummaryStatus =
+  | "pending"
+  | "leased"
+  | "ok"
+  | "failed"
+  | "skipped";
 
 export type ErrorOperation =
   | "ingestion"

@@ -111,7 +111,8 @@ cli-push-branch:
 #   make desktop-release v=1.0.0           # stable build → GitHub release
 #   make desktop-release v=1.0.0 canary=1  # canary build → GitHub prerelease
 #
-#   Builds locally, signs, notarizes, tags, and uploads artifacts to GitHub.
+#   Builds locally, signs, notarizes, tags, and uploads artifacts to GitHub —
+#   the desktop .dmg plus (stable only) standalone `draft` CLI binaries.
 #   Stable releases must be run from main. Canary can run from any branch.
 #   gh CLI must be authenticated: gh auth status
 
@@ -177,6 +178,15 @@ p.write_text(result)"
 	@echo "[desktop-release] Building $(_TAG)..."
 	@echo ""
 	@bun run --cwd desktop $(_BUILD_CMD)
+	@# ── Cross-compile CLI binaries (stable only — canary is --prerelease, never fetched) ──
+	@if [ -z "$(canary)" ]; then \
+		echo ""; \
+		echo "[desktop-release] Cross-compiling draft CLI binaries..."; \
+		DRAFT_SUPABASE_URL=$$(python3 -c "import json; print(json.load(open('desktop/src/build-config.json')).get('supabase_url',''))"); \
+		DRAFT_SUPABASE_PUBLISHABLE_KEY=$$(python3 -c "import json; print(json.load(open('desktop/src/build-config.json')).get('supabase_publishable_key',''))"); \
+		DRAFT_SUPABASE_URL="$$DRAFT_SUPABASE_URL" DRAFT_SUPABASE_PUBLISHABLE_KEY="$$DRAFT_SUPABASE_PUBLISHABLE_KEY" DRAFT_CLI_VERSION="$(v)" \
+			bun run cli/scripts/build-release.ts; \
+	fi
 	@# ── Tag + push ────────────────────────────────────────────────────────────
 	@echo ""
 	@echo "[desktop-release] Tagging $(_TAG) and pushing..."

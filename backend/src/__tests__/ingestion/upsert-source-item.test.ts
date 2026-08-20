@@ -8,18 +8,24 @@ const ids = {
   priorItem: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
 };
 
+interface RpcResult {
+  item_id: string;
+  changed: boolean;
+  superseded_item_ids: string[];
+}
+
 interface FakeState {
-  priorReadyRevisions: { id: string; external_version: string }[];
-  upsertedItem: Record<string, unknown> | null;
-  supersedeCalls: string[][];
+  rpcParams: Record<string, unknown> | null;
+  fetchedItemId: string | null;
   connectionUpsertPayload: Record<string, unknown> | null;
 }
 
-function createFakeClient(priorReadyRevisions: { id: string; external_version: string }[]) {
+// Supersede logic lives in upsert_source_item (db/functions/upsert_source_item.sql);
+// this fake only proves the wrapper calls the RPC and reads back its result.
+function createFakeClient(rpcResult: RpcResult) {
   const state: FakeState = {
-    priorReadyRevisions,
-    upsertedItem: null,
-    supersedeCalls: [],
+    rpcParams: null,
+    fetchedItemId: null,
     connectionUpsertPayload: null,
   };
 
@@ -43,30 +49,18 @@ function createFakeClient(priorReadyRevisions: { id: string; external_version: s
     if (table === "source_items") {
       return {
         select: () => ({
-          eq: () => ({
-            eq: () => ({
-              eq: () => ({
-                neq: async () => ({ data: state.priorReadyRevisions, error: null }),
-              }),
-            }),
-          }),
-        }),
-        upsert: (payload: Record<string, unknown>) => {
-          state.upsertedItem = payload;
-          return {
-            select: () => ({
-              single: async () => ({
-                data: { id: "new-item-id", ...payload },
+          eq: (_col: string, val: string) => ({
+            single: async () => {
+              state.fetchedItemId = val;
+              return {
+                data: {
+                  id: val,
+                  supersedes_source_item_id: rpcResult.superseded_item_ids[0] ?? null,
+                },
                 error: null,
-              }),
-            }),
-          };
-        },
-        update: (payload: Record<string, unknown>) => ({
-          in: async (_col: string, ids_: string[]) => {
-            state.supersedeCalls.push(ids_);
-            return { error: null };
-          },
+              };
+            },
+          }),
         }),
       };
     }
@@ -74,12 +68,24 @@ function createFakeClient(priorReadyRevisions: { id: string; external_version: s
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
-  return { client: { from } as unknown as SupabaseClient, state };
+  function rpc(fnName: string, params: Record<string, unknown>) {
+    if (fnName !== "upsert_source_item") {
+      throw new Error(`Unexpected rpc in fake client: ${fnName}`);
+    }
+    state.rpcParams = params;
+    return Promise.resolve({ data: rpcResult, error: null });
+  }
+
+  return { client: { from, rpc } as unknown as SupabaseClient, state };
 }
 
 describe("upsertSourceConnection", () => {
   it("upserts on (workspace_id, provider, connection_key)", async () => {
-    const { client, state } = createFakeClient([]);
+    const { client, state } = createFakeClient({
+      item_id: "unused",
+      changed: true,
+      superseded_item_ids: [],
+    });
     const connection = await upsertSourceConnection(client, {
       workspace_id: ids.workspace,
       provider: "fireflies",
@@ -91,14 +97,48 @@ describe("upsertSourceConnection", () => {
       workspace_id: ids.workspace,
       provider: "fireflies",
       connection_key: "founder-primary",
+    });
+  });
+
+  it("omits status entirely when the caller doesn't pass one, so a conflict leaves an existing row's status untouched", async () => {
+    const { client, state } = createFakeClient({
+      item_id: "unused",
+      changed: true,
+      superseded_item_ids: [],
+    });
+    await upsertSourceConnection(client, {
+      workspace_id: ids.workspace,
+      provider: "claude_session",
+      connection_key: "agent-sessions",
+    });
+
+    expect(state.connectionUpsertPayload).not.toHaveProperty("status");
+  });
+
+  it("includes status in the payload when the caller passes one explicitly", async () => {
+    const { client, state } = createFakeClient({
+      item_id: "unused",
+      changed: true,
+      superseded_item_ids: [],
+    });
+    await upsertSourceConnection(client, {
+      workspace_id: ids.workspace,
+      provider: "manual_upload",
+      connection_key: "manual-upload",
       status: "active",
     });
+
+    expect(state.connectionUpsertPayload).toMatchObject({ status: "active" });
   });
 });
 
 describe("upsertSourceItem", () => {
-  it("upserts a new item with no prior revisions to supersede", async () => {
-    const { client, state } = createFakeClient([]);
+  it("calls the RPC with the input fields and returns the row it wrote", async () => {
+    const { client, state } = createFakeClient({
+      item_id: "new-item-id",
+      changed: true,
+      superseded_item_ids: [],
+    });
     const result = await upsertSourceItem(client, {
       workspace_id: ids.workspace,
       source_connection_id: ids.connection,
@@ -110,16 +150,28 @@ describe("upsertSourceItem", () => {
       content_hash: "hash-a",
     });
 
+    expect(state.rpcParams).toMatchObject({
+      p_workspace_id: ids.workspace,
+      p_source_connection_id: ids.connection,
+      p_item_type: "meeting_transcript",
+      p_external_id: "meeting-1",
+      p_external_version: "hash-a",
+      p_content_markdown: "# Meeting 1",
+      p_content_hash: "hash-a",
+      p_lifecycle_status: "ready",
+    });
+    expect(state.fetchedItemId).toBe("new-item-id");
     expect(result.item.id).toBe("new-item-id");
     expect(result.supersededItemIds).toEqual([]);
-    expect(state.upsertedItem?.supersedes_source_item_id).toBeNull();
-    expect(state.supersedeCalls).toEqual([]);
   });
 
-  it("marks prior ready revisions superseded and links via supersedes_source_item_id", async () => {
-    const { client, state } = createFakeClient([
-      { id: ids.priorItem, external_version: "hash-old" },
-    ]);
+  it("surfaces the superseded item ids the RPC reports", async () => {
+    const { client } = createFakeClient({
+      item_id: "new-item-id-2",
+      changed: true,
+      superseded_item_ids: [ids.priorItem],
+    });
+
     const result = await upsertSourceItem(client, {
       workspace_id: ids.workspace,
       source_connection_id: ids.connection,
@@ -132,7 +184,6 @@ describe("upsertSourceItem", () => {
     });
 
     expect(result.supersededItemIds).toEqual([ids.priorItem]);
-    expect(state.upsertedItem?.supersedes_source_item_id).toBe(ids.priorItem);
-    expect(state.supersedeCalls).toEqual([[ids.priorItem]]);
+    expect(result.item.supersedes_source_item_id).toBe(ids.priorItem);
   });
 });

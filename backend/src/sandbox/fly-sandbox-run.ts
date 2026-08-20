@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { ValidatedRunBundle } from "../synthesis/context-version-files";
 import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import {
@@ -26,12 +25,27 @@ const SANDBOX_GUEST = {
   memory_mb: 512,
 };
 
+// Narrowed subset of ValidatedRunBundle so non-synthesis callers (e.g.
+// summarization) don't depend on synthesis's bundle-building internals.
+export interface SandboxRunBundle {
+  organizationId: string;
+  workspaceId: string;
+  runId: string;
+  bundleHash: string;
+  files: Record<string, { content: string }>;
+}
+
 export interface LaunchFlySandboxRunInput {
-  bundle: ValidatedRunBundle;
-  prompt: string;
+  bundle: SandboxRunBundle;
+  /** Required unless mode is "batch" -- batch runs carry per-session prompts in the bundle instead. */
+  prompt?: string;
   jsonSchema: Record<string, unknown>;
   claudeCodeOAuthToken: string;
   config: SandboxDeploymentConfig;
+  /** Additive: omitted preserves today's single-prompt runner behavior. */
+  mode?: "single" | "batch";
+  /** Bundle-relative manifest path, required when mode is "batch". */
+  manifestPath?: string;
 }
 
 function serializeJsonSchema(schema: Record<string, unknown>): string {
@@ -91,7 +105,7 @@ export async function launchFlySandboxRun(
   input: LaunchFlySandboxRunInput,
   dependencies: LaunchFlySandboxRunDependencies = {},
 ): Promise<FlySandboxRunReceipt> {
-  assertNonEmpty(input.prompt, "prompt");
+  if (input.mode !== "batch") assertNonEmpty(input.prompt ?? "", "prompt");
   assertNonEmpty(input.claudeCodeOAuthToken, "claudeCodeOAuthToken");
   const config = validateSandboxDeploymentConfig(input.config);
 
@@ -119,7 +133,7 @@ export async function launchFlySandboxRun(
   const filesForUpload = Object.fromEntries(
     Object.entries(input.bundle.files).map(([path, file]) => [path, file.content]),
   );
-  filesForUpload[PROMPT_PATH] = input.prompt;
+  if (input.prompt !== undefined) filesForUpload[PROMPT_PATH] = input.prompt;
   filesForUpload[OUTPUT_SCHEMA_PATH] = `${serializedSchema}\n`;
 
   const bundleUploader = dependencies.bundleUploader ?? uploadRunBundle;
@@ -149,6 +163,13 @@ export async function launchFlySandboxRun(
     DRAFT_OUTPUT_SCHEMA_PATH: `/run/${OUTPUT_SCHEMA_PATH}`,
     DRAFT_TIMEOUT_SECONDS: String(SANDBOX_TIMEOUT_SECONDS),
   };
+  if (input.mode === "batch") {
+    if (!input.manifestPath) {
+      throw new Error("manifestPath is required when mode is \"batch\"");
+    }
+    env.DRAFT_RUN_MODE = "batch";
+    env.DRAFT_MANIFEST_PATH = `/run/${input.manifestPath}`;
+  }
   const created = await client.create({
     image: config.flySandboxImage,
     files: {},

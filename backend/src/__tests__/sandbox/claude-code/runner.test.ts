@@ -11,6 +11,7 @@ import {
   extractStructuredOutput,
   claudeCommandArgs,
   fetchAndWriteBundle,
+  parseBatchManifest,
   parseCompletedClaudeEnvelope,
   parseResultPayload,
   readOutputSchema,
@@ -290,5 +291,24 @@ describe("fetchAndWriteBundle", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe("batch manifest parsing", () => {
+  test("parses a valid manifest and caps it at 25 entries", () => {
+    const entries = Array.from({ length: 30 }, (_, i) => ({
+      id: `session-${i}`,
+      promptPath: `input/sessions/session-${i}/prompt.md`,
+    }));
+    const parsed = parseBatchManifest(JSON.stringify(entries));
+    expect(parsed).toHaveLength(25);
+    expect(parsed[0]).toEqual(entries[0]);
+  });
+
+  test("rejects non-array or malformed entries", () => {
+    expect(() => parseBatchManifest("not json")).toThrow("valid JSON");
+    expect(() => parseBatchManifest("{}")).toThrow("must be a JSON array");
+    expect(() => parseBatchManifest('[{"id":"x"}]')).toThrow("promptPath");
+    expect(() => parseBatchManifest('[{"id":"","promptPath":"p"}]')).toThrow("promptPath");
   });
 });

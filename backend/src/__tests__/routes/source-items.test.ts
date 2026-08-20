@@ -52,20 +52,9 @@ function createFakeClient() {
         }
         if (table === "source_items") {
           if (operation === "select") {
-            // Prior-ready-revisions lookup inside upsertSourceItem — none in these tests.
-            return { data: [], error: null };
-          }
-          if (operation === "upsert") {
-            const externalId = payload.external_id as string;
-            if (itemUpsertShouldFail === externalId) {
-              return { data: null, error: new Error("simulated db failure") };
-            }
-            const row = { ...(payload as unknown as SourceItem), id: `item-${++nextId}` };
-            state.items.push(row);
-            return { data: { ...row }, error: null };
-          }
-          if (operation === "update") {
-            return { data: null, error: null };
+            // Post-RPC fetch-by-id inside upsertSourceItem.
+            const found = state.items.find((item) => matches(item));
+            return { data: found ?? null, error: found ? null : new Error("not found") };
           }
         }
         throw new Error(`Unexpected fake query: ${operation} ${table}`);
@@ -87,6 +76,29 @@ function createFakeClient() {
         },
       };
       return builder;
+    },
+    async rpc(fnName: string, params: Record<string, unknown>) {
+      if (fnName !== "upsert_source_item") {
+        throw new Error(`Unexpected rpc: ${fnName}`);
+      }
+      const externalId = params.p_external_id as string;
+      if (itemUpsertShouldFail === externalId) {
+        return { data: null, error: new Error("simulated db failure") };
+      }
+      const row: SourceItem = {
+        id: `item-${++nextId}`,
+        workspace_id: params.p_workspace_id as string,
+        source_connection_id: params.p_source_connection_id as string,
+        external_id: externalId,
+        external_version: params.p_external_version as string,
+        content_hash: params.p_content_hash as string,
+        content_markdown: params.p_content_markdown as string,
+      };
+      state.items.push(row);
+      return {
+        data: { item_id: row.id, changed: true, superseded_item_ids: [] },
+        error: null,
+      };
     },
   };
 }

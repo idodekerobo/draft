@@ -18,11 +18,16 @@ if (missing.length > 0) {
 const supabaseUrl = process.env.DRAFT_SUPABASE_URL!;
 const supabasePublishableKey = process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY!;
 
+// Reported by `draft --version` and used by `draft update`'s version check.
+const cliVersion = process.env.DRAFT_CLI_VERSION
+  ?? (await import("../package.json")).version;
+
 const proc = Bun.spawn({
   cmd: [
     "bun", "build", "--compile",
     "--define", `process.env.DRAFT_SUPABASE_URL=${JSON.stringify(supabaseUrl)}`,
     "--define", `process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY=${JSON.stringify(supabasePublishableKey)}`,
+    "--define", `process.env.DRAFT_CLI_VERSION=${JSON.stringify(cliVersion)}`,
     "src/index.ts", "--outfile", "../draft-bin",
   ],
   cwd: import.meta.dir + "/..",

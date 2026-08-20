@@ -70,6 +70,94 @@ Pass one or more `--dimension <name>` flags, or `--all` — exactly one selectio
 
 ---
 
+## Sessions
+
+Captures Claude Code coding sessions from a project into your workspace, so they're readable from the CLI (and, later, summarized and searchable). Only `claude-code` has a real install path today — other agent names in the `add`/`sessions` vocabulary (`codex`, `cursor`, `openclaw`, `hermes`) are accepted but rejected with a clear "not yet supported" error.
+
+### `draft sessions enable <agent> [--dir <path>] [--json]`
+
+Turns on session capture for one project: mints a repo-scoped ingest token, writes `.claude/draft/config.json` and `.claude/draft/capture-session.sh`, and adds a `SessionEnd` hook entry to `.claude/settings.json` (preserving any hooks already there). It never runs `git add`/`git commit` — review the diff and commit it yourself.
+
+```bash
+draft sessions enable claude-code --dir ~/code/my-app
+draft sessions enable claude-code --dir . --json
+```
+
+Re-running is idempotent: the hook entry is only added once (`hookChanged: false` on a no-op rerun).
+
+### `draft sessions disable [--dir <path>] [--json]`
+
+Removes the `SessionEnd` hook entry from `.claude/settings.json`. The repo's ingest token stays active server-side — revoking it isn't wired up yet (no settings UI to drive it from).
+
+```bash
+draft sessions disable --dir ~/code/my-app
+```
+
+### `draft sessions status [--dir <path>] [--json]`
+
+Reports whether a project has session capture configured and whether the `SessionEnd` hook is installed.
+
+```bash
+draft sessions status --dir ~/code/my-app
+```
+
+### `draft sessions list [--provider <name>] [--user <email>] [--since <iso8601>] [--json]`
+
+Lists captured sessions in your workspace, most recent first. `--user` takes an email address, resolved against both an authenticated user's `users.email` and an unverified contributor's `session_contributors.git_email` — not a raw user id.
+
+```bash
+draft sessions list
+draft sessions list --provider claude-code-session --json
+draft sessions list --user ada@example.com
+```
+
+### `draft sessions read <id> [--summary | --transcript] [--json]`
+
+Prints one session's summary (default) or its raw transcript.
+
+```bash
+draft sessions read <session-id>
+draft sessions read <session-id> --transcript
+```
+
+A session that hasn't been summarized yet prints `(no summary yet)`; `--transcript` always works off the raw captured messages, regardless of summary state.
+
+#### `--grep`, `--context`, `--max-bytes` (transcript only)
+
+Filter a transcript before reading it back, instead of fetching the whole thing:
+
+```bash
+draft sessions read <session-id> --transcript --grep "database migration"
+draft sessions read <session-id> --transcript --grep "error" --context 3
+draft sessions read <session-id> --transcript --max-bytes 20000
+```
+
+- `--grep "<pattern>"` — case-insensitive regex match against raw message content. A malformed pattern returns a usage error, not a crash.
+- `--context <n>` — include `n` messages before/after each match (default 0). Requires `--grep`. Overlapping windows are merged; the JSON response's `windows: [{start_seq, end_seq}]` array marks the returned ranges explicitly, since the result usually isn't a contiguous transcript.
+- `--max-bytes <n>` — cap the serialized response size, truncating from the end. Composes with `--grep`: filtering happens first, then truncation if the filtered result is still too large. `truncated_bytes` in the JSON response reports how much was cut.
+
+These three flags only apply with `--transcript` — combining any of them with `--summary` is a usage error.
+
+### `draft sessions search "<pattern>"  [--provider <name>] [--user <email>] [--since <iso8601>] [--json]`
+
+Searches session **summaries** by keyword — a different corpus than `sessions read --transcript --grep`:
+
+| Command | Corpus | Backed by |
+|---|---|---|
+| `sessions search` | summaries (`source_items.content_markdown`) | GIN tsvector index |
+| `sessions read --transcript --grep` | raw turns (`agent_messages.content`) | sequential scan, one session |
+
+`search` never returns full summary text — only a short snippet around each match, so it stays cheap to skim across many sessions. Use `sessions read <id>` to fetch a session's full summary once you've found the one you want.
+
+```bash
+draft sessions search "database migration"
+draft sessions search "auth bug" --since 2026-08-01
+```
+
+List sessions and read summaries first. Fetch a full transcript, or use `--grep`, only when the summary is missing, stale, or insufficient.
+
+---
+
 ## Project setup
 
 ### `draft add <tool> [--dir <path>...] [--json]`
@@ -110,6 +198,30 @@ $ draft add claude-code --dir ./my-repo --json
 ```
 
 If any of the given directories fail validation, `status` is `partial_error`, each directory's own result reports `ok` and, on failure, a `code` (`directory_not_found`, `not_a_directory`, or `symlink_target`) and `message` — directories that did validate are still written. Exit code is `1` if any directory failed, `0` if all succeeded.
+
+---
+
+## Installing and updating
+
+The CLI installs standalone — no repo clone, no bun, no desktop app required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idodekerobo/draft/main/scripts/install-cli.sh | bash
+```
+
+This downloads the platform-matched `draft` binary from the latest GitHub release (the same release `make desktop-release` cuts for the desktop app) to `~/.draft/bin/draft` and links it onto `PATH` — the same layout the desktop app's own first-launch installer uses, so either install path works interchangeably with `draft update`.
+
+### `draft update`
+
+Downloads the latest release binary for your platform and replaces the running `draft` in place.
+
+```bash
+draft update            # install the latest version
+draft update --check    # report whether an update is available, without installing
+draft update --json
+```
+
+Every other command also does a cheap, cached, non-blocking staleness check in the background and prints a one-line notice to stderr (`Update available: vX → vY — run draft update`) when a newer release is cached as available — nothing waits on the network to run your actual command. `draft --version` prints the installed version. Not available when running from source (`bun run src/index.ts`) — only applies to a compiled release binary.
 
 ---
 

@@ -35,17 +35,23 @@ export interface RunCliOptions {
   apiUrl: string;
   supabaseUrl?: string;
   timeoutMs?: number;
+  cwd?: string;
+  stdin?: string;
+  env?: Record<string, string>;
 }
 
 export function runCli(args: string[], opts: RunCliOptions): Promise<CaptureResult> {
   return capture(["bun", "run", CLI_ENTRY, ...args], {
     timeoutMs: opts.timeoutMs ?? 10_000,
+    cwd: opts.cwd,
+    stdin: opts.stdin,
     env: {
       HOME: opts.home,
       DRAFT_API_BASE_URL: opts.apiUrl,
       DRAFT_APP_URL: opts.apiUrl,
       DRAFT_SUPABASE_URL: opts.supabaseUrl ?? opts.apiUrl,
       DRAFT_SUPABASE_PUBLISHABLE_KEY: "test-anon-key",
+      ...opts.env,
     },
   });
 }

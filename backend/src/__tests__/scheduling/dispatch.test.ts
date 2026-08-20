@@ -64,6 +64,7 @@ function neverCalledDeps(): DispatchDependencies {
     materializeSlackBatches: mock(shouldNotBeCalled) as unknown as DispatchDependencies["materializeSlackBatches"],
     launchSynthesisRun: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSynthesisRun"],
     getReadySourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getReadySourceItemIds"],
+    launchSummarizationBatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSummarizationBatch"],
   };
 }
 
@@ -206,6 +207,19 @@ describe("dispatchScheduledTask", () => {
         scheduledTaskId: task.id,
         occurrenceAt: task.next_due_at,
       }),
+    );
+  });
+
+  it("routes summarize_sessions to the summarization batch launcher", async () => {
+    const task = baseTask({ task_type: "summarize_sessions" });
+    const client = fakeClient(task);
+    const deps = neverCalledDeps();
+    deps.launchSummarizationBatch = mock(async () => null) as unknown as DispatchDependencies["launchSummarizationBatch"];
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.launchSummarizationBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: task.workspace_id }),
     );
   });
 });

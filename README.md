@@ -10,6 +10,24 @@ Visit [draftai.us](https://draftai.us) to download the app. See below to run fro
 
 ---
 
+## Install
+
+**Desktop app** (macOS, Apple Silicon):
+
+```
+https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg
+```
+
+**CLI only** — no desktop app, no repo clone, no Bun required. Useful for servers, CI, or another agent that just needs `draft`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/idodekerobo/draft/main/scripts/install-cli.sh | bash
+```
+
+This detects your OS/arch, downloads the matching `draft` binary from the latest GitHub release, and installs it to `~/.draft/bin/draft` (linked onto `PATH`). Supported platforms: macOS (arm64/x64) and Linux (x64). Update anytime with `draft update`.
+
+---
+
 ## How it works
 
 ```
@@ -252,6 +270,8 @@ draft auth logout                   # sign out and clear local credentials
 draft context list                  # list available context dimensions
 draft context read --dimension <name>  # print one or more context dimensions
 draft context read --all            # print every context dimension
+draft update                        # update the CLI to the latest release
+draft --version                     # print the installed CLI version
 ```
 
 ---

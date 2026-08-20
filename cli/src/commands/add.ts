@@ -37,6 +37,19 @@ const MANAGED_BLOCK_BODY = [
   "- `draft context list` — discover available context dimensions.",
   "- `draft context read --dimension <name>` (repeatable) or `--all` — read current context.",
   "- `draft --help` — see all available commands.",
+  "",
+  "### Coding sessions",
+  "",
+  "- `draft sessions list [--provider <p>] [--user <email>] [--since <ISO>]` — list captured sessions.",
+  "- `draft sessions read <id> [--summary|--transcript]` — read one session's summary or raw transcript.",
+  "- `draft sessions search \"<pattern>\"` — search session **summaries** by keyword (fast, snippet-only).",
+  "- `draft sessions read <id> --transcript --grep \"<pattern>\" [--context <n>]` and `--max-bytes <n>` — search a raw transcript (different corpus than `search` — see `draft sessions search` vs. `draft sessions read --grep` in `docs/cli.md`).",
+  "",
+  "List sessions and read summaries first. Fetch a full transcript, or use",
+  "`--grep`, only when the summary is missing, stale, or insufficient.",
+  "",
+  "Resolve people by exact display name or Git email. Present choices when a",
+  "name is ambiguous.",
 ].join("\n");
 
 interface ParsedArgs {

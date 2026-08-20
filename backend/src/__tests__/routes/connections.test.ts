@@ -6,7 +6,7 @@ const workspaceId = "workspace-1";
 
 interface Connection {
   id: string;
-  provider: "slack" | "fireflies";
+  provider: "slack" | "fireflies" | "linear" | "claude_session";
   credential_id: string | null;
   connection_key: string;
   status: string;
@@ -85,6 +85,29 @@ function createFakeClient() {
             } as Connection;
             state.connections.push(row);
             return { data: { id: row.id }, error: null };
+          }
+          if (operation === "upsert") {
+            const existing = state.connections.find((c) =>
+              c.workspace_id === payload.workspace_id && c.provider === payload.provider && c.connection_key === payload.connection_key,
+            );
+            if (existing) {
+              // Mirrors PostgREST merge-duplicates upsert: only keys present in
+              // the payload get written -- an omitted `status` leaves the
+              // existing row's status untouched.
+              Object.assign(existing, payload);
+              return { data: existing, error: null };
+            }
+            const row = {
+              ...(payload as unknown as Connection),
+              id: "connection-new",
+              status: (payload.status as string | undefined) ?? "pending",
+              display_name: (payload.display_name as string | null | undefined) ?? null,
+              last_success_at: null,
+              last_error_at: null,
+              config_json: (payload.config_json as Record<string, unknown> | undefined) ?? {},
+            } as Connection;
+            state.connections.push(row);
+            return { data: row, error: null };
           }
         }
 
@@ -600,5 +623,42 @@ describe("workspace connection routes", () => {
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "invalid_body" });
+  });
+
+  it("claude_session: POST toggles the workspace on with no credential/webhook", async () => {
+    state.connections = state.connections.filter((c) => c.provider !== "claude_session");
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, { provider: "claude_session" }) as never,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    const connection = state.connections.find((c) => c.provider === "claude_session");
+    expect(connection?.status).toBe("active");
+    expect(connection?.connection_key).toBe("agent-sessions");
+  });
+
+  it("claude_session: DELETE revokes without touching scheduled_tasks", async () => {
+    state.connections.push({
+      id: "claude-session-connection",
+      provider: "claude_session",
+      credential_id: null,
+      connection_key: "agent-sessions",
+      status: "active",
+      display_name: null,
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+    });
+    state.scheduledTasks = [];
+
+    const response = await routeModule.DELETE(
+      request("DELETE", { id: workspaceId, provider: "claude_session" }) as never,
+    );
+    expect(response.status).toBe(200);
+    const connection = state.connections.find((c) => c.provider === "claude_session");
+    expect(connection?.status).toBe("revoked");
+    expect(state.scheduledTasks).toHaveLength(0);
   });
 });

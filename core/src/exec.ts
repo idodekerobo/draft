@@ -45,7 +45,7 @@ export interface CaptureResult {
  */
 export async function capture(
   cmd: string[],
-  opts?: { timeoutMs?: number; env?: Record<string, string>; cwd?: string }
+  opts?: { timeoutMs?: number; env?: Record<string, string>; cwd?: string; stdin?: string }
 ): Promise<CaptureResult> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const bin  = cmd[0] ?? "";
@@ -57,7 +57,7 @@ export async function capture(
   let proc: ReturnType<typeof Bun.spawn>;
   try {
     proc = Bun.spawn([bin, ...args], {
-      stdin: "ignore",
+      stdin: opts?.stdin !== undefined ? Buffer.from(opts.stdin) : "ignore",
       stdout: "pipe",
       stderr: "pipe",
       ...(env ? { env } : {}),

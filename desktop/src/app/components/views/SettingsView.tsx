@@ -18,6 +18,7 @@ import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
 import { GithubConnectPanel } from "../shared/GithubConnectPanel";
 import { LinearConnectPanel } from "../shared/LinearConnectPanel";
+import { SessionTrackingPanel } from "../shared/SessionTrackingPanel";
 import { SlackConnectPanel } from "../shared/SlackConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 
@@ -82,14 +83,15 @@ function SegmentControl({ value, options, onChange }: SegmentControlProps) {
 // ── Sub-components: Connected Apps ─────────────────────────────────────────────
 
 const SOURCE_LABELS: Record<string, string> = {
-  slack:     "Slack",
-  fireflies: "Fireflies",
-  linear:    "Linear",
-  github:    "GitHub",
+  slack:          "Slack",
+  fireflies:      "Fireflies",
+  linear:         "Linear",
+  github:         "GitHub",
+  claude_session: "Coding Sessions",
 };
 
 interface InputSourceRowProps {
-  sourceKey: "slack" | "fireflies" | "linear" | "github";
+  sourceKey: "slack" | "fireflies" | "linear" | "github" | "claude_session";
   detail: IntegrationDetail;
   onDisconnect: () => void;
   onToggleConnect: () => void;
@@ -119,7 +121,7 @@ function InputSourceRow({
     if (detail.channels) parts.push(`${detail.channels} channels`);
     const time = relativeTime(detail.lastConnected);
     if (time) parts.push(time);
-    return parts.join(" · ");
+    return parts.length > 0 ? parts.join(" · ") : "On";
   }
 
   return (
@@ -183,8 +185,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | "github" | null>(null);
-  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | "github" | null>(null);
+  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | "github" | "claude_session" | null>(null);
+  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | "github" | "claude_session" | null>(null);
   const [slackPanelMode, setSlackPanelMode] = useState<"connect" | "manage">("connect");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
@@ -265,7 +267,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
-  async function handleDisconnect(source: "slack" | "fireflies" | "linear" | "github") {
+  async function handleDisconnect(source: "slack" | "fireflies" | "linear" | "github" | "claude_session") {
     if (!apps) return;
     setDisconnecting(source);
     try {
@@ -355,7 +357,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         <section className="settings__section">
           <h2 className="settings__section-label">Input Sources</h2>
           <div className="settings__rows">
-            {(["fireflies", "linear", "slack", "github"] as const).map((key) => (
+            {(["fireflies", "linear", "slack", "github", "claude_session"] as const).map((key) => (
               <InputSourceRow
                 key={key}
                 sourceKey={key}
@@ -370,7 +372,11 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 }}
                 isDisconnecting={disconnecting === key}
                 isExpanded={expandedSource === key}
-                connectedAction={key === "slack" ? { label: "Update channels", onClick: () => toggleSlackPanel("manage") } : undefined}
+                connectedAction={
+                  key === "slack" ? { label: "Update channels", onClick: () => toggleSlackPanel("manage") } :
+                  key === "claude_session" ? { label: "Setup guide", onClick: () => setExpandedSource((current) => current === "claude_session" ? null : "claude_session") } :
+                  undefined
+                }
               >
                 {key === "fireflies" && (
                   <FirefliesConnectPanel detail={apps.integrations.fireflies} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
@@ -386,6 +392,12 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
 
                 {key === "github" && (
                   <GithubConnectPanel detail={apps.integrations.github} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
+                )}
+
+                {key === "claude_session" && (
+                  // Stays expanded after connecting (no setExpandedSource(null)) so the
+                  // per-repo setup guide it renders next is visible immediately.
+                  <SessionTrackingPanel detail={apps.integrations.claude_session} classPrefix="app-row" onConnected={refreshConnectedApps} />
                 )}
               </InputSourceRow>
             ))}

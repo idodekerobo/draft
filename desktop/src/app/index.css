@@ -2618,6 +2618,19 @@ button {
   color: var(--color-text-primary);
 }
 
+.app-row__repo-list,
+.onboarding__repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-secondary);
+}
+
 .onboarding__connect-panel {
   display: flex;
   flex-direction: column;

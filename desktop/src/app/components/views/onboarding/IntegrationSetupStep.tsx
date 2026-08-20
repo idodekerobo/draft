@@ -3,6 +3,7 @@ import type { ConnectedAppsStatus } from "../../../../rpc/schema";
 import { FirefliesConnectPanel } from "../../shared/FirefliesConnectPanel";
 import { GithubConnectPanel } from "../../shared/GithubConnectPanel";
 import { LinearConnectPanel } from "../../shared/LinearConnectPanel";
+import { SessionTrackingPanel } from "../../shared/SessionTrackingPanel";
 // TODO: Granola still works locally but has no backend ingestion pipeline in
 // the new cloud model (backend/src/ingestion only has fireflies/slack/
 // linear/github) — connecting it can't get its data into source_items at
@@ -21,7 +22,7 @@ interface IntegrationSetupStepProps {
   loadConnections: () => Promise<void>;
 }
 
-type IntegrationName = "slack" | "fireflies" | "linear" | "github";
+type IntegrationName = "slack" | "fireflies" | "linear" | "github" | "claude_session";
 
 export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, connections, loadConnections }: IntegrationSetupStepProps) {
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
@@ -35,9 +36,12 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
       current ? { ...current, [name]: { ...current[name], connected: true } } : current,
   );
 
-  function handleConnected(name: IntegrationName) {
+  // Returns the refetch promise -- SessionTrackingPanel awaits it to avoid flicker.
+  function handleConnected(name: IntegrationName): Promise<void> {
     markConnected(name);
-    void loadConnections().then(() => setExpanded(null));
+    return loadConnections().then(() => {
+      if (name !== "claude_session") setExpanded(null);
+    });
   }
 
   const allConnected = optimisticConnections
@@ -47,7 +51,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
     && optimisticConnections.github.connected;
 
   function toggle(name: IntegrationName, connected?: boolean) {
-    if (connected) return;
+    if (connected && name !== "claude_session") return;
     setError(null);
     setExpanded((current) => current === name ? null : name);
   }
@@ -56,6 +60,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
   const fireflies = optimisticConnections?.fireflies;
   const linear = optimisticConnections?.linear;
   const github = optimisticConnections?.github;
+  const claudeSession = optimisticConnections?.claude_session;
 
   return (
     <div className="onboarding__body onboarding__body--wide">
@@ -94,6 +99,18 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
 
         <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>
           <LinearConnectPanel detail={linear} classPrefix="onboarding" onConnected={() => handleConnected("linear")} />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard
+          title="Coding Sessions"
+          description="Capture Claude Code sessions from your repos"
+          hint="1 step"
+          connected={claudeSession?.connected ?? false}
+          expanded={expanded === "claude_session"}
+          onToggle={() => toggle("claude_session", claudeSession?.connected)}
+          keepContentWhenConnected
+        >
+          <SessionTrackingPanel detail={claudeSession} classPrefix="onboarding" onConnected={() => handleConnected("claude_session")} />
         </IntegrationSetupCard>
       </div>
 
