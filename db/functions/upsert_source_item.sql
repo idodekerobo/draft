@@ -22,6 +22,7 @@ security definer
 set search_path = public
 as $$
 declare
+  v_connection_status text;
   v_existing_hash text;
   v_prior_ids uuid[];
   v_supersede_id uuid;
@@ -29,6 +30,21 @@ declare
   v_changed boolean;
   v_now timestamptz := now();
 begin
+  -- Connection is always the first row lock in lifecycle writes. This makes
+  -- an in-flight ingest and disconnect serialize: whichever takes this lock
+  -- first is the operation that truthfully completes first.
+  select status into v_connection_status
+  from source_connections
+  where id = p_source_connection_id
+    and workspace_id = p_workspace_id
+  for update;
+
+  if not found or v_connection_status not in ('active', 'degraded') then
+    raise exception using
+      errcode = 'P0001',
+      message = 'connection_inactive';
+  end if;
+
   -- Lock the exact-match row (same connection/external_id/external_version)
   -- if one already exists, so two concurrent writers of the identical
   -- revision can't race each other.

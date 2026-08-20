@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run src/server.ts",
     "start": "bun run src/server.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "test:db:lifecycle": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/integration-lifecycle.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",

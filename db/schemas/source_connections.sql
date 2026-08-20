@@ -32,6 +32,13 @@ create unique index source_connections_github_installation_unique
   on source_connections (connection_key)
   where provider = 'github' and status <> 'revoked';
 
+-- A workspace may have only one live GitHub App installation. Keep this
+-- separate from the global installation-ID index above: the two indexes
+-- protect different ownership axes.
+create unique index source_connections_one_live_github_per_workspace
+  on source_connections (workspace_id)
+  where provider = 'github' and status <> 'revoked';
+
 alter table source_connections enable row level security;
 
 create policy source_connections_select on source_connections
