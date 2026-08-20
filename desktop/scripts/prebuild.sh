@@ -324,12 +324,16 @@ log "  Target: $BUN_TARGET"
 DRAFT_SUPABASE_URL=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('supabase_url',''))" 2>/dev/null || echo "")
 DRAFT_SUPABASE_PUBLISHABLE_KEY=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('supabase_publishable_key',''))" 2>/dev/null || echo "")
 
+# Stamp the bundled CLI with the app's version, so `draft update` works the same either way.
+DRAFT_CLI_VERSION=$(python3 -c "import re; print(re.search(r'version: \"([^\"]+)\"', open('$DESKTOP_DIR/electrobun.config.ts').read()).group(1))" 2>/dev/null || echo "0.0.0")
+
 bun build \
   --compile \
   --target="$BUN_TARGET" \
   --bytecode \
   --define "process.env.DRAFT_SUPABASE_URL=\"${DRAFT_SUPABASE_URL}\"" \
   --define "process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY=\"${DRAFT_SUPABASE_PUBLISHABLE_KEY}\"" \
+  --define "process.env.DRAFT_CLI_VERSION=\"${DRAFT_CLI_VERSION}\"" \
   --outfile "$ASSETS_DIR/bin/draft" \
   "$REPO_ROOT/cli/src/index.ts"
 
