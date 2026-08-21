@@ -30,6 +30,7 @@ describe("integration safe output", () => {
     expect(Object.keys(INTEGRATION_ERROR_REGISTRY).sort()).toEqual([
       "aborted",
       "auth_busy",
+      "cancelled",
       "connection_update_conflict",
       "credential_input_required",
       "expired",

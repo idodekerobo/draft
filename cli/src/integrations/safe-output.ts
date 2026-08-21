@@ -31,7 +31,8 @@ export type IntegrationErrorCode =
   | "slack_channel_list_failed"
   | "slack_channel_join_failed"
   | "slack_channel_leave_failed"
-  | "connection_update_conflict";
+  | "connection_update_conflict"
+  | "cancelled";
 
 interface ErrorDefinition {
   message: string;
@@ -65,6 +66,7 @@ export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefin
   slack_channel_join_failed: { message: "One or more Slack channels could not be joined.", exitCode: 1 },
   slack_channel_leave_failed: { message: "One or more Slack channels could not be left.", exitCode: 1 },
   connection_update_conflict: { message: "The integration changed concurrently. Retry shortly.", exitCode: 1 },
+  cancelled: { message: "Cancelled.", exitCode: 1 },
 };
 
 export type IntegrationEvent =
@@ -72,6 +74,7 @@ export type IntegrationEvent =
   | { status: "awaiting_credentials"; provider: HostedConnectionProvider }
   | { status: "opening_browser"; provider: HostedConnectionProvider }
   | { status: "browser_required"; provider: "github" | "slack"; url: string; expires_in_seconds?: number }
+  | { status: "handoff_required"; provider: "fireflies"; url: string; opened: boolean }
   | { status: "awaiting_install"; provider: "github" | "slack" }
   | { status: "connected"; provider: HostedConnectionProvider; cleanup_pending?: true }
   | { status: "credential_stored"; provider: "claude-code" }
@@ -211,6 +214,17 @@ function reviewedBrowserUrl(provider: "github" | "slack", value: string): string
   }
 }
 
+function reviewedHandoffUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "file:" || url.username || url.password || url.port || url.hash || url.search) return null;
+    if (!url.pathname.startsWith("/")) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function eventPayload(event: IntegrationEvent): Record<string, unknown> | null {
   switch (event.status) {
     case "ok": {
@@ -231,6 +245,11 @@ function eventPayload(event: IntegrationEvent): Record<string, unknown> | null {
         payload.expires_in_seconds = event.expires_in_seconds;
       }
       return payload;
+    }
+    case "handoff_required": {
+      const url = reviewedHandoffUrl(event.url);
+      if (!url) return null;
+      return { status: "handoff_required", provider: "fireflies", url, opened: event.opened };
     }
     case "not_supported":
       return { status: "not_supported", provider: "claude-code", code: "not_supported" };
@@ -305,6 +324,14 @@ export class IntegrationOutput {
     }
     if (event.status === "browser_required") {
       this.writeStderr(`Open this URL: ${String(payload.url)}\n`);
+      return 0;
+    }
+    if (event.status === "handoff_required") {
+      this.writeStderr(
+        event.opened
+          ? "Opening a local page with your Fireflies webhook details.\n"
+          : `Open this page to finish Fireflies setup: ${String(payload.url)}\n`,
+      );
       return 0;
     }
     if (event.status === "awaiting_credentials") {

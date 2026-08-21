@@ -14,6 +14,7 @@ import { runGithubConnect } from "../integrations/providers/github.ts";
 import { runLinearConnect } from "../integrations/providers/linear.ts";
 import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
 import { runSlackConnect, runSlackChannelsList, runSlackChannelsSet } from "../integrations/providers/slack.ts";
+import { runFirefliesConnect } from "../integrations/providers/fireflies.ts";
 import { CredentialInputError, parseCredentialSourceOptions, type CredentialSource } from "../integrations/credentials.ts";
 
 interface ParsedListArgs {
@@ -65,6 +66,24 @@ function parseGithubConnectArgs(args: string[]): ParsedGithubConnectArgs {
   const json = jsonCount > 0;
   const noOpen = noOpenCount > 0;
   const valid = args[0] === "github" &&
+    jsonCount <= 1 &&
+    noOpenCount <= 1 &&
+    args.slice(1).every((arg) => arg === "--json" || arg === "--no-open");
+  return valid ? { json, noOpen } : { json, noOpen, error: true };
+}
+
+interface ParsedFirefliesConnectArgs {
+  json: boolean;
+  noOpen: boolean;
+  error?: true;
+}
+
+function parseFirefliesConnectArgs(args: string[]): ParsedFirefliesConnectArgs {
+  const jsonCount = args.filter((arg) => arg === "--json").length;
+  const noOpenCount = args.filter((arg) => arg === "--no-open").length;
+  const json = jsonCount > 0;
+  const noOpen = noOpenCount > 0;
+  const valid = args[0] === "fireflies" &&
     jsonCount <= 1 &&
     noOpenCount <= 1 &&
     args.slice(1).every((arg) => arg === "--json" || arg === "--no-open");
@@ -201,6 +220,12 @@ async function runIntegrationsConnect(args: string[]): Promise<number> {
     const output = createIntegrationOutput({ json: parsed.json });
     if (parsed.error) return output.error("invalid_usage");
     return runSlackConnect({ noOpen: parsed.noOpen, source: parsed.source }, output);
+  }
+  if (args[0] === "fireflies") {
+    const parsed = parseFirefliesConnectArgs(args);
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runFirefliesConnect({ noOpen: parsed.noOpen }, output);
   }
   const parsed = parseGithubConnectArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
