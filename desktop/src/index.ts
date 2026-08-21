@@ -14,7 +14,7 @@ import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
-import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack";
+import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack-hosted";
 import {
   normalizeHostedConnections,
   type RawHostedConnectionSummary,

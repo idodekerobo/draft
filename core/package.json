@@ -25,6 +25,7 @@
     "./integrations/hosted-connections": "./src/integrations/hosted-connections.ts",
     "./integrations/mcp-health": "./src/integrations/mcp-health.ts",
     "./integrations/slack": "./src/integrations/slack.ts",
+    "./integrations/slack-hosted": "./src/integrations/slack-hosted.ts",
     "./agents/mcp": "./src/agents/mcp.ts",
     "./sync/atomic-write": "./src/sync/atomic-write.ts",
     "./sync/manifest": "./src/sync/manifest.ts",
