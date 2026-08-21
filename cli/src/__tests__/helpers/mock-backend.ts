@@ -26,6 +26,7 @@ export interface MockBackendState {
   connectionsConnectResponse: (workspaceId: string) => Response | Promise<Response>;
   connectionsDisconnectResponse: (workspaceId: string, provider: string) => Response | Promise<Response>;
   githubInstallSessionResponse: (workspaceId: string) => Response | Promise<Response>;
+  githubInstallPollResponse: (workspaceId: string, code: string) => Response | Promise<Response>;
   slackChannelsResponse: (workspaceId: string) => Response | Promise<Response>;
   slackMembershipResponse: (workspaceId: string) => Response | Promise<Response>;
 }
@@ -56,6 +57,7 @@ export function createMockBackend() {
       code: "install-code",
       installUrl: "https://github.com/apps/draft-context-test/installations/new?state=install-code",
     }),
+    githubInstallPollResponse: () => Response.json({ status: "connected" }),
     slackChannelsResponse: () => Response.json({ ok: true, channels: [] }),
     slackMembershipResponse: () => Response.json({
       ok: true,
@@ -119,6 +121,10 @@ export function createMockBackend() {
       }
       if (req.method === "POST" && /^\/workspaces\/[^/]+\/github\/install-sessions$/.test(url.pathname)) {
         return state.githubInstallSessionResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/github\/install-sessions\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.githubInstallPollResponse(parts[2]!, parts[5]!);
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/connections\/slack\/channels$/.test(url.pathname)) {
         return state.slackChannelsResponse(url.pathname.split("/")[2]!);

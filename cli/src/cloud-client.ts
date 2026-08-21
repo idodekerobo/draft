@@ -51,9 +51,9 @@ export async function requireAccessToken(): Promise<AccessTokenResult> {
   }
 }
 
-export async function fetchWhoami(token: string): Promise<Response> {
+export async function fetchWhoami(token: string, signal?: AbortSignal): Promise<Response> {
   const config = getCliRuntimeConfig();
-  return fetch(`${config.apiBaseUrl}/whoami`, { headers: { Authorization: `Bearer ${token}` } });
+  return fetch(`${config.apiBaseUrl}/whoami`, { headers: { Authorization: `Bearer ${token}` }, signal });
 }
 
 export interface HydratedIdentity {
@@ -114,14 +114,14 @@ function sameStoredAuthLineage(
     current.refresh_token === captured.refresh_token;
 }
 
-async function resolveAuthedWorkspace(): Promise<AuthedWorkspaceResult> {
+async function resolveAuthedWorkspace(signal?: AbortSignal): Promise<AuthedWorkspaceResult> {
   const tokenResult = await requireAccessToken();
   if (!tokenResult.ok) return tokenResult;
   const captured = readCliAuthState();
 
   let response: Response;
   try {
-    response = await fetchWhoami(tokenResult.token);
+    response = await fetchWhoami(tokenResult.token, signal);
   } catch {
     return { ok: false, code: "session_refresh_transient" };
   }
@@ -238,6 +238,7 @@ export type FetchErrorCode =
   | "no_workspace"
   | "request_failed"
   | "malformed_response"
+  | "aborted"
   | "not_supported"
   | "not_found"
   | "linear_webhook_create_failed"
@@ -262,6 +263,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true
       headers,
     });
   } catch {
+    if (init?.signal?.aborted) return { ok: false, code: "aborted" };
     return { ok: false, code: "session_refresh_transient" };
   }
   return { ok: true, token: resolved.token, workspaceId: resolved.workspaceId, response };
@@ -294,6 +296,18 @@ export type ConnectIntegrationResult =
 export interface GithubInstallSession {
   code: string;
   installUrl: string;
+  originWorkspaceId: string;
+}
+
+export type GithubInstallPollAdapterErrorCode =
+  | IdentityErrorCode
+  | "no_workspace"
+  | "workspace_changed"
+  | "poll_failed";
+
+export interface GithubInstallPollAdapter {
+  fetch: typeof fetch;
+  failureCode(): GithubInstallPollAdapterErrorCode | undefined;
 }
 
 export interface HostedSlackChannel {
@@ -481,20 +495,76 @@ export function disconnectIntegration(provider: BackendProvider): Promise<FetchR
   return requestValue(`/connections/${encodeURIComponent(provider)}`, { method: "DELETE" }, decodeOk);
 }
 
-export function createGithubInstallSession(): Promise<FetchResult<GithubInstallSession>> {
-  return requestValue("/github/install-sessions", { method: "POST" }, (value) => {
-    const body = recordValue(value);
-    if (!body || typeof body.code !== "string" || body.code.length === 0 || typeof body.installUrl !== "string") {
-      return null;
+export async function createGithubInstallSession(signal?: AbortSignal): Promise<FetchResult<GithubInstallSession>> {
+  const result = await authedFetch("/github/install-sessions", { method: "POST", signal });
+  if (!result.ok) return result;
+  let value: unknown;
+  try {
+    value = await result.response.json();
+  } catch {
+    return { ok: false, code: result.response.ok ? "malformed_response" : "request_failed" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, code: safeBackendError(value) ?? "request_failed" };
+  }
+  const body = recordValue(value);
+  if (!body || typeof body.code !== "string" || body.code.length === 0 || typeof body.installUrl !== "string") {
+    return { ok: false, code: "malformed_response" };
+  }
+  try {
+    const url = new URL(body.installUrl);
+    if (url.protocol !== "https:" || url.hostname !== "github.com") {
+      return { ok: false, code: "malformed_response" };
     }
-    try {
-      const url = new URL(body.installUrl);
-      if (url.protocol !== "https:" || url.hostname !== "github.com") return null;
-    } catch {
-      return null;
-    }
-    return { code: body.code, installUrl: body.installUrl };
-  });
+  } catch {
+    return { ok: false, code: "malformed_response" };
+  }
+  return {
+    ok: true,
+    value: {
+      code: body.code,
+      installUrl: body.installUrl,
+      originWorkspaceId: result.workspaceId,
+    },
+  };
+}
+
+export function createGithubInstallPollAdapter(originWorkspaceId: string, code: string): GithubInstallPollAdapter {
+  let failure: GithubInstallPollAdapterErrorCode | undefined;
+  return {
+    failureCode: () => failure,
+    fetch: (async (_input, init) => {
+      failure = undefined;
+      const resolved = await resolveAuthedWorkspace(init?.signal ?? undefined);
+      if (!resolved.ok) {
+        if (init?.signal?.aborted) throw new Error("github_poll_aborted");
+        failure = resolved.code;
+        throw new Error("github_poll_identity_failed");
+      }
+      if (!resolved.workspaceId) {
+        failure = "no_workspace";
+        throw new Error("github_poll_identity_failed");
+      }
+      if (resolved.workspaceId !== originWorkspaceId) {
+        failure = "workspace_changed";
+        throw new Error("github_poll_workspace_changed");
+      }
+      const config = getCliRuntimeConfig();
+      try {
+        return await fetch(
+          `${config.apiBaseUrl}/workspaces/${encodeURIComponent(originWorkspaceId)}/github/install-sessions/${encodeURIComponent(code)}`,
+          {
+            signal: init?.signal,
+            headers: { Authorization: `Bearer ${resolved.token}` },
+          },
+        );
+      } catch (error) {
+        if (init?.signal?.aborted) throw error;
+        failure = "poll_failed";
+        throw new Error("github_poll_request_failed");
+      }
+    }) as typeof fetch,
+  };
 }
 
 export function listSlackChannels(): Promise<FetchResult<{ ok: true; channels: HostedSlackChannel[] }>> {

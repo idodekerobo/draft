@@ -54,8 +54,14 @@ _draft_completion() {
       return 0
       ;;
     integrations)
-      COMPREPLY=( $(compgen -W "list disconnect" -- "\$cur") )
+      COMPREPLY=( $(compgen -W "list connect disconnect" -- "\$cur") )
       return 0
+      ;;
+    connect)
+      if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
+        COMPREPLY=( $(compgen -W "github" -- "\$cur") )
+        return 0
+      fi
       ;;
     disconnect)
       if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
@@ -123,8 +129,11 @@ _draft() {
           ;;
         integrations)
           if (( CURRENT == 3 )); then
-            local subcmds=('list:List hosted integrations' 'disconnect:Disconnect a hosted integration')
+            local subcmds=('list:List hosted integrations' 'connect:Connect a hosted integration' 'disconnect:Disconnect a hosted integration')
             _describe 'subcommand' subcmds
+          elif [[ \$words[3] == 'connect' ]]; then
+            local providers=('github:GitHub')
+            _describe 'provider' providers
           elif [[ \$words[3] == 'disconnect' ]]; then
             local providers=('github:GitHub' 'fireflies:Fireflies' 'linear:Linear' 'slack:Slack')
             _describe 'provider' providers

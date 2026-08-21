@@ -9,6 +9,7 @@ import {
   type DisconnectProvider,
 } from "../integrations/types.ts";
 import { createIntegrationOutput } from "../integrations/safe-output.ts";
+import { runGithubConnect } from "../integrations/providers/github.ts";
 
 interface ParsedListArgs {
   json: boolean;
@@ -18,6 +19,12 @@ interface ParsedListArgs {
 interface ParsedDisconnectArgs {
   json: boolean;
   provider?: DisconnectProvider;
+  error?: true;
+}
+
+interface ParsedGithubConnectArgs {
+  json: boolean;
+  noOpen: boolean;
   error?: true;
 }
 
@@ -45,6 +52,18 @@ function parseDisconnectArgs(args: string[]): ParsedDisconnectArgs {
     return { json, error: true };
   }
   return { json, provider: positionals[0] };
+}
+
+function parseGithubConnectArgs(args: string[]): ParsedGithubConnectArgs {
+  const jsonCount = args.filter((arg) => arg === "--json").length;
+  const noOpenCount = args.filter((arg) => arg === "--no-open").length;
+  const json = jsonCount > 0;
+  const noOpen = noOpenCount > 0;
+  const valid = args[0] === "github" &&
+    jsonCount <= 1 &&
+    noOpenCount <= 1 &&
+    args.slice(1).every((arg) => arg === "--json" || arg === "--no-open");
+  return valid ? { json, noOpen } : { json, noOpen, error: true };
 }
 
 async function runIntegrationsList(args: string[]): Promise<number> {
@@ -78,10 +97,18 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
   return output.event({ status: "disconnected", provider: parsed.provider });
 }
 
+async function runIntegrationsConnect(args: string[]): Promise<number> {
+  const parsed = parseGithubConnectArgs(args);
+  const output = createIntegrationOutput({ json: parsed.json });
+  if (parsed.error) return output.error("invalid_usage");
+  return runGithubConnect({ noOpen: parsed.noOpen }, output);
+}
+
 export async function runIntegrations(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "list") return runIntegrationsList(rest);
   if (subcommand === "disconnect") return runIntegrationsDisconnect(rest);
+  if (subcommand === "connect") return runIntegrationsConnect(rest);
 
   const json = args.includes("--json");
   return createIntegrationOutput({ json }).error("invalid_usage");

@@ -226,7 +226,6 @@ describe("draft integrations grammar and safe failures", () => {
   it("rejects invalid grammar before any provider request", async () => {
     const cases = [
       ["integrations"],
-      ["integrations", "connect", "github"],
       ["integrations", "unknown", "--json", "--json"],
       ["integrations", "list", "extra"],
       ["integrations", "list", "--json", "--json"],
@@ -303,15 +302,16 @@ describe("integrations help and completion", () => {
     const result = await runCli(["--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("integrations list");
+    expect(result.stdout).toContain("integrations connect github");
     expect(result.stdout).toContain("integrations disconnect <provider>");
-    expect(result.stdout).not.toContain("integrations connect");
   });
 
   it("includes current top-level commands and integrations choices in bash and zsh completion", async () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
     expect(bash.stdout).toContain('commands="add auth context sessions integrations update completion"');
-    expect(bash.stdout).toContain('compgen -W "list disconnect"');
+    expect(bash.stdout).toContain('compgen -W "list connect disconnect"');
+    expect(bash.stdout).toContain('compgen -W "github"');
     expect(bash.stdout).toContain('compgen -W "github fireflies linear slack"');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
@@ -320,6 +320,7 @@ describe("integrations help and completion", () => {
       expect(zsh.stdout).toContain(`'${command}`);
     }
     expect(zsh.stdout).toContain("'list:List hosted integrations'");
+    expect(zsh.stdout).toContain("'connect:Connect a hosted integration'");
     expect(zsh.stdout).toContain("'disconnect:Disconnect a hosted integration'");
     expect(zsh.stdout).toContain("'github:GitHub'");
     expect(zsh.stdout).toContain("'fireflies:Fireflies'");
