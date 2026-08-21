@@ -50,6 +50,16 @@ const MANAGED_BLOCK_BODY = [
   "",
   "Resolve people by exact display name or Git email. Present choices when a",
   "name is ambiguous.",
+  "",
+  "### Hosted integrations",
+  "",
+  "- `draft integrations list` — see which of GitHub, Linear, Slack, Fireflies,",
+  "  and Claude Code are connected.",
+  "- `draft integrations connect <github|linear|slack|fireflies|claude-code>` —",
+  "  connect one. These need a human at a terminal (browser handoffs, hidden",
+  "  credential prompts) — don't run this on the user's behalf unless asked.",
+  "- `draft integrations disconnect <github|linear|slack|fireflies>` —",
+  "  disconnect one.",
 ].join("\n");
 
 interface ParsedArgs {
