@@ -6,10 +6,14 @@ import {
 import {
   BACKEND_PROVIDER_BY_CLI,
   isDisconnectProvider,
+  isNetworkDisconnectProvider,
   type DisconnectProvider,
 } from "../integrations/types.ts";
 import { createIntegrationOutput } from "../integrations/safe-output.ts";
 import { runGithubConnect } from "../integrations/providers/github.ts";
+import { runLinearConnect } from "../integrations/providers/linear.ts";
+import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
+import { CredentialInputError, parseCredentialSourceOptions, type CredentialSource } from "../integrations/credentials.ts";
 
 interface ParsedListArgs {
   json: boolean;
@@ -66,6 +70,26 @@ function parseGithubConnectArgs(args: string[]): ParsedGithubConnectArgs {
   return valid ? { json, noOpen } : { json, noOpen, error: true };
 }
 
+interface ParsedCredentialConnectArgs {
+  json: boolean;
+  source: CredentialSource;
+  error?: true;
+}
+
+function parseCredentialConnectArgs(provider: "linear" | "claude-code", args: string[]): ParsedCredentialConnectArgs {
+  const json = args.includes("--json");
+  if (args[0] !== provider) return { json, source: { kind: "tty" }, error: true };
+  try {
+    const { source, remaining } = parseCredentialSourceOptions(args.slice(1));
+    const jsonCount = remaining.filter((arg) => arg === "--json").length;
+    const valid = jsonCount <= 1 && remaining.every((arg) => arg === "--json");
+    return valid ? { json, source } : { json, source, error: true };
+  } catch (error) {
+    if (error instanceof CredentialInputError) return { json, source: { kind: "tty" }, error: true };
+    throw error;
+  }
+}
+
 async function runIntegrationsList(args: string[]): Promise<number> {
   const parsed = parseListArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
@@ -89,6 +113,10 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
     return output.error("invalid_usage");
   }
 
+  if (!isNetworkDisconnectProvider(parsed.provider)) {
+    return output.error("not_supported");
+  }
+
   const result = await disconnectIntegration(BACKEND_PROVIDER_BY_CLI[parsed.provider]);
   if (!result.ok) {
     return output.error(result.code);
@@ -98,6 +126,18 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
 }
 
 async function runIntegrationsConnect(args: string[]): Promise<number> {
+  if (args[0] === "linear") {
+    const parsed = parseCredentialConnectArgs("linear", args);
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runLinearConnect({ source: parsed.source }, output);
+  }
+  if (args[0] === "claude-code") {
+    const parsed = parseCredentialConnectArgs("claude-code", args);
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runClaudeCodeConnect({ source: parsed.source }, output);
+  }
   const parsed = parseGithubConnectArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
   if (parsed.error) return output.error("invalid_usage");

@@ -72,7 +72,7 @@ export type IntegrationEvent =
   | { status: "opening_browser"; provider: HostedConnectionProvider }
   | { status: "browser_required"; provider: "github" | "slack"; url: string; expires_in_seconds?: number }
   | { status: "awaiting_install"; provider: "github" | "slack" }
-  | { status: "connected"; provider: HostedConnectionProvider }
+  | { status: "connected"; provider: HostedConnectionProvider; cleanup_pending?: true }
   | { status: "credential_stored"; provider: "claude-code" }
   | { status: "credentials_stored_webhook_pending"; provider: "fireflies" }
   | { status: "disconnected"; provider: HostedConnectionProvider }
@@ -231,10 +231,15 @@ function eventPayload(event: IntegrationEvent): Record<string, unknown> | null {
     }
     case "not_supported":
       return { status: "not_supported", provider: "claude-code", code: "not_supported" };
+    case "connected": {
+      if (!PROVIDERS.has(event.provider)) return null;
+      const payload: Record<string, unknown> = { status: event.status, provider: event.provider };
+      if (event.cleanup_pending) payload.cleanup_pending = true;
+      return payload;
+    }
     case "awaiting_credentials":
     case "opening_browser":
     case "awaiting_install":
-    case "connected":
     case "credential_stored":
     case "credentials_stored_webhook_pending":
     case "disconnected":
@@ -268,6 +273,7 @@ export class IntegrationOutput {
     }
     if (this.options.json) {
       this.json({ schema_version: 1, ...payload });
+      if (event.status === "connected" && event.cleanup_pending) this.emitCleanupPendingWarning(event.provider);
       return 0;
     }
 
@@ -297,8 +303,17 @@ export class IntegrationOutput {
       this.stdout("Fireflies: credentials stored; webhook setup pending\n");
       return 0;
     }
+    if (event.status === "connected") {
+      this.stdout(`${PROVIDER_LABELS[event.provider]}: connected\n`);
+      if (event.cleanup_pending) this.emitCleanupPendingWarning(event.provider);
+      return 0;
+    }
     this.stdout(`${PROVIDER_LABELS[event.provider]}: ${event.status === "not_supported" ? "not supported" : event.status}\n`);
     return 0;
+  }
+
+  private emitCleanupPendingWarning(provider: HostedConnectionProvider): void {
+    this.stderr(`Warning: a previous ${PROVIDER_LABELS[provider]} webhook could not be removed automatically; cleanup will retry.\n`);
   }
 
   error(error: unknown): 1 | 2 | 130 {

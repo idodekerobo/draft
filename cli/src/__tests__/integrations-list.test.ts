@@ -232,7 +232,6 @@ describe("draft integrations grammar and safe failures", () => {
       ["integrations", "list", "--unknown"],
       ["integrations", "disconnect"],
       ["integrations", "disconnect", "github", "extra"],
-      ["integrations", "disconnect", "claude-code"],
       ["integrations", "disconnect", "future-provider"],
       ["integrations", "disconnect", "slack", "--json", "--json"],
       ["integrations", "disconnect", "slack", "--unknown"],
@@ -244,6 +243,13 @@ describe("draft integrations grammar and safe failures", () => {
         expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_usage" });
       }
     }
+    expect(backend.state.requests).toHaveLength(0);
+  });
+
+  it("disconnects claude-code deterministically as not_supported, without a network call", async () => {
+    const result = await runCli(["integrations", "disconnect", "claude-code", "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "not_supported" });
     expect(backend.state.requests).toHaveLength(0);
   });
 
