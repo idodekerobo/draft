@@ -266,7 +266,7 @@ describe("draft integrations connect github", () => {
       ["integrations", "connect", "github", "--no-open", "--no-open"],
       ["integrations", "connect", "github", "--credential-stdin"],
       ["integrations", "connect", "github", "--credential-fd", "3"],
-      ["integrations", "connect", "slack"],
+      ["integrations", "connect", "unknown-provider"],
       ["integrations", "connect", "--json", "github"],
     ];
     for (const args of cases) {

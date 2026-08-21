@@ -13,6 +13,7 @@ import { createIntegrationOutput } from "../integrations/safe-output.ts";
 import { runGithubConnect } from "../integrations/providers/github.ts";
 import { runLinearConnect } from "../integrations/providers/linear.ts";
 import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
+import { runSlackConnect, runSlackChannelsList, runSlackChannelsSet } from "../integrations/providers/slack.ts";
 import { CredentialInputError, parseCredentialSourceOptions, type CredentialSource } from "../integrations/credentials.ts";
 
 interface ParsedListArgs {
@@ -90,6 +91,63 @@ function parseCredentialConnectArgs(provider: "linear" | "claude-code", args: st
   }
 }
 
+interface ParsedSlackConnectArgs {
+  json: boolean;
+  noOpen: boolean;
+  source: CredentialSource;
+  error?: true;
+}
+
+function parseSlackConnectArgs(args: string[]): ParsedSlackConnectArgs {
+  const json = args.includes("--json");
+  const noOpen = args.includes("--no-open");
+  if (args[0] !== "slack") return { json, noOpen, source: { kind: "tty" }, error: true };
+  try {
+    const { source, remaining } = parseCredentialSourceOptions(args.slice(1));
+    const jsonCount = remaining.filter((arg) => arg === "--json").length;
+    const noOpenCount = remaining.filter((arg) => arg === "--no-open").length;
+    const valid = jsonCount <= 1 &&
+      noOpenCount <= 1 &&
+      remaining.every((arg) => arg === "--json" || arg === "--no-open");
+    return valid ? { json, noOpen, source } : { json, noOpen, source, error: true };
+  } catch (error) {
+    if (error instanceof CredentialInputError) return { json, noOpen, source: { kind: "tty" }, error: true };
+    throw error;
+  }
+}
+
+interface ParsedSlackChannelsListArgs {
+  json: boolean;
+  error?: true;
+}
+
+function parseSlackChannelsListArgs(args: string[]): ParsedSlackChannelsListArgs {
+  const jsonCount = args.filter((arg) => arg === "--json").length;
+  const json = jsonCount > 0;
+  return jsonCount <= 1 && args.every((arg) => arg === "--json")
+    ? { json }
+    : { json, error: true };
+}
+
+interface ParsedSlackChannelsSetArgs {
+  json: boolean;
+  channelIds: string[] | null;
+  error?: true;
+}
+
+function parseSlackChannelsSetArgs(args: string[]): ParsedSlackChannelsSetArgs {
+  const jsonCount = args.filter((arg) => arg === "--json").length;
+  const json = jsonCount > 0;
+  if (jsonCount > 1) return { json, channelIds: null, error: true };
+  const positionals: string[] = [];
+  for (const arg of args) {
+    if (arg === "--json") continue;
+    if (arg.startsWith("-")) return { json, channelIds: null, error: true };
+    positionals.push(arg);
+  }
+  return { json, channelIds: positionals.length > 0 ? positionals : null };
+}
+
 async function runIntegrationsList(args: string[]): Promise<number> {
   const parsed = parseListArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
@@ -138,10 +196,33 @@ async function runIntegrationsConnect(args: string[]): Promise<number> {
     if (parsed.error) return output.error("invalid_usage");
     return runClaudeCodeConnect({ source: parsed.source }, output);
   }
+  if (args[0] === "slack") {
+    const parsed = parseSlackConnectArgs(args);
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runSlackConnect({ noOpen: parsed.noOpen, source: parsed.source }, output);
+  }
   const parsed = parseGithubConnectArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
   if (parsed.error) return output.error("invalid_usage");
   return runGithubConnect({ noOpen: parsed.noOpen }, output);
+}
+
+async function runIntegrationsSlack(args: string[]): Promise<number> {
+  if (args[0] === "channels" && args[1] === "list") {
+    const parsed = parseSlackChannelsListArgs(args.slice(2));
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runSlackChannelsList(output);
+  }
+  if (args[0] === "channels" && args[1] === "set") {
+    const parsed = parseSlackChannelsSetArgs(args.slice(2));
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runSlackChannelsSet(parsed.channelIds, output);
+  }
+  const json = args.includes("--json");
+  return createIntegrationOutput({ json }).error("invalid_usage");
 }
 
 export async function runIntegrations(args: string[]): Promise<number> {
@@ -149,6 +230,7 @@ export async function runIntegrations(args: string[]): Promise<number> {
   if (subcommand === "list") return runIntegrationsList(rest);
   if (subcommand === "disconnect") return runIntegrationsDisconnect(rest);
   if (subcommand === "connect") return runIntegrationsConnect(rest);
+  if (subcommand === "slack") return runIntegrationsSlack(rest);
 
   const json = args.includes("--json");
   return createIntegrationOutput({ json }).error("invalid_usage");

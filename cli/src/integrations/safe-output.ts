@@ -3,6 +3,7 @@ import type {
   HostedConnectionStatus,
   HostedConnectionSummary,
 } from "draft-core/integrations/hosted-connections";
+import type { HostedSlackChannel, SlackMembershipReconcileResult } from "../cloud-client.ts";
 import { PROVIDER_LABELS } from "./types.ts";
 
 export type IntegrationErrorCode =
@@ -76,7 +77,9 @@ export type IntegrationEvent =
   | { status: "credential_stored"; provider: "claude-code" }
   | { status: "credentials_stored_webhook_pending"; provider: "fireflies" }
   | { status: "disconnected"; provider: HostedConnectionProvider }
-  | { status: "not_supported"; provider: "claude-code"; code: "not_supported" };
+  | { status: "not_supported"; provider: "claude-code"; code: "not_supported" }
+  | { status: "channels"; provider: "slack"; channels: HostedSlackChannel[] }
+  | { status: "channels_set"; provider: "slack"; result: SlackMembershipReconcileResult };
 
 export interface IntegrationOutputOptions {
   json: boolean;
@@ -231,6 +234,22 @@ function eventPayload(event: IntegrationEvent): Record<string, unknown> | null {
     }
     case "not_supported":
       return { status: "not_supported", provider: "claude-code", code: "not_supported" };
+    case "channels":
+      return {
+        status: "channels",
+        provider: "slack",
+        channels: event.channels.map((channel) => ({ ...channel })),
+      };
+    case "channels_set":
+      return {
+        status: "channels_set",
+        provider: "slack",
+        ok: event.result.ok,
+        channel_ids: [...event.result.channel_ids],
+        joined: [...event.result.joined],
+        left: [...event.result.left],
+        failed: event.result.failed.map((failure) => ({ ...failure })),
+      };
     case "connected": {
       if (!PROVIDERS.has(event.provider)) return null;
       const payload: Record<string, unknown> = { status: event.status, provider: event.provider };
@@ -274,6 +293,7 @@ export class IntegrationOutput {
     if (this.options.json) {
       this.json({ schema_version: 1, ...payload });
       if (event.status === "connected" && event.cleanup_pending) this.emitCleanupPendingWarning(event.provider);
+      if (event.status === "channels_set") this.emitChannelFailureWarnings(event.result.failed);
       return 0;
     }
 
@@ -308,12 +328,29 @@ export class IntegrationOutput {
       if (event.cleanup_pending) this.emitCleanupPendingWarning(event.provider);
       return 0;
     }
+    if (event.status === "channels") {
+      for (const channel of event.channels) {
+        this.stdout(`#${channel.name} (${channel.id}) — ${channel.memberCount} members${channel.isMember ? " [joined]" : ""}\n`);
+      }
+      return 0;
+    }
+    if (event.status === "channels_set") {
+      this.stdout(`Slack channels: ${event.result.channel_ids.length} selected (${event.result.joined.length} joined, ${event.result.left.length} left)\n`);
+      this.emitChannelFailureWarnings(event.result.failed);
+      return 0;
+    }
     this.stdout(`${PROVIDER_LABELS[event.provider]}: ${event.status === "not_supported" ? "not supported" : event.status}\n`);
     return 0;
   }
 
   private emitCleanupPendingWarning(provider: HostedConnectionProvider): void {
     this.stderr(`Warning: a previous ${PROVIDER_LABELS[provider]} webhook could not be removed automatically; cleanup will retry.\n`);
+  }
+
+  private emitChannelFailureWarnings(failed: SlackMembershipReconcileResult["failed"]): void {
+    for (const failure of failed) {
+      this.stderr(`Warning: could not ${failure.operation} channel ${failure.channel_id}.\n`);
+    }
   }
 
   error(error: unknown): 1 | 2 | 130 {
