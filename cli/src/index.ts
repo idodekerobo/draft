@@ -2,6 +2,7 @@
 // index.ts — Draft CLI entry point and command router
 
 import { printHelp, red } from "./utils/output.ts";
+import { reportUnexpectedIntegrationFailure } from "./integrations/safe-output.ts";
 
 import { runAdd } from "./commands/add.ts";
 import { runAuth } from "./commands/auth.ts";
@@ -62,6 +63,10 @@ if (command === "--version" || command === "-v") {
     checkForUpdateBackground();
   }
 })().catch((error: unknown) => {
+  if (command === "integrations") {
+    process.exitCode = reportUnexpectedIntegrationFailure({ json: rest.includes("--json") });
+    return;
+  }
   const message = error instanceof Error ? error.message : String(error);
   console.error(red(`Draft could not start safely: ${message}`));
   process.exitCode = 1;
