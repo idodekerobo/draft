@@ -85,9 +85,11 @@ async function expectPostgresError(
     await promise;
     throw new Error("expected Postgres statement to fail");
   } catch (error) {
-    const pgError = error as Error & { code?: string };
+    // Bun's SQL client puts the Postgres SQLSTATE in `errno`, not `code`
+    // (`code` is always the generic "ERR_POSTGRES_SERVER_ERROR" wrapper).
+    const pgError = error as Error & { errno?: string; message?: string };
     if (pgError.message === "expected Postgres statement to fail") throw pgError;
-    if (expected.code) expect(pgError.code).toBe(expected.code);
+    if (expected.code) expect(pgError.errno).toBe(expected.code);
     if (expected.message) expect(pgError.message).toContain(expected.message);
   }
 }
