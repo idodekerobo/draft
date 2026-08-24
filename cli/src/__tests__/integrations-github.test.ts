@@ -282,6 +282,26 @@ describe("draft integrations connect github", () => {
     expect(backend.state.requests).toEqual([]);
   });
 
+  it("lists the valid providers when connect is missing or given an unknown one", async () => {
+    for (const args of [["integrations", "connect"], ["integrations", "connect", "unknown-provider"]]) {
+      const human = await runCli(args, { home, apiUrl: backend.url });
+      expect(human.exitCode).toBe(2);
+      expect(human.stderr).toContain("github|linear|claude-code|slack|fireflies");
+
+      const json = await runCli([...args, "--json"], { home, apiUrl: backend.url });
+      expect(json.exitCode).toBe(2);
+      expect(JSON.parse(json.stdout)).toMatchObject({ status: "error", code: "invalid_connect_usage" });
+    }
+    expect(backend.state.requests).toEqual([]);
+  });
+
+  it("still reports github's own grammar error, not the generic provider list, when a valid provider is just misplaced", async () => {
+    const result = await runCli(["integrations", "connect", "--json", "github"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_usage" });
+    expect(backend.state.requests).toEqual([]);
+  });
+
   it("handles SIGINT once and stops before a later poll request", async () => {
     backend.state.githubInstallPollResponse = () => Response.json({ status: "pending" });
     const cliEntry = join(import.meta.dir, "..", "index.ts");

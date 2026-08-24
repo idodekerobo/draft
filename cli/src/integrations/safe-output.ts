@@ -8,6 +8,7 @@ import { PROVIDER_LABELS } from "./types.ts";
 
 export type IntegrationErrorCode =
   | "invalid_usage"
+  | "invalid_connect_usage"
   | "credential_input_required"
   | "invalid_credential_input"
   | "interrupted"
@@ -42,6 +43,10 @@ interface ErrorDefinition {
 
 export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefinition> = {
   invalid_usage: { message: "Invalid integrations command.", action: "draft --help", exitCode: 2 },
+  invalid_connect_usage: {
+    message: "Usage: draft integrations connect <github|linear|claude-code|slack|fireflies> [options].",
+    exitCode: 2,
+  },
   credential_input_required: { message: "Credential input requires a controlling terminal or an explicit credential source.", exitCode: 2 },
   invalid_credential_input: { message: "Credential input is invalid for this provider.", exitCode: 2 },
   interrupted: { message: "Integration setup was interrupted.", exitCode: 130 },

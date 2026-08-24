@@ -205,6 +205,11 @@ draft integrations list --json
 | `slack` | `--no-open`, `--credential-stdin` \| `--credential-fd <n>` | No, but channel selection only runs on an attended TTY | `connected` |
 | `fireflies` | `--no-open` | **Yes — always** | `credentials_stored_webhook_pending` |
 
+Omitting `<provider>`, or passing one that isn't in the table above, fails
+immediately with `invalid_connect_usage` (exit `2`) and prints the exact
+list of valid providers — it never falls through to any one provider's
+flow by default.
+
 ```bash
 draft integrations connect github                        # prints install-app guidance, then waits for install
 draft integrations connect github --no-open --json      # print the install URL instead of opening a browser
@@ -342,7 +347,9 @@ CLI itself). A `connected` event for Linear may also carry
 a credential-rotation reconnect — the new connection is still authoritative
 and usable; cleanup retries automatically.
 
-**Error codes worth knowing beyond the general set:** `credential_input_required`
+**Error codes worth knowing beyond the general set:** `invalid_connect_usage`
+(`connect` called with no provider or an unrecognized one, exit `2`),
+`credential_input_required`
 (no TTY and no `--credential-stdin`/`--credential-fd`, exit `2`),
 `invalid_credential_input` (malformed hidden-input JSON or a token that
 fails a provider's own format check, exit `2`), `cancelled` (declined a

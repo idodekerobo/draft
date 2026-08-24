@@ -308,7 +308,7 @@ describe("integrations help and completion", () => {
     const result = await runCli(["--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("integrations list");
-    expect(result.stdout).toContain("integrations connect github");
+    expect(result.stdout).toContain("integrations connect <provider>");
     expect(result.stdout).toContain("integrations disconnect <provider>");
   });
 

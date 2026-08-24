@@ -37,6 +37,7 @@ describe("integration safe output", () => {
       "forbidden",
       "github_installation_conflict",
       "interrupted",
+      "invalid_connect_usage",
       "invalid_credential_input",
       "invalid_usage",
       "linear_webhook_create_failed",

@@ -202,7 +202,17 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
   return output.event({ status: "disconnected", provider: parsed.provider });
 }
 
+const CONNECT_PROVIDERS = new Set(["github", "linear", "claude-code", "slack", "fireflies"]);
+
 async function runIntegrationsConnect(args: string[]): Promise<number> {
+  // Only short-circuit when no recognized provider appears anywhere in
+  // args -- a misplaced flag ahead of a real provider name (e.g.
+  // `--json github`) should still reach that provider's own grammar
+  // check below, which reports the more specific problem.
+  if (!args.some((arg) => CONNECT_PROVIDERS.has(arg))) {
+    const json = args.includes("--json");
+    return createIntegrationOutput({ json }).error("invalid_connect_usage");
+  }
   if (args[0] === "linear") {
     const parsed = parseCredentialConnectArgs("linear", args);
     const output = createIntegrationOutput({ json: parsed.json });
