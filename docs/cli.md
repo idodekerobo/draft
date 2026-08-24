@@ -182,6 +182,14 @@ Lists all five providers and their status — `disconnected`, `pending`,
 `connected`, `degraded`, or `error`. Slack connections also report their
 current `channel_ids`.
 
+**Fireflies stays `pending` until it has proof the webhook actually
+works** — not just until credentials are stored. The backend flips it to
+`connected` only after Fireflies calls the webhook back for a real
+`meeting.transcribed`/`meeting.summarized` event; pressing Enter to finish
+`connect fireflies` confirms you did the manual setup step, but can't prove
+the webhook is live. Expect `pending` until your next meeting is
+transcribed or summarized.
+
 ```bash
 draft integrations list
 draft integrations list --json
@@ -198,7 +206,7 @@ draft integrations list --json
 | `fireflies` | `--no-open` | **Yes — always** | `credentials_stored_webhook_pending` |
 
 ```bash
-draft integrations connect github
+draft integrations connect github                        # prints install-app guidance, then waits for install
 draft integrations connect github --no-open --json      # print the install URL instead of opening a browser
 
 draft integrations connect linear                        # prompts for a Linear API key on the terminal
@@ -231,9 +239,23 @@ browser or local page can't be opened, the CLI falls back to printing the
 URL so you can open it yourself; it never blocks waiting for a browser that
 didn't launch.
 
+Every hidden-credential prompt (linear, claude-code, slack, fireflies) prints
+where to find the value before asking for it — a settings URL, or for
+`slack` which OAuth screen each token comes from — states plainly that the
+prompt is hidden (input isn't echoed to the screen), and confirms that
+Ctrl+C cancels it. This guidance is written straight to the terminal, not
+into the `--json` stdout stream, so it shows up even with `--json` set as
+long as the interactive prompt is what's actually running; it's only
+skipped entirely when credentials come via `--credential-stdin`/
+`--credential-fd` instead.
+
 **GitHub** allows only one active installation per workspace — connecting a
 second one while the first is still active fails with
 `github_installation_conflict` (exit `1`); disconnect the existing one first.
+After the browser opens, the CLI prints what to do there (install the app,
+grant repo access), then "Waiting for installation." while it polls for
+completion — it resolves to `connected` or an error once you finish the
+install in the browser.
 
 **Slack**'s channel picker (during `connect slack`, and during
 `slack channels set` with no IDs given) only runs when you're at an attended
@@ -246,10 +268,15 @@ deploy.
 
 **Fireflies** ends in `credentials_stored_webhook_pending`, not `connected`
 — the CLI stores the token and shows you the webhook details, but can't
-verify you actually finished pasting them into Fireflies. Re-running
+verify you actually finished pasting them into Fireflies. It opens (or
+prints, with `--no-open`) a local handoff page with the webhook URL and
+secret, and both the page and the terminal spell out the Fireflies webhook
+settings URL (`https://app.fireflies.ai/integrations/api/webhook`) and the
+two events to enable — Meeting Transcribed and Meeting Summarized. Re-running
 `connect fireflies` on an existing connection always warns before rotating
 the secret (`y`/`N` at the terminal); declining exits `1` with `cancelled`
-and makes no request.
+and makes no request. See `integrations list` above for why the connection
+still shows `pending` after this succeeds.
 
 ### `draft integrations disconnect <provider> [--json]`
 
@@ -293,11 +320,12 @@ target set is safe and will retry only what didn't converge.
 ### JSON Lines event vocabulary
 
 `--json` writes one `{"schema_version":1, ...}` object per line to stdout.
-A `connect` flow that needs a browser or local handoff prints one line
-first, then a terminal line:
+A `connect` flow that needs a browser or local handoff prints one or more
+progress lines first, then a terminal line:
 
 ```json
 {"schema_version":1,"status":"browser_required","provider":"github","url":"https://github.com/apps/.../installations/new?state=...","expires_in_seconds":300}
+{"schema_version":1,"status":"awaiting_install","provider":"github"}
 {"schema_version":1,"status":"connected","provider":"github"}
 ```
 
@@ -365,7 +393,7 @@ Follow the printed instructions to install into your shell profile.
 
 ## Machine-readable output
 
-Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `integrations connect github`/`slack`/`fireflies` (one `browser_required`/`handoff_required` line, then one terminal line) — see [Hosted integrations](#hosted-integrations) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
+Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `integrations connect github`/`slack`/`fireflies` (one `browser_required`/`handoff_required` line, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted integrations](#hosted-integrations) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
 
 **Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C — during `auth login`, or during an `integrations connect`/`slack channels set` prompt).
 
