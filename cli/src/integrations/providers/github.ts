@@ -83,6 +83,9 @@ export async function runGithubConnect(
     }
     if (controller.signal.aborted) return output.error("aborted");
 
+    const awaitingInstall = output.event({ status: "awaiting_install", provider: "github" });
+    if (awaitingInstall !== 0) return awaitingInstall;
+
     const adapter = deps.createPollAdapter(created.value.originWorkspaceId, created.value.code);
     try {
       const result = await deps.poll({

@@ -230,7 +230,10 @@ describe("integration safe output", () => {
     const stderr: string[] = [];
     const humanOutput = createIntegrationOutput({ json: false, stderr: (value) => stderr.push(value) });
     expect(humanOutput.event({ status: "browser_required", provider: "github", url })).toBe(0);
-    expect(stderr.join("")).toBe(`Open this URL: ${url}\n`);
+    expect(stderr.join("")).toBe(
+      `Open this URL: ${url}\n`
+      + "Install the Draft GitHub App and select the repositories to grant it access to.\n",
+    );
   });
 
   it("never leaks canaries across success, typed/raw errors, throw, abort, or debug paths", async () => {

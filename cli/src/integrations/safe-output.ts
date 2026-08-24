@@ -324,6 +324,9 @@ export class IntegrationOutput {
     }
     if (event.status === "browser_required") {
       this.writeStderr(`Open this URL: ${String(payload.url)}\n`);
+      if (event.provider === "github") {
+        this.writeStderr("Install the Draft GitHub App and select the repositories to grant it access to.\n");
+      }
       return 0;
     }
     if (event.status === "handoff_required") {

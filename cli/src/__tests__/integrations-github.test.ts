@@ -75,6 +75,7 @@ describe("GitHub connect provider", () => {
         url: installUrl,
         expires_in_seconds: 300,
       },
+      { schema_version: 1, status: "awaiting_install", provider: "github" },
       { schema_version: 1, status: "connected", provider: "github" },
     ]);
     expect(opened.handlers.size).toBe(0);
@@ -84,7 +85,11 @@ describe("GitHub connect provider", () => {
     const harness = dependencies();
     const terminal = output(false);
     expect(await runGithubConnect({ noOpen: true }, terminal.value, harness.deps)).toBe(0);
-    expect(terminal.stderr.join("")).toBe(`Open this URL: ${installUrl}\n`);
+    expect(terminal.stderr.join("")).toBe(
+      `Open this URL: ${installUrl}\n`
+      + "Install the Draft GitHub App and select the repositories to grant it access to.\n"
+      + "Waiting for installation.\n",
+    );
     expect(terminal.stdout.join("")).toBe("GitHub: connected\n");
   });
 
@@ -94,7 +99,7 @@ describe("GitHub connect provider", () => {
     });
     const rendered = output(true);
     expect(await runGithubConnect({ noOpen: false }, rendered.value, harness.deps)).toBe(0);
-    expect(rendered.stdout.map((line) => JSON.parse(line).status)).toEqual(["browser_required", "connected"]);
+    expect(rendered.stdout.map((line) => JSON.parse(line).status)).toEqual(["browser_required", "awaiting_install", "connected"]);
   });
 
   it("aborts a hung session creation through the threaded signal", async () => {
@@ -144,7 +149,7 @@ describe("GitHub connect provider", () => {
     const rendered = output(true);
     expect(await runGithubConnect({ noOpen: true }, rendered.value, harness.deps)).toBe(0);
     expect(polls).toBe(2);
-    expect(rendered.stdout.map((line) => JSON.parse(line).status)).toEqual(["browser_required", "connected"]);
+    expect(rendered.stdout.map((line) => JSON.parse(line).status)).toEqual(["browser_required", "awaiting_install", "connected"]);
   });
 
   it("maps safe polling failures and never renders terminal backend detail", async () => {
@@ -222,6 +227,7 @@ describe("draft integrations connect github", () => {
         url: installUrl,
         expires_in_seconds: 300,
       },
+      { schema_version: 1, status: "awaiting_install", provider: "github" },
       { schema_version: 1, status: "connected", provider: "github" },
     ]);
     const pollRequests = backend.state.requests.filter((request) =>
@@ -300,8 +306,8 @@ describe("draft integrations connect github", () => {
     expect(await child.exited).toBe(130);
     const stdout = await new Response(child.stdout).text();
     const lines = stdout.trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.map((line) => line.status)).toEqual(["browser_required", "error"]);
-    expect(lines[1]).toMatchObject({ code: "aborted" });
+    expect(lines.map((line) => line.status)).toEqual(["browser_required", "awaiting_install", "error"]);
+    expect(lines.at(-1)).toMatchObject({ code: "aborted" });
     await Bun.sleep(20);
     expect(backend.state.requests.some((request) =>
       new URL(request.url).pathname.includes("/github/install-sessions/install-code")
@@ -339,8 +345,8 @@ describe("draft integrations connect github", () => {
     expect(await child.exited).toBe(130);
     const stdout = await new Response(child.stdout).text();
     const lines = stdout.trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.map((line) => line.status)).toEqual(["browser_required", "error"]);
-    expect(lines[1]).toMatchObject({ code: "aborted" });
+    expect(lines.map((line) => line.status)).toEqual(["browser_required", "awaiting_install", "error"]);
+    expect(lines.at(-1)).toMatchObject({ code: "aborted" });
     releaseHungWhoami?.();
   }, 15_000);
 });
