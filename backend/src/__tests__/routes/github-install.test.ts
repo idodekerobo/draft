@@ -102,14 +102,24 @@ describe("github-install routes", () => {
     expect(response.status).toBe(403);
   });
 
-  it("pollGET surfaces a resolved connected/error status", async () => {
+  it("pollGET repeatedly surfaces the same terminal error status", async () => {
     const { createInstallSession, resolveInstallSession } = await import("../../auth/github-install-store");
     const code = createInstallSession("ws-1");
-    resolveInstallSession(code, { status: "error", errorMessage: "org approval required" });
+    resolveInstallSession(code, {
+      status: "error",
+      errorCode: "github_installation_conflict",
+      errorMessage: "disconnect first",
+    });
 
     const { pollGET } = await import("../../routes/github-install");
-    const response = await pollGET(bunRequest(code));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "error", errorMessage: "org approval required" });
+    for (let poll = 0; poll < 2; poll += 1) {
+      const response = await pollGET(bunRequest(code));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        status: "error",
+        errorCode: "github_installation_conflict",
+        errorMessage: "disconnect first",
+      });
+    }
   });
 });

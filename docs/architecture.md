@@ -38,7 +38,7 @@ The desktop can also read a local folder during onboarding to seed a workspace. 
 
 ### CLI
 
-The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context reads, coding-session capture setup, and session listing/search/reading. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
+The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's own hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code) — the desktop app is no longer the only client that manages connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
 
 ### Agent connection
 
@@ -86,4 +86,4 @@ The repository does not currently provide a one-command production deployment. O
 
 ## GitHub
 
-GitHub is a source integration. The backend can receive GitHub App events and the desktop can use GitHub source import during onboarding. The old private-repository context-publish/load workflow is not the current collaboration architecture.
+GitHub is a source integration. The backend can receive GitHub App events, the desktop can use GitHub source import during onboarding, and `draft integrations connect github` in the CLI drives the same App-installation flow — see [CLI reference](./cli.md#hosted-integrations). The old private-repository context-publish/load workflow is not the current collaboration architecture.

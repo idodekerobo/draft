@@ -4,7 +4,8 @@ import type { ErrorOperation } from "../types/enums";
 const REDACTED = "[REDACTED]";
 const SENSITIVE_KEYS = new Set([
   "authorization", "cookie", "cookies", "password", "passwords", "secret", "secrets",
-  "token", "tokens", "access_token", "refresh_token", "api_key", "credential", "credentials",
+  "token", "tokens", "access_token", "refresh_token", "api_token", "api_key",
+  "signing_secret", "webhook_secret", "credential", "credentials",
   "provider_payload", "request_body", "response_body",
 ]);
 const SENSITIVE_QUERY = /([?&](?:token|key|secret|signature|sig|expires|credential|x-amz-[^=]+|x-goog-[^=]+)=)[^&#\s]+/gi;
@@ -93,6 +94,7 @@ function fallback(input: RecordErrorInput, reason: unknown): void {
     scheduled_task_id: input.scheduledTaskId ?? null,
     synthesis_run_id: input.synthesisRunId ?? null,
     message: redactString(input.message),
+    detail: sanitize(input.detail ?? {}),
     error: original.metadata ?? null,
     stack_trace: original.stack ?? null,
     logger_error: normalized.metadata ?? null,

@@ -1,9 +1,7 @@
 // utils/json-output.ts — machine output contract for --json mode
-//
-// All machine output uses schema_version: 1. Every --json invocation writes
-// exactly one JSON object to stdout, except `auth login` which is JSONL
-// (one line per event). stdout carries JSON only in --json mode — no ANSI,
-// progress text, or browser-launch noise; human-readable errors go to stderr.
+// Machine output uses schema_version: 1 and normally writes exactly one object.
+// Event streams such as auth and integration handoffs use JSONL instead.
+// In --json mode, stdout contains JSON only: no ANSI, prose, or launch noise.
 
 export const SCHEMA_VERSION = 1 as const;
 

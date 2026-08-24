@@ -30,7 +30,7 @@ _draft_completion() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context completion"
+  commands="add auth context sessions integrations update completion"
 
   case "\$prev" in
     draft)
@@ -48,6 +48,26 @@ _draft_completion() {
     context)
       COMPREPLY=( $(compgen -W "list read" -- "\$cur") )
       return 0
+      ;;
+    sessions)
+      COMPREPLY=( $(compgen -W "enable disable status list read search" -- "\$cur") )
+      return 0
+      ;;
+    integrations)
+      COMPREPLY=( $(compgen -W "list connect disconnect" -- "\$cur") )
+      return 0
+      ;;
+    connect)
+      if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
+        COMPREPLY=( $(compgen -W "github" -- "\$cur") )
+        return 0
+      fi
+      ;;
+    disconnect)
+      if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
+        COMPREPLY=( $(compgen -W "github fireflies linear slack" -- "\$cur") )
+        return 0
+      fi
       ;;
     completion)
       COMPREPLY=( $(compgen -W "--bash --zsh" -- "\$cur") )
@@ -82,6 +102,9 @@ _draft() {
         'add:Add Draft to a CLI tool'
         'auth:Authenticate with the Draft control plane'
         'context:Read workspace context'
+        'sessions:Manage coding session capture'
+        'integrations:Manage hosted integrations'
+        'update:Update the Draft CLI'
         'completion:Generate shell completion script'
       )
       _describe 'command' commands
@@ -99,6 +122,25 @@ _draft() {
         context)
           local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions')
           _describe 'subcommand' subcmds
+          ;;
+        sessions)
+          local subcmds=('enable:Enable session capture' 'disable:Disable session capture' 'status:Show capture status' 'list:List sessions' 'read:Read a session' 'search:Search sessions')
+          _describe 'subcommand' subcmds
+          ;;
+        integrations)
+          if (( CURRENT == 3 )); then
+            local subcmds=('list:List hosted integrations' 'connect:Connect a hosted integration' 'disconnect:Disconnect a hosted integration')
+            _describe 'subcommand' subcmds
+          elif [[ \$words[3] == 'connect' ]]; then
+            local providers=('github:GitHub')
+            _describe 'provider' providers
+          elif [[ \$words[3] == 'disconnect' ]]; then
+            local providers=('github:GitHub' 'fireflies:Fireflies' 'linear:Linear' 'slack:Slack')
+            _describe 'provider' providers
+          fi
+          ;;
+        update)
+          _arguments '--check[Check without installing]'
           ;;
         completion)
           _arguments '--bash[Generate bash completion]' '--zsh[Generate zsh completion]'

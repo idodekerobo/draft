@@ -115,10 +115,13 @@ function InputSourceRow({
   const needsAttention = detail.connected && detail.healthStatus === "needs_attention";
 
   function buildMeta(): string {
+    if (detail.status === "pending") {
+      return sourceKey === "fireflies" ? "Pending webhook verification" : "Setup pending";
+    }
     if (!detail.connected) return "Not connected";
     const parts: string[] = [];
     if (detail.mode)     parts.push(detail.mode);
-    if (detail.channels) parts.push(`${detail.channels} channels`);
+    if (detail.channels !== null) parts.push(`${detail.channels} channels`);
     const time = relativeTime(detail.lastConnected);
     if (time) parts.push(time);
     return parts.length > 0 ? parts.join(" · ") : "On";
@@ -161,7 +164,7 @@ function InputSourceRow({
               className="app-row__connect"
               onClick={onToggleConnect}
             >
-              {isExpanded ? "Close" : "Connect"}
+              {isExpanded ? "Close" : detail.status === "pending" ? "Finish setup" : "Connect"}
             </button>
           )}
         </div>
@@ -294,11 +297,18 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     }
   }
 
-  async function refreshConnectedApps() {
+  async function tryRefreshConnectedApps(): Promise<boolean> {
     try {
       const updated = await rpc.request.getConnectedApps();
       setApps(updated);
-    } catch { /* non-fatal */ }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refreshConnectedApps() {
+    await tryRefreshConnectedApps();
   }
 
   function toggleSlackPanel(mode: "connect" | "manage") {
@@ -373,13 +383,18 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 isDisconnecting={disconnecting === key}
                 isExpanded={expandedSource === key}
                 connectedAction={
-                  key === "slack" ? { label: "Update channels", onClick: () => toggleSlackPanel("manage") } :
+                  key === "slack" ? { label: "Manage channels", onClick: () => toggleSlackPanel("manage") } :
                   key === "claude_session" ? { label: "Setup guide", onClick: () => setExpandedSource((current) => current === "claude_session" ? null : "claude_session") } :
                   undefined
                 }
               >
                 {key === "fireflies" && (
-                  <FirefliesConnectPanel detail={apps.integrations.fireflies} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
+                  <FirefliesConnectPanel
+                    detail={apps.integrations.fireflies}
+                    classPrefix="app-row"
+                    onStatusRefresh={tryRefreshConnectedApps}
+                    onDone={() => setExpandedSource(null)}
+                  />
                 )}
 
                 {key === "linear" && (
@@ -387,7 +402,13 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 )}
 
                 {key === "slack" && (
-                  <SlackConnectPanel detail={apps.integrations.slack} mode={slackPanelMode} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
+                  <SlackConnectPanel
+                    detail={apps.integrations.slack}
+                    mode={slackPanelMode}
+                    classPrefix="app-row"
+                    onMembershipUpdated={refreshConnectedApps}
+                    onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }}
+                  />
                 )}
 
                 {key === "github" && (

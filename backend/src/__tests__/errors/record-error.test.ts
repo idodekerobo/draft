@@ -137,7 +137,20 @@ describe("recordError", () => {
     const original = console.error;
     console.error = stderr;
     try {
-      await expect(recordError({ client, workspaceId: null, operation: "auth", message: "request token=abc failed", error: new Error("Bearer hidden-token"), code: "auth_failed" })).resolves.toBeUndefined();
+      await expect(recordError({
+        client,
+        workspaceId: null,
+        operation: "auth",
+        message: "request token=abc failed",
+        error: new Error("Bearer hidden-token"),
+        code: "auth_failed",
+        detail: {
+          linear_webhook_id: "webhook-safe-1",
+          api_token: "api-token-canary",
+          signing_secret: "signing-secret-canary",
+          nested: { provider_payload: "provider-raw-canary" },
+        },
+      })).resolves.toBeUndefined();
     } finally {
       console.error = original;
     }
@@ -145,9 +158,16 @@ describe("recordError", () => {
     expect(stderr).toHaveBeenCalledTimes(1);
     expect(stderrOutput).toContain('"code":"auth_failed"');
     expect(stderrOutput).toContain('"message":"request token=[REDACTED] failed"');
+    expect(stderrOutput).toContain('"linear_webhook_id":"webhook-safe-1"');
+    expect(stderrOutput).toContain('"api_token":"[REDACTED]"');
+    expect(stderrOutput).toContain('"signing_secret":"[REDACTED]"');
+    expect(stderrOutput).toContain('"provider_payload":"[REDACTED]"');
     expect(stderrOutput).toContain("Bearer [REDACTED]");
     expect(stderrOutput).not.toContain("abc");
     expect(stderrOutput).not.toContain("hidden-token");
+    expect(stderrOutput).not.toContain("api-token-canary");
+    expect(stderrOutput).not.toContain("signing-secret-canary");
+    expect(stderrOutput).not.toContain("provider-raw-canary");
   });
 
   it("never rejects when the database client throws or returns an error", async () => {

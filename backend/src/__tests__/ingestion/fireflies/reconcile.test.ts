@@ -42,7 +42,7 @@ function createFakeClient(): { client: SupabaseClient; state: FakeState } {
           eq: () => ({
             eq: () => ({
               maybeSingle: async () => ({
-                data: { id: ids.connection, credential_id: ids.credential },
+                data: { id: ids.connection, credential_id: ids.credential, status: "active" },
                 error: null,
               }),
             }),
@@ -64,15 +64,17 @@ function createFakeClient(): { client: SupabaseClient; state: FakeState } {
         select: () => ({
           eq: () => ({
             eq: () => ({
-              maybeSingle: async () => ({
-                data: {
-                  id: ids.credential,
-                  status: "active",
-                  expires_at: null,
-                  encrypted_payload: encryptedPayload,
-                  encryption_key_version: KEY_VERSION,
-                },
-                error: null,
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: {
+                    id: ids.credential,
+                    status: "active",
+                    expires_at: null,
+                    encrypted_payload: encryptedPayload,
+                    encryption_key_version: KEY_VERSION,
+                  },
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -204,6 +206,7 @@ describe("reconcileFirefliesConnection", () => {
     expect(state.cursorUpdates).toHaveLength(1);
     const cursorPayload = state.cursorUpdates[0] as { cursor_json: Record<string, unknown> };
     expect(typeof cursorPayload.cursor_json.last_reconciled_at).toBe("string");
+    expect(state.cursorUpdates[0]).not.toHaveProperty("last_success_at");
   });
 
   it("leaves the cursor untouched when a mid-pass ingestion fails", async () => {

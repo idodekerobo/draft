@@ -22,8 +22,10 @@
     "./agents/prompts/setup": "./src/agents/prompts/setup.ts",
     "./integrations/granola": "./src/integrations/granola.ts",
     "./integrations/fireflies": "./src/integrations/fireflies.ts",
+    "./integrations/hosted-connections": "./src/integrations/hosted-connections.ts",
     "./integrations/mcp-health": "./src/integrations/mcp-health.ts",
     "./integrations/slack": "./src/integrations/slack.ts",
+    "./integrations/slack-hosted": "./src/integrations/slack-hosted.ts",
     "./agents/mcp": "./src/agents/mcp.ts",
     "./sync/atomic-write": "./src/sync/atomic-write.ts",
     "./sync/manifest": "./src/sync/manifest.ts",
@@ -48,7 +50,8 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/bun": "latest",
-    "@types/tar-stream": "^3.1.4"
+    "@types/tar-stream": "^3.1.4",
+    "bun-types": "^1.3.14"
   },
   "peerDependencies": {
     "typescript": "^5"

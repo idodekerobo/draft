@@ -167,14 +167,20 @@ interface Store {
   sourceItems: Row[];
   workspaceEvents: Row[];
   sourceConnections: Row[];
+  rpcCalls: Array<{ functionName: string; params: Row }>;
 }
 
-function createFakeClient(messages: SlackMessageRow[], cursorJson: Record<string, unknown>) {
+function createFakeClient(
+  messages: SlackMessageRow[],
+  cursorJson: Record<string, unknown>,
+  rpcError: unknown = null,
+) {
   const store: Store = {
     slackMessages: messages,
     sourceItems: [],
     workspaceEvents: [],
     sourceConnections: [{ id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: cursorJson }],
+    rpcCalls: [],
   };
 
   function execSlackMessages(qb: FakeQueryBuilder) {
@@ -311,6 +317,8 @@ function createFakeClient(messages: SlackMessageRow[], cursorJson: Record<string
     },
     rpc(fnName: string, params: Row) {
       if (fnName === "upsert_source_item") {
+        store.rpcCalls.push({ functionName: fnName, params });
+        if (rpcError) return Promise.resolve({ data: null, error: rpcError });
         return Promise.resolve(execUpsertSourceItemRpc(params));
       }
       throw new Error(`unexpected rpc: ${fnName}`);
@@ -353,6 +361,7 @@ describe("materializeSlackBatches", () => {
     );
 
     expect(result.batchesCut).toBe(1);
+    expect(store.rpcCalls[0]?.functionName).toBe("upsert_source_item");
     expect(store.sourceItems).toHaveLength(1);
     expect(store.sourceItems[0]!.metadata_json.message_count).toBe(3);
 
@@ -365,6 +374,30 @@ describe("materializeSlackBatches", () => {
 
     const cursor = (result.updatedCursorJson as any).channels[channelId].last_batched_message_ts;
     expect(cursor).toBe(messages[2]!.message_ts);
+  });
+
+  it("treats connection_inactive from upsert_source_item as a stale materialization skip", async () => {
+    const channelId = "C-stale";
+    const messages = [0, 1].map((n) => makeMessage(channelId, n));
+    const initialCursor = {};
+    const { client, store } = createFakeClient(
+      messages,
+      initialCursor,
+      { code: "P0001", message: "connection_inactive" },
+    );
+    setLimits({ maxMessages: 2 });
+
+    const result = await materializeSlackBatches(
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: initialCursor },
+      client,
+    );
+
+    expect(result).toEqual({ batchesCut: 0, updatedCursorJson: initialCursor });
+    expect(store.rpcCalls).toHaveLength(1);
+    expect(store.sourceItems).toHaveLength(0);
+    expect(store.workspaceEvents).toHaveLength(0);
+    expect(store.slackMessages.every((message) => message.source_item_id === null)).toBe(true);
+    expect(store.sourceConnections[0]?.cursor_json).toEqual(initialCursor);
   });
 
   it("cuts a batch once the span threshold is crossed, including the crossing message", async () => {

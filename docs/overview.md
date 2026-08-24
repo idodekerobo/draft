@@ -12,7 +12,7 @@ Draft has a server-side workspace and local clients:
 
 **The workspace** is the canonical company brain. It contains versioned context, source items, synthesis runs, connected-source state, and coding-agent session data. The Draft API authenticates access and enforces organization, team, and workspace boundaries.
 
-**The local clients** are the Electrobun desktop app, the CLI, the local background daemon, and agent integrations. They sign in, display or query the workspace, connect local agents, and upload local coding-agent sessions when capture is enabled. The background daemon remains a local/transitional runtime used by desktop bundles and current plugin hooks; it is not the canonical hosted workspace.
+**The local clients** are the Electrobun desktop app, the CLI, the local background daemon, and agent integrations. They sign in, display or query the workspace, connect the workspace's hosted data sources (Slack, GitHub, Linear, Fireflies, Claude Code — from either the desktop app or `draft integrations connect` in the CLI), connect local agents, and upload local coding-agent sessions when capture is enabled. The background daemon remains a local/transitional runtime used by desktop bundles and current plugin hooks; it is not the canonical hosted workspace.
 
 The CLI and plugin are the current agent connection path. That surface is intentionally evolving while the project works out the best long-term way for agents to attach to the company brain.
 

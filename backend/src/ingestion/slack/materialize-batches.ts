@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderSlackMessages } from "./render";
 import { loadSlackBatchLimits, type SlackBatchLimits } from "./config";
 import type { SlackMessageRow } from "./types";
-import { upsertSourceItem } from "../upsert-source-item";
+import { isConnectionInactiveError, upsertSourceItem } from "../upsert-source-item";
 import { insertEvent } from "../../events/insert-event";
 import type { ScheduledTaskRow } from "../../types/tables";
 
@@ -228,33 +228,37 @@ export async function materializeSlackBatches(
   let cursorJson = connection.cursor_json;
   let batchesCut = 0;
 
-  const channelIds = await getChannelIdsWithMessages(db, connection.id);
+  try {
+    const channelIds = await getChannelIdsWithMessages(db, connection.id);
 
-  for (const channelId of channelIds) {
-    const cursorTs = getChannelCursor(cursorJson, channelId);
-    const messages = await getPendingMessages(db, connection.id, channelId, cursorTs);
-    if (messages.length === 0) continue;
+    for (const channelId of channelIds) {
+      const cursorTs = getChannelCursor(cursorJson, channelId);
+      const messages = await getPendingMessages(db, connection.id, channelId, cursorTs);
+      if (messages.length === 0) continue;
 
-    const { committed } = await materializeChannelBatches(
-      db,
-      connection,
-      channelId,
-      messages,
-      limits,
-    );
+      const { committed } = await materializeChannelBatches(
+        db,
+        connection,
+        channelId,
+        messages,
+        limits,
+      );
 
-    // Cursor is persisted after each cut, not just at the end of the pass,
-    // so a crash between two cuts leaves it at the last fully committed batch.
-    for (const batch of committed) {
-      cursorJson = withChannelCursor(cursorJson, channelId, batch.lastMessageTs);
-      const { error } = await db
-        .from("source_connections")
-        .update({ cursor_json: cursorJson })
-        .eq("id", connection.id)
-        .eq("workspace_id", connection.workspace_id);
-      if (error) throw error;
-      batchesCut += 1;
+      // Cursor is persisted after each cut, not just at the end of the pass,
+      // so a crash between two cuts leaves it at the last fully committed batch.
+      for (const batch of committed) {
+        cursorJson = withChannelCursor(cursorJson, channelId, batch.lastMessageTs);
+        const { error } = await db
+          .from("source_connections")
+          .update({ cursor_json: cursorJson })
+          .eq("id", connection.id)
+          .eq("workspace_id", connection.workspace_id);
+        if (error) throw error;
+        batchesCut += 1;
+      }
     }
+  } catch (error) {
+    if (!isConnectionInactiveError(error)) throw error;
   }
 
   return { batchesCut, updatedCursorJson: cursorJson };

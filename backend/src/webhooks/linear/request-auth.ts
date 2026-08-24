@@ -110,6 +110,7 @@ export async function authenticateLinearWebhookRequest(
     .select("id, workspace_id")
     .eq("connection_key", connectionKey)
     .eq("provider", "linear")
+    .in("status", ["active", "degraded"])
     .maybeSingle();
   if (error) reject("Linear webhook connection lookup failed");
 

@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SlackMessageFileRef, SlackMessageRow } from "./types";
+import { isConnectionInactiveError } from "../upsert-source-item";
 
 const SKIP_SUBTYPES = new Set([
   "bot_message",
@@ -137,10 +138,29 @@ async function upsertSlackMessageRow(
   client: SupabaseClient,
   row: Omit<SlackMessageRow, "id" | "created_at" | "updated_at">,
 ): Promise<void> {
-  const { error } = await client.from("slack_messages").upsert(row, {
-    onConflict: "source_connection_id,channel_id,message_ts,message_version",
+  const { error } = await client.rpc("upsert_slack_message_if_connection_active", {
+    p_workspace_id: row.workspace_id,
+    p_source_connection_id: row.source_connection_id,
+    p_channel_id: row.channel_id,
+    p_channel_name_snapshot: row.channel_name_snapshot,
+    p_message_ts: row.message_ts,
+    p_message_version: row.message_version,
+    p_thread_ts: row.thread_ts,
+    p_parent_user_id: row.parent_user_id,
+    p_slack_user_id: row.slack_user_id,
+    p_user_name_snapshot: row.user_name_snapshot,
+    p_text: row.text,
+    p_subtype: row.subtype,
+    p_is_deleted: row.is_deleted,
+    p_edited_at: row.edited_at,
+    p_deleted_at: row.deleted_at,
+    p_blocks_json: row.blocks_json,
+    p_files_json: row.files_json,
+    p_reactions_json: row.reactions_json,
+    p_provider_metadata_json: row.provider_metadata_json,
+    p_captured_at: row.captured_at,
   });
-  if (error) throw error;
+  if (error && !isConnectionInactiveError(error)) throw error;
 }
 
 export async function handleSlackMessageEvent(

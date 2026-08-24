@@ -5,7 +5,8 @@ import { rpc } from "../../rpc";
 
 interface FirefliesConnectPanelProps {
   detail: IntegrationDetail | undefined;
-  onConnected: () => void | Promise<void>;
+  onStatusRefresh: () => boolean | Promise<boolean>;
+  onDone: () => void | Promise<void>;
   classPrefix: "onboarding" | "app-row";
 }
 
@@ -14,7 +15,9 @@ interface WebhookInfo {
   webhookSecret: string;
 }
 
-export function FirefliesConnectPanel({ onConnected, classPrefix }: FirefliesConnectPanelProps) {
+const REFRESH_ERROR = "Connection saved, but Draft could not refresh its status. Keep this webhook information and try Done again.";
+
+export function FirefliesConnectPanel({ onStatusRefresh, onDone, classPrefix }: FirefliesConnectPanelProps) {
   const { track } = useAnalytics();
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
@@ -35,8 +38,10 @@ export function FirefliesConnectPanel({ onConnected, classPrefix }: FirefliesCon
       setApiKey("");
       if (result.webhookUrl && result.webhookSecret) {
         setWebhookInfo({ webhookUrl: result.webhookUrl, webhookSecret: result.webhookSecret });
+        if (!await refreshStatus()) setError(REFRESH_ERROR);
       } else {
-        await onConnected();
+        if (await refreshStatus()) await onDone();
+        else setError(REFRESH_ERROR);
       }
     } catch {
       setError("Could not connect Fireflies. Try again.");
@@ -49,6 +54,24 @@ export function FirefliesConnectPanel({ onConnected, classPrefix }: FirefliesCon
     await navigator.clipboard.writeText(value);
     setCopied(kind);
     window.setTimeout(() => setCopied((current) => current === kind ? null : current), 1_500);
+  }
+
+  async function refreshStatus(): Promise<boolean> {
+    try {
+      return await onStatusRefresh();
+    } catch {
+      return false;
+    }
+  }
+
+  async function finishHandoff() {
+    setError(null);
+    if (!await refreshStatus()) {
+      setError(REFRESH_ERROR);
+      return;
+    }
+    setWebhookInfo(null);
+    await onDone();
   }
 
   if (webhookInfo) {
@@ -70,7 +93,8 @@ export function FirefliesConnectPanel({ onConnected, classPrefix }: FirefliesCon
           <code>{webhookInfo.webhookSecret}</code>
           <button type="button" onClick={() => void copy(webhookInfo.webhookSecret, "secret")}>{copied === "secret" ? "Copied" : "Copy"}</button>
         </div>
-        <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => { setWebhookInfo(null); void onConnected(); }}>
+        {error && <span className={`${classPrefix}__validation`}>{error}</span>}
+        <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void finishHandoff()}>
           Done
         </button>
       </div>

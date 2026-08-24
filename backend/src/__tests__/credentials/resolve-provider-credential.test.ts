@@ -17,7 +17,7 @@ beforeAll(() => {
 });
 
 interface FakeClientOptions {
-  connection?: { id: string; credential_id: string | null } | null;
+  connection?: { id: string; credential_id: string | null; status: string } | null;
   credential?: {
     id: string;
     status: string;
@@ -25,6 +25,7 @@ interface FakeClientOptions {
     encrypted_payload: unknown;
     encryption_key_version: string;
   } | null;
+  failOnCredentialLookup?: boolean;
 }
 
 function createFakeClient(options: FakeClientOptions) {
@@ -37,7 +38,7 @@ function createFakeClient(options: FakeClientOptions) {
               maybeSingle: async () => ({
                 data:
                   options.connection === undefined
-                    ? { id: ids.connection, credential_id: ids.credential }
+                    ? { id: ids.connection, credential_id: ids.credential, status: "active" }
                     : options.connection,
                 error: null,
               }),
@@ -48,13 +49,16 @@ function createFakeClient(options: FakeClientOptions) {
     }
 
     if (table === "credentials") {
+      if (options.failOnCredentialLookup) throw new Error("credential lookup must not run");
       return {
         select: () => ({
           eq: () => ({
             eq: () => ({
-              maybeSingle: async () => ({
-                data: options.credential ?? null,
-                error: null,
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: options.credential ?? null,
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -130,7 +134,7 @@ describe("resolveProviderCredential", () => {
 
   it("throws a typed 'missing' error when the connection has no credential_id", async () => {
     const client = createFakeClient({
-      connection: { id: ids.connection, credential_id: null },
+      connection: { id: ids.connection, credential_id: null, status: "active" },
     });
 
     try {
@@ -141,6 +145,36 @@ describe("resolveProviderCredential", () => {
       expect((error as CredentialError).reason).toBe("missing");
     }
   });
+
+  it("allows a degraded connection to resolve its credential", async () => {
+    const secrets = { api_token: "ff-token", webhook_secret: "ff-secret" };
+    const client = createFakeClient({
+      connection: { id: ids.connection, credential_id: ids.credential, status: "degraded" },
+      credential: activeCredential(
+        encryptCredentialPayload(JSON.stringify(secrets), KEY_VERSION),
+      ),
+    });
+
+    await expect(resolveProviderCredential(ids.workspace, "fireflies", client)).resolves.toEqual(secrets);
+  });
+
+  it.each(["pending", "error", "revoked"])(
+    "rejects an inactive %s connection before reading or decrypting its credential",
+    async (status) => {
+      const client = createFakeClient({
+        connection: { id: ids.connection, credential_id: ids.credential, status },
+        failOnCredentialLookup: true,
+      });
+
+      try {
+        await resolveProviderCredential(ids.workspace, "fireflies", client);
+        throw new Error("expected rejection");
+      } catch (error) {
+        expect(error).toBeInstanceOf(CredentialError);
+        expect((error as CredentialError).reason).toBe("missing");
+      }
+    },
+  );
 
   it("throws a typed 'revoked' error for a revoked credential", async () => {
     const client = createFakeClient({

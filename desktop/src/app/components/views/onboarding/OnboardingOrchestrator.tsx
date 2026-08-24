@@ -50,11 +50,14 @@ export function OnboardingOrchestrator({ onComplete }: OnboardingOrchestratorPro
   // connections resets to null on every remount and briefly flashes
   // "unconnected" until getConnectedApps() resolves again.
   const [connections, setConnections] = useState<ConnectedAppsStatus["integrations"] | null>(null);
-  const loadConnections = useCallback(async () => {
+  const loadConnections = useCallback(async (): Promise<boolean> => {
     try {
       const result = await rpc.request.getConnectedApps();
       setConnections(result.integrations);
-    } catch { /* IntegrationSetupStep surfaces its own error message on failure. */ }
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
   useEffect(() => { void loadConnections(); }, [loadConnections]);
 

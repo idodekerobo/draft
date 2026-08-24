@@ -23,7 +23,7 @@ beforeAll(() => {
 });
 
 interface FakeClientOptions {
-  connection?: { id: string; workspace_id: string } | null;
+  connection?: { id: string; workspace_id: string; credential_id: string | null } | null;
   credential?: {
     id: string;
     status: string;
@@ -32,6 +32,8 @@ interface FakeClientOptions {
     encryption_key_version: string;
   } | null;
   connectionCredentialId?: string | null;
+  connectionStatus?: string;
+  expectedCredentialId?: string;
 }
 
 function createFakeClient(options: FakeClientOptions) {
@@ -40,23 +42,29 @@ function createFakeClient(options: FakeClientOptions) {
       return {
         select: (columns: string) => ({
           eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => {
-                if (columns.includes("workspace_id") && !columns.includes("credential_id")) {
-                  return {
-                    data:
-                      options.connection === undefined
-                        ? { id: ids.connection, workspace_id: ids.workspace }
-                        : options.connection,
-                    error: null,
-                  };
-                }
+            eq: () => {
+              const maybeSingle = async () => {
                 return {
-                  data: { id: ids.connection, credential_id: options.connectionCredentialId ?? ids.credential },
+                  data:
+                    options.connection === undefined
+                      ? {
+                          id: ids.connection,
+                          workspace_id: ids.workspace,
+                          credential_id: options.connectionCredentialId ?? ids.credential,
+                        }
+                      : options.connection,
                   error: null,
                 };
-              },
-            }),
+              };
+              return {
+                maybeSingle,
+                in: (_column: string, statuses: string[]) => ({
+                  maybeSingle: async () => statuses.includes(options.connectionStatus ?? "active")
+                    ? maybeSingle()
+                    : { data: null, error: null },
+                }),
+              };
+            },
           }),
         }),
       };
@@ -65,14 +73,23 @@ function createFakeClient(options: FakeClientOptions) {
     if (table === "credentials") {
       return {
         select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: options.credential ?? null,
-                error: null,
+          eq: (column: string, value: unknown) => {
+            if (column === "id" && options.expectedCredentialId) {
+              expect(value).toBe(options.expectedCredentialId);
+            }
+            return {
+              eq: () => ({
+                eq: (providerColumn: string, providerValue: unknown) => ({
+                  maybeSingle: async () => ({
+                    data: providerColumn === "provider" && providerValue === "fireflies"
+                      ? options.credential ?? null
+                      : null,
+                    error: null,
+                  }),
+                }),
               }),
-            }),
-          }),
+            };
+          },
         }),
       };
     }
@@ -129,9 +146,37 @@ describe("authenticateFirefliesWebhookRequest", () => {
 
     expect(result).toEqual({
       connection: { id: ids.connection, workspace_id: ids.workspace },
+      credentialId: ids.credential,
       event: "meeting.summarized",
       meetingId: "meeting-123",
     });
+  });
+
+  it("decrypts the exact credential generation captured with the connection", async () => {
+    const capturedCredentialId = "44444444-4444-4444-8444-444444444444";
+    const capturedSecret = "captured-generation-secret";
+    const client = createFakeClient({
+      connection: {
+        id: ids.connection,
+        workspace_id: ids.workspace,
+        credential_id: capturedCredentialId,
+      },
+      expectedCredentialId: capturedCredentialId,
+      credential: {
+        ...activeCredential(
+          encryptCredentialPayload(
+            JSON.stringify({ api_token: "ff-token", webhook_secret: capturedSecret }),
+            KEY_VERSION,
+          ),
+        ),
+        id: capturedCredentialId,
+      },
+    });
+    const request = makeRequest(validPayload, sign(validPayload, capturedSecret));
+
+    const result = await authenticateFirefliesWebhookRequest(request, CONNECTION_KEY, client);
+
+    expect(result.credentialId).toBe(capturedCredentialId);
   });
 
   it("rejects a wrong signature", async () => {
@@ -160,6 +205,18 @@ describe("authenticateFirefliesWebhookRequest", () => {
       authenticateFirefliesWebhookRequest(request, "unknown-key", client),
     ).rejects.toBeInstanceOf(FirefliesWebhookAuthError);
   });
+
+  it.each(["pending", "error", "revoked"])(
+    "rejects an inactive %s connection exactly like a missing key",
+    async (connectionStatus) => {
+      const client = createFakeClient({ connectionStatus });
+      const request = makeRequest(validPayload, sign(validPayload, WEBHOOK_SECRET));
+
+      await expect(
+        authenticateFirefliesWebhookRequest(request, CONNECTION_KEY, client),
+      ).rejects.toBeInstanceOf(FirefliesWebhookAuthError);
+    },
+  );
 
   it("rejects a tampered body (bit-flip after signing)", async () => {
     const client = defaultClient();

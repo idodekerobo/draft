@@ -2,10 +2,12 @@
 // index.ts — Draft CLI entry point and command router
 
 import { printHelp, red } from "./utils/output.ts";
+import { reportUnexpectedIntegrationFailure } from "./integrations/safe-output.ts";
 
 import { runAdd } from "./commands/add.ts";
 import { runAuth } from "./commands/auth.ts";
 import { runContext } from "./commands/context.ts";
+import { runIntegrations } from "./commands/integrations.ts";
 import { runSessions } from "./commands/sessions.ts";
 import { runCompletion } from "./commands/completion.ts";
 import { runUpdate, getCachedUpdateNotice, checkForUpdateBackground } from "./commands/update.ts";
@@ -36,6 +38,9 @@ if (command === "--version" || command === "-v") {
     case "context":
       process.exitCode = await runContext(rest);
       break;
+    case "integrations":
+      process.exitCode = await runIntegrations(rest);
+      break;
     case "sessions":
       process.exitCode = await runSessions(rest);
       break;
@@ -51,13 +56,17 @@ if (command === "--version" || command === "-v") {
       process.exitCode = 2;
   }
 
-  // Skip for `update` (redundant), `completion` (stdout must be pure shell), and --json.
-  if (command !== "update" && command !== "completion" && !rest.includes("--json")) {
+  // Integrations reserves stdout/stderr for stable provider lifecycle output.
+  if (command !== "update" && command !== "completion" && command !== "integrations" && !rest.includes("--json")) {
     const notice = getCachedUpdateNotice();
     if (notice) console.error(notice);
     checkForUpdateBackground();
   }
 })().catch((error: unknown) => {
+  if (command === "integrations") {
+    process.exitCode = reportUnexpectedIntegrationFailure({ json: rest.includes("--json") });
+    return;
+  }
   const message = error instanceof Error ? error.message : String(error);
   console.error(red(`Draft could not start safely: ${message}`));
   process.exitCode = 1;

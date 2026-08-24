@@ -44,7 +44,7 @@ The hosted service runs this stack for you. In a self-hosted deployment, these s
 The local components connect your agents and computer to the Draft workspace:
 
 - The Electrobun desktop app signs in, displays the shared workspace, manages connections, and shows synthesis activity.
-- The CLI authenticates against the configured Draft API and can read workspace context and coding-agent session data.
+- The CLI authenticates against the configured Draft API, can read workspace context and coding-agent session data, and can connect/disconnect the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code) directly — see `draft integrations` in the [CLI reference](./docs/cli.md).
 - Agent integrations and project hooks let supported agents attach to Draft. The current CLI/plugin path is still evolving as we work toward the best long-term agent connection model.
 - The `background/` module is a local daemon/runtime path still used by desktop bundles and current plugin hooks. It contains local pollers, session jobs, and source-adapter runtimes; it is not the hosted workspace or hosted synthesis control plane.
 - A local hook can read a completed coding-agent transcript from the project machine and send it to the configured Draft API. The local machine keeps authentication state, project configuration, and temporary capture/runtime files.
@@ -128,6 +128,8 @@ draft/
 
 The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is an integration and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
 
+Connect or manage any of these from the desktop app, or from the CLI: `draft integrations list` reports each provider's status, `draft integrations connect <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft integrations disconnect <provider>` revokes it. Slack additionally supports `draft integrations slack channels list`/`set` to manage which channels the bot has joined. See [docs/cli.md](./docs/cli.md#hosted-integrations) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
+
 ## CLI
 
 Install a released CLI binary without cloning the repository:
@@ -146,6 +148,8 @@ draft auth whoami
 draft context list
 draft context read --all
 draft sessions list
+draft integrations list
+draft integrations connect github
 draft --help
 ~~~
 

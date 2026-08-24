@@ -28,6 +28,7 @@ export type ProviderCredential<P extends SourceConnectionProvider> = P extends "
 interface SourceConnectionCredentialRow {
   id: string;
   credential_id: string | null;
+  status: string;
 }
 
 interface CredentialSecretRow {
@@ -40,43 +41,25 @@ interface CredentialSecretRow {
 
 const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack", "linear"]);
 
-// Assumes one active source_connection per (workspaceId, provider). Named-secret
-// providers store encrypted_payload as a JSON object rather than one string.
-export async function resolveProviderCredential<P extends SourceConnectionProvider>(
+async function resolveCredentialById<P extends SourceConnectionProvider>(
   workspaceId: string,
   provider: P,
-  client?: SupabaseClient,
+  credentialId: string,
+  db: SupabaseClient,
 ): Promise<ProviderCredential<P>> {
-  const db = client ?? (await import("../db/client")).serviceClient;
-
-  const { data: connectionData, error: connectionError } = await db
-    .from("source_connections")
-    .select("id, credential_id")
-    .eq("workspace_id", workspaceId)
-    .eq("provider", provider)
-    .maybeSingle();
-  if (connectionError) throw connectionError;
-
-  const connection = connectionData as SourceConnectionCredentialRow | null;
-  if (!connection || !connection.credential_id) {
-    throw new CredentialError(
-      `Workspace ${workspaceId} has no ${provider} source connection with a credential configured`,
-      "missing",
-    );
-  }
-
   const { data: credentialData, error: credentialError } = await db
     .from("credentials")
     .select("id, status, expires_at, encrypted_payload, encryption_key_version")
-    .eq("id", connection.credential_id)
+    .eq("id", credentialId)
     .eq("workspace_id", workspaceId)
+    .eq("provider", provider)
     .maybeSingle();
   if (credentialError) throw credentialError;
 
   const credential = credentialData as CredentialSecretRow | null;
   if (!credential) {
     throw new CredentialError(
-      `Credential ${connection.credential_id} for workspace ${workspaceId} was not found`,
+      `Credential ${credentialId} for workspace ${workspaceId} was not found`,
       "missing",
     );
   }
@@ -116,6 +99,50 @@ export async function resolveProviderCredential<P extends SourceConnectionProvid
       "decrypt_failed",
     );
   }
+}
+
+export async function resolveProviderCredentialById<P extends SourceConnectionProvider>(
+  workspaceId: string,
+  provider: P,
+  credentialId: string,
+  client?: SupabaseClient,
+): Promise<ProviderCredential<P>> {
+  const db = client ?? (await import("../db/client")).serviceClient;
+  return resolveCredentialById(workspaceId, provider, credentialId, db);
+}
+
+// Assumes one active source_connection per (workspaceId, provider). Named-secret
+// providers store encrypted_payload as a JSON object rather than one string.
+export async function resolveProviderCredential<P extends SourceConnectionProvider>(
+  workspaceId: string,
+  provider: P,
+  client?: SupabaseClient,
+): Promise<ProviderCredential<P>> {
+  const db = client ?? (await import("../db/client")).serviceClient;
+
+  const { data: connectionData, error: connectionError } = await db
+    .from("source_connections")
+    .select("id, credential_id, status")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", provider)
+    .maybeSingle();
+  if (connectionError) throw connectionError;
+
+  const connection = connectionData as SourceConnectionCredentialRow | null;
+  if (!connection || !connection.credential_id) {
+    throw new CredentialError(
+      `Workspace ${workspaceId} has no ${provider} source connection with a credential configured`,
+      "missing",
+    );
+  }
+  if (connection.status !== "active" && connection.status !== "degraded") {
+    throw new CredentialError(
+      `Workspace ${workspaceId} has no ingestible ${provider} source connection`,
+      "missing",
+    );
+  }
+
+  return resolveCredentialById(workspaceId, provider, connection.credential_id, db);
 }
 
 export { CredentialError } from "./crypto";

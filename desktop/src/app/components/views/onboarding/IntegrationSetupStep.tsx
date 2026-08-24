@@ -19,7 +19,7 @@ interface IntegrationSetupStepProps {
   onBack: () => void;
   onNext: () => void;
   connections: ConnectedAppsStatus["integrations"] | null;
-  loadConnections: () => Promise<void>;
+  loadConnections: () => Promise<boolean>;
 }
 
 type IntegrationName = "slack" | "fireflies" | "linear" | "github" | "claude_session";
@@ -28,8 +28,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Optimistic overlay so a successful connect shows "connected"
-  // instead of flashing back to the pre-connect state while loadConnections() runs
+  // Synchronous providers update optimistically; Fireflies waits for webhook
+  // evidence from the backend before it may appear connected.
   const [optimisticConnections, markConnected] = useOptimistic(
     connections,
     (current, name: IntegrationName) =>
@@ -37,11 +37,10 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
   );
 
   // Returns the refetch promise -- SessionTrackingPanel awaits it to avoid flicker.
-  function handleConnected(name: IntegrationName): Promise<void> {
-    markConnected(name);
-    return loadConnections().then(() => {
-      if (name !== "claude_session") setExpanded(null);
-    });
+  async function handleConnected(name: IntegrationName): Promise<void> {
+    if (name !== "fireflies") markConnected(name);
+    const refreshed = await loadConnections();
+    if (refreshed && name !== "claude_session") setExpanded(null);
   }
 
   const allConnected = optimisticConnections
@@ -93,8 +92,13 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
           <GithubConnectPanel detail={github} classPrefix="onboarding" onConnected={() => handleConnected("github")} />
         </IntegrationSetupCard>
 
-        <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies?.connected)}>
-          <FirefliesConnectPanel detail={fireflies} classPrefix="onboarding" onConnected={() => handleConnected("fireflies")} />
+        <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} status={fireflies?.status} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies?.connected)} keepContentWhenConnected>
+          <FirefliesConnectPanel
+            detail={fireflies}
+            classPrefix="onboarding"
+            onStatusRefresh={loadConnections}
+            onDone={() => setExpanded(null)}
+          />
         </IntegrationSetupCard>
 
         <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>

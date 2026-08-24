@@ -1,6 +1,13 @@
 // Minimal in-process mock of the hosted control-plane API + Supabase auth
 // endpoints the CLI talks to. Started on an ephemeral port per test.
 
+export interface CapturedRequest {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
 export interface MockBackendState {
   linkCode: string;
   linkPollResponses: (() => Response)[];
@@ -14,6 +21,14 @@ export interface MockBackendState {
   sessionsSearchResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   sessionsIngestRequests: { url: string; headers: Record<string, string>; body: string }[];
   sessionsIngestResponse: () => Response | Promise<Response>;
+  requests: CapturedRequest[];
+  connectionsListResponse: (workspaceId: string) => Response | Promise<Response>;
+  connectionsConnectResponse: (workspaceId: string) => Response | Promise<Response>;
+  connectionsDisconnectResponse: (workspaceId: string, provider: string) => Response | Promise<Response>;
+  githubInstallSessionResponse: (workspaceId: string) => Response | Promise<Response>;
+  githubInstallPollResponse: (workspaceId: string, code: string) => Response | Promise<Response>;
+  slackChannelsResponse: (workspaceId: string) => Response | Promise<Response>;
+  slackMembershipResponse: (workspaceId: string) => Response | Promise<Response>;
 }
 
 export function defaultWhoami(overrides: Partial<{ organization_id: string | null; primary_team_id: string | null; workspace_id: string | null; onboarding_completed_at: string | null }> = {}) {
@@ -34,12 +49,37 @@ export function createMockBackend() {
     sessionsSearchResponse: () => Response.json({ sessions: [] }),
     sessionsIngestRequests: [],
     sessionsIngestResponse: () => Response.json({ ok: true, sessionId: "session-1" }),
+    requests: [],
+    connectionsListResponse: () => Response.json({ connections: [] }),
+    connectionsConnectResponse: () => Response.json({ ok: true }),
+    connectionsDisconnectResponse: () => Response.json({ ok: true }),
+    githubInstallSessionResponse: () => Response.json({
+      code: "install-code",
+      installUrl: "https://github.com/apps/draft-context-test/installations/new?state=install-code",
+    }),
+    githubInstallPollResponse: () => Response.json({ status: "connected" }),
+    slackChannelsResponse: () => Response.json({ ok: true, channels: [] }),
+    slackMembershipResponse: () => Response.json({
+      ok: true,
+      channel_ids: [],
+      joined: [],
+      left: [],
+      failed: [],
+    }),
   };
 
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
+      const headers: Record<string, string> = {};
+      req.headers.forEach((value, key) => { headers[key] = value; });
+      state.requests.push({
+        method: req.method,
+        url: req.url,
+        headers,
+        body: await req.clone().text(),
+      });
       if (req.method === "POST" && url.pathname === "/link") return Response.json({ code: state.linkCode });
       if (req.method === "GET" && url.pathname === `/link/${state.linkCode}`) {
         const next = state.linkPollResponses.shift();
@@ -66,10 +106,31 @@ export function createMockBackend() {
         return state.sessionReadResponse(parts[2]!, parts[4]!, url);
       }
       if (req.method === "POST" && url.pathname === "/sessions/ingest") {
-        const headers: Record<string, string> = {};
-        req.headers.forEach((value, key) => { headers[key] = value; });
         state.sessionsIngestRequests.push({ url: req.url, headers, body: await req.text() });
         return state.sessionsIngestResponse();
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/connections$/.test(url.pathname)) {
+        return state.connectionsListResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "POST" && /^\/workspaces\/[^/]+\/connections$/.test(url.pathname)) {
+        return state.connectionsConnectResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "DELETE" && /^\/workspaces\/[^/]+\/connections\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.connectionsDisconnectResponse(parts[2]!, parts[4]!);
+      }
+      if (req.method === "POST" && /^\/workspaces\/[^/]+\/github\/install-sessions$/.test(url.pathname)) {
+        return state.githubInstallSessionResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/github\/install-sessions\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.githubInstallPollResponse(parts[2]!, parts[5]!);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/connections\/slack\/channels$/.test(url.pathname)) {
+        return state.slackChannelsResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "PATCH" && /^\/workspaces\/[^/]+\/connections\/slack$/.test(url.pathname)) {
+        return state.slackMembershipResponse(url.pathname.split("/")[2]!);
       }
       return new Response("not found", { status: 404 });
     },

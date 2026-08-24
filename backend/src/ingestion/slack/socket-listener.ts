@@ -92,10 +92,49 @@ async function getSocketModeUrl(appToken: string): Promise<string> {
   return data.url;
 }
 
+export async function isSlackConnectionIngestible(
+  connection: Pick<SlackListenerConnection, "id" | "workspace_id">,
+  client?: SupabaseClient,
+): Promise<boolean> {
+  const db = client ?? (await import("../../db/client")).serviceClient;
+  const { data, error } = await db
+    .from("source_connections")
+    .select("status")
+    .eq("id", connection.id)
+    .eq("workspace_id", connection.workspace_id)
+    .maybeSingle();
+  if (error) throw error;
+  const status = (data as { status?: unknown } | null)?.status;
+  return status === "active" || status === "degraded";
+}
+
+export interface SlackSocketListenerDependencies {
+  resolveCredential: (
+    workspaceId: string,
+    client?: SupabaseClient,
+  ) => Promise<{ bot_token: string; app_token: string }>;
+  openSocketMode: (appToken: string) => Promise<string>;
+  createWebSocket: (url: string) => WebSocket;
+  handleMessage: typeof handleSlackMessageEvent;
+  setTimeoutFn: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
 export function connectSlackSocketListener(
   connection: SlackListenerConnection,
   client?: SupabaseClient,
+  dependencyOverrides: Partial<SlackSocketListenerDependencies> = {},
 ): SlackListenerHandle {
+  const dependencies: SlackSocketListenerDependencies = {
+    resolveCredential: (workspaceId, credentialClient) =>
+      resolveProviderCredential(workspaceId, "slack", credentialClient),
+    openSocketMode: getSocketModeUrl,
+    createWebSocket: (url) => new WebSocket(url),
+    handleMessage: handleSlackMessageEvent,
+    setTimeoutFn: (callback, delayMs) => setTimeout(callback, delayMs),
+    clearTimeoutFn: (timer) => clearTimeout(timer),
+    ...dependencyOverrides,
+  };
   let stopped = false;
   let ws: WebSocket | null = null;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
@@ -108,7 +147,8 @@ export function connectSlackSocketListener(
       .from("source_connections")
       .update({ status, last_error_at: new Date().toISOString() })
       .eq("id", connection.id)
-      .eq("workspace_id", connection.workspace_id);
+      .eq("workspace_id", connection.workspace_id)
+      .in("status", ["active", "degraded"]);
     if (error) log("error", connection.id, `failed to persist terminal listener status: ${error}`);
     log("error", connection.id, `terminal listener failure: ${err} — stopped; not retrying`);
   }
@@ -125,7 +165,7 @@ export function connectSlackSocketListener(
 
   function scheduleReconnect(): void {
     if (stopped) return;
-    reconnectTimer = setTimeout(() => {
+    reconnectTimer = dependencies.setTimeoutFn(() => {
       reconnectDelay = nextReconnectDelay(reconnectDelay);
       connect().catch((err) => log("error", connection.id, `reconnect error: ${err}`));
     }, reconnectDelay);
@@ -134,27 +174,50 @@ export function connectSlackSocketListener(
   const connect = async (): Promise<void> => {
     if (stopped) return;
 
-    let botToken: string;
-    let appToken: string;
     try {
-      const credential = await resolveProviderCredential(connection.workspace_id, "slack", client);
-      botToken = credential.bot_token;
-      appToken = credential.app_token;
+      if (!await isSlackConnectionIngestible(connection, client)) {
+        stopped = true;
+        ws?.close();
+        return;
+      }
     } catch (err) {
-      await handleConnectFailure(err, "credential resolution failed");
+      if (stopped) return;
+      await handleConnectFailure(err, "connection status check failed");
       return;
     }
 
+    let botToken: string;
+    let appToken: string;
     try {
-      const url = await getSocketModeUrl(appToken);
-      ws = new WebSocket(url);
+      const credential = await dependencies.resolveCredential(connection.workspace_id, client);
+      botToken = credential.bot_token;
+      appToken = credential.app_token;
+    } catch (err) {
+      if (stopped) return;
+      await handleConnectFailure(err, "credential resolution failed");
+      return;
+    }
+    if (stopped) return;
+
+    try {
+      const url = await dependencies.openSocketMode(appToken);
+      if (stopped) return;
+
+      const ingestible = await isSlackConnectionIngestible(connection, client);
+      if (stopped) return;
+      if (!ingestible) {
+        stopped = true;
+        return;
+      }
+
+      ws = dependencies.createWebSocket(url);
 
       ws.onopen = () => {
         log("info", connection.id, "Socket Mode connected");
         reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
       };
 
-      ws.onmessage = (event: MessageEvent) => {
+      ws.onmessage = async (event: MessageEvent) => {
         let msg: Record<string, unknown>;
         try {
           msg = JSON.parse(event.data as string);
@@ -162,7 +225,50 @@ export function connectSlackSocketListener(
           return;
         }
 
-        // An unacked envelope gets redelivered by Slack, so ack immediately.
+        if (msg.type === "events_api") {
+          const payload = msg.payload as Record<string, unknown> | undefined;
+          const slackEvent = payload?.event as Record<string, unknown> | undefined;
+          if (slackEvent?.type === "message") {
+            const channelId = (slackEvent.channel as string | undefined) ?? "";
+            let ingestible: boolean;
+            try {
+              ingestible = await isSlackConnectionIngestible(connection, client);
+            } catch (err) {
+              ws?.close();
+              log("error", connection.id, `connection status check failed before ACK: ${err}`);
+              return;
+            }
+            if (!ingestible) {
+              if (msg.envelope_id) {
+                ws?.send(JSON.stringify({ envelope_id: msg.envelope_id }));
+              }
+              stopped = true;
+              ws?.close();
+              return;
+            }
+            if (msg.envelope_id) {
+              ws?.send(JSON.stringify({ envelope_id: msg.envelope_id }));
+            }
+            try {
+              await dependencies.handleMessage(
+                slackEvent,
+                {
+                  connectionId: connection.id,
+                  workspaceId: connection.workspace_id,
+                  organizationId: connection.organization_id,
+                  channelId,
+                  channelName: null,
+                  botToken,
+                },
+                client,
+              );
+            } catch (err) {
+              log("error", connection.id, `handleSlackMessageEvent error: ${err}`);
+            }
+            return;
+          }
+        }
+
         if (msg.envelope_id) {
           ws?.send(JSON.stringify({ envelope_id: msg.envelope_id }));
         }
@@ -176,27 +282,6 @@ export function connectSlackSocketListener(
           const reason = (msg.reason as string | undefined) ?? "unknown";
           log("warn", connection.id, `received disconnect (reason=${reason}) — reconnecting`);
           ws?.close();
-          return;
-        }
-
-        if (msg.type === "events_api") {
-          const payload = msg.payload as Record<string, unknown> | undefined;
-          const slackEvent = payload?.event as Record<string, unknown> | undefined;
-          if (slackEvent?.type === "message") {
-            const channelId = (slackEvent.channel as string | undefined) ?? "";
-            handleSlackMessageEvent(
-              slackEvent,
-              {
-                connectionId: connection.id,
-                workspaceId: connection.workspace_id,
-                organizationId: connection.organization_id,
-                channelId,
-                channelName: null,
-                botToken,
-              },
-              client,
-            ).catch((err) => log("error", connection.id, `handleSlackMessageEvent error: ${err}`));
-          }
         }
       };
 
@@ -210,6 +295,7 @@ export function connectSlackSocketListener(
         scheduleReconnect();
       };
     } catch (err) {
+      if (stopped) return;
       await handleConnectFailure(err, "connection error");
     }
   };
@@ -219,7 +305,7 @@ export function connectSlackSocketListener(
   return {
     stop(): void {
       stopped = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (reconnectTimer) dependencies.clearTimeoutFn(reconnectTimer);
       reconnectTimer = null;
       ws?.close();
     },

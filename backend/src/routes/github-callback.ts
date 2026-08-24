@@ -10,6 +10,31 @@ const RETURN_TO_DRAFT_HTML = (message: string) =>
 
 const OWNER_APPROVAL_MESSAGE =
   "This GitHub organization requires owner approval — ask your org owner to install the app, then click Connect GitHub again.";
+const INSTALLATION_CONFLICT_CODE = "github_installation_conflict";
+const INSTALLATION_CONFLICT_MESSAGE =
+  "A GitHub installation is already connected to this workspace. Disconnect GitHub first, then try again.";
+const WORKSPACE_GITHUB_INDEX = "source_connections_one_live_github_per_workspace";
+
+function isWorkspaceGithubConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown; details?: unknown };
+  if (candidate.code !== "23505") return false;
+  return [candidate.message, candidate.details].some((value) =>
+    typeof value === "string" && value.includes(WORKSPACE_GITHUB_INDEX)
+  );
+}
+
+function installationConflict(code: string): Response {
+  resolveInstallSession(code, {
+    status: "error",
+    errorCode: INSTALLATION_CONFLICT_CODE,
+    errorMessage: INSTALLATION_CONFLICT_MESSAGE,
+  });
+  return new Response(RETURN_TO_DRAFT_HTML(INSTALLATION_CONFLICT_MESSAGE), {
+    status: 200,
+    headers: { "content-type": "text/html" },
+  });
+}
 
 // The App's one configured Callback URL -- unauthenticated (a plain browser
 // redirect from GitHub, no bearer token available). Spoofable per GitHub's
@@ -56,6 +81,18 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
+    const { data: existing, error: existingError } = await serviceClient
+      .from("source_connections")
+      .select("connection_key")
+      .eq("workspace_id", session.workspaceId)
+      .eq("provider", "github")
+      .neq("status", "revoked")
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing && existing.connection_key !== installationId) {
+      return installationConflict(code);
+    }
+
     const installation = await githubClient.verifyInstallation(installationId);
 
     await upsertSourceConnection(serviceClient, {
@@ -74,6 +111,9 @@ export async function GET(request: Request): Promise<Response> {
       headers: { "content-type": "text/html" },
     });
   } catch (error) {
+    if (isWorkspaceGithubConflict(error)) {
+      return installationConflict(code);
+    }
     const message =
       error instanceof GithubClientError
         ? "Could not verify this GitHub installation."
