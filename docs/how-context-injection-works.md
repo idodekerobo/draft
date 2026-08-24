@@ -1,140 +1,75 @@
-# How Context Injection Works
+# How agents reach the company brain
 
-Every time you start a Claude Code, Codex, or Cursor session, Draft automatically injects your workspace context into the agent's system prompt — before you type anything. This page explains exactly what gets injected, what happens after a session ends, and how to control it.
-
----
+Draft has a server-side workspace and local agent connections. The exact delivery mechanism varies by tool and is still evolving, but the responsibilities are stable.
 
 ## At session start
 
-When you open a new session, three hooks fire in sequence:
+The local connection reads the configured Draft deployment and makes the current workspace context available to the agent. Depending on the tool, this can use a project instruction file, a hook, the CLI, or a tool-specific integration.
 
-1. **`session-init.sh`** — reads `~/.draft/active-profile` to determine which workspace to use, and keeps `settings.json` up to date with the correct workspace path.
-2. **`load-team.sh`** — if you have team collaboration configured, does a quick pull of your teammates' latest accepted context updates. Runs with a 30-second timeout so it never blocks the session.
-3. **`inject-context.sh`** — reads your workspace context files and outputs the formatted context block that becomes part of the agent's system prompt.
+The context comes from the authenticated workspace. It is not a private copy maintained in a team Git repository.
 
-This all happens before your first message. The agent reads it as part of its orientation for the session.
+The current CLI setup path is:
 
----
+~~~bash
+draft auth login
+draft add claude-code --dir /path/to/project
+draft add codex --dir /path/to/project
+~~~
 
-## What gets injected
+`draft add` writes a managed Draft block to the project's `CLAUDE.md` or `AGENTS.md`. That block points the agent at the current CLI-based context connection. It is the current integration mechanism, not a promise that this file layout or plugin protocol is permanent.
 
-The injected block looks like this:
+## When a session ends
 
-```
-# Draft — Workspace Context
+When coding-session capture is enabled, a project-local SessionEnd hook:
 
-**Active profile:** acme
-**DRAFT_WORKSPACE:** ~/.draft/workspaces/acme
+1. Receives the agent's session-end event.
+2. Resolves the project's Draft configuration.
+3. Reads the completed transcript from the local machine.
+4. Sends it to the Draft API using the project's session-ingest token.
+5. Returns without blocking the agent if the upload fails.
 
-## Workspace structure
-company/
-  index.md
-product/
-  index.md
-research/
-  index.md
-...
+The backend stores the session, schedules any summarization or synthesis work, and exposes the resulting status through the API.
 
-## Context index
-**company**
-[frontmatter description from company/index.md]
+## What the agent receives
 
-**product**
-[frontmatter description from product/index.md]
+The company brain is made up of workspace context such as:
 
-**research**
-[frontmatter description from research/index.md]
+- Company and product context.
+- Team and role context.
+- Priorities and decisions.
+- Context versions created from connected sources.
+- Other custom workspace dimensions.
 
-**team**
-[frontmatter description from team/index.md]
+An agent can also use the CLI's context and session commands directly when it needs more detail than the connection's initial context.
 
-## Uninitialized dimensions        ← only shown when present
-These folders exist but have no index.md — Draft cannot load them:
-  - decisions/
-Run `/draft:add-dimension <name>` or `draft dimension add <name>` to scaffold each one.
+## Local versus server-side
 
-## Current priorities
-[full body of priorities/index.md]
+Local:
 
-## Memory
-[full body of ~/.draft/personal/memory.md]
-```
+- Agent configuration and project hook files.
+- Auth/session state and workspace identifiers.
+- The source transcript before upload.
+- Temporary runtime files and logs.
 
-**Context dimensions** — any subdirectory of `context/` that contains an `index.md` is loaded automatically. The default set is `company`, `product`, `team`, and `priorities`, but you can add custom dimensions at any time. Only the `description` field from each file's YAML frontmatter is injected — short enough to keep token usage low, detailed enough to orient the agent. The agent reads the full file body when a task needs deeper detail.
+Server-side:
 
-**Priorities** — the full body of `priorities/index.md` is always injected, not just the summary. Active sprint state changes frequently and needs to be precise.
+- The authenticated workspace and access control.
+- Versioned context and source items.
+- Uploaded session data and synthesis runs.
+- Integration credentials and provider connection state.
 
-**Memory** — the full body of `~/.draft/personal/memory.md` is injected. This is your personal layer — vocabulary, preferences, patterns — shared across all profiles.
+## Troubleshooting
 
-**Collaboration status** — if team collaboration is configured, a block showing the team repo, teammates, and last published/loaded timestamps is included.
+Check that the CLI is signed in:
 
-**Update notice** — if a new Draft version is available, a brief notice is injected so the agent can surface it naturally at the start of the conversation.
+~~~bash
+draft auth whoami
+~~~
 
----
+Check that the project hook is installed:
 
-## What is NOT injected
+~~~bash
+draft sessions status --dir /path/to/project
+~~~
 
-- The full body of context dimension files (company, product, team) — read on demand only.
-- Log entries (`context/*/log/`) — historical record, not injected automatically.
-- Decision files (`context/decisions/`) — not injected; the agent reads these when a task is relevant.
-- `tensions.md` — not injected; the agent surfaces tensions passively when a task touches a relevant area.
-- Any file outside `~/.draft/` — Draft has no access to your codebase or other files unless the agent explicitly reads them as part of a task.
-
----
-
-## After a session ends
-
-When you close a session, the `SessionEnd` hook fires `on-session-end.sh`. It writes a job file to `~/.draft/background/pending/` with the session ID, profile, and exit reason.
-
-The background daemon picks this up within 5 seconds. It runs `synthesize.sh`, which:
-
-1. **Validates the exit** — skips jobs where the session exited abnormally (crash, force-kill). Only clean exits (`prompt_input_exit`) are synthesized, because the transcript needs to be complete.
-2. **Calls Claude** — reads the session transcript and extracts any team-relevant context changes: decisions made, priorities shifted, things learned about the product or team.
-3. **Stages a proposal** — if meaningful changes are found, writes a structured markdown proposal to `~/.draft/workspaces/<profile>/proposals/`. Nothing is written to your context files yet.
-
-You review the proposal in the desktop app or with `draft proposals`. If you accept, the context files are updated. If you reject, the proposal is archived and nothing changes.
-
----
-
-## Controlling what gets injected
-
-In the desktop app: **Settings → Session Context**
-
-Each context dimension has a toggle. Disable any section to exclude it from injection. Changes take effect on the next session start — no restart required.
-
-You can also toggle sections from the CLI:
-
-```bash
-# Disable a section
-draft config set disabledContextSections '["team"]'
-```
-
----
-
-## Previewing what will be injected
-
-The desktop app's **Context tab** shows a live preview of what the next session will receive, including a token estimate. This is useful for verifying that your context is current before starting a session.
-
-The preview is generated by running `inject-context.sh` directly — it's the exact output the agent will see.
-
----
-
-## Editing context
-
-Context files are plain markdown at `~/.draft/workspaces/<profile>/context/<dimension>/index.md`. Edit them in any text editor, or use slash commands from inside your agent:
-
-- `/draft:setup` — guided interview to initialize or refresh all dimensions
-- `/draft:add-dimension <name>` — scaffold a new custom dimension (`context/<name>/index.md` + `log/`)
-- `/draft:learn` — save something specific to memory or a context file
-- `/draft:synthesize` — extract updates from the current session and stage as a proposal
-- `/draft:import <source>` — import context from a local directory or GitHub repo as a proposal
-
-Changes take effect on the next session start.
-
----
-
-## See also
-
-- [Architecture](./architecture.md)
-- [Agent plugins](./agent-plugins.md)
-- [Setting up collaboration](./setting-up-collaboration.md)
+If the project points at a self-hosted deployment, verify DRAFT_API_BASE_URL and the matching Supabase public configuration. A local hook can still exit successfully when the API is unavailable; inspect the local project/runtime logs and the backend logs for the failed upload.
