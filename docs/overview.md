@@ -1,128 +1,77 @@
-# What is Draft
+# What is Draft?
 
-> **Platform:** macOS on Apple Silicon only. Intel Mac and Windows support is not available yet.
+Draft is the company brain for teams building with AI.
 
-Draft keeps your AI agent sessions grounded. It runs in the background, capturing context from your meetings, Slack, and coding sessions, then injects what your agent needs to know at the start of every session — automatically, with no copy-pasting.
+It turns decisions, product context, priorities, and activity from the tools your team already uses into a shared workspace. Connected agents can use that workspace so sessions start with the same understanding of the company instead of a private, stale copy of context.
 
-Everything stays on your machine. Draft never routes your code, prompts, or context files through any server.
+You can use the hosted service at [draftai.us](https://draftai.us), or run the open-source stack in infrastructure you control.
 
----
+## The product model
 
-## The three components
+Draft has a server-side workspace and local clients:
 
-Draft is three things that work together:
+**The workspace** is the canonical company brain. It contains versioned context, source items, synthesis runs, connected-source state, and coding-agent session data. The Draft API authenticates access and enforces organization, team, and workspace boundaries.
 
-**Desktop app**
-A native macOS app that runs as a tray icon. Browse your context files, review and accept or reject proposed context updates, manage profiles, and start or stop the background daemon. Install once; it launches at login.
+**The local clients** are the Electrobun desktop app, the CLI, the local background daemon, and agent integrations. They sign in, display or query the workspace, connect local agents, and upload local coding-agent sessions when capture is enabled. The background daemon remains a local/transitional runtime used by desktop bundles and current plugin hooks; it is not the canonical hosted workspace.
 
-**CLI (`draft`)**
-A thin client for the hosted Draft control plane, installed to `/usr/local/bin/draft`. Sign in with `draft auth login`, then read your workspace's context with `draft context list` / `draft context read` — useful for scripting and for giving coding agents direct terminal access to context without going through the desktop app. Also runs `draft add <tool>` to install the plugin. Run `draft --help` to explore. See [CLI reference](./cli.md).
+The CLI and plugin are the current agent connection path. That surface is intentionally evolving while the project works out the best long-term way for agents to attach to the company brain.
 
-**Plugin**
-Installed into Claude Code, Codex, Cursor, OpenClaw, or Hermes via `draft add <tool>`. At the start of every agent session, the plugin injects your current workspace context — company, product, team, priorities, decisions — directly into the agent's system prompt. At session end, it queues a job so the daemon can extract and propose updates. No copy-pasting. No re-explaining.
+## How information flows
 
----
+~~~text
+Slack · GitHub · Fireflies · Linear · coding-agent sessions
+                         |
+                         v
+         Draft API and ingestion workers
+                         |
+                         v
+        Source items and workspace context
+                         |
+                         v
+       Scheduled synthesis in Fly Machines
+                         |
+                         v
+          New context version in the workspace
+                         |
+                         v
+      Web app · desktop · CLI · connected agents
+~~~
 
-## How context flows
+Connected sources can arrive through provider webhooks, provider APIs, or a local upload. The backend normalizes the input, schedules synthesis, runs bounded model work in a disposable sandbox, validates the result, and stores a new context version. Humans and clients can then inspect the current workspace.
 
-```
-Inputs (Granola, Slack, GitHub)
-        |
-        v
-Background daemon captures + synthesizes
-        |
-        v
-Proposed updates land in your inbox (desktop app / CLI)
-        |
-        v  (you accept)
-Workspace context: ~/.draft/workspaces/<profile>/context/
-        |
-        v
-Plugin hook fires on every session start
-        |
-        v
-Your context injected into the agent's system prompt
-        |
-        v
-Agent starts every session fully briefed
-```
+## Hosted Draft
 
----
+Hosted Draft provides the web app, API, Supabase project, and Fly sandbox infrastructure for you. Sign up at [draftai.us](https://draftai.us), download the desktop app, sign in, and create or join a team workspace.
 
-## The background daemon
+## Self-hosting
 
-The daemon is a long-running process registered as a macOS LaunchAgent (`com.draft.daemon`). macOS starts it at login and restarts it automatically if it crashes.
+The open-source stack is self-hostable with:
 
-It does three things:
-- **Processes synthesis jobs** — when a Claude Code session ends, the plugin drops a job file locally. The daemon picks it up, uses Claude to extract any team-relevant updates from the session transcript, and stages them as proposals for your review.
-- **Polls integrations** — Granola, Fireflies, Slack, and GitHub are polled on a schedule. New meeting notes, Slack threads, and GitHub activity are synthesized into proposed context updates.
-- **Heartbeat** — writes a heartbeat file every few seconds so the desktop app can show live daemon status.
+- Supabase for auth, Postgres, storage, and row-level access control.
+- A Bun backend for the API, ingestion, scheduling, and webhooks.
+- Fly Machines for isolated synthesis runs.
+- The Next.js web app for browser signup, invites, and pairing.
+- The Electrobun desktop app configured for your URLs.
+- The Bun CLI configured for your API and Supabase project.
 
-All processing happens locally. Integration pollers talk directly to those services' APIs using credentials stored on your machine.
+Self-hosting currently requires deploying and configuring these services separately. See the root README and the individual app READMEs for the current environment variables and local launcher.
 
-See [Architecture](./architecture.md) for a detailed breakdown.
+The Makefile does provide one-command local workflows: `make run-local` starts the local app stack, while `make dev-refresh` rebuilds and installs the local CLI, daemon binary, and bundled background runtimes. Those commands are development/runtime refresh commands, not a complete production deployment.
 
----
+## What is local?
 
-## Context injection
+The local machine holds authentication state, project configuration, hook files, temporary capture data, desktop/CLI runtime files, and—when enabled—the local background daemon and its runtime state. When coding-session capture is enabled, a project hook reads the completed local transcript and sends it to the configured Draft API.
 
-When you run `draft add claude-code`, Draft registers hooks directly into your local Claude Code installation (`~/.claude/settings.json`). These hooks fire at the start and end of every session:
+The local machine is not the authoritative home of the shared company brain. In hosted mode, the canonical workspace is stored by Draft's deployment. In self-hosted mode, it is stored by the operator's deployment.
 
-- **Session start** — reads your active workspace context files and outputs them into the agent's system prompt. The agent sees your product context, priorities, and memory before responding to your first message.
-- **Session end** — queues a synthesis job for the daemon.
+## What is server-side?
 
-This all runs locally. Draft does not intercept or proxy any model calls. It configures your tool once, then gets out of the way.
-
-The same pattern applies to other platforms/agents — `draft add <tool>` wire equivalent hooks into each tool's own config.
-
-See [How context injection works](./how-context-injection-works.md) for the full technical details.
-
----
-
-## What stays on your machine
-
-Everything.
-
-| What | Where |
-|------|-------|
-| Workspace context files | `~/.draft/workspaces/<profile>/context/` |
-| Proposals (pending review) | `~/.draft/workspaces/<profile>/proposals/` |
-| Personal memory | `~/.draft/personal/memory.md` |
-| Global config | `~/.draft/config.json` |
-| Daemon binary + scripts | `~/.draft/background/` |
-| Daemon logs | `~/.draft/background/logs/` |
-| Skills and agents | `~/.draft/shared/` → symlinked into `~/.claude/` |
-| Draft CLI binary | `~/.draft/bin/draft` → symlinked to `/usr/local/bin/draft` |
-
-None of this is transmitted to Draft servers. Synthesis calls go through your own Claude subscription — Draft does not proxy them.
-
-The only data that ever leaves your machine is optional, anonymous usage analytics — only if you opted in during onboarding, using an anonymous UUID, never your email or name. You can change this at any time in **Settings → Privacy**.
-
----
-
-## Profiles
-
-A profile is a named workspace — a directory at `~/.draft/workspaces/<name>/`. You can have multiple profiles for different clients, projects, or roles.
-
-The active profile determines which context gets injected at session start and which proposals inbox you're looking at. The desktop app shows and manages profiles in the status bar. Profile management (`switch`, `profiles list/create/rename/delete`) is a desktop-app feature, not currently exposed in the CLI — see [CLI reference](./cli.md) for what the CLI supports today.
-
----
-
-## Team collaboration
-
-If you set up collaboration via `/draft:setup-collab`, Draft syncs context through a GitHub repository you control. At session start, Draft checks for updates from teammates and applies them locally. When you publish, your accepted context updates go to the shared repo.
-
-Draft uses your local `gh` credentials to talk to GitHub directly — it does not act as an intermediary.
-
-See [Setting up collaboration](./setting-up-collaboration.md).
-
----
+The deployment stores and serves authenticated workspace context, source items, synthesis runs, coding-agent session records, and the credentials required to connect configured providers. Synthesis executes in sandboxed Fly Machines rather than inside the long-running API process.
 
 ## See also
 
-- [CLI reference](./cli.md)
-- [How context injection works](./how-context-injection-works.md)
-- [How proposals work](./proposals.md)
 - [Architecture](./architecture.md)
-- [Setting up collaboration](./setting-up-collaboration.md)
 - [Privacy](./privacy.md)
+- [Hosted team collaboration](./setting-up-collaboration.md)
+- [Agent connections](./agent-plugins.md)
+- [CLI reference](./cli.md)

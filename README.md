@@ -1,286 +1,170 @@
 # Draft
 
-Draft keeps your team's AI sessions grounded, so there's no more re-explaining your product, priorities, or decisions at the start of every session. It runs in the background, capturing context from your meetings, Slack, and GitHub, then injects it automatically for everyone.
+Draft is the company brain for teams building with AI.
 
-Visit [draftai.us](https://draftai.us) to download the app. See below to run from source.
+It turns the decisions, context, and activity scattered across your team's tools into a shared workspace that every connected agent can use. Agents attach to Draft through a local CLI or agent integration, so each session can start with the same current understanding of the company, product, priorities, and decisions.
 
-> **Platform:** macOS on Apple Silicon. Intel Mac and Windows support is not available yet.
+Draft is available as a hosted service at [draftai.us](https://draftai.us), and the open-source stack can also be self-hosted.
 
 ![Draft Screenshot](assets/onboarding-screenshot.png)
 
----
+## How Draft works
 
-## Install
+~~~text
+Your tools and agent sessions
+  Slack · GitHub · Fireflies · Linear · Claude Code
+             |
+             v
+Local capture + agent connection
+  Desktop · CLI · project hooks
+             |
+             v
+Draft API and workspace
+  Auth · integrations · context versions · session history
+             |
+             v
+Server-side synthesis
+  Scheduled ingestion and sandboxed Fly Machine runs
+             |
+             v
+Company brain
+  Shared context available to the web app, desktop, CLI, and agents
+~~~
 
-**Desktop app** (macOS, Apple Silicon):
+### What happens on the server
 
-```
-https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg
-```
+The Draft backend is the control plane for a team workspace. It handles authentication, organizations, invitations, integrations, webhooks, source data, coding-agent sessions, context versions, and synthesis runs.
 
-**CLI only** — no desktop app, no repo clone, no Bun required. Useful for servers, CI, or another agent that just needs `draft`:
+Synthesis runs execute in disposable [Fly Machines](https://fly.io/docs/machines/) so model-backed processing is isolated from the long-running API. The backend schedules the work, prepares a bounded input bundle, starts the sandbox, validates the result, and commits the resulting context version to the workspace.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/idodekerobo/draft/main/scripts/install-cli.sh | bash
-```
+The hosted service runs this stack for you. In a self-hosted deployment, these services run in infrastructure you control.
 
-This detects your OS/arch, downloads the matching `draft` binary from the latest GitHub release, and installs it to `~/.draft/bin/draft` (linked onto `PATH`). Supported platforms: macOS (arm64/x64) and Linux (x64). Update anytime with `draft update`.
+### What happens locally
 
----
+The local components connect your agents and computer to the Draft workspace:
 
-## How it works
+- The Electrobun desktop app signs in, displays the shared workspace, manages connections, and shows synthesis activity.
+- The CLI authenticates against the configured Draft API and can read workspace context and coding-agent session data.
+- Agent integrations and project hooks let supported agents attach to Draft. The current CLI/plugin path is still evolving as we work toward the best long-term agent connection model.
+- The `background/` module is a local daemon/runtime path still used by desktop bundles and current plugin hooks. It contains local pollers, session jobs, and source-adapter runtimes; it is not the hosted workspace or hosted synthesis control plane.
+- A local hook can read a completed coding-agent transcript from the project machine and send it to the configured Draft API. The local machine keeps authentication state, project configuration, and temporary capture/runtime files.
 
-```
-Inputs (Granola, Slack, GitHub)
-        |
-        v
-Background daemon — captures + synthesizes via Claude
-        |
-        v
-Proposed updates land in your inbox (desktop app / CLI)
-        |
-        v  (you accept)
-Workspace context: ~/.draft/workspaces/<profile>/context/
-        |
-        v
-Plugin hook fires at every session start
-        |
-        v
-Context injected into the agent's system prompt
-```
+The canonical company brain is the workspace in the Draft deployment, not a Git repository on the user's machine. Local files are connection state, caches, runtime state, or source material waiting to be uploaded.
 
-The daemon is registered as a macOS LaunchAgent (`com.draft.daemon`). It starts at login and restarts automatically. All synthesis calls go through your own Claude subscription — Draft does not proxy them. Everything stays on your machine.
+## Use hosted Draft
 
----
+1. Sign up at [draftai.us](https://draftai.us).
+2. Download the Draft desktop app for macOS Apple Silicon.
+3. Sign in and create or join a team workspace.
+4. Connect the integrations your team uses.
+5. Attach your coding agents using the current CLI/plugin setup.
 
-## Repo structure
+The hosted web app handles account creation, sign-in, desktop pairing, and team invitations. The desktop app is the primary workspace surface today; the CLI is useful for agents, scripts, and session access.
 
-```
-draft/
-├── cli/                  # Draft CLI (TypeScript, compiled to a binary via bun)
-├── background/           # Background daemon (TypeScript + shell scripts)
-│   ├── integrations/     # Pollers: Granola, Slack, GitHub
-│   ├── synthesizers/     # Per-source synthesizers (session, Granola, Slack, GitHub)
-│   └── draft-background.ts
-├── core/                 # Shared library (workspace resolution, config, types)
-├── desktop/              # macOS desktop app (Electrobun + React 19)
-├── cli-agent-plugin/     # Plugin for Claude Code, Codex, Cursor (subtree), OpenClaw, Hermes
-│   ├── hooks/            # inject-context.sh (session start), on-session-end.sh
-│   ├── skills/           # /draft:setup, /draft:synthesize, /draft:publish, etc.
-│   └── agents/           # OpenClaw + Hermes plugin adapters
-├── landing-page-app/     # Marketing site (Next.js)
-├── install.sh            # One-shot install script
-└── Makefile              # CLI + desktop release automation
-```
+## Self-host Draft
 
----
+Self-hosting runs the same product architecture under your control:
 
-## Prerequisites
+- **Supabase** for authentication, Postgres data, storage, and row-level access control.
+- **Bun backend** for the Draft API, ingestion, scheduling, webhooks, and workspace access.
+- **Fly Machines** for disposable sandboxed synthesis runs.
+- **Next.js web app** for authentication, invitations, and browser access.
+- **Electrobun desktop app** configured to point at your API and web app.
+- **Bun CLI** configured to point at your API and Supabase project.
 
-- **macOS** (Apple Silicon)
-- **git** — to clone the repo
-- **[Bun](https://bun.sh)** — runtime + package manager for all TypeScript workspaces
-- **[tmux](https://github.com/tmux/tmux)** — used by the daemon to manage background processes
-- **[Claude Code](https://claude.ai/code)** (or Codex / Cursor) — the agent the plugin hooks into
-- **[gh CLI](https://cli.github.com)** — required for team collaboration features (`draft setup-collab`)
+The Makefile provides one-command local workflows, but not a single-command production deployment. `make run-local` starts the local web app, landing page, backend, and desktop supervisor. `make dev-refresh` rebuilds and installs the local CLI, daemon binary, and bundled background runtimes after changes to `cli/` or `background/`. A self-hosted production deployment still requires configuring and deploying each service, applying the Supabase migrations, creating the required GitHub App credentials, and providing the backend's Fly Machines configuration.
 
-> **Note:** bun and tmux are bundled inside the macOS desktop app and extracted automatically at install time. If you're running from source (CLI only, no desktop app), install them manually:
+### Local development
 
-```bash
-curl -fsSL https://bun.sh/install | bash
-brew install tmux
-```
+The repository includes a local stack launcher for the web app, landing page, backend, and desktop app.
 
----
-
-## Running from source
-
-### 1. Clone and install
-
-```bash
+~~~bash
 git clone https://github.com/idodekerobo/draft.git
 cd draft
-bash install.sh
-```
-
-`install.sh` does the following:
-1. Verifies bun is installed
-2. Installs TypeScript dependencies for the CLI workspace (`cli/`)
-3. Copies the `draft` wrapper script to `~/bin/` (or `/usr/local/bin/`)
-4. Installs shell tab completion (zsh or bash)
-5. Prints the `draft add <tool> --dir <path>` command to run next, per project
-
-After install, run `draft --help` to verify everything is on PATH.
-
-### 2. Initialize a workspace
-
-```bash
-draft init
-```
-
-This runs an interview to set up your first profile and writes context files to `~/.draft/workspaces/default/`.
-
-### 3. Start the daemon
-
-```bash
-draft daemon start
-```
-
-Or let the LaunchAgent handle it — it starts automatically at login after `install.sh` runs.
-
----
-
-## Development
-
-This is a Bun monorepo. Install all workspace dependencies from the root:
-
-```bash
 bun install
-```
-
-### Run the local application stack
-
-The repository-level local entrypoint starts the web app, landing page,
-backend, and desktop app together:
-
-```bash
 cp .env.example .env.local
 # Fill in the private values in .env.local.
 make run-local
-```
+# After changing cli/ or background/:
+make dev-refresh
+~~~
 
-The root env file is organized by scope. Set `DRAFT_APP_URL` to the browser
-origin and `DRAFT_API_BASE_URL` to the backend URL reachable by browsers,
-desktop, and webhooks. For an ngrok backend, use the same ngrok URL for
-`DRAFT_API_BASE_URL`; the backend can still listen locally on
-`DRAFT_BACKEND_PORT`.
+The local launcher starts:
 
-The current backend scheduler requires `DRAFT_API_BASE_URL` to be an HTTPS
-URL, so a public tunnel such as ngrok is required for the full local stack.
-`make run-local` validates the required URLs, ports, Supabase values, Fly
-deployment values, and `SANDBOX_CALLBACK_SECRET` before starting anything. If
-one is missing, it exits with the exact variable name that must be added.
+| Service | Default address | Role |
+|---|---|---|
+| Web app | http://localhost:3000 | Auth, invites, pairing |
+| Landing page | http://localhost:3001 | Marketing site |
+| Backend | http://localhost:8787 locally | API, ingestion, scheduling |
+| Desktop | Electrobun dev window | Workspace client |
 
-`make run-local` currently preserves the app-local `.env.local` files as a
-temporary fallback while configuration is migrated. Those files are not
-deleted automatically. See each app README for standalone development and
-self-hosting variables.
+The full local stack needs a publicly reachable HTTPS value for DRAFT_API_BASE_URL because the backend schedules callbacks and receives external webhooks. A tunnel such as ngrok is currently required for local development of those flows. make run-local validates the required URLs, ports, Supabase values, GitHub App values, and Fly sandbox values before starting.
 
-### CLI
+See the app READMEs for standalone development and deployment configuration:
 
-```bash
-cd cli
-bun run dev         # run directly with bun (no compile step)
-bun run build       # compile to ../draft-bin binary
-bun test            # run tests
-```
+- [Backend](./backend/README.md)
+- [Desktop](./desktop/README.md)
+- [Web app](./web-app/README.md)
+- [Landing page](./landing-page-app/README.md)
+- [CLI and agent integration](./cli-agent-plugin/README.md)
 
-The compiled binary is the `draft-bin` file at the repo root. The `draft` wrapper script in your PATH delegates to it.
+## Repository structure
 
-### Background daemon
+~~~text
+draft/
+├── backend/              # Bun API, ingestion, scheduler, and synthesis orchestration
+├── web-app/              # Next.js auth, invite, and browser application
+├── desktop/              # Electrobun desktop workspace client
+├── cli/                  # Bun CLI for hosted or self-hosted API access
+├── core/                 # Shared auth, config, runtime, and sync primitives
+├── background/           # Local daemon/runtime, pollers, and source adapters
+├── cli-agent-plugin/     # Current, evolving agent connection integrations
+├── landing-page-app/     # Next.js marketing site
+├── supabase/             # Database migrations and local Supabase configuration
+└── Makefile              # Local stack and release automation
+~~~
 
-```bash
-cd background
-bun run background/draft-background.ts   # run daemon directly
-```
+## Current integrations
 
-The daemon reads from `~/.draft/` and writes proposals to `~/.draft/workspaces/<profile>/proposals/`. Logs go to `~/.draft/background/logs/`.
+The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is an integration and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
 
-### Desktop app
+## CLI
 
-The desktop app is built with [Electrobun](https://electrobun.dev) — a Bun-native desktop framework. The main process runs in Bun; views are webviews backed by React 19.
+Install a released CLI binary without cloning the repository:
 
-```bash
-cd desktop
-bun run dev         # dev mode with hot reload
-bun run start       # dev mode without watch
-```
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/idodekerobo/draft/main/scripts/install-cli.sh | bash
+~~~
 
-For a local build (no signing or notarization):
+The installer supports macOS arm64/x64 and Linux x64. The CLI uses the hosted Draft API by default. For another deployment, set DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY as appropriate for that deployment.
 
-```bash
-bun run build:dev
-```
+Common commands:
 
-Production builds use `make desktop-release v=<version>` from the repo root. This requires Apple Developer credentials for signing and notarization.
+~~~bash
+draft auth login
+draft auth whoami
+draft context list
+draft context read --all
+draft sessions list
+draft --help
+~~~
 
-### Plugin (cli-agent-plugin)
+See [docs/cli.md](./docs/cli.md) for the current CLI surface.
 
-The plugin is a git subtree at `cli-agent-plugin/` — the public-facing repo is at `idodekerobo/draft-cli-plugin`. Changes should always be made in the monorepo and pushed to the plugin repo via Make:
-
-```bash
-make cli-push                  # sync to plugin repo (development)
-make cli-release v=1.2.0 m="release notes"   # cut a versioned release
-```
-
-The plugin hooks are shell scripts. `inject-context.sh` runs at session start and writes context into the agent's system prompt. `on-session-end.sh` queues a synthesis job for the daemon.
-
----
-
-## Context files
-
-All workspace state lives under `~/.draft/`:
-
-| Path | Contents |
-|------|----------|
-| `~/.draft/workspaces/<profile>/context/` | Accepted context files (company, product, priorities, etc.) |
-| `~/.draft/workspaces/<profile>/proposals/` | Pending proposed updates |
-| `~/.draft/personal/memory.md` | Global personal memory (shared across all profiles) |
-| `~/.draft/config.json` | Global config (active profile, integration credentials) |
-| `~/.draft/background/` | Daemon binary, start/stop scripts |
-| `~/.draft/background/logs/` | Daemon logs |
-| `~/.draft/bin/draft` | CLI binary (symlinked to `/usr/local/bin/draft`) |
-
----
-
-## Integrations
-
-Connect data sources with `draft connect` or `draft add <source>`:
-
-- **Granola** — meeting notes (MCP or API)
-- **Slack** — threads and channel activity
-- **GitHub** — PR activity, commits, issues
-
-The daemon polls each source on a schedule, synthesizes new information via Claude, and stages proposed context updates for your review.
-
----
-
-## Team collaboration
-
-Draft can sync context through a GitHub repository you control. One person acts as the curator and publishes; teammates pull updates.
-
-```bash
-draft setup-collab     # configure the shared repo (run once)
-draft publish          # push accepted context to the shared repo
-draft load-team        # pull latest team context locally
-```
-
-This uses your local `gh` credentials and the separate-clone pattern — the Draft workspace (`~/.draft/`) is never initialized as a git repo.
-
----
-
-## Key CLI commands
-
-```bash
-draft --help                        # full command reference
-draft add <tool> --dir <path>       # configure a project's instruction file for claude-code | codex | cursor | openclaw | hermes
-draft auth login                    # sign in via device pairing
-draft auth whoami                   # show the current signed-in identity
-draft auth logout                   # sign out and clear local credentials
-draft context list                  # list available context dimensions
-draft context read --dimension <name>  # print one or more context dimensions
-draft context read --all            # print every context dimension
-draft update                        # update the CLI to the latest release
-draft --version                     # print the installed CLI version
-```
-
----
-
-## Docs
+## Documentation
 
 - [What is Draft](./docs/overview.md)
 - [Architecture](./docs/architecture.md)
-- [How context injection works](./docs/how-context-injection-works.md)
-- [How proposals work](./docs/proposals.md)
-- [Setting up collaboration](./docs/setting-up-collaboration.md)
 - [Privacy](./docs/privacy.md)
+- [Hosted team collaboration](./docs/setting-up-collaboration.md)
+- [Agent connections](./docs/agent-plugins.md)
+- [How context reaches agents](./docs/how-context-injection-works.md)
+- [CLI reference](./docs/cli.md)
+- [Synthesis and proposals](./docs/proposals.md)
+
+## Platform support
+
+- Hosted web app: any supported modern browser.
+- Desktop app: macOS on Apple Silicon today.
+- CLI releases: macOS arm64/x64 and Linux x64.
+- Agent integration: current hooks require a POSIX shell; the connection surface is evolving.
