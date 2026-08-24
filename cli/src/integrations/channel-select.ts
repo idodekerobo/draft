@@ -18,7 +18,11 @@ export class ChannelSelectionInterruptedError extends Error {
 export interface ChannelSelector {
   // Returns the full desired set of channel ids, or null if the tty is unavailable
   // or the typed selection could not be parsed. Throws ChannelSelectionInterruptedError
-  // if `signal` aborts while waiting on input.
+  // if `signal` aborts while waiting on input. Note: a native read already
+  // dispatched on the underlying TTY fd can't actually be cancelled -- it
+  // only settles once more input arrives -- so the caller is responsible for
+  // force-exiting after this rejects, once its own cleanup/messaging is
+  // done, rather than relying on the process draining naturally.
   select(channels: SelectableChannel[], signal?: AbortSignal): Promise<string[] | null>;
 }
 

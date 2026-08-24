@@ -37,6 +37,11 @@ export interface SlackConnectDeps {
   connect(body: { provider: "slack"; bot_token: string; app_token: string; channel_ids: string[] }): Promise<FetchResult<ConnectIntegrationResult>>;
   onSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
   offSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
+  // A read the channel selector already had in flight on the TTY can't
+  // actually be cancelled (it only settles once more input arrives), so
+  // once the interrupted message has printed, this forces the process to
+  // exit rather than risk it hanging until further input arrives.
+  exitProcess(code: number): void;
 }
 
 async function defaultFetchChannels(botToken: string): Promise<HostedSlackChannel[]> {
@@ -62,6 +67,7 @@ const defaultDeps: SlackConnectDeps = {
   connect: connectIntegration,
   onSignal: (signal, handler) => { process.on(signal, handler); },
   offSignal: (signal, handler) => { process.off(signal, handler); },
+  exitProcess: (code) => { process.exit(code); },
 };
 
 async function launchBrowserUntilAbort(
@@ -106,11 +112,16 @@ export async function runSlackConnect(
     }
     if (controller.signal.aborted) return output.error("aborted");
 
+    const awaitingCredentials = output.event({ status: "awaiting_credentials", provider: "slack" });
+    if (awaitingCredentials !== 0) return awaitingCredentials;
+
     let credentials: { bot_token: string; app_token: string };
     try {
       credentials = await deps.reader.read("slack", options.source);
     } catch (error) {
-      return output.error(error instanceof CredentialInputError ? error.code : "invalid_credential_input");
+      const code = output.error(error instanceof CredentialInputError ? error.code : "invalid_credential_input");
+      if (error instanceof CredentialInputError && error.code === "interrupted") deps.exitProcess(code);
+      return code;
     }
     output.registerSecrets([credentials.bot_token, credentials.app_token]);
 
@@ -129,7 +140,11 @@ export async function runSlackConnect(
       try {
         selected = await deps.selector.select(channels, controller.signal);
       } catch (error) {
-        if (error instanceof ChannelSelectionInterruptedError) return output.error("interrupted");
+        if (error instanceof ChannelSelectionInterruptedError) {
+          const code = output.error("interrupted");
+          deps.exitProcess(code);
+          return code;
+        }
         throw error;
       }
       if (selected === null) return output.error("invalid_credential_input");
@@ -173,6 +188,8 @@ export interface SlackChannelsSetDeps {
   preflightTty(): Promise<boolean>;
   onSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
   offSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
+  // See SlackConnectDeps.exitProcess.
+  exitProcess(code: number): void;
 }
 
 const defaultSetDeps: SlackChannelsSetDeps = {
@@ -182,6 +199,7 @@ const defaultSetDeps: SlackChannelsSetDeps = {
   preflightTty: () => credentialReader.preflightTty(),
   onSignal: (signal, handler) => { process.on(signal, handler); },
   offSignal: (signal, handler) => { process.off(signal, handler); },
+  exitProcess: (code) => { process.exit(code); },
 };
 
 export async function runSlackChannelsSet(
@@ -204,7 +222,11 @@ export async function runSlackChannelsSet(
       try {
         selected = await deps.selector.select(list.value.channels, controller.signal);
       } catch (error) {
-        if (error instanceof ChannelSelectionInterruptedError) return output.error("interrupted");
+        if (error instanceof ChannelSelectionInterruptedError) {
+          const code = output.error("interrupted");
+          deps.exitProcess(code);
+          return code;
+        }
         throw error;
       }
       if (selected === null) return output.error("invalid_credential_input");

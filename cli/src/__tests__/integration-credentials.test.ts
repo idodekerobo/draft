@@ -258,6 +258,12 @@ describe("TTY credential input", () => {
     });
     expect(sessions).toBe(1);
     expect(fake.state.writes).toEqual([
+      "In the Slack app page just opened: install the app to your workspace, then find --\n",
+      "  Bot token -- OAuth & Permissions -> OAuth Tokens (starts with xoxb-)\n",
+      "  App token -- Basic Information -> App-Level Tokens, with the connections:write scope (starts with xapp-)\n",
+      "These are secure, hidden prompts -- tokens won't be echoed to the screen.\n",
+      "Press Ctrl+C to cancel.\n",
+      "\n",
       "Slack bot token (xoxb-):",
       "\n",
       "Slack app token (xapp-):",
@@ -270,13 +276,41 @@ describe("TTY credential input", () => {
   });
 
   it.each([
-    ["fireflies", "Fireflies API token:"],
-    ["linear", "Linear API key:"],
-    ["claude-code", "Claude Code setup token:"],
-  ] as const)("uses the exact %s prompt", async (provider, prompt) => {
+    [
+      "fireflies",
+      "Fireflies API token:",
+      [
+        "Get your Fireflies API key: https://app.fireflies.ai/settings/developer-settings\n",
+        "This is a secure, hidden prompt -- your key won't be echoed to the screen.\n",
+        "Press Ctrl+C to cancel.\n",
+        "\n",
+      ],
+    ],
+    [
+      "linear",
+      "Linear API key:",
+      [
+        "Get your Linear API key: https://linear.app/settings/api\n",
+        "This is a secure, hidden prompt -- your key won't be echoed to the screen.\n",
+        "Press Ctrl+C to cancel.\n",
+        "\n",
+      ],
+    ],
+    [
+      "claude-code",
+      "Claude Code setup token:",
+      [
+        "Install the Claude Code CLI (https://code.claude.com/docs/en/quickstart), then run\n",
+        "'claude setup-token' in your terminal and paste the result below.\n",
+        "This is a secure, hidden prompt -- the token won't be echoed to the screen.\n",
+        "Press Ctrl+C to cancel.\n",
+        "\n",
+      ],
+    ],
+  ] as const)("uses the exact %s prompt, preceded by guidance on where to find the credential", async (provider, prompt, guidance) => {
     const fake = fakeOps({ session: new FakeTtySession([encoder.encode("secret")]) });
     await new PosixCredentialReader(fake.ops).read(provider, { kind: "tty" });
-    expect(fake.state.writes).toEqual([prompt, "\n"]);
+    expect(fake.state.writes).toEqual([...guidance, prompt, "\n"]);
   });
 
   it("restores the full opaque mode, falls back to echo, removes handlers, and closes once", async () => {
@@ -344,7 +378,7 @@ describe("TTY credential input", () => {
   });
 
   it.each(["SIGINT", "SIGTERM"] as const)(
-    "cancels the pending read and restores before returning %s interruption",
+    "cancels the pending read and restores before returning %s interruption, skipping the close that would hang on it",
     async (signal) => {
       const session = new FakeTtySession([], true);
       const fake = fakeOps({ session });
@@ -355,7 +389,14 @@ describe("TTY credential input", () => {
 
       await expectCredentialError(pending, "interrupted");
       expect(session.cancelCalls).toBeGreaterThanOrEqual(1);
-      expect(session.closeCalls).toBe(1);
+      // A read that was genuinely in flight when the signal arrived can't be
+      // cancelled (a native read on a TTY fd only settles once more input
+      // arrives) -- session.close() would wait on that same read, so it's
+      // skipped here. Force-exiting the process (so the abandoned read can't
+      // hang it) is the caller's responsibility, after it's had a chance to
+      // print/emit its own interrupted message -- see each provider's own
+      // exitProcess wiring, not tested here.
+      expect(session.closeCalls).toBe(0);
       expect(fake.state.order.indexOf("stty:opaque-mode")).toBeLessThan(fake.state.order.indexOf("close:42"));
       expect(fake.state.order.filter((entry) => entry === "close:42")).toHaveLength(1);
       expect(fake.state.signals.size).toBe(0);

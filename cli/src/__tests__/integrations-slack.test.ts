@@ -52,11 +52,13 @@ function stubSelector(select: ChannelSelector["select"]): ChannelSelector {
 const noopSignals = {
   onSignal: () => {},
   offSignal: () => {},
+  exitProcess: () => {},
 };
 
-function connectDeps(overrides: Partial<SlackConnectDeps> = {}): { deps: SlackConnectDeps; launches: string[]; handlers: Map<string, () => void> } {
+function connectDeps(overrides: Partial<SlackConnectDeps> = {}): { deps: SlackConnectDeps; launches: string[]; handlers: Map<string, () => void>; exitCalls: number[] } {
   const launches: string[] = [];
   const handlers = new Map<string, () => void>();
+  const exitCalls: number[] = [];
   const deps: SlackConnectDeps = {
     reader: stubReader(async () => ({ bot_token: "xoxb-good", app_token: "xapp-good" })),
     launcher: { launchBrowser: async (url) => { launches.push(url); return { opened: true }; } },
@@ -65,9 +67,10 @@ function connectDeps(overrides: Partial<SlackConnectDeps> = {}): { deps: SlackCo
     connect: async () => ({ ok: true, value: { ok: true } }),
     onSignal: (signal, handler) => { handlers.set(signal, handler); },
     offSignal: (signal) => { handlers.delete(signal); },
+    exitProcess: (code) => { exitCalls.push(code); },
     ...overrides,
   };
-  return { deps, launches, handlers };
+  return { deps, launches, handlers, exitCalls };
 }
 
 describe("Slack connect provider", () => {
@@ -79,6 +82,7 @@ describe("Slack connect provider", () => {
     expect(lines[0]).toMatchObject({ status: "browser_required", provider: "slack" });
     expect(lines[0].url).toContain("https://api.slack.com/apps?new_app=1&manifest_json=");
     expect(lines.at(-1)).toEqual({ schema_version: 1, status: "connected", provider: "slack" });
+    expect(harness.exitCalls).toEqual([]);
   });
 
   it("only opens the browser when --no-open is absent", async () => {
@@ -133,6 +137,18 @@ describe("Slack connect provider", () => {
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "invalid_credential_input" });
   });
 
+  it("prints the interrupted message, then force-exits, when the credential read is abandoned mid-flight", async () => {
+    const harness = connectDeps({
+      reader: { preflightTty: async () => true, read: async () => { throw new CredentialInputError("interrupted"); } },
+    });
+    const rendered = output(true);
+    expect(await runSlackConnect({ noOpen: true, source: ttySource }, rendered.value, harness.deps)).toBe(130);
+    // The message must be visible before the process is force-exited --
+    // otherwise Ctrl-C at this prompt looks like nothing happened at all.
+    expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "interrupted" });
+    expect(harness.exitCalls).toEqual([130]);
+  });
+
   it("never renders the raw bot/app tokens, even on a canary-secret failure path", async () => {
     const harness = connectDeps({
       reader: stubReader(async () => ({ bot_token: "xoxb-canary-secret", app_token: "xapp-canary-secret" })),
@@ -180,7 +196,7 @@ describe("Slack connect provider", () => {
     expect(rendered.stdout.map((line) => JSON.parse(line).status)).toEqual(["browser_required", "error"]);
   });
 
-  it("reports interrupted (not a hang) when SIGINT arrives during interactive channel selection", async () => {
+  it("reports interrupted (not a hang) when SIGINT arrives during interactive channel selection, then force-exits", async () => {
     const harness = connectDeps({
       fetchChannels: async () => [{ id: "C1", name: "general", memberCount: 1, isMember: false }],
       selector: stubSelector((_channels, signal) => new Promise((_resolve, reject) => {
@@ -193,6 +209,7 @@ describe("Slack connect provider", () => {
     harness.handlers.get("SIGINT")?.();
     expect(await pending).toBe(130);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "interrupted" });
+    expect(harness.exitCalls).toEqual([130]);
   });
 });
 
@@ -329,8 +346,9 @@ describe("Slack channels set", () => {
     expect(JSON.parse(rendered2.stdout.at(-1)!)).toMatchObject({ ok: true, channel_ids: ["C1"] });
   });
 
-  it("reports interrupted (not a hang) when SIGINT arrives during interactive channel selection", async () => {
+  it("reports interrupted (not a hang) when SIGINT arrives during interactive channel selection, then force-exits", async () => {
     const handlers = new Map<string, () => void>();
+    const exitCalls: number[] = [];
     const deps: SlackChannelsSetDeps = {
       list: async () => ({ ok: true, value: { ok: true, channels: [{ id: "C1", name: "general", memberCount: 1, isMember: false }] } }),
       set: async () => ({ ok: true, value: { ok: true, channel_ids: [], joined: [], left: [], failed: [] } }),
@@ -340,6 +358,7 @@ describe("Slack channels set", () => {
       preflightTty: async () => true,
       onSignal: (signal, handler) => { handlers.set(signal, handler); },
       offSignal: (signal) => { handlers.delete(signal); },
+      exitProcess: (code) => { exitCalls.push(code); },
     };
     const rendered = output(true);
     const pending = runSlackChannelsSet(null, rendered.value, deps);
@@ -347,6 +366,7 @@ describe("Slack channels set", () => {
     handlers.get("SIGINT")?.();
     expect(await pending).toBe(130);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "interrupted" });
+    expect(exitCalls).toEqual([130]);
   });
 });
 

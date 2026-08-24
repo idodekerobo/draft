@@ -293,11 +293,28 @@ export class PosixCredentialReader implements CredentialReader {
     let echoDisabled = false;
     let restored = false;
     let interrupted = false;
+    let awaitingRead = false;
+    // Only true if the interrupt arrived while a native read was genuinely
+    // in flight -- that's the one case a stuck read can't be cancelled and
+    // session.close() (which waits on that same read settling) could hang.
+    // An interrupt at any other time (e.g. during a close that's already in
+    // progress after a successful read) isn't at risk, so it keeps the
+    // normal cleanup path.
+    let hungReadAbandoned = false;
     let session: TtyReadSession | undefined;
+    let rejectInterrupt: ((error: CredentialInputError) => void) | undefined;
+    const interruptSignal = new Promise<never>((_resolve, reject) => { rejectInterrupt = reject; });
+    // Swallow rejection on this promise specifically -- Promise.race below
+    // attaches its own handling, but if nothing ever rejects it (the happy
+    // path), an unused executor-only promise is fine; this just guards
+    // against an unhandledRejection warning if interrupt fires very early.
+    interruptSignal.catch(() => {});
     const onSignal = () => {
       if (interrupted) return;
       interrupted = true;
+      if (awaitingRead) hungReadAbandoned = true;
       try { session?.cancel(); } catch {}
+      rejectInterrupt?.(new CredentialInputError("interrupted"));
     };
     const throwIfInterrupted = () => {
       if (interrupted) throw new CredentialInputError("interrupted");
@@ -334,12 +351,24 @@ export class PosixCredentialReader implements CredentialReader {
 
       const prompt = async (label: string): Promise<string> => {
         this.ops.write(fd, label);
+        // A read already dispatched to the OS on a TTY fd cannot be cancelled
+        // by destroying the stream -- it only settles once more input
+        // arrives. Race it against the interrupt so Ctrl-C takes effect
+        // immediately instead of waiting for a keystroke that may never come;
+        // the loser is abandoned (never awaited further) but still given a
+        // catch handler so its eventual settlement can't surface as an
+        // unhandled rejection.
+        const readPromise = session!.readLine(MAX_CREDENTIAL_BYTES);
+        readPromise.catch(() => {});
+        awaitingRead = true;
         let bytes: Uint8Array;
         try {
-          bytes = await session!.readLine(MAX_CREDENTIAL_BYTES);
+          bytes = await Promise.race([readPromise, interruptSignal]);
         } catch (error) {
           throwIfInterrupted();
           throw error;
+        } finally {
+          awaitingRead = false;
         }
         throwIfInterrupted();
         let value: string;
@@ -353,21 +382,62 @@ export class PosixCredentialReader implements CredentialReader {
         return value;
       };
 
+      const writeGuidance = (lines: string[]) => {
+        for (const line of lines) this.ops.write(fd, `${line}\n`);
+        this.ops.write(fd, "\n");
+      };
+
       if (provider === "fireflies") {
+        writeGuidance([
+          "Get your Fireflies API key: https://app.fireflies.ai/settings/developer-settings",
+          "This is a secure, hidden prompt -- your key won't be echoed to the screen.",
+          "Press Ctrl+C to cancel.",
+        ]);
         return { api_token: await prompt("Fireflies API token:") } as ProviderCredentials[P];
       }
       if (provider === "linear") {
+        writeGuidance([
+          "Get your Linear API key: https://linear.app/settings/api",
+          "This is a secure, hidden prompt -- your key won't be echoed to the screen.",
+          "Press Ctrl+C to cancel.",
+        ]);
         return { api_key: await prompt("Linear API key:") } as ProviderCredentials[P];
       }
       if (provider === "slack") {
+        writeGuidance([
+          "In the Slack app page just opened: install the app to your workspace, then find --",
+          "  Bot token -- OAuth & Permissions -> OAuth Tokens (starts with xoxb-)",
+          "  App token -- Basic Information -> App-Level Tokens, with the connections:write scope (starts with xapp-)",
+          "These are secure, hidden prompts -- tokens won't be echoed to the screen.",
+          "Press Ctrl+C to cancel.",
+        ]);
         const botToken = await prompt("Slack bot token (xoxb-):");
         const appToken = await prompt("Slack app token (xapp-):");
         return { bot_token: botToken, app_token: appToken } as ProviderCredentials[P];
       }
+      writeGuidance([
+        "Install the Claude Code CLI (https://code.claude.com/docs/en/quickstart), then run",
+        "'claude setup-token' in your terminal and paste the result below.",
+        "This is a secure, hidden prompt -- the token won't be echoed to the screen.",
+        "Press Ctrl+C to cancel.",
+      ]);
       return { setup_token: await prompt("Claude Code setup token:") } as ProviderCredentials[P];
     } finally {
       try { session?.cancel(); } catch {}
       await restore();
+      if (hungReadAbandoned) {
+        // The abandoned read is still native-blocked on this fd, and
+        // session.close() would wait on that same read settling (it never
+        // will, until more input arrives) -- so it's skipped entirely here,
+        // to avoid readFromTty itself hanging. This still just throws
+        // (rather than force-exiting the process) so the caller gets a
+        // chance to print/emit its own interrupted message first -- see
+        // each provider's exitProcess call, made only after that happens.
+        try { this.ops.offSignal("SIGINT", onSignal); } catch {}
+        try { this.ops.offSignal("SIGTERM", onSignal); } catch {}
+        try { this.ops.close(fd); } catch {}
+        throw new CredentialInputError("interrupted");
+      }
       try { await session?.close(); } catch {}
       const cleanupInterrupted = interrupted;
       try { this.ops.offSignal("SIGINT", onSignal); } catch {}

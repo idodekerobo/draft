@@ -26,6 +26,7 @@ function output(json: boolean) {
 }
 
 const ttySource: CredentialSource = { kind: "tty" };
+const noopExit = { exitProcess: () => {} };
 
 function stubReader<P extends "linear" | "claude-code">(
   provider: P,
@@ -47,6 +48,7 @@ describe("Linear connect provider", () => {
     const deps: LinearConnectDeps = {
       reader: stubReader("linear", async () => ({ api_key: "lin_api_secret" })),
       connect: async (body) => { connectCalls.push(body); return { ok: true, value: { ok: true } }; },
+      ...noopExit,
     };
     const rendered = output(true);
     expect(await runLinearConnect({ source: ttySource }, rendered.value, deps)).toBe(0);
@@ -61,6 +63,7 @@ describe("Linear connect provider", () => {
     const deps: LinearConnectDeps = {
       reader: stubReader("linear", async () => ({ api_key: "lin_api_secret" })),
       connect: async () => ({ ok: true, value: { ok: true, cleanup_pending: true } }),
+      ...noopExit,
     };
     const rendered = output(true);
     expect(await runLinearConnect({ source: ttySource }, rendered.value, deps)).toBe(0);
@@ -72,6 +75,7 @@ describe("Linear connect provider", () => {
     const deps: LinearConnectDeps = {
       reader: stubReader("linear", async () => ({ api_key: "lin_api_secret" })),
       connect: async () => ({ ok: true, value: { ok: true, cleanup_pending: true } }),
+      ...noopExit,
     };
     const rendered = output(false);
     expect(await runLinearConnect({ source: ttySource }, rendered.value, deps)).toBe(0);
@@ -83,6 +87,7 @@ describe("Linear connect provider", () => {
     const deps: LinearConnectDeps = {
       reader: stubReader("linear", async () => ({ api_key: "canary-secret-value" })),
       connect: async () => ({ ok: false, code: "linear_webhook_create_failed" }),
+      ...noopExit,
     };
     const rendered = output(true);
     expect(await runLinearConnect({ source: ttySource }, rendered.value, deps)).toBe(1);
@@ -95,11 +100,27 @@ describe("Linear connect provider", () => {
     const deps: LinearConnectDeps = {
       reader: { preflightTty: async () => false, read: async () => { throw new CredentialInputError("credential_input_required"); } },
       connect: async () => { connectCalled = true; return { ok: true, value: { ok: true } }; },
+      ...noopExit,
     };
     const rendered = output(true);
     expect(await runLinearConnect({ source: ttySource }, rendered.value, deps)).toBe(2);
     expect(connectCalled).toBe(false);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "credential_input_required" });
+  });
+
+  it("prints the interrupted message, then force-exits, when the credential read is abandoned mid-flight", async () => {
+    const exitCalls: number[] = [];
+    const deps: LinearConnectDeps = {
+      reader: { preflightTty: async () => true, read: async () => { throw new CredentialInputError("interrupted"); } },
+      connect: async () => ({ ok: true, value: { ok: true } }),
+      exitProcess: (code) => { exitCalls.push(code); },
+    };
+    const rendered = output(true);
+    expect(await runLinearConnect({ source: ttySource }, rendered.value, deps)).toBe(130);
+    // The message must be visible before the process is force-exited --
+    // otherwise Ctrl-C at this prompt looks like nothing happened at all.
+    expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "interrupted" });
+    expect(exitCalls).toEqual([130]);
   });
 });
 
@@ -109,6 +130,7 @@ describe("Claude Code connect provider", () => {
     const deps: ClaudeCodeConnectDeps = {
       reader: stubReader("claude-code", async () => ({ setup_token: "setup_secret" })),
       connect: async (body) => { connectCalls.push(body); return { ok: true, value: { ok: true } }; },
+      ...noopExit,
     };
     const rendered = output(true);
     expect(await runClaudeCodeConnect({ source: ttySource }, rendered.value, deps)).toBe(0);
@@ -123,10 +145,24 @@ describe("Claude Code connect provider", () => {
     const deps: ClaudeCodeConnectDeps = {
       reader: stubReader("claude-code", async () => ({ setup_token: "canary-setup-token" })),
       connect: async () => ({ ok: false, code: "request_failed" }),
+      ...noopExit,
     };
     const rendered = output(true);
     expect(await runClaudeCodeConnect({ source: ttySource }, rendered.value, deps)).toBe(1);
     expect(rendered.stdout.join("")).not.toContain("canary-setup-token");
+  });
+
+  it("prints the interrupted message, then force-exits, when the credential read is abandoned mid-flight", async () => {
+    const exitCalls: number[] = [];
+    const deps: ClaudeCodeConnectDeps = {
+      reader: { preflightTty: async () => true, read: async () => { throw new CredentialInputError("interrupted"); } },
+      connect: async () => ({ ok: true, value: { ok: true } }),
+      exitProcess: (code) => { exitCalls.push(code); },
+    };
+    const rendered = output(true);
+    expect(await runClaudeCodeConnect({ source: ttySource }, rendered.value, deps)).toBe(130);
+    expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "interrupted" });
+    expect(exitCalls).toEqual([130]);
   });
 });
 

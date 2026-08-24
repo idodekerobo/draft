@@ -18,11 +18,17 @@ export interface LinearConnectOptions {
 export interface LinearConnectDeps {
   reader: CredentialReader;
   connect(body: { provider: "linear"; api_token: string }): Promise<FetchResult<ConnectIntegrationResult>>;
+  // A credential read already in flight on the TTY can't actually be
+  // cancelled (it only settles once more input arrives), so once the
+  // interrupted message has been emitted, this forces the process to exit
+  // rather than risk it hanging until further input arrives.
+  exitProcess(code: number): void;
 }
 
 const defaultDeps: LinearConnectDeps = {
   reader: credentialReader,
   connect: connectIntegration,
+  exitProcess: (code) => { process.exit(code); },
 };
 
 export async function runLinearConnect(
@@ -37,7 +43,9 @@ export async function runLinearConnect(
   try {
     credentials = await deps.reader.read("linear", options.source);
   } catch (error) {
-    return output.error(error instanceof CredentialInputError ? error.code : "invalid_credential_input");
+    const code = output.error(error instanceof CredentialInputError ? error.code : "invalid_credential_input");
+    if (error instanceof CredentialInputError && error.code === "interrupted") deps.exitProcess(code);
+    return code;
   }
   output.registerSecret(credentials.api_key);
 

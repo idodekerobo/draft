@@ -14,7 +14,7 @@ import {
   type CredentialReader,
 } from "../credentials.ts";
 import { browserLauncher, type BrowserLauncher } from "../browser.ts";
-import { ttyConfirm, ttyWaitForAck } from "../tty-prompt.ts";
+import { ttyConfirm, ttyWaitForAck, type TtyAckResult } from "../tty-prompt.ts";
 import type { IntegrationOutput } from "../safe-output.ts";
 
 const ACK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -36,6 +36,11 @@ export interface FirefliesConnectDeps {
   mkTempDir(): string;
   writeFile(path: string, content: string): void;
   removeDir(path: string): void;
+  // A confirm/ack read already in flight on the TTY can't actually be
+  // cancelled (it only settles once more input arrives), so once any
+  // required cleanup/messaging is done, this forces the process to exit
+  // rather than risk it hanging until further input arrives.
+  exitProcess(code: number): void;
 }
 
 const defaultDeps: FirefliesConnectDeps = {
@@ -51,6 +56,7 @@ const defaultDeps: FirefliesConnectDeps = {
   mkTempDir: () => mkdtempSync(join(tmpdir(), "draft-fireflies-")),
   writeFile: (path, content) => writeFileSync(path, content, { mode: 0o600 }),
   removeDir: (path) => { try { rmSync(path, { recursive: true, force: true }); } catch {} },
+  exitProcess: (code) => { process.exit(code); },
 };
 
 function escapeHtml(value: string): string {
@@ -99,16 +105,25 @@ export async function runFirefliesConnect(
         "Reconnecting Fireflies rotates the webhook secret; the old one will stop working. Continue? [y/N] ",
         controller.signal,
       );
-      if (confirmed === "interrupted") return output.error("aborted");
+      if (confirmed === "interrupted") {
+        const code = output.error("aborted");
+        deps.exitProcess(code);
+        return code;
+      }
       if (confirmed !== "yes") return output.error("cancelled");
     }
     if (controller.signal.aborted) return output.error("aborted");
+
+    const awaitingCredentials = output.event({ status: "awaiting_credentials", provider: "fireflies" });
+    if (awaitingCredentials !== 0) return awaitingCredentials;
 
     let credentials: { api_token: string };
     try {
       credentials = await deps.reader.read("fireflies", { kind: "tty" });
     } catch (error) {
-      return output.error(error instanceof CredentialInputError ? error.code : "invalid_credential_input");
+      const code = output.error(error instanceof CredentialInputError ? error.code : "invalid_credential_input");
+      if (error instanceof CredentialInputError && error.code === "interrupted") deps.exitProcess(code);
+      return code;
     }
     output.registerSecret(credentials.api_token);
     if (controller.signal.aborted) return output.error("aborted");
@@ -120,6 +135,7 @@ export async function runFirefliesConnect(
     }
 
     const dir = deps.mkTempDir();
+    let ackResult: TtyAckResult | undefined;
     try {
       const path = join(dir, "index.html");
       deps.writeFile(path, handoffHtml(result.value.webhookUrl, result.value.webhookSecret));
@@ -136,7 +152,7 @@ export async function runFirefliesConnect(
       const handoff = output.event({ status: "handoff_required", provider: "fireflies", url: fileUrl, opened });
       if (handoff !== 0) return handoff;
 
-      await deps.waitForAck(
+      ackResult = await deps.waitForAck(
         "Press Enter once you've added the webhook in Fireflies (this continues automatically after 10 minutes): ",
         deps.ackTimeoutMs,
         controller.signal,
@@ -145,7 +161,14 @@ export async function runFirefliesConnect(
       deps.removeDir(dir);
     }
 
-    return output.event({ status: "credentials_stored_webhook_pending", provider: "fireflies" });
+    const exitCode = output.event({ status: "credentials_stored_webhook_pending", provider: "fireflies" });
+    if (ackResult === "timed_out" || ackResult === "interrupted") {
+      // The wait was abandoned rather than genuinely acknowledged -- the
+      // underlying read may still be native-blocked on the tty, so force
+      // exit now that cleanup and the success message are both done.
+      deps.exitProcess(exitCode);
+    }
+    return exitCode;
   } finally {
     deps.offSignal("SIGINT", onSignal);
     deps.offSignal("SIGTERM", onSignal);

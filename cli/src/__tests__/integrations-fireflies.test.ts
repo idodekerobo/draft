@@ -36,6 +36,7 @@ function harness(overrides: Partial<FirefliesConnectDeps> = {}) {
   const removedDirs: string[] = [];
   const launches: string[] = [];
   const handlers = new Map<string, () => void>();
+  const exitCalls: number[] = [];
   let tempDirCounter = 0;
 
   const deps: FirefliesConnectDeps = {
@@ -54,9 +55,10 @@ function harness(overrides: Partial<FirefliesConnectDeps> = {}) {
     mkTempDir: () => `/tmp/draft-fireflies-test-${tempDirCounter++}`,
     writeFile: (path, content) => { writtenFiles.push({ path, content }); },
     removeDir: (path) => { removedDirs.push(path); },
+    exitProcess: (code) => { exitCalls.push(code); },
     ...overrides,
   };
-  return { deps, writtenFiles, removedDirs, launches, handlers };
+  return { deps, writtenFiles, removedDirs, launches, handlers, exitCalls };
 }
 
 describe("Fireflies connect provider", () => {
@@ -80,8 +82,9 @@ describe("Fireflies connect provider", () => {
     const rendered = output(true);
     expect(await runFirefliesConnect({ noOpen: false }, rendered.value, h.deps)).toBe(0);
     const lines = rendered.stdout.map((line) => JSON.parse(line));
-    expect(lines[0]).toMatchObject({ status: "handoff_required", provider: "fireflies", opened: true });
-    expect(lines[0].url).toMatch(/^file:\/\/\/tmp\/draft-fireflies-test-0\/index\.html$/);
+    expect(lines[0]).toEqual({ schema_version: 1, status: "awaiting_credentials", provider: "fireflies" });
+    expect(lines[1]).toMatchObject({ status: "handoff_required", provider: "fireflies", opened: true });
+    expect(lines[1].url).toMatch(/^file:\/\/\/tmp\/draft-fireflies-test-0\/index\.html$/);
     expect(lines.at(-1)).toEqual({ schema_version: 1, status: "credentials_stored_webhook_pending", provider: "fireflies" });
     expect(h.writtenFiles).toHaveLength(1);
     expect(h.writtenFiles[0]!.content).toContain("https://api.example.com/hooks/ff/abc");
@@ -104,7 +107,7 @@ describe("Fireflies connect provider", () => {
     const rendered = output(true);
     expect(await runFirefliesConnect({ noOpen: true }, rendered.value, h.deps)).toBe(0);
     expect(h.launches).toEqual([]);
-    const handoff = JSON.parse(rendered.stdout[0]!);
+    const handoff = JSON.parse(rendered.stdout[1]!);
     expect(handoff).toMatchObject({ status: "handoff_required", opened: false });
   });
 
@@ -112,7 +115,7 @@ describe("Fireflies connect provider", () => {
     const h = harness({ launcher: { launchBrowser: async () => ({ opened: false }) } });
     const rendered = output(true);
     expect(await runFirefliesConnect({ noOpen: false }, rendered.value, h.deps)).toBe(0);
-    expect(JSON.parse(rendered.stdout[0]!)).toMatchObject({ status: "handoff_required", opened: false });
+    expect(JSON.parse(rendered.stdout[1]!)).toMatchObject({ status: "handoff_required", opened: false });
   });
 
   it("warns and requires confirmation before reconnecting an existing connection", async () => {
@@ -161,6 +164,10 @@ describe("Fireflies connect provider", () => {
     expect(await runFirefliesConnect({ noOpen: true }, rendered.value, h.deps)).toBe(130);
     expect(connectCalled).toBe(false);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "aborted" });
+    // The confirm prompt's read was abandoned mid-flight (a native TTY read
+    // can't actually be cancelled), so this force-exits after the message
+    // prints rather than risk hanging until further input arrives.
+    expect(h.exitCalls).toEqual([130]);
   });
 
   it("maps credential read failures without ever connecting", async () => {
@@ -176,6 +183,9 @@ describe("Fireflies connect provider", () => {
     expect(await runFirefliesConnect({ noOpen: true }, rendered.value, h.deps)).toBe(130);
     expect(connectCalled).toBe(false);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "interrupted" });
+    // The message must print before the force-exit -- otherwise Ctrl-C at
+    // this prompt looks like nothing happened at all.
+    expect(h.exitCalls).toEqual([130]);
   });
 
   it("maps a listConnections failure to its safe error code, without connecting", async () => {
@@ -199,15 +209,19 @@ describe("Fireflies connect provider", () => {
     expect(JSON.parse(rendered.stdout.at(-1)!)).toMatchObject({ status: "error", code: "request_failed" });
   });
 
-  it("cleans up the temp dir when waitForAck times out, and still reports success", async () => {
+  it("cleans up the temp dir when waitForAck times out, reports success, then force-exits", async () => {
     const h = harness({ waitForAck: (async () => "timed_out") as typeof ttyWaitForAck });
     const rendered = output(true);
     expect(await runFirefliesConnect({ noOpen: true }, rendered.value, h.deps)).toBe(0);
     expect(h.removedDirs).toEqual(["/tmp/draft-fireflies-test-0"]);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toEqual({ schema_version: 1, status: "credentials_stored_webhook_pending", provider: "fireflies" });
+    // The ack wait was abandoned (never genuinely acknowledged), so the temp
+    // dir is still cleaned up and the success message still prints first --
+    // but force-exit follows immediately after, same reasoning as above.
+    expect(h.exitCalls).toEqual([0]);
   });
 
-  it("cleans up the temp dir when SIGINT interrupts the ack wait, and still reports success (the connection already succeeded)", async () => {
+  it("cleans up the temp dir when SIGINT interrupts the ack wait, reports success (the connection already succeeded), then force-exits", async () => {
     const h = harness({
       waitForAck: (async (_message, _timeoutMs, signal) => new Promise((resolve) => {
         signal?.addEventListener("abort", () => resolve("interrupted"), { once: true });
@@ -220,6 +234,14 @@ describe("Fireflies connect provider", () => {
     expect(await pending).toBe(0);
     expect(h.removedDirs).toEqual(["/tmp/draft-fireflies-test-0"]);
     expect(JSON.parse(rendered.stdout.at(-1)!)).toEqual({ schema_version: 1, status: "credentials_stored_webhook_pending", provider: "fireflies" });
+    expect(h.exitCalls).toEqual([0]);
+  });
+
+  it("does not force-exit when the ack wait genuinely resolves via Enter", async () => {
+    const h = harness({ waitForAck: (async () => "acked") as typeof ttyWaitForAck });
+    const rendered = output(true);
+    expect(await runFirefliesConnect({ noOpen: true }, rendered.value, h.deps)).toBe(0);
+    expect(h.exitCalls).toEqual([]);
   });
 
   it("cleans up the temp dir even if the browser launcher throws", async () => {
@@ -227,7 +249,7 @@ describe("Fireflies connect provider", () => {
     const rendered = output(true);
     expect(await runFirefliesConnect({ noOpen: false }, rendered.value, h.deps)).toBe(0);
     expect(h.removedDirs).toEqual(["/tmp/draft-fireflies-test-0"]);
-    expect(JSON.parse(rendered.stdout[0]!)).toMatchObject({ status: "handoff_required", opened: false });
+    expect(JSON.parse(rendered.stdout[1]!)).toMatchObject({ status: "handoff_required", opened: false });
   });
 
   it("maps a malformed connect response (missing webhook fields) to malformed_response", async () => {
