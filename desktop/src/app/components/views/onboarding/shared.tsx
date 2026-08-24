@@ -351,8 +351,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
     <>
       {noRunnersInstalled && (
         <div className="onboarding__manual-fallback">
-          <p className="onboarding__error">No CLI runner found. Install Claude Code or Codex, then open your terminal and run:</p>
-          <CopyableCmd cmd="/draft-setup" />
+          <p className="onboarding__error">No CLI runner found. Open Settings to set up your workspace context.</p>
         </div>
       )}
 
@@ -443,7 +442,7 @@ export function HeadlessSetupPanel({ onComplete, onSkip, skipLabel = "Skip for n
       {(error || !phase) && !noRunnersInstalled && <div className="onboarding__manual-fallback">
         {error && <button className="empty-state__cta onboarding__cta" onClick={() => void start(lastMode)}>Try again</button>}
         <p>Prefer to have an agent interview you? Open {selectedRunner === "claude" ? "Claude Code" : "Codex"} and run:</p>
-        <CopyableCmd cmd={selectedRunner === "codex" ? "@draft-setup" : "/draft-setup"} />
+        <CopyableCmd cmd={selectedRunner === "codex" ? "$draft:setup" : "/draft:setup"} />
       </div>}
     </>
   );
