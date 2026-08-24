@@ -59,7 +59,7 @@ import type {
 } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
-import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
+import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 
@@ -479,7 +479,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         try {
           // Currently assumes one team_default workspace. A real workspace list and
           // picker are needed before supporting teams with multiple workspaces.
-          const workspaceId = getCachedWorkspaceId();
+          const auth = readAuthState();
+          if (!auth) {
+            try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
+            return [];
+          }
+          const workspaceId = auth.workspace_id;
           if (!workspaceId) return [];
 
           // This RPC always reads the current cloud snapshot. The renderer owns
@@ -495,7 +500,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
               return entry ? [entry] : [];
             }),
           );
-        } catch {
+        } catch (error) {
+          const authFailure =
+            (error instanceof AuthRefreshError && error.kind === "terminal") ||
+            (error instanceof Error && /request_failed_(401|403)/.test(error.message));
+          if (authFailure) {
+            try { clearAuthState(); } catch {}
+            try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
+          }
           return [];
         }
       },
