@@ -1,5 +1,9 @@
 # Source Adapter Interface Contract
 
+These source adapters describe the local/background synthesis runtime contract. The current hosted architecture stores source items and context versions in the backend workspace and runs production synthesis through the backend's sandbox orchestration. Keep this document for the local runtime and self-hosting implementation details; it is not a description of the hosted collaboration model.
+
+This local contract predates the hosted result shape in the backend. Its `needs_input` outcome stages a local flagged proposal, while hosted synthesis stores a `needs_input` array on the synthesis run and may persist it alongside a changed or unchanged result. Do not use this local `proposals/flagged/` behavior as the hosted product workflow.
+
 Files in `synthesizers/` are **source adapters** — each one knows how to handle
 a specific input source (session transcripts, Granola meetings, Slack threads).
 

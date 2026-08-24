@@ -1,5 +1,7 @@
 # Intelligence Adapter Interface Contract
 
+These adapters are local runtime contracts used by the bundled background process and by source/self-hosting development. In the hosted product, the corresponding synthesis work is orchestrated by the backend and runs in a disposable Fly Machine sandbox. This directory is not the hosted workspace or the canonical company-brain storage layer.
+
 Files in `intelligence/` are **intelligence adapters** — each one knows how to
 execute a specific LLM or agent tool to run synthesis.
 

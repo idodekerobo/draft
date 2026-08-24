@@ -1,78 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Draft landing page
 
-## Getting Started
+The landing page is the public Next.js marketing site for Draft. It explains the company-brain product and links users to hosted signup, downloads, support, and the open-source repository. It does not contain the authenticated workspace or the Draft API.
 
-First, run the development server:
+## Local development
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+From the repository root:
 
-Open [http://localhost:3001](http://localhost:3001) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Local development / self-hosting
-
-The recommended repository-wide entrypoint is:
-
-```bash
+~~~bash
 make run-local
-```
+~~~
 
-It starts this app at `http://localhost:3001` and maps the root `.env.local`
-values to the landing-page settings that Next.js expects.
+Or run it alone:
 
-For standalone development:
-
-```bash
+~~~bash
 cd landing-page-app
 bun run dev -- --port 3001
-```
+~~~
 
-Standalone development uses `landing-page-app/.env.local` when that file is
-present. The repository-wide launcher uses the root `.env.local` instead.
+Required local link configuration:
 
-### Required for local links
-
-```env
+~~~env
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 PORT=3001
-```
+~~~
 
-### Optional integrations and links
+Optional public analytics and support configuration:
 
-```env
+~~~env
 NEXT_PUBLIC_CRISP_WEBSITE_ID=
 NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=
-CRISP_HISTORY_SECRET=
-CRISP_API_IDENTIFIER=
-CRISP_API_KEY=
-```
+~~~
 
-The `CRISP_*` values are server-side credentials for the Crisp history route;
-they must not be shared with the web app or desktop app.
+The Crisp history route also uses server-side CRISP_HISTORY_SECRET, CRISP_API_IDENTIFIER, and CRISP_API_KEY. Do not share those values with the web app or desktop app.
 
-## Learn More
+## Build
 
-To learn more about Next.js, take a look at the following resources:
+~~~bash
+cd landing-page-app
+bun run build
+bun run start
+~~~
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The hosted site runs at [draftai.us](https://draftai.us). A self-hosted deployment may serve this app separately or use another public signup/documentation site; the authenticated web app and API are configured independently.
