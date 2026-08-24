@@ -45,8 +45,9 @@ export function App() {
   const [contextLoading, setContextLoading] = useState(false);
   const contextRequestRef = useRef(0);
   const identity = useUserIdentity();
-  const { workspaceId, hydrated: identityHydrated } = identity;
+  const { workspaceId, hydrated: identityHydrated, signedIn } = identity;
   const workspaceIdRef = useRef(workspaceId);
+  const signedInRef = useRef(signedIn);
   const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
 
   const { track } = useAnalytics();
@@ -104,10 +105,11 @@ export function App() {
   useEffect(() => { void loadProfiles(); }, []);
 
   useEffect(() => { workspaceIdRef.current = workspaceId; }, [workspaceId]);
+  useEffect(() => { signedInRef.current = signedIn; }, [signedIn]);
 
   const reloadContextFiles = useCallback(async () => {
     const requestedWorkspaceId = workspaceIdRef.current;
-    if (!requestedWorkspaceId) return;
+    if (!requestedWorkspaceId || !signedInRef.current) return;
     const requestId = ++contextRequestRef.current;
     try {
       const files = await rpc.request.getContextFiles();
@@ -127,9 +129,9 @@ export function App() {
   useEffect(() => {
     contextRequestRef.current += 1;
     setContextSnapshot({ workspaceId, files: [] });
-    setContextLoading(Boolean(workspaceId));
-    if (workspaceId) void reloadContextFiles();
-  }, [workspaceId, reloadContextFiles]);
+    setContextLoading(Boolean(workspaceId && signedIn));
+    if (workspaceId && signedIn) void reloadContextFiles();
+  }, [workspaceId, signedIn, reloadContextFiles]);
 
   // ── Push: profile changed (CLI-driven or desktop-driven) ──────────────────
   useEffect(() => {
