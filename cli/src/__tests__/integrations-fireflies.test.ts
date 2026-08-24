@@ -89,8 +89,22 @@ describe("Fireflies connect provider", () => {
     expect(h.writtenFiles).toHaveLength(1);
     expect(h.writtenFiles[0]!.content).toContain("https://api.example.com/hooks/ff/abc");
     expect(h.writtenFiles[0]!.content).toContain("ff-webhook-secret-canary");
+    // Where to paste those values, and which events to enable there.
+    expect(h.writtenFiles[0]!.content).toContain("https://app.fireflies.ai/integrations/api/webhook");
+    expect(h.writtenFiles[0]!.content).toContain("Meeting Transcribed");
+    expect(h.writtenFiles[0]!.content).toContain("Meeting Summarized");
     expect(h.launches).toEqual(["file:///tmp/draft-fireflies-test-0/index.html"]);
     expect(h.removedDirs).toEqual(["/tmp/draft-fireflies-test-0"]);
+  });
+
+  it("prints the Fireflies webhook settings URL and required events to the terminal, in human mode", async () => {
+    const h = harness();
+    const rendered = output(false);
+    expect(await runFirefliesConnect({ noOpen: true }, rendered.value, h.deps)).toBe(0);
+    const stderrText = rendered.stderr.join("");
+    expect(stderrText).toContain("https://app.fireflies.ai/integrations/api/webhook");
+    expect(stderrText).toContain("Meeting Transcribed");
+    expect(stderrText).toContain("Meeting Summarized");
   });
 
   it("never renders the raw api_token or webhook secret to stdout/stderr", async () => {

@@ -332,6 +332,10 @@ export class IntegrationOutput {
           ? "Opening a local page with your Fireflies webhook details.\n"
           : `Open this page to finish Fireflies setup: ${String(payload.url)}\n`,
       );
+      this.writeStderr(
+        "In Fireflies, add the webhook at https://app.fireflies.ai/integrations/api/webhook "
+        + "and enable the Meeting Transcribed and Meeting Summarized events.\n",
+      );
       return 0;
     }
     if (event.status === "awaiting_credentials") {

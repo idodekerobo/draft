@@ -63,15 +63,22 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+const FIREFLIES_WEBHOOK_SETTINGS_URL = "https://app.fireflies.ai/integrations/api/webhook";
+
 function handoffHtml(webhookUrl: string, webhookSecret: string): string {
   return `<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Fireflies webhook setup</title></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 640px; margin: 40px auto; line-height: 1.5; color: #1a1a1a;">
 <h1>Fireflies webhook setup</h1>
-<p>In Fireflies, add a webhook with these values:</p>
+<p><a href="${escapeHtml(FIREFLIES_WEBHOOK_SETTINGS_URL)}" target="_blank" rel="noopener">Open Fireflies webhook settings</a> and add a webhook with these values:</p>
 <p><strong>Webhook URL</strong><br><code>${escapeHtml(webhookUrl)}</code></p>
 <p><strong>Webhook secret</strong><br><code>${escapeHtml(webhookSecret)}</code></p>
+<p><strong>Events</strong> -- enable both:</p>
+<ul>
+<li>Meeting Transcribed</li>
+<li>Meeting Summarized</li>
+</ul>
 <p>Return to your terminal and press Enter once you're done.</p>
 </body>
 </html>

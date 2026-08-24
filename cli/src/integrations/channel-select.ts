@@ -1,5 +1,6 @@
-import { closeSync, createReadStream, createWriteStream, openSync } from "fs";
+import { createReadStream, createWriteStream, openSync } from "fs";
 import { createInterface } from "readline/promises";
+import { flushTtyOutput } from "./tty-stream-cleanup.ts";
 
 export interface SelectableChannel {
   id: string;
@@ -68,9 +69,17 @@ export class TtyChannelSelector implements ChannelSelector {
         rl.close();
       }
     } finally {
+      await flushTtyOutput(output);
+      // Despite autoClose:false, destroying a stream backed by this fd
+      // still closes it asynchronously (a Bun stream quirk) -- and since
+      // `input` and `output` both wrap the SAME fd, destroying both (or
+      // destroying one and then also closeSync'ing the fd ourselves) races
+      // two or more independent closers against the same fd, throwing an
+      // *uncaught* EBADF from whichever loses, well after this function has
+      // returned. Destroying exactly one stream (never both, and no
+      // separate manual close) is the only combination that closes the fd
+      // without a race.
       input.destroy();
-      output.destroy();
-      try { closeSync(fd); } catch {}
     }
   }
 }
