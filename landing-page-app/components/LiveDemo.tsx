@@ -70,6 +70,7 @@ export default function LiveDemo() {
 
   return (
     <div
+      className="live-demo"
       style={{
         position: "relative",
         background: "var(--color-surface)",
@@ -493,6 +494,9 @@ export default function LiveDemo() {
       </div>
 
       <style>{`
+        @media (max-width: 900px) {
+          .live-demo { height: 840px !important; }
+        }
         @keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.75)} }
         @keyframes fadeSlideUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         @keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
