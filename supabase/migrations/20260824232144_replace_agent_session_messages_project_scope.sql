@@ -1,15 +1,9 @@
--- Replaces a session's full message set atomically: upsert the
--- agent_sessions row, then delete + reinsert agent_messages, all in one
--- transaction. Mirrors upsert_source_item.sql's shape (security definer,
--- search_path locked, row locking before mutation, revoked from public).
--- Attribution never regresses on re-ingest: once a session is linked to a
--- verified user_id, a later contributor-tier ingest of the same
--- (workspace, provider, external_session_id) cannot overwrite it back to
--- contributor_id.
--- p_session_project_id is set only when the ingesting
--- credential is project-scoped; a legacy credential's ingest passes null
--- and never overwrites an existing session_project_id (coalesce, not
--- excluded-wins) -- no backfill for legacy-authored sessions.
+-- replace_agent_session_messages grows a new p_session_project_id param
+-- (appended with a default of null so this is a backward-compatible
+-- `create or replace`, not a drop+recreate) so a project-scoped ingest can
+-- persist the project link on the session row. A legacy call site that
+-- never passes it keeps writing null, matching
+-- the plan's explicit no-backfill decision for legacy credentials.
 create or replace function replace_agent_session_messages(
   p_workspace_id uuid,
   p_provider text,

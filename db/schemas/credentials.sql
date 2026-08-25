@@ -5,6 +5,11 @@
 -- TODO: `provider` has no CHECK constraint. Allowed values live only in the
 -- CredentialProvider TS union (backend/src/types/enums.ts) -- update that
 -- type, not this file, when adding a value.
+-- `session_project_id`/`allowed_providers` scope an `agent_session_ingest`
+-- credential to one project + provider set. Both are nullable: a null
+-- `session_project_id` marks a legacy `claude_session_ingest` credential,
+-- which the ingest route detects and falls back to workspace-scoped
+-- behavior for -- no backfill, ever.
 create table credentials (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
@@ -16,10 +21,14 @@ create table credentials (
                               check (status in ('active', 'revoked', 'expired')),
   expires_at               timestamptz,
   last_used_at             timestamptz,
+  session_project_id       uuid,
+  allowed_providers        text[],
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),
 
-  unique (id, workspace_id)
+  unique (id, workspace_id),
+  foreign key (session_project_id, workspace_id)
+    references session_projects(id, workspace_id)
 );
 
 alter table credentials enable row level security;
