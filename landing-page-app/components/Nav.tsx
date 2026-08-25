@@ -6,6 +6,7 @@ import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 
 const GITHUB_URL = "https://github.com/idodekerobo/draft";
+const DOCS_URL = "https://github.com/idodekerobo/draft/tree/main/docs";
 const DOWNLOAD_URL =
   "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
@@ -14,7 +15,7 @@ export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const ph = usePostHog();
-  const downloadCta = "Download for macOS";
+  const downloadCta = "Download desktop app";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -71,7 +72,7 @@ export default function Nav() {
           {[
             { label: "Features", href: "#features" },
             { label: "How it works", href: "#how-it-works" },
-            { label: "Docs", href: "https://docs.draftai.us", external: true },
+            { label: "Docs", href: DOCS_URL, external: true },
           ].map((link) => (
             <a
               key={link.label}
@@ -102,7 +103,7 @@ export default function Nav() {
           ))}
 
           {/* GitHub icon link */}
-          <a href={`${APP_URL}/signup`} style={{ color: "var(--color-accent)", textDecoration: "none", fontWeight: 600 }}>Sign up</a>
+          <a href={`${APP_URL}/signup`} style={{ color: "var(--color-accent)", textDecoration: "none", fontWeight: 600 }}>Get Started</a>
           <a
             href={GITHUB_URL}
             target="_blank"
@@ -176,7 +177,7 @@ export default function Nav() {
           }}
         >
           <a
-            href="https://docs.draftai.us"
+            href={DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => ph?.capture(EVENTS.DOCS_CLICKED, { source: "nav_mobile_inline" })}
@@ -289,6 +290,21 @@ export default function Nav() {
               {label}
             </a>
           ))}
+          <a
+            href={`${APP_URL}/signup`}
+            style={{
+              display: "inline-block",
+              padding: "0.75rem 1.5rem",
+              border: "1px solid var(--color-accent)",
+              color: "var(--color-accent)",
+              fontWeight: 600,
+              textDecoration: "none",
+              borderRadius: "6px",
+              textAlign: "center",
+            }}
+          >
+            Get Started
+          </a>
           <a
             href={DOWNLOAD_URL}
             onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "nav_mobile" })}

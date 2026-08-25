@@ -19,8 +19,8 @@ const TRUST_ITEMS = [
         <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.1 269-317.1 71 0 130.5 46.4 175 46.4 42.5 0 109.2-49.9 190.5-49.9zm-174.9-41.6c-31.1-36.9-53.3-88.1-53.3-139.3 0-7.1.6-14.3 1.9-20.1 50.6 1.9 110.4 33.7 147.1 75.8 28.5 32.4 55.1 83.6 55.1 135.5 0 7.8-1.3 15.5-1.9 18.1-3.2.6-8.4 1.3-13.6 1.3-45.4 0-102.5-30.4-135.3-71.3z"/>
       </svg>
     ),
-    label: "macOS Apple Silicon",
-    detail: "Native desktop app",
+    label: "Hosted or self-hosted",
+    detail: "Deploy it your way",
     href: null,
   },
   {
@@ -30,8 +30,8 @@ const TRUST_ITEMS = [
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
       </svg>
     ),
-    label: "Everything on your machine",
-    detail: "Privacy first",
+    label: "Human-reviewed updates",
+    detail: "Your team stays in control",
     href: null,
   },
   {

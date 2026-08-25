@@ -5,27 +5,27 @@ import { useEffect, useRef } from "react";
 const steps = [
   {
     step: "01",
-    title: "Install Draft",
-    body: "Download the macOS desktop app. It installs as a tray icon, registers as a LaunchAgent (starts at login), and wires the plugin into your agent tools automatically.",
-    tag: "Desktop app · CLI · Plugin",
+    title: "Start with your context",
+    body: "Start with the context that makes your company unique: what you are building, your priorities, your team, and the decisions behind the work.",
+    tag: "Structured workspace",
   },
   {
     step: "02",
-    title: "Run /draft:setup",
-    body: "A short interview — what you're building, your priorities, your team. Takes 5 minutes. Writes structured context files to your workspace. This is your workspace — the source of truth that loads in every session.",
-    tag: "One-time setup",
+    title: "Connect your sources",
+    body: "Bring in meetings, Slack, GitHub, Linear, and agent sessions. Draft turns the activity already happening across your tools into durable company knowledge.",
+    tag: "Meetings · Slack · GitHub · Linear",
   },
   {
     step: "03",
-    title: "Connect your tools",
-    body: "Link Granola, Fireflies, Slack, and GitHub. The daemon starts capturing meeting notes, threads, and PR activity on a schedule — no manual effort.",
-    tag: "Granola · Fireflies · Slack · GitHub",
+    title: "Review what changed",
+    body: "New context arrives as proposals, not silent edits. Review what Draft found, accept what matters, and keep your shared brain trustworthy.",
+    tag: "Human-reviewed updates",
   },
   {
     step: "04",
-    title: "Review & publish",
-    body: "Proposed context updates land in your inbox. Accept what's relevant. Publish to a GitHub repo your team pulls from — everyone's sessions start grounded.",
-    tag: "Proposals inbox · Team sync",
+    title: "Activate every agent",
+    body: "Connect your agents through the desktop app, CLI, or integrations. Each session can start with the current company brain already available.",
+    tag: "Claude Code · Codex · Cursor · More",
   },
 ];
 
@@ -74,7 +74,7 @@ export default function HowItWorks() {
             textTransform: "uppercase",
           }}
         >
-          How it works
+          How teams use it
         </span>
       </div>
 
@@ -91,9 +91,9 @@ export default function HowItWorks() {
           maxWidth: "520px",
         }}
       >
-        Install once.
+        Search the brain.
         <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
-          {" "}Your workspace, everywhere.
+          {" "}Keep every agent current.
         </span>
       </h2>
 

@@ -26,22 +26,22 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://draftai.us"),
-  title: "Draft — Collaborative context layer for your team's AI sessions",
+  title: "Draft - The company brain for teams using AI agents",
   description:
-    "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start. No re-explaining. No copy-pasting.",
+    "Draft turns your company's decisions, priorities, and activity into shared context every connected AI agent can use.",
   openGraph: {
-    title: "Draft — Collaborative context layer for your team's AI sessions",
+    title: "Draft - The company brain for teams using AI agents",
     description:
-      "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start. No re-explaining. No copy-pasting.",
+      "Draft turns your company's decisions, priorities, and activity into shared context every connected AI agent can use.",
     url: "https://draftai.us",
     siteName: "Draft",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Draft — Collaborative context layer for your team's AI sessions",
+    title: "Draft - The company brain for teams using AI agents",
     description:
-      "Draft runs in the background, capturing context from your meetings, Slack, and GitHub — then injects it automatically at every agent session start.",
+      "Draft turns your company's decisions, priorities, and activity into shared context every connected AI agent can use.",
   },
 };
 

@@ -3,75 +3,32 @@
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 
-const GITHUB_URL = "https://github.com/idodekerobo/draft";
 const DOWNLOAD_URL =
   "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
 const BULLETS = [
   {
-    label: "Workspace.",
-    text: "Your product context, priorities, and decisions organized in one structured place.",
+    label: "Find.",
+    text: "Ask for a decision, customer insight, prior feedback, or rationale.",
   },
   {
-    label: "Sync.",
-    text: "Publish to a repo and share with teammates — everyone's sessions start from the same context.",
+    label: "Remember.",
+    text: "Synthesize meetings, Slack threads, and activity into durable company memory.",
   },
   {
-    label: "Capture.",
-    text: "Meetings, Slack threads, and GitHub activity synthesized into proposed updates automatically.",
-  },
-  {
-    label: "Review.",
-    text: "A proposals inbox where you control what gets added to your workspace.",
+    label: "Unblock.",
+    text: "Let teammates and agents self-serve instead of interrupting the person who knows.",
   },
 ];
 
 export default function DemoHeroLeft() {
   const ph = usePostHog();
-  const downloadCta = "Download for macOS";
-
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      {/* Eyebrow */}
-      <div
-        className="animate-fade-in delay-100"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          padding: "0.35rem 0.875rem",
-          border: "1px solid var(--color-border-md)",
-          borderRadius: "100px",
-          marginBottom: "2rem",
-          alignSelf: "flex-start",
-        }}
-      >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "var(--color-accent)",
-            display: "inline-block",
-            animation: "heroLeftPulse 2s ease-in-out infinite",
-          }}
-        />
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "0.72rem",
-            color: "var(--color-muted)",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-          }}
-        >
-          Free & Open Source
-        </span>
-      </div>
-
       {/* Headline */}
       <h1
-        className="animate-fade-up delay-200"
+        className="animate-fade-up delay-100"
         style={{
           fontFamily: "var(--font-display)",
           fontSize: "clamp(2.6rem, 4.5vw, 4.25rem)",
@@ -82,13 +39,28 @@ export default function DemoHeroLeft() {
           margin: "0 0 1.25rem 0",
         }}
       >
-        Keep your agents
+        A company brain
         <br />
-        in sync,{" "}
+        for founders and
+        <br />
         <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
-          automatically.
+          AI-native teams.
         </span>
       </h1>
+
+      {/* Positioning line */}
+      <p
+        className="animate-fade-up delay-200"
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: "1.1rem",
+          fontWeight: 600,
+          color: "var(--color-primary)",
+          margin: "0 0 1.25rem 0",
+        }}
+      >
+        Give your agents more than a CLAUDE.md file.
+      </p>
 
       {/* Subhead */}
       <p
@@ -102,14 +74,17 @@ export default function DemoHeroLeft() {
           maxWidth: "400px",
         }}
       >
-        Draft gives you a persistent workspace — product context, priorities,
-        and decisions that load automatically across every agent session. Use it
-        solo, or share and collaborate with your whole team.
+        Draft synthesizes the decisions, feedback, customer details, and
+        rationale that change week to week, so {" "}
+        <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
+          teammates and agents
+        </span>{" "}
+        can find what they need without waiting on the person who knows.
       </p>
 
       {/* Bullets */}
       <div
-        className="animate-fade-up delay-400"
+        className="animate-fade-up delay-300"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -149,13 +124,13 @@ export default function DemoHeroLeft() {
 
       {/* CTAs */}
       <div
-        className="animate-fade-up delay-500"
+        className="animate-fade-up delay-400"
         style={{ display: "flex", flexDirection: "column", gap: "0.625rem", alignItems: "flex-start" }}
       >
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <a
-            href={DOWNLOAD_URL}
-            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "hero" })}
+            href={`${APP_URL}/signup`}
+            onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { source: "hero", cta_text: "Get Started" })}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -184,18 +159,12 @@ export default function DemoHeroLeft() {
               el.style.boxShadow = "none";
             }}
           >
-            {/* Apple icon */}
-            <svg width="13" height="13" viewBox="0 0 814 1000" fill="currentColor" aria-hidden="true">
-              <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.1 269-317.1 71 0 130.5 46.4 175 46.4 42.5 0 109.2-49.9 190.5-49.9zm-174.9-41.6c-31.1-36.9-53.3-88.1-53.3-139.3 0-7.1.6-14.3 1.9-20.1 50.6 1.9 110.4 33.7 147.1 75.8 28.5 32.4 55.1 83.6 55.1 135.5 0 7.8-1.3 15.5-1.9 18.1-3.2.6-8.4 1.3-13.6 1.3-45.4 0-102.5-30.4-135.3-71.3z"/>
-            </svg>
-            {downloadCta}
+            Get Started
           </a>
 
           <a
-            href="https://cal.com/idode/learn-about-draft"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "hero", type: "book_call" })}
+            href={DOWNLOAD_URL}
+            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "hero" })}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -225,17 +194,11 @@ export default function DemoHeroLeft() {
               el.style.transform = "translateY(0)";
             }}
           >
-            Book a Call
+            Download the desktop app
           </a>
         </div>
       </div>
 
-      <style>{`
-        @keyframes heroLeftPulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%       { opacity: 0.45; transform: scale(0.8); }
-        }
-      `}</style>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import Nav from "@/components/Nav";
 import DemoHero from "@/components/DemoHero";
+import ForWho from "@/components/ForWho";
 import LogoBar from "@/components/LogoBar";
 import Features from "@/components/Features";
 import HowItWorks from "@/components/HowItWorks";
@@ -13,6 +14,7 @@ export default function Home() {
       <SectionObserver />
       <Nav />
       <DemoHero />
+      <ForWho />
       <LogoBar />
       <Features />
       <HowItWorks />

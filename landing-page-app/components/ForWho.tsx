@@ -4,22 +4,16 @@ import { useEffect, useRef } from "react";
 
 const personas = [
   {
-    label: "01 — Co-founders",
-    headline: "Own product. Keep pace with your engineer.",
-    body: "You're the product brain — strategy, specs, prioritization — while your co-founder ships. The problem is Claude Code starts blank every session. Draft gives it persistent memory so every session starts with your full context loaded. No re-briefing. Just product work.",
-    tag: "Co-founder, product mode",
+    label: "01 — Founders shipping with agents",
+    headline: "Keep the details close to the work.",
+    body: "You move between customers, product, and code all day. Draft helps your agents find the decisions, feedback, and customer details you do not want to re-explain every time.",
+    tag: "Founder mode",
   },
   {
-    label: "02 — Heads of Product",
-    headline: "Set the source of truth. Once.",
-    body: "You're the curator — the one person who owns the product context everyone else operates from. Draft is built for that role. Run /setup once, and your strategy, decisions, and priorities are structured, versioned, and loaded automatically. Your team pulls from what you set. You stop re-explaining it.",
-    tag: "Curator mode",
-  },
-  {
-    label: "03 — Solo founders",
-    headline: "You're doing all the jobs. Draft covers the PM one.",
-    body: "Product, engineering, GTM — it's all you. Context loss hits hardest when you're switching between all three in the same day. Draft keeps your product brain intact across every Claude session so when you're back in PM mode, you're not starting from scratch.",
-    tag: "Full-stack founder",
+    label: "02 — AI-native product teams",
+    headline: "Make team knowledge available wherever agents work.",
+    body: "When multiple agents work across product and engineering, Draft helps the team find the latest feedback, decisions, and rationale without maintaining another manual knowledge base.",
+    tag: "Team mode",
   },
 ];
 
@@ -90,8 +84,24 @@ export default function ForWho() {
           maxWidth: "500px",
         }}
       >
-        Built for the product mind behind the code.
+        Let everyone find what they need without waiting on you.
       </h2>
+
+      <p
+        className="reveal reveal-delay-2"
+        style={{
+          fontFamily: "var(--font-body)",
+          fontSize: "1rem",
+          color: "var(--color-muted)",
+          lineHeight: 1.7,
+          maxWidth: "560px",
+          margin: "-2.5rem 0 4rem",
+        }}
+      >
+        Draft synthesizes company context from the work already happening, so
+        founders, teammates, and agents can find the details behind the work
+        themselves.
+      </p>
 
       {/* Cards grid */}
       <div

@@ -5,10 +5,10 @@ import { useEffect, useRef } from "react";
 const features = [
   {
     number: "01",
-    title: "Portable workspace",
-    headline: "Your context, everywhere you build.",
-    body: "Run /draft:setup once. Your workspace — product context, priorities, decisions — loads automatically in every Claude Code, Codex, or Cursor session. One source of truth. No copy-pasting. No briefing before every session.",
-    detail: "Desktop app · CLI · Plugin · Works on session start",
+    title: "Find the detail",
+    headline: "Search the company's memory.",
+    body: "Ask for a decision, customer insight, prior feedback, or the reasoning behind a priority. Draft searches your connected company context and finds the relevant detail.",
+    detail: "Decisions · Customer insight · Feedback · Rationale",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <rect x="4" y="6" width="20" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/>
@@ -20,10 +20,10 @@ const features = [
   },
   {
     number: "02",
-    title: "Your team, in sync",
-    headline: "Everyone starts from the same page.",
-    body: "Publish your accepted context to a GitHub repo your team controls. Teammates pull updates — their sessions start from the same grounded workspace you maintain. One curator. Whole team briefed. No Notion pages to maintain.",
-    detail: "GitHub sync · Shared context · Multi-profile · Team collaboration",
+    title: "Ground the answer",
+    headline: "Give agents the context around the fact.",
+    body: "A useful answer needs more than an isolated note. Draft brings back the surrounding decision, feedback, and rationale so agents can use changing details in the right way.",
+    detail: "Relevant context · Connected sources · Agent sessions",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <circle cx="8" cy="14" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
@@ -36,10 +36,10 @@ const features = [
   },
   {
     number: "03",
-    title: "Stays current, automatically",
-    headline: "Context that keeps up with you.",
-    body: "Connect Granola, Fireflies, Slack, and GitHub. The Draft daemon runs in the background on a schedule, synthesizing new meeting notes, threads, and PR activity into proposed workspace updates. Review in the inbox — accept what matters.",
-    detail: "Granola · Fireflies · Slack · GitHub · Background daemon · Proposals inbox",
+    title: "Keep it current",
+    headline: "New details become proposed updates.",
+    body: "New feedback, decisions, and exceptions become proposed updates. Review what changed, accept what matters, and keep the shared context trustworthy.",
+    detail: "Meetings · Slack · GitHub · Linear · Proposals inbox",
     icon: (
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5"/>
@@ -120,7 +120,7 @@ export default function Features() {
               textTransform: "uppercase",
             }}
           >
-            What Draft does
+            Company memory
           </span>
         </div>
 
@@ -146,9 +146,9 @@ export default function Features() {
               maxWidth: "420px",
             }}
           >
-            A context layer for{" "}
+            Find the details that{" "}
             <span style={{ color: "var(--color-accent)", fontStyle: "italic" }}>
-              the whole team.
+              move the work.
             </span>
           </h2>
 
@@ -162,7 +162,7 @@ export default function Features() {
               maxWidth: "340px",
             }}
           >
-            Your workspace. Your team. Your tools — all in sync. Install once.
+            Search decisions, feedback, and customer insight. Review what changed. Give every agent the latest context.
           </p>
         </div>
 

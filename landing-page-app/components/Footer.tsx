@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+const DOCS_URL = "https://github.com/idodekerobo/draft/tree/main/docs";
+
 export default function Footer() {
   return (
     <footer
@@ -46,7 +48,7 @@ export default function Footer() {
               lineHeight: 1.6,
             }}
           >
-            A context layer that keeps your team's AI sessions grounded.
+            The company brain for teams using AI agents.
           </p>
         </div>
 
@@ -74,7 +76,7 @@ export default function Footer() {
             {[
               { label: "Features", href: "#features" },
               { label: "How it works", href: "#how-it-works" },
-              { label: "Documentation", href: "https://docs.draftai.us", external: true },
+              { label: "Documentation", href: DOCS_URL, external: true },
             ].map((l) => (
               <a
                 key={l.label}

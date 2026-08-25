@@ -138,7 +138,7 @@ export default function Hero() {
               textTransform: "uppercase",
             }}
           >
-            AI Product Manager
+            Founders and AI-native product teams
           </span>
         </div>
 
@@ -155,7 +155,7 @@ export default function Hero() {
             marginBottom: "1.5rem",
           }}
         >
-          Scale yourself.
+          A company brain for founders
           <br />
           <span
             style={{
@@ -163,7 +163,7 @@ export default function Hero() {
               fontStyle: "italic",
             }}
           >
-            Not your headcount.
+            and AI-native teams.
           </span>
         </h1>
 
@@ -179,9 +179,9 @@ export default function Hero() {
             margin: "0 auto 3rem",
           }}
         >
-          Draft is the AI product manager built for solo PMs and founders.
-          Write better specs, think through strategy, and hand off tasks
-          directly to coding agents — all integrated with the tools your team already uses.
+          Draft turns your company&apos;s decisions, priorities, and activity into
+          shared context every connected agent can use. Capture what changes,
+          review what matters, and keep every session grounded in the way your team works.
         </p>
 
         {/* CTAs */}
@@ -196,7 +196,7 @@ export default function Hero() {
           }}
         >
           <a
-            href={`${APP_URL}/onboarding`}
+            href={`${APP_URL}/signup`}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -226,7 +226,7 @@ export default function Hero() {
               el.style.boxShadow = "0 0 0 0 rgba(200,148,59,0.4)";
             }}
           >
-            Start building for free with Draft
+            Get Started
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
