@@ -21,6 +21,7 @@ Required local link configuration:
 
 ~~~env
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+DRAFT_API_BASE_URL=http://localhost:8787
 PORT=3001
 ~~~
 
