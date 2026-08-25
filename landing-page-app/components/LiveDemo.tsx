@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
+import { openWaitlistModal } from "@/components/WaitlistModal";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
@@ -446,13 +447,16 @@ export default function LiveDemo() {
           flexShrink: 0,
         }}
       >
-        <a
-          href={`${APP_URL}/signup`}
+        <button
+          type="button"
           onClick={() =>
-            ph?.capture(EVENTS.CTA_CLICKED, {
-              cta_location: "hero_panel",
-              cta_text: "Get Started",
-            })
+            (() => {
+              ph?.capture(EVENTS.CTA_CLICKED, {
+                cta_location: "hero_panel",
+                cta_text: "Join the beta",
+              });
+              openWaitlistModal("hero_panel");
+            })()
           }
           style={{
             display: "flex",
@@ -465,7 +469,8 @@ export default function LiveDemo() {
             fontFamily: "var(--font-body)",
             fontSize: "0.9rem",
             fontWeight: 700,
-            textDecoration: "none",
+            border: 0,
+            cursor: "pointer",
             borderRadius: "8px",
             transition: "opacity 0.2s, transform 0.2s",
           }}
@@ -478,7 +483,19 @@ export default function LiveDemo() {
             e.currentTarget.style.transform = "translateY(0)";
           }}
         >
-          Get Started
+          Join the beta
+        </button>
+        <a
+          href={`${APP_URL}/login`}
+          style={{
+            color: "var(--color-muted)",
+            fontFamily: "var(--font-body)",
+            fontSize: "0.8rem",
+            textAlign: "center",
+            textDecoration: "none",
+          }}
+        >
+          Already have access? Sign in
         </a>
         <span
           style={{

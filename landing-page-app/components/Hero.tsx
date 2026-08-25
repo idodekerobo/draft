@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { openWaitlistModal } from "@/components/WaitlistModal";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "#";
 
@@ -195,8 +196,9 @@ export default function Hero() {
             flexWrap: "wrap",
           }}
         >
-          <a
-            href={`${APP_URL}/signup`}
+          <button
+            type="button"
+            onClick={() => openWaitlistModal("legacy_hero")}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -207,11 +209,12 @@ export default function Hero() {
               fontFamily: "var(--font-body)",
               fontSize: "0.95rem",
               fontWeight: 700,
-              textDecoration: "none",
+              border: 0,
               borderRadius: "8px",
               transition: "opacity 0.2s, transform 0.2s, box-shadow 0.2s",
               boxShadow: "0 0 0 0 rgba(200,148,59,0.4)",
               letterSpacing: "0.01em",
+              cursor: "pointer",
             }}
             onMouseEnter={(e) => {
               const el = e.currentTarget;
@@ -226,42 +229,35 @@ export default function Hero() {
               el.style.boxShadow = "0 0 0 0 rgba(200,148,59,0.4)";
             }}
           >
-            Get Started
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </a>
+            Join the beta
+          </button>
 
           <a
-            href="#features"
+            href={`${APP_URL}/login`}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "0.5rem",
-              padding: "0.875rem 2rem",
+              padding: "0.5rem 0.25rem",
               background: "transparent",
-              color: "var(--color-primary)",
+              color: "var(--color-muted)",
               fontFamily: "var(--font-body)",
               fontSize: "0.95rem",
               fontWeight: 500,
               textDecoration: "none",
-              borderRadius: "8px",
-              border: "1px solid var(--color-border-md)",
-              transition: "border-color 0.2s, background 0.2s",
+              borderRadius: "6px",
+              transition: "color 0.2s",
               letterSpacing: "0.01em",
             }}
             onMouseEnter={(e) => {
               const el = e.currentTarget;
-              el.style.borderColor = "rgba(237,229,208,0.3)";
-              el.style.background = "rgba(237,229,208,0.04)";
+              el.style.color = "var(--color-primary)";
             }}
             onMouseLeave={(e) => {
               const el = e.currentTarget;
-              el.style.borderColor = "var(--color-border-md)";
-              el.style.background = "transparent";
+              el.style.color = "var(--color-muted)";
             }}
           >
-            See how it works
+            Sign in
           </a>
         </div>
 

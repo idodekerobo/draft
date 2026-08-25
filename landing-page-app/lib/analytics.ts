@@ -13,6 +13,8 @@ export const EVENTS = {
   DOWNLOAD_CLICKED: 'download_clicked',
   GITHUB_CLICKED: 'github_clicked',
   DOCS_CLICKED: 'docs_clicked',
+  WAITLIST_OPENED: 'waitlist_opened',
+  WAITLIST_SUBMITTED: 'waitlist_submitted',
 
   // Nav
   NAV_LINK_CLICKED: 'nav_link_clicked',

@@ -6,6 +6,7 @@ import Features from "@/components/Features";
 import HowItWorks from "@/components/HowItWorks";
 import CTASection from "@/components/CTASection";
 import Footer from "@/components/Footer";
+import WaitlistModal from "@/components/WaitlistModal";
 import { SectionObserver } from "@/components/SectionObserver";
 
 export default function Home() {
@@ -20,6 +21,7 @@ export default function Home() {
       <HowItWorks />
       <CTASection />
       <Footer />
+      <WaitlistModal />
     </main>
   );
 }

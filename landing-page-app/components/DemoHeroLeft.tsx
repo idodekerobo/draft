@@ -2,9 +2,8 @@
 
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
+import { openWaitlistModal } from "@/components/WaitlistModal";
 
-const DOWNLOAD_URL =
-  "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
 const BULLETS = [
@@ -127,10 +126,13 @@ export default function DemoHeroLeft() {
         className="animate-fade-up delay-400"
         style={{ display: "flex", flexDirection: "column", gap: "0.625rem", alignItems: "flex-start" }}
       >
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <a
-            href={`${APP_URL}/signup`}
-            onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { source: "hero", cta_text: "Get Started" })}
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => {
+              ph?.capture(EVENTS.CTA_CLICKED, { source: "hero", cta_text: "Join the beta" });
+              openWaitlistModal("hero");
+            }}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -145,6 +147,8 @@ export default function DemoHeroLeft() {
               borderRadius: "8px",
               transition: "opacity 0.2s, transform 0.2s, box-shadow 0.2s",
               letterSpacing: "0.01em",
+              border: 0,
+              cursor: "pointer",
             }}
             onMouseEnter={(e) => {
               const el = e.currentTarget;
@@ -159,42 +163,37 @@ export default function DemoHeroLeft() {
               el.style.boxShadow = "none";
             }}
           >
-            Get Started
-          </a>
+            Join the beta
+          </button>
 
           <a
-            href={DOWNLOAD_URL}
-            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "hero" })}
+            href={`${APP_URL}/login`}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "0.5rem",
-              padding: "0.875rem 1.75rem",
-              background: "transparent",
-              color: "var(--color-primary)",
+              padding: "0.5rem 0.25rem",
+              background: "none",
+              color: "var(--color-muted)",
               fontFamily: "var(--font-body)",
               fontSize: "0.9rem",
-              fontWeight: 600,
+              fontWeight: 500,
               textDecoration: "none",
-              borderRadius: "8px",
-              border: "1px solid var(--color-border-md)",
-              transition: "border-color 0.2s, background 0.2s, transform 0.2s",
+              borderRadius: "6px",
+              transition: "color 0.2s, transform 0.2s",
               letterSpacing: "0.01em",
             }}
             onMouseEnter={(e) => {
               const el = e.currentTarget;
-              el.style.borderColor = "rgba(237,229,208,0.3)";
-              el.style.background = "rgba(237,229,208,0.04)";
+              el.style.color = "var(--color-primary)";
               el.style.transform = "translateY(-2px)";
             }}
             onMouseLeave={(e) => {
               const el = e.currentTarget;
-              el.style.borderColor = "var(--color-border-md)";
-              el.style.background = "transparent";
+              el.style.color = "var(--color-muted)";
               el.style.transform = "translateY(0)";
             }}
           >
-            Download the desktop app
+            Sign in
           </a>
         </div>
       </div>

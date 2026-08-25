@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 
-const DOCS_URL = "https://github.com/idodekerobo/draft/tree/main/docs";
-
 export default function Footer() {
   return (
     <footer
@@ -76,12 +74,10 @@ export default function Footer() {
             {[
               { label: "Features", href: "#features" },
               { label: "How it works", href: "#how-it-works" },
-              { label: "Documentation", href: DOCS_URL, external: true },
             ].map((l) => (
               <a
                 key={l.label}
                 href={l.href}
-                {...("external" in l && l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                 style={{
                   fontFamily: "var(--font-body)",
                   fontSize: "0.8rem",

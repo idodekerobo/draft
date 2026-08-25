@@ -4,18 +4,15 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
+import { openWaitlistModal } from "@/components/WaitlistModal";
 
 const GITHUB_URL = "https://github.com/idodekerobo/draft";
-const DOCS_URL = "https://github.com/idodekerobo/draft/tree/main/docs";
-const DOWNLOAD_URL =
-  "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const ph = usePostHog();
-  const downloadCta = "Download desktop app";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -72,17 +69,12 @@ export default function Nav() {
           {[
             { label: "Features", href: "#features" },
             { label: "How it works", href: "#how-it-works" },
-            { label: "Docs", href: DOCS_URL, external: true },
           ].map((link) => (
             <a
               key={link.label}
               href={link.href}
               {...("external" in link && link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              onClick={() =>
-                link.label === "Docs"
-                  ? ph?.capture(EVENTS.DOCS_CLICKED, { source: "nav" })
-                  : ph?.capture(EVENTS.NAV_LINK_CLICKED, { source: "nav", label: link.label })
-              }
+              onClick={() => ph?.capture(EVENTS.NAV_LINK_CLICKED, { source: "nav", label: link.label })}
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "0.875rem",
@@ -103,7 +95,12 @@ export default function Nav() {
           ))}
 
           {/* GitHub icon link */}
-          <a href={`${APP_URL}/signup`} style={{ color: "var(--color-accent)", textDecoration: "none", fontWeight: 600 }}>Get Started</a>
+          <a
+            href={`${APP_URL}/login`}
+            style={{ color: "var(--color-muted)", textDecoration: "none", fontWeight: 500 }}
+          >
+            Sign in
+          </a>
           <a
             href={GITHUB_URL}
             target="_blank"
@@ -131,24 +128,27 @@ export default function Nav() {
             </svg>
           </a>
 
-          {/* Download CTA */}
-          <a
-            href={DOWNLOAD_URL}
-            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "nav" })}
+          {/* Beta CTA */}
+          <button
+            type="button"
+            onClick={() => {
+              ph?.capture(EVENTS.CTA_CLICKED, { source: "nav", cta_text: "Join the beta" });
+              openWaitlistModal("nav");
+            }}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: "0.4rem",
               padding: "0.5rem 1.25rem",
               background: "var(--color-accent)",
               color: "#0B0B0B",
               fontFamily: "var(--font-body)",
               fontSize: "0.875rem",
               fontWeight: 600,
-              textDecoration: "none",
+              border: 0,
               borderRadius: "6px",
               transition: "opacity 0.2s, transform 0.15s",
               letterSpacing: "0.01em",
+              cursor: "pointer",
             }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLElement).style.opacity = "0.9";
@@ -159,15 +159,11 @@ export default function Nav() {
               (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
             }}
           >
-            {/* Apple icon */}
-            <svg width="13" height="13" viewBox="0 0 814 1000" fill="currentColor" aria-hidden="true">
-              <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.1 269-317.1 71 0 130.5 46.4 175 46.4 42.5 0 109.2-49.9 190.5-49.9zm-174.9-41.6c-31.1-36.9-53.3-88.1-53.3-139.3 0-7.1.6-14.3 1.9-20.1 50.6 1.9 110.4 33.7 147.1 75.8 28.5 32.4 55.1 83.6 55.1 135.5 0 7.8-1.3 15.5-1.9 18.1-3.2.6-8.4 1.3-13.6 1.3-45.4 0-102.5-30.4-135.3-71.3z"/>
-            </svg>
-            {downloadCta}
-          </a>
+            Join the beta
+          </button>
         </div>
 
-        {/* Mobile inline links (Docs + GitHub) */}
+        {/* Mobile inline GitHub link */}
         <div
           className="show-mobile"
           style={{
@@ -176,22 +172,6 @@ export default function Nav() {
             gap: "0.25rem",
           }}
         >
-          <a
-            href={DOCS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => ph?.capture(EVENTS.DOCS_CLICKED, { source: "nav_mobile_inline" })}
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "0.875rem",
-              color: "var(--color-muted)",
-              textDecoration: "none",
-              letterSpacing: "0.01em",
-              padding: "12px 16px",
-            }}
-          >
-            Docs
-          </a>
           <a
             href={GITHUB_URL}
             target="_blank"
@@ -291,7 +271,7 @@ export default function Nav() {
             </a>
           ))}
           <a
-            href={`${APP_URL}/signup`}
+            href={`${APP_URL}/login`}
             style={{
               display: "inline-block",
               padding: "0.75rem 1.5rem",
@@ -303,24 +283,29 @@ export default function Nav() {
               textAlign: "center",
             }}
           >
-            Get Started
+            Sign in
           </a>
-          <a
-            href={DOWNLOAD_URL}
-            onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "nav_mobile" })}
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
+              ph?.capture(EVENTS.CTA_CLICKED, { source: "nav_mobile", cta_text: "Join the beta" });
+              openWaitlistModal("nav_mobile");
+            }}
             style={{
               display: "inline-block",
               padding: "0.75rem 1.5rem",
               background: "var(--color-accent)",
               color: "#0B0B0B",
               fontWeight: 600,
-              textDecoration: "none",
+              border: 0,
               borderRadius: "6px",
               textAlign: "center",
+              cursor: "pointer",
             }}
           >
-            {downloadCta}
-          </a>
+            Join the beta
+          </button>
         </div>
       )}
 
