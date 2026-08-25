@@ -62,6 +62,45 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
+import { randomUUID } from "crypto";
+import {
+  CAPTURE_CONFIG_FILE,
+  DRAFT_DIR as SESSION_DRAFT_DIR,
+  HOOK_SCRIPT_FILE,
+  buildCaptureScript,
+  mergeSessionEndHook,
+  removeSessionEndHook,
+} from "draft-core/sessions";
+import { mutateClaudeSettingsAtomic, writeCaptureConfigAtomic } from "draft-core/sync/claude-settings";
+
+// Mirrors the CLI's SessionCaptureConfig shape (cli/src/commands/sessions.ts)
+// so either installer can read a config the other one wrote.
+interface DesktopSessionCaptureConfig {
+  backendUrl: string;
+  workspaceId: string;
+  ingestToken: string;
+  projectId: string;
+  projectKey: string;
+  allowedProviders: string[];
+  credentialScope: string;
+}
+
+function readSessionCaptureConfig(configPath: string): Partial<DesktopSessionCaptureConfig> | null {
+  if (!existsSync(configPath)) return null;
+  try {
+    return JSON.parse(readFileSync(configPath, "utf8")) as Partial<DesktopSessionCaptureConfig>;
+  } catch {
+    return null;
+  }
+}
+
+function isScopedSessionCaptureConfig(config: Partial<DesktopSessionCaptureConfig>): config is DesktopSessionCaptureConfig {
+  return !!(config.backendUrl && config.workspaceId && config.ingestToken && config.projectId && config.projectKey && config.allowedProviders);
+}
+
+async function revokeCredentialAdmin(workspaceId: string, credentialId: string): Promise<void> {
+  await fetchServer(`workspaces/${workspaceId}/sessions/tokens/${encodeURIComponent(credentialId)}`, { method: "DELETE" });
+}
 
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
@@ -69,13 +108,6 @@ let githubInstallController: AbortController | null = null;
 const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
 const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
 
-// Mirrors the CLI's `draft sessions enable claude-code` hook script (cli/src/commands/sessions.ts).
-const SESSION_END_HOOK_COMMAND = `"\${CLAUDE_PROJECT_DIR}/.claude/draft/capture-session.sh"`;
-const SESSION_CAPTURE_SCRIPT = `#!/usr/bin/env bash
-# Installed by Draft — do not edit by hand, re-run setup instead.
-draft sessions ingest >/dev/null 2>&1
-exit 0
-`;
 
 function capitalize(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -1055,48 +1087,114 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
 
-        let minted: { id: string; token: string };
-        try {
-          minted = await fetchServerJSON<{ id: string; token: string }>(`workspaces/${workspaceId}/sessions/tokens`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ label: basename(folderPath) }),
-          });
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not mint an ingest token." };
+        const draftDir = join(folderPath, SESSION_DRAFT_DIR);
+        const settingsPath = join(folderPath, ".claude", "settings.json");
+        const configPath = join(draftDir, CAPTURE_CONFIG_FILE);
+
+        // Malformed settings.json is refused before minting anything, so a
+        // failed enable never leaves an orphaned credential for this reason.
+        const settingsPreflight = await mutateClaudeSettingsAtomic(settingsPath, (s) => s);
+        if (!settingsPreflight.ok) return { ok: false, error: `${settingsPath} is not valid JSON — fix it by hand, then retry.` };
+
+        const existing = readSessionCaptureConfig(configPath);
+        let sessionConfig: DesktopSessionCaptureConfig;
+        let mintedCredentialId: string | null = null;
+        if (existing && isScopedSessionCaptureConfig(existing)) {
+          sessionConfig = existing;
+        } else {
+          let minted: { id: string; token: string; sessionProjectId: string; credentialScope: string };
+          const projectKey = randomUUID();
+          try {
+            minted = await fetchServerJSON(`workspaces/${workspaceId}/sessions/tokens`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ label: basename(folderPath), projectKey, allowedProviders: ["claude-code-session"] }),
+            });
+          } catch (err) {
+            return { ok: false, error: err instanceof Error ? err.message : "Could not mint an ingest token." };
+          }
+          mintedCredentialId = minted.id;
+          sessionConfig = {
+            backendUrl: apiUrl,
+            workspaceId,
+            ingestToken: minted.token,
+            projectId: minted.sessionProjectId,
+            projectKey,
+            allowedProviders: ["claude-code-session"],
+            credentialScope: minted.credentialScope,
+          };
         }
 
         try {
-          const draftDir = join(folderPath, ".claude", "draft");
           mkdirSync(draftDir, { recursive: true });
-          writeFileSync(
-            join(draftDir, "config.json"),
-            `${JSON.stringify({ backendUrl: apiUrl, workspaceId, ingestToken: minted.token }, null, 2)}\n`,
-            { mode: 0o600 },
-          );
-          const hookPath = join(draftDir, "capture-session.sh");
-          writeFileSync(hookPath, SESSION_CAPTURE_SCRIPT, { mode: 0o755 });
+          await writeCaptureConfigAtomic(configPath, sessionConfig);
+          const hookPath = join(draftDir, HOOK_SCRIPT_FILE);
+          writeFileSync(hookPath, buildCaptureScript(), { mode: 0o755 });
           chmodSync(hookPath, 0o755);
 
-          const settingsPath = join(folderPath, ".claude", "settings.json");
-          const settings = existsSync(settingsPath)
-            ? JSON.parse(readFileSync(settingsPath, "utf8")) as { hooks?: { SessionEnd?: Array<{ hooks: Array<{ type: string; command: string; timeout?: number }> }> } }
-            : {};
-          settings.hooks ??= {};
-          settings.hooks.SessionEnd ??= [];
-          const alreadyInstalled = settings.hooks.SessionEnd.some((entry) =>
-            entry.hooks.some((h) => h.command === SESSION_END_HOOK_COMMAND));
-          let hookChanged = false;
-          if (!alreadyInstalled) {
-            settings.hooks.SessionEnd.push({ hooks: [{ type: "command", command: SESSION_END_HOOK_COMMAND, timeout: 60 }] });
-            mkdirSync(join(folderPath, ".claude"), { recursive: true });
-            writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-            hookChanged = true;
+          const settingsResult = await mutateClaudeSettingsAtomic(settingsPath, mergeSessionEndHook);
+          if (!settingsResult.ok) {
+            if (mintedCredentialId) await revokeCredentialAdmin(workspaceId, mintedCredentialId).catch(() => {});
+            return { ok: false, error: `${settingsPath} is not valid JSON — fix it by hand, then retry.` };
           }
-          return { ok: true, hookChanged };
+          return { ok: true, hookChanged: settingsResult.changed };
         } catch (err) {
+          if (mintedCredentialId) await revokeCredentialAdmin(workspaceId, mintedCredentialId).catch(() => {});
           return { ok: false, error: err instanceof Error ? err.message : "Could not write session-capture files." };
         }
+      },
+
+      rotateSessionCaptureForRepo: async ({ folderPath }) => {
+        const draftDir = join(folderPath, SESSION_DRAFT_DIR);
+        const configPath = join(draftDir, CAPTURE_CONFIG_FILE);
+        const existing = readSessionCaptureConfig(configPath);
+        if (!existing || !isScopedSessionCaptureConfig(existing)) {
+          return { ok: false, error: "No session-capture credential found for this repo — enable it first." };
+        }
+        let rotated: { id: string; token: string };
+        try {
+          const response = await fetch(`${apiUrl}/sessions/tokens/rotate`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${existing.ingestToken}` },
+          });
+          if (!response.ok) return { ok: false, error: "This project's ingest credential is no longer valid — enable it again." };
+          rotated = await response.json() as { id: string; token: string };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not reach the Draft backend." };
+        }
+        try {
+          await writeCaptureConfigAtomic(configPath, { ...existing, ingestToken: rotated.token });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not write the rotated credential." };
+        }
+      },
+
+      disableSessionCaptureForRepo: async ({ folderPath }) => {
+        const draftDir = join(folderPath, SESSION_DRAFT_DIR);
+        const configPath = join(draftDir, CAPTURE_CONFIG_FILE);
+        const settingsPath = join(folderPath, ".claude", "settings.json");
+        const existing = readSessionCaptureConfig(configPath);
+
+        let revoked = false;
+        if (existing?.ingestToken) {
+          try {
+            const response = await fetch(`${apiUrl}/sessions/tokens/revoke`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${existing.ingestToken}` },
+            });
+            revoked = response.ok;
+          } catch {
+            revoked = false;
+          }
+        }
+
+        const settingsResult = await mutateClaudeSettingsAtomic(settingsPath, removeSessionEndHook);
+        if (!settingsResult.ok) {
+          return { ok: false, error: `${settingsPath} is not valid JSON — fix it by hand. The credential was still revoked.`, revoked };
+        }
+        if (existsSync(configPath)) writeFileSync(configPath, "{}\n");
+        return { ok: true, hookRemoved: settingsResult.changed, revoked };
       },
 
       getInviteLink: async () => {

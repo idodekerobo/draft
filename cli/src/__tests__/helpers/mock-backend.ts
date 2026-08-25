@@ -16,6 +16,9 @@ export interface MockBackendState {
   refreshResponse: () => Response | Promise<Response>;
   logoutResponse: () => Response | Promise<Response>;
   sessionTokensResponse: (workspaceId: string) => Response | Promise<Response>;
+  sessionTokensRotateResponse: () => Response | Promise<Response>;
+  sessionTokensRevokeResponse: () => Response | Promise<Response>;
+  sessionTokenAdminRevokeResponse: (workspaceId: string, credentialId: string) => Response | Promise<Response>;
   sessionsListResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   sessionReadResponse: (workspaceId: string, sessionId: string, url: URL) => Response | Promise<Response>;
   sessionsSearchResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
@@ -43,7 +46,15 @@ export function createMockBackend() {
     contextResponse: () => Response.json({ versionId: "v1", versionNumber: 1, contentHash: "hash1", creationReason: "synthesis", createdAt: "2026-01-01T00:00:00.000Z", documents: {} }),
     refreshResponse: () => Response.json({ access_token: "refreshed-at", refresh_token: "refreshed-rt", expires_in: 3600 }),
     logoutResponse: () => new Response(null, { status: 204 }),
-    sessionTokensResponse: () => Response.json({ id: "cred-1", token: "draft_sit_cred-1_secret" }),
+    sessionTokensResponse: () => Response.json({
+      id: "cred-1",
+      token: "draft_sit_cred-1_secret",
+      sessionProjectId: "project-1",
+      credentialScope: "ingest-only, shared with repo access",
+    }),
+    sessionTokensRotateResponse: () => Response.json({ ok: true, id: "cred-2", token: "draft_sit_cred-2_secret" }),
+    sessionTokensRevokeResponse: () => Response.json({ ok: true }),
+    sessionTokenAdminRevokeResponse: () => Response.json({ ok: true }),
     sessionsListResponse: () => Response.json({ sessions: [] }),
     sessionReadResponse: () => Response.json({ summary: null }),
     sessionsSearchResponse: () => Response.json({ sessions: [] }),
@@ -94,6 +105,16 @@ export function createMockBackend() {
       if (req.method === "POST" && url.pathname === "/auth/v1/logout") return state.logoutResponse();
       if (req.method === "POST" && /^\/workspaces\/[^/]+\/sessions\/tokens$/.test(url.pathname)) {
         return state.sessionTokensResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "DELETE" && /^\/workspaces\/[^/]+\/sessions\/tokens\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.sessionTokenAdminRevokeResponse(parts[2]!, parts[5]!);
+      }
+      if (req.method === "POST" && url.pathname === "/sessions/tokens/rotate") {
+        return state.sessionTokensRotateResponse();
+      }
+      if (req.method === "POST" && url.pathname === "/sessions/tokens/revoke") {
+        return state.sessionTokensRevokeResponse();
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/sessions$/.test(url.pathname)) {
         return state.sessionsListResponse(url.pathname.split("/")[2]!, url);

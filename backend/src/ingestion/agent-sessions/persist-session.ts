@@ -13,6 +13,8 @@ export interface PersistAgentSessionInput {
   ended_at: string | null;
   status: string;
   messages: ParsedMessage[];
+  // Null for a legacy credential's session -- never backfilled.
+  session_project_id: string | null;
 }
 
 interface ReplaceAgentSessionMessagesRpcResult {
@@ -37,6 +39,7 @@ export async function persistAgentSession(
     p_ended_at: input.ended_at,
     p_status: input.status,
     p_messages: input.messages,
+    p_session_project_id: input.session_project_id,
   });
   if (error) throw error;
 

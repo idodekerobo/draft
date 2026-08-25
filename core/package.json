@@ -37,7 +37,9 @@
     "./integrations/github-oauth": "./src/integrations/github-oauth.ts",
     "./secrets": "./src/secrets.ts",
     "./time": "./src/time.ts",
-    "./migrations/runner": "./src/migrations/runner.ts"
+    "./migrations/runner": "./src/migrations/runner.ts",
+    "./sessions": "./src/sessions.ts",
+    "./sync/claude-settings": "./src/sync/claude-settings.ts"
   },
   "scripts": {
     "test": "bun test"

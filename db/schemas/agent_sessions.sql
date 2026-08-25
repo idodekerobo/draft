@@ -7,6 +7,9 @@ create table agent_sessions (
   external_session_id   text not null,           -- provider's own session id
   project               text,
   cwd                   text,
+  -- Set only when the ingesting credential is project-scoped; null for
+  -- legacy-credential-authored sessions -- not backfilled.
+  session_project_id    uuid,
   started_at            timestamptz not null,
   ended_at              timestamptz,
   status                text not null,
@@ -24,6 +27,8 @@ create table agent_sessions (
   check (num_nonnulls(user_id, contributor_id) = 1),
   foreign key (contributor_id, workspace_id)
     references session_contributors(id, workspace_id) on delete restrict,
+  foreign key (session_project_id, workspace_id)
+    references session_projects(id, workspace_id),
   unique (workspace_id, provider, external_session_id),
   unique (id, workspace_id)
 );

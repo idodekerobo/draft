@@ -10,6 +10,8 @@ import * as sandboxCallback from "./sandbox-callback";
 import * as sessionsIngest from "./sessions-ingest";
 import * as sessionsSearch from "./sessions-search";
 import * as sessionTokens from "./session-tokens";
+import * as sessionTokensRotate from "./session-tokens-rotate";
+import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
@@ -33,10 +35,13 @@ export const routes = {
   "/workspaces/:id/github/install-sessions/:code": { GET: githubInstall.pollGET },
   "/workspaces/github/callback": { GET: githubCallback.GET },
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
+  "/workspaces/:id/sessions/tokens/:credentialId": { DELETE: sessionTokens.DELETE },
   "/workspaces/:id/sessions": { GET: sessions.GET },
   "/workspaces/:id/sessions/search": { GET: sessionsSearch.GET },
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
   "/sessions/ingest": { POST: sessionsIngest.POST },
+  "/sessions/tokens/rotate": { POST: sessionTokensRotate.POST },
+  "/sessions/tokens/revoke": { POST: sessionTokensRevoke.POST },
   "/invites/mine": { GET: invites.mineGET },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },

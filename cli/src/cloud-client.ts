@@ -620,16 +620,77 @@ export function setSlackChannels(channelIds: string[]): Promise<FetchResult<Slac
   });
 }
 
-export async function mintSessionIngestToken(label: string | null): Promise<FetchResult<{ id: string; token: string; workspaceId: string }>> {
+export interface MintSessionIngestTokenInput {
+  label: string | null;
+  projectKey: string;
+  allowedProviders: string[];
+}
+
+export async function mintSessionIngestToken(
+  input: MintSessionIngestTokenInput,
+): Promise<FetchResult<{ id: string; token: string; workspaceId: string; sessionProjectId: string; credentialScope: string }>> {
   const result = await authedFetch("/sessions/tokens", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label }),
+    body: JSON.stringify({ label: input.label, projectKey: input.projectKey, allowedProviders: input.allowedProviders }),
   });
   if (!result.ok) return result;
   if (!result.response.ok) return { ok: false, code: "request_failed" };
-  const body = await result.response.json() as { id: string; token: string };
-  return { ok: true, value: { id: body.id, token: body.token, workspaceId: result.workspaceId } };
+  const body = await result.response.json() as { id: string; token: string; sessionProjectId: string; credentialScope: string };
+  return {
+    ok: true,
+    value: {
+      id: body.id,
+      token: body.token,
+      workspaceId: result.workspaceId,
+      sessionProjectId: body.sessionProjectId,
+      credentialScope: body.credentialScope,
+    },
+  };
+}
+
+export async function adminRevokeSessionIngestToken(credentialId: string): Promise<FetchResult<{ ok: true }>> {
+  return requestValue(`/sessions/tokens/${encodeURIComponent(credentialId)}`, { method: "DELETE" }, decodeOk);
+}
+
+export type IngestTokenActionResult =
+  | { ok: true; value: { id: string; token: string } }
+  | { ok: false; code: "invalid_ingest_token" | "request_failed" | "session_refresh_transient" };
+
+// Credential-gated, not Draft user auth — presents the ingest token itself
+// as bearer auth, the same path /sessions/ingest uses. Deliberately does
+// NOT go through authedFetch/resolveAuthedWorkspace.
+export async function rotateSessionIngestToken(currentToken: string): Promise<IngestTokenActionResult> {
+  const config = getCliRuntimeConfig();
+  let response: Response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}/sessions/tokens/rotate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${currentToken}` },
+    });
+  } catch {
+    return { ok: false, code: "session_refresh_transient" };
+  }
+  if (response.status === 401) return { ok: false, code: "invalid_ingest_token" };
+  if (!response.ok) return { ok: false, code: "request_failed" };
+  const body = await response.json() as { id: string; token: string };
+  return { ok: true, value: { id: body.id, token: body.token } };
+}
+
+export async function revokeSessionIngestTokenWithGrace(currentToken: string): Promise<FetchResult<{ ok: true }>> {
+  const config = getCliRuntimeConfig();
+  let response: Response;
+  try {
+    response = await fetch(`${config.apiBaseUrl}/sessions/tokens/revoke`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${currentToken}` },
+    });
+  } catch {
+    return { ok: false, code: "session_refresh_transient" };
+  }
+  if (response.status === 401) return { ok: false, code: "request_failed" };
+  if (!response.ok) return { ok: false, code: "request_failed" };
+  return { ok: true, value: { ok: true } };
 }
 
 export interface ListSessionsFilters {

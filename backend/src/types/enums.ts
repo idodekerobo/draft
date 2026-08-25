@@ -16,7 +16,9 @@ export type WorkspaceAccessMode = "team_default" | "restricted";
 
 // No DB CHECK constraint backs this one (see db/schemas/credentials.sql) --
 // this type is the only source of truth for allowed values.
-// "claude_session_ingest" is INBOUND-only
+// "claude_session_ingest" is the legacy (pre Plan-0049) workspace-scoped
+// ingest provider -- kept only so old rows still type-check. New code mints
+// "agent_session_ingest" (project + provider scoped) exclusively.
 export type CredentialProvider =
   | "fireflies"
   | "slack"
@@ -24,9 +26,15 @@ export type CredentialProvider =
   | "linear"
   | "github"
   | "claude_code"
-  | "claude_session_ingest";
+  | "claude_session_ingest"
+  | "agent_session_ingest";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
+
+// Providers an agent_session_ingest credential may submit sessions under --
+// these are the literal `source` query-param values sessions-ingest.ts
+// compares against, not display names.
+export type AgentSessionProvider = "claude-code-session" | "codex-session";
 
 export type SourceConnectionProvider =
   | "fireflies"

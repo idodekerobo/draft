@@ -69,10 +69,17 @@ Enable Claude Code session capture for a project:
 ~~~bash
 draft sessions enable claude-code --dir /path/to/project
 draft sessions status --dir /path/to/project
+draft sessions rotate --dir /path/to/project
 draft sessions disable --dir /path/to/project
 ~~~
 
-The enable command writes a project-local capture script and SessionEnd hook. The hook reads the completed transcript locally and posts it to the configured API.
+The enable command writes a project-local capture script and SessionEnd hook. The hook reads the completed transcript locally and posts it to the configured API. The resulting ingest credential is scoped to this one project and provider — a token minted for one project cannot submit sessions under another.
+
+This credential is committed to git as part of `.claude/draft/config.json` and is readable by anyone with access to the repo. That is by design: possession of the file is what authorizes submitting sessions, the same way any other project-local tooling config works. The credential is ingest-only — holding it lets someone submit sessions, not read, list, or search them. `enable` prints this plainly, and the same fact is available as `credentialScope` in `--json` output.
+
+Until `.claude/draft/config.json` and the SessionEnd hook in `.claude/settings.json` are committed and pushed, only sessions in your own working copy are captured — every other clone or pull gets no hook, no config, and no error, so their sessions are silently never captured. Commit and push both files right after enabling.
+
+`draft sessions rotate` mints a replacement credential for the same project and writes it to the local config; the old credential keeps working for a short grace window before it stops, so one contributor rotating doesn't immediately break capture for teammates who haven't pulled yet. `draft sessions disable` revokes the credential the same way (grace window, not instant) and removes the local hook.
 
 List and inspect captured sessions:
 

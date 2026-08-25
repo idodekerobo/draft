@@ -21,7 +21,7 @@ Session capture currently has an installation path for Claude Code. Other agent 
 A local connection can:
 
 1. Resolve the active Draft API and Supabase configuration.
-2. Authenticate the user or use a workspace-scoped session-ingest token.
+2. Authenticate the user or use a project-and-provider-scoped session-ingest token.
 3. Read the current workspace context for an agent.
 4. Install a project-local session hook.
 5. Read a completed coding-agent transcript and upload it to the Draft API.
@@ -49,7 +49,9 @@ Enable current Claude Code session capture for a project:
 draft sessions enable claude-code --dir /path/to/project
 ~~~
 
-This writes project-local configuration under .claude/draft/ and adds a SessionEnd hook to .claude/settings.json. Review and commit those project changes yourself. Draft does not commit them.
+This writes project-local configuration under .claude/draft/ and adds a SessionEnd hook to .claude/settings.json. Review and commit those project changes yourself. Draft does not commit them — until you do, only your own working copy captures sessions.
+
+The minted credential is scoped to this one project and to Claude Code specifically; it is committed to git and readable by anyone with repo access, but it is ingest-only and cannot read, list, or search sessions. Use `draft sessions rotate` to replace it (old credential still works for a short grace window) or `draft sessions disable` to revoke it.
 
 Read the current workspace or captured sessions:
 
