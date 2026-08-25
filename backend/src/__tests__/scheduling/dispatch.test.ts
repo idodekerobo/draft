@@ -60,7 +60,6 @@ function neverCalledDeps(): DispatchDependencies {
     throw new Error("should not be called");
   };
   return {
-    reconcileFirefliesConnection: mock(shouldNotBeCalled) as unknown as DispatchDependencies["reconcileFirefliesConnection"],
     materializeSlackBatches: mock(shouldNotBeCalled) as unknown as DispatchDependencies["materializeSlackBatches"],
     launchSynthesisRun: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSynthesisRun"],
     getReadySourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getReadySourceItemIds"],
@@ -101,7 +100,7 @@ describe("dispatchScheduledTask", () => {
     ).rejects.toThrow(/Unsupported scheduled task_type/);
   });
 
-  it("routes ingest_source to the Fireflies handler based on connection provider", async () => {
+  it("rejects an ingest_source task for an unsupported connection provider", async () => {
     const task = baseTask({
       task_type: "ingest_source",
       source_connection_id: "conn-1",
@@ -117,11 +116,11 @@ describe("dispatchScheduledTask", () => {
       cursor_json: {},
     });
     const deps = neverCalledDeps();
-    deps.reconcileFirefliesConnection = mock(async () => ({ ingested: 1 })) as unknown as DispatchDependencies["reconcileFirefliesConnection"];
 
-    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+    await expect(
+      dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps),
+    ).rejects.toThrow(/unsupported provider/);
 
-    expect(deps.reconcileFirefliesConnection).toHaveBeenCalledTimes(1);
     expect(deps.materializeSlackBatches).not.toHaveBeenCalled();
   });
 
@@ -146,7 +145,6 @@ describe("dispatchScheduledTask", () => {
     await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
 
     expect(deps.materializeSlackBatches).toHaveBeenCalledTimes(1);
-    expect(deps.reconcileFirefliesConnection).not.toHaveBeenCalled();
   });
 
   it("propagates an ingestion failure without retrying -- the next scheduled occurrence retries instead", async () => {
@@ -160,16 +158,16 @@ describe("dispatchScheduledTask", () => {
     const client = fakeClient(task, {
       id: "conn-1",
       workspace_id: task.workspace_id,
-      provider: "fireflies",
+      provider: "slack",
       status: "active",
       cursor_json: {},
     });
     const deps = neverCalledDeps();
     let calls = 0;
-    deps.reconcileFirefliesConnection = mock(async () => {
+    deps.materializeSlackBatches = mock(async () => {
       calls += 1;
       throw new Error("transient");
-    }) as unknown as DispatchDependencies["reconcileFirefliesConnection"];
+    }) as unknown as DispatchDependencies["materializeSlackBatches"];
 
     await expect(
       dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps),
@@ -200,7 +198,6 @@ describe("dispatchScheduledTask", () => {
       await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
 
       expect(deps.materializeSlackBatches).not.toHaveBeenCalled();
-      expect(deps.reconcileFirefliesConnection).not.toHaveBeenCalled();
     },
   );
 

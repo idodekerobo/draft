@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
-import { reconcileFirefliesConnection } from "../ingestion/fireflies/reconcile";
 import { materializeSlackBatches } from "../ingestion/slack/materialize-batches";
 import { getReadySourceItemIds } from "../synthesis/get-ready-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
@@ -11,7 +10,6 @@ import type { ScheduledTaskRow } from "../types/tables";
 // Injectable, defaulting to the real implementations, so tests can
 // substitute fakes without mock.module's cross-file leakage.
 export interface DispatchDependencies {
-  reconcileFirefliesConnection: typeof reconcileFirefliesConnection;
   materializeSlackBatches: typeof materializeSlackBatches;
   launchSynthesisRun: typeof launchSynthesisRun;
   getReadySourceItemIds: typeof getReadySourceItemIds;
@@ -19,7 +17,6 @@ export interface DispatchDependencies {
 }
 
 const defaultDependencies: DispatchDependencies = {
-  reconcileFirefliesConnection,
   materializeSlackBatches,
   launchSynthesisRun,
   getReadySourceItemIds,
@@ -57,9 +54,7 @@ async function dispatchIngestSource(
   // RPCs remain the final backstop after this early stale-work check.
   if (connection.status !== "active" && connection.status !== "degraded") return;
 
-  if (connection.provider === "fireflies") {
-    await deps.reconcileFirefliesConnection(connection, client);
-  } else if (connection.provider === "slack") {
+  if (connection.provider === "slack") {
     await deps.materializeSlackBatches(connection, client);
   } else {
     throw new Error(

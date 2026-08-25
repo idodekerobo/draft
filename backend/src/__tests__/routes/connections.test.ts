@@ -702,7 +702,7 @@ describe("workspace connection routes", () => {
     expect(body.webhookSecret).toMatch(/^[0-9a-f]{64}$/);
     expect(body.webhookSecret).not.toBe("fireflies-api-token");
     expect(state.connections[0]?.connection_key).toMatch(/^[0-9a-f-]{36}$/);
-    expect(state.scheduledTasks).toHaveLength(1);
+    expect(state.scheduledTasks).toHaveLength(0);
     const credential = state.credentials[0];
     expect(JSON.parse(decryptCredentialPayload(credential?.encrypted_payload, "v1"))).toEqual({
       api_token: "fireflies-api-token",

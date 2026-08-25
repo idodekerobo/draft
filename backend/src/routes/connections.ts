@@ -10,7 +10,6 @@ import {
 import { resolveProviderCredential } from "../credentials/resolve-provider-credential";
 import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
-import { registerFirefliesReconciliationTask } from "../ingestion/fireflies/reconcile";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
 import {
@@ -698,10 +697,8 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
 
   try {
     if (isFireflies) {
-      await registerFirefliesReconciliationTask(
-        { id: connectionId, workspace_id: req.params.id },
-        serviceClient,
-      );
+      // TODO: add a reconciliation backstop here if the webhook is ever observed
+      // to drop events -- it's the only ingestion path today and untested so far.
     } else if (isSlack) {
       await registerSlackBatchMaterializationTask(
         { id: connectionId, workspace_id: req.params.id },
