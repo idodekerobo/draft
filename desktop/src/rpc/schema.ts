@@ -494,6 +494,12 @@ export type AppRPCType = {
       /** Desktop-native equivalent of `draft sessions enable claude-code --dir <folderPath>` (CLI has a separate auth store). */
       enableSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult & { hookChanged?: boolean } };
 
+      /** Desktop-native equivalent of `draft sessions rotate --dir <folderPath>`. */
+      rotateSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult };
+
+      /** Desktop-native equivalent of `draft sessions disable --dir <folderPath>`. */
+      disableSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult & { hookRemoved?: boolean; revoked?: boolean } };
+
       /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
       getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };
 
