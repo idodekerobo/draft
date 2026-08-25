@@ -22,7 +22,13 @@ interface SessionRow {
 
 const state: { contributors: ContributorRow[]; sessions: SessionRow[] } = { contributors: [], sessions: [] };
 let nextId = 0;
-let ingestTokenWorkspace: string | null = workspaceId;
+interface FakeScope {
+  credentialId: string;
+  workspaceId: string;
+  sessionProjectId: string | null;
+  allowedProviders: string[] | null;
+}
+let ingestScope: FakeScope | null = { credentialId: "cred-1", workspaceId, sessionProjectId: null, allowedProviders: null };
 let userLookup: { userId: string } | null = null;
 let accessResult: Response | null = null;
 /** Mirrors source_connections' claude_session/agent-sessions row status. `undefined` = no row (opt-in default: blocked). */
@@ -106,7 +112,7 @@ function createFakeServiceClient() {
 }
 
 mock.module("../../credentials/session-ingest-token", () => ({
-  resolveWorkspaceFromIngestToken: async () => ingestTokenWorkspace,
+  resolveIngestCredentialScope: async () => ingestScope,
 }));
 mock.module("../../auth/workspace-access", () => ({
   assertWorkspaceAccess: async () => accessResult,
@@ -125,7 +131,7 @@ const routeModule = await import("../../routes/sessions-ingest");
 beforeEach(() => {
   state.contributors = [];
   state.sessions = [];
-  ingestTokenWorkspace = workspaceId;
+  ingestScope = { credentialId: "cred-1", workspaceId, sessionProjectId: null, allowedProviders: null };
   userLookup = null;
   accessResult = null;
   sessionTrackingStatus = "active";
@@ -162,7 +168,7 @@ describe("POST /sessions/ingest", () => {
   });
 
   it("rejects an invalid/unresolvable ingest token", async () => {
-    ingestTokenWorkspace = null;
+    ingestScope = null;
     const response = await routeModule.POST(ingestRequest({ ingestToken: "bad" }) as never);
     expect(response.status).toBe(401);
   });
@@ -207,7 +213,7 @@ describe("POST /sessions/ingest", () => {
   });
 
   it("tenant isolation: the ingest token's workspace is used, never anything the client claims", async () => {
-    ingestTokenWorkspace = "workspace-B";
+    ingestScope = { credentialId: "cred-1", workspaceId: "workspace-B", sessionProjectId: null, allowedProviders: null };
     const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
     expect(response.status).toBe(200);
     expect(state.sessions[0]?.workspace_id).toBe("workspace-B");
@@ -247,5 +253,44 @@ describe("POST /sessions/ingest", () => {
     const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
     expect(response.status).toBe(200);
     expect(state.sessions).toHaveLength(1);
+  });
+});
+
+describe("POST /sessions/ingest — scoped credential (project + provider)", () => {
+  const sessionProjectId = "project-A";
+
+  beforeEach(() => {
+    ingestScope = { credentialId: "cred-1", workspaceId, sessionProjectId, allowedProviders: ["claude-code-session"] };
+  });
+
+  it("persists the credential's session_project_id on the session", async () => {
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
+    expect(response.status).toBe(200);
+    expect(state.sessions).toHaveLength(1);
+  });
+
+  // Mandatory regression: today an arbitrary `source` bypasses the tracking
+  // toggle entirely (`if (source !== CLAUDE_CODE_SESSION_SOURCE) return
+  // true`). A scoped credential must not get that bypass.
+  it("a non-claude-code-session source is still subject to the tracking toggle", async () => {
+    sessionTrackingStatus = undefined;
+    ingestScope = { credentialId: "cred-1", workspaceId, sessionProjectId, allowedProviders: ["some-other-source"] };
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good", query: { source: "some-other-source" } }) as never);
+    expect(response.status).toBe(403);
+    expect(state.sessions).toHaveLength(0);
+  });
+
+  it("rejects a source not in the credential's allowed_providers", async () => {
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good", query: { source: "codex-session" } }) as never);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ ok: false, error: "provider_not_allowed" });
+    expect(state.sessions).toHaveLength(0);
+  });
+
+  it("allows a source explicitly present in allowed_providers", async () => {
+    ingestScope = { credentialId: "cred-1", workspaceId, sessionProjectId, allowedProviders: ["codex-session"] };
+    sessionTrackingStatus = "active";
+    const response = await routeModule.POST(ingestRequest({ ingestToken: "good", query: { source: "codex-session" } }) as never);
+    expect(response.status).toBe(200);
   });
 });

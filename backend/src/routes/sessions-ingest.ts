@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { publishableClient, serviceClient } from "../db/client";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
-import { resolveWorkspaceFromIngestToken } from "../credentials/session-ingest-token";
+import { resolveIngestCredentialScope } from "../credentials/session-ingest-token";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { parseClaudeCodeJsonl } from "../ingestion/claude-code/parse-transcript";
 import { persistAgentSession } from "../ingestion/agent-sessions/persist-session";
@@ -13,6 +13,19 @@ const CLAUDE_CODE_SESSION_SOURCE = "claude-code-session";
 
 async function isSessionTrackingEnabled(workspaceId: string, source: string): Promise<boolean> {
   if (source !== CLAUDE_CODE_SESSION_SOURCE) return true;
+  const { data } = await serviceClient
+    .from("source_connections")
+    .select("status")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "claude_session")
+    .eq("connection_key", CLAUDE_SESSION_CONNECTION_KEY)
+    .maybeSingle<{ status: string }>();
+  return data?.status === "active" || data?.status === "pending";
+}
+
+// Scoped credentials get no per-source bypass -- every source is subject
+// to the tracking toggle, unlike the legacy path above.
+async function isSessionTrackingEnabledForScopedCredential(workspaceId: string): Promise<boolean> {
   const { data } = await serviceClient
     .from("source_connections")
     .select("status")
@@ -93,8 +106,9 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
   const ingestToken = authHeader.slice("Bearer ".length).trim();
   if (!ingestToken) return errorResponse("missing_ingest_token", 401);
 
-  const workspaceId = await resolveWorkspaceFromIngestToken(serviceClient, ingestToken);
-  if (!workspaceId) return errorResponse("invalid_ingest_token", 401);
+  const scope = await resolveIngestCredentialScope(serviceClient, ingestToken);
+  if (!scope) return errorResponse("invalid_ingest_token", 401);
+  const { workspaceId } = scope;
 
   const params = new URL(req.url).searchParams;
   const sessionId = params.get("sessionId")?.trim();
@@ -107,8 +121,24 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
   const source = params.get("source") || CLAUDE_CODE_SESSION_SOURCE;
   const project = cwd ? basename(cwd) : null;
 
+  // No project scope at all -- keep today's workspace-scoped behavior
+  // unchanged so already-onboarded repos need no re-enable.
+  const isLegacyCredential = scope.sessionProjectId === null;
+
+  if (!isLegacyCredential) {
+    // Client-supplied source is checked only for consistency against the
+    // credential's scope -- never used to select or grant scope.
+    if (scope.allowedProviders && !scope.allowedProviders.includes(source)) {
+      return errorResponse("provider_not_allowed", 403, undefined, workspaceId);
+    }
+  }
+
   // The ingest token is valid -- this is a workspace policy rejection, not an auth failure.
-  if (!(await isSessionTrackingEnabled(workspaceId, source))) {
+  if (isLegacyCredential) {
+    if (!(await isSessionTrackingEnabled(workspaceId, source))) {
+      return errorResponse("session_tracking_disabled", 403, undefined, workspaceId);
+    }
+  } else if (!(await isSessionTrackingEnabledForScopedCredential(workspaceId))) {
     return errorResponse("session_tracking_disabled", 403, undefined, workspaceId);
   }
 
@@ -141,6 +171,7 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
       ended_at: parsed.endedAt,
       status,
       messages: parsed.messages,
+      session_project_id: scope.sessionProjectId,
     });
     return Response.json({ ok: true, sessionId: agentSessionId });
   } catch (err) {
