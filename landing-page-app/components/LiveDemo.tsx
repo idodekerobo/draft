@@ -4,35 +4,51 @@ import { useState, useEffect } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 
-const DOWNLOAD_URL =
-  "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
-const CONTEXT_FILES = [
-  "workspace/product/index.md",
-  "workspace/priorities/index.md",
-  "workspace/team/decisions.md",
-  "workspace/memory/recent.md",
+const SEARCH_STEPS = [
+  "meeting notes · launch planning",
+  "Slack threads · product feedback",
+  "active decisions · roadmap",
+];
+
+const BRAIN_ENTRIES = [
+  {
+    label: "Feedback",
+    value: "Every launch plan includes one customer proof point and a named distribution owner.",
+  },
+  {
+    label: "Source",
+    value: "Launch planning thread · Marketing · 2 weeks ago",
+  },
+  {
+    label: "Current focus",
+    value: "Make the API the primary integration surface.",
+  },
 ];
 
 export default function LiveDemo() {
   const ph = usePostHog();
-  const [visibleFiles, setVisibleFiles] = useState(0);
+  const [visibleSearchSteps, setVisibleSearchSteps] = useState(0);
+  const [showBrain, setShowBrain] = useState(false);
   const [showProposal, setShowProposal] = useState(false);
   const [showMessage, setShowMessage] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [typedText, setTypedText] = useState("");
 
   const MESSAGE =
-    "3 new proposals from this week's Granola notes. The team shifted the roadmap focus to API-first after Monday's sync — I've staged that decision for your review before it goes out to teammates.";
+    "Marketing feedback found: every launch plan should include one customer proof point and a named distribution owner. Draft added it to the context for review.";
 
   useEffect(() => {
-    const fileTimers = CONTEXT_FILES.map((_, i) =>
-      setTimeout(() => setVisibleFiles(i + 1), 400 + i * 260)
+    const searchTimers = SEARCH_STEPS.map((_, i) =>
+      setTimeout(() => setVisibleSearchSteps(i + 1), 400 + i * 260)
     );
-    const proposalTimer = setTimeout(() => setShowProposal(true), 1700);
-    const msgTimer = setTimeout(() => setShowMessage(true), 2100);
+    const brainTimer = setTimeout(() => setShowBrain(true), 1550);
+    const proposalTimer = setTimeout(() => setShowProposal(true), 3000);
+    const msgTimer = setTimeout(() => setShowMessage(true), 3350);
     return () => {
-      fileTimers.forEach(clearTimeout);
+      searchTimers.forEach(clearTimeout);
+      clearTimeout(brainTimer);
       clearTimeout(proposalTimer);
       clearTimeout(msgTimer);
     };
@@ -62,7 +78,7 @@ export default function LiveDemo() {
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        height: "580px",
+        height: "700px",
         boxShadow: "0 1px 2px rgba(28,22,16,0.04), 0 4px 16px rgba(28,22,16,0.06)",
       }}
     >
@@ -92,13 +108,13 @@ export default function LiveDemo() {
           <span
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "0.68rem",
-              color: "var(--color-muted)",
+              fontSize: "0.75rem",
+              color: "var(--color-primary)",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
             }}
           >
-            Draft · Context Layer
+            Draft · Company Brain
           </span>
         </div>
         {/* Profile pill */}
@@ -125,7 +141,7 @@ export default function LiveDemo() {
           <span
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "0.58rem",
+              fontSize: "0.65rem",
               color: "var(--color-accent)",
               letterSpacing: "0.06em",
             }}
@@ -151,26 +167,26 @@ export default function LiveDemo() {
           <span
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: "0.62rem",
-              color: "var(--color-faint)",
+              fontSize: "0.75rem",
+              color: "var(--color-muted)",
               letterSpacing: "0.06em",
             }}
           >
-            &gt; session started · loading workspace context
+            &gt; agent request · create launch plan for API integrations
           </span>
         </div>
 
-        {/* Context files loading */}
+        {/* Search progress */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-          {CONTEXT_FILES.map((file, i) => (
+          {SEARCH_STEPS.map((step, i) => (
             <div
-              key={file}
+              key={step}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: "0.5rem",
-                opacity: i < visibleFiles ? 1 : 0,
-                transform: i < visibleFiles ? "translateX(0)" : "translateX(-6px)",
+                opacity: i < visibleSearchSteps ? 1 : 0,
+                transform: i < visibleSearchSteps ? "translateX(0)" : "translateX(-6px)",
                 transition: "opacity 0.3s ease, transform 0.3s ease",
               }}
             >
@@ -187,16 +203,95 @@ export default function LiveDemo() {
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: "0.62rem",
-                  color: "var(--color-muted)",
+                  fontSize: "0.75rem",
+                  color: "var(--color-primary)",
                   letterSpacing: "0.04em",
                 }}
               >
-                {file}
+                {step}
               </span>
             </div>
           ))}
         </div>
+
+        {/* Company brain snapshot */}
+        {showBrain && (
+          <div
+            style={{
+              background: "var(--color-bg)",
+              border: "1px solid var(--color-border-md)",
+              borderRadius: "8px",
+              padding: "0.75rem 0.875rem",
+              animation: "fadeSlideUp 0.35s ease forwards",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "0.5rem",
+                marginBottom: "0.625rem",
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.68rem",
+                  color: "var(--color-accent)",
+                  letterSpacing: "0.07em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Company brain loaded
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.62rem",
+                  color: "var(--color-faint)",
+                }}
+              >
+                acme · current
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+              {BRAIN_ENTRIES.map((entry) => (
+                <div
+                  key={entry.label}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "5.25rem 1fr",
+                    gap: "0.5rem",
+                    alignItems: "baseline",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "0.62rem",
+                      color: "var(--color-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    {entry.label}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-body)",
+                      fontSize: "0.8rem",
+                      color: "var(--color-primary)",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {entry.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Proposal badge */}
         {showProposal && (
@@ -220,12 +315,12 @@ export default function LiveDemo() {
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: "0.6rem",
+                fontSize: "0.68rem",
                 color: "var(--color-accent)",
                 letterSpacing: "0.06em",
               }}
             >
-              3 proposals pending review
+              1 relevant memory found
             </span>
           </div>
         )}
@@ -264,19 +359,19 @@ export default function LiveDemo() {
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: "0.58rem",
+                  fontSize: "0.65rem",
                   color: "var(--color-faint)",
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                 }}
               >
-                · Context Layer
+                · Company Brain
               </span>
             </div>
             <p
               style={{
                 fontFamily: "var(--font-body)",
-                fontSize: "0.8rem",
+                fontSize: "0.9rem",
                 color: "var(--color-primary)",
                 lineHeight: 1.6,
                 margin: 0,
@@ -310,12 +405,12 @@ export default function LiveDemo() {
               animation: "fadeSlideUp 0.3s ease forwards",
             }}
           >
-            {["Review proposals →", "Show what changed", "Publish to team →"].map((label) => (
+            {["Use in launch plan →", "Show source", "Add to company brain →"].map((label) => (
               <button
                 key={label}
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: "0.62rem",
+                  fontSize: "0.7rem",
                   color: "var(--color-accent)",
                   background: "rgba(200,148,59,0.08)",
                   border: "1px solid rgba(200,148,59,0.25)",
@@ -351,11 +446,11 @@ export default function LiveDemo() {
         }}
       >
         <a
-          href={DOWNLOAD_URL}
+          href={`${APP_URL}/signup`}
           onClick={() =>
             ph?.capture(EVENTS.CTA_CLICKED, {
               cta_location: "hero_panel",
-              cta_text: "Download for macOS",
+              cta_text: "Get Started",
             })
           }
           style={{
@@ -382,10 +477,7 @@ export default function LiveDemo() {
             e.currentTarget.style.transform = "translateY(0)";
           }}
         >
-          <svg width="13" height="13" viewBox="0 0 814 1000" fill="currentColor" aria-hidden="true">
-            <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-37.5-155.5-127.4C46.7 790.7 0 663 0 541.8c0-207.5 135.4-317.1 269-317.1 71 0 130.5 46.4 175 46.4 42.5 0 109.2-49.9 190.5-49.9zm-174.9-41.6c-31.1-36.9-53.3-88.1-53.3-139.3 0-7.1.6-14.3 1.9-20.1 50.6 1.9 110.4 33.7 147.1 75.8 28.5 32.4 55.1 83.6 55.1 135.5 0 7.8-1.3 15.5-1.9 18.1-3.2.6-8.4 1.3-13.6 1.3-45.4 0-102.5-30.4-135.3-71.3z"/>
-          </svg>
-          Download for macOS
+          Get Started
         </a>
         <span
           style={{
@@ -396,7 +488,7 @@ export default function LiveDemo() {
             textAlign: "center",
           }}
         >
-          Free · Open source · Apple Silicon · v0.1.0
+          Hosted or self-hosted · Open source · Human-reviewed updates
         </span>
       </div>
 
