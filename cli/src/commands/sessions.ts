@@ -1,31 +1,55 @@
-// commands/sessions.ts — draft sessions enable|disable|status|ingest|list|read|search
+// commands/sessions.ts — draft sessions enable|rotate|disable|status|ingest|list|read|search
 // `ingest` is hook-only: installed as the project's Claude Code SessionEnd hook.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, statSync } from "fs";
+import { randomUUID } from "crypto";
 import { dirname, isAbsolute, join, resolve } from "path";
 import {
+  adminRevokeSessionIngestToken,
   fetchSessionRead,
   fetchSessions,
   fetchSessionsSearch,
   mintSessionIngestToken,
   requireAccessToken,
+  revokeSessionIngestTokenWithGrace,
+  rotateSessionIngestToken,
 } from "../cloud-client.ts";
 import { getCliRuntimeConfig } from "../runtime-config.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
-import { dim, red } from "../utils/output.ts";
+import { bold, cyan, dim, red } from "../utils/output.ts";
+import {
+  CAPTURE_CONFIG_FILE,
+  DRAFT_DIR,
+  HOOK_SCRIPT_FILE,
+  buildCaptureScript,
+  hasSessionEndHook,
+  mergeSessionEndHook,
+  removeSessionEndHook,
+  resolveDraftBinaryPath,
+} from "draft-core/sessions";
+import { mutateClaudeSettingsAtomic, readClaudeSettings, writeCaptureConfigAtomic } from "draft-core/sync/claude-settings";
 
 const SUPPORTED_AGENTS = ["claude-code", "codex", "cursor", "openclaw", "hermes"] as const;
 type Agent = (typeof SUPPORTED_AGENTS)[number];
 
-const DRAFT_DIR = ".claude/draft";
-const CONFIG_FILE = "config.json";
-const HOOK_SCRIPT = "capture-session.sh";
 const SETTINGS_FILE = ".claude/settings.json";
+const INGEST_TOKEN_PREFIX = "draft_sit_";
 
 interface SessionCaptureConfig {
   backendUrl: string;
   workspaceId: string;
   ingestToken: string;
+  projectId: string;
+  projectKey: string;
+  allowedProviders: string[];
+  credentialScope: string;
+}
+
+// A legacy (pre project-scoping) config only has these three fields.
+type LegacyOrScopedConfig = Partial<SessionCaptureConfig> & { backendUrl?: string; workspaceId?: string; ingestToken?: string };
+
+function isScopedConfig(config: LegacyOrScopedConfig): config is SessionCaptureConfig {
+  return !!(config.backendUrl && config.workspaceId && config.ingestToken && config.projectId && config.projectKey && config.allowedProviders);
 }
 
 function isAgent(value: string): value is Agent {
@@ -35,6 +59,7 @@ function isAgent(value: string): value is Agent {
 function fetchErrorPayload(code: string) {
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
+  if (code === "invalid_ingest_token") return errorPayload(code, "This project's ingest token is no longer valid — run `draft sessions enable claude-code` again.");
   return errorPayload(code, "Could not reach the Draft backend right now. Retry shortly.");
 }
 
@@ -44,19 +69,7 @@ function printFetchError(command: string, code: string, json: boolean): void {
   console.error(red(`${command}: ${payload.message}${payload.action ? ` Run \`${payload.action}\`.` : ""}`));
 }
 
-// ── enable/disable/status shared helpers ────────────────────────────────
-
-const HOOK_COMMAND = `"\${CLAUDE_PROJECT_DIR}/${DRAFT_DIR}/${HOOK_SCRIPT}"`;
-
-const CAPTURE_SCRIPT = `#!/usr/bin/env bash
-# Installed by \`draft sessions enable\` — do not edit by hand, re-run enable instead.
-# Claude Code SessionEnd hook: hands the raw hook JSON (on stdin) to
-# \`draft sessions ingest\`, which resolves this project's config, reads the
-# transcript off disk, and posts it to the Draft backend. Never blocks
-# Claude Code: always exits 0, whatever happens upstream.
-draft sessions ingest >/dev/null 2>&1
-exit 0
-`;
+// ── shared path/config helpers ──────────────────────────────────────────
 
 function resolveDir(rawDir: string | undefined): string {
   if (!rawDir) return process.cwd();
@@ -64,68 +77,44 @@ function resolveDir(rawDir: string | undefined): string {
 }
 
 function configPath(dir: string): string {
-  return join(dir, DRAFT_DIR, CONFIG_FILE);
+  return join(dir, DRAFT_DIR, CAPTURE_CONFIG_FILE);
 }
 
 function hookScriptPath(dir: string): string {
-  return join(dir, DRAFT_DIR, HOOK_SCRIPT);
+  return join(dir, DRAFT_DIR, HOOK_SCRIPT_FILE);
 }
 
 function settingsPath(dir: string): string {
   return join(dir, SETTINGS_FILE);
 }
 
-interface ClaudeSettings {
-  hooks?: {
-    SessionEnd?: Array<{ hooks: Array<{ type: string; command: string; timeout?: number }> }>;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
+function basenameOf(dir: string): string {
+  const parts = dir.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? dir;
 }
 
-function readSettings(path: string): ClaudeSettings {
-  if (!existsSync(path)) return {};
+function readLocalConfig(dir: string): LegacyOrScopedConfig | null {
+  const path = configPath(dir);
+  if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as ClaudeSettings;
+    return JSON.parse(readFileSync(path, "utf8")) as LegacyOrScopedConfig;
   } catch {
-    return {};
+    return null;
   }
 }
 
-function hasSessionEndHook(settings: ClaudeSettings): boolean {
-  return (settings.hooks?.SessionEnd ?? []).some((entry) =>
-    entry.hooks.some((h) => h.command === HOOK_COMMAND),
-  );
-}
-
-/** Idempotent: returns false if settings.json already has the hook, matching add.ts's no-op convention. */
-function mergeSessionEndHook(dir: string): boolean {
-  const path = settingsPath(dir);
-  const settings = readSettings(path);
-  if (hasSessionEndHook(settings)) return false;
-
-  settings.hooks ??= {};
-  settings.hooks.SessionEnd ??= [];
-  settings.hooks.SessionEnd.push({ hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 60 }] });
-
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
-  return true;
-}
-
-/** Idempotent: returns false if settings.json had no matching hook to remove. */
-function removeSessionEndHook(dir: string): boolean {
-  const path = settingsPath(dir);
-  const settings = readSettings(path);
-  if (!hasSessionEndHook(settings)) return false;
-
-  settings.hooks!.SessionEnd = (settings.hooks!.SessionEnd ?? [])
-    .map((entry) => ({ ...entry, hooks: entry.hooks.filter((h) => h.command !== HOOK_COMMAND) }))
-    .filter((entry) => entry.hooks.length > 0);
-  if (settings.hooks!.SessionEnd.length === 0) delete settings.hooks!.SessionEnd;
-
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
-  return true;
+function commitReminderLines(dir: string): string[] {
+  return [
+    "Review the diff and commit these files — Draft never commits on your behalf:",
+    `  git -C ${dir} status`,
+    `  git -C ${dir} add ${DRAFT_DIR} .claude/settings.json`,
+    `  git -C ${dir} commit -m "Enable Draft session capture"`,
+    "",
+    dim(
+      "Until this is committed and pushed, only sessions in this working copy are captured — every " +
+        "other clone/pull gets no hook, no config, and no error; their sessions are silently never captured.",
+    ),
+  ];
 }
 
 // ── enable ───────────────────────────────────────────────────────────────
@@ -164,7 +153,111 @@ function parseEnableArgs(args: string[]): ParsedEnableArgs {
   return { agent, dir, json };
 }
 
+// Writes config.json + the hook script + merges the SessionEnd hook. When
+// `mintedCredentialId` is set, any failure here (ordinary exception or a
+// malformed settings.json) revokes that just-minted credential — an
+// unused ingest-only credential is low severity, but we don't leave one
+// active if setup never completed.
+async function writeCaptureFiles(
+  dir: string,
+  config: SessionCaptureConfig,
+  mintedCredentialId: string | null,
+): Promise<{ ok: true; hookChanged: boolean } | { ok: false; reason: "malformed_settings" | "exception"; message: string }> {
+  try {
+    await writeCaptureConfigAtomic(configPath(dir), config);
+    writeFileSync(hookScriptPath(dir), buildCaptureScript(), { mode: 0o755 });
+    chmodSync(hookScriptPath(dir), 0o755);
+
+    const result = await mutateClaudeSettingsAtomic(settingsPath(dir), mergeSessionEndHook);
+    if (!result.ok) {
+      if (mintedCredentialId) await adminRevokeSessionIngestToken(mintedCredentialId).catch(() => {});
+      return { ok: false, reason: "malformed_settings", message: `${settingsPath(dir)} is not valid JSON — fix it by hand, then re-run enable. Left unchanged.` };
+    }
+    return { ok: true, hookChanged: result.changed };
+  } catch (err) {
+    if (mintedCredentialId) await adminRevokeSessionIngestToken(mintedCredentialId).catch(() => {});
+    return { ok: false, reason: "exception", message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function printSessionsEnableHelp(): void {
+  console.log("Turn on session capture for this project.");
+  console.log("");
+  console.log(
+    "Mints a project-and-provider-scoped ingest credential, writes it to\n" +
+      ".claude/draft/config.json, and installs a SessionEnd hook in\n" +
+      ".claude/settings.json that uploads each finished session.",
+  );
+  console.log("");
+  console.log(`Usage: ${cyan("draft sessions enable")} <TOOL> [OPTIONS]`);
+  console.log("");
+  console.log("Arguments:");
+  console.log("  <TOOL>");
+  console.log("          Agent tool to capture sessions for. Only claude-code has an");
+  console.log("          install path today; other values are accepted by shared config");
+  console.log("          but not yet wired up.");
+  console.log("");
+  console.log(`          [possible values: ${SUPPORTED_AGENTS.join(", ")}]`);
+  console.log("");
+  console.log("Options:");
+  console.log("      --dir <PATH>");
+  console.log("          Project directory to configure [default: current directory]");
+  console.log("");
+  console.log("      --json");
+  console.log("          Machine-readable output");
+  console.log("");
+  console.log("  -h, --help");
+  console.log("          Print help");
+  console.log("");
+  console.log(bold("About the credential:"));
+  console.log(
+    "  The minted credential is ingest-only — it can submit sessions but cannot\n" +
+      "  read, list, or search them. It's written to a file meant to be committed\n" +
+      "  to git (.claude/draft/config.json), so anyone with repo access can use it\n" +
+      "  to submit sessions for this project; that's expected, not a leak. It\n" +
+      "  cannot act outside this one project and this one tool.",
+  );
+  console.log("");
+  console.log(
+    "  Until you commit and push .claude/draft/ and .claude/settings.json,\n" +
+      "  capture only works in this working copy — every other clone silently\n" +
+      "  gets no capture.",
+  );
+  console.log("");
+  console.log(
+    `  Use ${cyan("draft sessions rotate")} to replace the credential (old one keeps\n` +
+      `  working for a short grace window), or ${cyan("draft sessions disable")} to\n` +
+      "  revoke it.",
+  );
+}
+
+function printSessionsHelp(): void {
+  console.log("Capture, list, and search coding-agent sessions.");
+  console.log("");
+  console.log(`Usage: ${cyan("draft sessions")} <COMMAND> [ARGS]`);
+  console.log("");
+  console.log("Commands:");
+  const cmds: [string, string][] = [
+    ["enable <tool> [--dir <path>] [--json]", "Turn on session capture for this project (claude-code only today)"],
+    ["rotate [--dir <path>] [--json]", "Replace this project's ingest credential (short grace window)"],
+    ["disable [--dir <path>] [--json]", "Turn off capture and revoke this project's credential (grace window, not instant)"],
+    ["status [--dir <path>] [--json]", "Show this project's session-capture health"],
+    ["list [--provider <p>] [--user <email>] [--since <ISO>]", "List captured sessions"],
+    ["read <id> [--summary|--transcript]", "Print one session's summary or transcript"],
+    ["search \"<pattern>\"", "Search session summaries by keyword"],
+  ];
+  for (const [cmd, desc] of cmds) {
+    console.log(`  ${cyan(cmd.padEnd(56))}${desc}`);
+  }
+  console.log("");
+  console.log(`Run ${cyan("draft sessions enable --help")} for details on the credential enable mints.`);
+}
+
 export async function runSessionsEnable(args: string[]): Promise<number> {
+  if (args.includes("--help") || args.includes("-h")) {
+    printSessionsEnableHelp();
+    return EXIT_SUCCESS;
+  }
   const parsed = parseEnableArgs(args);
   if (parsed.error) {
     if (parsed.json) printJsonLine(errorPayload("invalid_usage", parsed.error));
@@ -191,26 +284,65 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
     return EXIT_OPERATIONAL_ERROR;
   }
 
-  const minted = await mintSessionIngestToken(basenameOf(dir));
-  if (!minted.ok) {
-    printFetchError("draft sessions enable", minted.code, json);
+  // Validate settings.json before minting anything — a malformed file
+  // means we refuse up front rather than orphaning a freshly minted
+  // credential.
+  const settingsCheck = readClaudeSettings(settingsPath(dir));
+  if (!settingsCheck.ok) {
+    const message = `${settingsPath(dir)} is not valid JSON — fix it by hand, then re-run enable. Left unchanged.`;
+    if (json) printJsonLine(errorPayload("malformed_settings", message));
+    else console.error(red(`draft sessions enable: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
-  const config: SessionCaptureConfig = {
-    backendUrl: getCliRuntimeConfig().apiBaseUrl,
-    workspaceId: minted.value.workspaceId,
-    ingestToken: minted.value.token,
-  };
+  const existing = readLocalConfig(dir);
 
+  let config: SessionCaptureConfig;
+  let mintedCredentialId: string | null = null;
+  if (existing && isScopedConfig(existing)) {
+    // Idempotent: a valid scoped credential already exists for this project.
+    config = existing;
+  } else {
+    const projectKey = randomUUID();
+    const minted = await mintSessionIngestToken({ label: basenameOf(dir), projectKey, allowedProviders: ["claude-code-session"] });
+    if (!minted.ok) {
+      printFetchError("draft sessions enable", minted.code, json);
+      return EXIT_OPERATIONAL_ERROR;
+    }
+    mintedCredentialId = minted.value.id;
+    config = {
+      backendUrl: getCliRuntimeConfig().apiBaseUrl,
+      workspaceId: minted.value.workspaceId,
+      ingestToken: minted.value.token,
+      projectId: minted.value.sessionProjectId,
+      projectKey,
+      allowedProviders: ["claude-code-session"],
+      credentialScope: minted.value.credentialScope,
+    };
+  }
+
+  // Runs unconditionally so a repeated `enable` also repairs a hook the
+  // user deleted, even when the credential itself was already valid.
   mkdirSync(dirname(configPath(dir)), { recursive: true });
-  writeFileSync(configPath(dir), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-  writeFileSync(hookScriptPath(dir), CAPTURE_SCRIPT, { mode: 0o755 });
-  chmodSync(hookScriptPath(dir), 0o755);
-  const hookChanged = mergeSessionEndHook(dir);
+  const written = await writeCaptureFiles(dir, config, mintedCredentialId);
+  if (!written.ok) {
+    if (json) printJsonLine(errorPayload(written.reason, written.message));
+    else console.error(red(`draft sessions enable: ${written.message}`));
+    return EXIT_OPERATIONAL_ERROR;
+  }
+  const hookChanged = written.hookChanged;
 
   if (json) {
-    printJsonLine({ status: "ok", dir, configPath: configPath(dir), hookChanged });
+    printJsonLine({
+      status: "ok",
+      dir,
+      configPath: configPath(dir),
+      hookChanged,
+      credentialScope: config.credentialScope,
+      commitRequired: true,
+      uncommittedConsequence:
+        "Only sessions in this working copy are captured until config and hook are committed and pushed; other clones silently get no capture.",
+    });
     return EXIT_SUCCESS;
   }
 
@@ -218,16 +350,63 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   console.log(`${dim("✓")} Wrote ${hookScriptPath(dir)}`);
   console.log(`${dim("✓")} ${hookChanged ? "Added" : "Already had"} the SessionEnd hook in ${settingsPath(dir)}`);
   console.log("");
-  console.log("Review the diff and commit these files — Draft never commits on your behalf:");
-  console.log(`  git -C ${dir} status`);
-  console.log(`  git -C ${dir} add ${DRAFT_DIR} .claude/settings.json`);
-  console.log(`  git -C ${dir} commit -m "Enable Draft session capture"`);
+  console.log(`${config.credentialScope} — anyone with access to this repo can use it to submit sessions (it cannot read them).`);
+  console.log("");
+  for (const line of commitReminderLines(dir)) console.log(line);
   return EXIT_SUCCESS;
 }
 
-function basenameOf(dir: string): string {
-  const parts = dir.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? dir;
+// ── rotate ───────────────────────────────────────────────────────────────
+
+export async function runSessionsRotate(args: string[]): Promise<number> {
+  const json = args.includes("--json");
+  let dir: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--dir") dir = args[++i];
+    else if (args[i]?.startsWith("--dir=")) dir = args[i]!.slice("--dir=".length);
+    else if (args[i] !== "--json") {
+      const message = `unknown argument: ${args[i]}`;
+      if (json) printJsonLine(errorPayload("invalid_usage", message));
+      else console.error(red(`draft sessions rotate: ${message}`));
+      return EXIT_USAGE_ERROR;
+    }
+  }
+
+  const resolvedDir = resolveDir(dir);
+  const existing = readLocalConfig(resolvedDir);
+  if (!existing || !isScopedConfig(existing)) {
+    const message = `no project ingest credential found at ${configPath(resolvedDir)} — run \`draft sessions enable claude-code\` first.`;
+    if (json) printJsonLine(errorPayload("not_enabled", message));
+    else console.error(red(`draft sessions rotate: ${message}`));
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  const rotated = await rotateSessionIngestToken(existing.ingestToken);
+  if (!rotated.ok) {
+    printFetchError("draft sessions rotate", rotated.code, json);
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  const nextConfig: SessionCaptureConfig = { ...existing, ingestToken: rotated.value.token };
+  try {
+    await writeCaptureConfigAtomic(configPath(resolvedDir), nextConfig);
+  } catch (err) {
+    await adminRevokeSessionIngestToken(rotated.value.id).catch(() => {});
+    const message = err instanceof Error ? err.message : String(err);
+    if (json) printJsonLine(errorPayload("setup_failed", message));
+    else console.error(red(`draft sessions rotate: ${message}`));
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  if (json) {
+    printJsonLine({ status: "ok", dir: resolvedDir, configPath: configPath(resolvedDir), commitRequired: true });
+    return EXIT_SUCCESS;
+  }
+  console.log(`${dim("✓")} Rotated the ingest credential and wrote ${configPath(resolvedDir)}`);
+  console.log(dim("The old credential keeps working for a short grace window, then stops."));
+  console.log("");
+  for (const line of commitReminderLines(resolvedDir)) console.log(line);
+  return EXIT_SUCCESS;
 }
 
 // ── disable ──────────────────────────────────────────────────────────────
@@ -247,20 +426,47 @@ export async function runSessionsDisable(args: string[]): Promise<number> {
   }
 
   const resolvedDir = resolveDir(dir);
-  const hookRemoved = removeSessionEndHook(resolvedDir);
+  const existing = readLocalConfig(resolvedDir);
+
+  let revoked = false;
+  if (existing?.ingestToken) {
+    const result = await revokeSessionIngestTokenWithGrace(existing.ingestToken);
+    revoked = result.ok;
+  }
+
+  const settingsResult = await mutateClaudeSettingsAtomic(settingsPath(resolvedDir), removeSessionEndHook);
+  if (!settingsResult.ok) {
+    const message = `${settingsPath(resolvedDir)} is not valid JSON — fix it by hand. The hook was left in place; the credential was still revoked.`;
+    if (json) printJsonLine(errorPayload("malformed_settings", message));
+    else console.error(red(`draft sessions disable: ${message}`));
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
   const configExisted = existsSync(configPath(resolvedDir));
   if (configExisted) writeFileSync(configPath(resolvedDir), "{}\n");
 
   if (json) {
-    printJsonLine({ status: "ok", dir: resolvedDir, hookRemoved, configExisted });
+    printJsonLine({ status: "ok", dir: resolvedDir, hookRemoved: settingsResult.changed, configExisted, revoked });
     return EXIT_SUCCESS;
   }
-  console.log(`${dim("✓")} ${hookRemoved ? "Removed" : "No"} SessionEnd hook in ${settingsPath(resolvedDir)}`);
-  console.log(dim("The ingest token stays active server-side — revoking it isn't wired up here yet."));
+  console.log(`${dim("✓")} ${settingsResult.changed ? "Removed" : "No"} SessionEnd hook in ${settingsPath(resolvedDir)}`);
+  console.log(
+    revoked
+      ? dim("The ingest credential will stop working after a short grace window.")
+      : dim("No active local credential to revoke."),
+  );
   return EXIT_SUCCESS;
 }
 
 // ── status ───────────────────────────────────────────────────────────────
+
+function isExecutable(path: string): boolean {
+  try {
+    return (statSync(path).mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
 
 export async function runSessionsStatus(args: string[]): Promise<number> {
   const json = args.includes("--json");
@@ -271,29 +477,54 @@ export async function runSessionsStatus(args: string[]): Promise<number> {
   }
 
   const resolvedDir = resolveDir(dir);
+  const settingsResult = readClaudeSettings(settingsPath(resolvedDir));
+  const hookInstalled = settingsResult.ok && hasSessionEndHook(settingsResult.settings);
+  const settingsMalformed = !settingsResult.ok;
+
+  const rawConfig = readLocalConfig(resolvedDir);
   const configExists = existsSync(configPath(resolvedDir));
-  const hookInstalled = hasSessionEndHook(readSettings(settingsPath(resolvedDir)));
+  const configValid = !!rawConfig && !!rawConfig.backendUrl && !!rawConfig.workspaceId && !!rawConfig.ingestToken;
+  const projectScoped = !!rawConfig && isScopedConfig(rawConfig);
+  const credentialFormatValid = !!rawConfig?.ingestToken?.startsWith(INGEST_TOKEN_PREFIX);
+  const draftBinaryPath = resolveDraftBinaryPath(process.env, isExecutable);
+  const lastEvent = readLastIngestEvent(resolvedDir);
 
   if (json) {
-    printJsonLine({ dir: resolvedDir, configExists, hookInstalled });
+    printJsonLine({
+      dir: resolvedDir,
+      hookInstalled,
+      settingsMalformed,
+      configExists,
+      configValid,
+      projectScoped,
+      projectId: projectScoped ? (rawConfig as SessionCaptureConfig).projectId : null,
+      credentialFormatValid,
+      draftBinaryPath,
+      lastIngestAttempt: lastEvent,
+    });
     return EXIT_SUCCESS;
   }
+
   console.log(`dir: ${resolvedDir}`);
-  console.log(`config: ${configExists ? "present" : "missing"}`);
-  console.log(`SessionEnd hook: ${hookInstalled ? "installed" : "not installed"}`);
+  console.log(`SessionEnd hook: ${hookInstalled ? "installed" : "not installed"}${settingsMalformed ? " (settings.json is malformed — can't tell)" : ""}`);
+  console.log(`config: ${configExists ? (configValid ? "present, valid" : "present, invalid") : "missing"}`);
+  console.log(`project scope: ${projectScoped ? "project-scoped" : configExists ? "legacy (workspace-scoped)" : "n/a"}`);
+  console.log(`credential shape: ${credentialFormatValid ? "looks valid" : "missing or malformed"}`);
+  console.log(`draft binary: ${draftBinaryPath ?? "not found on any resolved path"}`);
+  console.log(`last ingest attempt: ${lastEvent ? `${lastEvent.status} at ${lastEvent.ts}${lastEvent.detail ? ` (${lastEvent.detail})` : ""}` : "none recorded"}`);
   return EXIT_SUCCESS;
 }
 
 // ── ingest (hook-only) ──────────────────────────────────────────────────
 
-function findConfigUpward(startDir: string): { path: string; config: SessionCaptureConfig } | null {
+function findConfigUpward(startDir: string): { path: string; dir: string; config: SessionCaptureConfig | LegacyOrScopedConfig } | null {
   let dir = startDir;
   for (;;) {
     const candidate = configPath(dir);
     if (existsSync(candidate)) {
       try {
-        const config = JSON.parse(readFileSync(candidate, "utf8")) as SessionCaptureConfig;
-        if (config.backendUrl && config.workspaceId && config.ingestToken) return { path: candidate, config };
+        const config = JSON.parse(readFileSync(candidate, "utf8")) as LegacyOrScopedConfig;
+        if (config.backendUrl && config.workspaceId && config.ingestToken) return { path: candidate, dir, config };
       } catch {
         // fall through — try CLAUDE_PROJECT_DIR below
       }
@@ -306,13 +537,43 @@ function findConfigUpward(startDir: string): { path: string; config: SessionCapt
   return null;
 }
 
-function logIngestFailure(reason: string): void {
+interface IngestLogEntry {
+  ts: string;
+  status: "success" | "failure" | "skipped";
+  dir: string;
+  sessionId?: string;
+  detail?: string;
+}
+
+function ingestLogPath(): string {
+  return join(process.env.HOME ?? "/tmp", ".draft", "log", "sessions-ingest.log");
+}
+
+function logIngestEvent(entry: Omit<IngestLogEntry, "ts">): void {
   try {
-    const logDir = join(process.env.HOME ?? "/tmp", ".draft", "log");
+    const logDir = dirname(ingestLogPath());
     mkdirSync(logDir, { recursive: true });
-    writeFileSync(join(logDir, "sessions-ingest.log"), `${new Date().toISOString()} ${reason}\n`, { flag: "a" });
+    writeFileSync(ingestLogPath(), `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`, { flag: "a" });
   } catch {
     // best-effort logging only
+  }
+}
+
+function readLastIngestEvent(dir: string): IngestLogEntry | null {
+  try {
+    if (!existsSync(ingestLogPath())) return null;
+    const lines = readFileSync(ingestLogPath(), "utf8").trim().split("\n").filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const entry = JSON.parse(lines[i]!) as IngestLogEntry;
+        if (entry.dir === dir) return entry;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -334,7 +595,7 @@ export async function runSessionsIngest(): Promise<number> {
     const raw = await new Response(Bun.stdin.stream()).text();
     hookInput = JSON.parse(raw);
   } catch {
-    logIngestFailure("skipped malformed-hook-input");
+    logIngestEvent({ status: "skipped", dir: process.cwd(), detail: "malformed-hook-input" });
     return EXIT_SUCCESS;
   }
 
@@ -342,18 +603,18 @@ export async function runSessionsIngest(): Promise<number> {
   const projectDir = process.env.CLAUDE_PROJECT_DIR ?? cwd;
   const resolved = findConfigUpward(projectDir) ?? findConfigUpward(cwd);
   if (!resolved) {
-    logIngestFailure("skipped missing-project-config");
+    logIngestEvent({ status: "skipped", dir: projectDir, detail: "missing-project-config" });
     return EXIT_SUCCESS;
   }
 
   if (!hookInput.session_id || !hookInput.transcript_path || !existsSync(hookInput.transcript_path)) {
-    logIngestFailure(`${hookInput.session_id ?? "unknown"} skipped missing-transcript`);
+    logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "missing-transcript" });
     return EXIT_SUCCESS;
   }
 
   const gitEmail = gitConfigValue(cwd, "user.email");
   if (!gitEmail) {
-    logIngestFailure(`${hookInput.session_id} skipped missing-git-email`);
+    logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "missing-git-email" });
     return EXIT_SUCCESS;
   }
   const displayName = gitConfigValue(cwd, "user.name");
@@ -362,7 +623,7 @@ export async function runSessionsIngest(): Promise<number> {
   try {
     transcript = readFileSync(hookInput.transcript_path, "utf8");
   } catch {
-    logIngestFailure(`${hookInput.session_id} skipped unreadable-transcript`);
+    logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "unreadable-transcript" });
     return EXIT_SUCCESS;
   }
 
@@ -385,9 +646,19 @@ export async function runSessionsIngest(): Promise<number> {
       headers,
       body: transcript,
     });
-    logIngestFailure(`${hookInput.session_id} ${response.ok ? "ok" : `failed status=${response.status}`}`);
+    logIngestEvent({
+      status: response.ok ? "success" : "failure",
+      dir: resolved.dir,
+      sessionId: hookInput.session_id,
+      detail: response.ok ? undefined : `status=${response.status}`,
+    });
   } catch (err) {
-    logIngestFailure(`${hookInput.session_id} failed ${err instanceof Error ? err.message : String(err)}`);
+    logIngestEvent({
+      status: "failure",
+      dir: resolved.dir,
+      sessionId: hookInput.session_id,
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
   return EXIT_SUCCESS;
 }
@@ -566,8 +837,13 @@ export async function runSessionsSearch(args: string[]): Promise<number> {
 
 export async function runSessions(args: string[]): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === "--help" || sub === "-h") {
+    printSessionsHelp();
+    return EXIT_SUCCESS;
+  }
   switch (sub) {
     case "enable": return runSessionsEnable(rest);
+    case "rotate": return runSessionsRotate(rest);
     case "disable": return runSessionsDisable(rest);
     case "status": return runSessionsStatus(rest);
     case "ingest": return runSessionsIngest();
@@ -575,7 +851,7 @@ export async function runSessions(args: string[]): Promise<number> {
     case "read": return runSessionsRead(rest);
     case "search": return runSessionsSearch(rest);
     default:
-      console.error(red(`draft sessions: unknown subcommand${sub ? ` "${sub}"` : ""}. Use enable, disable, status, list, read, or search.`));
+      console.error(red(`draft sessions: unknown subcommand${sub ? ` "${sub}"` : ""}. Use enable, rotate, disable, status, list, read, or search.`));
       return EXIT_USAGE_ERROR;
   }
 }

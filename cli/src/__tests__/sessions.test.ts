@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execSync } from "child_process";
@@ -33,11 +33,21 @@ describe("draft sessions enable", () => {
     const configPath = join(project, ".claude", "draft", "config.json");
     expect(existsSync(configPath)).toBe(true);
     const config = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(config).toEqual({ backendUrl: backend.url, workspaceId: "ws-1", ingestToken: "draft_sit_cred-1_secret" });
+    expect(config).toMatchObject({
+      backendUrl: backend.url,
+      workspaceId: "ws-1",
+      ingestToken: "draft_sit_cred-1_secret",
+      projectId: "project-1",
+      allowedProviders: ["claude-code-session"],
+      credentialScope: "ingest-only, shared with repo access",
+    });
+    expect(typeof config.projectKey).toBe("string");
+    expect(config.projectKey.length).toBeGreaterThan(0);
+    expect(statSync(configPath).mode & 0o777).toBe(0o600);
 
     const hookScriptPath = join(project, ".claude", "draft", "capture-session.sh");
     expect(existsSync(hookScriptPath)).toBe(true);
-    expect(readFileSync(hookScriptPath, "utf8")).toContain("draft sessions ingest");
+    expect(readFileSync(hookScriptPath, "utf8")).toContain("sessions ingest");
 
     const settingsPath = join(project, ".claude", "settings.json");
     expect(existsSync(settingsPath)).toBe(true);
@@ -74,11 +84,11 @@ describe("draft sessions enable", () => {
 });
 
 describe("draft sessions disable", () => {
-  test("removes the SessionEnd hook but leaves the ingest token concept alone", async () => {
+  test("removes the SessionEnd hook and grace-window-revokes the credential", async () => {
     await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
     const result = await runCli(["sessions", "disable", "--dir", project, "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ status: "ok", hookRemoved: true });
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "ok", hookRemoved: true, revoked: true });
 
     const settings = JSON.parse(readFileSync(join(project, ".claude", "settings.json"), "utf8"));
     expect(settings.hooks?.SessionEnd ?? []).toEqual([]);
@@ -86,7 +96,59 @@ describe("draft sessions disable", () => {
 
   test("is a no-op when nothing was enabled", async () => {
     const result = await runCli(["sessions", "disable", "--dir", project, "--json"], { home, apiUrl: backend.url });
-    expect(JSON.parse(result.stdout)).toMatchObject({ hookRemoved: false });
+    expect(JSON.parse(result.stdout)).toMatchObject({ hookRemoved: false, revoked: false });
+  });
+});
+
+describe("draft sessions rotate", () => {
+  test("mints a replacement credential and rewrites config.json", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    const result = await runCli(["sessions", "rotate", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "ok" });
+
+    const config = JSON.parse(readFileSync(join(project, ".claude", "draft", "config.json"), "utf8"));
+    expect(config.ingestToken).toBe("draft_sit_cred-2_secret");
+    expect(config.projectId).toBe("project-1");
+  });
+
+  test("without an existing config, reports an operational error", async () => {
+    const result = await runCli(["sessions", "rotate", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+  });
+
+  test("rejects when the presented token doesn't verify", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    backend.state.sessionTokensRotateResponse = () => Response.json({ ok: false, error: "invalid_ingest_token" }, { status: 401 });
+    const result = await runCli(["sessions", "rotate", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+  });
+});
+
+describe("malformed settings.json", () => {
+  test("enable refuses and leaves the file byte-for-byte unchanged", async () => {
+    const settingsPath = join(project, ".claude", "settings.json");
+    execSync(`mkdir -p ${join(project, ".claude")}`);
+    writeFileSync(settingsPath, "{ not json");
+    const before = readFileSync(settingsPath, "utf8");
+
+    const result = await runCli(["sessions", "enable", "claude-code", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(readFileSync(settingsPath, "utf8")).toBe(before);
+
+    const configPath = join(project, ".claude", "draft", "config.json");
+    expect(existsSync(configPath)).toBe(false);
+  });
+
+  test("disable refuses and leaves the file byte-for-byte unchanged", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    const settingsPath = join(project, ".claude", "settings.json");
+    writeFileSync(settingsPath, "{ not json");
+    const before = readFileSync(settingsPath, "utf8");
+
+    const result = await runCli(["sessions", "disable", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(readFileSync(settingsPath, "utf8")).toBe(before);
   });
 });
 
