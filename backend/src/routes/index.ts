@@ -16,6 +16,7 @@ import * as sessions from "./sessions";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
 import * as whoami from "./whoami";
+import * as waitlist from "./waitlist";
 import * as workspaceContext from "./workspace-context";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
@@ -24,6 +25,7 @@ import { OPTIONS, withCors } from "../auth/with-cors";
 export const routes = {
   "/health": { GET: health.GET },
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
+  "/waitlist": { POST: waitlist.POST },
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
   "/workspaces/:id/context": { GET: workspaceContext.contextGET },
   "/workspaces/:id/connections": { GET: connections.GET, POST: connections.POST },
