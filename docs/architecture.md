@@ -42,7 +42,7 @@ The Bun CLI is a thin authenticated client for the Draft API. It supports auth, 
 
 ### Agent connection
 
-The current CLI/plugin path installs project-local or tool-specific hooks. A session hook can read a completed coding-agent transcript and post it to the backend using a workspace-scoped ingest token. The agent connection surface is evolving, so new connection methods should share the API contract without assuming the current plugin shape is permanent.
+The current CLI/plugin path installs project-local or tool-specific hooks. A session hook can read a completed coding-agent transcript and post it to the backend using an ingest token scoped to one project and provider set — a token minted for one project cannot submit sessions for another, even within the same workspace. The agent connection surface is evolving, so new connection methods should share the API contract without assuming the current plugin shape is permanent.
 
 ### Background daemon
 
