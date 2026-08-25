@@ -489,7 +489,7 @@ export default function LiveDemo() {
             textAlign: "center",
           }}
         >
-          Hosted or self-hosted · Open source · Human-reviewed updates
+          Hosted or self-hosted · Open source
         </span>
       </div>
 
