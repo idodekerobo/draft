@@ -7,5 +7,8 @@
     "cli",
     "core",
     "desktop"
-  ]
+  ],
+  "devDependencies": {
+    "railway": "3.11.0"
+  }
 }
