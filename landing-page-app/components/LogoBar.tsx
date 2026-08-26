@@ -1,3 +1,4 @@
+/** @deprecated Legacy landing trust bar. The active homepage uses LandingPage.tsx. */
 "use client";
 
 const GITHUB_URL = "https://github.com/idodekerobo/draft";

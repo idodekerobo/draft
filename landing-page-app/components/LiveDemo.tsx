@@ -1,3 +1,4 @@
+/** @deprecated Legacy landing demo. The active homepage uses LandingPage.tsx. */
 "use client";
 
 import { useState, useEffect } from "react";

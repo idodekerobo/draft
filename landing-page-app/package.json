@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prebuild": "mkdir -p public && cp ../assets/icon.png app/icon.png && cp ../assets/og-image.png public/og-image.png && cp ../assets/og-image.png app/opengraph-image.png",
+    "prebuild": "mkdir -p public && cp ../assets/icon.png app/icon.png && cp ../assets/og-image.png public/og-image.png && cp ../assets/og-image.png app/opengraph-image.png && cp ../assets/onboarding-screenshot.png public/onboarding-screenshot.png && cp ../assets/context-screenshot.png public/context-screenshot.png && cp ../assets/github-screenshot.png public/github-screenshot.png && cp ../assets/granola-screenshot.png public/granola-screenshot.png && cp ../assets/slack-screenshot.png public/slack-screenshot.png",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

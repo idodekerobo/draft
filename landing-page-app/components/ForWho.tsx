@@ -1,3 +1,4 @@
+/** @deprecated Legacy landing audience section. The active homepage uses LandingPage.tsx. */
 "use client";
 
 import { useEffect, useRef } from "react";
