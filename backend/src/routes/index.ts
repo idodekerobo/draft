@@ -15,6 +15,7 @@ import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
+import * as synthesisSchedule from "./synthesis-schedule";
 import * as whoami from "./whoami";
 import * as waitlist from "./waitlist";
 import * as workspaceContext from "./workspace-context";
@@ -32,6 +33,7 @@ export const routes = {
   "/workspaces/:id/connections/:provider": { PATCH: connections.PATCH, DELETE: connections.DELETE },
   "/workspaces/:id/connections/:provider/channels": { GET: connections.CHANNELS_GET },
   "/workspaces/:id/synthesis-runs": { GET: synthesisRuns.GET, POST: synthesisRuns.POST },
+  "/workspaces/:id/synthesis-schedule": { GET: synthesisSchedule.GET, PATCH: synthesisSchedule.PATCH },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/github/install-sessions": { POST: githubInstall.createPOST },
   "/workspaces/:id/github/install-sessions/:code": { GET: githubInstall.pollGET },

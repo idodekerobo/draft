@@ -6,6 +6,7 @@ interface FakeWorkspace {
   id: string;
   runs_enabled: boolean;
   max_runs_per_day: number | null;
+  inference_credential_id?: string | null;
 }
 
 function createFakeClient(workspace: FakeWorkspace, runCountToday: number) {
@@ -16,7 +17,12 @@ function createFakeClient(workspace: FakeWorkspace, runCountToday: number) {
           select: () => ({
             eq: (_field: string, _value: string) => ({
               single: async () => ({
-                data: { runs_enabled: workspace.runs_enabled, max_runs_per_day: workspace.max_runs_per_day },
+                data: {
+                  runs_enabled: workspace.runs_enabled,
+                  max_runs_per_day: workspace.max_runs_per_day,
+                  inference_credential_id:
+                    "inference_credential_id" in workspace ? workspace.inference_credential_id : "cred-1",
+                },
                 error: null,
               }),
             }),
@@ -61,5 +67,14 @@ describe("checkRunAllowed", () => {
     const client = createFakeClient({ id: "w1", runs_enabled: true, max_runs_per_day: 3 }, 2);
     const result = await checkRunAllowed("w1", client);
     expect(result).toEqual({ ok: true });
+  });
+
+  it("denies when no inference credential is configured", async () => {
+    const client = createFakeClient(
+      { id: "w1", runs_enabled: true, max_runs_per_day: null, inference_credential_id: null },
+      0,
+    );
+    const result = await checkRunAllowed("w1", client);
+    expect(result).toEqual({ ok: false, reason: "no inference credential configured for this workspace" });
   });
 });

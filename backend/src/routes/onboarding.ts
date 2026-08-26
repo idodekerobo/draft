@@ -7,6 +7,12 @@ import type { UserRow } from "../types/tables";
 // when unset, so repeat calls (the desktop app calls this once, at the end
 // of its onboarding wizard, but retries on network failure) keep the
 // original completion timestamp instead of bumping it forward.
+//
+// TODO: once this route (or whatever replaces it) creates workspaces
+// directly, it must call createInitialWorkspaceSynthesis()
+// (backend/src/synthesis/register-workspace-synthesis.ts) for each new
+// workspace — see backend/scripts/create-organization.ts for the current
+// call site.
 export const POST = withCors(withAuth(async (_req, caller) => {
   const { data: existing, error: readError } = await serviceClient
     .from("users")

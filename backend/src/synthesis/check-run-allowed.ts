@@ -22,14 +22,23 @@ export async function checkRunAllowed(
 ): Promise<CheckRunAllowedResult> {
   const { data: workspaceData, error: workspaceError } = await client
     .from("workspaces")
-    .select("runs_enabled, max_runs_per_day")
+    .select("runs_enabled, max_runs_per_day, inference_credential_id")
     .eq("id", workspaceId)
     .single();
   if (workspaceError) throw workspaceError;
-  const workspace = workspaceData as Pick<WorkspaceRow, "runs_enabled" | "max_runs_per_day">;
+  const workspace = workspaceData as Pick<
+    WorkspaceRow,
+    "runs_enabled" | "max_runs_per_day" | "inference_credential_id"
+  >;
 
   if (!workspace.runs_enabled) {
     return { ok: false, reason: "runs_enabled is false for this workspace" };
+  }
+
+  // Fail fast here rather than deep inside resolveInferenceCredential,
+  // after prepareRun has already created a synthesis_runs row.
+  if (!workspace.inference_credential_id) {
+    return { ok: false, reason: "no inference credential configured for this workspace" };
   }
 
   if (workspace.max_runs_per_day !== null) {

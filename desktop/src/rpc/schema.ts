@@ -356,6 +356,15 @@ export interface SlackMembershipReconcileResult {
   }>;
 }
 
+export interface SynthesisSchedule {
+  enabled: boolean;
+  scheduleKind: "cron" | "interval";
+  cronExpression: string | null;
+  intervalSeconds: number | null;
+  nextDueAt: string | null;
+  lastEnqueuedAt: string | null;
+}
+
 export interface ContextFileEntry {
   relativePath: string;
   label: string;
@@ -421,6 +430,12 @@ export type AppRPCType = {
 
       /** Rich connection status for all intelligence tools and input sources. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
+
+      /** Read the workspace's synthesize_workspace schedule (cadence + enabled). Null if not signed in or no schedule exists yet. */
+      getSynthesisSchedule: { params: void; response: SynthesisSchedule | null };
+
+      /** Toggle the workspace's synthesis schedule on/off. Cadence editing isn't supported yet. */
+      setSynthesisEnabled: { params: { enabled: boolean }; response: ActionResult & { schedule?: SynthesisSchedule } };
 
       /** Disconnect an input source. granola/github flip connected=false in integrations.json; slack/fireflies/linear/claude_session revoke the workspace's cloud source_connections row. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "claude_session" }; response: ActionResult };
