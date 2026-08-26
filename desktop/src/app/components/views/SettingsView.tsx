@@ -3,7 +3,7 @@
 // Sections (top → bottom):
 //   Context             — Apply team context mode
 //   Input Sources       — which integrations are connected; disconnect action
-//   System              — Draft Cloud sign-in, Enable notifications
+//   System              — Draft Cloud sign-in, notifications, synthesis schedule
 //   Privacy             — interaction recording opt-out
 //   Updates             — current version, check for updates
 //
@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfig } from "../../../rpc/schema";
+import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfig, SynthesisSchedule } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
@@ -34,6 +34,18 @@ function relativeTime(iso: string | null): string {
   if (diffH < 24)   return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
   return `${diffD}d ago`;
+}
+
+// Only one cadence is offered today (see register-workspace-synthesis.ts); falls
+// back to the raw cron/interval if a workspace ever has something else.
+function describeSynthesisCadence(schedule: SynthesisSchedule): string {
+  if (schedule.scheduleKind === "cron" && schedule.cronExpression === "0 0,4,8,9-18,22 * * *") {
+    return "Hourly, 9am–6pm UTC; every ~4h overnight";
+  }
+  if (schedule.scheduleKind === "interval" && schedule.intervalSeconds) {
+    return `Every ${Math.round(schedule.intervalSeconds / 60)} minutes`;
+  }
+  return schedule.cronExpression ?? "Custom schedule";
 }
 
 // ── Sub-components: Controls ───────────────────────────────────────────────────
@@ -195,6 +207,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
   const [calUrl, setCalUrl]                = useState<string>("");
+  const [synthesisSchedule, setSynthesisSchedule] = useState<SynthesisSchedule | null>(null);
+  const [synthesisSaving, setSynthesisSaving] = useState(false);
 
   const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
   const { cloudSignIn, cloudSignInError, handleCloudSignIn, handleCloudSignOut } = useCloudSignIn();
@@ -210,12 +224,14 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       rpc.request.getConnectedApps(),
       rpc.request.getAppVersion(),
       rpc.request.getCrispConfig(),
+      rpc.request.getSynthesisSchedule(),
     ])
-      .then(([config, connectedApps, appVersion, crispConfig]) => {
+      .then(([config, connectedApps, appVersion, crispConfig, synthesisSchedule]) => {
         setSettings(config);
         setApps(connectedApps);
         setVersionInfo(appVersion);
         setCalUrl(crispConfig.cal_url);
+        setSynthesisSchedule(synthesisSchedule);
       })
       .catch(() => setLoadError("Failed to load settings."));
   }, [activeProfile]);
@@ -294,6 +310,28 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       setSaveError("Disconnect failed.");
     } finally {
       setDisconnecting(null);
+    }
+  }
+
+  // ── Synthesis schedule ─────────────────────────────────────────────────────
+  async function handleToggleSynthesis(enabled: boolean) {
+    if (!synthesisSchedule) return;
+    const previous = synthesisSchedule;
+    setSynthesisSchedule({ ...synthesisSchedule, enabled });
+    setSynthesisSaving(true);
+    try {
+      const result = await rpc.request.setSynthesisEnabled({ enabled });
+      if (result.ok && result.schedule) {
+        setSynthesisSchedule(result.schedule);
+      } else {
+        setSynthesisSchedule(previous);
+        setSaveError(result.error ?? "Save failed.");
+      }
+    } catch {
+      setSynthesisSchedule(previous);
+      setSaveError("Save failed.");
+    } finally {
+      setSynthesisSaving(false);
     }
   }
 
@@ -468,6 +506,21 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 onChange={(v) => void patch({ notificationsEnabled: v })}
               />
             </div>
+            {synthesisSchedule && (
+              <div className="settings__row">
+                <div className="settings__row-content">
+                  <span className="settings__row-label">Synthesize workspace context</span>
+                  <span className="settings__row-desc">
+                    {describeSynthesisCadence(synthesisSchedule)}
+                  </span>
+                </div>
+                <Toggle
+                  checked={synthesisSchedule.enabled}
+                  disabled={synthesisSaving}
+                  onChange={(v) => void handleToggleSynthesis(v)}
+                />
+              </div>
+            )}
           </div>
         </section>
 

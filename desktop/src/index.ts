@@ -55,6 +55,7 @@ import type {
   IntegrationDetail,
   SlackChannelOption,
   SlackMembershipReconcileResult,
+  SynthesisSchedule,
   WorkspaceRun,
 } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
@@ -688,6 +689,31 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Disconnect failed." };
+        }
+      },
+
+      getSynthesisSchedule: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return null;
+        try {
+          return await fetchServerJSON<SynthesisSchedule>(`workspaces/${workspaceId}/synthesis-schedule`);
+        } catch {
+          return null;
+        }
+      },
+
+      setSynthesisEnabled: async ({ enabled }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          const schedule = await fetchServerJSON<SynthesisSchedule>(`workspaces/${workspaceId}/synthesis-schedule`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled }),
+          });
+          return { ok: true, schedule };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not update the synthesis schedule." };
         }
       },
 
