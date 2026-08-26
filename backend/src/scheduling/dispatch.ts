@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
+import { OccurrenceAlreadyDispatchedError } from "../synthesis/prepare-run";
 import { materializeSlackBatches } from "../ingestion/slack/materialize-batches";
 import { getReadySourceItemIds } from "../synthesis/get-ready-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
@@ -88,6 +89,8 @@ async function dispatchSynthesizeWorkspace(
   } catch (error) {
     // launchSynthesisRun already logs a denial to `errors` -- don't double-log.
     if (error instanceof RunNotAllowedError) return;
+    // Another dispatch already claimed this occurrence -- not a failure.
+    if (error instanceof OccurrenceAlreadyDispatchedError) return;
     throw error;
   }
 }

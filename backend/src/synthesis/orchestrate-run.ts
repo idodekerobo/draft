@@ -6,7 +6,12 @@ import {
 } from "../sandbox";
 import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
 import { commitSynthesisResult } from "./commit-result";
-import { markRunFailed, markRunLaunched, prepareRun } from "./prepare-run";
+import {
+  markRunFailed,
+  markRunLaunched,
+  OccurrenceAlreadyDispatchedError,
+  prepareRun,
+} from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type {
@@ -75,6 +80,9 @@ export async function launchSynthesisRun(
 
     return { runId, machineId: receipt.machineId, bundleHash: receipt.bundleHash };
   } catch (error) {
+    // Not a failure -- another dispatch already claimed this occurrence.
+    if (error instanceof OccurrenceAlreadyDispatchedError) throw error;
+
     await recordError({
       client,
       workspaceId: options.workspaceId,

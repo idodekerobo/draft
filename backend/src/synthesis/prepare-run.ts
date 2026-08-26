@@ -10,7 +10,8 @@ import type { SourceItemRow, WorkspaceRow } from "../types/tables";
 // way that should be distinguishable in synthesis_runs.prompt_version history.
 const PROMPT_VERSION = "synthesis-v1";
 
-// Postgres unique_violation, raised here by synthesis_runs_one_active_writer.
+// Postgres unique_violation, raised here by synthesis_runs_one_active_writer
+// or synthesis_runs_workspace_id_idempotency_key_key.
 const UNIQUE_VIOLATION = "23505";
 
 // Thrown when a workspace already has a run in preparing/running/validating/
@@ -20,6 +21,15 @@ export class WorkspaceRunAlreadyActiveError extends Error {
   constructor(public readonly workspaceId: string) {
     super(`Workspace ${workspaceId} already has an active synthesis run`);
     this.name = "WorkspaceRunAlreadyActiveError";
+  }
+}
+
+// Thrown on an idempotency-key collision -- this occurrence was already
+// dispatched by another caller. Safe to treat as a no-op.
+export class OccurrenceAlreadyDispatchedError extends Error {
+  constructor(public readonly workspaceId: string, public readonly idempotencyKey: string) {
+    super(`Occurrence ${idempotencyKey} for workspace ${workspaceId} was already dispatched`);
+    this.name = "OccurrenceAlreadyDispatchedError";
   }
 }
 
@@ -129,13 +139,15 @@ export async function prepareRun(
     .select("id")
     .single();
   if (runError) {
-    // Checked by message, not just the 23505 code: a (workspace_id,
-    // idempotency_key) collision is a different, unrelated situation.
-    if (
-      runError.code === UNIQUE_VIOLATION &&
-      runError.message.includes("synthesis_runs_one_active_writer")
-    ) {
-      throw new WorkspaceRunAlreadyActiveError(options.workspaceId);
+    // Checked by message, not just the 23505 code: the two constraints this
+    // table can violate mean different things to the caller.
+    if (runError.code === UNIQUE_VIOLATION) {
+      if (runError.message.includes("synthesis_runs_one_active_writer")) {
+        throw new WorkspaceRunAlreadyActiveError(options.workspaceId);
+      }
+      if (runError.message.includes("synthesis_runs_workspace_id_idempotency_key_key")) {
+        throw new OccurrenceAlreadyDispatchedError(options.workspaceId, idempotencyKey);
+      }
     }
     throw runError;
   }
