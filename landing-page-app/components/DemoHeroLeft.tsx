@@ -1,3 +1,4 @@
+/** @deprecated Legacy landing hero copy. The active homepage uses LandingPage.tsx. */
 "use client";
 
 import { usePostHog } from "posthog-js/react";

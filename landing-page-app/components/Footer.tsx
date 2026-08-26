@@ -1,3 +1,4 @@
+/** @deprecated Legacy landing footer. The active homepage uses LandingPage.tsx. */
 "use client";
 
 import Link from "next/link";

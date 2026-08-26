@@ -1,3 +1,4 @@
+/** @deprecated Legacy landing features. The active homepage uses LandingPage.tsx. */
 "use client";
 
 import { useEffect, useRef } from "react";

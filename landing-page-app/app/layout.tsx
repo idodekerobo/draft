@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
-import { Fraunces, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { PostHogProvider } from "@/lib/PostHogProvider";
 import CrispChat from "@/components/CrispChat";
 import "./globals.css";
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-fraunces",
-  axes: ["opsz"],
-  display: "swap",
-});
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -26,22 +19,22 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://draftai.us"),
-  title: "Draft - The company brain for teams using AI agents",
+  title: "Draft — Shared context for AI-native teams",
   description:
-    "Draft turns your company's decisions, priorities, and activity into shared context every connected AI agent can use.",
+    "Draft keeps your company's decisions, customer context, and priorities current across every AI session your team starts.",
   openGraph: {
-    title: "Draft - The company brain for teams using AI agents",
+    title: "Draft — Shared context for AI-native teams",
     description:
-      "Draft turns your company's decisions, priorities, and activity into shared context every connected AI agent can use.",
+      "Draft keeps your company's decisions, customer context, and priorities current across every AI session your team starts.",
     url: "https://draftai.us",
     siteName: "Draft",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Draft - The company brain for teams using AI agents",
+    title: "Draft — Shared context for AI-native teams",
     description:
-      "Draft turns your company's decisions, priorities, and activity into shared context every connected AI agent can use.",
+      "Draft keeps your company's decisions, customer context, and priorities current across every AI session your team starts.",
   },
 };
 
@@ -53,7 +46,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${fraunces.variable} ${jakarta.variable} ${jetbrains.variable} antialiased`}
+        className={`${jakarta.variable} ${jetbrains.variable} antialiased`}
       >
         <PostHogProvider>
           {children}
