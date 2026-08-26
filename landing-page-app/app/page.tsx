@@ -1,11 +1,4 @@
-import Nav from "@/components/Nav";
-import DemoHero from "@/components/DemoHero";
-import ForWho from "@/components/ForWho";
-import LogoBar from "@/components/LogoBar";
-import Features from "@/components/Features";
-import HowItWorks from "@/components/HowItWorks";
-import CTASection from "@/components/CTASection";
-import Footer from "@/components/Footer";
+import LandingPage from "@/components/LandingPage";
 import WaitlistModal from "@/components/WaitlistModal";
 import { SectionObserver } from "@/components/SectionObserver";
 
@@ -13,14 +6,7 @@ export default function Home() {
   return (
     <main>
       <SectionObserver />
-      <Nav />
-      <DemoHero />
-      <ForWho />
-      <LogoBar />
-      <Features />
-      <HowItWorks />
-      <CTASection />
-      <Footer />
+      <LandingPage />
       <WaitlistModal />
     </main>
   );
