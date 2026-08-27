@@ -94,17 +94,21 @@ export async function loadValidatedRunBundle(
   const baseVersion = versionResult.data as WorkspaceContextVersionRow;
   const memberships = (membershipResult.data ?? []) as Membership[];
 
-  let sourceRows: Source[] = [];
+  let sourcesById = new Map<string, Source>();
   if (memberships.length > 0) {
+    // Filtered by workspace_id, not by the membership id list itself -- an
+    // .in() over that list put every id in the request URL, which stops
+    // working once a run's membership set gets large enough (~600+ ids).
     const sourceResult = await client
       .from("source_items")
       .select("id, workspace_id, external_version, content_markdown, content_hash")
-      .in("id", memberships.map(({ source_item_id }) => source_item_id));
+      .eq("workspace_id", run.workspace_id);
     if (sourceResult.error) throw sourceResult.error;
-    sourceRows = (sourceResult.data ?? []) as Source[];
+    sourcesById = new Map(
+      ((sourceResult.data ?? []) as Source[]).map((source) => [source.id, source]),
+    );
   }
 
-  const sourcesById = new Map(sourceRows.map((source) => [source.id, source]));
   const sources: RunBundleSource[] = memberships.map((membership) => {
     const item = sourcesById.get(membership.source_item_id);
     if (!item) throw new Error(`Missing source item ${membership.source_item_id}`);
