@@ -432,6 +432,7 @@ export async function runClaudeOnce(
 
   const stdoutFile = createWriteStream(scratchStdoutPath, { flags: "wx", mode: 0o600 });
   let stdout = "";
+  let stderr = "";
   let stdoutBytes = 0;
   let stderrBytes = 0;
   let overflow = false;
@@ -447,7 +448,9 @@ export async function runClaudeOnce(
   });
   child.stderr?.on("data", (chunk: Buffer) => {
     stderrBytes += chunk.length;
-    failureCategory = classifyClaudeFailureChunk(chunk.toString("utf8"), failureCategory);
+    const text = chunk.toString("utf8");
+    stderr += text;
+    failureCategory = classifyClaudeFailureChunk(text, failureCategory);
   });
 
   let timedOut = false;
@@ -496,7 +499,17 @@ export async function runClaudeOnce(
   });
   const finalResult = success
     ? payload
-    : { error: failure!.failureCode, diagnostics: failure! };
+    : {
+        error: failure!.failureCode,
+        diagnostics: failure!,
+        stderr,
+        // The envelope's own error text (its `result` field when
+        // is_error) is usually more diagnostic than raw stderr.
+        envelope_result:
+          envelope?.is_error === true && typeof envelope.result === "string"
+            ? envelope.result
+            : undefined,
+      };
 
   return {
     success,
