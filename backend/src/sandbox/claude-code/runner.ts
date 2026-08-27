@@ -188,10 +188,30 @@ export function claudeCommandArgs(prompt: string, serializedSchema: string): str
     "dontAsk",
     "--no-session-persistence",
     "--output-format",
-    "json",
+    "stream-json",
+    "--verbose",
     "--json-schema",
     serializedSchema,
   ];
+}
+
+// Every line of stream-json output is its own JSON message (system init,
+// assistant turns, tool calls/results, and the final "result" envelope).
+// Kept alongside parseCompletedClaudeEnvelope rather than replacing it --
+// this returns the whole transcript, that one still finds just the
+// terminal envelope for control flow.
+export function parseStreamJsonTranscript(raw: string): unknown[] {
+  const messages: unknown[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      messages.push(JSON.parse(trimmed));
+    } catch {
+      // Non-JSON progress/partial lines are expected in a streamed buffer.
+    }
+  }
+  return messages;
 }
 
 export function readOutputSchema(path: string, inputRoot = "/run/input"): string {
@@ -265,6 +285,7 @@ async function callback(
   runId: string,
   bundleHash: string,
   body: unknown,
+  transcript: unknown[] | undefined,
 ): Promise<void> {
   const delays = [0, 1_000, 3_000, 7_000];
   let lastError = "callback failed";
@@ -281,7 +302,12 @@ async function callback(
           "x-draft-run-id": runId,
           "x-draft-bundle-hash": bundleHash,
         },
-        body: JSON.stringify({ run_id: runId, bundle_hash: bundleHash, result: body }),
+        body: JSON.stringify({
+          run_id: runId,
+          bundle_hash: bundleHash,
+          result: body,
+          ...(transcript !== undefined ? { transcript } : {}),
+        }),
         signal: AbortSignal.timeout(15_000),
       });
       response.body?.cancel().catch(() => undefined);
@@ -326,12 +352,20 @@ async function reportAndExit(input: {
   callbackToken: string;
   runId: string;
   bundleHash: string;
+  transcript?: unknown[];
 }): Promise<void> {
   mkdirSync("/run/output", { recursive: true });
   chownSync("/run/output", 0, 0);
   chmodSync("/run/output", 0o750);
   atomicWriteJson(OUTPUT_PATH, input.finalResult);
-  await callback(input.callbackUrl, input.callbackToken, input.runId, input.bundleHash, input.finalResult);
+  await callback(
+    input.callbackUrl,
+    input.callbackToken,
+    input.runId,
+    input.bundleHash,
+    input.finalResult,
+    input.transcript,
+  );
 
   runnerLog("final", {
     run_id: input.runId,
@@ -402,6 +436,7 @@ export interface RunClaudeOnceResult {
   finalResult: unknown;
   failureCode: RunnerFailureCode | "none";
   diagnostics: FinalDiagnosticInput;
+  transcript: unknown[];
 }
 
 // scratchStdoutPath must be unique per invocation within a run -- it's
@@ -503,12 +538,6 @@ export async function runClaudeOnce(
         error: failure!.failureCode,
         diagnostics: failure!,
         stderr,
-        // The envelope's own error text (its `result` field when
-        // is_error) is usually more diagnostic than raw stderr.
-        envelope_result:
-          envelope?.is_error === true && typeof envelope.result === "string"
-            ? envelope.result
-            : undefined,
       };
 
   return {
@@ -516,6 +545,7 @@ export async function runClaudeOnce(
     finalResult,
     failureCode: failure?.failureCode ?? "none",
     diagnostics: diagnosticsInput,
+    transcript: parseStreamJsonTranscript(stdout),
   };
 }
 
@@ -720,6 +750,7 @@ export async function main(): Promise<void> {
     callbackToken,
     runId,
     bundleHash,
+    transcript: result.transcript,
   });
 }
 

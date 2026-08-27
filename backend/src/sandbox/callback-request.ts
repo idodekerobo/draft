@@ -5,7 +5,27 @@ import {
 
 const BUNDLE_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
-export const DEFAULT_SANDBOX_CALLBACK_BODY_LIMIT_BYTES = 1024 * 1024;
+// Exported so tests can cover unset/valid/invalid values directly, without
+// re-importing the module to trigger the env read.
+export function parseByteEnvVar(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === "") return fallback;
+  if (!/^[1-9][0-9]*$/.test(raw)) {
+    throw new Error(`Invalid byte size env var value: ${raw}`);
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`Invalid byte size env var value: ${raw}`);
+  }
+  return value;
+}
+
+// 8 MB: comfortably above a realistic Read/Glob-only, single-prompt
+// stream-json transcript, same order of magnitude as the runner's own 16 MB
+// stdout capture ceiling. Override via SANDBOX_CALLBACK_BODY_LIMIT_BYTES.
+export const DEFAULT_SANDBOX_CALLBACK_BODY_LIMIT_BYTES = parseByteEnvVar(
+  process.env.SANDBOX_CALLBACK_BODY_LIMIT_BYTES,
+  8 * 1024 * 1024,
+);
 
 export interface AuthenticateSandboxCallbackRequestOptions {
   /** Unix timestamp in milliseconds, forwarded to callback token verification. */
@@ -17,6 +37,8 @@ export interface AuthenticatedSandboxCallbackRequest {
   runId: string;
   bundleHash: string;
   result: unknown;
+  /** Full sandbox transcript (stream-json message array), when the caller sent one. */
+  transcript?: unknown[];
   claims: SandboxCallbackClaims;
 }
 
@@ -129,7 +151,9 @@ function topLevelKeys(source: string): string[] {
   return keys;
 }
 
-function parseBody(bytes: Uint8Array): { run_id: string; bundle_hash: string; result: unknown } {
+function parseBody(
+  bytes: Uint8Array,
+): { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[] } {
   let source: string;
   let parsed: unknown;
   try {
@@ -142,9 +166,17 @@ function parseBody(bytes: Uint8Array): { run_id: string; bundle_hash: string; re
     return reject("Callback body is invalid");
   }
 
+  // "transcript" is optional -- batch/summarization callbacks don't send
+  // one -- everything else about this shape stays exact-match strict.
+  const required = new Set(["run_id", "bundle_hash", "result"]);
+  const optional = new Set(["transcript"]);
   const keys = topLevelKeys(source);
-  const expected = new Set(["run_id", "bundle_hash", "result"]);
-  if (keys.length !== expected.size || new Set(keys).size !== keys.length || keys.some((key) => !expected.has(key))) {
+  const seen = new Set(keys);
+  if (
+    seen.size !== keys.length ||
+    keys.some((key) => !required.has(key) && !optional.has(key)) ||
+    [...required].some((key) => !seen.has(key))
+  ) {
     return reject("Callback body fields are invalid");
   }
 
@@ -157,7 +189,10 @@ function parseBody(bytes: Uint8Array): { run_id: string; bundle_hash: string; re
   ) {
     return reject("Callback body identifiers are invalid");
   }
-  return body as { run_id: string; bundle_hash: string; result: unknown };
+  if (body.transcript !== undefined && !Array.isArray(body.transcript)) {
+    return reject("Callback body transcript must be an array");
+  }
+  return body as { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[] };
 }
 
 /**
@@ -219,6 +254,7 @@ export async function authenticateSandboxCallbackRequest(
     runId: claims.runId,
     bundleHash: claims.bundleHash,
     result: body.result,
+    transcript: body.transcript,
     claims,
   };
 }

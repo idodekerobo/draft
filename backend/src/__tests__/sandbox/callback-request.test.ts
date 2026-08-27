@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   authenticateSandboxCallbackRequest,
+  parseByteEnvVar,
   SandboxCallbackRequestError,
 } from "../../sandbox/callback-request";
 import { createSandboxCallbackToken } from "../../sandbox/callback-token";
@@ -149,6 +150,43 @@ describe("sandbox callback request authentication", () => {
     ).rejects.toThrow("Callback body is too large");
   });
 
+  it("accepts an optional transcript array and returns it", async () => {
+    const body = JSON.stringify({
+      run_id: runId,
+      bundle_hash: bundleHash,
+      result: { ok: true },
+      transcript: [{ type: "system" }, { type: "result", is_error: false }],
+    });
+    await expect(authenticateSandboxCallbackRequest(callbackRequest({ body }), secret, { now })).resolves.toEqual({
+      runId,
+      bundleHash,
+      result: { ok: true },
+      transcript: [{ type: "system" }, { type: "result", is_error: false }],
+      claims,
+    });
+  });
+
+  it("rejects a transcript that isn't an array", async () => {
+    const body = JSON.stringify({
+      run_id: runId,
+      bundle_hash: bundleHash,
+      result: { ok: true },
+      transcript: "not-an-array",
+    });
+    await expect(authenticateSandboxCallbackRequest(callbackRequest({ body }), secret, { now })).rejects.toThrow(
+      "Callback body transcript must be an array",
+    );
+  });
+
+  it("still accepts a body with no transcript field at all", async () => {
+    await expect(authenticateSandboxCallbackRequest(callbackRequest(), secret, { now })).resolves.toEqual({
+      runId,
+      bundleHash,
+      result: { ok: true },
+      claims,
+    });
+  });
+
   it("never leaks token, secret, or result content in errors", async () => {
     const resultMarker = "private-result-marker";
     const token = createSandboxCallbackToken(claims, secret);
@@ -164,5 +202,20 @@ describe("sandbox callback request authentication", () => {
     expect(message).not.toContain(secret);
     expect(message).not.toContain("wrong-secret-marker");
     expect(message).not.toContain(resultMarker);
+  });
+});
+
+describe("parseByteEnvVar", () => {
+  it("returns the fallback when unset or empty", () => {
+    expect(parseByteEnvVar(undefined, 42)).toBe(42);
+    expect(parseByteEnvVar("", 42)).toBe(42);
+  });
+
+  it("parses a valid positive integer string", () => {
+    expect(parseByteEnvVar("8388608", 42)).toBe(8_388_608);
+  });
+
+  it.each(["0", "-1", "1.5", "abc", " 1", "1 "])("rejects an invalid value %p", (raw) => {
+    expect(() => parseByteEnvVar(raw, 42)).toThrow("Invalid byte size env var value");
   });
 });

@@ -16,6 +16,9 @@ create table synthesis_runs (
   outcome                     text check (outcome in ('changed', 'no_change', 'failure', 'stale')),
   result_summary               text,
   result_hash                  text check (result_hash is null or result_hash ~ '^[0-9a-f]{64}$'),
+  -- Full stream-json transcript (array of message objects) from the sandbox
+  -- run, captured on both success and failure.
+  transcript_json               jsonb,
   needs_input_json              jsonb,
   needs_input_resolution        text,
   needs_input_resolved_at       timestamptz,

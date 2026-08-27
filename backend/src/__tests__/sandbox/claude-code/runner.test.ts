@@ -14,6 +14,7 @@ import {
   parseBatchManifest,
   parseCompletedClaudeEnvelope,
   parseResultPayload,
+  parseStreamJsonTranscript,
   readOutputSchema,
   parseTimeoutSeconds,
   recomputeBundleHash,
@@ -21,7 +22,7 @@ import {
   shouldRetryCallback,
 } from "../../../sandbox/claude-code/runner";
 
-test("Claude command is read-only, noninteractive, ephemeral, and schema-constrained", () => {
+test("Claude command is read-only, noninteractive, ephemeral, streamed, and schema-constrained", () => {
   const schema = '{"type":"object","required":["outcome"]}';
   expect(claudeCommandArgs("inspect the input", schema)).toEqual([
     "-p",
@@ -32,10 +33,36 @@ test("Claude command is read-only, noninteractive, ephemeral, and schema-constra
     "dontAsk",
     "--no-session-persistence",
     "--output-format",
-    "json",
+    "stream-json",
+    "--verbose",
     "--json-schema",
     schema,
   ]);
+});
+
+describe("parseStreamJsonTranscript", () => {
+  test("collects every valid JSON line into an array", () => {
+    const raw = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":"looking at the bundle"}}',
+      '{"type":"result","is_error":false,"structured_output":{"outcome":"no_change"}}',
+    ].join("\n");
+    expect(parseStreamJsonTranscript(raw)).toEqual([
+      { type: "system", subtype: "init" },
+      { type: "assistant", message: { content: "looking at the bundle" } },
+      { type: "result", is_error: false, structured_output: { outcome: "no_change" } },
+    ]);
+  });
+
+  test("skips blank lines and non-JSON noise without throwing", () => {
+    const raw = '\n{"type":"system"}\n\nnot json\n  \n{"type":"result","is_error":true}\n';
+    expect(parseStreamJsonTranscript(raw)).toEqual([{ type: "system" }, { type: "result", is_error: true }]);
+  });
+
+  test("returns an empty array for empty input", () => {
+    expect(parseStreamJsonTranscript("")).toEqual([]);
+    expect(parseStreamJsonTranscript("   \n  \n")).toEqual([]);
+  });
 });
 
 describe("Claude result detection", () => {

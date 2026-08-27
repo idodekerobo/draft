@@ -184,6 +184,7 @@ export interface SynthesisRunRow {
   outcome: SynthesisRunOutcome | null;
   result_summary: string | null;
   result_hash: string | null;
+  transcript_json: unknown[] | null;
   needs_input_json: unknown[] | null;
   needs_input_resolution: string | null;
   needs_input_resolved_at: string | null;

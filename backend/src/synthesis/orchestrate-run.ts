@@ -135,6 +135,24 @@ export async function completeSynthesisRunCallback(
     const authenticated = await authenticateSandboxCallbackRequest(request, callbackSecret);
     runId = authenticated.runId;
 
+    // Best-effort and unconditional: saved before validation/commit so it
+    // lands even when validateSynthesisResult throws immediately (a
+    // runner-reported failure has no `outcome`), and a write hiccup here
+    // must never block recording the run's actual outcome below.
+    if (authenticated.transcript !== undefined) {
+      try {
+        const { error: transcriptError } = await resolvedClient
+          .from("synthesis_runs")
+          .update({ transcript_json: authenticated.transcript })
+          .eq("id", runId);
+        if (transcriptError) {
+          console.error("completeSynthesisRunCallback: transcript_json update failed", transcriptError);
+        }
+      } catch (transcriptError) {
+        console.error("completeSynthesisRunCallback: transcript_json update threw", transcriptError);
+      }
+    }
+
     if (typeof authenticated.result === "object" && authenticated.result !== null) {
       const result = authenticated.result as Record<string, unknown>;
       if ("error" in result) runnerReportedResult = result;
