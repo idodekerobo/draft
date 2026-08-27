@@ -96,23 +96,21 @@ function createFakeClient(options: FakeClientOptions = {}) {
 
     if (table === "source_items") {
       return {
-        select: () => ({
-          in: (_column: string, values: string[]) => {
-            let filtered = sourceItems.filter((item) => values.includes(item.id));
-            const query = {
-              eq: (column: string, value: string) => {
-                filtered = filtered.filter(
-                  (item) => item[column as keyof typeof item] === value,
-                );
-                return query;
-              },
-              then: (
-                resolve: (value: { data: typeof sourceItems; error: null }) => void,
-              ) => resolve({ data: filtered, error: null }),
-            };
-            return query;
-          },
-        }),
+        select: () => {
+          let filtered = sourceItems;
+          const query = {
+            eq: (column: string, value: string) => {
+              filtered = filtered.filter(
+                (item) => item[column as keyof typeof item] === value,
+              );
+              return query;
+            },
+            then: (
+              resolve: (value: { data: typeof sourceItems; error: null }) => void,
+            ) => resolve({ data: filtered, error: null }),
+          };
+          return query;
+        },
       };
     }
 
