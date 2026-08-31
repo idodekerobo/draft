@@ -134,7 +134,7 @@ function Hero() {
     <section id="top" className="landing-hero">
       <div className="landing-shell landing-hero-grid">
         <div className="landing-hero-copy">
-          <p className="landing-kicker landing-reveal">The company brain for AI-native teams</p>
+          <p className="landing-kicker landing-reveal">The company brain and agent harness for AI-native teams</p>
           <h1 className="landing-display landing-reveal landing-reveal-delay-1">
             One company brain. Every agent in sync.
           </h1>
