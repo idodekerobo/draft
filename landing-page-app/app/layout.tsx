@@ -19,11 +19,11 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://draftai.us"),
-  title: "Draft — Shared context for AI-native teams",
+  title: "Draft - Open source company brain and harness for AI-native teams",
   description:
     "Draft keeps your company's decisions, customer context, and priorities current across every AI session your team starts.",
   openGraph: {
-    title: "Draft — Shared context for AI-native teams",
+    title: "Draft - Open source company brain and harness for AI-native teams",
     description:
       "Draft keeps your company's decisions, customer context, and priorities current across every AI session your team starts.",
     url: "https://draftai.us",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Draft — Shared context for AI-native teams",
+    title: "Draft - Open source company brain and harness for AI-native teams",
     description:
       "Draft keeps your company's decisions, customer context, and priorities current across every AI session your team starts.",
   },
