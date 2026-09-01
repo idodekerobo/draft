@@ -18,6 +18,11 @@ Key routing rules:
 - Architecture review → invoke plan-eng-review
 - Fly sandbox image/Dockerfile/entrypoint/runner changes, new Fly sandbox environment → invoke fly-sandbox-image
 
+## Writing Code
+- Comments on SQL files that explain the data model or functions are fine
+- For source code, only leave comments for code that is unituitive from the code itself. When you do, you should keep them clean/concise trying not to exceed 3 lines.
+- `// TODO:` comments are acceptable for future work or items that need to be picked up later.
+
 ## Database changes (backend/Supabase)
 
 `supabase/migrations/` is the applied source of truth (the Supabase CLI
