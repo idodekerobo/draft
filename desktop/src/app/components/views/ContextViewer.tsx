@@ -459,7 +459,7 @@ function SessionPreviewPanel({ preview, loading }: { preview: SessionPreview | n
           <span className="context-token-pill__dot" />
           {formatted}
         </span>
-        <span className="context-session-meta__note">injected at every session start</span>
+        <span className="context-session-meta__note">current context preview</span>
       </div>
       <div className="context-session-scroll">
         <pre className="context-session-pre">{preview.text}</pre>

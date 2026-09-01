@@ -33,14 +33,6 @@ export function getBundledBackgroundDir(): string {
   return join(import.meta.dir, "../../../background");
 }
 
-/** Path to bundled cli-agent-plugin/ assets. Falls back to repo sibling in dev mode. */
-export function getBundledPluginDir(): string {
-  const resources = getBundleResourcesPath();
-  // Electrobun places copy: assets under Resources/app/, not Resources/ directly
-  if (resources) return join(resources, "app", "plugin");
-  return join(import.meta.dir, "../../../cli-agent-plugin");
-}
-
 /** Path to bundled compiled draft binary. Returns null in dev mode (binary not compiled). */
 export function getBundledBinPath(): string | null {
   const execPath = process.execPath;

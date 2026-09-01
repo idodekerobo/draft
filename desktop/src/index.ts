@@ -8,7 +8,7 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, readCollaboration, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
@@ -27,7 +27,6 @@ import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import {
   getBundledBackgroundDir,
   getBundledDaemonBinPath,
-  getBundledPluginDir,
 } from "./main/bundlePath";
 import { runInstall, syncExtractedBins } from "./main/installer";
 import { setNotificationsEnabled } from "./main/notifications";
@@ -125,6 +124,100 @@ function splitFrontmatter(content: string): { frontmatterRaw: string; body: stri
   if (end === -1) return { frontmatterRaw: "", body: content };
   const body = content.slice(end + 4).replace(/^\n/, "");
   return { frontmatterRaw: content.slice(0, content.length - body.length), body };
+}
+
+/**
+ * Render the context that the desktop's Session view previews.
+ *
+ * This intentionally reads the active profile directly instead of invoking
+ * the legacy agent-plugin hook. The agent integrations may be absent while
+ * the desktop app and its background daemon remain installed.
+ */
+function buildSessionPreview(): { text: string; tokenEstimate: number } {
+  const workspace = getWorkspacePath(getActiveProfile());
+  const contextDir = join(workspace, "context");
+  const personalDir = join(DRAFT_ROOT, "personal");
+  const local = readLocalConfig(workspace);
+  const disabled = new Set(local.ok ? local.config.disabledContextSections ?? [] : []);
+  const lines: string[] = [
+    "# Draft — Workspace Context",
+    "",
+    `**Active profile:** ${getActiveProfile()}`,
+    `**DRAFT_WORKSPACE:** ${workspace}`,
+    "",
+    "## Workspace structure",
+  ];
+
+  if (!existsSync(contextDir)) {
+    lines.push("(context/ not found — run /draft:setup)");
+  } else {
+    try {
+      for (const entry of readdirSync(contextDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        if (entry.name.startsWith(".")) continue;
+        const entryPath = join(contextDir, entry.name);
+        if (entry.isDirectory()) {
+          lines.push(`${entry.name}/`);
+          for (const child of readdirSync(entryPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+            if (!child.name.startsWith(".")) lines.push(`  ${child.name}`);
+          }
+        } else {
+          lines.push(entry.name);
+        }
+      }
+    } catch {
+      lines.push("(unable to read context structure)");
+    }
+  }
+
+  lines.push("", "## Context index");
+  let indexFiles: string[] = [];
+  try {
+    indexFiles = readdirSync(contextDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !disabled.has(entry.name) && existsSync(join(contextDir, entry.name, "index.md")))
+      .map((entry) => join(contextDir, entry.name, "index.md"))
+      .sort();
+  } catch { /* missing or unreadable context is handled below */ }
+
+  if (indexFiles.length === 0) {
+    lines.push("No context loaded yet — run /draft:setup to initialize your shared context layer.");
+  } else {
+    for (const indexPath of indexFiles) {
+      try {
+        const content = readFileSync(indexPath, "utf8");
+        const dimension = indexPath.split("/").at(-2) ?? "context";
+        const end = content.startsWith("---") ? content.indexOf("\n---", 3) : -1;
+        const frontmatter = end >= 0 ? content.slice(3, end).trim() : content.slice(0, 300).trim();
+        lines.push(`**${dimension}**`, frontmatter, "");
+      } catch { /* skip an unreadable dimension */ }
+    }
+  }
+
+  if (!disabled.has("priorities")) {
+    lines.push("## Current priorities");
+    const priorities = join(contextDir, "priorities", "index.md");
+    try { lines.push(existsSync(priorities) ? readFileSync(priorities, "utf8").trimEnd() : "No priorities recorded yet."); }
+    catch { lines.push("No priorities recorded yet."); }
+  }
+
+  const memoryPath = join(personalDir, "memory.md");
+  if (!disabled.has("memory") && existsSync(memoryPath)) {
+    lines.push("", "## Memory");
+    try { lines.push(readFileSync(memoryPath, "utf8").trimEnd()); }
+    catch { /* missing memory is non-fatal */ }
+  }
+
+  const collaboration = readCollaboration(workspace);
+  if (collaboration.ok && collaboration.collab.mode === "github") {
+    lines.push(
+      "",
+      "## Collaboration",
+      `mode: github`,
+      `teammates: ${(collaboration.collab.teammates ?? []).join(", ") || "—"}`,
+    );
+  }
+
+  const text = lines.join("\n");
+  return { text, tokenEstimate: Math.ceil(text.length / 4) };
 }
 
 function logEntryLabel(filename: string): string {
@@ -749,23 +842,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       getSessionPreview: async () => {
-        const scriptPath = `${process.env.HOME}/.draft/shared/hooks/inject-context.sh`;
-        if (!existsSync(scriptPath)) {
-          return { text: "", tokenEstimate: 0 };
-        }
-        try {
-          const proc = Bun.spawn(["bash", scriptPath], {
-            stdin: "ignore",
-            stdout: "pipe",
-            stderr: "ignore",
-            env: { ...process.env } as Record<string, string>,
-          });
-          const text = await new Response(proc.stdout as ReadableStream<Uint8Array>).text();
-          await proc.exited;
-          return { text, tokenEstimate: Math.ceil(text.length / 4) };
-        } catch {
-          return { text: "", tokenEstimate: 0 };
-        }
+        return buildSessionPreview();
       },
 
       getContextSections: async () => {
@@ -1848,25 +1925,6 @@ async function syncBundledAssets(): Promise<void> {
     } catch (err) {
       console.warn(`[draft-desktop] daemon runtime sync failed: ${err instanceof Error ? err.message : err}`);
       return;
-    }
-  }
-
-  // ── Plugin content (skills, agents, hooks) ──────────────────────────────────
-  const pluginDir = getBundledPluginDir();
-  const populateScript = join(pluginDir, "scripts", "populate-shared.sh");
-
-  if (existsSync(populateScript)) {
-    try {
-      const result = await capture(["bash", populateScript], {
-        env: { PLUGIN_ROOT: pluginDir, USE_LOCAL: "true" },
-      });
-      if (result.exitCode === 0) {
-        console.log(`[draft-desktop] plugin content synced to ${appVersion}`);
-      } else {
-        console.warn(`[draft-desktop] plugin sync failed (exit ${result.exitCode}): ${result.stderr.slice(0, 200)}`);
-      }
-    } catch (err) {
-      console.warn(`[draft-desktop] plugin sync failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
