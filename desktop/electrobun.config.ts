@@ -66,7 +66,6 @@ export default {
       "src/app/index.css":  "views/app/index.css",
       // Bundled at build time by desktop/scripts/prebuild.sh
       "assets/background/": "background/",
-      "assets/plugin/":     "plugin/",
     },
     mac: {
       icons: "assets/icon.iconset",

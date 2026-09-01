@@ -3,11 +3,10 @@
 #
 # What this does:
 #   1. Copies background/ daemon scripts → desktop/assets/background/
-#   2. Copies cli-agent-plugin/ → desktop/assets/plugin/
-#   3. Builds tmux (and libevent) from source → desktop/assets/bin/tmux
-#   4. Compiles the draft CLI as a standalone binary → desktop/assets/bin/draft
-#   5. Compiles the daemon binary → desktop/assets/background/draft-background-bin
-#   6. Stages the app icon set
+#   2. Builds tmux (and libevent) from source → desktop/assets/bin/tmux
+#   3. Compiles the draft CLI as a standalone binary → desktop/assets/bin/draft
+#   4. Compiles the daemon binary → desktop/assets/background/draft-background-bin
+#   5. Stages the app icon set
 #
 # Run before every build. Idempotent — wipes and recreates assets/ each time.
 # assets/ is gitignored (build artifact, not committed). The tmux build is cached
@@ -27,7 +26,7 @@ log() { echo -e "${GREEN}[prebuild]${NC} $1"; }
 # ── Clean ──────────────────────────────────────────────────────────────────────
 
 rm -rf "$ASSETS_DIR"
-mkdir -p "$ASSETS_DIR/background" "$ASSETS_DIR/plugin" "$ASSETS_DIR/bin"
+mkdir -p "$ASSETS_DIR/background" "$ASSETS_DIR/bin"
 
 # ── 1. Copy daemon scripts ─────────────────────────────────────────────────────
 
@@ -114,13 +113,7 @@ rm -rf "$SMOKE_ROOT"
 trap - EXIT
 log "  Done"
 
-# ── 2. Copy plugin assets ──────────────────────────────────────────────────────
-
-log "Copying cli-agent-plugin/..."
-cp -r "$REPO_ROOT/cli-agent-plugin/." "$ASSETS_DIR/plugin/"
-log "  Done"
-
-# ── 3. Build tmux from source ─────────────────────────────────────────────────
+# ── 2. Build tmux from source ─────────────────────────────────────────────────
 #
 # This used to `cp $(which tmux)` from the build machine, which shipped a
 # Homebrew binary to every user: it dynamically linked
@@ -370,6 +363,5 @@ log "  Done ($(find "$ASSETS_DIR/icon.iconset" -type f | wc -l | tr -d ' ') file
 echo ""
 log "Assets ready in desktop/assets/"
 echo "  background/  $(find "$ASSETS_DIR/background" -type f | wc -l | tr -d ' ') files"
-echo "  plugin/      $(find "$ASSETS_DIR/plugin" -type f | wc -l | tr -d ' ') files"
 echo "  bin/draft    $(du -sh "$ASSETS_DIR/bin/draft" | cut -f1)"
 echo ""

@@ -6,10 +6,7 @@
 // `draft add <tool>` is no longer invoked automatically here — as of the
 // Stage 2 CLI rebuild it only configures a project-local instruction file
 // (CLAUDE.md/AGENTS.md/HERMES.md) and requires an explicit --dir, so it has
-// nothing useful to do at desktop first-launch time. What (if anything)
-// replaces the old plugin/skill/daemon install step this used to trigger is
-// an open desktop-architecture question, tracked separately — not decided
-// here. See TODOS.md.
+// nothing useful to do at desktop first-launch time.
 //
 // Idempotent — safe to call if partially or fully installed.
 

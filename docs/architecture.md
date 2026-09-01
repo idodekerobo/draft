@@ -38,15 +38,15 @@ The desktop can also read a local folder during onboarding to seed a workspace. 
 
 ### CLI
 
-The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's own hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code) — the desktop app is no longer the only client that manages connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
+The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
 
 ### Agent connection
 
-The current CLI/plugin path installs project-local or tool-specific hooks. A session hook can read a completed coding-agent transcript and post it to the backend using an ingest token scoped to one project and provider set — a token minted for one project cannot submit sessions for another, even within the same workspace. The agent connection surface is evolving, so new connection methods should share the API contract without assuming the current plugin shape is permanent.
+The CLI and tool-specific setup commands install project-local hooks. A session hook can read a completed coding-agent transcript and post it to the backend using an ingest token scoped to one project and provider set — a token minted for one project cannot submit sessions for another, even within the same workspace. Agent connections use the API contract and support multiple local setup methods.
 
 ### Background daemon
 
-The `background/` module is still used by the local desktop/plugin runtime. It provides the installed daemon, local pollers, session jobs, and bundled source/intelligence adapters. `desktop/scripts/prebuild.sh` copies and bundles it into desktop assets, and `make dev-refresh` installs the refreshed local runtime. It is a transitional local path; hosted production ingestion and synthesis are owned by the Bun backend and Fly Machine sandbox.
+The `background/` module powers the local desktop runtime. It provides the installed daemon, local pollers, session jobs, and bundled source/intelligence adapters. `desktop/scripts/prebuild.sh` copies and bundles it into desktop assets, and `make dev-refresh` installs the local runtime. Agent connections are opt-in through the CLI or tool-specific setup. Hosted production ingestion and synthesis run through the Bun backend and Fly Machine sandbox; the background module handles local capture and source processing.
 
 ## Backend
 
@@ -86,4 +86,4 @@ The repository does not currently provide a one-command production deployment. O
 
 ## GitHub
 
-GitHub is a source integration. The backend can receive GitHub App events, the desktop can use GitHub source import during onboarding, and `draft integrations connect github` in the CLI drives the same App-installation flow — see [CLI reference](./cli.md#hosted-integrations). The old private-repository context-publish/load workflow is not the current collaboration architecture.
+GitHub is a source integration. The backend can receive GitHub App events, the desktop can use GitHub source import during onboarding, and `draft integrations connect github` in the CLI drives the same App-installation flow — see [CLI reference](./cli.md#hosted-integrations). Collaboration uses hosted workspace context and the backend API.
