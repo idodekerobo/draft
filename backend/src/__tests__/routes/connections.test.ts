@@ -16,6 +16,8 @@ interface Connection {
   config_json: Record<string, unknown>;
   workspace_id: string;
   updated_at?: string;
+  connected_by_user_id?: string | null;
+  external_account_id?: string | null;
 }
 
 interface Credential {
@@ -46,13 +48,20 @@ interface OperatorError {
   detail_json: Record<string, unknown>;
 }
 
+interface User {
+  id: string;
+  display_name: string | null;
+  email: string;
+}
+
 const state: {
   connections: Connection[];
   credentials: Credential[];
   scheduledTasks: ScheduledTask[];
   workspaces: Workspace[];
   errors: OperatorError[];
-} = { connections: [], credentials: [], scheduledTasks: [], workspaces: [], errors: [] };
+  users: User[];
+} = { connections: [], credentials: [], scheduledTasks: [], workspaces: [], errors: [], users: [] };
 
 function matches(row: object, filters: Record<string, unknown>): boolean {
   const values = row as Record<string, unknown>;
@@ -66,11 +75,13 @@ function createFakeClient() {
       let payload: Record<string, unknown> = {};
       const filters: Record<string, unknown> = {};
       const inFilters: Record<string, unknown[]> = {};
+      const notFilters: Record<string, unknown> = {};
       let selected = "";
       let returnSingle = false;
 
       const rowMatches = (row: object) => matches(row, filters) && Object.entries(inFilters)
-        .every(([key, values]) => values.includes((row as Record<string, unknown>)[key]));
+        .every(([key, values]) => values.includes((row as Record<string, unknown>)[key]))
+        && Object.entries(notFilters).every(([key, value]) => (row as Record<string, unknown>)[key] !== value);
 
       const execute = async () => {
         if (table === "source_connections") {
@@ -175,6 +186,11 @@ function createFakeClient() {
           }
         }
 
+        if (table === "users" && operation === "select") {
+          const rows = state.users.filter(rowMatches).map((row) => ({ ...row }));
+          return { data: returnSingle ? rows[0] ?? null : rows, error: null };
+        }
+
         if (table === "errors" && operation === "insert") {
           if (errorsInsertError) return { data: null, error: errorsInsertError };
           state.errors.push(payload as unknown as OperatorError);
@@ -195,6 +211,10 @@ function createFakeClient() {
         },
         in(column: string, values: unknown[]) {
           inFilters[column] = values;
+          return builder;
+        },
+        neq(column: string, value: unknown) {
+          notFilters[column] = value;
           return builder;
         },
         update(nextPayload: Record<string, unknown>) {
@@ -278,7 +298,11 @@ function createFakeClient() {
           candidate.status !== "revoked"
         );
         if (!connection) {
-          return { data: [{ connection_id: null, transitioned: false }], error: null };
+          return { data: [{ connection_id: null, outcome: "not_found" }], error: null };
+        }
+        const owner = (connection as unknown as { connected_by_user_id?: string | null }).connected_by_user_id;
+        if (owner != null && owner !== params.p_connected_by_user_id) {
+          return { data: [{ connection_id: connection.id, outcome: "not_owner" }], error: null };
         }
         connection.status = "revoked";
         for (const task of state.scheduledTasks) {
@@ -288,7 +312,7 @@ function createFakeClient() {
           }
         }
         return {
-          data: [{ connection_id: connection.id, transitioned: true }],
+          data: [{ connection_id: connection.id, outcome: "disconnected" }],
           error: null,
         };
       }
@@ -419,6 +443,12 @@ let sourceConnectionUpdateCount = 0;
 let errorsInsertError: { message: string } | null = null;
 let firefliesRotationError: { message: string } | null = null;
 let disconnectRpcError: { message: string } | null = null;
+let firefliesAccountIdentity: { user_id: string; name: string | null; email: string | null } | null = {
+  user_id: "ff-user-1",
+  name: "Ada Lovelace",
+  email: "ada@example.com",
+};
+let firefliesAccountIdentityError: string | null = null;
 let linearCommitError: { code?: string; message: string } | null = null;
 let linearCommitCount = 0;
 let linearWebhookIds: string[] = [];
@@ -473,6 +503,9 @@ beforeEach(() => {
   errorsInsertError = null;
   firefliesRotationError = null;
   disconnectRpcError = null;
+  firefliesAccountIdentity = { user_id: "ff-user-1", name: "Ada Lovelace", email: "ada@example.com" };
+  firefliesAccountIdentityError = null;
+  state.users = [];
   linearCommitError = null;
   linearCommitCount = 0;
   linearWebhookIds = [];
@@ -484,6 +517,18 @@ beforeEach(() => {
   linearWebhookFailureBody = null;
   globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
+    if (url === "https://api.fireflies.ai/graphql") {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes("CurrentUser")) {
+        if (firefliesAccountIdentityError) {
+          return Response.json({ errors: [{ message: firefliesAccountIdentityError }] });
+        }
+        return Response.json({
+          data: { user: firefliesAccountIdentity },
+        });
+      }
+      throw new Error(`Unexpected Fireflies GraphQL query: ${body.query}`);
+    }
     if (url === "https://api.linear.app/graphql") {
       const authorization = new Headers(init?.headers).get("authorization");
       const body = JSON.parse(String(init?.body)) as {
@@ -723,6 +768,7 @@ describe("workspace connection routes", () => {
       config_json: {},
       workspace_id: workspaceId,
       updated_at: "2026-08-20T14:00:00.000000+00:00",
+      connected_by_user_id: caller.userId,
     }];
     state.credentials = [{
       id: "fireflies-credential",
@@ -771,6 +817,7 @@ describe("workspace connection routes", () => {
       config_json: {},
       workspace_id: workspaceId,
       updated_at: "2026-08-20T14:00:00.000000+00:00",
+      connected_by_user_id: caller.userId,
     }];
     state.credentials = [{
       id: "fireflies-credential",
@@ -1172,6 +1219,7 @@ describe("workspace connection routes", () => {
       const fireflies = body.connections.find((connection) => connection.provider === "fireflies");
 
       expect(fireflies).toEqual({
+        id: `fireflies-${status}`,
         provider: "fireflies",
         status: expectedStatus,
         display_name: "Fireflies",
@@ -1179,9 +1227,49 @@ describe("workspace connection routes", () => {
         last_error_at: status === "degraded" || status === "error"
           ? "2026-08-20T13:00:00.000Z"
           : null,
+        is_mine: false,
       });
     },
   );
+
+  it("returns one row per Fireflies connection with is_mine set per caller", async () => {
+    state.connections = [
+      {
+        id: "fireflies-mine",
+        provider: "fireflies",
+        credential_id: "fireflies-credential",
+        connection_key: "fireflies-mine-key",
+        status: "active",
+        display_name: "Ada Lovelace",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: caller.userId,
+      },
+      {
+        id: "fireflies-teammate",
+        provider: "fireflies",
+        credential_id: "fireflies-credential-2",
+        connection_key: "fireflies-teammate-key",
+        status: "active",
+        display_name: "Grace Hopper",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: "user-2",
+      },
+    ];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<Record<string, unknown>> };
+    const fireflies = body.connections.filter((connection) => connection.provider === "fireflies");
+
+    expect(fireflies).toHaveLength(2);
+    expect(fireflies.find((c) => c.id === "fireflies-mine")).toMatchObject({ is_mine: true, display_name: "Ada Lovelace" });
+    expect(fireflies.find((c) => c.id === "fireflies-teammate")).toMatchObject({ is_mine: false, display_name: "Grace Hopper" });
+  });
 
   it("omits an absent source provider while preserving synthesized Claude Code state", async () => {
     state.connections = [];
@@ -1534,6 +1622,53 @@ describe("workspace connection routes", () => {
     expect(state.connections[0]?.status).toBe("active");
     expect(state.scheduledTasks[0]?.enabled).toBe(true);
     expect(stoppedSlackListeners).toEqual([]);
+  });
+
+  it("rejects disconnecting a Fireflies connection owned by a different teammate", async () => {
+    state.connections.push({
+      id: "fireflies-teammate-connection",
+      provider: "fireflies",
+      credential_id: "fireflies-credential",
+      connection_key: "fireflies-teammate-key",
+      status: "active",
+      display_name: "Fireflies (teammate)",
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: "user-2",
+    });
+
+    const response = await routeModule.DELETE(
+      request("DELETE", { id: workspaceId, provider: "fireflies" }) as never,
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "not_connection_owner" });
+    expect(state.connections.find((c) => c.id === "fireflies-teammate-connection")?.status).toBe("active");
+  });
+
+  it("allows disconnecting the caller's own Fireflies connection", async () => {
+    state.connections.push({
+      id: "fireflies-own-connection",
+      provider: "fireflies",
+      credential_id: "fireflies-credential",
+      connection_key: "fireflies-own-key",
+      status: "active",
+      display_name: "Fireflies (mine)",
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: caller.userId,
+    });
+
+    const response = await routeModule.DELETE(
+      request("DELETE", { id: workspaceId, provider: "fireflies" }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.connections.find((c) => c.id === "fireflies-own-connection")?.status).toBe("revoked");
   });
 
   it("includes a connected github source in GET", async () => {

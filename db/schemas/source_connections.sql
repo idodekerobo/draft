@@ -39,6 +39,21 @@ create unique index source_connections_one_live_github_per_workspace
   on source_connections (workspace_id)
   where provider = 'github' and status <> 'revoked';
 
+-- Multi-account providers (fireflies): one row per connecting user, ever --
+-- revoke-then-reconnect rotates the same row rather than inserting a new
+-- one. Closes the TOCTOU race on two near-simultaneous connect requests
+-- from the same user.
+create unique index source_connections_one_per_connecting_user
+  on source_connections (workspace_id, provider, connected_by_user_id)
+  where provider = 'fireflies';
+
+-- Singleton providers going through the generic connect route (Slack,
+-- Linear, claude_session) may only ever have one live connection per
+-- workspace -- DB-level backstop for an assumption the app already made.
+create unique index source_connections_one_live_singleton_per_workspace
+  on source_connections (workspace_id, provider)
+  where provider in ('slack', 'linear', 'claude_session') and status <> 'revoked';
+
 alter table source_connections enable row level security;
 
 create policy source_connections_select on source_connections
