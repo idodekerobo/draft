@@ -8,7 +8,7 @@ import {
   nextReconnectDelay,
 } from "../../../ingestion/slack/socket-listener";
 
-const connection = { id: "conn-1", workspace_id: "workspace-1", organization_id: "org-1" };
+const connection = { id: "conn-1", workspace_id: "workspace-1", organization_id: "org-1", credential_id: "credential-1" };
 
 function statusClient(initialStatus: string) {
   let status = initialStatus;

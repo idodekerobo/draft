@@ -11,12 +11,13 @@ import type { FirefliesMeetingData } from "../../../ingestion/fireflies/fetch-me
 const realResolveProviderCredentialModule = await import(
   "../../../credentials/resolve-provider-credential"
 );
-const realResolveProviderCredential = realResolveProviderCredentialModule.resolveProviderCredential;
+const realResolveProviderCredentialById = realResolveProviderCredentialModule.resolveProviderCredentialById;
 const RealCredentialError = realResolveProviderCredentialModule.CredentialError;
 
 const ids = {
   workspace: "88888888-8888-4888-8888-888888888888",
   connection: "99999999-9999-4999-8999-999999999999",
+  credential: "77777777-7777-4777-8777-777777777777",
 };
 
 const originalFetch = globalThis.fetch;
@@ -143,7 +144,7 @@ function createFakeClient(priorReadyRevisions: { id: string; external_version: s
 describe("ingestFirefliesMeeting", () => {
   beforeEach(() => {
     mock.module("../../../credentials/resolve-provider-credential", () => ({
-      resolveProviderCredential: async () => ({
+      resolveProviderCredentialById: async () => ({
         api_token: "fake-token",
         webhook_secret: "fake-secret",
       }),
@@ -157,7 +158,7 @@ describe("ingestFirefliesMeeting", () => {
 
   afterAll(() => {
     mock.module("../../../credentials/resolve-provider-credential", () => ({
-      resolveProviderCredential: realResolveProviderCredential,
+      resolveProviderCredentialById: realResolveProviderCredentialById,
       CredentialError: RealCredentialError,
     }));
   });
@@ -169,6 +170,7 @@ describe("ingestFirefliesMeeting", () => {
 
     const result = await ingestFirefliesMeeting(
       { id: ids.connection, workspace_id: ids.workspace },
+      ids.credential,
       "meeting-123",
       client,
     );
@@ -222,7 +224,12 @@ describe("ingestFirefliesMeeting", () => {
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
     await expect(
-      ingestFirefliesMeeting({ id: ids.connection, workspace_id: ids.workspace }, "missing", client),
+      ingestFirefliesMeeting(
+        { id: ids.connection, workspace_id: ids.workspace },
+        ids.credential,
+        "missing",
+        client,
+      ),
     ).rejects.toThrow(/Transcript not found/);
   });
 
@@ -236,6 +243,7 @@ describe("ingestFirefliesMeeting", () => {
 
     await ingestFirefliesMeeting(
       { id: ids.connection, workspace_id: ids.workspace },
+      ids.credential,
       "meeting-123",
       client,
     );

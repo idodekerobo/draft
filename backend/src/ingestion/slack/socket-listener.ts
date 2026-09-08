@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { resolveProviderCredential } from "../../credentials/resolve-provider-credential";
+import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 import { CredentialError } from "../../credentials/crypto";
 import { handleSlackMessageEvent } from "./normalize";
 
@@ -7,6 +7,7 @@ export interface SlackListenerConnection {
   id: string;
   workspace_id: string;
   organization_id: string;
+  credential_id: string;
 }
 
 export interface SlackListenerHandle {
@@ -111,6 +112,7 @@ export async function isSlackConnectionIngestible(
 export interface SlackSocketListenerDependencies {
   resolveCredential: (
     workspaceId: string,
+    credentialId: string,
     client?: SupabaseClient,
   ) => Promise<{ bot_token: string; app_token: string }>;
   openSocketMode: (appToken: string) => Promise<string>;
@@ -126,8 +128,8 @@ export function connectSlackSocketListener(
   dependencyOverrides: Partial<SlackSocketListenerDependencies> = {},
 ): SlackListenerHandle {
   const dependencies: SlackSocketListenerDependencies = {
-    resolveCredential: (workspaceId, credentialClient) =>
-      resolveProviderCredential(workspaceId, "slack", credentialClient),
+    resolveCredential: (workspaceId, credentialId, credentialClient) =>
+      resolveProviderCredentialById(workspaceId, "slack", credentialId, credentialClient),
     openSocketMode: getSocketModeUrl,
     createWebSocket: (url) => new WebSocket(url),
     handleMessage: handleSlackMessageEvent,
@@ -189,7 +191,11 @@ export function connectSlackSocketListener(
     let botToken: string;
     let appToken: string;
     try {
-      const credential = await dependencies.resolveCredential(connection.workspace_id, client);
+      const credential = await dependencies.resolveCredential(
+        connection.workspace_id,
+        connection.credential_id,
+        client,
+      );
       botToken = credential.bot_token;
       appToken = credential.app_token;
     } catch (err) {

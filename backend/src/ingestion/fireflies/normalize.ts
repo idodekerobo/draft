@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchFirefliesMeeting, type FirefliesMeetingData } from "./fetch-meeting";
 import { upsertSourceItem } from "../upsert-source-item";
 import { insertEvent } from "../../events/insert-event";
-import { resolveProviderCredential } from "../../credentials/resolve-provider-credential";
+import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 
 function sha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
@@ -57,12 +57,14 @@ export function buildFirefliesExternalVersion(
 
 export async function ingestFirefliesMeeting(
   connection: { id: string; workspace_id: string },
+  credentialId: string,
   meetingId: string,
   client?: SupabaseClient,
 ): Promise<{ sourceItemId: string }> {
-  const { api_token: apiToken } = await resolveProviderCredential(
+  const { api_token: apiToken } = await resolveProviderCredentialById(
     connection.workspace_id,
     "fireflies",
+    credentialId,
     client,
   );
 
