@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   normalizeHostedConnection,
   normalizeHostedConnections,
+  normalizeHostedConnectionList,
   type HostedConnectionProvider,
 } from "../integrations/hosted-connections";
 
@@ -162,5 +163,36 @@ describe("normalizeHostedConnections", () => {
       connected: true,
     });
     expect(connections.slice(1).every(({ connected }) => !connected)).toBe(true);
+  });
+});
+
+describe("normalizeHostedConnectionList", () => {
+  it("returns one item per Fireflies connection with id and is_mine", () => {
+    const items = normalizeHostedConnectionList("fireflies", [
+      { provider: "fireflies", status: "active", display_name: "Ada", id: "conn-1", is_mine: true, last_success_at: "2026-01-01T00:00:00Z" },
+      { provider: "fireflies", status: "active", display_name: "Grace", id: "conn-2", is_mine: false, last_success_at: "2026-01-01T00:00:00Z" },
+      { provider: "slack", status: "active" },
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ id: "conn-1", is_mine: true, display_name: "Ada", connected: true });
+    expect(items[1]).toMatchObject({ id: "conn-2", is_mine: false, display_name: "Grace", connected: true });
+  });
+
+  it("returns a single disconnected placeholder when no rows match the provider", () => {
+    const items = normalizeHostedConnectionList("fireflies", [
+      { provider: "slack", status: "active" },
+    ]);
+
+    expect(items).toEqual([{
+      provider: "fireflies",
+      status: "disconnected",
+      connected: false,
+      display_name: null,
+      last_success_at: null,
+      last_error_at: null,
+      id: null,
+      is_mine: false,
+    }]);
   });
 });
