@@ -310,6 +310,20 @@ export interface IntegrationDetail {
   channelIds?: string[];
 }
 
+/**
+ * One row in a multi-account provider's connection list (Settings only --
+ * every other IntegrationDetail consumer keeps the folded single-row shape).
+ */
+export interface MultiAccountConnectionListItem {
+  id: string | null;
+  is_mine: boolean;
+  status: "disconnected" | "pending" | "connected" | "degraded" | "error";
+  connected: boolean;
+  display_name: string | null;
+  last_success_at: string | null;
+  last_error_at: string | null;
+}
+
 export interface ConnectedAppsStatus {
   tools: {
     "claude-code": ToolDetail;
@@ -328,6 +342,8 @@ export interface ConnectedAppsStatus {
     claude_session: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
+  /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
+  firefliesConnections: MultiAccountConnectionListItem[];
 }
 
 /**
@@ -428,7 +444,7 @@ export type AppRPCType = {
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
 
-      /** Rich connection status for all intelligence tools and input sources. */
+      /** Rich connection status for all intelligence tools and input sources, plus firefliesConnections for the Settings list view. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
       /** Read the workspace's synthesize_workspace schedule (cadence + enabled). Null if not signed in or no schedule exists yet. */

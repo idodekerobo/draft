@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfig, SynthesisSchedule } from "../../../rpc/schema";
+import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfig, MultiAccountConnectionListItem, SynthesisSchedule } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
@@ -187,6 +187,84 @@ function InputSourceRow({
   );
 }
 
+// ── Fireflies: multi-account list ──────────────────────────────────────────────
+//
+// Fireflies is the one multi-account provider (each teammate connects their
+// own account) -- every other Input Source stays a single row via
+// InputSourceRow above. This renders one row per teammate's connection
+// (view-only for rows that aren't yours) plus a "Connect your account" row
+// that opens the same FirefliesConnectPanel used for the singleton sources.
+
+interface FirefliesConnectionsRowProps {
+  connections: MultiAccountConnectionListItem[];
+  isExpanded: boolean;
+  isDisconnecting: boolean;
+  onToggleConnect: () => void;
+  onDisconnect: () => void;
+  children?: ReactNode;
+}
+
+function FirefliesConnectionsRow({
+  connections: rows,
+  isExpanded,
+  isDisconnecting,
+  onToggleConnect,
+  onDisconnect,
+  children,
+}: FirefliesConnectionsRowProps) {
+  const mine = rows.find((row) => row.is_mine && row.connected);
+  const teammates = rows.filter((row) => !row.is_mine && row.connected);
+
+  return (
+    <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
+      <div className="app-row__main">
+        <div className="app-row__left">
+          <span className={`app-row__status-dot${mine ? " app-row__status-dot--on" : ""}`} />
+          <div className="app-row__text">
+            <span className="app-row__name">Fireflies</span>
+            <span className="app-row__meta">
+              {mine
+                ? `Connected as ${mine.display_name ?? "you"}`
+                : "Not connected"}
+              {teammates.length > 0
+                ? ` · ${teammates.length} teammate${teammates.length === 1 ? "" : "s"} connected`
+                : ""}
+            </span>
+          </div>
+        </div>
+
+        <div className="app-row__right">
+          {mine ? (
+            <button
+              className="app-row__disconnect"
+              onClick={onDisconnect}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting ? "Disconnecting…" : "Disconnect"}
+            </button>
+          ) : (
+            <button className="app-row__connect" onClick={onToggleConnect}>
+              {isExpanded ? "Close" : "Connect your account"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {teammates.length > 0 && (
+        <ul className="app-row__teammates">
+          {teammates.map((row) => (
+            <li key={row.id ?? row.display_name ?? "teammate"} className="app-row__teammate">
+              {row.display_name ?? "A teammate"} — {row.status}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {isExpanded && children}
+    </div>
+  );
+}
+
 // ── SettingsView ───────────────────────────────────────────────────────────────
 
 interface SettingsViewProps {
@@ -296,13 +374,17 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
           setSlackPanelMode("connect");
           setExpandedSource((current) => current === "slack" ? null : current);
         }
-        setApps({
-          ...apps,
-          integrations: {
-            ...apps.integrations,
-            [source]: { ...apps.integrations[source], connected: false },
-          },
-        });
+        if (source === "fireflies") {
+          await tryRefreshConnectedApps();
+        } else {
+          setApps({
+            ...apps,
+            integrations: {
+              ...apps.integrations,
+              [source]: { ...apps.integrations[source], connected: false },
+            },
+          });
+        }
       } else {
         setSaveError(result.error ?? "Disconnect failed.");
       }
@@ -405,7 +487,22 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         <section className="settings__section">
           <h2 className="settings__section-label">Input Sources</h2>
           <div className="settings__rows">
-            {(["fireflies", "linear", "slack", "github", "claude_session"] as const).map((key) => (
+            <FirefliesConnectionsRow
+              connections={apps.firefliesConnections}
+              isExpanded={expandedSource === "fireflies"}
+              isDisconnecting={disconnecting === "fireflies"}
+              onToggleConnect={() => setExpandedSource((current) => current === "fireflies" ? null : "fireflies")}
+              onDisconnect={() => void handleDisconnect("fireflies")}
+            >
+              <FirefliesConnectPanel
+                detail={apps.integrations.fireflies}
+                classPrefix="app-row"
+                onStatusRefresh={tryRefreshConnectedApps}
+                onDone={() => setExpandedSource(null)}
+              />
+            </FirefliesConnectionsRow>
+
+            {(["linear", "slack", "github", "claude_session"] as const).map((key) => (
               <InputSourceRow
                 key={key}
                 sourceKey={key}
@@ -426,15 +523,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                   undefined
                 }
               >
-                {key === "fireflies" && (
-                  <FirefliesConnectPanel
-                    detail={apps.integrations.fireflies}
-                    classPrefix="app-row"
-                    onStatusRefresh={tryRefreshConnectedApps}
-                    onDone={() => setExpandedSource(null)}
-                  />
-                )}
-
                 {key === "linear" && (
                   <LinearConnectPanel detail={apps.integrations.linear} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
                 )}
