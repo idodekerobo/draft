@@ -9,7 +9,8 @@ create or replace function search_source_items(
   p_user_id uuid default null,
   p_contributor_id uuid default null,
   p_limit int default 20,
-  p_offset int default 0
+  p_offset int default 0,
+  p_caller_user_id uuid default null
 )
 returns table (
   source_item_id uuid,
@@ -40,6 +41,11 @@ as $$
   where si.workspace_id = p_workspace_id
     and si.item_type = 'coding_session'
     and si.lifecycle_status = 'ready'
+    -- Defense-in-depth: coding_session items are always 'shared' today
+    -- (only fireflies sets 'private'), but this keeps a future item_type
+    -- expansion from silently reopening the visibility leak this plan
+    -- closes -- see eng review E1.
+    and (si.visibility = 'shared' or si.owner_user_id = p_caller_user_id)
     and to_tsvector('english', si.content_markdown) @@ websearch_to_tsquery('english', p_query)
     and (p_since is null or si.occurred_at >= p_since)
     and (p_provider is null or si.metadata_json->>'provider' = p_provider)
@@ -49,5 +55,5 @@ as $$
   limit p_limit offset p_offset;
 $$;
 
-revoke all on function search_source_items(uuid, text, timestamptz, text, uuid, uuid, int, int) from public;
-grant execute on function search_source_items(uuid, text, timestamptz, text, uuid, uuid, int, int) to service_role;
+revoke all on function search_source_items(uuid, text, timestamptz, text, uuid, uuid, int, int, uuid) from public;
+grant execute on function search_source_items(uuid, text, timestamptz, text, uuid, uuid, int, int, uuid) to service_role;

@@ -14,7 +14,9 @@ create or replace function upsert_source_item(
   p_content_hash text,
   p_metadata_json jsonb default '{}'::jsonb,
   p_sanitized_raw_json jsonb default null,
-  p_lifecycle_status text default 'ready'
+  p_lifecycle_status text default 'ready',
+  p_visibility text default 'shared',
+  p_owner_user_id uuid default null
 )
 returns jsonb
 language plpgsql
@@ -81,12 +83,12 @@ begin
     workspace_id, source_connection_id, item_type, external_id,
     external_version, lifecycle_status, occurred_at, normalized_at,
     content_markdown, content_hash, metadata_json, sanitized_raw_json,
-    supersedes_source_item_id
+    supersedes_source_item_id, visibility, owner_user_id
   ) values (
     p_workspace_id, p_source_connection_id, p_item_type, p_external_id,
     p_external_version, p_lifecycle_status, p_occurred_at, v_now,
     p_content_markdown, p_content_hash, p_metadata_json, p_sanitized_raw_json,
-    v_supersede_id
+    v_supersede_id, p_visibility, p_owner_user_id
   )
   on conflict (source_connection_id, external_id, external_version)
   do update set
@@ -99,7 +101,9 @@ begin
     metadata_json = excluded.metadata_json,
     sanitized_raw_json = excluded.sanitized_raw_json,
     supersedes_source_item_id =
-      coalesce(source_items.supersedes_source_item_id, excluded.supersedes_source_item_id)
+      coalesce(source_items.supersedes_source_item_id, excluded.supersedes_source_item_id),
+    visibility = excluded.visibility,
+    owner_user_id = excluded.owner_user_id
   returning id into v_item_id;
 
   if v_prior_ids is not null then
@@ -117,8 +121,8 @@ end;
 $$;
 
 revoke all on function upsert_source_item(
-  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text
+  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid
 ) from public;
 grant execute on function upsert_source_item(
-  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text
+  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid
 ) to service_role;

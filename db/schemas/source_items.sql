@@ -16,6 +16,14 @@ create table source_items (
   metadata_json                jsonb not null default '{}',
   sanitized_raw_json           jsonb,
   supersedes_source_item_id    uuid,
+  -- Snapshotted at ingest, not a live join to
+  -- source_connections.connected_by_user_id (that FK is nullable and
+  -- cleared on user deletion). Only multi-account providers (fireflies)
+  -- set visibility='private' today; every other provider stays 'shared'
+  -- (workspace-wide), matching the pre-existing, unscoped read behavior.
+  visibility                   text not null default 'shared'
+                                 check (visibility in ('private', 'shared')),
+  owner_user_id                uuid references users(id) on delete set null,
   created_at                   timestamptz not null default now(),
   updated_at                   timestamptz not null default now(),
 
@@ -38,6 +46,10 @@ create index source_items_content_markdown_gin_idx
 
 alter table source_items enable row level security;
 
+-- Defense-in-depth only -- the primary enforcement for the app's own reads
+-- (sessions.ts/sessions-search.ts) is the app-level filter, since those
+-- routes use serviceClient and bypass RLS entirely. This protects any
+-- future code path that reads via the user's own client.
 create policy source_items_select on source_items
   for select to authenticated
   using (
@@ -48,6 +60,7 @@ create policy source_items_select on source_items
         and w.team_id = current_user_team_id()
         and w.access_mode = 'team_default'
     )
+    and (source_items.visibility = 'shared' or source_items.owner_user_id = auth.uid())
   );
 
 grant select on table source_items to authenticated;

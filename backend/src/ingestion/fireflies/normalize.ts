@@ -56,7 +56,7 @@ export function buildFirefliesExternalVersion(
 }
 
 export async function ingestFirefliesMeeting(
-  connection: { id: string; workspace_id: string },
+  connection: { id: string; workspace_id: string; connected_by_user_id?: string | null },
   credentialId: string,
   meetingId: string,
   client?: SupabaseClient,
@@ -93,6 +93,10 @@ export async function ingestFirefliesMeeting(
       fireflies_meeting_id: meetingId,
     },
     sanitized_raw_json: sanitizedRaw,
+    // Fireflies is a multi-account provider -- meetings are private to the
+    // connecting teammate by default (no widen action exists yet).
+    visibility: "private",
+    owner_user_id: connection.connected_by_user_id ?? null,
   });
 
   await insertEvent(db, connection.workspace_id, {
