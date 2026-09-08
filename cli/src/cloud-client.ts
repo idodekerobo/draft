@@ -246,7 +246,13 @@ export type FetchErrorCode =
   | "slack_channel_join_failed"
   | "slack_channel_leave_failed"
   | "github_installation_conflict"
-  | "connection_update_conflict";
+  | "connection_update_conflict"
+  | "skill_not_found"
+  | "duplicate_name"
+  | "invalid_name"
+  | "missing_required_fields"
+  | "missing_content"
+  | "malformed_frontmatter";
 
 async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true; token: string; workspaceId: string; response: Response } | { ok: false; code: FetchErrorCode }> {
   const resolved = await resolveAuthedWorkspace();
@@ -340,6 +346,12 @@ const SAFE_BACKEND_ERROR_CODES = new Set<FetchErrorCode>([
   "slack_channel_leave_failed",
   "github_installation_conflict",
   "connection_update_conflict",
+  "skill_not_found",
+  "duplicate_name",
+  "invalid_name",
+  "missing_required_fields",
+  "missing_content",
+  "malformed_frontmatter",
 ]);
 const BACKEND_PROVIDERS = new Set<BackendConnectionProvider>([
   "github",
@@ -788,4 +800,111 @@ export function discoverDimensions(documents: Record<string, WorkspaceDocument>)
   }
   found.sort((a, b) => a.name.localeCompare(b.name));
   return found;
+}
+
+export interface SkillSummary {
+  name: string;
+  description: string;
+}
+
+export interface SkillDetail {
+  name: string;
+  description: string;
+  license: string | null;
+  compatibility: string | null;
+  metadata: Record<string, unknown> | null;
+  allowedTools: string | null;
+  content: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export interface AddOrUpdateSkillBody {
+  name?: string;
+  description?: string;
+  content: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, unknown>;
+  allowed_tools?: string;
+}
+
+function decodeSkillSummary(value: unknown): SkillSummary | null {
+  const row = recordValue(value);
+  if (!row || typeof row.name !== "string" || typeof row.description !== "string") return null;
+  return { name: row.name, description: row.description };
+}
+
+function decodeSkillDetail(value: unknown): SkillDetail | null {
+  const row = recordValue(value);
+  if (
+    !row ||
+    typeof row.name !== "string" ||
+    typeof row.description !== "string" ||
+    typeof row.content !== "string" ||
+    typeof row.createdBy !== "string" ||
+    typeof row.createdAt !== "string" ||
+    typeof row.updatedAt !== "string" ||
+    !nullableString(row.license) ||
+    !nullableString(row.compatibility) ||
+    !nullableString(row.allowedTools) ||
+    !nullableString(row.updatedBy)
+  ) return null;
+  const metadata = row.metadata === null || row.metadata === undefined
+    ? null
+    : recordValue(row.metadata);
+  if (row.metadata !== null && row.metadata !== undefined && metadata === null) return null;
+  return {
+    name: row.name,
+    description: row.description,
+    license: row.license,
+    compatibility: row.compatibility,
+    metadata,
+    allowedTools: row.allowedTools,
+    content: row.content,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    updatedBy: row.updatedBy,
+  };
+}
+
+export function listSkills(): Promise<FetchResult<{ skills: SkillSummary[] }>> {
+  return requestValue("/skills", undefined, (value) => {
+    const body = recordValue(value);
+    if (!body || !Array.isArray(body.skills)) return null;
+    const skills: SkillSummary[] = [];
+    for (const raw of body.skills) {
+      const skill = decodeSkillSummary(raw);
+      if (!skill) return null;
+      skills.push(skill);
+    }
+    return { skills };
+  });
+}
+
+export function readSkill(name: string): Promise<FetchResult<SkillDetail>> {
+  return requestValue(`/skills/${encodeURIComponent(name)}`, undefined, decodeSkillDetail);
+}
+
+export function addSkill(body: AddOrUpdateSkillBody): Promise<FetchResult<SkillDetail>> {
+  return requestValue("/skills", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }, decodeSkillDetail);
+}
+
+export function updateSkill(name: string, body: AddOrUpdateSkillBody): Promise<FetchResult<SkillDetail>> {
+  return requestValue(`/skills/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }, decodeSkillDetail);
+}
+
+export function removeSkill(name: string): Promise<FetchResult<{ ok: true }>> {
+  return requestValue(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" }, decodeOk);
 }

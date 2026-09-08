@@ -9,6 +9,7 @@ import { runAuth } from "./commands/auth.ts";
 import { runContext } from "./commands/context.ts";
 import { runIntegrations } from "./commands/integrations.ts";
 import { runSessions } from "./commands/sessions.ts";
+import { runSkills } from "./commands/skills.ts";
 import { runCompletion } from "./commands/completion.ts";
 import { runUpdate, getCachedUpdateNotice, checkForUpdateBackground } from "./commands/update.ts";
 import { CLI_VERSION } from "./version.ts";
@@ -43,6 +44,9 @@ if (command === "--version" || command === "-v") {
       break;
     case "sessions":
       process.exitCode = await runSessions(rest);
+      break;
+    case "skills":
+      process.exitCode = await runSkills(rest);
       break;
     case "update":
       process.exitCode = await runUpdate(rest);
