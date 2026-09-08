@@ -50,6 +50,26 @@ draft context read --all
 
 Context reads go through the authenticated API and return the current workspace snapshot. A missing workspace is an account/onboarding state, not a local initialization step.
 
+## Skills
+
+Skills are the company's skill marketplace — reusable procedures, templates, and heuristics a teammate saves once so any future agent can find and follow them. Unlike context, this is a write path: instant-publish, team-scoped, no approval queue.
+
+~~~bash
+draft skills list
+draft skills read <name>
+draft skills add [<name>] [--description "<when to use this>"] (--file <path> | --content "<text>" | stdin)
+draft skills update <name> [--description "<text>"] (--file <path> | --content "<text>" | stdin)
+draft skills remove <name>
+~~~
+
+`name`/`description` are optional on `add` when the content starts with standard YAML frontmatter (SKILL.md-style: `---\nname: ...\ndescription: ...\n---`) — the backend parses `name`, `description`, and the optional `license`/`compatibility`/`metadata`/`allowed-tools` fields. Explicit flags always override parsed frontmatter values. `name` must match `^[a-z0-9]+(-[a-z0-9]+)*$`, max 64 chars.
+
+Content can come from a local file (`--file`), inline text (`--content`), or piped stdin — a conversational agent often has pasted or described text rather than a local path.
+
+`add` rejects a duplicate active name (use `update` instead); `remove` soft-deletes, hiding the skill from `list`/`read` immediately while preserving its content and author for the rare postmortem — the name becomes reusable by a later `add`. `update` overwrites content/description in place with no version history; `updated_at`/`updated_by` make an overwrite attributable even though the prior content isn't recoverable.
+
+`list` shows every active skill's full description text (not truncated); `read <name>` returns the full content plus every optional field.
+
 ## Project agent setup
 
 Use draft add to write a managed Draft context block to a project's instruction file:
@@ -155,7 +175,9 @@ Each directory must already exist; a missing path, a path that isn't a directory
 | `openclaw` | `AGENTS.md` |
 | `hermes` | `HERMES.md` |
 
-`draft add` appends or updates one short, sentinel-delimited Draft-managed block in that file — it only points the agent at the CLI commands above, it never copies or embeds context content into the file. Everything outside the sentinels (your own instructions) is preserved byte-for-byte. The block is identical across tools, so `draft add codex --dir .` followed by `draft add cursor --dir .` converge on the same `AGENTS.md` block rather than duplicating it, and running the same command twice makes no write once the block is already current.
+`draft add` appends or updates one short, sentinel-delimited Draft-managed block in that file — it only points the agent at the CLI commands above (including the "### Skills" marketplace-discovery instructions, read and write directions both), it never copies or embeds context content into the file. Everything outside the sentinels (your own instructions) is preserved byte-for-byte. The block is identical across tools, so `draft add codex --dir .` followed by `draft add cursor --dir .` converge on the same `AGENTS.md` block rather than duplicating it, and running the same command twice makes no write once the block is already current.
+
+Rerunning `draft add` in an already-configured project is the only way that project's instruction file picks up new managed-block content (like the Skills section) added by a later CLI release — the block isn't retroactively updated.
 
 ```bash
 draft add codex --dir ./my-repo

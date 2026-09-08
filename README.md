@@ -147,6 +147,8 @@ draft auth login
 draft auth whoami
 draft context list
 draft context read --all
+draft skills list
+draft skills read <name>
 draft sessions list
 draft integrations list
 draft integrations connect github
