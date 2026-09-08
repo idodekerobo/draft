@@ -152,6 +152,23 @@ export interface WorkspaceContextVersionRow {
   created_at: string;
 }
 
+export interface SkillRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  license: string | null;
+  compatibility: string | null;
+  metadata: Record<string, unknown> | null;
+  allowed_tools: string | null;
+  content: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  updated_by: string | null;
+  removed_at: string | null;
+}
+
 export interface ScheduledTaskRow {
   id: string;
   workspace_id: string;

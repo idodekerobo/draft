@@ -13,6 +13,7 @@ import * as sessionTokens from "./session-tokens";
 import * as sessionTokensRotate from "./session-tokens-rotate";
 import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
+import * as skills from "./skills";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
 import * as synthesisSchedule from "./synthesis-schedule";
@@ -43,6 +44,8 @@ export const routes = {
   "/workspaces/:id/sessions": { GET: sessions.GET },
   "/workspaces/:id/sessions/search": { GET: sessionsSearch.GET },
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
+  "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
+  "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
   "/sessions/ingest": { POST: sessionsIngest.POST },
   "/sessions/tokens/rotate": { POST: sessionTokensRotate.POST },
   "/sessions/tokens/revoke": { POST: sessionTokensRevoke.POST },
