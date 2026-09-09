@@ -234,10 +234,9 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
     .eq("item_type", "coding_session")
     .eq("lifecycle_status", "ready")
     .contains("metadata_json", { agent_session_id: session.id })
-    // Defense-in-depth (eng review E1): coding_session items are always
-    // 'shared' today -- only fireflies sets 'private' -- but this keeps a
-    // future item_type expansion from silently reopening the leak this
-    // plan closes.
+    // Defense-in-depth: coding_session items are always 'shared' today --
+    // only fireflies sets 'private' -- but this keeps a future item_type
+    // expansion from silently reopening the leak.
     .or(`visibility.eq.shared,owner_user_id.eq.${caller.userId}`)
     .maybeSingle<Pick<SourceItemRow, "content_markdown" | "occurred_at" | "metadata_json" | "visibility" | "owner_user_id">>();
   if (error) return errorResponse("summary_lookup_failed", 500, error, req.params.id);

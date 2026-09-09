@@ -71,7 +71,7 @@ export type SourceItemLifecycleStatus =
 
 // 'private' scopes a direct read (sessions.ts/sessions-search.ts) to the
 // item's owner_user_id; synthesis (get-ready-source-items.ts) deliberately
-// ignores this column -- see eng review E1 in the multi-account plan.
+// ignores this column.
 export type SourceItemVisibility = "private" | "shared";
 
 export type ContextVersionCreationReason =
