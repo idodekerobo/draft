@@ -17,6 +17,7 @@ import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack-hosted";
 import {
   normalizeHostedConnections,
+  normalizeHostedConnectionList,
   type RawHostedConnectionSummary,
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
@@ -667,6 +668,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             claude_session: claudeSessionDetail,
           },
           claudeCode: { connected: claudeCodeConnection?.connected ?? false },
+          // Settings list view only -- every other consumer above keeps
+          // using the folded IntegrationDetail shape. Reuses cloudConnections
+          // (already fetched once above) instead of a second round trip.
+          firefliesConnections: normalizeHostedConnectionList("fireflies", cloudConnections ?? []),
         };
       },
 

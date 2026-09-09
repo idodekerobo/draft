@@ -14,7 +14,7 @@ export interface AuthenticateFirefliesWebhookRequestOptions {
 }
 
 export interface AuthenticatedFirefliesWebhookRequest {
-  connection: Pick<SourceConnectionRow, "id" | "workspace_id">;
+  connection: Pick<SourceConnectionRow, "id" | "workspace_id" | "connected_by_user_id">;
   credentialId: string;
   event: string;
   meetingId: string;
@@ -106,7 +106,7 @@ export async function authenticateFirefliesWebhookRequest(
 
   const { data, error } = await db
     .from("source_connections")
-    .select("id, workspace_id, credential_id")
+    .select("id, workspace_id, credential_id, connected_by_user_id")
     .eq("connection_key", connectionKey)
     .eq("provider", "fireflies")
     .in("status", ["active", "degraded"])
@@ -115,7 +115,7 @@ export async function authenticateFirefliesWebhookRequest(
 
   const connection = data as Pick<
     SourceConnectionRow,
-    "id" | "workspace_id" | "credential_id"
+    "id" | "workspace_id" | "credential_id" | "connected_by_user_id"
   > | null;
   if (!connection || !connection.credential_id) {
     reject(`Fireflies webhook has no matching connection for key "${connectionKey}"`);
@@ -143,7 +143,11 @@ export async function authenticateFirefliesWebhookRequest(
   const body = parseBody(bodyBytes);
 
   return {
-    connection: { id: connection.id, workspace_id: connection.workspace_id },
+    connection: {
+      id: connection.id,
+      workspace_id: connection.workspace_id,
+      connected_by_user_id: connection.connected_by_user_id,
+    },
     credentialId: connection.credential_id,
     event: body.event,
     meetingId: body.meeting_id,

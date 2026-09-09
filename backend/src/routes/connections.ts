@@ -24,8 +24,20 @@ import {
   LinearProviderError,
 } from "../ingestion/linear/provider";
 import { upsertSourceConnection } from "../ingestion/upsert-source-item";
+import { fetchFirefliesAccountIdentity } from "../ingestion/fireflies/fetch-meeting";
+import type { SourceConnectionProvider } from "../types/enums";
 import type { SourceConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
+
+// Providers where a workspace may hold more than one live connection at
+// once (one per connecting teammate). Every other provider stays a
+// workspace-wide singleton -- Slack bot tokens, for instance, are
+// workspace-level, not personal, so a second Slack connect should rotate
+// the existing row rather than create a second live one.
+const MULTI_ACCOUNT_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies"]);
+function isMultiAccountProvider(provider: SourceConnectionProvider): boolean {
+  return MULTI_ACCOUNT_PROVIDERS.has(provider);
+}
 
 type ConnectionsRequest = Bun.BunRequest<"/workspaces/:id/connections">;
 type ConnectionProviderRequest = Bun.BunRequest<"/workspaces/:id/connections/:provider">;
@@ -96,6 +108,12 @@ const SINGLETON_CONNECTION_PROVIDERS = [
   "github",
   "claude_session",
 ] as const;
+// GET folds multiple rows to one for these -- everything in
+// SINGLETON_CONNECTION_PROVIDERS except the multi-account ones, which are
+// listed as separate rows instead.
+const FOLDED_CONNECTION_PROVIDERS = SINGLETON_CONNECTION_PROVIDERS.filter(
+  (provider) => !isMultiAccountProvider(provider),
+);
 
 type ListedConnectionRow = Pick<
   SourceConnectionRow,
@@ -107,6 +125,7 @@ type ListedConnectionRow = Pick<
   | "last_error_at"
   | "config_json"
   | "updated_at"
+  | "connected_by_user_id"
 >;
 
 function connectionSelectionRank(status: SourceConnectionRow["status"]): number {
@@ -198,15 +217,22 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
+  // One query for every listed provider -- folded and multi-account rows are
+  // partitioned from the same result set below rather than fetched
+  // separately, since it's the same table and workspace filter either way.
   const { data, error } = await serviceClient
     .from("source_connections")
-    .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, updated_at")
+    .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, updated_at, connected_by_user_id")
     .eq("workspace_id", req.params.id)
     .in("provider", [...SINGLETON_CONNECTION_PROVIDERS]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
+  const rows = (data ?? []) as ListedConnectionRow[];
+  const foldedRows = rows.filter((connection) => !isMultiAccountProvider(connection.provider));
+  const multiAccountRows = rows.filter((connection) => isMultiAccountProvider(connection.provider));
+
   const selectedByProvider = new Map<string, ListedConnectionRow>();
-  for (const connection of (data ?? []) as ListedConnectionRow[]) {
+  for (const connection of foldedRows) {
     selectedByProvider.set(
       connection.provider,
       preferredConnection(selectedByProvider.get(connection.provider), connection),
@@ -220,7 +246,9 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     last_success_at: string | null;
     last_error_at: string | null;
     channel_ids?: string[];
-  }> = SINGLETON_CONNECTION_PROVIDERS.flatMap((provider) => {
+    id?: string;
+    is_mine?: boolean;
+  }> = FOLDED_CONNECTION_PROVIDERS.flatMap((provider) => {
     const connection = selectedByProvider.get(provider);
     if (!connection) return [];
     return [{
@@ -240,6 +268,18 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
         : {}),
     }];
   });
+
+  for (const connection of multiAccountRows) {
+    connections.push({
+      id: connection.id,
+      provider: connection.provider,
+      status: connection.status,
+      display_name: connection.display_name,
+      last_success_at: connection.last_success_at,
+      last_error_at: connection.last_error_at,
+      is_mine: connection.connected_by_user_id === caller.userId,
+    });
+  }
 
   const { data: workspaceData, error: workspaceError } = await serviceClient
     .from("workspaces")
@@ -402,13 +442,64 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   const isFireflies = body.provider === "fireflies";
   const isSlack = body.provider === "slack";
 
-  const { data: existing, error: existingError } = await serviceClient
+  // Multi-account providers (fireflies) scope "does this caller already have
+  // a connection?" to the caller -- a teammate connecting their own account
+  // must never find (and silently overwrite) another teammate's row.
+  // Singleton providers (Slack, Linear, claude_session) keep the unscoped
+  // workspace-wide lookup: only one live connection can ever exist for them.
+  let existingQuery = serviceClient
     .from("source_connections")
     .select("id, credential_id, connection_key, config_json, updated_at")
     .eq("workspace_id", req.params.id)
-    .eq("provider", body.provider)
-    .maybeSingle();
+    .eq("provider", body.provider);
+  if (isMultiAccountProvider(body.provider)) {
+    existingQuery = existingQuery.eq("connected_by_user_id", caller.userId);
+  }
+  const { data: existing, error: existingError } = await existingQuery.maybeSingle();
   if (existingError) return errorResponse("connection_lookup_failed", 500, existingError, req.params.id);
+
+  let firefliesAccountIdentity: { externalAccountId: string; displayName: string | null } | null = null;
+  if (body.provider === "fireflies") {
+    try {
+      firefliesAccountIdentity = await fetchFirefliesAccountIdentity(body.api_token);
+    } catch (error) {
+      return errorResponse("fireflies_account_lookup_failed", 502, error, req.params.id);
+    }
+
+    if (!existing) {
+      // Same underlying Fireflies account pasted into a second connection --
+      // distinct from linking two *different* accounts' copies of one
+      // meeting (cut from this slice). Reject before inserting a duplicate
+      // that would double-ingest every meeting from that account.
+      const { data: duplicate, error: duplicateError } = await serviceClient
+        .from("source_connections")
+        .select("id, connected_by_user_id")
+        .eq("workspace_id", req.params.id)
+        .eq("provider", "fireflies")
+        .eq("external_account_id", firefliesAccountIdentity.externalAccountId)
+        .neq("status", "revoked")
+        .maybeSingle();
+      if (duplicateError) return errorResponse("connection_lookup_failed", 500, duplicateError, req.params.id);
+
+      if (duplicate) {
+        let ownerName = "another teammate";
+        if (duplicate.connected_by_user_id) {
+          const { data: ownerUser } = await serviceClient
+            .from("users")
+            .select("display_name, email")
+            .eq("id", duplicate.connected_by_user_id)
+            .maybeSingle<{ display_name: string | null; email: string }>();
+          if (ownerUser) ownerName = ownerUser.display_name ?? ownerUser.email;
+        }
+        return errorResponse(
+          `fireflies_account_already_connected:${ownerName}`,
+          409,
+          undefined,
+          req.params.id,
+        );
+      }
+    }
+  }
 
   const connectionKey = existing?.connection_key ?? randomUUID();
 
@@ -613,6 +704,18 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       return errorResponse("connection_update_failed", 500, "invalid_rotation_result", req.params.id);
     }
     connectionId = existing.id;
+
+    if (firefliesAccountIdentity) {
+      const { error: identityError } = await serviceClient
+        .from("source_connections")
+        .update({
+          external_account_id: firefliesAccountIdentity.externalAccountId,
+          display_name: firefliesAccountIdentity.displayName,
+        })
+        .eq("id", connectionId)
+        .eq("workspace_id", req.params.id);
+      if (identityError) return errorResponse("connection_update_failed", 500, identityError, req.params.id);
+    }
   } else if (existing) {
     connectionId = existing.id;
 
@@ -688,6 +791,12 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         status: "active",
         connected_by_user_id: caller.userId,
         config_json: body.provider === "slack" ? { channel_ids: body.channel_ids } : {},
+        ...(firefliesAccountIdentity
+          ? {
+              external_account_id: firefliesAccountIdentity.externalAccountId,
+              display_name: firefliesAccountIdentity.displayName,
+            }
+          : {}),
       })
       .select("id")
       .single();
@@ -817,18 +926,27 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
+  // The RPC is the single source of truth for ownership -- it takes
+  // p_connected_by_user_id and reports which case occurred, so there's no
+  // need for a separate pre-check query that would just repeat the same
+  // lookup.
   const { data, error } = await serviceClient.rpc("disconnect_source_connection", {
     p_workspace_id: req.params.id,
     p_provider: req.params.provider,
+    p_connected_by_user_id: caller.userId,
   });
   if (error) return errorResponse("disconnect_failed", 500, error, req.params.id);
 
   const result = (Array.isArray(data) ? data[0] : data) as {
     connection_id: string | null;
-    transitioned: boolean;
+    outcome: "disconnected" | "not_found" | "not_owner";
   } | null;
 
-  if (req.params.provider === "slack" && result?.transitioned && result.connection_id) {
+  if (result?.outcome === "not_owner") {
+    return errorResponse("not_connection_owner", 403, undefined, req.params.id);
+  }
+
+  if (req.params.provider === "slack" && result?.outcome === "disconnected" && result.connection_id) {
     await stopSlackListener(result.connection_id);
   }
 

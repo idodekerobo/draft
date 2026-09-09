@@ -21,6 +21,8 @@ export interface RawHostedConnectionSummary {
   last_success_at?: unknown;
   last_error_at?: unknown;
   channel_ids?: unknown;
+  id?: unknown;
+  is_mine?: unknown;
 }
 
 export interface HostedConnectionSummary {
@@ -86,6 +88,36 @@ export function normalizeHostedConnection(
       : [];
   }
   return result;
+}
+
+export interface HostedConnectionListItem extends HostedConnectionSummary {
+  id: string | null;
+  is_mine: boolean;
+}
+
+// Settings-list-only: unlike normalizeHostedConnections (which folds to one
+// row per provider for every other consumer), this returns every row a
+// multi-account provider has -- one per connecting teammate. Deliberately
+// separate from normalizeHostedConnection/normalizeHostedConnections so
+// every other caller's folded shape is untouched.
+export function normalizeHostedConnectionList(
+  provider: HostedConnectionProvider,
+  value: unknown,
+): HostedConnectionListItem[] {
+  const rawConnections = Array.isArray(value) ? value : [];
+  const matches = rawConnections
+    .map((entry) => rawSummary(entry))
+    .filter((raw): raw is RawHostedConnectionSummary => !!raw && normalizedProvider(raw.provider) === provider);
+
+  if (matches.length === 0) {
+    return [{ ...normalizeHostedConnection(provider), id: null, is_mine: false }];
+  }
+
+  return matches.map((raw) => ({
+    ...normalizeHostedConnection(provider, raw),
+    id: typeof raw.id === "string" ? raw.id : null,
+    is_mine: raw.is_mine === true,
+  }));
 }
 
 export function normalizeHostedConnections(

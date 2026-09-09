@@ -61,6 +61,7 @@ export const GET = withAuth<SessionsSearchRequest>(async (req, caller) => {
     p_contributor_id: contributorId,
     p_limit: limit,
     p_offset: offset,
+    p_caller_user_id: caller.userId,
   });
   if (error) return errorResponse("search_failed", 500, error, req.params.id);
 

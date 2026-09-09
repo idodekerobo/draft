@@ -12,6 +12,7 @@ import type {
   SourceConnectionStatus,
   SourceItemLifecycleStatus,
   SourceItemType,
+  SourceItemVisibility,
   SynthesisRunOutcome,
   SynthesisRunStatus,
   SynthesisRunTriggerType,
@@ -133,6 +134,8 @@ export interface SourceItemRow {
   metadata_json: Record<string, unknown>;
   sanitized_raw_json: unknown | null;
   supersedes_source_item_id: string | null;
+  visibility: SourceItemVisibility;
+  owner_user_id: string | null;
   created_at: string;
   updated_at: string;
 }

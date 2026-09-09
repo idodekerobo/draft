@@ -8,6 +8,7 @@ import { connectSlackSocketListener, type SlackListenerHandle } from "./socket-l
 interface ActiveSlackConnectionRow {
   id: string;
   workspace_id: string;
+  credential_id: string | null;
   workspaces: { organization_id: string } | { organization_id: string }[] | null;
 }
 
@@ -29,6 +30,9 @@ function startResolvedListener(
   if (!organizationId) {
     throw new Error(`Slack connection ${row.id} has no organization_id`);
   }
+  if (!row.credential_id) {
+    throw new Error(`Slack connection ${row.id} has no credential configured`);
+  }
 
   listenerHandles.get(row.id)?.stop();
   listenerHandles.set(
@@ -38,6 +42,7 @@ function startResolvedListener(
         id: row.id,
         workspace_id: row.workspace_id,
         organization_id: organizationId,
+        credential_id: row.credential_id,
       },
       client,
     ),
@@ -51,7 +56,7 @@ export async function restartSlackListener(
   const db = client ?? (await import("../../db/client")).serviceClient;
   const { data, error } = await db
     .from("source_connections")
-    .select("id, workspace_id, workspaces!inner(organization_id)")
+    .select("id, workspace_id, credential_id, workspaces!inner(organization_id)")
     .eq("id", connectionId)
     .eq("provider", "slack")
     .eq("status", "active")
@@ -72,7 +77,7 @@ export async function startSlackListeners(client?: SupabaseClient): Promise<void
 
   const { data, error } = await db
     .from("source_connections")
-    .select("id, workspace_id, workspaces!inner(organization_id)")
+    .select("id, workspace_id, credential_id, workspaces!inner(organization_id)")
     .eq("provider", "slack")
     .eq("status", "active");
   if (error) throw error;

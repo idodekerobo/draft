@@ -134,7 +134,7 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
     const response = await routeModule.POST(bunRequest("acme-fireflies"));
 
     expect(response.status).toBe(200);
-    expect(called).toEqual([connection, "meeting-123"]);
+    expect(called).toEqual([connection, "credential-1", "meeting-123"]);
     expect(evidence.lastSuccessAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(evidence.rpcCalls[0]).toMatchObject({
       functionName: "mark_fireflies_webhook_success",

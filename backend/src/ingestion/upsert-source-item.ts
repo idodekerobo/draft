@@ -4,6 +4,7 @@ import type {
   SourceConnectionStatus,
   SourceItemLifecycleStatus,
   SourceItemType,
+  SourceItemVisibility,
 } from "../types/enums";
 import type { SourceConnectionRow, SourceItemRow } from "../types/tables";
 
@@ -62,6 +63,10 @@ export interface UpsertSourceItemInput {
   metadata_json?: Record<string, unknown>;
   sanitized_raw_json?: unknown;
   lifecycle_status?: SourceItemLifecycleStatus;
+  // Defaults to 'shared'/null -- only multi-account providers (fireflies)
+  // pass 'private' + the connecting user's id at ingest time.
+  visibility?: SourceItemVisibility;
+  owner_user_id?: string | null;
 }
 
 export interface UpsertSourceItemResult {
@@ -100,6 +105,8 @@ export async function upsertSourceItem(
       p_metadata_json: input.metadata_json ?? {},
       p_sanitized_raw_json: input.sanitized_raw_json ?? null,
       p_lifecycle_status: input.lifecycle_status ?? "ready",
+      p_visibility: input.visibility ?? "shared",
+      p_owner_user_id: input.owner_user_id ?? null,
     });
   if (rpcError) throw rpcError;
 

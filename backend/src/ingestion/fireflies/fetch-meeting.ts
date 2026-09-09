@@ -82,6 +82,66 @@ function toIsoDate(date: number | string): string {
   return new Date(date).toISOString();
 }
 
+const USER_QUERY = `
+  query CurrentUser {
+    user {
+      user_id
+      name
+      email
+    }
+  }
+`;
+
+interface FirefliesGraphQLUser {
+  user_id?: string | null;
+  name?: string | null;
+  email?: string | null;
+}
+
+interface FirefliesUserGraphQLResponse {
+  data?: { user: FirefliesGraphQLUser | null };
+  errors?: { message: string }[];
+}
+
+export interface FirefliesAccountIdentity {
+  externalAccountId: string;
+  displayName: string | null;
+}
+
+// Verified against the Fireflies GraphQL API: `user` returns the token's own
+// account -- there is no separate "whoami"/introspection endpoint.
+export async function fetchFirefliesAccountIdentity(apiToken: string): Promise<FirefliesAccountIdentity> {
+  const response = await fetch(FIREFLIES_GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiToken}`,
+    },
+    body: JSON.stringify({ query: USER_QUERY }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Fireflies API request failed for account identity: ${response.status} ${response.statusText} ${body}`);
+  }
+
+  const payload = (await response.json()) as FirefliesUserGraphQLResponse;
+  if (payload.errors && payload.errors.length > 0) {
+    throw new Error(`Fireflies API returned errors for account identity: ${payload.errors.map((e) => e.message).join("; ")}`);
+  }
+
+  const user = payload.data?.user;
+  const externalAccountId = user?.user_id || user?.email;
+  if (!externalAccountId) {
+    throw new Error("Fireflies API returned no account identity for this token");
+  }
+
+  return {
+    externalAccountId,
+    displayName: user?.name || user?.email || null,
+  };
+}
+
 export async function fetchFirefliesMeeting(
   apiToken: string,
   meetingId: string,

@@ -1,3 +1,10 @@
+-- Old signature (uuid, text) picked "most recently updated" workspace-wide,
+-- with no owner parameter at all -- a route-level guard alone can't fix
+-- this, since the route doesn't know which connection_id the function will
+-- pick. Drop it explicitly: a different arg list creates an overload rather
+-- than replacing it.
+drop function if exists disconnect_source_connection(uuid, text);
+
 -- Revokes one live provider connection owned by the caller and disables all
 -- of its scheduled work in the same transaction. Reports which case
 -- occurred ('disconnected' / 'not_found' / 'not_owner') so the route can

@@ -19,7 +19,7 @@ export async function POST(
     sourceConnectionId = connection.id;
 
     if (HANDLED_EVENTS.has(event)) {
-      await ingestFirefliesMeeting(connection, meetingId);
+      await ingestFirefliesMeeting(connection, credentialId, meetingId);
     }
 
     const { error } = await serviceClient.rpc("mark_fireflies_webhook_success", {

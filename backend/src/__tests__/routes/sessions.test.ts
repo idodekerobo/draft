@@ -32,6 +32,8 @@ interface SourceItemRow {
   metadata_json: Record<string, unknown>;
   content_markdown: string;
   occurred_at: string;
+  visibility?: string;
+  owner_user_id?: string | null;
 }
 
 const state: {
@@ -240,9 +242,30 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
     state.sourceItems.push({
       workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "ready",
       metadata_json: { agent_session_id: "s1" }, content_markdown: "# Summary", occurred_at: "2026-01-01T00:00:00Z",
+      visibility: "shared", owner_user_id: null,
     });
     const response = await routeModule.READ(readRequest("s1") as never);
     expect(await response.json()).toEqual({ summary: "# Summary", occurred_at: "2026-01-01T00:00:00Z" });
+  });
+
+  it("excludes a private summary source_item owned by a different user", async () => {
+    state.sourceItems.push({
+      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "ready",
+      metadata_json: { agent_session_id: "s1" }, content_markdown: "# Secret", occurred_at: "2026-01-01T00:00:00Z",
+      visibility: "private", owner_user_id: "someone-else",
+    });
+    const response = await routeModule.READ(readRequest("s1") as never);
+    expect(await response.json()).toEqual({ summary: null });
+  });
+
+  it("includes a private summary source_item owned by the caller", async () => {
+    state.sourceItems.push({
+      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "ready",
+      metadata_json: { agent_session_id: "s1" }, content_markdown: "# Mine", occurred_at: "2026-01-01T00:00:00Z",
+      visibility: "private", owner_user_id: caller.userId,
+    });
+    const response = await routeModule.READ(readRequest("s1") as never);
+    expect(await response.json()).toEqual({ summary: "# Mine", occurred_at: "2026-01-01T00:00:00Z" });
   });
 
   it("--transcript returns messages ordered by seq", async () => {

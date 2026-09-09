@@ -23,7 +23,7 @@ beforeAll(() => {
 });
 
 interface FakeClientOptions {
-  connection?: { id: string; workspace_id: string; credential_id: string | null } | null;
+  connection?: { id: string; workspace_id: string; credential_id: string | null; connected_by_user_id?: string | null } | null;
   credential?: {
     id: string;
     status: string;
@@ -51,6 +51,7 @@ function createFakeClient(options: FakeClientOptions) {
                           id: ids.connection,
                           workspace_id: ids.workspace,
                           credential_id: options.connectionCredentialId ?? ids.credential,
+                          connected_by_user_id: null,
                         }
                       : options.connection,
                   error: null,
@@ -145,7 +146,7 @@ describe("authenticateFirefliesWebhookRequest", () => {
     const result = await authenticateFirefliesWebhookRequest(request, CONNECTION_KEY, client);
 
     expect(result).toEqual({
-      connection: { id: ids.connection, workspace_id: ids.workspace },
+      connection: { id: ids.connection, workspace_id: ids.workspace, connected_by_user_id: null },
       credentialId: ids.credential,
       event: "meeting.summarized",
       meetingId: "meeting-123",

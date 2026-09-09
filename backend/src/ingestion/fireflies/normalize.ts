@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchFirefliesMeeting, type FirefliesMeetingData } from "./fetch-meeting";
 import { upsertSourceItem } from "../upsert-source-item";
 import { insertEvent } from "../../events/insert-event";
-import { resolveProviderCredential } from "../../credentials/resolve-provider-credential";
+import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 
 function sha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
@@ -56,13 +56,15 @@ export function buildFirefliesExternalVersion(
 }
 
 export async function ingestFirefliesMeeting(
-  connection: { id: string; workspace_id: string },
+  connection: { id: string; workspace_id: string; connected_by_user_id?: string | null },
+  credentialId: string,
   meetingId: string,
   client?: SupabaseClient,
 ): Promise<{ sourceItemId: string }> {
-  const { api_token: apiToken } = await resolveProviderCredential(
+  const { api_token: apiToken } = await resolveProviderCredentialById(
     connection.workspace_id,
     "fireflies",
+    credentialId,
     client,
   );
 
@@ -91,6 +93,10 @@ export async function ingestFirefliesMeeting(
       fireflies_meeting_id: meetingId,
     },
     sanitized_raw_json: sanitizedRaw,
+    // Fireflies is a multi-account provider -- meetings are private to the
+    // connecting teammate by default (no widen action exists yet).
+    visibility: "private",
+    owner_user_id: connection.connected_by_user_id ?? null,
   });
 
   await insertEvent(db, connection.workspace_id, {
