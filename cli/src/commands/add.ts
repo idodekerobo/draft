@@ -60,6 +60,22 @@ const MANAGED_BLOCK_BODY = [
   "  credential prompts) — don't run this on the user's behalf unless asked.",
   "- `draft integrations disconnect <github|linear|slack|fireflies>` —",
   "  disconnect one.",
+  "",
+  "### Skills",
+  "",
+  "Draft's skills are a company skill marketplace — reusable procedures,",
+  "templates, and heuristics the team has saved for any future workflow, not",
+  "just one task type.",
+  "",
+  "- Discover: before starting a task that might match an existing company",
+  "  procedure, run `draft skills list` to browse the marketplace. Read the",
+  "  full description text for each; if one matches, run `draft skills read",
+  "  <name>` and follow it.",
+  "- Add: when a teammate asks you to save a template or procedure for future",
+  "  use, run `draft skills add` with the content. Write the description the",
+  "  way you'd write a skill's own SKILL.md description — the same judgment",
+  "  you already use for that format's frontmatter.",
+  "- `draft skills --help` — see add/update/remove/list/read usage.",
 ].join("\n");
 
 interface ParsedArgs {

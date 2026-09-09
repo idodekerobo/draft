@@ -32,6 +32,11 @@ export interface MockBackendState {
   githubInstallPollResponse: (workspaceId: string, code: string) => Response | Promise<Response>;
   slackChannelsResponse: (workspaceId: string) => Response | Promise<Response>;
   slackMembershipResponse: (workspaceId: string) => Response | Promise<Response>;
+  skillsListResponse: (workspaceId: string) => Response | Promise<Response>;
+  skillsReadResponse: (workspaceId: string, name: string) => Response | Promise<Response>;
+  skillsAddResponse: (workspaceId: string, body: unknown) => Response | Promise<Response>;
+  skillsUpdateResponse: (workspaceId: string, name: string, body: unknown) => Response | Promise<Response>;
+  skillsRemoveResponse: (workspaceId: string, name: string) => Response | Promise<Response>;
 }
 
 export function defaultWhoami(overrides: Partial<{ organization_id: string | null; primary_team_id: string | null; workspace_id: string | null; onboarding_completed_at: string | null }> = {}) {
@@ -77,6 +82,15 @@ export function createMockBackend() {
       left: [],
       failed: [],
     }),
+    skillsListResponse: () => Response.json({ skills: [] }),
+    skillsReadResponse: () => Response.json({ error: "skill_not_found" }, { status: 404 }),
+    skillsAddResponse: () => Response.json({
+      name: "example", description: "desc", license: null, compatibility: null, metadata: null,
+      allowedTools: null, content: "content", createdBy: "user-1", createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z", updatedBy: null,
+    }, { status: 201 }),
+    skillsUpdateResponse: () => Response.json({ error: "skill_not_found" }, { status: 404 }),
+    skillsRemoveResponse: () => Response.json({ error: "skill_not_found" }, { status: 404 }),
   };
 
   const server = Bun.serve({
@@ -152,6 +166,27 @@ export function createMockBackend() {
       }
       if (req.method === "PATCH" && /^\/workspaces\/[^/]+\/connections\/slack$/.test(url.pathname)) {
         return state.slackMembershipResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/skills$/.test(url.pathname)) {
+        return state.skillsListResponse(url.pathname.split("/")[2]!);
+      }
+      if (req.method === "POST" && /^\/workspaces\/[^/]+\/skills$/.test(url.pathname)) {
+        const workspaceId = url.pathname.split("/")[2]!;
+        const body = await req.clone().json().catch(() => null);
+        return state.skillsAddResponse(workspaceId, body);
+      }
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/skills\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.skillsReadResponse(parts[2]!, decodeURIComponent(parts[4]!));
+      }
+      if (req.method === "PATCH" && /^\/workspaces\/[^/]+\/skills\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        const body = await req.clone().json().catch(() => null);
+        return state.skillsUpdateResponse(parts[2]!, decodeURIComponent(parts[4]!), body);
+      }
+      if (req.method === "DELETE" && /^\/workspaces\/[^/]+\/skills\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        return state.skillsRemoveResponse(parts[2]!, decodeURIComponent(parts[4]!));
       }
       return new Response("not found", { status: 404 });
     },

@@ -73,6 +73,16 @@ describe("draft add — tool-to-file mapping", () => {
       expect(content).toContain("draft integrations connect <github|linear|slack|fireflies|claude-code>");
       expect(content).toContain("draft integrations disconnect <github|linear|slack|fireflies>");
     });
+
+    test(`${tool} writes the skills subsection to ${file}`, async () => {
+      const result = await runCli(["add", tool, "--dir", project], { home, apiUrl: "http://unused" });
+      expect(result.exitCode).toBe(0);
+      const content = readFileSync(join(project, file), "utf8");
+      expect(content).toContain("### Skills");
+      expect(content).toContain("draft skills list");
+      expect(content).toContain("draft skills add");
+      expect(content).toContain("draft skills --help");
+    });
   }
 });
 
