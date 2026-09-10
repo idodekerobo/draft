@@ -24,7 +24,7 @@ export interface BackendConfig {
   // src/auth/better-auth.ts needs these and validates them itself.
   betterAuthDatabaseUrl: string | undefined;
   betterAuthSecret: string | undefined;
-  // MCP resource identifier (RFC 8707/9728) — HTTPS URL, no query/fragment.
+  // MCP resource identifier (RFC 8707/9728) — always apiBaseUrl + "/mcp".
   mcpResourceUrl: string;
 }
 
@@ -38,13 +38,14 @@ function unescapePem(value: string): string {
 export function loadConfig(): BackendConfig {
   const port = Number(process.env.PORT ?? 8787);
   const githubAppPrivateKeyPreviousRaw = process.env.GITHUB_APP_PRIVATE_KEY_PREVIOUS;
+  const apiBaseUrl = process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`;
   return {
     supabaseUrl: requireEnv("SUPABASE_URL"),
     supabasePublishableKey: requireEnv("SUPABASE_PUBLISHABLE_KEY"),
     supabaseSecretKey: requireEnv("SUPABASE_SECRET_KEY"),
     port,
     appUrl: process.env.APP_URL ?? "https://app.draftai.us",
-    apiBaseUrl: process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`,
+    apiBaseUrl,
     githubAppId: requireEnv("GITHUB_APP_ID"),
     githubAppSlug: requireEnv("GITHUB_APP_SLUG"),
     githubAppPrivateKey: unescapePem(requireEnv("GITHUB_APP_PRIVATE_KEY")),
@@ -54,8 +55,6 @@ export function loadConfig(): BackendConfig {
     githubAppWebhookSecret: requireEnv("GITHUB_APP_WEBHOOK_SECRET"),
     betterAuthDatabaseUrl: process.env.BETTER_AUTH_DATABASE_URL,
     betterAuthSecret: process.env.BETTER_AUTH_SECRET,
-    mcpResourceUrl:
-      process.env.MCP_RESOURCE_URL ??
-      `${process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`}/mcp`,
+    mcpResourceUrl: `${apiBaseUrl}/mcp`,
   };
 }
