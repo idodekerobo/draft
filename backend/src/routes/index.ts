@@ -64,7 +64,11 @@ export const routes = {
   // RFC 9728/8414 discovery docs live at root, outside the basePath.
   "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },
+  // Both the bare path and the RFC 9728 path-appended form (for the "/mcp"
+  // resource) are valid; Better Auth's handler recognizes both itself, but
+  // Bun's router needs an explicit entry for each.
   "/.well-known/oauth-protected-resource": { GET: WELL_KNOWN_HANDLER },
+  "/.well-known/oauth-protected-resource/mcp": { GET: WELL_KNOWN_HANDLER },
   "/mcp": { GET: mcp.GET, POST: mcp.POST, DELETE: mcp.DELETE },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
