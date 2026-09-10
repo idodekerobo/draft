@@ -222,6 +222,15 @@ button:disabled {
   color: var(--teal);
   border-left: 2px solid var(--teal);
 }
+.scope-hint {
+  margin: -10px 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.consent-actions {
+  display: grid;
+  gap: 10px;
+}
 .auth-footer {
   align-self: end;
   margin: 24px 0 0;
