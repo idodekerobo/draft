@@ -1,12 +1,13 @@
 "use client";
-import { useState } from "react";
 import { API_URL } from "@/lib/config";
 
 /**
- * Posts the accept/deny decision to Better Auth's /oauth2/consent endpoint,
- * then redirects to the `redirect_uri` it returns. Unlike /link's device
- * pairing, no Supabase tokens are forwarded — only the Better Auth session
- * cookie (set earlier by ResumeOAuthAuthorize) proves who's consenting.
+ * Navigates (not fetches) to a top-level bridge for Better Auth's POST-only
+ * /oauth2/consent — a background fetch with credentials: "include" would
+ * need to send the session cookie cross-origin, which is silently dropped
+ * as third-party in most browsers (same issue as the Supabase-session
+ * bridge; see backend/src/auth/oauth-consent-redirect.ts). `query` is
+ * signed by Better Auth and forwarded exactly as received.
  */
 export function ApproveOAuthConsent({
   query,
@@ -17,27 +18,9 @@ export function ApproveOAuthConsent({
   clientId: string;
   scope: string;
 }) {
-  const [state, setState] = useState<"ready" | "working" | "error">("ready");
-
-  async function decide(accept: boolean) {
-    setState("working");
-    // `query` is signed by Better Auth — forward it exactly as received.
-    const response = await fetch(`${API_URL}/api/auth/oauth2/consent`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accept, oauth_query: query }),
-    });
-    if (!response.ok) {
-      setState("error");
-      return;
-    }
-    const body = (await response.json()) as { redirect_uri?: string };
-    if (!body.redirect_uri) {
-      setState("error");
-      return;
-    }
-    location.assign(body.redirect_uri);
+  function decide(accept: boolean) {
+    const oauthQuery = encodeURIComponent(query);
+    location.assign(`${API_URL}/oauth2/consent-redirect?accept=${accept}&oauth_query=${oauthQuery}`);
   }
 
   return (
@@ -48,20 +31,11 @@ export function ApproveOAuthConsent({
       </p>
       <p className="scope-hint">Requested access: {scope}</p>
       <div className="consent-actions">
-        <button disabled={state === "working"} onClick={() => decide(true)}>
-          Allow
-        </button>
-        <button
-          disabled={state === "working"}
-          className="mode-switch"
-          onClick={() => decide(false)}
-        >
+        <button onClick={() => decide(true)}>Allow</button>
+        <button className="mode-switch" onClick={() => decide(false)}>
           Deny
         </button>
       </div>
-      {state === "error" && (
-        <p className="error">Something went wrong. Close this window and try again.</p>
-      )}
     </>
   );
 }

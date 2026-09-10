@@ -24,6 +24,7 @@ import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
 import { OPTIONS, withCors } from "../auth/with-cors";
 import { AUTH_HANDLER, WELL_KNOWN_HANDLER } from "../auth/better-auth-routes";
+import * as oauthConsentRedirect from "../auth/oauth-consent-redirect";
 import * as mcp from "../mcp/route";
 
 export const routes = {
@@ -63,6 +64,9 @@ export const routes = {
   // Better Auth emits no CORS headers itself, so the browser-called paths
   // under it (the bridge endpoint, oauth2/consent) need withCors here too.
   "/api/auth/*": { GET: withCors(AUTH_HANDLER), POST: withCors(AUTH_HANDLER), OPTIONS },
+  // Top-level-navigation front for the POST-only /oauth2/consent — see
+  // oauth-consent-redirect.ts for why the consent page can't call it via fetch.
+  "/oauth2/consent-redirect": { GET: oauthConsentRedirect.GET },
   // RFC 9728/8414 discovery docs live at root, outside the basePath.
   "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },

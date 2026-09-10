@@ -14,6 +14,10 @@ export default async function OAuthConsentPage({
     if (Array.isArray(value)) value.forEach((v) => query.append(key, v));
     else if (value !== undefined) query.append(key, value);
   }
+  // `error` is our own retry-signal, never part of Better Auth's signed
+  // query — strip it before this gets forwarded as oauth_query.
+  const hasError = query.has("error");
+  query.delete("error");
   const queryString = query.toString();
   const clientId = query.get("client_id") ?? "An application";
   const scope = query.get("scope") ?? "read";
@@ -26,6 +30,7 @@ export default async function OAuthConsentPage({
   return (
     <main className="card">
       <h1>Connect Draft</h1>
+      {hasError && <p className="error">Something went wrong. Try again.</p>}
       {user ? (
         <ApproveOAuthConsent query={queryString} clientId={clientId} scope={scope} />
       ) : (
