@@ -1,6 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type AgentQueryLogCommand = "sessions.list" | "sessions.read" | "sessions.search" | "skills.list" | "skills.read";
+export type AgentQueryLogCommand =
+  | "context.read"
+  | "sessions.list"
+  | "sessions.read"
+  | "sessions.search"
+  | "skills.list"
+  | "skills.read"
+  | "mcp.context.list"
+  | "mcp.context.read"
+  | "mcp.sessions.list"
+  | "mcp.sessions.read"
+  | "mcp.sessions.search"
+  | "mcp.skills.list"
+  | "mcp.skills.read";
 
 export interface RecordAgentQueryLogInput {
   workspaceId: string;
