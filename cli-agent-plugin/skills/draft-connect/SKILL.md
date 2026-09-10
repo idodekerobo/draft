@@ -2,9 +2,10 @@
 name: draft-connect
 description: >
   Connect integrations to the Draft daemon. Guides the user through configuring
-  Granola (MCP or API), Fireflies (MCP), Slack, and GitHub. Run as /draft:connect
-  to see all integrations, or /draft:connect <name> to configure a specific one.
-  Each integration has its own sub-skill file in this directory.
+  Granola (Draft Cloud hosted, requires a Business/Enterprise plan), Fireflies
+  (MCP), Slack, and GitHub. Run as /draft:connect to see all integrations, or
+  /draft:connect <name> to configure a specific one. Each integration has its
+  own sub-skill file in this directory.
 ---
 
 # /draft:connect — Integration Hub
@@ -50,6 +51,30 @@ Continue to Step 2 (status display).
 
 Show all integrations and their current connection state.
 
+Granola is hosted (Draft Cloud), not local — check it separately via the CLI
+rather than reading `integrations.json`:
+
+```bash
+draft integrations list --json 2>/dev/null | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    rows = [c for c in data.get('connections', []) if c.get('provider') == 'granola']
+except Exception:
+    rows = []
+if not rows or all(r.get('status') in (None, 'disconnected') for r in rows):
+    print('granola:not configured')
+else:
+    parts = []
+    for r in rows:
+        kind = 'workspace key' if r.get('id') and r.get('is_mine') is False and r.get('account_kind') == 'workspace' else 'personal'
+        parts.append(f\"{r.get('status')} ({kind})\")
+    print('granola:' + ', '.join(parts))
+"
+```
+
+If the command fails (not signed in to Draft Cloud), print `granola:not configured — run 'draft auth login' then /draft:connect granola`.
+
 ```bash
 python3 -c "
 import json
@@ -63,14 +88,6 @@ integrations = {}
 if int_path.exists():
     try: integrations = json.loads(int_path.read_text())
     except: pass
-
-# ── Granola ───────────────────────────────────────────────────────────────────
-g = integrations.get('granola', {})
-if g.get('connected'):
-    granola_status = f\"connected ({g.get('mode', 'unknown')})\"
-else:
-    granola_status = 'not configured'
-print(f'granola:{granola_status}')
 
 # ── Slack ─────────────────────────────────────────────────────────────────────
 s = integrations.get('slack', {})
@@ -103,7 +120,7 @@ Print a status table using the output above:
 ```
 Draft Integrations
 
-  granola     [connected (MCP) | connected (API) | not configured]
+  granola     [active (personal) | active (workspace key) | not configured]
   fireflies   [connected | not configured]
   slack       [connected (passive, 2 channels) | not configured]
   github      [connected (org/repo1, org/repo2) | not configured — run /draft:connect github]

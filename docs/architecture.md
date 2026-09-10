@@ -38,7 +38,7 @@ The desktop can also read a local folder during onboarding to seed a workspace. 
 
 ### CLI
 
-The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context and skill reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
+The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context and skill reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Granola, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
 
 ### Agent connection
 
