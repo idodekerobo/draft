@@ -20,6 +20,12 @@ export interface BackendConfig {
   githubAppPrivateKey: string;
   githubAppPrivateKeyPrevious?: string;
   githubAppWebhookSecret: string;
+  // Optional (not requireEnv) since loadConfig() is called broadly; only
+  // src/auth/better-auth.ts needs these and validates them itself.
+  betterAuthDatabaseUrl: string | undefined;
+  betterAuthSecret: string | undefined;
+  // MCP resource identifier (RFC 8707/9728) — HTTPS URL, no query/fragment.
+  mcpResourceUrl: string;
 }
 
 // GITHUB_APP_PRIVATE_KEY is stored with literal \n escapes (see
@@ -46,5 +52,10 @@ export function loadConfig(): BackendConfig {
       ? unescapePem(githubAppPrivateKeyPreviousRaw)
       : undefined,
     githubAppWebhookSecret: requireEnv("GITHUB_APP_WEBHOOK_SECRET"),
+    betterAuthDatabaseUrl: process.env.BETTER_AUTH_DATABASE_URL,
+    betterAuthSecret: process.env.BETTER_AUTH_SECRET,
+    mcpResourceUrl:
+      process.env.MCP_RESOURCE_URL ??
+      `${process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`}/mcp`,
   };
 }
