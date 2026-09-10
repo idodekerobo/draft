@@ -24,6 +24,7 @@ import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
 import { OPTIONS, withCors } from "../auth/with-cors";
 import { AUTH_HANDLER, WELL_KNOWN_HANDLER } from "../auth/better-auth-routes";
+import * as mcp from "../mcp/route";
 
 export const routes = {
   "/health": { GET: health.GET },
@@ -64,6 +65,7 @@ export const routes = {
   "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/oauth-protected-resource": { GET: WELL_KNOWN_HANDLER },
+  "/mcp": { GET: mcp.GET, POST: mcp.POST, DELETE: mcp.DELETE },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
   "/webhooks/github": { POST: githubWebhook.POST },
