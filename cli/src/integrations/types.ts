@@ -1,6 +1,6 @@
 import type { HostedConnectionProvider } from "draft-core/integrations/hosted-connections";
 
-export const NETWORK_DISCONNECT_PROVIDERS = ["github", "fireflies", "linear", "slack"] as const;
+export const NETWORK_DISCONNECT_PROVIDERS = ["github", "fireflies", "linear", "slack", "granola"] as const;
 export type NetworkDisconnectProvider = typeof NETWORK_DISCONNECT_PROVIDERS[number];
 
 // Grammar-level superset: "claude-code" parses as a recognized disconnect target so it gets a
@@ -13,6 +13,7 @@ export const BACKEND_PROVIDER_BY_CLI: Record<NetworkDisconnectProvider, NetworkD
   fireflies: "fireflies",
   linear: "linear",
   slack: "slack",
+  granola: "granola",
 };
 
 export const PROVIDER_LABELS: Record<HostedConnectionProvider, string> = {
@@ -20,6 +21,7 @@ export const PROVIDER_LABELS: Record<HostedConnectionProvider, string> = {
   slack: "Slack",
   linear: "Linear",
   fireflies: "Fireflies",
+  granola: "Granola",
   "claude-code": "Claude Code",
 };
 

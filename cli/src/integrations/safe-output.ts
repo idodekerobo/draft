@@ -132,6 +132,7 @@ const PROVIDERS = new Set<HostedConnectionProvider>([
   "slack",
   "linear",
   "fireflies",
+  "granola",
   "claude-code",
 ]);
 const STATUSES = new Set<HostedConnectionStatus>([

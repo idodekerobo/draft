@@ -275,7 +275,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true
   return { ok: true, token: resolved.token, workspaceId: resolved.workspaceId, response };
 }
 
-export type BackendProvider = "github" | "slack" | "linear" | "fireflies" | "claude_code";
+export type BackendProvider = "github" | "slack" | "linear" | "fireflies" | "granola" | "claude_code";
 export type BackendConnectionProvider = BackendProvider | "claude_session";
 export type BackendConnectionStatus = "pending" | "active" | "degraded" | "error" | "revoked" | "expired";
 
@@ -291,6 +291,7 @@ export interface HostedConnectionTransport {
 export type HostedConnectBody =
   | { provider: "fireflies"; api_token: string }
   | { provider: "linear"; api_token: string }
+  | { provider: "granola"; api_token: string; account_kind: "personal" | "workspace" }
   | { provider: "slack"; bot_token: string; app_token: string; channel_ids: string[] }
   | { provider: "claude_code"; token: string };
 
@@ -358,6 +359,7 @@ const BACKEND_PROVIDERS = new Set<BackendConnectionProvider>([
   "slack",
   "linear",
   "fireflies",
+  "granola",
   "claude_code",
   "claude_session",
 ]);
@@ -452,6 +454,8 @@ function connectRequestBody(body: HostedConnectBody): HostedConnectBody {
     case "fireflies":
     case "linear":
       return { provider: body.provider, api_token: body.api_token };
+    case "granola":
+      return { provider: "granola", api_token: body.api_token, account_kind: body.account_kind };
     case "slack":
       return {
         provider: "slack",
@@ -503,8 +507,16 @@ export function connectIntegration(body: HostedConnectBody): Promise<FetchResult
   });
 }
 
-export function disconnectIntegration(provider: BackendProvider): Promise<FetchResult<{ ok: true }>> {
-  return requestValue(`/connections/${encodeURIComponent(provider)}`, { method: "DELETE" }, decodeOk);
+/**
+ * Disconnects a hosted integration. `accountKind` only matters for Granola,
+ * which can have both a personal and a workspace-key connection live.
+ */
+export function disconnectIntegration(
+  provider: BackendProvider,
+  accountKind?: "personal" | "workspace",
+): Promise<FetchResult<{ ok: true }>> {
+  const query = provider === "granola" ? `?account_kind=${accountKind ?? "personal"}` : "";
+  return requestValue(`/connections/${encodeURIComponent(provider)}${query}`, { method: "DELETE" }, decodeOk);
 }
 
 export async function createGithubInstallSession(signal?: AbortSignal): Promise<FetchResult<GithubInstallSession>> {

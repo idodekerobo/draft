@@ -4,7 +4,7 @@ import { finished } from "stream/promises";
 
 export const MAX_CREDENTIAL_BYTES = 65_536;
 
-export type CredentialProvider = "fireflies" | "linear" | "slack" | "claude-code";
+export type CredentialProvider = "fireflies" | "linear" | "slack" | "claude-code" | "granola";
 export type CredentialSource =
   | { kind: "tty" }
   | { kind: "stdin" }
@@ -15,6 +15,7 @@ export interface ProviderCredentials {
   linear: { api_key: string };
   slack: { bot_token: string; app_token: string };
   "claude-code": { setup_token: string };
+  granola: { api_token: string };
 }
 
 export type CredentialInputErrorCode =
@@ -191,7 +192,11 @@ function decodeProviderCredentials<P extends CredentialProvider>(
     throw new CredentialInputError("invalid_credential_input");
   }
   const input = value as Record<string, unknown>;
-  if (provider === "fireflies" && exactKeys(input, ["api_token"]) && nonemptyString(input.api_token)) {
+  if (
+    (provider === "fireflies" || provider === "granola") &&
+    exactKeys(input, ["api_token"]) &&
+    nonemptyString(input.api_token)
+  ) {
     return { api_token: input.api_token } as ProviderCredentials[P];
   }
   if (provider === "linear" && exactKeys(input, ["api_key"]) && nonemptyString(input.api_key)) {
@@ -394,6 +399,15 @@ export class PosixCredentialReader implements CredentialReader {
           "Press Ctrl+C to cancel.",
         ]);
         return { api_token: await prompt("Fireflies API token:") } as ProviderCredentials[P];
+      }
+      if (provider === "granola") {
+        writeGuidance([
+          "Get your Granola API key: open the Granola desktop app -> Settings -> Connectors -> API keys.",
+          "Requires a Granola Business or Enterprise plan.",
+          "This is a secure, hidden prompt -- your key won't be echoed to the screen.",
+          "Press Ctrl+C to cancel.",
+        ]);
+        return { api_token: await prompt("Granola API key:") } as ProviderCredentials[P];
       }
       if (provider === "linear") {
         writeGuidance([
