@@ -60,7 +60,9 @@ export const routes = {
   "/sandbox/callback": { POST: sandboxCallback.POST },
   // Wildcard covers every Better Auth path under its "/api/auth" basePath
   // (oauth2/authorize, oauth2/token, oauth2/consent, our bridge endpoint, etc).
-  "/api/auth/*": { GET: AUTH_HANDLER, POST: AUTH_HANDLER },
+  // Better Auth emits no CORS headers itself, so the browser-called paths
+  // under it (the bridge endpoint, oauth2/consent) need withCors here too.
+  "/api/auth/*": { GET: withCors(AUTH_HANDLER), POST: withCors(AUTH_HANDLER), OPTIONS },
   // RFC 9728/8414 discovery docs live at root, outside the basePath.
   "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },

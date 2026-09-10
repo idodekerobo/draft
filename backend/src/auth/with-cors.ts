@@ -10,7 +10,13 @@ function allowedOrigin(req: Request): string | null {
 }
 function addHeaders(response: Response, origin: string | null): Response {
   response.headers.append("Vary", "Origin");
-  if (origin) response.headers.set("Access-Control-Allow-Origin", origin);
+  if (origin) {
+    response.headers.set("Access-Control-Allow-Origin", origin);
+    // Required alongside a specific (non-"*") origin for cookie-based
+    // cross-origin calls (credentials: "include") — the Better Auth
+    // session bridge/consent flow.
+    response.headers.set("Access-Control-Allow-Credentials", "true");
+  }
   response.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return response;
