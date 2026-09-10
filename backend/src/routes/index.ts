@@ -23,6 +23,7 @@ import * as workspaceContext from "./workspace-context";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
 import { OPTIONS, withCors } from "../auth/with-cors";
+import { AUTH_HANDLER, WELL_KNOWN_HANDLER } from "../auth/better-auth-routes";
 
 export const routes = {
   "/health": { GET: health.GET },
@@ -56,6 +57,13 @@ export const routes = {
   "/link/:code": { GET: links.pollGET },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
+  // Wildcard covers every Better Auth path under its "/api/auth" basePath
+  // (oauth2/authorize, oauth2/token, oauth2/consent, our bridge endpoint, etc).
+  "/api/auth/*": { GET: AUTH_HANDLER, POST: AUTH_HANDLER },
+  // RFC 9728/8414 discovery docs live at root, outside the basePath.
+  "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
+  "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },
+  "/.well-known/oauth-protected-resource": { GET: WELL_KNOWN_HANDLER },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
   "/webhooks/github": { POST: githubWebhook.POST },
