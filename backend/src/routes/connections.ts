@@ -7,7 +7,7 @@ import {
   decryptCredentialPayload,
   encryptCredentialPayload,
 } from "../credentials/crypto";
-import { resolveProviderCredential } from "../credentials/resolve-provider-credential";
+import { resolveProviderCredential, resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
 import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
@@ -25,6 +25,13 @@ import {
 } from "../ingestion/linear/provider";
 import { upsertSourceConnection } from "../ingestion/upsert-source-item";
 import { fetchFirefliesAccountIdentity } from "../ingestion/fireflies/fetch-meeting";
+import {
+  createGranolaWebhookEndpoint,
+  deleteGranolaWebhookEndpoint,
+  GranolaProviderError,
+} from "../ingestion/granola/webhook-endpoints";
+import { listGranolaNotesSince } from "../ingestion/granola/fetch-note";
+import { ingestGranolaNote } from "../ingestion/granola/normalize";
 import type { SourceConnectionProvider } from "../types/enums";
 import type { SourceConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
@@ -34,7 +41,9 @@ import { recordRouteError } from "../errors/route-error";
 // workspace-wide singleton -- Slack bot tokens, for instance, are
 // workspace-level, not personal, so a second Slack connect should rotate
 // the existing row rather than create a second live one.
-const MULTI_ACCOUNT_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies"]);
+// Granola is also a singleton for its separate workspace-key row
+// (connected_by_user_id null) -- see isGranolaWorkspaceKey below.
+const MULTI_ACCOUNT_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "granola"]);
 function isMultiAccountProvider(provider: SourceConnectionProvider): boolean {
   return MULTI_ACCOUNT_PROVIDERS.has(provider);
 }
@@ -69,8 +78,20 @@ interface ClaudeSessionConnectBody {
   provider: "claude_session";
 }
 
-type ConnectBody = SlackConnectBody | FirefliesConnectBody | LinearConnectBody | ClaudeCodeConnectBody | ClaudeSessionConnectBody;
-type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session";
+interface GranolaConnectBody {
+  provider: "granola";
+  api_token: string;
+  account_kind: "personal" | "workspace";
+}
+
+type ConnectBody =
+  | SlackConnectBody
+  | FirefliesConnectBody
+  | LinearConnectBody
+  | ClaudeCodeConnectBody
+  | ClaudeSessionConnectBody
+  | GranolaConnectBody;
+type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session" | "granola";
 
 interface SlackConnectResponse {
   ok: true;
@@ -99,6 +120,10 @@ interface LinearConnectResponse {
   cleanup_pending?: true;
 }
 
+interface GranolaConnectResponse {
+  ok: true;
+}
+
 const config = loadConfig();
 const MAX_SLACK_RECONCILE_ATTEMPTS = 3;
 const SINGLETON_CONNECTION_PROVIDERS = [
@@ -107,6 +132,7 @@ const SINGLETON_CONNECTION_PROVIDERS = [
   "linear",
   "github",
   "claude_session",
+  "granola",
 ] as const;
 // GET folds multiple rows to one for these -- everything in
 // SINGLETON_CONNECTION_PROVIDERS except the multi-account ones, which are
@@ -154,7 +180,8 @@ function isSupportedProvider(value: unknown): value is SupportedProvider {
     value === "linear" ||
     value === "claude_code" ||
     value === "github" ||
-    value === "claude_session"
+    value === "claude_session" ||
+    value === "granola"
   );
 }
 
@@ -193,6 +220,16 @@ function isClaudeCodeConnectBody(value: unknown): value is ClaudeCodeConnectBody
 function isClaudeSessionConnectBody(value: unknown): value is ClaudeSessionConnectBody {
   if (!value || typeof value !== "object") return false;
   return (value as Partial<ClaudeSessionConnectBody>).provider === "claude_session";
+}
+
+function isGranolaConnectBody(value: unknown): value is GranolaConnectBody {
+  if (!value || typeof value !== "object") return false;
+  const body = value as Partial<GranolaConnectBody>;
+  return (
+    body.provider === "granola" &&
+    isNonEmptyString(body.api_token) &&
+    (body.account_kind === "personal" || body.account_kind === "workspace")
+  );
 }
 
 function isChannelIds(value: unknown): value is string[] {
@@ -248,6 +285,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     channel_ids?: string[];
     id?: string;
     is_mine?: boolean;
+    account_kind?: "personal" | "workspace";
   }> = FOLDED_CONNECTION_PROVIDERS.flatMap((provider) => {
     const connection = selectedByProvider.get(provider);
     if (!connection) return [];
@@ -278,6 +316,12 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
       last_success_at: connection.last_success_at,
       last_error_at: connection.last_error_at,
       is_mine: connection.connected_by_user_id === caller.userId,
+      // Granola is the one multi-account provider that also has a
+      // singleton workspace-key row (connected_by_user_id null) -- the UI
+      // renders that row separately from "my connections" using this flag.
+      ...(connection.provider === "granola"
+        ? { account_kind: connection.connected_by_user_id ? ("personal" as const) : ("workspace" as const) }
+        : {}),
     });
   }
 
@@ -365,7 +409,8 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     !isFirefliesConnectBody(body) &&
     !isLinearConnectBody(body) &&
     !isClaudeCodeConnectBody(body) &&
-    !isClaudeSessionConnectBody(body)
+    !isClaudeSessionConnectBody(body) &&
+    !isGranolaConnectBody(body)
   ) {
     return errorResponse("invalid_body", 400);
   }
@@ -442,17 +487,18 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   const isFireflies = body.provider === "fireflies";
   const isSlack = body.provider === "slack";
 
-  // Multi-account providers (fireflies) scope "does this caller already have
-  // a connection?" to the caller -- a teammate connecting their own account
-  // must never find (and silently overwrite) another teammate's row.
-  // Singleton providers (Slack, Linear, claude_session) keep the unscoped
-  // workspace-wide lookup: only one live connection can ever exist for them.
+  // Multi-account providers scope the lookup to the caller so one teammate
+  // can't overwrite another's row; singleton providers use no filter.
+  // Granola's workspace-key kind is a third shape: looks up by no-owner.
+  const isGranolaWorkspaceKey = body.provider === "granola" && body.account_kind === "workspace";
   let existingQuery = serviceClient
     .from("source_connections")
     .select("id, credential_id, connection_key, config_json, updated_at")
     .eq("workspace_id", req.params.id)
     .eq("provider", body.provider);
-  if (isMultiAccountProvider(body.provider)) {
+  if (isGranolaWorkspaceKey) {
+    existingQuery = existingQuery.is("connected_by_user_id", null);
+  } else if (isMultiAccountProvider(body.provider)) {
     existingQuery = existingQuery.eq("connected_by_user_id", caller.userId);
   }
   const { data: existing, error: existingError } = await existingQuery.maybeSingle();
@@ -661,6 +707,173 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       ok: true,
       ...(cleanupPending.length > 0 || cleanupStateFailed ? { cleanup_pending: true as const } : {}),
     } satisfies LinearConnectResponse);
+  }
+
+  if (body.provider === "granola") {
+    const accountKind = body.account_kind;
+    const webhookScope = accountKind === "workspace" ? "public" : "personal";
+
+    // Also doubles as account-identity lookup: Granola has no whoami
+    // endpoint, but this response's created_by names the key's owner.
+    let webhookEndpoint: Awaited<ReturnType<typeof createGranolaWebhookEndpoint>>;
+    try {
+      webhookEndpoint = await createGranolaWebhookEndpoint(
+        body.api_token,
+        `${config.apiBaseUrl}/webhooks/granola/${connectionKey}`,
+        webhookScope,
+      );
+    } catch (error) {
+      const errorCode = error instanceof GranolaProviderError ? error.code : "granola_webhook_create_failed";
+      return errorResponse(errorCode, 502, error, req.params.id);
+    }
+
+    const externalAccountId = webhookEndpoint.createdBy?.email ?? null;
+    const displayName = webhookEndpoint.createdBy?.name ?? externalAccountId;
+
+    if (!existing && accountKind === "personal" && externalAccountId) {
+      // Reject the same account connected twice, which would double-ingest
+      // its notes. Scoped to personal rows: a workspace key from the same
+      // person is a different resource, not a duplicate.
+      const { data: duplicate, error: duplicateError } = await serviceClient
+        .from("source_connections")
+        .select("id, connected_by_user_id")
+        .eq("workspace_id", req.params.id)
+        .eq("provider", "granola")
+        .eq("external_account_id", externalAccountId)
+        .not("connected_by_user_id", "is", null)
+        .neq("status", "revoked")
+        .maybeSingle();
+      if (duplicateError) return errorResponse("connection_lookup_failed", 500, duplicateError, req.params.id);
+
+      if (duplicate) {
+        try {
+          await deleteGranolaWebhookEndpoint(body.api_token, webhookEndpoint.id);
+        } catch (cleanupError) {
+          recordRouteError({
+            workspaceId: req.params.id,
+            operation: "auth",
+            errorCode: "granola_webhook_compensation_failed",
+            error: cleanupError,
+            detail: { webhook_endpoint_id: webhookEndpoint.id },
+          });
+        }
+
+        let ownerName = "another teammate";
+        if (duplicate.connected_by_user_id) {
+          const { data: ownerUser } = await serviceClient
+            .from("users")
+            .select("display_name, email")
+            .eq("id", duplicate.connected_by_user_id)
+            .maybeSingle<{ display_name: string | null; email: string }>();
+          if (ownerUser) ownerName = ownerUser.display_name ?? ownerUser.email;
+        }
+        return errorResponse(
+          `granola_account_already_connected:${ownerName}`,
+          409,
+          undefined,
+          req.params.id,
+        );
+      }
+    }
+
+    const encrypted = encryptCredentialPayload(
+      JSON.stringify({
+        api_token: body.api_token,
+        webhook_secret: webhookEndpoint.signingSecret,
+        webhook_endpoint_id: webhookEndpoint.id,
+      }),
+      CURRENT_CREDENTIAL_KEY_VERSION,
+    );
+
+    // Workspace-key rows have no owner -- Granola, not Draft, gates who can
+    // generate one, so any workspace member may create or disconnect it.
+    const connectedByUserId = accountKind === "personal" ? caller.userId : null;
+
+    let connectionId: string;
+    let credentialId: string;
+
+    if (existing) {
+      const { data: rotationData, error: rotationError } = await serviceClient.rpc(
+        "rotate_granola_connection_credential",
+        {
+          p_workspace_id: req.params.id,
+          p_connection_id: existing.id,
+          p_encrypted_payload: encrypted,
+          p_encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+          p_connected_by_user_id: connectedByUserId,
+        },
+      );
+      if (rotationError) return errorResponse("connection_update_failed", 500, rotationError, req.params.id);
+      const rotation = rotationData as { connection_id?: unknown; credential_id?: unknown } | null;
+      if (!rotation || rotation.connection_id !== existing.id || typeof rotation.credential_id !== "string") {
+        return errorResponse("connection_update_failed", 500, "invalid_rotation_result", req.params.id);
+      }
+      connectionId = existing.id;
+      credentialId = rotation.credential_id;
+
+      const { error: identityError } = await serviceClient
+        .from("source_connections")
+        .update({ external_account_id: externalAccountId, display_name: displayName })
+        .eq("id", connectionId)
+        .eq("workspace_id", req.params.id);
+      if (identityError) return errorResponse("connection_update_failed", 500, identityError, req.params.id);
+    } else {
+      const { data: newCredential, error: credentialError } = await serviceClient
+        .from("credentials")
+        .insert({
+          workspace_id: req.params.id,
+          provider: "granola",
+          encrypted_payload: encrypted,
+          encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+          status: "active",
+        })
+        .select("id")
+        .single();
+      if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError, req.params.id);
+
+      const { data: newConnection, error: connectionError } = await serviceClient
+        .from("source_connections")
+        .insert({
+          workspace_id: req.params.id,
+          provider: "granola",
+          connection_key: connectionKey,
+          credential_id: newCredential.id,
+          status: "active",
+          connected_by_user_id: connectedByUserId,
+          external_account_id: externalAccountId,
+          display_name: displayName,
+          config_json: {},
+        })
+        .select("id")
+        .single();
+      if (connectionError || !newConnection) return errorResponse("connection_insert_failed", 500, connectionError, req.params.id);
+      connectionId = newConnection.id;
+      credentialId = newCredential.id;
+    }
+
+    // One-shot 7-day backfill; best-effort since the webhook covers
+    // everything from here on regardless of whether this succeeds.
+    try {
+      const notes = await listGranolaNotesSince(body.api_token, 7);
+      for (const note of notes) {
+        await ingestGranolaNote(
+          { id: connectionId, workspace_id: req.params.id, connected_by_user_id: connectedByUserId },
+          credentialId,
+          note.id,
+          serviceClient,
+        );
+      }
+    } catch (backfillError) {
+      recordRouteError({
+        workspaceId: req.params.id,
+        sourceConnectionId: connectionId,
+        operation: "ingestion",
+        errorCode: "granola_backfill_failed",
+        error: backfillError,
+      });
+    }
+
+    return Response.json({ ok: true } satisfies GranolaConnectResponse);
   }
 
   let webhookSecret: string | undefined;
@@ -926,6 +1139,13 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
+  // Granola can have two live rows at once, so DELETE needs to say which.
+  // Defaults to "personal" when omitted; no other provider sends this.
+  let accountKind: string | null = null;
+  if (req.params.provider === "granola") {
+    accountKind = new URL(req.url).searchParams.get("account_kind") === "workspace" ? "workspace" : "personal";
+  }
+
   // The RPC is the single source of truth for ownership -- it takes
   // p_connected_by_user_id and reports which case occurred, so there's no
   // need for a separate pre-check query that would just repeat the same
@@ -934,6 +1154,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     p_workspace_id: req.params.id,
     p_provider: req.params.provider,
     p_connected_by_user_id: caller.userId,
+    p_account_kind: accountKind,
   });
   if (error) return errorResponse("disconnect_failed", 500, error, req.params.id);
 
@@ -948,6 +1169,36 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
 
   if (req.params.provider === "slack" && result?.outcome === "disconnected" && result.connection_id) {
     await stopSlackListener(result.connection_id);
+  }
+
+  if (req.params.provider === "granola" && result?.outcome === "disconnected" && result.connection_id) {
+    // Best-effort: avoids the 4-day window before Granola auto-disables and
+    // emails about a dead endpoint, but isn't fatal if it fails.
+    const { data: revokedConnection } = await serviceClient
+      .from("source_connections")
+      .select("credential_id")
+      .eq("id", result.connection_id)
+      .eq("workspace_id", req.params.id)
+      .maybeSingle<{ credential_id: string | null }>();
+    if (revokedConnection?.credential_id) {
+      try {
+        const credential = await resolveProviderCredentialById(
+          req.params.id,
+          "granola",
+          revokedConnection.credential_id,
+          serviceClient,
+        );
+        await deleteGranolaWebhookEndpoint(credential.api_token, credential.webhook_endpoint_id);
+      } catch (cleanupError) {
+        recordRouteError({
+          workspaceId: req.params.id,
+          sourceConnectionId: result.connection_id,
+          operation: "auth",
+          errorCode: "granola_webhook_cleanup_failed",
+          error: cleanupError,
+        });
+      }
+    }
   }
 
   return Response.json({ ok: true });

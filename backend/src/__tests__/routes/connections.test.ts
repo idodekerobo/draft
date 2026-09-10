@@ -6,7 +6,7 @@ const workspaceId = "workspace-1";
 
 interface Connection {
   id: string;
-  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session";
+  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session" | "granola";
   credential_id: string | null;
   connection_key: string;
   status: string;
@@ -76,12 +76,14 @@ function createFakeClient() {
       const filters: Record<string, unknown> = {};
       const inFilters: Record<string, unknown[]> = {};
       const notFilters: Record<string, unknown> = {};
+      const notNullFilters: string[] = [];
       let selected = "";
       let returnSingle = false;
 
       const rowMatches = (row: object) => matches(row, filters) && Object.entries(inFilters)
         .every(([key, values]) => values.includes((row as Record<string, unknown>)[key]))
-        && Object.entries(notFilters).every(([key, value]) => (row as Record<string, unknown>)[key] !== value);
+        && Object.entries(notFilters).every(([key, value]) => (row as Record<string, unknown>)[key] !== value)
+        && notNullFilters.every((key) => (row as Record<string, unknown>)[key] != null);
 
       const execute = async () => {
         if (table === "source_connections") {
@@ -111,7 +113,7 @@ function createFakeClient() {
               ...(payload as unknown as Connection),
               id: "connection-new",
               status: "active",
-              display_name: null,
+              display_name: (payload.display_name as string | null | undefined) ?? null,
               last_success_at: null,
               last_error_at: null,
               config_json: payload.config_json ?? {},
@@ -217,6 +219,17 @@ function createFakeClient() {
           notFilters[column] = value;
           return builder;
         },
+        is(column: string, value: unknown) {
+          filters[column] = value;
+          return builder;
+        },
+        not(column: string, operator: string, value: unknown) {
+          if (operator === "is" && value === null) {
+            notNullFilters.push(column);
+            return builder;
+          }
+          throw new Error(`Unsupported fake .not() usage: ${column} ${operator} ${String(value)}`);
+        },
         update(nextPayload: Record<string, unknown>) {
           operation = "update";
           payload = nextPayload;
@@ -290,12 +303,59 @@ function createFakeClient() {
         };
       }
 
+      if (functionName === "rotate_granola_connection_credential") {
+        if (granolaRotationError) return { data: null, error: granolaRotationError };
+        const connection = state.connections.find((candidate) =>
+          candidate.id === params.p_connection_id &&
+          candidate.workspace_id === params.p_workspace_id &&
+          candidate.provider === "granola"
+        );
+        if (!connection) {
+          return { data: null, error: { code: "P0001", message: "granola_connection_conflict" } };
+        }
+
+        const priorCredential = connection.credential_id
+          ? state.credentials.find((candidate) => candidate.id === connection.credential_id)
+          : undefined;
+        const credential: Credential = {
+          id: `granola-credential-${state.credentials.length + 1}`,
+          workspace_id: String(params.p_workspace_id),
+          provider: "granola",
+          encrypted_payload: String(params.p_encrypted_payload),
+          encryption_key_version: String(params.p_encryption_key_version),
+          status: "active",
+        };
+        state.credentials.push(credential);
+        connection.credential_id = credential.id;
+        connection.status = "active";
+        connection.last_success_at = null;
+        connection.last_error_at = null;
+        connection.connected_by_user_id = (params.p_connected_by_user_id as string | null | undefined)
+          ?? connection.connected_by_user_id;
+        if (priorCredential) priorCredential.status = "revoked";
+
+        return {
+          data: {
+            connection_id: connection.id,
+            connection_key: connection.connection_key,
+            credential_id: credential.id,
+          },
+          error: null,
+        };
+      }
+
       if (functionName === "disconnect_source_connection") {
         if (disconnectRpcError) return { data: null, error: disconnectRpcError };
+        const accountKind = params.p_account_kind as string | null | undefined;
         const connection = state.connections.find((candidate) =>
           candidate.workspace_id === params.p_workspace_id &&
           candidate.provider === params.p_provider &&
-          candidate.status !== "revoked"
+          candidate.status !== "revoked" &&
+          (accountKind === "personal"
+            ? candidate.connected_by_user_id === params.p_connected_by_user_id
+            : accountKind === "workspace"
+              ? candidate.connected_by_user_id == null
+              : true)
         );
         if (!connection) {
           return { data: [{ connection_id: null, outcome: "not_found" }], error: null };
@@ -442,7 +502,16 @@ let sourceConnectionUpdateError: { message: string } | null = null;
 let sourceConnectionUpdateCount = 0;
 let errorsInsertError: { message: string } | null = null;
 let firefliesRotationError: { message: string } | null = null;
+let granolaRotationError: { message: string } | null = null;
 let disconnectRpcError: { message: string } | null = null;
+let granolaWebhookCreatedBy: { name: string | null; email: string | null } | null = {
+  name: "Oat Benson",
+  email: "oat@granola.ai",
+};
+let granolaWebhookCreateFailure = false;
+let granolaWebhookCreateRequests: Array<{ url: string; scopes: string[]; authorization: string | null }> = [];
+let granolaWebhookDeleteRequests: string[] = [];
+let granolaNotes: unknown[] = [];
 let firefliesAccountIdentity: { user_id: string; name: string | null; email: string | null } | null = {
   user_id: "ff-user-1",
   name: "Ada Lovelace",
@@ -502,7 +571,13 @@ beforeEach(() => {
   sourceConnectionUpdateCount = 0;
   errorsInsertError = null;
   firefliesRotationError = null;
+  granolaRotationError = null;
   disconnectRpcError = null;
+  granolaWebhookCreatedBy = { name: "Oat Benson", email: "oat@granola.ai" };
+  granolaWebhookCreateFailure = false;
+  granolaWebhookCreateRequests = [];
+  granolaWebhookDeleteRequests = [];
+  granolaNotes = [];
   firefliesAccountIdentity = { user_id: "ff-user-1", name: "Ada Lovelace", email: "ada@example.com" };
   firefliesAccountIdentityError = null;
   state.users = [];
@@ -565,6 +640,32 @@ beforeEach(() => {
           },
         },
       });
+    }
+    if (url === "https://public-api.granola.ai/v1/webhook-endpoints") {
+      const authorization = new Headers(init?.headers).get("authorization");
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init?.body)) as { url: string; scopes: string[] };
+        granolaWebhookCreateRequests.push({ url: body.url, scopes: body.scopes, authorization });
+        if (granolaWebhookCreateFailure) return new Response(null, { status: 502 });
+        return Response.json({
+          id: "whe_new",
+          object: "webhook_endpoint",
+          url: body.url,
+          events: ["note.generated", "note.edited", "note.access_granted"],
+          scopes: body.scopes,
+          created_by: granolaWebhookCreatedBy,
+          enabled: true,
+          created_at: "2026-01-27T15:30:00Z",
+          signing_secret: "whsec_newsecret",
+        });
+      }
+    }
+    if (url.startsWith("https://public-api.granola.ai/v1/webhook-endpoints/") && init?.method === "DELETE") {
+      granolaWebhookDeleteRequests.push(url.split("/").pop() ?? "");
+      return Response.json({ id: url.split("/").pop(), object: "webhook_endpoint", deleted: true });
+    }
+    if (url.startsWith("https://public-api.granola.ai/v1/notes")) {
+      return Response.json({ notes: granolaNotes, hasMore: false });
     }
     if (url.startsWith("https://slack.com/api/conversations.list")) {
       return Response.json({
@@ -1757,5 +1858,283 @@ describe("workspace connection routes", () => {
     const connection = state.connections.find((c) => c.provider === "claude_session");
     expect(connection?.status).toBe("revoked");
     expect(state.scheduledTasks).toHaveLength(0);
+  });
+});
+
+function deleteRequestWithQuery(params: Record<string, string>, query: string): Request {
+  const url = new URL("https://internal.test");
+  url.search = query;
+  return Object.assign(new Request(url, { method: "DELETE" }), { params });
+}
+
+describe("granola connections", () => {
+  it("fresh-connects a personal Granola key, registers a personal-scope webhook, and finds nothing to backfill", async () => {
+    state.connections = [];
+    state.credentials = [];
+    granolaNotes = [];
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "granola",
+        api_token: "grn_personal_token",
+        account_kind: "personal",
+      }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(state.connections).toHaveLength(1);
+    const connection = state.connections[0];
+    expect(connection?.provider).toBe("granola");
+    expect(connection?.connected_by_user_id).toBe(caller.userId);
+    expect(connection?.external_account_id).toBe("oat@granola.ai");
+    expect(connection?.display_name).toBe("Oat Benson");
+    expect(granolaWebhookCreateRequests).toHaveLength(1);
+    expect(granolaWebhookCreateRequests[0]?.scopes).toEqual(["personal"]);
+    expect(granolaWebhookCreateRequests[0]?.url).toContain(`/webhooks/granola/${connection?.connection_key}`);
+
+    const credential = state.credentials.find((c) => c.id === connection?.credential_id);
+    expect(JSON.parse(decryptCredentialPayload(credential?.encrypted_payload, credential?.encryption_key_version ?? "v1"))).toEqual({
+      api_token: "grn_personal_token",
+      webhook_secret: "whsec_newsecret",
+      webhook_endpoint_id: "whe_new",
+    });
+  });
+
+  it("rotates an existing personal connection's credential on reconnect without creating a second row", async () => {
+    state.connections = [{
+      id: "granola-personal-connection",
+      provider: "granola",
+      credential_id: "granola-credential-old",
+      connection_key: "granola-personal-key",
+      status: "active",
+      display_name: "Old Name",
+      last_success_at: "2026-01-01T00:00:00Z",
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: caller.userId,
+      external_account_id: "oat@granola.ai",
+    }];
+    state.credentials = [{
+      id: "granola-credential-old",
+      workspace_id: workspaceId,
+      provider: "granola",
+      encrypted_payload: encryptCredentialPayload(
+        JSON.stringify({ api_token: "old-token", webhook_secret: "whsec_old", webhook_endpoint_id: "whe_old" }),
+        "v1",
+      ),
+      encryption_key_version: "v1",
+      status: "active",
+    }];
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "granola",
+        api_token: "grn_rotated_token",
+        account_kind: "personal",
+      }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.connections).toHaveLength(1);
+    const connection = state.connections[0];
+    expect(connection?.id).toBe("granola-personal-connection");
+    // Reconnect resets readiness -- the new webhook generation hasn't
+    // proven delivery yet.
+    expect(connection?.last_success_at).toBe(null);
+    expect(state.credentials.find((c) => c.id === "granola-credential-old")?.status).toBe("revoked");
+  });
+
+  it("rejects connecting a second personal Granola account already connected by another teammate", async () => {
+    state.connections = [{
+      id: "granola-teammate-connection",
+      provider: "granola",
+      credential_id: "granola-credential-teammate",
+      connection_key: "granola-teammate-key",
+      status: "active",
+      display_name: "Oat Benson",
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: "user-2",
+      external_account_id: "oat@granola.ai",
+    }];
+    state.credentials = [];
+    state.users = [{ id: "user-2", display_name: "Bea Teammate", email: "bea@example.com" }];
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "granola",
+        api_token: "grn_same_account_different_paste",
+        account_kind: "personal",
+      }) as never,
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "granola_account_already_connected:Bea Teammate" });
+    // The webhook created to discover identity is cleaned up on rejection.
+    expect(granolaWebhookDeleteRequests).toEqual(["whe_new"]);
+    expect(state.connections).toHaveLength(1);
+  });
+
+  it("fresh-connects a workspace Granola key as a singleton row with no owner", async () => {
+    state.connections = [];
+    state.credentials = [];
+    granolaWebhookCreatedBy = { name: "Workspace Admin", email: "admin@granola.ai" };
+
+    const response = await routeModule.POST(
+      request("POST", { id: workspaceId }, {
+        provider: "granola",
+        api_token: "grn_workspace_token",
+        account_kind: "workspace",
+      }) as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.connections).toHaveLength(1);
+    const connection = state.connections[0];
+    expect(connection?.connected_by_user_id ?? null).toBe(null);
+    expect(granolaWebhookCreateRequests[0]?.scopes).toEqual(["public"]);
+  });
+
+  it("GET folds granola personal rows one-per-teammate and surfaces the workspace row separately", async () => {
+    state.connections = [
+      {
+        id: "granola-mine",
+        provider: "granola",
+        credential_id: null,
+        connection_key: "granola-mine-key",
+        status: "active",
+        display_name: "Me",
+        last_success_at: "2026-01-01T00:00:00Z",
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: caller.userId,
+      },
+      {
+        id: "granola-teammate",
+        provider: "granola",
+        credential_id: null,
+        connection_key: "granola-teammate-key",
+        status: "active",
+        display_name: "Teammate",
+        last_success_at: "2026-01-01T00:00:00Z",
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: "user-2",
+      },
+      {
+        id: "granola-workspace",
+        provider: "granola",
+        credential_id: null,
+        connection_key: "granola-workspace-key",
+        status: "active",
+        display_name: "Workspace",
+        last_success_at: "2026-01-01T00:00:00Z",
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: null,
+      },
+    ];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<Record<string, unknown>> };
+    const granolaRows = body.connections.filter((c) => c.provider === "granola");
+
+    expect(granolaRows).toHaveLength(3);
+    expect(granolaRows.find((r) => r.id === "granola-mine")).toMatchObject({ is_mine: true, account_kind: "personal" });
+    expect(granolaRows.find((r) => r.id === "granola-teammate")).toMatchObject({ is_mine: false, account_kind: "personal" });
+    expect(granolaRows.find((r) => r.id === "granola-workspace")).toMatchObject({ is_mine: false, account_kind: "workspace" });
+  });
+
+  it("disconnects only the caller's own personal Granola connection, leaving a teammate's untouched", async () => {
+    state.connections = [
+      {
+        id: "granola-mine-2",
+        provider: "granola",
+        credential_id: "granola-credential-mine",
+        connection_key: "granola-mine-2-key",
+        status: "active",
+        display_name: "Me",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: caller.userId,
+      },
+      {
+        id: "granola-teammate-2",
+        provider: "granola",
+        credential_id: null,
+        connection_key: "granola-teammate-2-key",
+        status: "active",
+        display_name: "Teammate",
+        last_success_at: null,
+        last_error_at: null,
+        config_json: {},
+        workspace_id: workspaceId,
+        connected_by_user_id: "user-2",
+      },
+    ];
+    state.credentials = [{
+      id: "granola-credential-mine",
+      workspace_id: workspaceId,
+      provider: "granola",
+      encrypted_payload: encryptCredentialPayload(
+        JSON.stringify({ api_token: "grn_mine", webhook_secret: "whsec_mine", webhook_endpoint_id: "whe_mine" }),
+        "v1",
+      ),
+      encryption_key_version: "v1",
+      status: "active",
+    }];
+
+    const response = await routeModule.DELETE(
+      deleteRequestWithQuery({ id: workspaceId, provider: "granola" }, "account_kind=personal") as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.connections.find((c) => c.id === "granola-mine-2")?.status).toBe("revoked");
+    expect(state.connections.find((c) => c.id === "granola-teammate-2")?.status).toBe("active");
+    expect(granolaWebhookDeleteRequests).toEqual(["whe_mine"]);
+  });
+
+  it("disconnects the workspace Granola connection regardless of who calls it, and deletes its webhook endpoint", async () => {
+    state.connections = [{
+      id: "granola-workspace-2",
+      provider: "granola",
+      credential_id: "granola-credential-workspace",
+      connection_key: "granola-workspace-2-key",
+      status: "active",
+      display_name: "Workspace",
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: null,
+    }];
+    state.credentials = [{
+      id: "granola-credential-workspace",
+      workspace_id: workspaceId,
+      provider: "granola",
+      encrypted_payload: encryptCredentialPayload(
+        JSON.stringify({ api_token: "grn_ws", webhook_secret: "whsec_ws", webhook_endpoint_id: "whe_ws" }),
+        "v1",
+      ),
+      encryption_key_version: "v1",
+      status: "active",
+    }];
+
+    const response = await routeModule.DELETE(
+      deleteRequestWithQuery({ id: workspaceId, provider: "granola" }, "account_kind=workspace") as never,
+    );
+
+    expect(response.status).toBe(200);
+    expect(state.connections.find((c) => c.id === "granola-workspace-2")?.status).toBe("revoked");
+    expect(granolaWebhookDeleteRequests).toEqual(["whe_ws"]);
   });
 });
