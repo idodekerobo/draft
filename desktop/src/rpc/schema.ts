@@ -302,7 +302,7 @@ export interface IntegrationDetail {
   healthCheckedAt: string | null;
   healthMessage: string | null;
   lastConnected: string | null;
-  /** "mcp"|"api" for Granola; "passive"|"tagged" for Slack; null otherwise. Fireflies has no mode — always null. */
+  /** "passive"|"tagged" for Slack; null otherwise. Granola and Fireflies have no mode — always null. */
   mode: string | null;
   /** Slack: number of channels in the persisted bot membership set. Null for other sources. */
   channels: number | null;
@@ -322,6 +322,8 @@ export interface MultiAccountConnectionListItem {
   display_name: string | null;
   last_success_at: string | null;
   last_error_at: string | null;
+  /** Granola only: distinguishes a caller-owned personal-key row from the workspace's single shared workspace-key row. */
+  account_kind?: "personal" | "workspace";
 }
 
 export interface ConnectedAppsStatus {
@@ -344,6 +346,8 @@ export interface ConnectedAppsStatus {
   claudeCode: { connected: boolean };
   /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
   firefliesConnections: MultiAccountConnectionListItem[];
+  /** Every Granola connection in the workspace, personal rows plus the workspace-key row if any (Settings list view only) -- see MultiAccountConnectionListItem. */
+  granolaConnections: MultiAccountConnectionListItem[];
 }
 
 /**
@@ -453,8 +457,8 @@ export type AppRPCType = {
       /** Toggle the workspace's synthesis schedule on/off. Cadence editing isn't supported yet. */
       setSynthesisEnabled: { params: { enabled: boolean }; response: ActionResult & { schedule?: SynthesisSchedule } };
 
-      /** Disconnect an input source. granola/github flip connected=false in integrations.json; slack/fireflies/linear/claude_session revoke the workspace's cloud source_connections row. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "claude_session" }; response: ActionResult };
+      /** Disconnect an input source. github flips connected=false in integrations.json; slack/fireflies/linear/granola/claude_session revoke the workspace's cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "claude_session"; accountKind?: "personal" | "workspace" }; response: ActionResult };
 
       /**
        * Connect GitHub via the GitHub App install flow: opens the system
@@ -501,11 +505,15 @@ export type AppRPCType = {
       /** Return the full MCP manifest. */
       getMcpManifest: { params: void; response: McpManifest };
 
-      /** Register Granola's MCP server with Claude Code and persist connection status. */
-      connectGranolaMCP: { params: void; response: ActionResult };
-
-      /** Persist a Granola API key and connection status for the daemon. */
-      connectGranolaAPI: { params: { apiKey: string }; response: ActionResult };
+      /**
+       * Persist a Granola API key in Draft Cloud; the server registers the
+       * webhook itself (Granola exposes webhook management as an API, so
+       * unlike Fireflies there's no separate paste-into-vendor-UI step or
+       * webhook fields in the response). accountKind "personal" connects
+       * the caller's own account (multi-account, one row per teammate);
+       * "workspace" connects the workspace's single shared key.
+       */
+      connectGranola: { params: { apiKey: string; accountKind: "personal" | "workspace" }; response: ActionResult };
 
       /** Persist Fireflies API credentials in Draft Cloud and return webhook setup values. */
       connectFireflies: { params: { apiKey: string }; response: ActionResult & { webhookUrl?: string; webhookSecret?: string } };

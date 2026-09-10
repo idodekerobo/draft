@@ -2,14 +2,9 @@ import { useOptimistic, useState } from "react";
 import type { ConnectedAppsStatus } from "../../../../rpc/schema";
 import { FirefliesConnectPanel } from "../../shared/FirefliesConnectPanel";
 import { GithubConnectPanel } from "../../shared/GithubConnectPanel";
+import { GranolaConnectPanel } from "../../shared/GranolaConnectPanel";
 import { LinearConnectPanel } from "../../shared/LinearConnectPanel";
 import { SessionTrackingPanel } from "../../shared/SessionTrackingPanel";
-// TODO: Granola still works locally but has no backend ingestion pipeline in
-// the new cloud model (backend/src/ingestion only has fireflies/slack/
-// linear/github) — connecting it can't get its data into source_items at
-// all right now. GitHub is done (backend/src/ingestion/github); this card
-// stays commented out until Granola gets the same treatment.
-// import { GranolaConnectPanel } from "../../shared/GranolaConnectPanel";
 import { SlackConnectPanel } from "../../shared/SlackConnectPanel";
 import { IntegrationSetupCard } from "./shared";
 
@@ -22,14 +17,15 @@ interface IntegrationSetupStepProps {
   loadConnections: () => Promise<boolean>;
 }
 
-type IntegrationName = "slack" | "fireflies" | "linear" | "github" | "claude_session";
+type IntegrationName = "slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session";
 
 export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, connections, loadConnections }: IntegrationSetupStepProps) {
   const [expanded, setExpanded] = useState<IntegrationName | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Synchronous providers update optimistically; Fireflies waits for webhook
-  // evidence from the backend before it may appear connected.
+  // Synchronous providers update optimistically; webhook-driven providers
+  // (Fireflies, Granola) wait for delivery evidence from the backend before
+  // they may appear connected.
   const [optimisticConnections, markConnected] = useOptimistic(
     connections,
     (current, name: IntegrationName) =>
@@ -38,7 +34,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
 
   // Returns the refetch promise -- SessionTrackingPanel awaits it to avoid flicker.
   async function handleConnected(name: IntegrationName): Promise<void> {
-    if (name !== "fireflies") markConnected(name);
+    if (name !== "fireflies" && name !== "granola") markConnected(name);
     const refreshed = await loadConnections();
     if (refreshed && name !== "claude_session") setExpanded(null);
   }
@@ -47,7 +43,8 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
     && optimisticConnections.slack.connected
     && optimisticConnections.fireflies.connected
     && optimisticConnections.linear.connected
-    && optimisticConnections.github.connected;
+    && optimisticConnections.github.connected
+    && optimisticConnections.granola.connected;
 
   function toggle(name: IntegrationName, connected?: boolean) {
     if (connected && name !== "claude_session") return;
@@ -59,6 +56,7 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
   const fireflies = optimisticConnections?.fireflies;
   const linear = optimisticConnections?.linear;
   const github = optimisticConnections?.github;
+  const granola = optimisticConnections?.granola;
   const claudeSession = optimisticConnections?.claude_session;
 
   return (
@@ -76,8 +74,6 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
       {error && <p className="onboarding__error">{error}</p>}
 
       <div className="onboarding__integration-list">
-        {/* TODO: Granola card — see file-header note */}
-
         <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack?.connected)}>
           <SlackConnectPanel detail={slack} classPrefix="onboarding" onConnected={() => handleConnected("slack")} />
         </IntegrationSetupCard>
@@ -103,6 +99,15 @@ export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, conn
 
         <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>
           <LinearConnectPanel detail={linear} classPrefix="onboarding" onConnected={() => handleConnected("linear")} />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard title="Granola" description="Import your Granola meeting notes (Business/Enterprise plans)" hint="1 step" connected={granola?.connected ?? false} status={granola?.status} expanded={expanded === "granola"} onToggle={() => toggle("granola", granola?.connected)} keepContentWhenConnected>
+          <GranolaConnectPanel
+            detail={granola}
+            classPrefix="onboarding"
+            onStatusRefresh={loadConnections}
+            onDone={() => setExpanded(null)}
+          />
         </IntegrationSetupCard>
 
         <IntegrationSetupCard

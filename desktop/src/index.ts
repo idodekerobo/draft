@@ -13,7 +13,6 @@ import { runMigrations } from "draft-core/migrations/runner";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
-import { registerGranolaMCP, writeGranolaConfig } from "draft-core/integrations/granola";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack-hosted";
 import {
   normalizeHostedConnections,
@@ -652,10 +651,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           };
         }
 
-        // Integrations — read from per-profile integrations.json
-        const workspace  = getWorkspacePath(getActiveProfile());
-        const intResult  = readIntegrations(workspace);
-        const int        = intResult.ok ? intResult.integrations : {};
+        // Integrations — every entry is now cloud-backed (source_connections),
+        // fetched below in one round trip. No per-profile integrations.json
+        // read remains for this list.
         let cloudConnections: unknown = null;
         const cloudWorkspaceId = getCachedWorkspaceId();
         if (cloudWorkspaceId) {
@@ -670,53 +668,22 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
         const hostedConnections = normalizeHostedConnections(cloudConnections ?? []);
 
-        function integrationHealth(key: "granola" | "fireflies"): Pick<IntegrationDetail, "healthStatus" | "healthCheckedAt" | "healthMessage"> {
-          try {
-            const raw = JSON.parse(readFileSync(join(BACKGROUND_DIR, "state", `${key}.json`), "utf8")) as {
-              health?: { status?: unknown; checked_at?: unknown; message?: unknown };
-            };
-            const status = raw.health?.status;
-            return {
-              healthStatus: status === "healthy" ? "healthy" : status === "unavailable" ? "needs_attention" : "unknown",
-              healthCheckedAt: typeof raw.health?.checked_at === "string" ? raw.health.checked_at : null,
-              healthMessage: typeof raw.health?.message === "string" ? raw.health.message : null,
-            };
-          } catch {
-            return { healthStatus: "unknown", healthCheckedAt: null, healthMessage: null };
-          }
-        }
-
+        // Every integrationDetail key is now cloud-backed, so there's no
+        // local-flag/health-file fallback branch left to maintain.
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
-          const entry = key === "linear" || key === "github" ? undefined : int[key];
-          const cloud = (key === "slack" || key === "fireflies" || key === "linear" || key === "github")
-            ? hostedConnections.find((connection) => connection.provider === key)
-            : undefined;
-          const health = key === "granola" || key === "fireflies"
-            ? integrationHealth(key)
-            : { healthStatus: "unknown" as const, healthCheckedAt: null, healthMessage: null };
-          if (key === "slack" || key === "fireflies" || key === "linear" || key === "github") {
-            return {
-              // Cloud-backed integrations must not fall back to stale local flags
-              // when the server is unreachable or the user is signed out.
-              connected: cloud?.connected ?? false,
-              status: cloud?.status ?? "disconnected",
-              healthStatus: cloud?.status === "connected" ? "healthy" : cloud?.status === "degraded" || cloud?.status === "error" ? "needs_attention" : "unknown",
-              healthCheckedAt: cloud?.last_success_at ?? null,
-              healthMessage: cloud?.last_error_at ? "The cloud ingestion worker reported an error." : null,
-              lastConnected: cloud?.last_success_at ?? null,
-              mode: null,
-              channels: key === "slack" ? (cloud?.channel_ids?.length ?? 0) : null,
-              channelIds: key === "slack" ? (cloud?.channel_ids ?? []) : undefined,
-            };
-          }
+          const cloud = hostedConnections.find((connection) => connection.provider === key);
           return {
-            connected:     entry?.connected    ?? false,
-            status: entry?.connected ? "connected" : "disconnected",
-            ...health,
-            lastConnected: entry?.last_connected ?? null,
-            mode:          entry?.mode          ?? null,
-            channels:      entry?.channels      ?? null,
-            channelIds:    undefined,
+            // Cloud-backed integrations must not fall back to stale local flags
+            // when the server is unreachable or the user is signed out.
+            connected: cloud?.connected ?? false,
+            status: cloud?.status ?? "disconnected",
+            healthStatus: cloud?.status === "connected" ? "healthy" : cloud?.status === "degraded" || cloud?.status === "error" ? "needs_attention" : "unknown",
+            healthCheckedAt: cloud?.last_success_at ?? null,
+            healthMessage: cloud?.last_error_at ? "The cloud ingestion worker reported an error." : null,
+            lastConnected: cloud?.last_success_at ?? null,
+            mode: null,
+            channels: key === "slack" ? (cloud?.channel_ids?.length ?? 0) : null,
+            channelIds: key === "slack" ? (cloud?.channel_ids ?? []) : undefined,
           };
         }
 
@@ -765,15 +732,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // using the folded IntegrationDetail shape. Reuses cloudConnections
           // (already fetched once above) instead of a second round trip.
           firefliesConnections: normalizeHostedConnectionList("fireflies", cloudConnections ?? []),
+          granolaConnections: normalizeHostedConnectionList("granola", cloudConnections ?? []),
         };
       },
 
-      disconnectIntegration: async ({ source }) => {
+      disconnectIntegration: async ({ source, accountKind }) => {
         try {
-          if (source === "slack" || source === "fireflies" || source === "linear" || source === "github" || source === "claude_session") {
+          if (source === "slack" || source === "fireflies" || source === "linear" || source === "granola" || source === "claude_session") {
             const workspaceId = getCachedWorkspaceId();
             if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
-            await fetchServer(`workspaces/${workspaceId}/connections/${source}`, { method: "DELETE" });
+            const query = source === "granola" ? `?account_kind=${accountKind ?? "personal"}` : "";
+            await fetchServer(`workspaces/${workspaceId}/connections/${source}${query}`, { method: "DELETE" });
             return { ok: true };
           }
           const workspace = getWorkspacePath(getActiveProfile());
@@ -1093,25 +1062,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return readMcpManifest();
       },
 
-      connectGranolaMCP: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const reg = await registerGranolaMCP(workspace);
-        if (!reg.ok) return reg;
-        try {
-          writeGranolaConfig(workspace, "mcp", undefined, reg.mcpServerId);
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
-        }
-      },
-
-      connectGranolaAPI: async ({ apiKey }) => {
+      connectGranola: async ({ apiKey, accountKind }) => {
         if (!apiKey.trim()) return { ok: false, error: "Enter your Granola API key." };
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          writeGranolaConfig(getWorkspacePath(getActiveProfile()), "api", apiKey.trim());
-          return { ok: true };
+          return await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: "granola", api_token: apiKey.trim(), account_kind: accountKind }),
+          });
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not save the Granola connection." };
+          return { ok: false, error: err instanceof Error ? err.message : "Could not connect Granola." };
         }
       },
 
