@@ -17,13 +17,21 @@ export interface LinearProviderCredential {
   webhook_secret: string;
 }
 
+export interface GranolaProviderCredential {
+  api_token: string;
+  webhook_secret: string;
+  webhook_endpoint_id: string;
+}
+
 export type ProviderCredential<P extends SourceConnectionProvider> = P extends "fireflies"
   ? FirefliesProviderCredential
   : P extends "slack"
     ? SlackProviderCredential
     : P extends "linear"
       ? LinearProviderCredential
-      : string;
+      : P extends "granola"
+        ? GranolaProviderCredential
+        : string;
 
 interface SourceConnectionCredentialRow {
   id: string;
@@ -39,7 +47,7 @@ interface CredentialSecretRow {
   encryption_key_version: string;
 }
 
-const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack", "linear"]);
+const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack", "linear", "granola"]);
 
 async function resolveCredentialById<P extends SourceConnectionProvider>(
   workspaceId: string,

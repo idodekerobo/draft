@@ -111,12 +111,28 @@ describe("resolveProviderCredential", () => {
     expect(resolved).toEqual(secrets);
   });
 
+  it("returns a parsed named-secret object for granola", async () => {
+    const secrets = {
+      api_token: "grn_token",
+      webhook_secret: "whsec_abc123",
+      webhook_endpoint_id: "whe_abc123",
+    };
+    const client = createFakeClient({
+      credential: activeCredential(
+        encryptCredentialPayload(JSON.stringify(secrets), KEY_VERSION),
+      ),
+    });
+
+    const resolved = await resolveProviderCredential(ids.workspace, "granola", client);
+    expect(resolved).toEqual(secrets);
+  });
+
   it("returns a raw string for single-secret providers", async () => {
     const client = createFakeClient({
       credential: activeCredential(encryptCredentialPayload("plain-token", KEY_VERSION)),
     });
 
-    const resolved = await resolveProviderCredential(ids.workspace, "granola", client);
+    const resolved = await resolveProviderCredential(ids.workspace, "github", client);
     expect(resolved).toBe("plain-token");
   });
 
