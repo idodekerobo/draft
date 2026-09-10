@@ -55,12 +55,57 @@ export function buildFirefliesExternalVersion(
   return sha256(JSON.stringify({ contentMarkdown, sanitizedRaw }));
 }
 
+/**
+ * Finds the workspace's current `ready` source_item for a Fireflies meeting
+ * across every Fireflies connection, not just the caller's -- Fireflies'
+ * Team feature has one bot join on behalf of whoever invited it first, so
+ * teammates on the same Fireflies team can each independently fetch the
+ * same meeting_id through their own connection.
+ */
+async function findLiveFirefliesSourceItem(
+  db: SupabaseClient,
+  workspaceId: string,
+  meetingId: string,
+): Promise<{ id: string; source_connection_id: string } | null> {
+  const { data: connections, error: connectionsError } = await db
+    .from("source_connections")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "fireflies");
+  if (connectionsError) throw connectionsError;
+
+  const connectionIds = ((connections ?? []) as { id: string }[]).map((row) => row.id);
+  if (connectionIds.length === 0) return null;
+
+  const { data, error } = await db
+    .from("source_items")
+    .select("id, source_connection_id")
+    .eq("workspace_id", workspaceId)
+    .eq("external_id", meetingId)
+    .eq("lifecycle_status", "ready")
+    .in("source_connection_id", connectionIds)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { id: string; source_connection_id: string } | null;
+}
+
 export async function ingestFirefliesMeeting(
   connection: { id: string; workspace_id: string; connected_by_user_id?: string | null },
   credentialId: string,
   meetingId: string,
   client?: SupabaseClient,
 ): Promise<{ sourceItemId: string }> {
+  const db = client ?? (await import("../../db/client")).serviceClient;
+
+  // Dedup only -- visibility stays whatever the first-ingesting connection set
+  // (always 'private' today). Skipping here means the meeting stays owned by
+  // whoever's connection saw it first; it does NOT become visible to the
+  // second teammate unless a future widen decision is made, same as Granola's.
+  const existing = await findLiveFirefliesSourceItem(db, connection.workspace_id, meetingId);
+  if (existing && existing.source_connection_id !== connection.id) {
+    return { sourceItemId: existing.id };
+  }
+
   const { api_token: apiToken } = await resolveProviderCredentialById(
     connection.workspace_id,
     "fireflies",
@@ -73,8 +118,6 @@ export async function ingestFirefliesMeeting(
   const contentHash = sha256(contentMarkdown);
   const sanitizedRaw = buildFirefliesSanitizedRaw(meeting);
   const externalVersion = buildFirefliesExternalVersion(contentMarkdown, sanitizedRaw);
-
-  const db = client ?? (await import("../../db/client")).serviceClient;
 
   const result = await upsertSourceItem(db, {
     workspace_id: connection.workspace_id,
