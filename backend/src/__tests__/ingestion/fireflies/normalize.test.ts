@@ -64,6 +64,7 @@ interface FakeState {
   upsertedItem: Record<string, unknown> | null;
   supersedeCalls: string[][];
   eventInsertPayload: Record<string, unknown> | null;
+  updatedVisibility: { visibility: string; owner_user_id: string | null } | null;
 }
 
 interface FakeClientOptions {
@@ -72,7 +73,7 @@ interface FakeClientOptions {
   // cross-connection dedup lookup. Empty by default so existing tests are
   // unaffected -- the dedup query short-circuits when there's nothing to find.
   firefliesConnectionIds?: string[];
-  existingItem?: { id: string; source_connection_id: string } | null;
+  existingItem?: { id: string; source_connection_id: string; visibility: "private" | "shared" } | null;
 }
 
 function createFakeClient(options: FakeClientOptions = {}) {
@@ -81,6 +82,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
     upsertedItem: null,
     supersedeCalls: [],
     eventInsertPayload: null,
+    updatedVisibility: null,
   };
 
   function from(table: string) {
@@ -122,6 +124,14 @@ function createFakeClient(options: FakeClientOptions = {}) {
             }),
           };
         },
+        update: (payload: Record<string, unknown>) => ({
+          eq: () => ({
+            eq: async () => {
+              state.updatedVisibility = payload as { visibility: string; owner_user_id: string | null };
+              return { error: null };
+            },
+          }),
+        }),
       };
     }
 
@@ -292,9 +302,9 @@ describe("ingestFirefliesMeeting", () => {
   it("skips writing a duplicate row when another Fireflies connection already ingested this meeting", async () => {
     const otherConnectionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const existingItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const { client } = createFakeClient({
+    const { client, state } = createFakeClient({
       firefliesConnectionIds: [ids.connection, otherConnectionId],
-      existingItem: { id: existingItemId, source_connection_id: otherConnectionId },
+      existingItem: { id: existingItemId, source_connection_id: otherConnectionId, visibility: "private" },
     });
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
@@ -309,6 +319,27 @@ describe("ingestFirefliesMeeting", () => {
     );
 
     expect(result.sourceItemId).toBe(existingItemId);
+    expect(state.updatedVisibility).toEqual({ visibility: "shared", owner_user_id: null });
+  });
+
+  it("does not re-widen a meeting that's already shared", async () => {
+    const otherConnectionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const existingItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { client, state } = createFakeClient({
+      firefliesConnectionIds: [ids.connection, otherConnectionId],
+      existingItem: { id: existingItemId, source_connection_id: otherConnectionId, visibility: "shared" },
+    });
+    const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
+
+    const result = await ingestFirefliesMeeting(
+      { id: ids.connection, workspace_id: ids.workspace },
+      ids.credential,
+      "meeting-123",
+      client,
+    );
+
+    expect(result.sourceItemId).toBe(existingItemId);
+    expect(state.updatedVisibility).toBeNull();
   });
 });
 
