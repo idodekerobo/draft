@@ -5,6 +5,7 @@ import { serviceClient } from "../db/client";
 import type { SkillRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
+import { listSkills, loadActiveSkill, readSkill, serializeSkill } from "../services/skills";
 
 type SkillsRequest = Bun.BunRequest<"/workspaces/:id/skills">;
 type SkillRequest = Bun.BunRequest<"/workspaces/:id/skills/:name">;
@@ -115,40 +116,14 @@ function resolveFields(body: AddOrUpdateBody): ResolveResult {
   };
 }
 
-function serializeSkill(row: SkillRow) {
-  return {
-    name: row.name,
-    description: row.description,
-    license: row.license,
-    compatibility: row.compatibility,
-    metadata: row.metadata,
-    allowedTools: row.allowed_tools,
-    content: row.content,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    updatedBy: row.updated_by,
-  };
-}
-
 export const skillsGET = withAuth<SkillsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const { data, error } = await serviceClient
-    .from("skills")
-    .select("name, description")
-    .eq("workspace_id", req.params.id)
-    .is("removed_at", null)
-    .order("name", { ascending: true });
-  if (error) {
-    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "skills_list_failed", error });
-    return Response.json({ error: "skills_list_failed" }, { status: 500 });
-  }
+  const result = await listSkills(req.params.id);
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
-  const rows = (data ?? []) as Pick<SkillRow, "name" | "description">[];
-  const body = { skills: rows.map((row) => ({ name: row.name, description: row.description })) };
-  const responseText = JSON.stringify(body);
+  const responseText = JSON.stringify({ skills: result.skills });
   void recordAgentQueryLog(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
@@ -159,25 +134,14 @@ export const skillsGET = withAuth<SkillsRequest>(async (req, caller) => {
   return new Response(responseText, { headers: { "Content-Type": "application/json" } });
 });
 
-async function loadActiveSkill(workspaceId: string, name: string): Promise<SkillRow | null> {
-  const { data } = await serviceClient
-    .from("skills")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .eq("name", name)
-    .is("removed_at", null)
-    .maybeSingle<SkillRow>();
-  return data ?? null;
-}
-
 export const skillsREAD = withAuth<SkillRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const skill = await loadActiveSkill(req.params.id, req.params.name);
-  if (!skill) return Response.json({ error: "skill_not_found" }, { status: 404 });
+  const result = await readSkill(req.params.id, req.params.name);
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
-  const responseText = JSON.stringify(serializeSkill(skill));
+  const responseText = JSON.stringify(result.skill);
   void recordAgentQueryLog(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
