@@ -3,8 +3,8 @@
 // Used by: draft-desktop (RPC handlers), draft-cli (future)
 //
 // Single mode only (MCP-backed): Fireflies' remote MCP server requires a bearer
-// token for headless/unattended auth regardless of mode, so unlike Granola there
-// is no token-free path — the token is baked into the MCP registration itself.
+// token for headless/unattended auth — the token is baked into the MCP
+// registration itself.
 //
 // registerFirefliesMCP: idempotent — checks if already registered before adding.
 // writeFirefliesConfig: patch-writes secrets.json + integrations.json for the profile.

@@ -46,7 +46,6 @@ interface Job {
 const SYNTHESIS_ADAPTERS = {
   github: 'github',
   slack: 'slack',
-  granola: 'granola',
   'claude-code-session': 'claude-code-session',
   'codex-session': 'codex-session',
 } as const;
@@ -225,13 +224,11 @@ export async function synthesize(
   // ── Validate and route through the automated maintainer ───────────────────
   let routed;
   try {
-    const intelligence = source === 'granola'
-      ? process.env.DRAFT_GRANOLA_INTELLIGENCE
-      : source === 'slack'
-        ? process.env.DRAFT_SLACK_INTELLIGENCE
-        : source === 'github'
-          ? process.env.DRAFT_GITHUB_INTELLIGENCE
-          : process.env.DRAFT_SESSION_INTELLIGENCE;
+    const intelligence = source === 'slack'
+      ? process.env.DRAFT_SLACK_INTELLIGENCE
+      : source === 'github'
+        ? process.env.DRAFT_GITHUB_INTELLIGENCE
+        : process.env.DRAFT_SESSION_INTELLIGENCE;
     const inputSource = source === 'claude-code-session' || source === 'codex-session'
       ? 'session'
       : source;

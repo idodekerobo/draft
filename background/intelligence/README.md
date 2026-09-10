@@ -5,7 +5,7 @@ These adapters are local runtime contracts used by the bundled background proces
 Files in `intelligence/` are **intelligence adapters** — each one knows how to
 execute a specific LLM or agent tool to run synthesis.
 
-Intelligence adapters are NOT aware of input source type (session vs Granola vs Slack).
+Intelligence adapters are NOT aware of input source type (session vs Fireflies vs Slack).
 They receive a pre-built prompt file and an output file path, execute the model,
 and write the synthesis result to the output file.
 

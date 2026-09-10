@@ -116,8 +116,6 @@ export function getInstalledTools(): InstalledTool[] {
 
 export interface Secrets {
   github_connected?: boolean;
-  granola_mode?: "mcp" | "api";
-  granola_api_token?: string;
   fireflies_api_token?: string;
   slack_bot_token?: string;
   slack_app_token?: string;
@@ -146,7 +144,6 @@ export interface IntegrationEntry {
 }
 
 export interface Integrations {
-  granola?: IntegrationEntry;
   slack?: IntegrationEntry;
   github?: IntegrationEntry;
   fireflies?: IntegrationEntry;

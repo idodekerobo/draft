@@ -20,12 +20,12 @@ printf '%s\\n' '${output.replaceAll("'", "'\\''")}'
 
 describe("runtime MCP preparation", () => {
   it("does no Claude work for a disconnected integration", async () => {
-    writeIntegrations(ROOT, { granola: { connected: false, mode: "mcp" } });
+    writeIntegrations(ROOT, { fireflies: { connected: false, mode: "mcp" } });
     let resolved = false;
     const result = await prepareMcpIntegration({
       workspace: ROOT,
-      source: "granola",
-      preferredIds: ["granola", "granola-mcp"],
+      source: "fireflies",
+      preferredIds: ["fireflies", "fireflies-mcp"],
       resolve: async () => { resolved = true; return null; },
     });
     expect(result).toEqual({ enabled: false });
@@ -33,26 +33,26 @@ describe("runtime MCP preparation", () => {
   });
 
   it("lazily persists the exact connected server for a legacy configuration", async () => {
-    writeIntegrations(ROOT, { granola: { connected: true, mode: "mcp" } });
-    const binary = fakeClaude("granola: remote - ✔ Connected\ngranola-mcp: command - ✘ Failed to connect — closed");
+    writeIntegrations(ROOT, { fireflies: { connected: true, mode: "mcp" } });
+    const binary = fakeClaude("fireflies: remote - ✔ Connected\nfireflies-mcp: command - ✘ Failed to connect — closed");
     const result = await prepareMcpIntegration({
       workspace: ROOT,
-      source: "granola",
-      preferredIds: ["granola", "granola-mcp"],
+      source: "fireflies",
+      preferredIds: ["fireflies", "fireflies-mcp"],
       resolve: async () => binary,
     });
-    expect(result).toEqual({ enabled: true, verification: { ok: true, serverId: "granola" } });
+    expect(result).toEqual({ enabled: true, verification: { ok: true, serverId: "fireflies" } });
     const integrations = readIntegrations(ROOT);
-    expect(integrations.ok && integrations.integrations.granola?.mcp_server_id).toBe("granola");
+    expect(integrations.ok && integrations.integrations.fireflies?.mcp_server_id).toBe("fireflies");
   });
 
   it("honors a persisted exact ID instead of silently switching to another server", async () => {
-    writeIntegrations(ROOT, { granola: { connected: true, mode: "mcp", mcp_server_id: "granola-mcp" } });
-    const binary = fakeClaude("granola: remote - ✔ Connected\ngranola-mcp: command - ✘ Failed to connect — closed");
+    writeIntegrations(ROOT, { fireflies: { connected: true, mode: "mcp", mcp_server_id: "fireflies-mcp" } });
+    const binary = fakeClaude("fireflies: remote - ✔ Connected\nfireflies-mcp: command - ✘ Failed to connect — closed");
     const result = await prepareMcpIntegration({
       workspace: ROOT,
-      source: "granola",
-      preferredIds: ["granola", "granola-mcp"],
+      source: "fireflies",
+      preferredIds: ["fireflies", "fireflies-mcp"],
       resolve: async () => binary,
     });
     expect(result).toMatchObject({ enabled: true, verification: { ok: false, code: "mcp_connect" } });
@@ -79,11 +79,11 @@ describe("listClaudeMcpServers", () => {
     writeFileSync(binary, `#!/bin/bash
 [ "$DRAFT_SUPPRESS_SESSION_END_HOOK" = "1" ] || exit 9
 [ "$PWD" = "${realRoot}" ] || exit 8
-echo "granola: https://mcp.granola.ai/mcp - ✔ Connected"
+echo "fireflies: https://api.fireflies.ai/mcp - ✔ Connected"
 `);
     chmodSync(binary, 0o755);
     const result = await listClaudeMcpServers(ROOT, async () => binary);
     expect(result).toMatchObject({ exitCode: 0 });
-    expect(result.stdout).toContain("granola");
+    expect(result.stdout).toContain("fireflies");
   });
 });

@@ -21,12 +21,12 @@ describe("readSecrets", () => {
   it("returns ok:true for valid JSON", () => {
     writeFileSync(
       join(TMP, "config", "secrets.json"),
-      JSON.stringify({ granola_mode: "mcp", slack_bot_token: "xoxb-test" })
+      JSON.stringify({ fireflies_api_token: "ff-token", slack_bot_token: "xoxb-test" })
     );
     const result = readSecrets(TMP);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.secrets.granola_mode).toBe("mcp");
+      expect(result.secrets.fireflies_api_token).toBe("ff-token");
       expect(result.secrets.slack_bot_token).toBe("xoxb-test");
     }
   });
@@ -49,7 +49,7 @@ describe("readSecrets", () => {
     const result = readSecrets(TMP);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.secrets.granola_mode).toBeUndefined();
+      expect(result.secrets.fireflies_api_token).toBeUndefined();
       expect(result.secrets.slack_bot_token).toBeUndefined();
       expect(result.secrets.github_connected).toBeUndefined();
     }
@@ -61,15 +61,14 @@ describe("readSecrets", () => {
       JSON.stringify({ slack_bot_token: "xoxb-existing", slack_app_token: "xapp-existing" }),
     );
 
-    writeSecrets(TMP, { granola_mode: "api", granola_api_token: "granola-token" });
+    writeSecrets(TMP, { fireflies_api_token: "ff-new-token" });
 
     const result = readSecrets(TMP);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.secrets.slack_bot_token).toBe("xoxb-existing");
       expect(result.secrets.slack_app_token).toBe("xapp-existing");
-      expect(result.secrets.granola_mode).toBe("api");
-      expect(result.secrets.granola_api_token).toBe("granola-token");
+      expect(result.secrets.fireflies_api_token).toBe("ff-new-token");
     }
   });
 });
