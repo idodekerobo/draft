@@ -5,17 +5,28 @@ export interface VerifiedCaller {
   accessToken: string;
 }
 
-export async function verifyRequest(
-  req: Request,
+export async function verifyAccessToken(
+  accessToken: string,
 ): Promise<VerifiedCaller | null> {
-  const header = req.headers.get("authorization");
-  if (!header?.startsWith("Bearer ")) return null;
-
-  const accessToken = header.slice("Bearer ".length).trim();
   if (!accessToken) return null;
 
   const { data, error } = await publishableClient.auth.getUser(accessToken);
   if (error || !data.user) return null;
 
   return { userId: data.user.id, accessToken };
+}
+
+export async function verifyRequest(
+  req: Request,
+): Promise<VerifiedCaller | null> {
+  return verifyBearerHeader(req.headers);
+}
+
+export async function verifyBearerHeader(
+  headers: Headers,
+): Promise<VerifiedCaller | null> {
+  const header = headers.get("authorization");
+  if (!header?.startsWith("Bearer ")) return null;
+
+  return verifyAccessToken(header.slice("Bearer ".length).trim());
 }

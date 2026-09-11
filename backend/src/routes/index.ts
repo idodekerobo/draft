@@ -23,6 +23,9 @@ import * as workspaceContext from "./workspace-context";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
 import { OPTIONS, withCors } from "../auth/with-cors";
+import { AUTH_HANDLER, WELL_KNOWN_HANDLER } from "../auth/better-auth-routes";
+import * as oauthConsentRedirect from "../auth/oauth-consent-redirect";
+import * as mcp from "../mcp/route";
 
 export const routes = {
   "/health": { GET: health.GET },
@@ -56,6 +59,23 @@ export const routes = {
   "/link/:code": { GET: links.pollGET },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
+  // Wildcard covers every Better Auth path under its "/api/auth" basePath
+  // (oauth2/authorize, oauth2/token, oauth2/consent, our bridge endpoint, etc).
+  // Better Auth emits no CORS headers itself, so the browser-called paths
+  // under it (the bridge endpoint, oauth2/consent) need withCors here too.
+  "/api/auth/*": { GET: withCors(AUTH_HANDLER), POST: withCors(AUTH_HANDLER), OPTIONS },
+  // Top-level-navigation front for the POST-only /oauth2/consent — see
+  // oauth-consent-redirect.ts for why the consent page can't call it via fetch.
+  "/oauth2/consent-redirect": { GET: oauthConsentRedirect.GET },
+  // RFC 9728/8414 discovery docs live at root, outside the basePath.
+  "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
+  "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },
+  // Both the bare path and the RFC 9728 path-appended form (for the "/mcp"
+  // resource) are valid; Better Auth's handler recognizes both itself, but
+  // Bun's router needs an explicit entry for each.
+  "/.well-known/oauth-protected-resource": { GET: WELL_KNOWN_HANDLER },
+  "/.well-known/oauth-protected-resource/mcp": { GET: WELL_KNOWN_HANDLER },
+  "/mcp": { GET: mcp.GET, POST: mcp.POST, DELETE: mcp.DELETE },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
   "/webhooks/github": { POST: githubWebhook.POST },

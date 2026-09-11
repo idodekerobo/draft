@@ -3,7 +3,14 @@ create table agent_query_log (
   workspace_id  uuid not null references workspaces(id) on delete cascade,
   user_id       uuid references users(id),
   command       text not null
-                  check (command in ('sessions.list', 'sessions.read', 'sessions.search', 'skills.list', 'skills.read')),
+                  check (command in (
+                    'sessions.list', 'sessions.read', 'sessions.search',
+                    'skills.list', 'skills.read',
+                    'context.read',
+                    'mcp.context.list', 'mcp.context.read',
+                    'mcp.sessions.list', 'mcp.sessions.read', 'mcp.sessions.search',
+                    'mcp.skills.list', 'mcp.skills.read'
+                  )),
   args_json     jsonb not null default '{}',
   result_bytes  int,
   occurred_at   timestamptz not null default now()

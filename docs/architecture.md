@@ -24,7 +24,7 @@ Draft is a hosted or self-hosted company-brain system. The workspace and synthes
         +----------> workspace context <----------+
                               ^
                               |
-          Desktop · CLI · agent hooks · local daemon
+       Desktop · CLI · MCP · agent hooks · local daemon
                     running on user machines
 ~~~
 
@@ -38,11 +38,11 @@ The desktop can also read a local folder during onboarding to seed a workspace. 
 
 ### CLI
 
-The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
+The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context and skill reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
 
 ### Agent connection
 
-The CLI and tool-specific setup commands install project-local hooks. A session hook can read a completed coding-agent transcript and post it to the backend using an ingest token scoped to one project and provider set — a token minted for one project cannot submit sessions for another, even within the same workspace. Agent connections use the API contract and support multiple local setup methods.
+The remote MCP server is an OAuth-protected, stateless HTTP connection to the workspace. It resolves the caller's team workspace server-side and exposes read-only context and skills tools. The CLI and tool-specific setup commands remain useful for project-local instructions, explicit reads, scripts, and session capture. A session hook can read a completed coding-agent transcript and post it to the backend using an ingest token scoped to one project and provider set — a token minted for one project cannot submit sessions for another, even within the same workspace.
 
 ### Background daemon
 

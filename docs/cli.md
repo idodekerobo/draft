@@ -2,7 +2,7 @@
 
 The Draft CLI is a thin authenticated client for the hosted or self-hosted Draft control plane. It is useful for scripts, agents, project setup, and coding-session access without opening the desktop app.
 
-The CLI is also the current agent connection mechanism. That surface is evolving, so prefer the command help and this reference over older daemon or GitHub-sync documentation.
+The CLI is one of Draft's two agent connection paths. Use it for setup, scripts, project instructions, and explicit reads; use the remote MCP server when an MCP-compatible agent should query the company brain directly during a session. The connection surface is evolving, so prefer the command help and this reference over older daemon or GitHub-sync documentation.
 
 ## Install
 
@@ -49,6 +49,36 @@ draft context read --all
 ~~~
 
 Context reads go through the authenticated API and return the current workspace snapshot. A missing workspace is an account/onboarding state, not a local initialization step.
+
+## MCP connection
+
+Draft also exposes the same company brain through an OAuth-protected remote MCP server. Register the hosted endpoint in an MCP-compatible agent:
+
+~~~text
+https://api.draftai.us/mcp
+~~~
+
+The first connection uses Draft's browser sign-in and consent flow. The server is read-only and currently exposes:
+
+- `context.list` — list available context dimensions.
+- `context.read` — read one or more dimensions, or all current workspace documents.
+- `skills.list` — list the workspace's shared skills.
+- `skills.read` — read one shared skill by name.
+
+Claude Code can register it with:
+
+~~~bash
+claude mcp add --transport http draft https://api.draftai.us/mcp
+~~~
+
+Codex can use the equivalent HTTP entry in `~/.codex/config.toml`:
+
+~~~toml
+[mcp_servers.draft]
+url = "https://api.draftai.us/mcp"
+~~~
+
+For self-hosted Draft, replace the hosted URL with `<DRAFT_API_BASE_URL>/mcp`. MCP and CLI reads resolve the same authenticated team workspace; neither requires a local company-brain repository.
 
 ## Skills
 

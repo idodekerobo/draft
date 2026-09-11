@@ -2,7 +2,7 @@
 
 Draft is the company brain for teams building with AI.
 
-It turns the decisions, context, and activity scattered across your team's tools into a shared workspace that every connected agent can use. Agents attach to Draft through a local CLI or agent integration, so each session can start with the same current understanding of the company, product, priorities, and decisions.
+It turns the decisions, context, and activity scattered across your team's tools into a shared workspace that every connected agent can use. Agents attach to Draft through MCP or the local CLI, so each session can use the same current understanding of the company, product, priorities, and decisions.
 
 Draft is available as a hosted service at [draftai.us](https://draftai.us), and the open-source stack can also be self-hosted.
 
@@ -16,7 +16,7 @@ Your tools and agent sessions
              |
              v
 Local capture + agent connection
-  Desktop · CLI · project hooks
+  Desktop · CLI · MCP · project hooks
              |
              v
 Draft API and workspace
@@ -45,7 +45,8 @@ The local components connect your agents and computer to the Draft workspace:
 
 - The Electrobun desktop app signs in, displays the shared workspace, manages connections, and shows synthesis activity.
 - The CLI authenticates against the configured Draft API, can read workspace context and coding-agent session data, and can connect/disconnect the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code) directly — see `draft integrations` in the [CLI reference](./docs/cli.md).
-- Agent integrations and project hooks let supported agents attach to Draft. The current CLI/plugin path is still evolving as we work toward the best long-term agent connection model.
+- The remote MCP server lets supported agents query the authenticated workspace directly during a session. The current read-only tools expose context dimensions, full context documents, and shared skills.
+- The CLI is the scriptable connection path: it can read context and skills, configure project instruction files, install session capture, and manage hosted integrations. Use MCP for direct in-session access and the CLI for setup, scripts, and explicit reads.
 - The `background/` module is a local daemon/runtime path still used by desktop bundles and current plugin hooks. It contains local pollers, session jobs, and source-adapter runtimes; it is not the hosted workspace or hosted synthesis control plane.
 - A local hook can read a completed coding-agent transcript from the project machine and send it to the configured Draft API. The local machine keeps authentication state, project configuration, and temporary capture/runtime files.
 
@@ -57,7 +58,7 @@ The canonical company brain is the workspace in the Draft deployment, not a Git 
 2. Download the Draft desktop app for macOS Apple Silicon.
 3. Sign in and create or join a team workspace.
 4. Connect the integrations your team uses.
-5. Attach your coding agents using the current CLI/plugin setup.
+5. Connect your coding agents through MCP, or use the CLI/plugin setup for project-local instructions and session capture.
 
 The hosted web app handles account creation, sign-in, desktop pairing, and team invitations. The desktop app is the primary workspace surface today; the CLI is useful for agents, scripts, and session access.
 
@@ -130,6 +131,15 @@ The backend currently supports connections for Slack, Fireflies, Linear, GitHub,
 
 Connect or manage any of these from the desktop app, or from the CLI: `draft integrations list` reports each provider's status, `draft integrations connect <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft integrations disconnect <provider>` revokes it. Slack additionally supports `draft integrations slack channels list`/`set` to manage which channels the bot has joined. See [docs/cli.md](./docs/cli.md#hosted-integrations) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
 
+## Connect agents with MCP or CLI
+
+Draft gives agents two ways to reach the same hosted company brain:
+
+- **MCP** — register `https://api.draftai.us/mcp` in Claude Code, Codex, or another MCP-compatible agent. The first connection opens Draft's OAuth sign-in and consent flow. Agents can then query context and shared skills during a session.
+- **CLI** — install `draft`, run `draft auth login`, and use `draft context read --all` or `draft skills read <name>`. Run `draft add <tool> --dir <path>` when an agent should discover Draft through a project's `CLAUDE.md` or `AGENTS.md`.
+
+MCP is read-only and workspace-scoped: it never accepts a workspace ID from the agent, and access is resolved from the authenticated user's team. For the exact MCP configuration, available tools, and self-hosted setup, see the [MCP and agent connections guide](./docs/mcp.md).
+
 ## CLI
 
 Install a released CLI binary without cloning the repository:
@@ -164,6 +174,7 @@ See [docs/cli.md](./docs/cli.md) for the current CLI surface.
 - [Privacy](./docs/privacy.md)
 - [Hosted team collaboration](./docs/setting-up-collaboration.md)
 - [Agent connections](./docs/agent-plugins.md)
+- [MCP and agent connections](./docs/mcp.md)
 - [How context reaches agents](./docs/how-context-injection-works.md)
 - [CLI reference](./docs/cli.md)
 - [Synthesis and proposals](./docs/proposals.md)
