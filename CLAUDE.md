@@ -50,3 +50,56 @@ and never leave `db/schemas/`, `db/functions/`, or `db/storage/` out of
 sync with what's actually applied.
 
 Do not push to the linked Supabase project until you get explicit approval that I'm good with the changes.
+
+<!-- draft:begin (managed by Draft — do not edit this block) -->
+## Draft context
+
+This project uses Draft for its company brain and agent context.
+
+Use the CLI below to access the company brain — Draft's current, synthesized
+context about the product, team, and priorities — whenever you need it.
+
+- `draft auth login` — sign in if a command reports you're not authenticated.
+- `draft context list` — discover available context dimensions.
+- `draft context read --dimension <name>` (repeatable) or `--all` — read current context.
+- `draft --help` — see all available commands.
+
+### Coding sessions
+
+- `draft sessions list [--provider <p>] [--user <email>] [--since <ISO>]` — list captured sessions.
+- `draft sessions read <id> [--summary|--transcript]` — read one session's summary or raw transcript.
+- `draft sessions search "<pattern>"` — search session **summaries** by keyword (fast, snippet-only).
+- `draft sessions read <id> --transcript --grep "<pattern>" [--context <n>]` and `--max-bytes <n>` — search a raw transcript (different corpus than `search` — see `draft sessions search` vs. `draft sessions read --grep` in `docs/cli.md`).
+
+List sessions and read summaries first. Fetch a full transcript, or use
+`--grep`, only when the summary is missing, stale, or insufficient.
+
+Resolve people by exact display name or Git email. Present choices when a
+name is ambiguous.
+
+### Hosted integrations
+
+- `draft integrations list` — see which of GitHub, Linear, Slack, Fireflies,
+  and Claude Code are connected.
+- `draft integrations connect <github|linear|slack|fireflies|claude-code>` —
+  connect one. These need a human at a terminal (browser handoffs, hidden
+  credential prompts) — don't run this on the user's behalf unless asked.
+- `draft integrations disconnect <github|linear|slack|fireflies>` —
+  disconnect one.
+
+### Skills
+
+Draft's skills are a company skill marketplace — reusable procedures,
+templates, and heuristics the team has saved for any future workflow, not
+just one task type.
+
+- Discover: before starting a task that might match an existing company
+  procedure, run `draft skills list` to browse the marketplace. Read the
+  full description text for each; if one matches, run `draft skills read
+  <name>` and follow it.
+- Add: when a teammate asks you to save a template or procedure for future
+  use, run `draft skills add` with the content. Write the description the
+  way you'd write a skill's own SKILL.md description — the same judgment
+  you already use for that format's frontmatter.
+- `draft skills --help` — see add/update/remove/list/read usage.
+<!-- draft:end -->
