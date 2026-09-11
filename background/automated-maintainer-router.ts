@@ -25,7 +25,7 @@ export function routeAutomatedMaintainerOutput(
     throw new Error(`invalid maintainer output: ${validation.error}`);
   }
   if (
-    (metadata.input_source === 'granola' || metadata.input_source === 'fireflies')
+    metadata.input_source === 'fireflies'
     && validation.output.meeting_ids === undefined
   ) {
     throw new Error(`${metadata.input_source} maintainer output must include meeting_ids`);

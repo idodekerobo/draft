@@ -54,6 +54,19 @@ create unique index source_connections_one_live_singleton_per_workspace
   on source_connections (workspace_id, provider)
   where provider in ('slack', 'linear', 'claude_session') and status <> 'revoked';
 
+-- Granola is multi-account AND singleton at once, split by whether
+-- connected_by_user_id is set: a personal API key connects one row per
+-- teammate (same shape as source_connections_one_per_connecting_user
+-- above), while a workspace API key connects at most one shared,
+-- null-owner row per workspace.
+create unique index source_connections_granola_personal_per_user
+  on source_connections (workspace_id, provider, connected_by_user_id)
+  where provider = 'granola' and connected_by_user_id is not null;
+
+create unique index source_connections_granola_one_workspace_key
+  on source_connections (workspace_id, provider)
+  where provider = 'granola' and connected_by_user_id is null and status <> 'revoked';
+
 alter table source_connections enable row level security;
 
 create policy source_connections_select on source_connections

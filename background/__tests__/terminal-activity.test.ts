@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { rmSync } from 'fs';
 import { join } from 'path';
 import { createFirefliesPoller } from '../integrations/fireflies/fireflies-poller';
-import { createGranolaPoller } from '../integrations/granola/granola-poller';
 import { createSlackAnalyzer } from '../integrations/slack/slack-analyzer';
 
 const ROOT = `/tmp/draft-terminal-activity-test-${process.pid}`;
@@ -13,8 +12,8 @@ afterEach(() => rmSync(ROOT, { recursive: true, force: true }));
 describe('poller and analyzer terminal outcomes', () => {
   it('maps applied, flagged, and empty to the correct return value', async () => {
     const workspace = join(ROOT, 'terminal');
-    const granola = createGranolaPoller({
-      statePath: join(ROOT, 'granola.json'), workspace, profile: 'team', mode: 'mcp',
+    const pollerA = createFirefliesPoller({
+      statePath: join(ROOT, 'poller-a.json'), workspace, profile: 'team', token: 'token',
     }, {
       verifyMcp: async () => true,
       synthesize: async () => 'output',
@@ -22,8 +21,8 @@ describe('poller and analyzer terminal outcomes', () => {
       write: () => {},
       now: () => NOW,
     });
-    const fireflies = createFirefliesPoller({
-      statePath: join(ROOT, 'fireflies.json'), workspace, profile: 'team', token: 'token',
+    const pollerB = createFirefliesPoller({
+      statePath: join(ROOT, 'poller-b.json'), workspace, profile: 'team', token: 'token',
     }, {
       verifyMcp: async () => true,
       synthesize: async () => 'output',
@@ -41,24 +40,24 @@ describe('poller and analyzer terminal outcomes', () => {
       now: () => NOW,
     });
 
-    expect(await granola()).toBe('applied');
-    expect(await fireflies()).toBe('flagged');
+    expect(await pollerA()).toBe('applied');
+    expect(await pollerB()).toBe('flagged');
     expect(await slack()).toBe('empty');
   });
 
   it('rethrows exceptions for every integration', async () => {
     const workspace = join(ROOT, 'failed');
-    const granola = createGranolaPoller({
-      statePath: join(ROOT, 'granola.json'), workspace, profile: 'team', mode: 'mcp',
+    const pollerA = createFirefliesPoller({
+      statePath: join(ROOT, 'poller-a.json'), workspace, profile: 'team', token: 'token',
     }, {
       verifyMcp: async () => true,
       synthesize: async () => 'output',
-      route: () => { throw new Error('granola failed'); },
+      route: () => { throw new Error('poller failed'); },
       write: () => {},
       now: () => NOW,
     });
-    const fireflies = createFirefliesPoller({
-      statePath: join(ROOT, 'fireflies.json'), workspace, profile: 'team', token: 'token',
+    const pollerB = createFirefliesPoller({
+      statePath: join(ROOT, 'poller-b.json'), workspace, profile: 'team', token: 'token',
     }, {
       verifyMcp: async () => true,
       synthesize: async () => { throw new Error('fireflies failed'); },
@@ -75,8 +74,8 @@ describe('poller and analyzer terminal outcomes', () => {
       now: () => NOW,
     });
 
-    await expect(granola()).rejects.toThrow('granola failed');
-    await expect(fireflies()).rejects.toThrow('fireflies failed');
+    await expect(pollerA()).rejects.toThrow('poller failed');
+    await expect(pollerB()).rejects.toThrow('fireflies failed');
     await expect(slack()).rejects.toThrow('slack failed');
   });
 
@@ -84,8 +83,8 @@ describe('poller and analyzer terminal outcomes', () => {
     const workspace = join(ROOT, 'non-terminal');
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
-    const overlapping = createGranolaPoller({
-      statePath: join(ROOT, 'overlap.json'), workspace, profile: 'team', mode: 'mcp',
+    const overlapping = createFirefliesPoller({
+      statePath: join(ROOT, 'overlap.json'), workspace, profile: 'team', token: 'token',
     }, {
       verifyMcp: async () => true,
       synthesize: async () => { await gate; return 'output'; },

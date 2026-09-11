@@ -5,13 +5,19 @@ import { rpc } from "../../rpc";
 
 interface GranolaConnectPanelProps {
   detail: IntegrationDetail | undefined;
-  onConnected: () => void | Promise<void>;
+  onStatusRefresh: () => boolean | Promise<boolean>;
+  onDone: () => void | Promise<void>;
   classPrefix: "onboarding" | "app-row";
 }
 
-export function GranolaConnectPanel({ onConnected, classPrefix }: GranolaConnectPanelProps) {
+const REFRESH_ERROR = "Connection saved, but Draft could not refresh its status. Try again in a moment.";
+
+// Unlike Fireflies, Granola's webhook management is itself an API -- Draft
+// registers the webhook using the pasted key, so there's no second
+// paste-into-vendor-UI step. Connect goes straight from "saving" to "done".
+export function GranolaConnectPanel({ onStatusRefresh, onDone, classPrefix }: GranolaConnectPanelProps) {
   const { track } = useAnalytics();
-  const [mode, setMode] = useState<"mcp" | "api">("mcp");
+  const [accountKind, setAccountKind] = useState<"personal" | "workspace">("personal");
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,18 +26,17 @@ export function GranolaConnectPanel({ onConnected, classPrefix }: GranolaConnect
     setSaving(true);
     setError(null);
     try {
-      const result = mode === "mcp"
-        ? await rpc.request.connectGranolaMCP()
-        : await rpc.request.connectGranolaAPI({ apiKey });
+      const result = await rpc.request.connectGranola({ apiKey, accountKind });
       if (!result.ok) {
-        setError(result.error ?? (mode === "mcp" ? "MCP registration failed. Try API key instead." : "Could not connect Granola."));
+        setError(result.error ?? "Could not connect Granola. Check your API key.");
         return;
       }
       track("integration_connected", { source: "granola" });
       setApiKey("");
-      await onConnected();
+      if (await onStatusRefresh()) await onDone();
+      else setError(REFRESH_ERROR);
     } catch {
-      setError(mode === "mcp" ? "MCP registration failed. Try API key instead." : "Could not connect Granola. Try again.");
+      setError("Could not connect Granola. Try again.");
     } finally {
       setSaving(false);
     }
@@ -39,18 +44,39 @@ export function GranolaConnectPanel({ onConnected, classPrefix }: GranolaConnect
 
   return (
     <div className={`${classPrefix}__connect-panel`}>
-      <span className={`${classPrefix}__panel-label`}>Connection method</span>
+      <span className={`${classPrefix}__panel-label`}>Requires a Granola Business or Enterprise plan</span>
+      <span className={`${classPrefix}__panel-help`}>Granola only issues API keys on Business and Enterprise plans -- that's also what unlocks webhooks, so nothing further is gated once you have a key.</span>
+
+      <span className={`${classPrefix}__panel-label`}>Key type</span>
       <div className={`${classPrefix}__mode-picker`}>
-        <button type="button" className={mode === "mcp" ? `${classPrefix}__mode--selected` : ""} onClick={() => setMode("mcp")}>MCP</button>
-        <button type="button" className={mode === "api" ? `${classPrefix}__mode--selected` : ""} onClick={() => setMode("api")}>API key</button>
+        <button type="button" className={accountKind === "personal" ? `${classPrefix}__mode--selected` : ""} onClick={() => setAccountKind("personal")}>
+          Personal key
+        </button>
+        <button type="button" className={accountKind === "workspace" ? `${classPrefix}__mode--selected` : ""} onClick={() => setAccountKind("workspace")}>
+          Workspace key
+        </button>
       </div>
-      {mode === "mcp" ? (
-        <span className={`${classPrefix}__panel-help`}>Register Granola with Claude Code automatically. Authenticate in Claude Code on your next session.</span>
+      {accountKind === "personal" ? (
+        <span className={`${classPrefix}__panel-help`}>Connects your own Granola notes. Anyone on the team can do this from Granola Settings → Connectors → API keys (Personal notes scope).</span>
       ) : (
-        <input className={`${classPrefix}__input`} type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Granola API key" aria-label="Granola API key" />
+        <span className={`${classPrefix}__panel-help`}>
+          Workspace key -- for a key created by a <em>Granola</em> workspace admin (Settings → Workspace → General → API access, on Granola's side). Anyone in this Draft workspace can paste one here; Granola is what restricts who can create it, not Draft.
+        </span>
       )}
+
+      <button type="button" className={`${classPrefix}__panel-link ${classPrefix}__panel-action`} onClick={() => rpc.send.openUrl({ url: "https://docs.granola.ai/introduction" })}>
+        How to get a Granola API key
+      </button>
+      <input
+        className={`${classPrefix}__input`}
+        type="password"
+        value={apiKey}
+        onChange={(event) => setApiKey(event.target.value)}
+        placeholder={accountKind === "personal" ? "Your Granola API key" : "Workspace Granola API key"}
+        aria-label="Granola API key"
+      />
       {error && <span className={`${classPrefix}__validation`}>{error}</span>}
-      <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void connect()} disabled={saving || (mode === "api" && !apiKey.trim())}>
+      <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void connect()} disabled={saving || !apiKey.trim()}>
         {saving ? "Connecting…" : "Connect Granola"}
       </button>
     </div>

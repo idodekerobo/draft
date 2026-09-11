@@ -1,4 +1,4 @@
-export type IntegrationActivitySource = 'granola' | 'fireflies' | 'slack';
+export type IntegrationActivitySource = 'fireflies' | 'slack';
 
 export interface TerminalActivity {
   id: string;

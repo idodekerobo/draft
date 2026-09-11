@@ -64,25 +64,72 @@ interface FakeState {
   upsertedItem: Record<string, unknown> | null;
   supersedeCalls: string[][];
   eventInsertPayload: Record<string, unknown> | null;
+  updatedVisibility: { visibility: string; owner_user_id: string | null } | null;
 }
 
-function createFakeClient(priorReadyRevisions: { id: string; external_version: string }[] = []) {
+interface FakeClientOptions {
+  priorReadyRevisions?: { id: string; external_version: string }[];
+  // Other Fireflies connections already present in the workspace, for the
+  // cross-connection dedup lookup. Empty by default so existing tests are
+  // unaffected -- the dedup query short-circuits when there's nothing to find.
+  firefliesConnectionIds?: string[];
+  existingItem?: { id: string; source_connection_id: string; visibility: "private" | "shared" } | null;
+}
+
+function createFakeClient(options: FakeClientOptions = {}) {
   const state: FakeState = {
-    priorReadyRevisions,
+    priorReadyRevisions: options.priorReadyRevisions ?? [],
     upsertedItem: null,
     supersedeCalls: [],
     eventInsertPayload: null,
+    updatedVisibility: null,
   };
 
   function from(table: string) {
-    if (table === "source_items") {
+    if (table === "source_connections") {
       return {
         select: () => ({
-          eq: (_col: string, val: string) => ({
-            single: async () => ({
-              data: { id: val, ...state.upsertedItem },
+          eq: () => ({
+            eq: async () => ({
+              data: (options.firefliesConnectionIds ?? []).map((id) => ({ id })),
               error: null,
             }),
+          }),
+        }),
+      };
+    }
+
+    if (table === "source_items") {
+      return {
+        select: (columns?: string) => {
+          if (columns?.includes("source_connection_id")) {
+            return {
+              eq: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    in: () => ({
+                      maybeSingle: async () => ({ data: options.existingItem ?? null, error: null }),
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            eq: (_col: string, val: string) => ({
+              single: async () => ({
+                data: { id: val, ...state.upsertedItem },
+                error: null,
+              }),
+            }),
+          };
+        },
+        update: (payload: Record<string, unknown>) => ({
+          eq: () => ({
+            eq: async () => {
+              state.updatedVisibility = payload as { visibility: string; owner_user_id: string | null };
+              return { error: null };
+            },
           }),
         }),
       };
@@ -165,7 +212,7 @@ describe("ingestFirefliesMeeting", () => {
 
   it("fetches, normalizes, and writes a source_item + event on the happy path", async () => {
     mockFetchOnce(TRANSCRIPT_FIXTURE);
-    const { client, state } = createFakeClient([]);
+    const { client, state } = createFakeClient();
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
     const result = await ingestFirefliesMeeting(
@@ -220,7 +267,7 @@ describe("ingestFirefliesMeeting", () => {
 
   it("throws instead of silently producing empty content when Fireflies returns a GraphQL error", async () => {
     mockFetchOnce({ errors: [{ message: "Transcript not found" }] });
-    const { client } = createFakeClient([]);
+    const { client } = createFakeClient();
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
     await expect(
@@ -236,9 +283,9 @@ describe("ingestFirefliesMeeting", () => {
   it("marks a prior ready revision superseded when re-ingesting changed content", async () => {
     mockFetchOnce(TRANSCRIPT_FIXTURE);
     const priorId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-    const { client, state } = createFakeClient([
-      { id: priorId, external_version: "some-old-hash" },
-    ]);
+    const { client, state } = createFakeClient({
+      priorReadyRevisions: [{ id: priorId, external_version: "some-old-hash" }],
+    });
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
     await ingestFirefliesMeeting(
@@ -250,6 +297,49 @@ describe("ingestFirefliesMeeting", () => {
 
     expect(state.upsertedItem?.supersedes_source_item_id).toBe(priorId);
     expect(state.supersedeCalls).toEqual([[priorId]]);
+  });
+
+  it("skips writing a duplicate row when another Fireflies connection already ingested this meeting", async () => {
+    const otherConnectionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const existingItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { client, state } = createFakeClient({
+      firefliesConnectionIds: [ids.connection, otherConnectionId],
+      existingItem: { id: existingItemId, source_connection_id: otherConnectionId, visibility: "private" },
+    });
+    const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
+
+    // No fetch mock configured -- if this reaches fetchFirefliesMeeting, the
+    // test fails on a fetch call rather than a wrong assertion, which is the
+    // point: the whole fetch+write path should be skipped.
+    const result = await ingestFirefliesMeeting(
+      { id: ids.connection, workspace_id: ids.workspace },
+      ids.credential,
+      "meeting-123",
+      client,
+    );
+
+    expect(result.sourceItemId).toBe(existingItemId);
+    expect(state.updatedVisibility).toEqual({ visibility: "shared", owner_user_id: null });
+  });
+
+  it("does not re-widen a meeting that's already shared", async () => {
+    const otherConnectionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const existingItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { client, state } = createFakeClient({
+      firefliesConnectionIds: [ids.connection, otherConnectionId],
+      existingItem: { id: existingItemId, source_connection_id: otherConnectionId, visibility: "shared" },
+    });
+    const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
+
+    const result = await ingestFirefliesMeeting(
+      { id: ids.connection, workspace_id: ids.workspace },
+      ids.credential,
+      "meeting-123",
+      client,
+    );
+
+    expect(result.sourceItemId).toBe(existingItemId);
+    expect(state.updatedVisibility).toBeNull();
   });
 });
 

@@ -102,6 +102,14 @@ describe("draft integrations list", () => {
           last_error_at: null,
         },
         {
+          provider: "granola",
+          status: "disconnected",
+          connected: false,
+          display_name: null,
+          last_success_at: null,
+          last_error_at: null,
+        },
+        {
           provider: "claude-code",
           status: "error",
           connected: false,
@@ -113,7 +121,7 @@ describe("draft integrations list", () => {
     });
   });
 
-  it("synthesizes five disconnected entries when rows are missing", async () => {
+  it("synthesizes six disconnected entries when rows are missing", async () => {
     const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
     const connections = JSON.parse(result.stdout).connections;
     expect(connections.map((item: { provider: string }) => item.provider)).toEqual([
@@ -121,6 +129,7 @@ describe("draft integrations list", () => {
       "slack",
       "linear",
       "fireflies",
+      "granola",
       "claude-code",
     ]);
     expect(connections.every((item: { status: string; connected: boolean }) =>
@@ -183,6 +192,7 @@ describe("draft integrations list", () => {
       "Slack: connected",
       "Linear: disconnected",
       "Fireflies: pending",
+      "Granola: disconnected",
       "Claude Code: disconnected",
     ].join("\n"));
     expect(result.stderr).toBe("");
@@ -318,7 +328,7 @@ describe("integrations help and completion", () => {
     expect(bash.stdout).toContain('commands="add auth context sessions integrations update completion"');
     expect(bash.stdout).toContain('compgen -W "list connect disconnect"');
     expect(bash.stdout).toContain('compgen -W "github"');
-    expect(bash.stdout).toContain('compgen -W "github fireflies linear slack"');
+    expect(bash.stdout).toContain('compgen -W "github fireflies linear slack granola"');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
     expect(zsh.exitCode).toBe(0);
@@ -332,5 +342,6 @@ describe("integrations help and completion", () => {
     expect(zsh.stdout).toContain("'fireflies:Fireflies'");
     expect(zsh.stdout).toContain("'linear:Linear'");
     expect(zsh.stdout).toContain("'slack:Slack'");
+    expect(zsh.stdout).toContain("'granola:Granola'");
   });
 });

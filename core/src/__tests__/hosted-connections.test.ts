@@ -70,6 +70,7 @@ describe("normalizeHostedConnections", () => {
       "slack",
       "linear",
       "fireflies",
+      "granola",
       "claude-code",
     ]);
     expect(connections.map(({ status }) => status)).toEqual([
@@ -78,11 +79,12 @@ describe("normalizeHostedConnections", () => {
       "disconnected",
       "connected",
       "disconnected",
+      "disconnected",
     ]);
   });
 
   it("maps the backend claude_code name and emits only the public summary shape", () => {
-    const [github, slack, linear, fireflies, claudeCode] = normalizeHostedConnections([
+    const [github, slack, linear, fireflies, , claudeCode] = normalizeHostedConnections([
       {
         provider: "claude_code",
         status: "active",
@@ -121,9 +123,26 @@ describe("normalizeHostedConnections", () => {
   it("ignores unsupported providers and the session-capture toggle", () => {
     const connections = normalizeHostedConnections([
       { provider: "claude_session", status: "active" },
-      { provider: "granola", status: "active" },
     ]);
     expect(connections.every(({ connected }) => !connected)).toBe(true);
+  });
+
+  it("treats an active granola row with no proven webhook delivery as pending, not connected", () => {
+    const connections = normalizeHostedConnections([
+      { provider: "granola", status: "active" },
+    ]);
+    const granola = connections.find((c) => c.provider === "granola");
+    expect(granola?.status).toBe("pending");
+    expect(granola?.connected).toBe(false);
+  });
+
+  it("treats an active granola row with a proven webhook delivery as connected", () => {
+    const connections = normalizeHostedConnections([
+      { provider: "granola", status: "active", last_success_at: "2026-01-01T00:00:00Z" },
+    ]);
+    const granola = connections.find((c) => c.provider === "granola");
+    expect(granola?.status).toBe("connected");
+    expect(granola?.connected).toBe(true);
   });
 
   it.each([
@@ -136,12 +155,13 @@ describe("normalizeHostedConnections", () => {
   ])("returns the stable disconnected list for malformed input %#", (value) => {
     const connections = normalizeHostedConnections(value);
 
-    expect(connections).toHaveLength(5);
+    expect(connections).toHaveLength(6);
     expect(connections.map(({ provider }) => provider)).toEqual([
       "github",
       "slack",
       "linear",
       "fireflies",
+      "granola",
       "claude-code",
     ]);
     expect(connections.every(({ status, connected }) =>

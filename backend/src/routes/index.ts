@@ -1,4 +1,5 @@
 import * as firefliesWebhook from "../webhooks/fireflies/route";
+import * as granolaWebhook from "../webhooks/granola/route";
 import * as githubWebhook from "../webhooks/github/route";
 import * as linearWebhook from "../webhooks/linear/route";
 import * as connections from "./connections";
@@ -77,6 +78,7 @@ export const routes = {
   "/.well-known/oauth-protected-resource/mcp": { GET: WELL_KNOWN_HANDLER },
   "/mcp": { GET: mcp.GET, POST: mcp.POST, DELETE: mcp.DELETE },
   "/webhooks/fireflies/:connectionKey": { POST: firefliesWebhook.POST },
+  "/webhooks/granola/:connectionKey": { POST: granolaWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
   "/webhooks/github": { POST: githubWebhook.POST },
 };

@@ -50,7 +50,7 @@ meeting_ids:
       ok: false,
       error: "meeting_ids must be an array",
     });
-    // Duplicates are allowed here; mergeGranolaState/mergeFirefliesState collapse them via Set.
+    // Duplicates are allowed here; mergeFirefliesState collapses them via Set.
     expect(validateMaintainerOutput(document("outcome: no_change\nmeeting_ids:\n  - ok\n  - ok"))).toEqual({
       ok: true,
       output: { outcome: "no_change", meeting_ids: ["ok", "ok"] },

@@ -48,7 +48,7 @@ export async function listClaudeMcpServers(
 
 export async function prepareMcpIntegration(options: {
   workspace: string;
-  source: "granola" | "fireflies";
+  source: "fireflies";
   preferredIds: readonly string[];
   resolve?: typeof resolveRunnerBin;
 }): Promise<PreparedMcpIntegration> {

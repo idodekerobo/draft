@@ -65,7 +65,7 @@ _draft_completion() {
       ;;
     disconnect)
       if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
-        COMPREPLY=( $(compgen -W "github fireflies linear slack" -- "\$cur") )
+        COMPREPLY=( $(compgen -W "github fireflies linear slack granola" -- "\$cur") )
         return 0
       fi
       ;;
@@ -135,7 +135,7 @@ _draft() {
             local providers=('github:GitHub')
             _describe 'provider' providers
           elif [[ \$words[3] == 'disconnect' ]]; then
-            local providers=('github:GitHub' 'fireflies:Fireflies' 'linear:Linear' 'slack:Slack')
+            local providers=('github:GitHub' 'fireflies:Fireflies' 'linear:Linear' 'slack:Slack' 'granola:Granola')
             _describe 'provider' providers
           fi
           ;;

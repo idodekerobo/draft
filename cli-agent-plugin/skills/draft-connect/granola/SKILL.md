@@ -1,9 +1,11 @@
 ---
 name: draft-connect-granola
 description: >
-  Set up Granola integration for the Draft daemon. Guides the user through
-  connecting Granola via MCP (OAuth) or REST API token. Writes config/secrets.json
-  and config/integrations.json.
+  Connect Granola through Draft Cloud's hosted pipeline. Guides the user
+  through getting a Granola API key (personal or workspace) and running
+  `draft integrations connect granola`. Requires a Granola Business or
+  Enterprise plan and a Draft Cloud sign-in -- no local daemon config is
+  written.
 ---
 
 # /draft:connect granola — Granola Integration Setup
@@ -11,348 +13,113 @@ description: >
 Invoked by `draft-connect/SKILL.md` when the user runs `/draft:connect granola`.
 Not a registered skill — executed by the parent skill via Read.
 
-Connect Granola to the Draft daemon so meeting transcripts are automatically
-synthesized into team context. Two connection methods:
+Granola runs through Draft Cloud's hosted pipeline, not the local daemon:
+Draft registers a webhook with Granola directly using your API key, so meeting
+notes land in your workspace as they're generated. There's no MCP
+registration, no local `secrets.json`/`integrations.json` entry, and no daemon
+poll cycle to wait on — `draft integrations connect granola` does everything
+in one call.
 
-- **MCP** (recommended) — Claude Code calls Granola directly via OAuth during synthesis.
-  No token needed. Requires authenticating once in a new session after setup.
-- **API** — Daemon fetches transcripts via REST. Requires a personal access token.
-
----
-
-## Step 0: Resolve workspace + check daemon
-
-Resolve active workspace:
-
-```bash
-python3 -c "
-from pathlib import Path
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-ws = Path.home() / '.draft' / 'workspaces' / profile
-print(str(ws))
-"
-```
-
-Store as `ACTIVE_WORKSPACE`.
-
-Confirm daemon is installed:
-
-```bash
-ls ~/.draft/background/integrations/granola/granola-poller.sh 2>/dev/null && echo "installed" || echo "not installed"
-```
-
-If not installed: "The Draft daemon isn't installed. Run `bash <plugin_root>/background/install.sh` first, then re-run `/draft:connect granola`." Hard stop.
+**Requires a Granola Business or Enterprise plan.** Granola only issues API
+keys — and only allows webhooks — on those plans. If the workspace is on Free
+or Pro, there is currently no way to connect Granola to Draft; the user needs
+to upgrade first.
 
 ---
 
-## Step 1: Check current Granola state
+## Step 0: Confirm Draft Cloud sign-in
 
 ```bash
-python3 -c "
-import json, subprocess
-from pathlib import Path
-
-# Check MCP via claude mcp list (most reliable)
-mcp_connected = False
-try:
-    result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
-    mcp_connected = 'granola' in result.stdout.lower()
-except: pass
-
-# Fallback: check settings.json
-if not mcp_connected:
-    settings = Path.home() / '.claude' / 'settings.json'
-    if settings.exists():
-        try:
-            d = json.loads(settings.read_text())
-            mcp_connected = any('granola' in k.lower() for k in d.get('mcpServers', {}).keys())
-        except: pass
-
-ws_file = Path.home() / '.draft' / 'active-profile'
-profile = ws_file.read_text().strip() if ws_file.exists() else 'default'
-secrets = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'secrets.json'
-api_token = ''
-saved_mode = ''
-if secrets.exists():
-    try:
-        d = json.loads(secrets.read_text())
-        api_token = d.get('granola_api_token', '')
-        saved_mode = d.get('granola_mode', '')
-    except: pass
-
-print(f'mcp_connected:{mcp_connected}')
-print(f'api_token_set:{bool(api_token)}')
-print(f'saved_mode:{saved_mode}')
-"
+draft auth whoami --json >/dev/null 2>&1 && echo "signed_in" || echo "not_signed_in"
 ```
 
-If already configured, show state and use **AskUserQuestion**:
-> "Granola is already connected via [mcp / api]. What do you want to do?
-> (1) Reconfigure  (2) Disconnect  (3) Cancel"
+If `not_signed_in`: "You need to be signed in to Draft Cloud first. Run `draft auth login`, then re-run `/draft:connect granola`." Hard stop.
 
-- Reconfigure → write `connected: false` to integrations.json first (see helper below), then continue to Step 2.
-- Disconnect → run **Disconnect flow** below, then stop.
+---
+
+## Step 1: Check current Granola connections
+
+```bash
+draft integrations list --json 2>/dev/null
+```
+
+Look at the `connections` array for entries with `provider: "granola"`. There
+can be up to two: one personal (has `is_mine`) and one workspace-wide.
+
+If a connection already exists that this flow is about to touch (see Step 2
+for which one that is), use **AskUserQuestion**:
+> "Granola is already connected. What do you want to do?
+> (1) Reconnect / rotate the key  (2) Disconnect  (3) Cancel"
+
+- Reconnect → continue to Step 2 (reconnecting rotates the same connection —
+  it never creates a duplicate row).
+- Disconnect → run `draft integrations disconnect granola` (add
+  `--workspace-key` to disconnect the workspace key instead of the personal
+  one), then stop.
 - Cancel → print current status and stop.
 
-**Disconnect flow:**
-```bash
-python3 - <<'PYEOF'
-import json
-from pathlib import Path
-
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-workspace = Path.home() / '.draft' / 'workspaces' / profile
-
-secrets_path = workspace / 'config' / 'secrets.json'
-if secrets_path.exists():
-    try:
-        s = json.loads(secrets_path.read_text())
-        s.pop('granola_mode', None)
-        s.pop('granola_api_token', None)
-        secrets_path.write_text(json.dumps(s, indent=2) + '\n')
-    except: pass
-
-integrations_path = workspace / 'config' / 'integrations.json'
-integrations = {}
-if integrations_path.exists():
-    try: integrations = json.loads(integrations_path.read_text())
-    except: pass
-integrations['granola'] = {'connected': False}
-integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
-print('granola:disconnected')
-PYEOF
-```
-
-If granola was MCP mode, also deregister:
-```bash
-claude mcp remove granola 2>/dev/null || true
-```
-
-Print: `✓ Granola disconnected.`
-
 ---
 
-## Step 2: Choose connection method
+## Step 2: Choose key type
 
 Use the **AskUserQuestion** tool:
-> "How would you like to connect Granola?
+> "What kind of Granola API key are you connecting?
 >
-> (1) MCP server — Claude Code calls Granola directly during synthesis (recommended)
->     Requires: one-time browser OAuth after setup. No token needed.
+> (1) Personal key — connects your own Granola notes. Anyone on the team can
+>     do this with their own key; each person's notes stay private to them.
 >
-> (2) REST API token — daemon fetches transcripts independently
->     Requires: a Granola personal access token"
+> (2) Workspace key — a key created by a *Granola* workspace admin (Settings
+>     → Workspace → General → API access, on Granola's side — not a Draft
+>     permission). Connects the workspace's shared/public notes for everyone."
 
-- **(1)** → Step 3: MCP setup
-- **(2)** → Step 4: API setup
+Store the choice as `ACCOUNT_KIND` (`personal` or `workspace`).
 
 ---
 
-## Step 3: MCP setup
+## Step 3: Get a Granola API key
 
-Granola MCP uses HTTP transport + browser OAuth. The `claude mcp add` command registers
-the server. Authentication happens in a new session via `/mcp` → Authenticate.
-There is no API key for MCP — OAuth only.
+Tell the user:
+> "Open the Granola desktop app → Settings → Connectors → API keys → Create
+> new key. Choose the [Personal notes / Public notes] access scope to match
+> what you picked above, then copy the generated key (starts with `grn_`)."
 
-### 3a. Register via claude CLI (global scope)
-
-The Draft daemon runs synthesis sessions from outside any project directory, so the
-Granola MCP must be registered globally (`--scope user`) to be available during synthesis.
-
-```bash
-claude mcp add --scope user granola --transport http https://mcp.granola.ai/mcp
-```
-
-Capture output. If non-zero exit:
-- Print the error
-- "Registration failed. Try running this manually in your terminal:
-  `claude mcp add --scope user granola --transport http https://mcp.granola.ai/mcp`"
-- Hard stop.
-
-### 3b. Verify registration
-
-```bash
-claude mcp list 2>/dev/null | grep -i granola && echo "verified" || echo "not_found"
-```
-
-If not found: warn "MCP registered but not showing in `claude mcp list` — check manually." Continue.
-
-### 3c. Save mode to secrets.json
-
-```bash
-python3 - <<'PYEOF'
-import json
-from pathlib import Path
-
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-secrets_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'secrets.json'
-secrets_path.parent.mkdir(parents=True, exist_ok=True)
-
-secrets = {}
-if secrets_path.exists():
-    try:
-        secrets = json.loads(secrets_path.read_text())
-    except: pass
-
-secrets['granola_mode'] = 'mcp'
-secrets_path.write_text(json.dumps(secrets, indent=2) + '\n')
-print('wrote:' + str(secrets_path))
-PYEOF
-```
-
-### 3d. Write integrations.json
-
-```bash
-python3 - <<'PYEOF'
-import json
-from datetime import datetime
-from pathlib import Path
-
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-integrations_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
-
-integrations = {}
-if integrations_path.exists():
-    try: integrations = json.loads(integrations_path.read_text())
-    except: pass
-
-integrations['granola'] = {
-    'connected': True,
-    'mode': 'mcp',
-    'last_connected': datetime.utcnow().isoformat() + 'Z',
-}
-integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
-print('integrations.json updated')
-PYEOF
-```
-
-### 3e. Confirm
-
-Print:
-```
-✓ Granola MCP registered.
-
-  Server: https://mcp.granola.ai/mcp (HTTP transport)
-  Scope:  global (available in all sessions)
-  Mode saved to: config/secrets.json
-
-Two more steps required before synthesis will work:
-
-  1. Start a new Claude Code session (MCP loads at session start).
-
-  2. In the new session, run: /mcp
-     Select "granola" → "Authenticate".
-     A browser window will open — sign in to Granola to complete OAuth.
-
-  3. After authenticating, the daemon picks up Granola on the next poll (~5 min).
-     Test immediately with: `draft poll granola`
-
-The OAuth token is stored by Claude Code and reused across sessions — one-time auth only.
-```
-
-Stop.
+The CLI prompts for the key itself with a hidden, secure input — no need to
+collect it here.
 
 ---
 
-## Step 4: API setup
-
-### 4a. Prompt for token
-
-Use the **AskUserQuestion** tool:
-> "Paste your Granola personal access token:
-> (Granola app → Settings → API → Personal access token)"
-
-- Store as `GRANOLA_TOKEN`
-- If blank: "No token entered. Run `/draft:connect granola` when you have your token." Stop.
-
-### 4b. Write token and mode to secrets.json
+## Step 4: Connect
 
 ```bash
-python3 - <<PYEOF
-import json, os
-from pathlib import Path
-
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-secrets_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'secrets.json'
-secrets_path.parent.mkdir(parents=True, exist_ok=True)
-
-secrets = {}
-if secrets_path.exists():
-    try:
-        secrets = json.loads(secrets_path.read_text())
-    except: pass
-
-secrets['granola_api_token'] = '$GRANOLA_TOKEN'
-secrets['granola_mode'] = 'api'
-
-secrets_path.write_text(json.dumps(secrets, indent=2) + '\n')
-os.chmod(str(secrets_path), 0o600)
-print('wrote:' + str(secrets_path))
-PYEOF
+draft integrations connect granola
 ```
 
-### 4b-ii. Write integrations.json
+If `ACCOUNT_KIND` is `workspace`, add `--workspace-key`:
 
 ```bash
-python3 - <<'PYEOF'
-import json
-from datetime import datetime
-from pathlib import Path
-
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-integrations_path = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'integrations.json'
-
-integrations = {}
-if integrations_path.exists():
-    try: integrations = json.loads(integrations_path.read_text())
-    except: pass
-
-integrations['granola'] = {
-    'connected': True,
-    'mode': 'api',
-    'last_connected': datetime.utcnow().isoformat() + 'Z',
-}
-integrations_path.write_text(json.dumps(integrations, indent=2) + '\n')
-print('integrations.json updated')
-PYEOF
+draft integrations connect granola --workspace-key
 ```
 
-### 4c. Verify
+Both prompt for the API key on the terminal (hidden input) by default.
 
-```bash
-python3 -c "
-import json
-from pathlib import Path
-profile_file = Path.home() / '.draft' / 'active-profile'
-profile = profile_file.read_text().strip() if profile_file.exists() else 'default'
-secrets = Path.home() / '.draft' / 'workspaces' / profile / 'config' / 'secrets.json'
-d = json.loads(secrets.read_text())
-print(f'token_set:{bool(d.get(\"granola_api_token\"))} mode:{d.get(\"granola_mode\",\"\")}')
-"
+This single call does everything: Draft registers a webhook with Granola
+using the key (no separate paste-into-Granola-UI step), stores the
+credential, and backfills the last 7 days of existing notes.
+
+If the command reports a duplicate-account error: "This Granola account is
+already connected by another teammate. Each person connects their own key
+once." Stop.
+
+If it reports the workspace key is already connected, offer to reconnect
+(rotates the same row) instead.
+
+On success, tell the user:
 ```
+✓ Granola connected.
 
-If token not set: "Failed to write token — check permissions on config/secrets.json." Hard stop.
-
-### 4d. Confirm
-
-Print:
-```
-✓ Granola connected via REST API.
-
-  Token saved to config/secrets.json (chmod 600)
-  Mode: api
-
-The daemon will fetch Granola transcripts on the next poll cycle (~5 min).
-Test now: `draft poll granola`
-
-Restart the daemon to pick up the new mode:
-  `draft stop && draft start`
+Draft registered a webhook with Granola directly -- no further setup needed.
+The last 7 days of notes were just backfilled; new notes arrive automatically
+as Granola generates them.
 ```
 
 Stop.

@@ -32,7 +32,7 @@ describe('automated maintainer router', () => {
 
   it('requires explicit receipt lists for meeting sources', () => {
     mkdirSync(ROOT, { recursive: true });
-    for (const inputSource of ['granola', 'fireflies'] as const) {
+    for (const inputSource of ['fireflies'] as const) {
       expect(() => routeAutomatedMaintainerOutput(
         '---\noutcome: no_change\n---\n',
         { ...metadata, input_source: inputSource },

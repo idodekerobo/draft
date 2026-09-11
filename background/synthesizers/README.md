@@ -5,7 +5,7 @@ These source adapters describe the local/background synthesis runtime contract. 
 This local contract predates the hosted result shape in the backend. Its `needs_input` outcome stages a local flagged proposal, while hosted synthesis stores a `needs_input` array on the synthesis run and may persist it alongside a changed or unchanged result. Do not use this local `proposals/flagged/` behavior as the hosted product workflow.
 
 Files in `synthesizers/` are **source adapters** — each one knows how to handle
-a specific input source (session transcripts, Granola meetings, Slack threads).
+a specific input source (session transcripts, Fireflies meetings, Slack threads).
 
 Source adapters are responsible for:
 - Reading and parsing the input for their source type
@@ -21,7 +21,6 @@ synthesizers/
   synthesis-runtime.ts       # context snapshots + intelligence invocation
   claude-code-session.ts     # Claude Code session transcripts
   codex-session.ts           # Codex session transcripts
-  granola.ts                 # Granola meeting transcripts
   fireflies.ts               # Fireflies meeting transcripts
   slack.ts                   # Slack message batches
   github.ts                  # merged PRs and releases
@@ -93,7 +92,7 @@ rewrites:
 ---
 ```
 
-Meeting sources (`granola`, `fireflies`) must additionally emit a `meeting_ids` list
+Meeting sources (`fireflies`) must additionally emit a `meeting_ids` list
 for every outcome — it is how the poller advances its cursor. An empty list is valid.
 
 Contradictions are no longer routed to `context/tensions.md`; an unresolved one is
@@ -115,7 +114,6 @@ its own intelligence config var — use the one for your source, not a generic o
 | Source adapter | Intelligence var | Default |
 |---|---|---|
 | `claude-code-session.ts`, `codex-session.ts` | `DRAFT_SESSION_INTELLIGENCE` | `claude-code` |
-| `granola.ts` | `DRAFT_GRANOLA_INTELLIGENCE` | `claude-code` |
 | `fireflies.ts` | `DRAFT_FIREFLIES_INTELLIGENCE` | `claude-code` |
 | `slack.ts` | `DRAFT_SLACK_INTELLIGENCE` | `claude-code` |
 | `github.ts` | `DRAFT_GITHUB_INTELLIGENCE` | `claude-code` |
@@ -127,7 +125,7 @@ Valid values: `claude-code` (tmux TUI, full tool access), `claude-api` (stateles
 
 ```ts
 // Use the var for YOUR source — not DRAFT_SESSION_INTELLIGENCE
-const intelligence = process.env.DRAFT_GRANOLA_INTELLIGENCE ?? 'claude-code';
+const intelligence = process.env.DRAFT_FIREFLIES_INTELLIGENCE ?? 'claude-code';
 const snapshot = createContextSnapshot(workspace);
 try {
   return await runIntelligence({

@@ -3,6 +3,7 @@ export const HOSTED_CONNECTION_PROVIDERS = [
   "slack",
   "linear",
   "fireflies",
+  "granola",
   "claude-code",
 ] as const;
 
@@ -23,6 +24,7 @@ export interface RawHostedConnectionSummary {
   channel_ids?: unknown;
   id?: unknown;
   is_mine?: unknown;
+  account_kind?: unknown;
 }
 
 export interface HostedConnectionSummary {
@@ -67,7 +69,9 @@ export function normalizeHostedConnection(
   } else if (raw.status === "degraded") {
     status = "degraded";
   } else if (raw.status === "active") {
-    status = provider === "fireflies" && !stringOrNull(raw.last_success_at)
+    // Webhook-driven providers need a proven delivery, not just a saved
+    // credential, before they count as "connected".
+    status = (provider === "fireflies" || provider === "granola") && !stringOrNull(raw.last_success_at)
       ? "pending"
       : "connected";
   } else {
@@ -93,6 +97,9 @@ export function normalizeHostedConnection(
 export interface HostedConnectionListItem extends HostedConnectionSummary {
   id: string | null;
   is_mine: boolean;
+  // Only meaningful for Granola: distinguishes a caller-owned personal-key
+  // row from the workspace's single shared workspace-key row.
+  account_kind?: "personal" | "workspace";
 }
 
 // Settings-list-only: unlike normalizeHostedConnections (which folds to one
@@ -117,6 +124,9 @@ export function normalizeHostedConnectionList(
     ...normalizeHostedConnection(provider, raw),
     id: typeof raw.id === "string" ? raw.id : null,
     is_mine: raw.is_mine === true,
+    ...(raw.account_kind === "personal" || raw.account_kind === "workspace"
+      ? { account_kind: raw.account_kind }
+      : {}),
   }));
 }
 

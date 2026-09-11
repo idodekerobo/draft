@@ -98,7 +98,7 @@ Current state summaries — read the full file at the listed path only if the su
 ${dimensionContent}
 
 ## Pending proposals (synthesized but not yet reviewed)
-These proposals have been generated from earlier Slack or Granola runs but not yet
+These proposals have been generated from earlier Slack or Fireflies runs but not yet
 applied to the workspace. Do NOT re-capture anything already covered here.
 
 Treat pending proposals as deduplication evidence only. Never replace or modify them.

@@ -226,7 +226,7 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 ## Hosted integrations
 
 `draft integrations` connects and manages the hosted control plane's own data
-sources — GitHub, Linear, Slack, Fireflies, and Claude Code. This is
+sources — GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is
 different from `draft add`: `add` points a coding agent *inside a project* at
 the CLI's read commands (`auth login`, `context list`, `context read`);
 `integrations` is workspace-level and has nothing to do with any one
@@ -237,17 +237,22 @@ unless you're prepared to babysit the prompts.
 
 ### `draft integrations list [--json]`
 
-Lists all five providers and their status — `disconnected`, `pending`,
+Lists all six providers and their status — `disconnected`, `pending`,
 `connected`, `degraded`, or `error`. Slack connections also report their
-current `channel_ids`.
+current `channel_ids`. Granola is the one provider that can list more than
+one live connection at once: a personal row per connecting teammate, plus at
+most one workspace-key row (`account_kind: "workspace"`, no `is_mine`).
 
-**Fireflies stays `pending` until it has proof the webhook actually
-works** — not just until credentials are stored. The backend flips it to
-`connected` only after Fireflies calls the webhook back for a real
-`meeting.transcribed`/`meeting.summarized` event; pressing Enter to finish
-`connect fireflies` confirms you did the manual setup step, but can't prove
-the webhook is live. Expect `pending` until your next meeting is
-transcribed or summarized.
+**Fireflies and Granola stay `pending` until they have proof the webhook
+actually works** — not just until credentials are stored. The backend flips
+each to `connected` only after the provider calls its webhook back for a
+real event (`meeting.transcribed`/`meeting.summarized` for Fireflies;
+`note.generated`/`note.edited`/`note.access_granted` for Granola). For
+Fireflies, pressing Enter to finish `connect fireflies` confirms you did the
+manual setup step but can't prove the webhook is live — expect `pending`
+until your next meeting is transcribed or summarized. Granola has no manual
+setup step (the CLI registers the webhook itself), so `pending` there just
+means no note has landed yet.
 
 ```bash
 draft integrations list
@@ -263,6 +268,7 @@ draft integrations list --json
 | `claude-code` | `--credential-stdin` \| `--credential-fd <n>` | No | `credential_stored` (not live-validated) |
 | `slack` | `--no-open`, `--credential-stdin` \| `--credential-fd <n>` | No, but channel selection only runs on an attended TTY | `connected` |
 | `fireflies` | `--no-open` | **Yes — always** | `credentials_stored_webhook_pending` |
+| `granola` | `--workspace-key`, `--credential-stdin` \| `--credential-fd <n>` | No | `connected` |
 
 Omitting `<provider>`, or passing one that isn't in the table above, fails
 immediately with `invalid_connect_usage` (exit `2`) and prints the exact
@@ -284,18 +290,25 @@ draft integrations connect slack                         # opens the Slack app-m
 draft integrations connect slack --credential-fd 3 3<tokens.json   # automation mode — channel_ids default to []
 
 draft integrations connect fireflies                      # requires an attended terminal end to end
+
+draft integrations connect granola                        # prompts for a personal Granola API key
+draft integrations connect granola --workspace-key         # connects the workspace's shared key instead
+echo '{"api_token":"grn_..."}' | draft integrations connect granola --credential-stdin --json
 ```
 
-`github`, `linear`, `claude-code`, and `slack` accept `--credential-stdin` (a
-single JSON object on stdin) or `--credential-fd <n>` (the same, on an
-inherited file descriptor ≥ 3) as an alternative to the interactive hidden
-prompt — useful for scripting. **`fireflies` accepts neither.** Reconnecting
-Fireflies rotates its webhook secret, invalidating the one already configured
-on Fireflies' side, so the flow needs a human to confirm the rotation, paste
-the new token, and copy the newly generated webhook URL/secret out of a local
-handoff page — none of that can be scripted, so the CLI requires a real
-terminal and fails immediately with `credential_input_required` (exit `2`)
-if one isn't attached, before making any network call.
+`github`, `linear`, `claude-code`, `slack`, and `granola` accept
+`--credential-stdin` (a single JSON object on stdin) or `--credential-fd <n>`
+(the same, on an inherited file descriptor ≥ 3) as an alternative to the
+interactive hidden prompt — useful for scripting. **`fireflies` accepts
+neither.** Reconnecting Fireflies rotates its webhook secret, invalidating
+the one already configured on Fireflies' side, so the flow needs a human to
+confirm the rotation, paste the new token, and copy the newly generated
+webhook URL/secret out of a local handoff page — none of that can be
+scripted, so the CLI requires a real terminal and fails immediately with
+`credential_input_required` (exit `2`) if one isn't attached, before making
+any network call. Granola has no equivalent manual step — the backend
+registers the Granola webhook itself using the API key, so reconnecting
+Granola is scriptable end to end.
 
 `--no-open` (github, slack, fireflies) prints the browser/handoff URL instead
 of opening it — useful over SSH or in a container. In every case where a
@@ -303,7 +316,7 @@ browser or local page can't be opened, the CLI falls back to printing the
 URL so you can open it yourself; it never blocks waiting for a browser that
 didn't launch.
 
-Every hidden-credential prompt (linear, claude-code, slack, fireflies) prints
+Every hidden-credential prompt (linear, claude-code, slack, fireflies, granola) prints
 where to find the value before asking for it — a settings URL, or for
 `slack` which OAuth screen each token comes from — states plainly that the
 prompt is hidden (input isn't echoed to the screen), and confirms that
@@ -342,18 +355,38 @@ the secret (`y`/`N` at the terminal); declining exits `1` with `cancelled`
 and makes no request. See `integrations list` above for why the connection
 still shows `pending` after this succeeds.
 
-### `draft integrations disconnect <provider> [--json]`
+**Granola** requires a Business or Enterprise plan — Granola only issues API
+keys, and only allows webhooks, on those plans, so there is no separate
+free-tier path. `--workspace-key` connects the workspace's single shared key
+(`account_kind: "workspace"`, no owning teammate) instead of the default
+personal key (`account_kind: "personal"`, one row per connecting teammate —
+reconnecting your own key rotates that row rather than creating a second
+one). "Workspace admin" here refers to a *Granola* permission (who can
+generate a workspace API key on Granola's side), not a Draft one — any Draft
+workspace member can paste a workspace key once they have it. On success the
+backend registers a webhook with Granola directly using the key (no
+paste-into-Granola-UI step) and backfills the last 7 days of existing notes;
+everything after that arrives via the webhook.
+
+### `draft integrations disconnect <provider> [--json] [--workspace-key]`
 
 ```bash
 draft integrations disconnect github
 draft integrations disconnect linear --json
+draft integrations disconnect granola --workspace-key   # the workspace key, not your own
 ```
 
-Supported for `github`, `fireflies`, `linear`, `slack` — each makes a real
-request and reports `disconnected`. `claude-code` is a recognized argument
-(not a grammar error) but always reports `not_supported` (exit `1`) and
-makes **no** network call — there's no live Claude Code credential to
-revoke server-side.
+Supported for `github`, `fireflies`, `linear`, `slack`, `granola` — each
+makes a real request and reports `disconnected`. `claude-code` is a
+recognized argument (not a grammar error) but always reports `not_supported`
+(exit `1`) and makes **no** network call — there's no live Claude Code
+credential to revoke server-side.
+
+`--workspace-key` only applies to `granola`, which is the one provider that
+can have two live connections at once (your personal key and the workspace
+key); it selects which one to disconnect and is ignored (rejected as
+`invalid_usage`) for every other provider. Omitting it disconnects your own
+personal Granola connection.
 
 ### `draft integrations slack channels list [--json]`
 
@@ -398,13 +431,21 @@ progress lines first, then a terminal line:
 {"schema_version":1,"status":"credentials_stored_webhook_pending","provider":"fireflies"}
 ```
 
+```json
+{"schema_version":1,"status":"awaiting_credentials","provider":"granola"}
+{"schema_version":1,"status":"connected","provider":"granola"}
+```
+
 `browser_required` is used by `github`/`slack` (a real, remote URL);
 `handoff_required` is fireflies-only (a local `file://` page — the webhook
 secret is written into that page, never printed to stdout/stderr by the
-CLI itself). A `connected` event for Linear may also carry
-`"cleanup_pending":true` if a prior webhook couldn't be auto-removed during
-a credential-rotation reconnect — the new connection is still authoritative
-and usable; cleanup retries automatically.
+CLI itself). Granola never emits `browser_required` or `handoff_required` —
+the backend registers its webhook itself, so `connect granola` is just
+`awaiting_credentials` then a terminal line, same shape as `linear`. A
+`connected` event for Linear may also carry `"cleanup_pending":true` if a
+prior webhook couldn't be auto-removed during a credential-rotation
+reconnect — the new connection is still authoritative and usable; cleanup
+retries automatically.
 
 **Error codes worth knowing beyond the general set:** `invalid_connect_usage`
 (`connect` called with no provider or an unrecognized one, exit `2`),
@@ -459,7 +500,7 @@ Follow the printed instructions to install into your shell profile.
 
 ## Machine-readable output
 
-Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `integrations connect github`/`slack`/`fireflies` (one `browser_required`/`handoff_required` line, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted integrations](#hosted-integrations) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
+Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `integrations connect github`/`slack`/`fireflies`/`linear`/`granola` (one `browser_required`/`handoff_required` line for github/slack/fireflies, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted integrations](#hosted-integrations) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
 
 **Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C — during `auth login`, or during an `integrations connect`/`slack channels set` prompt).
 

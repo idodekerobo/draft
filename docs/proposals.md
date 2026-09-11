@@ -46,6 +46,7 @@ Current source paths include:
 
 - Slack connections and batches.
 - Fireflies and meeting data.
+- Granola meeting notes (Business/Enterprise plans only).
 - Linear webhooks.
 - GitHub App events and repository import.
 - Claude Code session capture from a local project hook.

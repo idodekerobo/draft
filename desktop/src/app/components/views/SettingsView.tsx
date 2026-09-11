@@ -17,6 +17,7 @@ import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel } from "../shared/FirefliesConnectPanel";
 import { GithubConnectPanel } from "../shared/GithubConnectPanel";
+import { GranolaConnectPanel } from "../shared/GranolaConnectPanel";
 import { LinearConnectPanel } from "../shared/LinearConnectPanel";
 import { SessionTrackingPanel } from "../shared/SessionTrackingPanel";
 import { SlackConnectPanel } from "../shared/SlackConnectPanel";
@@ -99,6 +100,7 @@ const SOURCE_LABELS: Record<string, string> = {
   fireflies:      "Fireflies",
   linear:         "Linear",
   github:         "GitHub",
+  granola:        "Granola",
   claude_session: "Coding Sessions",
 };
 
@@ -265,6 +267,99 @@ function FirefliesConnectionsRow({
   );
 }
 
+// ── Granola: multi-account list + a separate workspace-key row ─────────────────
+//
+// Personal keys behave like Fireflies above; the workspace key (no owner)
+// renders as its own line with its own disconnect action.
+
+interface GranolaConnectionsRowProps {
+  connections: MultiAccountConnectionListItem[];
+  isExpanded: boolean;
+  isDisconnecting: boolean;
+  onToggleConnect: () => void;
+  onDisconnectPersonal: () => void;
+  onDisconnectWorkspace: () => void;
+  children?: ReactNode;
+}
+
+function GranolaConnectionsRow({
+  connections: rows,
+  isExpanded,
+  isDisconnecting,
+  onToggleConnect,
+  onDisconnectPersonal,
+  onDisconnectWorkspace,
+  children,
+}: GranolaConnectionsRowProps) {
+  const personalRows = rows.filter((row) => row.account_kind !== "workspace");
+  const mine = personalRows.find((row) => row.is_mine && row.connected);
+  const teammates = personalRows.filter((row) => !row.is_mine && row.connected);
+  const workspaceRow = rows.find((row) => row.account_kind === "workspace" && row.connected);
+
+  return (
+    <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
+      <div className="app-row__main">
+        <div className="app-row__left">
+          <span className={`app-row__status-dot${mine || workspaceRow ? " app-row__status-dot--on" : ""}`} />
+          <div className="app-row__text">
+            <span className="app-row__name">Granola</span>
+            <span className="app-row__meta">
+              {mine
+                ? `Connected as ${mine.display_name ?? "you"}`
+                : "Not connected"}
+              {teammates.length > 0
+                ? ` · ${teammates.length} teammate${teammates.length === 1 ? "" : "s"} connected`
+                : ""}
+              {workspaceRow ? " · Workspace key connected" : ""}
+            </span>
+          </div>
+        </div>
+
+        <div className="app-row__right">
+          {mine ? (
+            <button
+              className="app-row__disconnect"
+              onClick={onDisconnectPersonal}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting ? "Disconnecting…" : "Disconnect"}
+            </button>
+          ) : (
+            <button className="app-row__connect" onClick={onToggleConnect}>
+              {isExpanded ? "Close" : "Connect"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {teammates.length > 0 && (
+        <ul className="app-row__teammates">
+          {teammates.map((row) => (
+            <li key={row.id ?? row.display_name ?? "teammate"} className="app-row__teammate">
+              {row.display_name ?? "A teammate"} — {row.status}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {workspaceRow && (
+        <div className="app-row__teammate">
+          Workspace key — {workspaceRow.display_name ?? "connected"} ({workspaceRow.status})
+          <button
+            className="app-row__disconnect"
+            onClick={onDisconnectWorkspace}
+            disabled={isDisconnecting}
+          >
+            {isDisconnecting ? "Disconnecting…" : "Disconnect"}
+          </button>
+        </div>
+      )}
+
+      {isExpanded && children}
+    </div>
+  );
+}
+
 // ── SettingsView ───────────────────────────────────────────────────────────────
 
 interface SettingsViewProps {
@@ -278,8 +373,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | "github" | "claude_session" | null>(null);
-  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | "github" | "claude_session" | null>(null);
+  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session" | null>(null);
+  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session" | null>(null);
   const [slackPanelMode, setSlackPanelMode] = useState<"connect" | "manage">("connect");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
@@ -364,17 +459,20 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
-  async function handleDisconnect(source: "slack" | "fireflies" | "linear" | "github" | "claude_session") {
+  async function handleDisconnect(
+    source: "slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session",
+    accountKind?: "personal" | "workspace",
+  ) {
     if (!apps) return;
     setDisconnecting(source);
     try {
-      const result = await rpc.request.disconnectIntegration({ source });
+      const result = await rpc.request.disconnectIntegration({ source, ...(accountKind ? { accountKind } : {}) });
       if (result.ok) {
         if (source === "slack") {
           setSlackPanelMode("connect");
           setExpandedSource((current) => current === "slack" ? null : current);
         }
-        if (source === "fireflies") {
+        if (source === "fireflies" || source === "granola") {
           await tryRefreshConnectedApps();
         } else {
           setApps({
@@ -501,6 +599,22 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                 onDone={() => setExpandedSource(null)}
               />
             </FirefliesConnectionsRow>
+
+            <GranolaConnectionsRow
+              connections={apps.granolaConnections}
+              isExpanded={expandedSource === "granola"}
+              isDisconnecting={disconnecting === "granola"}
+              onToggleConnect={() => setExpandedSource((current) => current === "granola" ? null : "granola")}
+              onDisconnectPersonal={() => void handleDisconnect("granola", "personal")}
+              onDisconnectWorkspace={() => void handleDisconnect("granola", "workspace")}
+            >
+              <GranolaConnectPanel
+                detail={apps.integrations.granola}
+                classPrefix="app-row"
+                onStatusRefresh={tryRefreshConnectedApps}
+                onDone={() => setExpandedSource(null)}
+              />
+            </GranolaConnectionsRow>
 
             {(["linear", "slack", "github", "claude_session"] as const).map((key) => (
               <InputSourceRow

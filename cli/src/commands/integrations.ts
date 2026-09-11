@@ -15,6 +15,7 @@ import { runLinearConnect } from "../integrations/providers/linear.ts";
 import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
 import { runSlackConnect, runSlackChannelsList, runSlackChannelsSet } from "../integrations/providers/slack.ts";
 import { runFirefliesConnect } from "../integrations/providers/fireflies.ts";
+import { runGranolaConnect } from "../integrations/providers/granola.ts";
 import { CredentialInputError, parseCredentialSourceOptions, type CredentialSource } from "../integrations/credentials.ts";
 
 interface ParsedListArgs {
@@ -25,6 +26,7 @@ interface ParsedListArgs {
 interface ParsedDisconnectArgs {
   json: boolean;
   provider?: DisconnectProvider;
+  workspaceKey: boolean;
   error?: true;
 }
 
@@ -44,20 +46,23 @@ function parseListArgs(args: string[]): ParsedListArgs {
 
 function parseDisconnectArgs(args: string[]): ParsedDisconnectArgs {
   const jsonCount = args.filter((arg) => arg === "--json").length;
+  const workspaceKeyCount = args.filter((arg) => arg === "--workspace-key").length;
   const json = jsonCount > 0;
-  if (jsonCount > 1) return { json, error: true };
+  const workspaceKey = workspaceKeyCount > 0;
+  if (jsonCount > 1 || workspaceKeyCount > 1) return { json, workspaceKey, error: true };
   const positionals: string[] = [];
   for (const arg of args) {
-    if (arg === "--json") {
+    if (arg === "--json" || arg === "--workspace-key") {
       continue;
     }
-    if (arg.startsWith("-")) return { json, error: true };
+    if (arg.startsWith("-")) return { json, workspaceKey, error: true };
     positionals.push(arg);
   }
   if (positionals.length !== 1 || !isDisconnectProvider(positionals[0]!)) {
-    return { json, error: true };
+    return { json, workspaceKey, error: true };
   }
-  return { json, provider: positionals[0] };
+  if (workspaceKey && positionals[0] !== "granola") return { json, workspaceKey, error: true };
+  return { json, workspaceKey, provider: positionals[0] };
 }
 
 function parseGithubConnectArgs(args: string[]): ParsedGithubConnectArgs {
@@ -135,6 +140,31 @@ function parseSlackConnectArgs(args: string[]): ParsedSlackConnectArgs {
   }
 }
 
+interface ParsedGranolaConnectArgs {
+  json: boolean;
+  source: CredentialSource;
+  workspaceKey: boolean;
+  error?: true;
+}
+
+function parseGranolaConnectArgs(args: string[]): ParsedGranolaConnectArgs {
+  const json = args.includes("--json");
+  const workspaceKey = args.includes("--workspace-key");
+  if (args[0] !== "granola") return { json, source: { kind: "tty" }, workspaceKey, error: true };
+  try {
+    const { source, remaining } = parseCredentialSourceOptions(args.slice(1));
+    const jsonCount = remaining.filter((arg) => arg === "--json").length;
+    const workspaceKeyCount = remaining.filter((arg) => arg === "--workspace-key").length;
+    const valid = jsonCount <= 1 &&
+      workspaceKeyCount <= 1 &&
+      remaining.every((arg) => arg === "--json" || arg === "--workspace-key");
+    return valid ? { json, source, workspaceKey } : { json, source, workspaceKey, error: true };
+  } catch (error) {
+    if (error instanceof CredentialInputError) return { json, source: { kind: "tty" }, workspaceKey, error: true };
+    throw error;
+  }
+}
+
 interface ParsedSlackChannelsListArgs {
   json: boolean;
   error?: true;
@@ -194,7 +224,10 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
     return output.error("not_supported");
   }
 
-  const result = await disconnectIntegration(BACKEND_PROVIDER_BY_CLI[parsed.provider]);
+  const result = await disconnectIntegration(
+    BACKEND_PROVIDER_BY_CLI[parsed.provider],
+    parsed.provider === "granola" ? (parsed.workspaceKey ? "workspace" : "personal") : undefined,
+  );
   if (!result.ok) {
     return output.error(result.code);
   }
@@ -202,7 +235,7 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
   return output.event({ status: "disconnected", provider: parsed.provider });
 }
 
-const CONNECT_PROVIDERS = new Set(["github", "linear", "claude-code", "slack", "fireflies"]);
+const CONNECT_PROVIDERS = new Set(["github", "linear", "claude-code", "slack", "fireflies", "granola"]);
 
 async function runIntegrationsConnect(args: string[]): Promise<number> {
   // Only short-circuit when no recognized provider appears anywhere in
@@ -236,6 +269,15 @@ async function runIntegrationsConnect(args: string[]): Promise<number> {
     const output = createIntegrationOutput({ json: parsed.json });
     if (parsed.error) return output.error("invalid_usage");
     return runFirefliesConnect({ noOpen: parsed.noOpen }, output);
+  }
+  if (args[0] === "granola") {
+    const parsed = parseGranolaConnectArgs(args);
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runGranolaConnect(
+      { source: parsed.source, accountKind: parsed.workspaceKey ? "workspace" : "personal" },
+      output,
+    );
   }
   const parsed = parseGithubConnectArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
