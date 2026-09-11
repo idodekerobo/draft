@@ -1,8 +1,17 @@
 # Agent connections
 
-Draft's company brain is useful when the agents doing the work can reach it. Today, the supported connection surface is a combination of the Draft CLI, project-local session hooks, and tool-specific integrations.
+Draft's company brain is useful when the agents doing the work can reach it. Today, agents can connect directly through Draft's remote MCP server or use the Draft CLI, project-local session hooks, and tool-specific integrations.
 
-This surface is evolving. The current CLI/plugin implementation is an integration mechanism, not a promise that this is the final agent protocol.
+MCP is the direct in-session read path. The CLI/plugin path is useful for setup, explicit reads, scripts, and session capture. Both use the authenticated Draft workspace rather than a private repository copy.
+
+## Choose a connection path
+
+| Path | Best for | What it provides |
+| --- | --- | --- |
+| MCP | Agents that should look up context while working | Read-only `context.*` and `skills.*` tools over OAuth |
+| CLI | Setup, scripts, project instructions, and manual reads | `draft context`, `draft skills`, `draft add`, and session/integration commands |
+
+See the [MCP and agent connections guide](./mcp.md) for the complete setup.
 
 ## Current tools
 

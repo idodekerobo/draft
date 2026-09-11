@@ -14,7 +14,7 @@ Draft has a server-side workspace and local clients:
 
 **The local clients** are the Electrobun desktop app, the CLI, the local background daemon, and agent integrations. They sign in, display or query the workspace, connect the workspace's hosted data sources (Slack, GitHub, Linear, Fireflies, Claude Code — from either the desktop app or `draft integrations connect` in the CLI), connect local agents, and upload local coding-agent sessions when capture is enabled. The background daemon remains a local/transitional runtime used by desktop bundles and current plugin hooks; it is not the canonical hosted workspace.
 
-The CLI and plugin are the current agent connection path. That surface is intentionally evolving while the project works out the best long-term way for agents to attach to the company brain.
+Agents can attach through two supported paths: the remote MCP server for direct, in-session reads, or the CLI for setup, scripts, and explicit context/skill reads. Project-local hooks remain available for coding-session capture. These connection surfaces are intentionally evolving, but the authenticated workspace and API are the stable source of truth.
 
 ## How information flows
 
@@ -34,7 +34,7 @@ Slack · GitHub · Fireflies · Linear · coding-agent sessions
           New context version in the workspace
                          |
                          v
-      Web app · desktop · CLI · connected agents
+          Web app · desktop · CLI · MCP · connected agents
 ~~~
 
 Connected sources can arrive through provider webhooks, provider APIs, or a local upload. The backend normalizes the input, schedules synthesis, runs bounded model work in a disposable sandbox, validates the result, and stores a new context version. Humans and clients can then inspect the current workspace.
@@ -74,4 +74,5 @@ The deployment stores and serves authenticated workspace context, source items, 
 - [Privacy](./privacy.md)
 - [Hosted team collaboration](./setting-up-collaboration.md)
 - [Agent connections](./agent-plugins.md)
+- [MCP and agent connections](./mcp.md)
 - [CLI reference](./cli.md)

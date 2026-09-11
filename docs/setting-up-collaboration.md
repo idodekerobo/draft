@@ -18,6 +18,15 @@ Workspace members can access the context, source-derived updates, synthesis acti
 
 The current workspace model supports multiple users and teams through the hosted API. It is the collaboration path for hosted Draft and for self-hosted deployments using the same backend.
 
+## Connect agents after joining
+
+Once a teammate has joined the workspace, they can connect their agents to the same company brain:
+
+- Register the remote MCP server for direct, read-only context and skill access during agent sessions.
+- Install and sign in to the CLI for project setup, scripts, and explicit context reads.
+
+See [MCP and agent connections](./mcp.md) for the hosted endpoint and setup examples. Every MCP and CLI read is authenticated and workspace-scoped.
+
 ## GitHub's role
 
 GitHub is an integration and source of activity. Draft can receive GitHub App events, and the desktop can import a GitHub repository as source material during onboarding. GitHub is not the primary team-context synchronization layer.
@@ -39,4 +48,5 @@ The operator controls the deployment and its storage. Team members still authent
 
 - [What is Draft](./overview.md)
 - [Architecture](./architecture.md)
+- [MCP and agent connections](./mcp.md)
 - [Privacy](./privacy.md)

@@ -30,6 +30,10 @@ The desktop and CLI keep local authentication state, project configuration, hook
 
 The local machine is not the canonical home of hosted workspace context. Clients request the current context from the deployment.
 
+## Agent access
+
+The remote MCP server provides authenticated, read-only access to workspace context and shared skills for connected agents. MCP calls are resolved against the caller's team workspace and checked against workspace access. The CLI uses authenticated API calls to read the same workspace and can also write project-local setup files or upload sessions when those features are enabled.
+
 ## Hosted processing
 
 Hosted Draft processes workspace data on Draft infrastructure to provide authentication, integrations, context storage, and synthesis. Synthesis runs use disposable Fly Machines. Connected providers may also process data under their own terms when Draft calls their APIs or receives their webhooks.
@@ -55,3 +59,4 @@ Hosted team collaboration uses Draft organizations, teams, workspaces, and invit
 - [What is Draft](./overview.md)
 - [Architecture](./architecture.md)
 - [Hosted team collaboration](./setting-up-collaboration.md)
+- [MCP and agent connections](./mcp.md)

@@ -4,11 +4,11 @@ Draft has a server-side workspace and local agent connections. The exact deliver
 
 ## At session start
 
-The local connection reads the configured Draft deployment and makes the current workspace context available to the agent. Depending on the tool, this can use a project instruction file, a hook, the CLI, or a tool-specific integration.
+The agent connection reads the configured Draft deployment and makes the current workspace context available to the agent. With MCP, the agent queries the remote workspace during a session. With the CLI, a project instruction block points the agent to explicit context commands; hooks separately capture completed sessions.
 
 The context comes from the authenticated workspace. It is not a private copy maintained in a team Git repository.
 
-The current CLI setup path is:
+The CLI setup path is:
 
 ~~~bash
 draft auth login
@@ -17,6 +17,25 @@ draft add codex --dir /path/to/project
 ~~~
 
 `draft add` writes a managed Draft block to the project's `CLAUDE.md` or `AGENTS.md`. That block points the agent at the current CLI-based context connection. It is the current integration mechanism, not a promise that this file layout or plugin protocol is permanent.
+
+## MCP connection
+
+Register the hosted MCP server at `https://api.draftai.us/mcp` in an MCP-compatible agent. The agent follows Draft's OAuth discovery, sign-in, and consent flow, then can call the read-only `context.list`, `context.read`, `skills.list`, and `skills.read` tools. The server resolves the caller's team-default workspace and enforces workspace access on every call.
+
+For Claude Code, the connection can be registered with:
+
+~~~bash
+claude mcp add --transport http draft https://api.draftai.us/mcp
+~~~
+
+For Codex, add the HTTP server to `~/.codex/config.toml`:
+
+~~~toml
+[mcp_servers.draft]
+url = "https://api.draftai.us/mcp"
+~~~
+
+Self-hosted deployments use the same `/mcp` path on their configured API base URL. See [MCP and agent connections](./mcp.md) for configuration notes and the current tool surface.
 
 ## When a session ends
 
