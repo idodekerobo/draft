@@ -1,6 +1,6 @@
 # Draft landing page
 
-The landing page is the public Next.js marketing site for Draft. It explains the company-brain product and links users to hosted signup, downloads, support, and the open-source repository. It does not contain the authenticated workspace or the Draft API.
+The landing page is the public Next.js marketing site for Draft. It explains the company-brain product, makes the MCP and CLI agent connection paths explicit, and links users to hosted signup, downloads, support, and the open-source repository. It does not contain the authenticated workspace or the Draft API.
 
 ## Local development
 

@@ -144,6 +144,13 @@ function Hero() {
           <p className="landing-hero-access landing-reveal landing-reveal-delay-2">
             <span>People</span> browse it in Draft <i /> <span>Agents</span> query the same brain mid-session
           </p>
+          <p className="landing-hero-connect landing-reveal landing-reveal-delay-2">
+            <span>Connect agents via</span>
+            <strong>MCP</strong>
+            <i />
+            <strong>CLI</strong>
+            <em>same company brain</em>
+          </p>
           <div className="landing-hero-actions landing-reveal landing-reveal-delay-3">
             <PrimaryCTA source="hero" />
             <ArrowLink
@@ -256,14 +263,23 @@ function Integrations() {
   return (
     <section id="integrations" className="landing-integrations">
       <div className="landing-shell landing-integrations-inner">
-        <span>Connect the signals already shaping the work</span>
-        <div className="landing-source-list" aria-label="Supported sources">
-          <span>Meetings</span><i />
-          <span>Slack</span><i />
-          <span>GitHub</span><i />
-          <span>Linear</span><i />
-          <span>Agent sessions</span><i />
-          <span>and more</span>
+        <div className="landing-integrations-row">
+          <span className="landing-integrations-label">Signals in</span>
+          <div className="landing-source-list" aria-label="Supported sources">
+            <span>Meetings</span><i />
+            <span>Slack</span><i />
+            <span>GitHub</span><i />
+            <span>Linear</span><i />
+            <span>Agent sessions</span><i />
+            <span>and more</span>
+          </div>
+        </div>
+        <div className="landing-integrations-row landing-agent-access-row">
+          <span className="landing-integrations-label">Agents connect via</span>
+          <div className="landing-agent-access-list" aria-label="Agent connection methods">
+            <span><strong>MCP</strong> Scoped access for every agent</span>
+            <span><strong>CLI</strong> Agents can do everything a human can do from the shell</span>
+          </div>
         </div>
       </div>
     </section>
@@ -282,7 +298,7 @@ function Features() {
       <div className="landing-shell">
         <div className="landing-section-intro landing-features-intro">
           <p className="landing-kicker">Why Draft</p>
-          <h2 className="landing-display">One company brain. Two front doors.</h2>
+          <h2 className="landing-display">One company brain. Two ways for agents to connect.</h2>
           <p>Draft turns the signals your company creates every day into one current company brain—viewable by your team in Draft and queryable by every connected agent.</p>
         </div>
         <div className="landing-feature-list">
