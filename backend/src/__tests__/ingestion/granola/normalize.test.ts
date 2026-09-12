@@ -43,6 +43,11 @@ const NOTE_FIXTURE = {
   id: "not_123",
   title: "Quarterly Review",
   owner: { name: "Oat Benson", email: "oat@granola.ai" },
+  calendar_event: {
+    event_title: "Quarterly Review",
+    scheduled_start_time: "2026-01-27T15:30:00.000Z",
+    scheduled_end_time: "2026-01-27T16:30:00.000Z",
+  },
   summary: "Reviewed the quarterly numbers.",
   transcript: [
     { speaker: { source: "microphone" }, text: "Let's start." },
@@ -200,6 +205,9 @@ describe("ingestGranolaNote", () => {
 
     const markdown = state.upsertedItem?.content_markdown as string;
     expect(markdown).toContain("# Quarterly Review");
+    expect(markdown).toContain("## Meeting date and time");
+    expect(markdown).toContain("- Start: 2026-01-27T15:30:00.000Z");
+    expect(markdown).toContain("- End: 2026-01-27T16:30:00.000Z");
     expect(markdown).toContain("## Summary");
     expect(markdown).toContain("Reviewed the quarterly numbers.");
     expect(markdown).toContain("## Transcript");

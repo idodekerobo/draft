@@ -10,14 +10,22 @@ function sha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-/** Renders a Granola note's summary and transcript as the item's markdown body. */
+/** Renders a Granola note's meeting details, summary, and transcript as markdown. */
 export function buildGranolaContentMarkdown(note: GranolaNote): string {
+  const calendarEvent = note.calendar_event;
   const transcriptText = (note.transcript ?? [])
     .map((item) => item.text)
     .filter((text) => text.length > 0)
     .join("\n");
 
   const sections: string[] = [];
+  if (calendarEvent?.scheduled_start_time || calendarEvent?.scheduled_end_time) {
+    const meetingTimes = [
+      calendarEvent.scheduled_start_time ? `- Start: ${calendarEvent.scheduled_start_time}` : null,
+      calendarEvent.scheduled_end_time ? `- End: ${calendarEvent.scheduled_end_time}` : null,
+    ].filter((line): line is string => line !== null).join("\n");
+    sections.push(`## Meeting date and time\n\n${meetingTimes}`);
+  }
   if (note.summary) sections.push(`## Summary\n\n${note.summary}`);
   if (transcriptText) sections.push(`## Transcript\n\n${transcriptText}`);
 

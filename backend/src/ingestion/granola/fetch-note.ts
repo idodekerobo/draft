@@ -15,10 +15,17 @@ export interface GranolaNoteOwner {
   email: string;
 }
 
+export interface GranolaCalendarEvent {
+  event_title?: string;
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
+}
+
 export interface GranolaNote {
   id: string;
   title: string;
   owner?: GranolaNoteOwner;
+  calendar_event?: GranolaCalendarEvent;
   summary?: string;
   transcript?: GranolaTranscriptItem[];
   created_at?: string;
