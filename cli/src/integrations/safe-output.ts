@@ -1,7 +1,8 @@
-import type {
-  HostedConnectionProvider,
-  HostedConnectionStatus,
-  HostedConnectionSummary,
+import {
+  normalizeBackfillSummary,
+  type HostedConnectionProvider,
+  type HostedConnectionStatus,
+  type HostedConnectionSummary,
 } from "draft-core/integrations/hosted-connections";
 import type { HostedSlackChannel, SlackMembershipReconcileResult } from "../cloud-client.ts";
 import { PROVIDER_LABELS } from "./types.ts";
@@ -157,6 +158,8 @@ function safeConnection(value: HostedConnectionSummary): HostedConnectionSummary
     result.channel_ids = Array.isArray(value.channel_ids)
       ? value.channel_ids.filter((item): item is string => typeof item === "string")
       : [];
+    const backfill = normalizeBackfillSummary(value.backfill);
+    if (backfill) result.backfill = backfill;
   }
   return result;
 }
@@ -325,6 +328,15 @@ export class IntegrationOutput {
     if (event.status === "ok") {
       for (const connection of payload.connections as HostedConnectionSummary[]) {
         this.stdout(`${PROVIDER_LABELS[connection.provider]}: ${connection.status}\n`);
+        if (connection.provider === "slack" && connection.backfill) {
+          const { status, completed_at, last_error } = connection.backfill;
+          const detail = status === "completed" && completed_at
+            ? `completed ${completed_at}`
+            : last_error
+              ? `${status} (${last_error})`
+              : status;
+          this.stdout(`  7-day history backfill: ${detail}\n`);
+        }
       }
       return 0;
     }

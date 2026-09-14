@@ -17,6 +17,13 @@ create table synthesis_run_source_items (
     references source_items(id, workspace_id) on delete restrict
 );
 
+-- Supports the successful-membership anti-join in
+-- get_pending_synthesis_source_item_ids: a correlated NOT EXISTS lookup
+-- keyed on (source_item_id, workspace_id, source_item_version, content_hash).
+create index synthesis_run_source_items_source_item_idx
+  on synthesis_run_source_items (source_item_id, workspace_id, source_item_version, content_hash)
+  include (synthesis_run_id);
+
 alter table synthesis_run_source_items enable row level security;
 
 grant select, insert on table synthesis_run_source_items to service_role;

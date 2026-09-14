@@ -158,7 +158,7 @@ describe("upsertSourceItem", () => {
       p_external_version: "hash-a",
       p_content_markdown: "# Meeting 1",
       p_content_hash: "hash-a",
-      p_lifecycle_status: "ready",
+      p_lifecycle_status: "active",
     });
     expect(state.fetchedItemId).toBe("new-item-id");
     expect(result.item.id).toBe("new-item-id");

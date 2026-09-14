@@ -93,26 +93,26 @@ export async function prepareRun(
   >[] = [];
   if (uniqueSourceItemIds.length > 0) {
     // Filtered by workspace+status, not by the id list itself -- both
-    // callers already pass the full ready set, and an .in() over that list
+    // callers already pass the full eligible set, and an .in() over that list
     // put every id in the request URL, which stops working once a
-    // workspace's ready set gets large enough (~600+ ids).
-    const { data: readyItemsData, error: readyItemsError } = await client
+    // workspace's active set gets large enough (~600+ ids).
+    const { data: activeItemsData, error: activeItemsError } = await client
       .from("source_items")
       .select("id, external_version, content_hash")
       .eq("workspace_id", options.workspaceId)
-      .eq("lifecycle_status", "ready");
-    if (readyItemsError) throw readyItemsError;
-    const readyById = new Map(
-      ((readyItemsData ?? []) as typeof sourceItems).map((item) => [item.id, item]),
+      .eq("lifecycle_status", "active");
+    if (activeItemsError) throw activeItemsError;
+    const activeById = new Map(
+      ((activeItemsData ?? []) as typeof sourceItems).map((item) => [item.id, item]),
     );
 
-    const ineligibleIds = uniqueSourceItemIds.filter((id) => !readyById.has(id));
+    const ineligibleIds = uniqueSourceItemIds.filter((id) => !activeById.has(id));
     if (ineligibleIds.length > 0) {
       throw new Error(
         `Missing or ineligible source items while preparing run: ${ineligibleIds.join(", ")}`,
       );
     }
-    sourceItems = uniqueSourceItemIds.map((id) => readyById.get(id)!);
+    sourceItems = uniqueSourceItemIds.map((id) => activeById.get(id)!);
   }
 
   // {scheduled_task_id}:{occurrence_at} so duplicate dispatches of the same

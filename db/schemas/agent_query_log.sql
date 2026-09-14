@@ -6,10 +6,12 @@ create table agent_query_log (
                   check (command in (
                     'sessions.list', 'sessions.read', 'sessions.search',
                     'skills.list', 'skills.read',
+                    'sources.search', 'sources.read',
                     'context.read',
                     'mcp.context.list', 'mcp.context.read',
                     'mcp.sessions.list', 'mcp.sessions.read', 'mcp.sessions.search',
-                    'mcp.skills.list', 'mcp.skills.read'
+                    'mcp.skills.list', 'mcp.skills.read',
+                    'mcp.sources.search', 'mcp.sources.read'
                   )),
   args_json     jsonb not null default '{}',
   result_bytes  int,

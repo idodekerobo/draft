@@ -106,7 +106,7 @@ export async function ingestGithubPullRequestEvent(
     .select("external_version")
     .eq("source_connection_id", connection.id)
     .eq("external_id", externalId)
-    .eq("lifecycle_status", "ready")
+    .eq("lifecycle_status", "active")
     .maybeSingle();
   if (lookupError) throw lookupError;
   if (existing && Date.parse(existing.external_version as string) >= Date.parse(externalVersion)) {
@@ -125,6 +125,10 @@ export async function ingestGithubPullRequestEvent(
     occurred_at: externalVersion,
     content_markdown: contentMarkdown,
     content_hash: contentHash,
+    representation_kind: "source",
+    source_time_start: externalVersion,
+    source_time_end: externalVersion,
+    time_basis: "source_event",
     metadata_json: {
       github_event: "pull_request",
       github_action: payload.action,
@@ -168,6 +172,10 @@ export async function ingestGithubPushEvent(
       occurred_at: commit.timestamp,
       content_markdown: contentMarkdown,
       content_hash: contentHash,
+      representation_kind: "source",
+      source_time_start: commit.timestamp,
+      source_time_end: commit.timestamp,
+      time_basis: "source_event",
       metadata_json: {
         github_event: "push",
         github_branch: branch,

@@ -106,7 +106,7 @@ async function upsertSourceItem(
   >`
     select upsert_source_item(
       ${workspaceId}, ${connectionId}, 'message', ${externalId}, ${externalVersion}, now(),
-      'contract test', ${hash}, '{}'::jsonb, null, 'ready'
+      'contract test', ${hash}, '{}'::jsonb, null, 'active'
     ) as result
   `;
   return row.result;
@@ -371,7 +371,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     }
   });
 
-  test("source-item upsert reports same-revision changes and supersedes prior ready rows in order", async () => {
+  test("source-item upsert reports same-revision changes and supersedes prior active rows in order", async () => {
     const connection = await createConnection("fireflies", "active");
     const externalId = randomUUID();
     const firstHash = "1".repeat(64);
@@ -415,12 +415,12 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       ) values
         (
           ${connection.workspaceId}, ${connection.connectionId}, 'message',
-          ${externalId}, 'older', 'ready', now(), '2026-01-01T00:00:00Z',
+          ${externalId}, 'older', 'active', now(), '2026-01-01T00:00:00Z',
           'older', ${priorHash}
         ),
         (
           ${connection.workspaceId}, ${connection.connectionId}, 'message',
-          ${externalId}, 'newer', 'ready', now(), '2026-01-02T00:00:00Z',
+          ${externalId}, 'newer', 'active', now(), '2026-01-02T00:00:00Z',
           'newer', ${priorHash}
         )
       returning id, external_version
@@ -449,7 +449,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     expect(byId.get(first.item_id)?.lifecycle_status).toBe("superseded");
     expect(byId.get(newer.id)?.lifecycle_status).toBe("superseded");
     expect(byId.get(older.id)?.lifecycle_status).toBe("superseded");
-    expect(byId.get(replacement.item_id)?.lifecycle_status).toBe("ready");
+    expect(byId.get(replacement.item_id)?.lifecycle_status).toBe("active");
     expect(byId.get(replacement.item_id)?.supersedes_source_item_id).toBe(first.item_id);
   });
 
@@ -465,7 +465,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         content_markdown, content_hash
       ) values (
         ${connection.workspaceId}, ${connection.connectionId}, 'message',
-        ${randomUUID()}, 'v1', 'ready', now(), now(), 'batch', ${"b".repeat(64)}
+        ${randomUUID()}, 'v1', 'active', now(), now(), 'batch', ${"b".repeat(64)}
       )
       returning id
     `;
@@ -507,10 +507,10 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       )
     `;
 
-    const [first] = await db()<[{ connection_id: string; transitioned: boolean }]>`
-      select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies')
+    const [first] = await db()<[{ connection_id: string; outcome: string }]>`
+      select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
     `;
-    expect(first).toEqual({ connection_id: connection.connectionId, transitioned: true });
+    expect(first).toEqual({ connection_id: connection.connectionId, outcome: 'disconnected' });
 
     const [state] = await db()<[{ status: string; enabled: boolean }]>`
       select sc.status, st.enabled
@@ -520,10 +520,10 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     `;
     expect(state).toEqual({ status: "revoked", enabled: false });
 
-    const [second] = await db()<[{ connection_id: string | null; transitioned: boolean }]>`
-      select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies')
+    const [second] = await db()<[{ connection_id: string | null; outcome: string }]>`
+      select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
     `;
-    expect(second).toEqual({ connection_id: null, transitioned: false });
+    expect(second).toEqual({ connection_id: null, outcome: 'not_found' });
   });
 
   test("source-item ingest commits before a waiting disconnect", async () => {
@@ -542,12 +542,12 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         select upsert_source_item(
           ${connection.workspaceId}, ${connection.connectionId}, 'message',
           'ingest-first', 'v1', now(), 'ingest-first', ${"5".repeat(64)},
-          '{}'::jsonb, null, 'ready'
+          '{}'::jsonb, null, 'active'
         )
       `;
 
       pending = waiter`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies')
+        select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
       `.then((rows) => {
         settled = true;
         return rows;
@@ -562,9 +562,9 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
 
       const [result] = await pending as Array<{
         connection_id: string;
-        transitioned: boolean;
+        outcome: string;
       }>;
-      expect(result).toEqual({ connection_id: connection.connectionId, transitioned: true });
+      expect(result).toEqual({ connection_id: connection.connectionId, outcome: 'disconnected' });
 
       const [state] = await db()<[{ item_count: number; status: string }]>`
         select
@@ -597,14 +597,14 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       await blocker`begin`;
       blockerOpen = true;
       await blocker`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies')
+        select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
       `;
 
       pending = waiter`
         select upsert_source_item(
           ${connection.workspaceId}, ${connection.connectionId}, 'message',
           'disconnect-first', 'v1', now(), 'disconnect-first', ${"6".repeat(64)},
-          '{}'::jsonb, null, 'ready'
+          '{}'::jsonb, null, 'active'
         )
       `.then((rows) => {
         settled = true;
@@ -656,7 +656,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       `;
 
       pending = waiter`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'slack')
+        select * from disconnect_source_connection(${connection.workspaceId}, 'slack', null)
       `.then((rows) => {
         settled = true;
         return rows;
@@ -701,7 +701,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       await blocker`begin`;
       blockerOpen = true;
       await blocker`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'slack')
+        select * from disconnect_source_connection(${connection.workspaceId}, 'slack', null)
       `;
 
       pending = waiter`

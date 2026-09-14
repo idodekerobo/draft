@@ -5,6 +5,7 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
 import { getWorkspaceContext } from "../services/workspace-context";
 import { listSkills, readSkill } from "../services/skills";
+import { readSource, searchSources } from "../services/sources";
 
 /** Derives the caller's single workspace server-side; no tool takes a workspaceId argument. */
 async function resolveCallerWorkspaceId(userId: string): Promise<string | null> {
@@ -43,7 +44,7 @@ async function withWorkspace<T>(
     userId,
     command,
     argsJson: args,
-    resultBytes: JSON.stringify(result).length,
+    resultBytes: Buffer.byteLength(JSON.stringify(result), "utf8"),
   });
   return { isError: false, result };
 }
@@ -55,7 +56,7 @@ export function buildMcpServer(userId: string): McpServer {
   server.registerTool(
     "context.list",
     {
-      description: "List the context dimensions available for the caller's workspace (each a top-level folder under the workspace's company-brain context, e.g. 'product', 'engineering').",
+      description: "List dimensions in Draft's maintained business map. Use context for orientation; use sources.search when you need cross-provider evidence beyond the synthesized map.",
       inputSchema: z.object({}),
     },
     async () => {
@@ -76,7 +77,7 @@ export function buildMcpServer(userId: string): McpServer {
   server.registerTool(
     "context.read",
     {
-      description: "Read the caller's workspace context. Pass one or more dimension names, or omit to read all.",
+      description: "Read Draft's maintained business map. For direct evidence, search sources and then read the selected source; the calling agent owns investigation and answer generation.",
       inputSchema: z.object({
         dimensions: z.array(z.string()).optional().describe("Dimension names to read; omit for all."),
       }),
@@ -102,6 +103,54 @@ export function buildMcpServer(userId: string): McpServer {
           createdAt: result.snapshot.createdAt,
           documents,
         };
+      });
+      if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
+      return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
+    },
+  );
+
+  server.registerTool(
+    "sources.search",
+    {
+      description: "Search current cross-provider source evidence using PostgreSQL keyword search. Search covers each source's stored default representation, which may be a summary, rendered source, or mixed content; original transcripts are not universally searchable.",
+      inputSchema: z.object({
+        query: z.string().min(1).max(512),
+        provider: z.string().optional(),
+        type: z.array(z.string()).optional(),
+        since: z.string().optional().describe("Inclusive UTC date or timestamp."),
+        until: z.string().optional().describe("Exclusive UTC date or timestamp."),
+        limit: z.number().int().min(1).max(100).optional(),
+        max_bytes: z.number().int().min(1024).max(262144).optional(),
+        cursor: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      const logArgs = { ...args, cursor: args.cursor ? "[redacted]" : undefined };
+      const outcome = await withWorkspace(userId, "mcp.sources.search", logArgs, async (workspaceId) => {
+        const result = await searchSources(serviceClient, workspaceId, userId, args);
+        return result.ok ? result.value : { error: result.error };
+      });
+      if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
+      return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
+    },
+  );
+
+  server.registerTool(
+    "sources.read",
+    {
+      description: "Read one authorized source by source_item_id. Default returns stored searchable content; request transcript, messages, or structured only when search reports that representation as available. Reads are bounded and version-bound.",
+      inputSchema: z.object({
+        source_item_id: z.string().uuid(),
+        representation: z.enum(["default", "transcript", "messages", "structured"]).optional(),
+        max_bytes: z.number().int().min(1024).max(262144).optional(),
+        cursor: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      const logArgs = { ...args, cursor: args.cursor ? "[redacted]" : undefined };
+      const outcome = await withWorkspace(userId, "mcp.sources.read", logArgs, async (workspaceId) => {
+        const result = await readSource(serviceClient, workspaceId, userId, args);
+        return result.ok ? result.value : { error: result.error };
       });
       if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
       return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };

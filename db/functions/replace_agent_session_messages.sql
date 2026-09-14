@@ -31,6 +31,7 @@ set search_path = public
 as $$
 declare
   v_session_id uuid;
+  v_transcript_revision bigint;
 begin
   perform 1
   from agent_sessions
@@ -57,8 +58,9 @@ begin
     cwd = excluded.cwd,
     ended_at = excluded.ended_at,
     status = excluded.status,
-    session_project_id = coalesce(excluded.session_project_id, agent_sessions.session_project_id)
-  returning id into v_session_id;
+    session_project_id = coalesce(excluded.session_project_id, agent_sessions.session_project_id),
+    transcript_revision = agent_sessions.transcript_revision + 1
+  returning id, transcript_revision into v_session_id, v_transcript_revision;
 
   delete from agent_messages where session_id = v_session_id;
 
@@ -71,7 +73,10 @@ begin
     msg->>'content'
   from jsonb_array_elements(p_messages) with ordinality as t(msg, ordinality);
 
-  return jsonb_build_object('session_id', v_session_id);
+  return jsonb_build_object(
+    'session_id', v_session_id,
+    'transcript_revision', v_transcript_revision
+  );
 end;
 $$;
 

@@ -57,7 +57,7 @@ function makeMessage(
 type Row = Record<string, any>;
 
 interface Filter {
-  op: "eq" | "neq" | "gt" | "in";
+  op: "eq" | "neq" | "gt" | "in" | "is";
   col: string;
   val: any;
 }
@@ -97,6 +97,10 @@ class FakeQueryBuilder {
   }
   in(col: string, vals: any[]) {
     this.filters.push({ op: "in", col, val: vals });
+    return this;
+  }
+  is(col: string, val: any) {
+    this.filters.push({ op: "is", col, val });
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }) {
@@ -148,6 +152,7 @@ function applyFilters(rows: Row[], filters: Filter[]): Row[] {
       if (f.op === "neq") return r[f.col] !== f.val;
       if (f.op === "gt") return r[f.col] > f.val;
       if (f.op === "in") return (f.val as any[]).includes(r[f.col]);
+      if (f.op === "is") return r[f.col] === f.val;
       return true;
     }),
   );
@@ -172,14 +177,13 @@ interface Store {
 
 function createFakeClient(
   messages: SlackMessageRow[],
-  cursorJson: Record<string, unknown>,
   rpcError: unknown = null,
 ) {
   const store: Store = {
     slackMessages: messages,
     sourceItems: [],
     workspaceEvents: [],
-    sourceConnections: [{ id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: cursorJson }],
+    sourceConnections: [{ id: CONNECTION_ID, workspace_id: WORKSPACE_ID }],
     rpcCalls: [],
   };
 
@@ -219,7 +223,7 @@ function createFakeClient(
       (r) =>
         r.source_connection_id === params.p_source_connection_id &&
         r.external_id === params.p_external_id &&
-        r.lifecycle_status === "ready" &&
+        r.lifecycle_status === "active" &&
         r.external_version !== params.p_external_version,
     );
     const priorIds = priorReady.map((r) => r.id as string);
@@ -237,7 +241,7 @@ function createFakeClient(
       item_type: params.p_item_type,
       external_id: params.p_external_id,
       external_version: params.p_external_version,
-      lifecycle_status: params.p_lifecycle_status ?? "ready",
+      lifecycle_status: params.p_lifecycle_status ?? "active",
       occurred_at: params.p_occurred_at,
       normalized_at: new Date().toISOString(),
       content_markdown: params.p_content_markdown,
@@ -316,6 +320,47 @@ function createFakeClient(
       return new FakeQueryBuilder(table, dispatch);
     },
     rpc(fnName: string, params: Row) {
+      if (fnName === "get_pending_slack_channel_ids") {
+        const channels = [...new Set(store.slackMessages
+          .filter((row) => row.workspace_id === params.p_workspace_id &&
+            row.source_connection_id === params.p_source_connection_id &&
+            row.source_item_id === null &&
+            (params.p_after_channel_id === null || row.channel_id > params.p_after_channel_id))
+          .map((row) => row.channel_id as string))]
+          .sort()
+          .slice(0, params.p_limit)
+          .map((channel_id) => ({ channel_id }));
+        return Promise.resolve({ data: channels, error: null });
+      }
+      if (fnName === "commit_slack_source_batch") {
+        store.rpcCalls.push({ functionName: fnName, params });
+        if (rpcError) return Promise.resolve({ data: null, error: rpcError });
+        const rows = store.slackMessages.filter((row) =>
+          params.p_message_ids.includes(row.id) && row.source_item_id === null &&
+          row.workspace_id === params.p_workspace_id && row.source_connection_id === params.p_source_connection_id &&
+          row.channel_id === params.p_channel_id,
+        );
+        if (rows.length !== params.p_message_ids.length) {
+          return Promise.resolve({ data: { status: "stale_batch" }, error: null });
+        }
+        const upsert = execUpsertSourceItemRpc({
+          p_workspace_id: params.p_workspace_id,
+          p_source_connection_id: params.p_source_connection_id,
+          p_item_type: "message",
+          p_external_id: params.p_external_id,
+          p_external_version: params.p_external_version,
+          p_occurred_at: params.p_occurred_at,
+          p_content_markdown: params.p_content_markdown,
+          p_content_hash: params.p_content_hash,
+          p_metadata_json: params.p_metadata_json,
+          p_sanitized_raw_json: null,
+          p_lifecycle_status: "active",
+        });
+        const itemId = upsert.data.item_id;
+        for (const row of rows) row.source_item_id = itemId;
+        store.workspaceEvents.push({ id: `event-${store.workspaceEvents.length + 1}`, event_type: "source_items_added" });
+        return Promise.resolve({ data: { status: "committed", item_id: itemId }, error: null });
+      }
       if (fnName === "upsert_source_item") {
         store.rpcCalls.push({ functionName: fnName, params });
         if (rpcError) return Promise.resolve({ data: null, error: rpcError });
@@ -352,81 +397,70 @@ describe("materializeSlackBatches", () => {
   it("cuts a batch once the message-count threshold is crossed, including the crossing message", async () => {
     const channelId = "C-count";
     const messages = [0, 1, 2, 3, 4].map((n) => makeMessage(channelId, n));
-    const { client, store } = createFakeClient(messages, {});
+    const { client, store } = createFakeClient(messages);
     setLimits({ maxMessages: 3 });
 
     const result = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: {} },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
-    expect(result.batchesCut).toBe(1);
-    expect(store.rpcCalls[0]?.functionName).toBe("upsert_source_item");
-    expect(store.sourceItems).toHaveLength(1);
+    expect(result.batchesCut).toBe(2);
+    expect(store.rpcCalls[0]?.functionName).toBe("commit_slack_source_batch");
+    expect(store.sourceItems).toHaveLength(2);
     expect(store.sourceItems[0]!.metadata_json.message_count).toBe(3);
 
     const linked = store.slackMessages.filter((m) => m.source_item_id !== null);
     expect(linked.map((m) => m.id).sort()).toEqual(
-      [messages[0]!.id, messages[1]!.id, messages[2]!.id].sort(),
+      messages.map((message) => message.id).sort(),
     );
-    expect(store.slackMessages.find((m) => m.id === messages[3]!.id)!.source_item_id).toBeNull();
-    expect(store.slackMessages.find((m) => m.id === messages[4]!.id)!.source_item_id).toBeNull();
-
-    const cursor = (result.updatedCursorJson as any).channels[channelId].last_batched_message_ts;
-    expect(cursor).toBe(messages[2]!.message_ts);
   });
 
   it("treats connection_inactive from upsert_source_item as a stale materialization skip", async () => {
     const channelId = "C-stale";
     const messages = [0, 1].map((n) => makeMessage(channelId, n));
-    const initialCursor = {};
     const { client, store } = createFakeClient(
       messages,
-      initialCursor,
       { code: "P0001", message: "connection_inactive" },
     );
     setLimits({ maxMessages: 2 });
 
     const result = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: initialCursor },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
-    expect(result).toEqual({ batchesCut: 0, updatedCursorJson: initialCursor });
+    expect(result).toEqual({ batchesCut: 0 });
     expect(store.rpcCalls).toHaveLength(1);
     expect(store.sourceItems).toHaveLength(0);
     expect(store.workspaceEvents).toHaveLength(0);
     expect(store.slackMessages.every((message) => message.source_item_id === null)).toBe(true);
-    expect(store.sourceConnections[0]?.cursor_json).toEqual(initialCursor);
   });
 
   it("cuts a batch once the span threshold is crossed, including the crossing message", async () => {
     const channelId = "C-span";
     // 2-second gaps between messages.
     const messages = [0, 2, 4].map((n) => makeMessage(channelId, n));
-    const { client, store } = createFakeClient(messages, {});
+    const { client, store } = createFakeClient(messages);
     // Threshold sits between a 0ms span (1 message) and a 2000ms span (2 messages).
     setLimits({ spanHours: 1500 / 3_600_000 });
 
     const result = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: {} },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
-    expect(result.batchesCut).toBe(1);
+    expect(result.batchesCut).toBe(2);
     expect(store.sourceItems[0]!.metadata_json.message_count).toBe(2);
     expect(store.slackMessages.find((m) => m.id === messages[0]!.id)!.source_item_id).not.toBeNull();
     expect(store.slackMessages.find((m) => m.id === messages[1]!.id)!.source_item_id).not.toBeNull();
-    expect(store.slackMessages.find((m) => m.id === messages[2]!.id)!.source_item_id).toBeNull();
-
-    const cursor = (result.updatedCursorJson as any).channels[channelId].last_batched_message_ts;
-    expect(cursor).toBe(messages[1]!.message_ts);
+    expect(store.slackMessages.find((m) => m.id === messages[2]!.id)!.source_item_id).not.toBeNull();
   });
 
   it("cuts a batch once the rendered-byte threshold is crossed, EXCLUDING the message that pushes it over", async () => {
     const channelId = "C-size";
     const messages = [0, 1, 2, 3].map((n) => makeMessage(channelId, n, { text: "x".repeat(200) }));
-    const { client, store } = createFakeClient([...messages], {});
+    const { client, store } = createFakeClient([...messages]);
 
     // Derive the threshold from the real renderer rather than hardcoding a
     // byte count that's an implementation detail of render.ts.
@@ -444,30 +478,27 @@ describe("materializeSlackBatches", () => {
     setLimits({ maxBytes: threshold });
 
     const result = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: {} },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
-    expect(result.batchesCut).toBe(1);
-    expect(store.sourceItems).toHaveLength(1);
+    expect(result.batchesCut).toBe(2);
+    expect(store.sourceItems).toHaveLength(2);
     // The 3rd message (which would have pushed bytes over the threshold) is
     // excluded from this batch -- only messages 1-2 are committed.
     expect(store.sourceItems[0]!.metadata_json.message_count).toBe(2);
-    expect(store.slackMessages.find((m) => m.id === messages[2]!.id)!.source_item_id).toBeNull();
-    expect(store.slackMessages.find((m) => m.id === messages[3]!.id)!.source_item_id).toBeNull();
-
-    const cursor = (result.updatedCursorJson as any).channels[channelId].last_batched_message_ts;
-    expect(cursor).toBe(messages[1]!.message_ts);
+    expect(store.slackMessages.find((m) => m.id === messages[2]!.id)!.source_item_id).not.toBeNull();
+    expect(store.slackMessages.find((m) => m.id === messages[3]!.id)!.source_item_id).not.toBeNull();
   });
 
   it("never mixes messages from two different channels into one batch", async () => {
     const messagesA = [0, 1].map((n) => makeMessage("C-A", n));
     const messagesB = [0, 1].map((n) => makeMessage("C-B", n));
-    const { client, store } = createFakeClient([...messagesA, ...messagesB], {});
+    const { client, store } = createFakeClient([...messagesA, ...messagesB]);
     setLimits({ maxMessages: 2 });
 
     const result = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: {} },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
@@ -491,32 +522,29 @@ describe("materializeSlackBatches", () => {
     }
   });
 
-  it("writes nothing and leaves the cursor unchanged when no threshold is crossed", async () => {
+  it("flushes a quiet remainder even when no threshold is crossed", async () => {
     const channelId = "C-quiet";
     const messages = [makeMessage(channelId, 0)];
-    const initialCursor = { channels: { "C-other": { last_batched_message_ts: ts(999) } } };
-    const { client, store } = createFakeClient(messages, initialCursor);
+    const { client, store } = createFakeClient(messages);
 
     const result = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: initialCursor },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
-    expect(result.batchesCut).toBe(0);
-    expect(store.sourceItems).toHaveLength(0);
-    expect(store.slackMessages[0]!.source_item_id).toBeNull();
-    expect(result.updatedCursorJson).toEqual(initialCursor);
-    expect(store.sourceConnections[0]!.cursor_json).toEqual(initialCursor);
+    expect(result.batchesCut).toBe(1);
+    expect(store.sourceItems).toHaveLength(1);
+    expect(store.slackMessages[0]!.source_item_id).not.toBeNull();
   });
 
-  it("re-running with an un-advanced cursor (simulated crash) lands on the same row instead of duplicating", async () => {
+  it("re-running after a batch is already committed does not duplicate it", async () => {
     const channelId = "C-crash";
     const messages = [0, 1, 2].map((n) => makeMessage(channelId, n));
-    const { client, store } = createFakeClient(messages, {});
+    const { client, store } = createFakeClient(messages);
     setLimits({ maxMessages: 3 });
 
     const first = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: {} },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
     expect(first.batchesCut).toBe(1);
@@ -525,15 +553,17 @@ describe("materializeSlackBatches", () => {
     const firstExternalId = store.sourceItems[0]!.external_id;
     const firstExternalVersion = store.sourceItems[0]!.external_version;
 
-    // Simulate a crash between step 6/7 (commit + link, already reflected in
-    // `store`) and step 8 (cursor persisted) by replaying with the same
-    // stale (un-advanced) cursor_json the caller held before the first run.
+    // Simulate a crash right after the first pass (already reflected in
+    // `store`, since every committed message is linked via
+    // source_item_id in the same transaction as the commit). Eligibility
+    // for the next pass comes solely from source_item_id IS NULL, so a
+    // second pass over the same connection sees nothing left to do.
     const second = await materializeSlackBatches(
-      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID, cursor_json: {} },
+      { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },
       client,
     );
 
-    expect(second.batchesCut).toBe(1);
+    expect(second.batchesCut).toBe(0);
     // Same row updated in place -- not a duplicate.
     expect(store.sourceItems).toHaveLength(1);
     expect(store.sourceItems[0]!.id).toBe(firstItemId);
@@ -544,7 +574,7 @@ describe("materializeSlackBatches", () => {
 
 describe("registerSlackBatchMaterializationTask", () => {
   it("upserts an idempotent ingest_source task keyed by connection id", async () => {
-    const { client, store } = createFakeClient([], {});
+    const { client, store } = createFakeClient([]);
 
     await registerSlackBatchMaterializationTask(
       { id: CONNECTION_ID, workspace_id: WORKSPACE_ID },

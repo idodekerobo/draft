@@ -232,7 +232,7 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
     .select("content_markdown, occurred_at, metadata_json, visibility, owner_user_id")
     .eq("workspace_id", req.params.id)
     .eq("item_type", "coding_session")
-    .eq("lifecycle_status", "ready")
+    .eq("lifecycle_status", "active")
     .contains("metadata_json", { agent_session_id: session.id })
     // Defense-in-depth: coding_session items are always 'shared' today --
     // only fireflies sets 'private' -- but this keeps a future item_type

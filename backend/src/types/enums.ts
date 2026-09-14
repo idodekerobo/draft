@@ -64,13 +64,13 @@ export type SourceItemType =
 export type SourceItemLifecycleStatus =
   | "received"
   | "normalized"
-  | "ready"
+  | "active"
   | "superseded"
   | "deleted"
   | "quarantined";
 
 // 'private' scopes a direct read (sessions.ts/sessions-search.ts) to the
-// item's owner_user_id; synthesis (get-ready-source-items.ts) deliberately
+// item's owner_user_id; synthesis deliberately
 // ignores this column.
 export type SourceItemVisibility = "private" | "shared";
 
@@ -84,7 +84,8 @@ export type ScheduledTaskType =
   | "ingest_source"
   | "synthesize_workspace"
   | "rebuild_projection"
-  | "summarize_sessions";
+  | "summarize_sessions"
+  | "slack_backfill";
 
 export type ScheduleKind = "cron" | "interval";
 

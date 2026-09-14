@@ -136,6 +136,12 @@ export async function ingestLinearEvent(
     occurred_at: occurredAt,
     content_markdown: contentMarkdown,
     content_hash: contentHash,
+    representation_kind: "source",
+    source_time_start: occurredAt,
+    source_time_end: occurredAt,
+    time_basis: str(payload.data.updatedAt) || str(payload.createdAt)
+      ? "source_event"
+      : "ingestion_fallback",
     metadata_json: {
       linear_resource_type: payload.type,
       linear_action: payload.action,

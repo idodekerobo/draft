@@ -2,7 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { loadSandboxDeploymentConfig } from "../sandbox";
-import { getReadySourceItemIds } from "../synthesis/get-ready-source-items";
+import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
@@ -52,6 +52,9 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
 
 interface SynthesisRunsBody {
   dimensions?: DimensionHint[];
+  // Explicit manual reprocessing: re-includes sources whose exact
+  // (version, content_hash) a prior successful run already consumed.
+  reprocess?: boolean;
 }
 
 function isDimensionHint(value: unknown): value is DimensionHint {
@@ -63,7 +66,8 @@ function isDimensionHint(value: unknown): value is DimensionHint {
 function isSynthesisRunsBody(value: unknown): value is SynthesisRunsBody {
   if (!value || typeof value !== "object") return false;
   const body = value as Partial<SynthesisRunsBody>;
-  return body.dimensions === undefined || (Array.isArray(body.dimensions) && body.dimensions.every(isDimensionHint));
+  return (body.dimensions === undefined || (Array.isArray(body.dimensions) && body.dimensions.every(isDimensionHint)))
+    && (body.reprocess === undefined || typeof body.reprocess === "boolean");
 }
 
 function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string): Response {
@@ -92,7 +96,9 @@ export const POST = withAuth<SynthesisRunsRequest>(async (req, caller) => {
     body = parsed;
   }
 
-  const sourceItemIds = await getReadySourceItemIds(req.params.id, serviceClient);
+  const sourceItemIds = await getPendingSynthesisSourceItemIds(req.params.id, serviceClient, {
+    reprocess: body.reprocess ?? false,
+  });
   if (sourceItemIds.length === 0) {
     return Response.json({ ok: false, reason: "no_ready_items" });
   }

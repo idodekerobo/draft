@@ -280,7 +280,7 @@ describe("ingestFirefliesMeeting", () => {
     ).rejects.toThrow(/Transcript not found/);
   });
 
-  it("marks a prior ready revision superseded when re-ingesting changed content", async () => {
+  it("marks a prior active revision superseded when re-ingesting changed content", async () => {
     mockFetchOnce(TRANSCRIPT_FIXTURE);
     const priorId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const { client, state } = createFakeClient({

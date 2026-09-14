@@ -22,9 +22,9 @@ interface UploadBody {
   files: UploadFile[];
   /**
    * When true, immediately launch a synthesis run scoped to exactly the
-   * items this request inserts — not every ready item in the workspace.
+   * items this request inserts — not every active item in the workspace.
    * One request/response instead of the caller fetching inserted IDs and
-   * making a second trigger call; also sidesteps ready items accumulated
+   * making a second trigger call; also sidesteps active items accumulated
    * from earlier, unrelated uploads pushing a later run over its bundle
    * byte cap.
    */
@@ -127,7 +127,9 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
         occurred_at: now,
         content_markdown: file.content,
         content_hash: file.contentHash,
-        lifecycle_status: "ready",
+        lifecycle_status: "active",
+        representation_kind: "source",
+        time_basis: "ingestion_fallback",
       });
       insertedIds.push(item.id);
     } catch (err) {

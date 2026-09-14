@@ -58,3 +58,7 @@ create policy slack_messages_select on slack_messages
 
 grant select on table slack_messages to authenticated;
 grant select, insert, update on table slack_messages to service_role;
+
+create index slack_messages_pending_materialization_idx
+  on slack_messages (workspace_id, source_connection_id, channel_id, message_ts, id)
+  where source_item_id is null;

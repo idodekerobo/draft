@@ -7,6 +7,7 @@ import type {
   SourceItemVisibility,
 } from "../types/enums";
 import type { SourceConnectionRow, SourceItemRow } from "../types/tables";
+import type { SourceRepresentationKind, SourceTimeBasis } from "draft-core/sources";
 
 export interface UpsertSourceConnectionInput {
   workspace_id: string;
@@ -58,6 +59,11 @@ export interface UpsertSourceItemInput {
   // A provider revision id, or a content hash for providers that give none.
   external_version: string;
   occurred_at: string;
+  source_time_start?: string | null;
+  source_time_end?: string | null;
+  representation_kind?: SourceRepresentationKind;
+  time_basis?: SourceTimeBasis;
+  agent_session_id?: string | null;
   content_markdown: string;
   content_hash: string;
   metadata_json?: Record<string, unknown>;
@@ -102,11 +108,18 @@ export async function upsertSourceItem(
       p_occurred_at: input.occurred_at,
       p_content_markdown: input.content_markdown,
       p_content_hash: input.content_hash,
-      p_metadata_json: input.metadata_json ?? {},
+      p_metadata_json: {
+        ...(input.metadata_json ?? {}),
+        time_basis: input.time_basis ?? "unknown",
+      },
       p_sanitized_raw_json: input.sanitized_raw_json ?? null,
-      p_lifecycle_status: input.lifecycle_status ?? "ready",
+      p_lifecycle_status: input.lifecycle_status ?? "active",
       p_visibility: input.visibility ?? "shared",
       p_owner_user_id: input.owner_user_id ?? null,
+      p_representation_kind: input.representation_kind ?? "unknown",
+      p_source_time_start: input.source_time_start ?? null,
+      p_source_time_end: input.source_time_end ?? null,
+      p_agent_session_id: input.agent_session_id ?? null,
     });
   if (rpcError) throw rpcError;
 

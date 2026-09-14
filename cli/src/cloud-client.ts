@@ -16,6 +16,8 @@ import {
   type AuthState,
 } from "draft-core/auth-state";
 import { getCliRuntimeConfig } from "./runtime-config.ts";
+import type { SourceReadInput, SourceReadResponse, SourceSearchInput, SourceSearchResponse } from "draft-core/sources";
+import { normalizeBackfillSummary, type HostedConnectionBackfillSummary } from "draft-core/integrations/hosted-connections";
 
 export interface WhoamiBody {
   organization_id: string | null;
@@ -286,6 +288,7 @@ export interface HostedConnectionTransport {
   last_success_at: string | null;
   last_error_at: string | null;
   channel_ids?: string[];
+  backfill?: HostedConnectionBackfillSummary;
 }
 
 export type HostedConnectBody =
@@ -440,6 +443,9 @@ function decodeConnection(value: unknown): HostedConnectionTransport | null {
     const channelIds = stringArrayValue(row.channel_ids);
     if (!channelIds) return null;
     connection.channel_ids = channelIds;
+
+    const backfill = normalizeBackfillSummary(row.backfill);
+    if (backfill) connection.backfill = backfill;
   }
   return connection;
 }
@@ -800,6 +806,36 @@ export async function fetchSessionsSearch(filters: SearchSessionsFilters): Promi
   if (!result.response.ok) return { ok: false, code: "request_failed" };
   const body = await result.response.json() as { sessions: SessionSearchItem[] };
   return { ok: true, value: body.sessions };
+}
+
+export function fetchSourcesSearch(input: SourceSearchInput): Promise<FetchResult<SourceSearchResponse>> {
+  return requestValue("/sources/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  }, (value) => {
+    const body = recordValue(value);
+    return body && Array.isArray(body.results) && typeof body.consistency === "string"
+      ? body as unknown as SourceSearchResponse
+      : null;
+  });
+}
+
+export function fetchSourceRead(input: SourceReadInput): Promise<FetchResult<SourceReadResponse>> {
+  return requestValue(`/sources/${encodeURIComponent(input.source_item_id)}/read`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      representation: input.representation,
+      max_bytes: input.max_bytes,
+      cursor: input.cursor,
+    }),
+  }, (value) => {
+    const body = recordValue(value);
+    return body && typeof body.content === "string" && typeof body.representation === "string"
+      ? body as unknown as SourceReadResponse
+      : null;
+  });
 }
 
 const DIMENSION_INDEX_PATTERN = /^([^/]+)\/index\.md$/;

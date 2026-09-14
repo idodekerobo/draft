@@ -16,6 +16,7 @@ import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
 import * as skills from "./skills";
 import * as sourceItems from "./source-items";
+import * as sources from "./sources";
 import * as synthesisRuns from "./synthesis-runs";
 import * as synthesisSchedule from "./synthesis-schedule";
 import * as whoami from "./whoami";
@@ -40,6 +41,8 @@ export const routes = {
   "/workspaces/:id/synthesis-runs": { GET: synthesisRuns.GET, POST: synthesisRuns.POST },
   "/workspaces/:id/synthesis-schedule": { GET: synthesisSchedule.GET, PATCH: synthesisSchedule.PATCH },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
+  "/workspaces/:id/sources/search": { POST: sources.searchPOST },
+  "/workspaces/:id/sources/:sourceItemId/read": { POST: sources.readPOST },
   "/workspaces/:id/github/install-sessions": { POST: githubInstall.createPOST },
   "/workspaces/:id/github/install-sessions/:code": { GET: githubInstall.pollGET },
   "/workspaces/github/callback": { GET: githubCallback.GET },

@@ -39,6 +39,7 @@
     "./time": "./src/time.ts",
     "./migrations/runner": "./src/migrations/runner.ts",
     "./sessions": "./src/sessions.ts",
+    "./sources": "./src/sources.ts",
     "./sync/claude-settings": "./src/sync/claude-settings.ts"
   },
   "scripts": {

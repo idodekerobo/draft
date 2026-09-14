@@ -43,12 +43,24 @@ export type SlackConversationTypes = "public_channel" | "public_channel,private_
 export type SlackProviderErrorCode =
   | "slack_channel_list_failed"
   | "slack_channel_join_failed"
-  | "slack_channel_leave_failed";
+  | "slack_channel_leave_failed"
+  | "slack_history_failed"
+  | "slack_replies_failed";
 
 export class SlackProviderError extends Error {
   constructor(public readonly code: SlackProviderErrorCode) {
     super(code);
     this.name = "SlackProviderError";
+  }
+}
+
+// Thrown instead of SlackProviderError on HTTP 429 (or an `ok:false,
+// error:"ratelimited"` envelope) so callers can back off using the server's
+// own Retry-After rather than treating it as a hard failure.
+export class SlackRateLimitedError extends Error {
+  constructor(public readonly retryAfterSeconds: number) {
+    super("slack_rate_limited");
+    this.name = "SlackRateLimitedError";
   }
 }
 
@@ -63,15 +75,32 @@ interface SlackEnvelope {
 }
 
 const MAX_SLACK_CHANNEL_PAGES = 1_000;
+const DEFAULT_SLACK_RATE_LIMIT_RETRY_SECONDS = 30;
 
+function parseRetryAfterSeconds(response: Response): number {
+  const header = response.headers.get("retry-after");
+  const parsed = header ? Number(header) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SLACK_RATE_LIMIT_RETRY_SECONDS;
+}
+
+// `checkRateLimit` opts a caller into treating HTTP 429 (or an ok:false,
+// error:"ratelimited" envelope -- some Slack surfaces use that instead) as a
+// SlackRateLimitedError rather than a hard SlackProviderError failure, so it
+// can back off using the server's own Retry-After. Existing callers
+// (conversations.list/join/leave) don't request this and keep their prior
+// behavior exactly.
 async function slackRequest(
   url: string,
   init: RequestInit,
   errorCode: SlackProviderErrorCode,
   fetchFn: typeof fetch,
+  options: { checkRateLimit?: boolean } = {},
 ): Promise<SlackEnvelope> {
   try {
     const response = await fetchFn(url, init);
+    if (options.checkRateLimit && response.status === 429) {
+      throw new SlackRateLimitedError(parseRetryAfterSeconds(response));
+    }
     if (!response.ok) throw new SlackProviderError(errorCode);
     const payload = await response.json() as unknown;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -82,11 +111,28 @@ async function slackRequest(
     if (envelope.error !== undefined && typeof envelope.error !== "string") {
       throw new SlackProviderError(errorCode);
     }
+    if (options.checkRateLimit && !envelope.ok && envelope.error === "ratelimited") {
+      throw new SlackRateLimitedError(DEFAULT_SLACK_RATE_LIMIT_RETRY_SECONDS);
+    }
     return envelope as SlackEnvelope;
   } catch (error) {
-    if (error instanceof SlackProviderError) throw error;
+    if (error instanceof SlackProviderError || error instanceof SlackRateLimitedError) throw error;
     throw new SlackProviderError(errorCode);
   }
+}
+
+function extractNextCursor(data: SlackEnvelope, errorCode: SlackProviderErrorCode): string {
+  if (
+    data.response_metadata !== undefined &&
+    (!data.response_metadata || typeof data.response_metadata !== "object" || Array.isArray(data.response_metadata))
+  ) {
+    throw new SlackProviderError(errorCode);
+  }
+  const cursor = (data.response_metadata as { next_cursor?: unknown } | undefined)?.next_cursor;
+  if (cursor !== undefined && typeof cursor !== "string") {
+    throw new SlackProviderError(errorCode);
+  }
+  return cursor ?? "";
 }
 
 function parseChannelPage(data: SlackEnvelope): { channels: SlackChannel[]; cursor: string } {
@@ -118,17 +164,7 @@ function parseChannelPage(data: SlackEnvelope): { channels: SlackChannel[]; curs
     };
   });
 
-  if (
-    data.response_metadata !== undefined &&
-    (!data.response_metadata || typeof data.response_metadata !== "object" || Array.isArray(data.response_metadata))
-  ) {
-    throw new SlackProviderError("slack_channel_list_failed");
-  }
-  const cursor = (data.response_metadata as { next_cursor?: unknown } | undefined)?.next_cursor;
-  if (cursor !== undefined && typeof cursor !== "string") {
-    throw new SlackProviderError("slack_channel_list_failed");
-  }
-  return { channels, cursor: cursor ?? "" };
+  return { channels, cursor: extractNextCursor(data, "slack_channel_list_failed") };
 }
 
 export async function walkSlackChannelPages(
@@ -236,4 +272,72 @@ export async function leavePublicSlackChannels(
   for (const channelId of channelIds) {
     await changeSlackMembership(botToken, channelId, "leave", fetchFn);
   }
+}
+
+export interface SlackMessagePage {
+  messages: Array<Record<string, unknown>>;
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
+function parseSlackMessagePage(data: SlackEnvelope, errorCode: SlackProviderErrorCode): SlackMessagePage {
+  if (!data.ok || (data.messages !== undefined && !Array.isArray(data.messages))) {
+    throw new SlackProviderError(errorCode);
+  }
+  const messages = (data.messages ?? []) as Array<Record<string, unknown>>;
+  const cursor = extractNextCursor(data, errorCode);
+  return {
+    messages,
+    hasMore: data.has_more === true,
+    nextCursor: cursor.length > 0 ? cursor : null,
+  };
+}
+
+export interface SlackHistoryPageOptions {
+  oldest?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export async function fetchSlackConversationHistory(
+  botToken: string,
+  channelId: string,
+  options: SlackHistoryPageOptions = {},
+  fetchFn: typeof fetch = fetch,
+): Promise<SlackMessagePage> {
+  const query = new URLSearchParams({ channel: channelId, limit: String(options.limit ?? 200) });
+  if (options.oldest) query.set("oldest", options.oldest);
+  if (options.cursor) query.set("cursor", options.cursor);
+  const data = await slackRequest(
+    `https://slack.com/api/conversations.history?${query.toString()}`,
+    { headers: { Authorization: `Bearer ${botToken}` } },
+    "slack_history_failed",
+    fetchFn,
+    { checkRateLimit: true },
+  );
+  return parseSlackMessagePage(data, "slack_history_failed");
+}
+
+export interface SlackRepliesPageOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+export async function fetchSlackConversationReplies(
+  botToken: string,
+  channelId: string,
+  threadTs: string,
+  options: SlackRepliesPageOptions = {},
+  fetchFn: typeof fetch = fetch,
+): Promise<SlackMessagePage> {
+  const query = new URLSearchParams({ channel: channelId, ts: threadTs, limit: String(options.limit ?? 200) });
+  if (options.cursor) query.set("cursor", options.cursor);
+  const data = await slackRequest(
+    `https://slack.com/api/conversations.replies?${query.toString()}`,
+    { headers: { Authorization: `Bearer ${botToken}` } },
+    "slack_replies_failed",
+    fetchFn,
+    { checkRateLimit: true },
+  );
+  return parseSlackMessagePage(data, "slack_replies_failed");
 }

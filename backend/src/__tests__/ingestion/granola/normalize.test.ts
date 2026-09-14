@@ -270,7 +270,7 @@ describe("ingestGranolaNote", () => {
     expect(markdown).toContain("Let's start.");
   });
 
-  it("marks a prior ready revision superseded when re-ingesting changed content", async () => {
+  it("marks a prior active revision superseded when re-ingesting changed content", async () => {
     mockFetchSequence([{ status: 200, json: NOTE_FIXTURE }]);
     const priorId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const { client, state } = createFakeClient({ priorReadyRevisions: [{ id: priorId, external_version: "some-old-hash" }] });
