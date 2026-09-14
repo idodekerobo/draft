@@ -169,7 +169,7 @@ p.write_text(result)"
 		git add desktop/electrobun.config.ts; \
 		git diff --cached --quiet \
 			&& echo "  Skipped: version already at $(v)" \
-			|| git commit -m "chore: release desktop v$(v)"; \
+			|| git commit -m "release: desktop v$(v)"; \
 		git push origin main; \
 		echo "  Pushed: version bump → origin/main"; \
 	fi
@@ -263,7 +263,7 @@ print('  Updated: CHANGELOG [Unreleased] \u2192 [' + v + '] \u2014 ' + today)" \
 	@git add $(CLI_PREFIX)/VERSION $(CLI_PREFIX)/.claude-plugin/plugin.json $(CLI_PREFIX)/CHANGELOG.md
 	@git diff --cached --quiet \
 		&& echo "  Skipped: version files already at $(v)" \
-		|| git commit -m "chore: release cli-plugin v$(v)"
+		|| git commit -m "release: cli-plugin v$(v)"
 	@# ── 5. Push version bump commit to main ──────────────────────────────────
 	@git push origin main
 	@echo "  Pushed: version bump → origin/main"
