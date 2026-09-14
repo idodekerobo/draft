@@ -1,55 +1,8 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { SQL } from "bun";
+import { setupDbIntegrationTest } from "./support";
 
-// Disposable Postgres gate for Delivery 1 (retrieval foundation). Never
-// falls back to the app's configured Supabase project:
-//   DRAFT_INTEGRATION_TEST_DATABASE_URL=postgresql://... bun test <this-file>
-const testDatabaseUrl = process.env.DRAFT_INTEGRATION_TEST_DATABASE_URL;
-const requireDatabase = process.env.DRAFT_REQUIRE_DB_INTEGRATION_TESTS === "1";
-const describeWithDatabase = testDatabaseUrl ? describe : describe.skip;
-const sql = testDatabaseUrl ? new SQL(testDatabaseUrl, { max: 8 }) : null;
-
-if (requireDatabase && !testDatabaseUrl) {
-  describe("source retrieval release gate", () => {
-    test("requires an explicit disposable Postgres URL", () => {
-      throw new Error("DRAFT_INTEGRATION_TEST_DATABASE_URL is required by the retrieval release gate");
-    });
-  });
-}
-
-interface WorkspaceFixture {
-  organizationId: string;
-  workspaceId: string;
-}
-
-const organizationIds = new Set<string>();
-
-function db(): SQL {
-  if (!sql) throw new Error("DRAFT_INTEGRATION_TEST_DATABASE_URL is required");
-  return sql;
-}
-
-async function createWorkspace(): Promise<WorkspaceFixture> {
-  const suffix = randomUUID();
-  const [organization] = await db()<[{ id: string }]>`
-    insert into organizations (slug, name)
-    values (${`retrieval-org-${suffix}`}, 'Retrieval contract test')
-    returning id
-  `;
-  const [team] = await db()<[{ id: string }]>`
-    insert into teams (organization_id, slug, name)
-    values (${organization.id}, ${`retrieval-team-${suffix}`}, 'Retrieval contract test')
-    returning id
-  `;
-  const [workspace] = await db()<[{ id: string }]>`
-    insert into workspaces (organization_id, team_id, slug, name)
-    values (${organization.id}, ${team.id}, ${`retrieval-workspace-${suffix}`}, 'Retrieval contract test')
-    returning id
-  `;
-  organizationIds.add(organization.id);
-  return { organizationId: organization.id, workspaceId: workspace.id };
-}
+const { describeWithDatabase, db, createWorkspace } = setupDbIntegrationTest("retrieval", "retrieval");
 
 async function createConnection(
   workspaceId: string,
@@ -148,17 +101,6 @@ async function searchSources(
 }
 
 describeWithDatabase("source retrieval migration", () => {
-  afterEach(async () => {
-    if (!sql || organizationIds.size === 0) return;
-    const ids = [...organizationIds];
-    organizationIds.clear();
-    await sql`delete from organizations where id = any(${sql.array(ids, "uuid")})`;
-  });
-
-  afterAll(async () => {
-    await sql?.close();
-  });
-
   describe("search_sources visibility and filters", () => {
     test("excludes non-active lifecycle statuses", async () => {
       const { workspaceId } = await createWorkspace();

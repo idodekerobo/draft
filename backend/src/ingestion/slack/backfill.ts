@@ -18,11 +18,26 @@ import {
 } from "draft-core/integrations/slack-hosted";
 import { handleSlackMessageEvent, type SlackMessageEventContext } from "./normalize";
 import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
+import { redactString } from "../../errors/record-error";
 import type { ScheduledTaskRow } from "../../types/tables";
 
 export const SLACK_BACKFILL_DEFAULT_DAYS = 7;
 export const SLACK_BACKFILL_MAX_REQUESTS_PER_DISPATCH = 10;
 export const SLACK_BACKFILL_PAGE_LIMIT = 200;
+const MESSAGE_INGEST_CONCURRENCY = 10;
+
+// Each message's ingest is an independent upsert (its own row lock, no
+// ordering dependency on the others in the page), so a page of up to
+// SLACK_BACKFILL_PAGE_LIMIT messages doesn't need to go one at a time --
+// just bounded so a page doesn't open hundreds of connections at once.
+async function ingestMessagesConcurrently(
+  messages: Array<Record<string, unknown>>,
+  ingest: (message: Record<string, unknown>) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < messages.length; i += MESSAGE_INGEST_CONCURRENCY) {
+    await Promise.all(messages.slice(i, i + MESSAGE_INGEST_CONCURRENCY).map(ingest));
+  }
+}
 const SLACK_BACKFILL_INTERVAL_SECONDS = 60;
 
 export type SlackBackfillStatus = "in_progress" | "partial" | "completed";
@@ -147,12 +162,12 @@ export async function registerSlackBackfillTask(
   if (error) throw error;
 }
 
-// Strips anything that could resemble a token before a message is
-// persisted -- defense in depth in case an underlying error ever echoes a
-// request URL or header back in its message.
+// redactString is the codebase's established defense against an
+// underlying error echoing back a token/secret/header -- capped to keep a
+// pathological message from bloating cursor_json.
 function sanitizeErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/xox[bap]-[A-Za-z0-9-]+/g, "[REDACTED]").slice(0, 500);
+  return redactString(message).slice(0, 500);
 }
 
 function messageHasReplies(message: Record<string, unknown>): message is Record<string, unknown> & { ts: string } {
@@ -254,6 +269,8 @@ export async function runSlackBackfillDispatch(
           await complete();
           return;
         }
+        // A pure bookkeeping transition -- no API call, so it doesn't need
+        // its own checkpoint; it's captured by whichever persist() follows.
         state = {
           ...state,
           pending_channel_ids: state.pending_channel_ids.slice(1),
@@ -264,7 +281,6 @@ export async function runSlackBackfillDispatch(
           current_thread_ts: null,
           replies_cursor: null,
         };
-        await persist();
         continue;
       }
 
@@ -281,9 +297,10 @@ export async function runSlackBackfillDispatch(
         // The first item in a replies page is always the thread parent
         // itself, already captured via conversations.history -- skip it so
         // it isn't re-upserted for no reason.
-        for (const message of page.messages.slice(1)) {
-          await deps.handleSlackMessageEvent(message, ctxFor(channelId), client);
-        }
+        await ingestMessagesConcurrently(
+          page.messages.slice(1),
+          (message) => deps.handleSlackMessageEvent(message, ctxFor(channelId), client),
+        );
         state = {
           ...state,
           replies_cursor: page.nextCursor,
@@ -302,11 +319,11 @@ export async function runSlackBackfillDispatch(
           { oldest: toSlackTimestamp(state.cutoff), cursor: state.history_cursor ?? undefined, limit: SLACK_BACKFILL_PAGE_LIMIT },
         );
         requestsUsed += 1;
-        const newThreads: string[] = [];
-        for (const message of page.messages) {
-          await deps.handleSlackMessageEvent(message, ctxFor(channelId), client);
-          if (messageHasReplies(message)) newThreads.push(message.ts);
-        }
+        const newThreads = page.messages.filter(messageHasReplies).map((message) => message.ts);
+        await ingestMessagesConcurrently(
+          page.messages,
+          (message) => deps.handleSlackMessageEvent(message, ctxFor(channelId), client),
+        );
         state = {
           ...state,
           history_cursor: page.nextCursor,
@@ -322,11 +339,11 @@ export async function runSlackBackfillDispatch(
       if (state.pending_reply_thread_ts.length > 0) {
         const [nextThread, ...rest] = state.pending_reply_thread_ts;
         state = { ...state, current_thread_ts: nextThread!, replies_cursor: null, pending_reply_thread_ts: rest };
-        await persist();
         continue;
       }
 
-      // Channel fully covered: no more history pages, no more threads.
+      // Channel fully covered: no more history pages, no more threads. Also
+      // a pure bookkeeping transition -- folded into the next persist().
       state = {
         ...state,
         done_channel_ids: [...state.done_channel_ids, channelId],
@@ -334,7 +351,6 @@ export async function runSlackBackfillDispatch(
         history_cursor: null,
         history_done: false,
       };
-      await persist();
     }
   } catch (error) {
     if (error instanceof SlackRateLimitedError) {

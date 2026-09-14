@@ -23,12 +23,15 @@ export interface RecordErrorInput {
   client?: SupabaseClient;
 }
 
-function redactString(value: string): string {
+export function redactString(value: string): string {
   return value
     .replace(SENSITIVE_QUERY, `$1${REDACTED}`)
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, `$1 ${REDACTED}`)
     .replace(/((?:token|secret|password|credential|api[-_]?key|authorization)\s*[=:]\s*)[^\s,;}&#]+/gi, `$1${REDACTED}`)
-    .replace(/\b(credentials?|tokens?|secrets?|passwords?)\s+[^\s,;}&#]+/gi, `$1 ${REDACTED}`);
+    .replace(/\b(credentials?|tokens?|secrets?|passwords?)\s+[^\s,;}&#]+/gi, `$1 ${REDACTED}`)
+    // Slack tokens (xoxb-/xoxp-/xapp-...) can appear bare, with no preceding
+    // "token"/"secret" keyword to trigger the patterns above.
+    .replace(/\bxox[bap]-[A-Za-z0-9-]+/g, REDACTED);
 }
 
 function isSensitiveKey(key: string): boolean {

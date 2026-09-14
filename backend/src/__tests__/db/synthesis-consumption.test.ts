@@ -1,55 +1,8 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { SQL } from "bun";
+import { setupDbIntegrationTest } from "./support";
 
-// Disposable Postgres gate for Delivery 2 (synthesis consumption). Never
-// falls back to the app's configured Supabase project:
-//   DRAFT_INTEGRATION_TEST_DATABASE_URL=postgresql://... bun test <this-file>
-const testDatabaseUrl = process.env.DRAFT_INTEGRATION_TEST_DATABASE_URL;
-const requireDatabase = process.env.DRAFT_REQUIRE_DB_INTEGRATION_TESTS === "1";
-const describeWithDatabase = testDatabaseUrl ? describe : describe.skip;
-const sql = testDatabaseUrl ? new SQL(testDatabaseUrl, { max: 8 }) : null;
-
-if (requireDatabase && !testDatabaseUrl) {
-  describe("synthesis consumption release gate", () => {
-    test("requires an explicit disposable Postgres URL", () => {
-      throw new Error("DRAFT_INTEGRATION_TEST_DATABASE_URL is required by the synthesis consumption release gate");
-    });
-  });
-}
-
-const organizationIds = new Set<string>();
-
-function db(): SQL {
-  if (!sql) throw new Error("DRAFT_INTEGRATION_TEST_DATABASE_URL is required");
-  return sql;
-}
-
-interface WorkspaceFixture {
-  organizationId: string;
-  workspaceId: string;
-}
-
-async function createWorkspace(): Promise<WorkspaceFixture> {
-  const suffix = randomUUID();
-  const [organization] = await db()<[{ id: string }]>`
-    insert into organizations (slug, name)
-    values (${`consumption-org-${suffix}`}, 'Synthesis consumption contract test')
-    returning id
-  `;
-  const [team] = await db()<[{ id: string }]>`
-    insert into teams (organization_id, slug, name)
-    values (${organization.id}, ${`consumption-team-${suffix}`}, 'Synthesis consumption contract test')
-    returning id
-  `;
-  const [workspace] = await db()<[{ id: string }]>`
-    insert into workspaces (organization_id, team_id, slug, name)
-    values (${organization.id}, ${team.id}, ${`consumption-workspace-${suffix}`}, 'Synthesis consumption contract test')
-    returning id
-  `;
-  organizationIds.add(organization.id);
-  return { organizationId: organization.id, workspaceId: workspace.id };
-}
+const { describeWithDatabase, db, createWorkspace } = setupDbIntegrationTest("synthesis consumption", "consumption");
 
 async function createConnection(workspaceId: string): Promise<string> {
   const [connection] = await db()<[{ id: string }]>`
@@ -150,17 +103,6 @@ async function getPending(workspaceId: string, reprocess = false): Promise<strin
 }
 
 describeWithDatabase("synthesis consumption migration", () => {
-  afterEach(async () => {
-    if (!sql || organizationIds.size === 0) return;
-    const ids = [...organizationIds];
-    organizationIds.clear();
-    await sql`delete from organizations where id = any(${sql.array(ids, "uuid")})`;
-  });
-
-  afterAll(async () => {
-    await sql?.close();
-  });
-
   test("a never-synthesized active source is pending", async () => {
     const { workspaceId } = await createWorkspace();
     const connectionId = await createConnection(workspaceId);

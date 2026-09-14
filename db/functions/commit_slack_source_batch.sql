@@ -60,13 +60,7 @@ begin
 
   update slack_messages set source_item_id = v_item_id where id = any(p_message_ids);
 
-  -- Locking the workspace row before allocating sequence_number serializes
-  -- it against every other workspace_events writer (commit_synthesis_run
-  -- included), so two concurrent batch commits in the same workspace can
-  -- never collide on the same sequence number.
-  perform 1 from workspaces where id = p_workspace_id for update;
-  select coalesce(max(sequence_number), 0) + 1 into v_next_sequence
-  from workspace_events where workspace_id = p_workspace_id;
+  v_next_sequence := next_workspace_event_sequence(p_workspace_id);
 
   insert into workspace_events (
     workspace_id, sequence_number, event_type, source_connection_id, summary, payload_json, occurred_at

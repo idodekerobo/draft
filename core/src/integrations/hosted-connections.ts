@@ -46,7 +46,7 @@ export interface HostedConnectionSummary {
   backfill?: HostedConnectionBackfillSummary;
 }
 
-function normalizeBackfillSummary(value: unknown): HostedConnectionBackfillSummary | undefined {
+export function normalizeBackfillSummary(value: unknown): HostedConnectionBackfillSummary | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Record<string, unknown>;
   if (typeof raw.status !== "string") return undefined;

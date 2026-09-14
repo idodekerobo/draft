@@ -1,7 +1,8 @@
-import type {
-  HostedConnectionProvider,
-  HostedConnectionStatus,
-  HostedConnectionSummary,
+import {
+  normalizeBackfillSummary,
+  type HostedConnectionProvider,
+  type HostedConnectionStatus,
+  type HostedConnectionSummary,
 } from "draft-core/integrations/hosted-connections";
 import type { HostedSlackChannel, SlackMembershipReconcileResult } from "../cloud-client.ts";
 import { PROVIDER_LABELS } from "./types.ts";
@@ -157,15 +158,8 @@ function safeConnection(value: HostedConnectionSummary): HostedConnectionSummary
     result.channel_ids = Array.isArray(value.channel_ids)
       ? value.channel_ids.filter((item): item is string => typeof item === "string")
       : [];
-    const backfill = value.backfill;
-    if (backfill && typeof backfill === "object" && typeof backfill.status === "string") {
-      result.backfill = {
-        status: backfill.status,
-        cutoff: typeof backfill.cutoff === "string" ? backfill.cutoff : null,
-        completed_at: typeof backfill.completed_at === "string" ? backfill.completed_at : null,
-        last_error: typeof backfill.last_error === "string" ? backfill.last_error : null,
-      };
-    }
+    const backfill = normalizeBackfillSummary(value.backfill);
+    if (backfill) result.backfill = backfill;
   }
   return result;
 }

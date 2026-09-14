@@ -17,6 +17,7 @@ import {
 } from "draft-core/auth-state";
 import { getCliRuntimeConfig } from "./runtime-config.ts";
 import type { SourceReadInput, SourceReadResponse, SourceSearchInput, SourceSearchResponse } from "draft-core/sources";
+import { normalizeBackfillSummary, type HostedConnectionBackfillSummary } from "draft-core/integrations/hosted-connections";
 
 export interface WhoamiBody {
   organization_id: string | null;
@@ -280,13 +281,6 @@ export type BackendProvider = "github" | "slack" | "linear" | "fireflies" | "gra
 export type BackendConnectionProvider = BackendProvider | "claude_session";
 export type BackendConnectionStatus = "pending" | "active" | "degraded" | "error" | "revoked" | "expired";
 
-export interface HostedConnectionBackfillTransport {
-  status: string;
-  cutoff: string | null;
-  completed_at: string | null;
-  last_error: string | null;
-}
-
 export interface HostedConnectionTransport {
   provider: BackendConnectionProvider;
   status: BackendConnectionStatus | null;
@@ -294,7 +288,7 @@ export interface HostedConnectionTransport {
   last_success_at: string | null;
   last_error_at: string | null;
   channel_ids?: string[];
-  backfill?: HostedConnectionBackfillTransport;
+  backfill?: HostedConnectionBackfillSummary;
 }
 
 export type HostedConnectBody =
@@ -450,21 +444,8 @@ function decodeConnection(value: unknown): HostedConnectionTransport | null {
     if (!channelIds) return null;
     connection.channel_ids = channelIds;
 
-    const backfillRow = recordValue(row.backfill);
-    if (
-      backfillRow &&
-      typeof backfillRow.status === "string" &&
-      nullableString(backfillRow.cutoff) &&
-      nullableString(backfillRow.completed_at) &&
-      nullableString(backfillRow.last_error)
-    ) {
-      connection.backfill = {
-        status: backfillRow.status,
-        cutoff: backfillRow.cutoff,
-        completed_at: backfillRow.completed_at,
-        last_error: backfillRow.last_error,
-      };
-    }
+    const backfill = normalizeBackfillSummary(row.backfill);
+    if (backfill) connection.backfill = backfill;
   }
   return connection;
 }

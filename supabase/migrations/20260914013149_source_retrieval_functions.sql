@@ -258,14 +258,15 @@ returns table (
 )
 language sql security definer set search_path = public stable
 as $$
+  -- ts_headline is deferred to the final page (below) since it's comparatively
+  -- expensive; ts_rank_cd still runs over every matching row since ordering
+  -- depends on it.
   with ranked as (
     select si.id, si.external_version,
       coalesce(si.metadata_json->>'title', si.metadata_json->>'project') title,
       sc.provider, si.item_type, si.representation_kind, si.occurred_at,
       si.source_time_start, si.source_time_end, si.metadata_json,
       si.content_markdown, si.sanitized_raw_json, si.agent_session_id,
-      ts_headline('english', coalesce(si.content_markdown, ''), websearch_to_tsquery('english', p_query),
-        'MaxFragments=2, MaxWords=35, MinWords=15, StartSel=**, StopSel=**') excerpt,
       ts_rank_cd(to_tsvector('english', coalesce(si.content_markdown, '')),
         websearch_to_tsquery('english', p_query))::real rank
     from source_items si
@@ -278,16 +279,24 @@ as $$
       and (p_since is null or coalesce(si.source_time_end, si.source_time_start, si.occurred_at) >= p_since)
       and (p_until is null or coalesce(si.source_time_start, si.source_time_end, si.occurred_at) < p_until)
       and to_tsvector('english', coalesce(si.content_markdown, '')) @@ websearch_to_tsquery('english', p_query)
+  ),
+  paged as (
+    select r.*
+    from ranked r
+    where p_after_rank is null or r.rank < p_after_rank
+      or (r.rank = p_after_rank and r.occurred_at < p_after_occurred_at)
+      or (r.rank = p_after_rank and r.occurred_at = p_after_occurred_at and r.id > p_after_id)
+    order by r.rank desc, r.occurred_at desc, r.id asc
+    limit greatest(1, least(p_limit, 101))
   )
-  select r.id, r.external_version, r.title, r.provider, r.item_type,
-    r.representation_kind, r.occurred_at, r.source_time_start, r.source_time_end,
-    r.metadata_json, r.content_markdown, r.sanitized_raw_json, r.agent_session_id, r.excerpt, r.rank
-  from ranked r
-  where p_after_rank is null or r.rank < p_after_rank
-    or (r.rank = p_after_rank and r.occurred_at < p_after_occurred_at)
-    or (r.rank = p_after_rank and r.occurred_at = p_after_occurred_at and r.id > p_after_id)
-  order by r.rank desc, r.occurred_at desc, r.id asc
-  limit greatest(1, least(p_limit, 101));
+  select p.id, p.external_version, p.title, p.provider, p.item_type,
+    p.representation_kind, p.occurred_at, p.source_time_start, p.source_time_end,
+    p.metadata_json, p.content_markdown, p.sanitized_raw_json, p.agent_session_id,
+    ts_headline('english', coalesce(p.content_markdown, ''), websearch_to_tsquery('english', p_query),
+      'MaxFragments=2, MaxWords=35, MinWords=15, StartSel=**, StopSel=**') excerpt,
+    p.rank
+  from paged p
+  order by p.rank desc, p.occurred_at desc, p.id asc;
 $$;
 
 revoke all on function search_sources(uuid, uuid, text, text, text[], timestamptz, timestamptz, real, timestamptz, uuid, int) from public;
@@ -311,6 +320,27 @@ as $$
 $$;
 revoke all on function get_pending_slack_channel_ids(uuid, uuid, text, int) from public;
 grant execute on function get_pending_slack_channel_ids(uuid, uuid, text, int) to service_role;
+
+-- Allocates the next workspace_events.sequence_number, locking the
+-- workspace row first so concurrent writers across the codebase (this
+-- function, commit_synthesis_run) can never collide on the same number.
+create or replace function next_workspace_event_sequence(p_workspace_id uuid)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_next bigint;
+begin
+  perform 1 from workspaces where id = p_workspace_id for update;
+  select coalesce(max(sequence_number), 0) + 1 into v_next
+  from workspace_events where workspace_id = p_workspace_id;
+  return v_next;
+end;
+$$;
+revoke all on function next_workspace_event_sequence(uuid) from public;
+grant execute on function next_workspace_event_sequence(uuid) to service_role;
 
 create or replace function commit_slack_source_batch(
   p_workspace_id uuid, p_source_connection_id uuid, p_channel_id text,
@@ -352,13 +382,7 @@ begin
   v_item_id := (v_upsert->>'item_id')::uuid;
   update slack_messages set source_item_id = v_item_id where id = any(p_message_ids);
 
-  -- Locking the workspace row before allocating sequence_number serializes
-  -- it against every other workspace_events writer (commit_synthesis_run
-  -- included), so two concurrent batch commits in the same workspace can
-  -- never collide on the same sequence number.
-  perform 1 from workspaces where id = p_workspace_id for update;
-  select coalesce(max(sequence_number), 0) + 1 into v_next_sequence
-  from workspace_events where workspace_id = p_workspace_id;
+  v_next_sequence := next_workspace_event_sequence(p_workspace_id);
 
   insert into workspace_events (
     workspace_id, sequence_number, event_type, source_connection_id, summary, payload_json, occurred_at

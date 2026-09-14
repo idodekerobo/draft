@@ -310,7 +310,7 @@ export async function readSource(
   if (!maxBytesResult.ok) return maxBytesResult;
 
   const { data, error } = await client.from("source_items")
-    .select("id, external_version, source_connection_id, item_type, representation_kind, occurred_at, source_time_start, source_time_end, metadata_json, content_markdown, sanitized_raw_json, agent_session_id, lifecycle_status, visibility, owner_user_id")
+    .select("id, external_version, source_connection_id, item_type, representation_kind, occurred_at, source_time_start, source_time_end, metadata_json, content_markdown, sanitized_raw_json, agent_session_id, lifecycle_status, visibility, owner_user_id, source_connections(provider)")
     .eq("workspace_id", workspaceId).eq("id", input.source_item_id)
     .or(`visibility.eq.shared,owner_user_id.eq.${callerUserId}`).maybeSingle();
   if (error) return failure("read_failed", "Source read failed.");
@@ -319,14 +319,14 @@ export async function readSource(
   if (item.lifecycle_status !== "active") {
     return failure(item.lifecycle_status === "superseded" ? "source_superseded" : "source_not_found", "Source is not active.");
   }
-  const { data: connection, error: connectionError } = await client.from("source_connections")
-    .select("provider").eq("workspace_id", workspaceId).eq("id", item.source_connection_id).single();
-  if (connectionError) return failure("read_failed", "Source provider lookup failed.");
+  const connection = item.source_connections as { provider: string } | { provider: string }[] | null;
+  const provider = Array.isArray(connection) ? connection[0]?.provider : connection?.provider;
+  if (!provider) return failure("read_failed", "Source provider lookup failed.");
 
   const row: SearchRow = {
     source_item_id: item.id as string, source_version: item.external_version as string,
     title: typeof (item.metadata_json as Record<string, unknown>).title === "string" ? (item.metadata_json as Record<string, unknown>).title as string : null,
-    provider: (connection as { provider: string }).provider, item_type: item.item_type as string,
+    provider, item_type: item.item_type as string,
     representation_kind: item.representation_kind as SourceRepresentationKind, occurred_at: item.occurred_at as string,
     source_time_start: item.source_time_start as string | null, source_time_end: item.source_time_end as string | null,
     metadata_json: item.metadata_json as Record<string, unknown>, content_markdown: item.content_markdown as string,
