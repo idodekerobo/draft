@@ -27,34 +27,6 @@ function tsToMs(ts: string): number {
 export interface MaterializeSlackBatchesConnectionInput {
   id: string;
   workspace_id: string;
-  cursor_json: Record<string, unknown>;
-}
-
-interface SlackCursorChannelState {
-  last_batched_message_ts?: string;
-}
-
-interface SlackCursorShape {
-  channels?: Record<string, SlackCursorChannelState>;
-  [key: string]: unknown;
-}
-
-function withChannelCursor(
-  cursorJson: Record<string, unknown>,
-  channelId: string,
-  lastBatchedMessageTs: string,
-): Record<string, unknown> {
-  const shape = cursorJson as SlackCursorShape;
-  return {
-    ...cursorJson,
-    channels: {
-      ...(shape.channels ?? {}),
-      [channelId]: {
-        ...(shape.channels?.[channelId] ?? {}),
-        last_batched_message_ts: lastBatchedMessageTs,
-      },
-    },
-  };
 }
 
 async function getPendingChannelIds(
@@ -204,7 +176,6 @@ async function materializeChannelBatches(
 
 export interface MaterializeSlackBatchesResult {
   batchesCut: number;
-  updatedCursorJson: Record<string, unknown>;
 }
 
 export async function materializeSlackBatches(
@@ -214,7 +185,6 @@ export async function materializeSlackBatches(
   const db = client ?? (await import("../../db/client")).serviceClient;
   const limits = loadSlackBatchLimits();
 
-  let cursorJson = connection.cursor_json;
   let batchesCut = 0;
 
   try {
@@ -232,24 +202,17 @@ export async function materializeSlackBatches(
         limits,
       );
 
-      // Cursor is persisted after each cut, not just at the end of the pass,
-      // so a crash between two cuts leaves it at the last fully committed batch.
-      for (const batch of committed) {
-        cursorJson = withChannelCursor(cursorJson, channelId, batch.lastMessageTs);
-        const { error } = await db
-          .from("source_connections")
-          .update({ cursor_json: cursorJson })
-          .eq("id", connection.id)
-          .eq("workspace_id", connection.workspace_id);
-        if (error) throw error;
-        batchesCut += 1;
-      }
+      // Eligibility for the next pass is driven entirely by
+      // slack_messages.source_item_id (set by commit_slack_source_batch's
+      // own transaction), so a crash here just leaves the remaining pending
+      // rows to be picked up again -- no separate checkpoint to persist.
+      batchesCut += committed.length;
     }
   } catch (error) {
     if (!isConnectionInactiveError(error)) throw error;
   }
 
-  return { batchesCut, updatedCursorJson: cursorJson };
+  return { batchesCut };
 }
 
 // This is the primary path from captured messages to source_items (not a

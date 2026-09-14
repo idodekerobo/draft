@@ -41,7 +41,7 @@ async function dispatchIngestSource(
 
   const { data: connectionData, error: connectionError } = await client
     .from("source_connections")
-    .select("id, workspace_id, provider, status, cursor_json")
+    .select("id, workspace_id, provider, status")
     .eq("id", task.source_connection_id)
     .eq("workspace_id", task.workspace_id)
     .single();
@@ -51,7 +51,6 @@ async function dispatchIngestSource(
     workspace_id: string;
     provider: string;
     status: string;
-    cursor_json: Record<string, unknown>;
   };
 
   // Disconnect can disable a schedule after this task was claimed; the write
