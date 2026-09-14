@@ -83,7 +83,7 @@ function input(): BuildRunBundleInput {
 }
 
 describe("validated run bundle", () => {
-  it("builds deterministic sandbox-ready context, source, and run metadata", () => {
+  it("builds deterministic sandbox-active context, source, and run metadata", () => {
     const first = buildValidatedRunBundle(input());
     const secondInput = input();
     secondInput.baseVersion.documents_json = Object.fromEntries(

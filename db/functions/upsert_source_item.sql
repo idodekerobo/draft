@@ -1,4 +1,4 @@
--- Locks the exact-match row (if any) and every prior 'ready' revision of
+-- Locks the exact-match row (if any) and every prior active revision of
 -- the same external_id before writing, so a crash or race between finding
 -- prior revisions and superseding them can never leave two 'ready' rows for
 -- one external_id. Supersedes all matched prior rows and links
@@ -14,9 +14,13 @@ create or replace function upsert_source_item(
   p_content_hash text,
   p_metadata_json jsonb default '{}'::jsonb,
   p_sanitized_raw_json jsonb default null,
-  p_lifecycle_status text default 'ready',
+  p_lifecycle_status text default 'active',
   p_visibility text default 'shared',
-  p_owner_user_id uuid default null
+  p_owner_user_id uuid default null,
+  p_representation_kind text default 'unknown',
+  p_source_time_start timestamptz default null,
+  p_source_time_end timestamptz default null,
+  p_agent_session_id uuid default null
 )
 returns jsonb
 language plpgsql
@@ -59,7 +63,7 @@ begin
 
   v_changed := v_existing_hash is distinct from p_content_hash;
 
-  -- Lock every prior ready revision of this logical item before deciding
+  -- Lock every prior active revision of this logical item before deciding
   -- anything else, so a concurrent caller can never observe -- or leave
   -- behind -- two 'ready' rows for the same external_id. Postgres rejects
   -- FOR UPDATE combined directly with an aggregate, so the lock happens in
@@ -69,7 +73,7 @@ begin
     from source_items
     where source_connection_id = p_source_connection_id
       and external_id = p_external_id
-      and lifecycle_status = 'ready'
+      and lifecycle_status = 'active'
       and external_version <> p_external_version
     for update
   )
@@ -81,20 +85,25 @@ begin
 
   insert into source_items (
     workspace_id, source_connection_id, item_type, external_id,
-    external_version, lifecycle_status, occurred_at, normalized_at,
-    content_markdown, content_hash, metadata_json, sanitized_raw_json,
-    supersedes_source_item_id, visibility, owner_user_id
+    external_version, lifecycle_status, representation_kind, occurred_at,
+    source_time_start, source_time_end, normalized_at, content_markdown,
+    content_hash, metadata_json, sanitized_raw_json, supersedes_source_item_id,
+    visibility, owner_user_id, agent_session_id
   ) values (
     p_workspace_id, p_source_connection_id, p_item_type, p_external_id,
-    p_external_version, p_lifecycle_status, p_occurred_at, v_now,
-    p_content_markdown, p_content_hash, p_metadata_json, p_sanitized_raw_json,
-    v_supersede_id, p_visibility, p_owner_user_id
+    p_external_version, p_lifecycle_status, p_representation_kind, p_occurred_at,
+    p_source_time_start, p_source_time_end, v_now, p_content_markdown,
+    p_content_hash, p_metadata_json, p_sanitized_raw_json, v_supersede_id,
+    p_visibility, p_owner_user_id, p_agent_session_id
   )
   on conflict (source_connection_id, external_id, external_version)
   do update set
     item_type = excluded.item_type,
     lifecycle_status = excluded.lifecycle_status,
+    representation_kind = excluded.representation_kind,
     occurred_at = excluded.occurred_at,
+    source_time_start = excluded.source_time_start,
+    source_time_end = excluded.source_time_end,
     normalized_at = excluded.normalized_at,
     content_markdown = excluded.content_markdown,
     content_hash = excluded.content_hash,
@@ -103,7 +112,8 @@ begin
     supersedes_source_item_id =
       coalesce(source_items.supersedes_source_item_id, excluded.supersedes_source_item_id),
     visibility = excluded.visibility,
-    owner_user_id = excluded.owner_user_id
+    owner_user_id = excluded.owner_user_id,
+    agent_session_id = excluded.agent_session_id
   returning id into v_item_id;
 
   if v_prior_ids is not null then
@@ -121,8 +131,10 @@ end;
 $$;
 
 revoke all on function upsert_source_item(
-  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid
+  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid,
+  text, timestamptz, timestamptz, uuid
 ) from public;
 grant execute on function upsert_source_item(
-  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid
+  uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid,
+  text, timestamptz, timestamptz, uuid
 ) to service_role;

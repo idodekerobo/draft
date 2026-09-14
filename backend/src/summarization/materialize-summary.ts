@@ -70,6 +70,11 @@ export async function materializeSessionSummary(
       occurred_at: session.ended_at ?? session.started_at,
       content_markdown: contentMarkdown,
       content_hash: contentHash,
+      representation_kind: "summary",
+      source_time_start: session.started_at,
+      source_time_end: session.ended_at ?? session.started_at,
+      time_basis: "source_event",
+      agent_session_id: session.id,
       metadata_json: {
         agent_session_id: session.id,
         provider: session.provider,

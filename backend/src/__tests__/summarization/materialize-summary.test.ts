@@ -15,6 +15,7 @@ function baseSession(overrides: Partial<AgentSessionRow> = {}): AgentSessionRow 
     started_at: "2026-08-01T00:00:00.000Z",
     ended_at: "2026-08-01T01:00:00.000Z",
     status: "completed",
+    transcript_revision: 1,
     summary_status: "leased",
     summary_attempts: 1,
     summary_lease_until: "2026-08-01T01:30:00.000Z",

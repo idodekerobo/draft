@@ -7,13 +7,17 @@ export type AgentQueryLogCommand =
   | "sessions.search"
   | "skills.list"
   | "skills.read"
+  | "sources.search"
+  | "sources.read"
   | "mcp.context.list"
   | "mcp.context.read"
   | "mcp.sessions.list"
   | "mcp.sessions.read"
   | "mcp.sessions.search"
   | "mcp.skills.list"
-  | "mcp.skills.read";
+  | "mcp.skills.read"
+  | "mcp.sources.search"
+  | "mcp.sources.read";
 
 export interface RecordAgentQueryLogInput {
   workspaceId: string;

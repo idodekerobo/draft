@@ -4,11 +4,10 @@
 
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { renderSlackMessages } from "./render";
+import { renderSlackMessageRows } from "./render";
 import { loadSlackBatchLimits, type SlackBatchLimits } from "./config";
 import type { SlackMessageRow } from "./types";
-import { isConnectionInactiveError, upsertSourceItem } from "../upsert-source-item";
-import { insertEvent } from "../../events/insert-event";
+import { isConnectionInactiveError } from "../upsert-source-item";
 import type { ScheduledTaskRow } from "../../types/tables";
 
 function sha256(content: string): string {
@@ -40,11 +39,6 @@ interface SlackCursorShape {
   [key: string]: unknown;
 }
 
-function getChannelCursor(cursorJson: Record<string, unknown>, channelId: string): string | undefined {
-  const shape = cursorJson as SlackCursorShape;
-  return shape.channels?.[channelId]?.last_batched_message_ts;
-}
-
 function withChannelCursor(
   cursorJson: Record<string, unknown>,
   channelId: string,
@@ -63,39 +57,45 @@ function withChannelCursor(
   };
 }
 
-async function getChannelIdsWithMessages(
+async function getPendingChannelIds(
   client: SupabaseClient,
+  workspaceId: string,
   connectionId: string,
 ): Promise<string[]> {
-  const { data, error } = await client
-    .from("slack_messages")
-    .select("channel_id")
-    .eq("source_connection_id", connectionId);
-  if (error) throw error;
-  const channelIds = new Set<string>();
-  for (const row of (data ?? []) as { channel_id: string }[]) {
-    channelIds.add(row.channel_id);
+  const channelIds: string[] = [];
+  let after: string | null = null;
+  while (true) {
+    const { data, error } = await client.rpc("get_pending_slack_channel_ids", {
+      p_workspace_id: workspaceId,
+      p_source_connection_id: connectionId,
+      p_after_channel_id: after,
+      p_limit: 100,
+    });
+    if (error) throw error;
+    const page = (data ?? []) as { channel_id: string }[];
+    channelIds.push(...page.map((row) => row.channel_id));
+    if (page.length < 100) break;
+    after = page[page.length - 1]!.channel_id;
   }
-  return [...channelIds];
+  return channelIds;
 }
 
 async function getPendingMessages(
   client: SupabaseClient,
+  workspaceId: string,
   connectionId: string,
   channelId: string,
-  cursorTs: string | undefined,
 ): Promise<SlackMessageRow[]> {
-  let query = client
+  const query = client
     .from("slack_messages")
     .select("*")
+    .eq("workspace_id", workspaceId)
     .eq("source_connection_id", connectionId)
     .eq("channel_id", channelId)
-    .order("message_ts", { ascending: true });
-  // Cursor points at the last message already batched -- `>` excludes it
-  // without skipping the next one.
-  if (cursorTs !== undefined) {
-    query = query.gt("message_ts", cursorTs);
-  }
+    .is("source_item_id", null)
+    .order("message_ts", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(1000);
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as SlackMessageRow[];
@@ -114,47 +114,35 @@ async function commitBatch(
   channelId: string,
   batch: SlackMessageRow[],
   contentMarkdown: string,
-): Promise<CommittedBatch> {
+): Promise<CommittedBatch | null> {
   const first = batch[0]!;
   const last = batch[batch.length - 1]!;
 
   const externalId = `${channelId}:${first.message_ts}`;
   const contentHash = sha256(contentMarkdown);
 
-  const { item } = await upsertSourceItem(client, {
-    workspace_id: connection.workspace_id,
-    source_connection_id: connection.id,
-    item_type: "message",
-    external_id: externalId,
-    external_version: contentHash,
-    occurred_at: new Date(tsToMs(last.message_ts)).toISOString(),
-    content_markdown: contentMarkdown,
-    content_hash: contentHash,
-    metadata_json: {
+  const messageIds = batch.map((message) => message.id);
+  const { data, error } = await client.rpc("commit_slack_source_batch", {
+    p_workspace_id: connection.workspace_id,
+    p_source_connection_id: connection.id,
+    p_channel_id: channelId,
+    p_message_ids: messageIds,
+    p_external_id: externalId,
+    p_external_version: contentHash,
+    p_occurred_at: new Date(tsToMs(last.message_ts)).toISOString(),
+    p_source_time_start: new Date(tsToMs(first.message_ts)).toISOString(),
+    p_source_time_end: new Date(tsToMs(last.message_ts)).toISOString(),
+    p_content_markdown: contentMarkdown,
+    p_content_hash: contentHash,
+    p_metadata_json: {
       channel_id: channelId,
       message_count: batch.length,
       first_message_ts: first.message_ts,
       last_message_ts: last.message_ts,
     },
   });
-
-  await insertEvent(client, connection.workspace_id, {
-    event_type: "source_items_added",
-    source_connection_id: connection.id,
-    summary: `Batched ${batch.length} Slack message(s) from channel ${channelId}`,
-    payload_json: {
-      channel_id: channelId,
-      message_count: batch.length,
-      source_item_id: item.id,
-    },
-  });
-
-  const messageIds = batch.map((m) => m.id);
-  const { error: linkError } = await client
-    .from("slack_messages")
-    .update({ source_item_id: item.id })
-    .in("id", messageIds);
-  if (linkError) throw linkError;
+  if (error) throw error;
+  if ((data as { status?: string } | null)?.status === "stale_batch") return null;
 
   return {
     channelId,
@@ -181,19 +169,14 @@ async function materializeChannelBatches(
   for (const message of messages) {
     batch.push(message);
 
-    let content = await renderSlackMessages(
-      batch.map((m) => m.id),
-      client,
-    );
-    let bytes = byteLength(content);
+    let content = renderSlackMessageRows(batch);
+    const bytes = byteLength(content);
 
     if (bytes >= limits.maxContentBytes && batch.length > 1) {
       const overflow = batch.pop()!;
-      content = await renderSlackMessages(
-        batch.map((m) => m.id),
-        client,
-      );
-      committed.push(await commitBatch(client, connection, channelId, batch, content));
+      content = renderSlackMessageRows(batch);
+      const cut = await commitBatch(client, connection, channelId, batch, content);
+      if (cut) committed.push(cut);
       batch = [overflow];
       continue;
     }
@@ -205,9 +188,15 @@ async function materializeChannelBatches(
     const sizeCrossedAlone = bytes >= limits.maxContentBytes && batch.length === 1;
 
     if (countCrossed || spanCrossed || sizeCrossedAlone) {
-      committed.push(await commitBatch(client, connection, channelId, batch, content));
+      const cut = await commitBatch(client, connection, channelId, batch, content);
+      if (cut) committed.push(cut);
       batch = [];
     }
+  }
+
+  if (batch.length > 0) {
+    const cut = await commitBatch(client, connection, channelId, batch, renderSlackMessageRows(batch));
+    if (cut) committed.push(cut);
   }
 
   return { committed };
@@ -229,11 +218,10 @@ export async function materializeSlackBatches(
   let batchesCut = 0;
 
   try {
-    const channelIds = await getChannelIdsWithMessages(db, connection.id);
+    const channelIds = await getPendingChannelIds(db, connection.workspace_id, connection.id);
 
     for (const channelId of channelIds) {
-      const cursorTs = getChannelCursor(cursorJson, channelId);
-      const messages = await getPendingMessages(db, connection.id, channelId, cursorTs);
+      const messages = await getPendingMessages(db, connection.workspace_id, connection.id, channelId);
       if (messages.length === 0) continue;
 
       const { committed } = await materializeChannelBatches(

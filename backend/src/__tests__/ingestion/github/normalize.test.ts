@@ -16,7 +16,7 @@ interface FakeState {
 }
 
 // normalize.ts's own idempotency lookup and upsertSourceItem's internal
-// prior-ready-revision lookup both chain select().eq().eq().eq() on
+// prior-active-revision lookup both chain select().eq().eq().eq() on
 // source_items and differ only in their terminal call (maybeSingle vs.
 // neq), so the fake exposes both terminals rather than guessing call order.
 function createFakeClientForUpsert(existingItem: { external_version: string } | null = null) {

@@ -63,7 +63,7 @@ interface LiveFirefliesSourceItem {
 }
 
 /**
- * Finds the workspace's current `ready` source_item for a Fireflies meeting
+ * Finds the workspace's current active source_item for a Fireflies meeting
  * across every Fireflies connection, not just the caller's -- Fireflies'
  * Team feature has one bot join on behalf of whoever invited it first, so
  * teammates on the same Fireflies team can each independently fetch the
@@ -89,7 +89,7 @@ async function findLiveFirefliesSourceItem(
     .select("id, source_connection_id, visibility")
     .eq("workspace_id", workspaceId)
     .eq("external_id", meetingId)
-    .eq("lifecycle_status", "ready")
+    .eq("lifecycle_status", "active")
     .in("source_connection_id", connectionIds)
     .maybeSingle();
   if (error) throw error;
@@ -145,6 +145,10 @@ export async function ingestFirefliesMeeting(
     occurred_at: meeting.occurredAt,
     content_markdown: contentMarkdown,
     content_hash: contentHash,
+    representation_kind: "summary",
+    source_time_start: meeting.occurredAt,
+    source_time_end: meeting.occurredAt,
+    time_basis: "source_event",
     metadata_json: {
       title: meeting.title,
       attendees: meeting.attendees,

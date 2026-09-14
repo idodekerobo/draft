@@ -142,6 +142,38 @@ draft sessions read <session-id> --transcript
 
 Session listing and reading are workspace-scoped and require authentication.
 
+## Sources
+
+Context is Draft's maintained business map. Sources are direct evidence across providers — search and read them when the map is incomplete or a claim needs direct support.
+
+```bash
+draft sources search "renewal date" --provider slack --since 2026-08-01
+draft sources search "billing bug" --type coding_session,github_event --limit 20
+draft sources read <source_item_id>
+draft sources read <source_item_id> --representation transcript
+```
+
+### `draft sources search "<query>" [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>] [--limit <n>] [--max-bytes <n>] [--cursor <opaque>] [--json]`
+
+Full-text searches each source item's stored default representation — a summary, rendered source content, or mixed content, depending on the provider. A readable original transcript may not be searchable: search only ever covers what was captured as the default representation.
+
+- `--provider <p>` — restrict to one provider (e.g. `slack`, `github`, `fireflies`, `granola`, `coding_session`).
+- `--type <t[,t...]>` — restrict to one or more item types, comma-separated.
+- `--since` / `--until` — UTC timestamps; filters on source-time overlap, not ingestion time.
+- `--limit <n>` — default 10, maximum 100.
+- `--max-bytes <n>` — caps the serialized response; default 32,768, accepted range 1,024–262,144.
+- `--cursor <opaque>` — continue a previous page. Cursors are versioned and bound to the exact query/filters that produced them; changing any filter, or a source changing underneath the page, fails the continuation explicitly (`cursor_mismatch`, `source_changed`, `source_superseded`) rather than silently returning different results.
+
+Results are ranked by relevance, then recency, and include full summary content up to 2,048 bytes or an excerpt beyond that. `consistency: "live"` on every response — there is no cached or eventually-consistent mode.
+
+### `draft sources read <source_item_id> [--representation default|transcript|messages|structured] [--max-bytes <n>] [--cursor <opaque>] [--json]`
+
+Reads one source item's content directly, bypassing search ranking. `--representation` selects which captured form to read — `default` (the summary/rendered/mixed content search indexes), or a provider-specific `transcript`/`messages`/`structured` form when one was captured. Requesting a representation that wasn't captured for that source returns `representation_unavailable` — Draft never substitutes a summary for a transcript.
+
+Large content pages through `--cursor`, the same continuation-and-invalidation model as search: a cursor is bound to the specific source version and representation it was issued for, so an edit or version change between pages is reported (`source_changed`/`source_superseded`), not silently followed.
+
+The calling agent owns investigation, comparison across sources, and answer generation — `sources search`/`sources read` return evidence only.
+
 ## Output and updates
 
 Commands support --json for machine-readable output. draft update checks for and installs a newer compiled release. Updates replace the CLI binary; they do not replace the server-side workspace.

@@ -29,6 +29,8 @@ export function printHelp(): void {
     ["context list",               "List available context dimensions"],
     ["context read --dimension <name>", "Print one or more context dimensions"],
     ["context read --all",         "Print every context dimension"],
+    ["sources search \"<query>\"", "Search cross-provider source evidence"],
+    ["sources read <source_item_id>", "Read a source or an available original representation"],
     ["integrations list",          "List hosted integration status"],
     ["integrations connect <provider>", "Connect github, linear, claude-code, slack, or fireflies"],
     ["integrations disconnect <provider>", "Disconnect GitHub, Fireflies, Linear, or Slack"],
@@ -53,7 +55,7 @@ export function printHelp(): void {
   }
   console.log("");
   console.log(`Getting started: run ${cyan("draft auth login")} to sign in,`);
-  console.log(`then ${cyan("draft context list")} to see what's available.`);
+  console.log(`then ${cyan("draft context list")} for the maintained map, or ${cyan("draft sources search \"<query>\"")} for evidence.`);
   console.log("");
   console.log(`Run ${cyan("draft <command> --json")} for machine-readable output.`);
   console.log(`Run ${cyan("draft --version")} to print the installed CLI version.`);

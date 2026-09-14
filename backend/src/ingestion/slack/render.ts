@@ -124,15 +124,7 @@ async function fetchMessages(
 
 // ── Main render ────────────────────────────────────────────────────────────────
 
-export async function renderSlackMessages(
-  messageIds: string[],
-  client?: SupabaseClient,
-): Promise<string> {
-  if (messageIds.length === 0) return "";
-
-  const db = client ?? (await import("../../db/client")).serviceClient;
-  const rawMessages = await fetchMessages(db, messageIds);
-
+export function renderSlackMessageRows(rawMessages: SlackMessageRow[]): string {
   // Sort by message_ts ascending ourselves -- don't trust caller order, and
   // don't trust the order rows come back from Postgres.
   const messages = [...rawMessages].sort((a, b) => a.message_ts.localeCompare(b.message_ts));
@@ -161,23 +153,22 @@ export async function renderSlackMessages(
     "---",
   ];
 
-  // Build reply map: thread root ts -> reply messages (everything after root)
-  const replyMap = new Map<string, SlackMessageRow[]>();
-  for (const t of threads) {
-    replyMap.set(t.thread_ts, t.messages.slice(1));
-  }
+  const groups: Array<{ firstTs: string; thread?: Thread; message?: SlackMessageRow }> = [
+    ...threads.map((thread) => ({ firstTs: thread.messages[0]!.message_ts, thread })),
+    ...standalone.map((message) => ({ firstTs: message.message_ts, message })),
+  ].sort((a, b) => a.firstTs.localeCompare(b.firstTs));
 
-  // Render all root messages in chronological order; nest replies inline.
-  const roots: SlackMessageRow[] = [
-    ...threads.map((t) => t.messages[0]).filter((m): m is SlackMessageRow => m !== undefined),
-    ...standalone,
-  ].sort((a, b) => a.message_ts.localeCompare(b.message_ts));
-
-  for (const root of roots) {
+  for (const group of groups) {
     sections.push("");
-    sections.push(renderMessage(root));
-
-    const replies = replyMap.get(root.message_ts) ?? [];
+    if (group.message) {
+      sections.push(renderMessage(group.message));
+      continue;
+    }
+    const thread = group.thread!;
+    const root = thread.messages.find((message) => message.message_ts === thread.thread_ts);
+    const replies = thread.messages.filter((message) => message.id !== root?.id);
+    if (root) sections.push(renderMessage(root));
+    else sections.push(`**Thread ${thread.thread_ts} (parent outside this source)**`);
     for (const reply of replies) {
       sections.push("");
       sections.push(renderReply(reply));
@@ -185,4 +176,13 @@ export async function renderSlackMessages(
   }
 
   return sections.join("\n");
+}
+
+export async function renderSlackMessages(
+  messageIds: string[],
+  client?: SupabaseClient,
+): Promise<string> {
+  if (messageIds.length === 0) return "";
+  const db = client ?? (await import("../../db/client")).serviceClient;
+  return renderSlackMessageRows(await fetchMessages(db, messageIds));
 }

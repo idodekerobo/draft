@@ -7,8 +7,12 @@ create table source_items (
   external_id                  text not null,
   external_version             text not null,
   lifecycle_status             text not null default 'received'
-                                 check (lifecycle_status in ('received', 'normalized', 'ready', 'superseded', 'deleted', 'quarantined')),
+                                 check (lifecycle_status in ('received', 'normalized', 'active', 'superseded', 'deleted', 'quarantined')),
+  representation_kind          text not null default 'unknown'
+                                 check (representation_kind in ('summary', 'source', 'mixed', 'unknown')),
   occurred_at                  timestamptz not null,
+  source_time_start            timestamptz,
+  source_time_end              timestamptz,
   received_at                  timestamptz not null default now(),
   normalized_at                timestamptz,
   content_markdown             text,
@@ -16,6 +20,7 @@ create table source_items (
   metadata_json                jsonb not null default '{}',
   sanitized_raw_json           jsonb,
   supersedes_source_item_id    uuid,
+  agent_session_id             uuid,
   -- Snapshotted at ingest, not a live join to
   -- source_connections.connected_by_user_id (that FK is nullable and
   -- cleared on user deletion). Only multi-account providers (fireflies)
@@ -33,16 +38,21 @@ create table source_items (
     references source_connections(id, workspace_id) on delete cascade,
   foreign key (supersedes_source_item_id, workspace_id)
     references source_items(id, workspace_id) on delete restrict,
+  foreign key (agent_session_id, workspace_id)
+    references agent_sessions(id, workspace_id) on delete restrict,
+  check (source_time_start is null or source_time_end is null or source_time_start <= source_time_end),
   check (
-    lifecycle_status not in ('normalized', 'ready', 'superseded')
+    lifecycle_status not in ('normalized', 'active', 'superseded')
     or (content_markdown is not null and content_hash is not null)
   )
 );
 
--- For a future `sessions search` (step 7) — index only, no search command
--- built yet.
 create index source_items_content_markdown_gin_idx
   on source_items using gin (to_tsvector('english', content_markdown));
+
+create index source_items_agent_session_idx
+  on source_items (workspace_id, agent_session_id)
+  where agent_session_id is not null;
 
 alter table source_items enable row level security;
 

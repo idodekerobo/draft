@@ -13,6 +13,8 @@ create table agent_sessions (
   started_at            timestamptz not null,
   ended_at              timestamptz,
   status                text not null,
+  transcript_revision   bigint not null default 1
+                          check (transcript_revision > 0),
   -- Summarization lease + retry state. An attempt timestamp alone is a
   -- lease with no expiry: a worker that dies mid-run would wedge the
   -- session forever without summary_lease_until.

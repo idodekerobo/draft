@@ -40,7 +40,7 @@ as $$
   from source_items si
   where si.workspace_id = p_workspace_id
     and si.item_type = 'coding_session'
-    and si.lifecycle_status = 'ready'
+    and si.lifecycle_status = 'active'
     -- Defense-in-depth: coding_session items are always 'shared' today
     -- (only fireflies sets 'private'), but this keeps a future item_type
     -- expansion from silently reopening the visibility leak this plan

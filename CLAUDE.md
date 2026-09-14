@@ -64,6 +64,19 @@ context about the product, team, and priorities — whenever you need it.
 - `draft context read --dimension <name>` (repeatable) or `--all` — read current context.
 - `draft --help` — see all available commands.
 
+### Source evidence
+
+Context is Draft's maintained business map. Sources are direct evidence across providers.
+Use context for orientation, then search and read sources when the map is incomplete
+or when a claim needs direct support.
+
+- `draft sources search "<query>" [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>]` — search stored default representations.
+- `draft sources read <source_item_id> [--representation default|transcript|messages|structured]` — read selected evidence with bounded continuation.
+
+A readable original transcript may not be searchable: default representations vary by
+provider and can be summaries, rendered source content, or mixed content. Draft returns
+evidence; the calling agent owns investigation, comparison, and answer generation.
+
 ### Coding sessions
 
 - `draft sessions list [--provider <p>] [--user <email>] [--since <ISO>]` — list captured sessions.
@@ -80,12 +93,14 @@ name is ambiguous.
 ### Hosted integrations
 
 - `draft integrations list` — see which of GitHub, Linear, Slack, Fireflies,
-  and Claude Code are connected.
-- `draft integrations connect <github|linear|slack|fireflies|claude-code>` —
+  Granola, and Claude Code are connected.
+- `draft integrations connect <github|linear|slack|fireflies|granola|claude-code>` —
   connect one. These need a human at a terminal (browser handoffs, hidden
   credential prompts) — don't run this on the user's behalf unless asked.
-- `draft integrations disconnect <github|linear|slack|fireflies>` —
-  disconnect one.
+  Granola also takes `--workspace-key` to connect the workspace's shared key
+  instead of a personal one, and requires a Granola Business/Enterprise plan.
+- `draft integrations disconnect <github|linear|slack|fireflies|granola>` —
+  disconnect one (Granola also takes `--workspace-key`).
 
 ### Skills
 

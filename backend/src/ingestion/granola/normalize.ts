@@ -39,7 +39,7 @@ interface LiveGranolaSourceItem {
 }
 
 /**
- * Finds the workspace's current `ready` source_item for a Granola note
+ * Finds the workspace's current active source_item for a Granola note
  * across every Granola connection, not just the caller's -- personal and
  * workspace scopes can both see the same note.
  */
@@ -63,7 +63,7 @@ async function findLiveGranolaSourceItem(
     .select("id, source_connection_id, visibility")
     .eq("workspace_id", workspaceId)
     .eq("external_id", noteId)
-    .eq("lifecycle_status", "ready")
+    .eq("lifecycle_status", "active")
     .in("source_connection_id", connectionIds)
     .maybeSingle();
   if (error) throw error;
@@ -121,6 +121,10 @@ export async function ingestGranolaNote(
     occurred_at: note.created_at ?? new Date().toISOString(),
     content_markdown: contentMarkdown,
     content_hash: contentHash,
+    representation_kind: note.transcript?.length ? "mixed" : "summary",
+    source_time_start: note.created_at ?? null,
+    source_time_end: note.created_at ?? null,
+    time_basis: note.created_at ? "source_event" : "ingestion_fallback",
     metadata_json: {
       title: note.title,
       granola_note_id: noteId,

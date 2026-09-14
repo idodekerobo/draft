@@ -325,14 +325,14 @@ describe("integrations help and completion", () => {
   it("includes current top-level commands and integrations choices in bash and zsh completion", async () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
-    expect(bash.stdout).toContain('commands="add auth context sessions integrations update completion"');
+    expect(bash.stdout).toContain('commands="add auth context sources sessions skills integrations update completion"');
     expect(bash.stdout).toContain('compgen -W "list connect disconnect"');
     expect(bash.stdout).toContain('compgen -W "github"');
     expect(bash.stdout).toContain('compgen -W "github fireflies linear slack granola"');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
     expect(zsh.exitCode).toBe(0);
-    for (const command of ["add:", "auth:", "context:", "sessions:", "integrations:", "update:", "completion:"]) {
+    for (const command of ["add:", "auth:", "context:", "sources:", "sessions:", "skills:", "integrations:", "update:", "completion:"]) {
       expect(zsh.stdout).toContain(`'${command}`);
     }
     expect(zsh.stdout).toContain("'list:List hosted integrations'");

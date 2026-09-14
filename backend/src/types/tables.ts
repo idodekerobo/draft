@@ -126,7 +126,10 @@ export interface SourceItemRow {
   external_id: string;
   external_version: string;
   lifecycle_status: SourceItemLifecycleStatus;
+  representation_kind: "summary" | "source" | "mixed" | "unknown";
   occurred_at: string;
+  source_time_start: string | null;
+  source_time_end: string | null;
   received_at: string;
   normalized_at: string | null;
   content_markdown: string | null;
@@ -134,6 +137,7 @@ export interface SourceItemRow {
   metadata_json: Record<string, unknown>;
   sanitized_raw_json: unknown | null;
   supersedes_source_item_id: string | null;
+  agent_session_id: string | null;
   visibility: SourceItemVisibility;
   owner_user_id: string | null;
   created_at: string;
@@ -264,6 +268,7 @@ export interface AgentSessionRow {
   started_at: string;
   ended_at: string | null;
   status: string;
+  transcript_revision: number;
   summary_status: AgentSessionSummaryStatus;
   summary_attempts: number;
   summary_lease_until: string | null;

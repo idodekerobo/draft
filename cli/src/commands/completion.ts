@@ -30,7 +30,7 @@ _draft_completion() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context sessions integrations update completion"
+  commands="add auth context sources sessions skills integrations update completion"
 
   case "\$prev" in
     draft)
@@ -49,8 +49,16 @@ _draft_completion() {
       COMPREPLY=( $(compgen -W "list read" -- "\$cur") )
       return 0
       ;;
+    sources)
+      COMPREPLY=( $(compgen -W "search read" -- "$cur") )
+      return 0
+      ;;
     sessions)
       COMPREPLY=( $(compgen -W "enable disable status list read search" -- "\$cur") )
+      return 0
+      ;;
+    skills)
+      COMPREPLY=( $(compgen -W "list read add update remove" -- "\$cur") )
       return 0
       ;;
     integrations)
@@ -102,7 +110,9 @@ _draft() {
         'add:Add Draft to a CLI tool'
         'auth:Authenticate with the Draft control plane'
         'context:Read workspace context'
+        'sources:Search and read cross-provider source evidence'
         'sessions:Manage coding session capture'
+        'skills:Discover and manage the company skill marketplace'
         'integrations:Manage hosted integrations'
         'update:Update the Draft CLI'
         'completion:Generate shell completion script'
@@ -123,8 +133,16 @@ _draft() {
           local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions')
           _describe 'subcommand' subcmds
           ;;
+        sources)
+          local subcmds=('search:Search source evidence' 'read:Read one source representation')
+          _describe 'subcommand' subcmds
+          ;;
         sessions)
           local subcmds=('enable:Enable session capture' 'disable:Disable session capture' 'status:Show capture status' 'list:List sessions' 'read:Read a session' 'search:Search sessions')
+          _describe 'subcommand' subcmds
+          ;;
+        skills)
+          local subcmds=('list:List the skill marketplace' 'read:Read one skill' 'add:Add a skill' 'update:Update a skill' 'remove:Remove a skill')
           _describe 'subcommand' subcmds
           ;;
         integrations)

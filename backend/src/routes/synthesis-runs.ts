@@ -2,7 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { loadSandboxDeploymentConfig } from "../sandbox";
-import { getReadySourceItemIds } from "../synthesis/get-ready-source-items";
+import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
@@ -92,7 +92,7 @@ export const POST = withAuth<SynthesisRunsRequest>(async (req, caller) => {
     body = parsed;
   }
 
-  const sourceItemIds = await getReadySourceItemIds(req.params.id, serviceClient);
+  const sourceItemIds = await getPendingSynthesisSourceItemIds(req.params.id, serviceClient);
   if (sourceItemIds.length === 0) {
     return Response.json({ ok: false, reason: "no_ready_items" });
   }
