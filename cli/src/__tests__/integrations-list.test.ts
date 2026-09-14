@@ -54,6 +54,13 @@ describe("draft integrations list", () => {
           last_success_at: "2026-08-20T11:00:00Z",
           channel_ids: ["C1", "C2"],
           config_json: { token: "secret-canary" },
+          backfill: {
+            status: "partial",
+            cutoff: "2026-08-13T00:00:00Z",
+            completed_at: null,
+            last_error: "rate limited",
+            internal_debug_field: "must-filter-canary",
+          },
         }),
       ],
     });
@@ -84,6 +91,12 @@ describe("draft integrations list", () => {
           last_success_at: "2026-08-20T11:00:00Z",
           last_error_at: null,
           channel_ids: ["C1", "C2"],
+          backfill: {
+            status: "partial",
+            cutoff: "2026-08-13T00:00:00Z",
+            completed_at: null,
+            last_error: "rate limited",
+          },
         },
         {
           provider: "linear",

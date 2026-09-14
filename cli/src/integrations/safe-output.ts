@@ -157,6 +157,15 @@ function safeConnection(value: HostedConnectionSummary): HostedConnectionSummary
     result.channel_ids = Array.isArray(value.channel_ids)
       ? value.channel_ids.filter((item): item is string => typeof item === "string")
       : [];
+    const backfill = value.backfill;
+    if (backfill && typeof backfill === "object" && typeof backfill.status === "string") {
+      result.backfill = {
+        status: backfill.status,
+        cutoff: typeof backfill.cutoff === "string" ? backfill.cutoff : null,
+        completed_at: typeof backfill.completed_at === "string" ? backfill.completed_at : null,
+        last_error: typeof backfill.last_error === "string" ? backfill.last_error : null,
+      };
+    }
   }
   return result;
 }
@@ -325,6 +334,15 @@ export class IntegrationOutput {
     if (event.status === "ok") {
       for (const connection of payload.connections as HostedConnectionSummary[]) {
         this.stdout(`${PROVIDER_LABELS[connection.provider]}: ${connection.status}\n`);
+        if (connection.provider === "slack" && connection.backfill) {
+          const { status, completed_at, last_error } = connection.backfill;
+          const detail = status === "completed" && completed_at
+            ? `completed ${completed_at}`
+            : last_error
+              ? `${status} (${last_error})`
+              : status;
+          this.stdout(`  7-day history backfill: ${detail}\n`);
+        }
       }
       return 0;
     }

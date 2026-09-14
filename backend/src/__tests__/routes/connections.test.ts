@@ -803,7 +803,9 @@ describe("workspace connection routes", () => {
     expect(state.connections[0]?.config_json).toEqual({ channel_ids: ["C-one", "C-two"] });
     expect(slackJoinCalls).toEqual(["C-one", "C-two"]);
     expect(restartedSlackListeners).toEqual(["connection-new"]);
-    expect(state.scheduledTasks).toHaveLength(1);
+    // One ingest_source task (batch materialization) and one slack_backfill task.
+    expect(state.scheduledTasks).toHaveLength(2);
+    expect(state.scheduledTasks.map((task) => task.task_type).sort()).toEqual(["ingest_source", "slack_backfill"]);
     const credential = state.credentials[0];
     expect(credential?.encryption_key_version).toBe("v1");
     expect(JSON.parse(decryptCredentialPayload(credential?.encrypted_payload, "v1"))).toEqual({

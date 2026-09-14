@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { OccurrenceAlreadyDispatchedError } from "../synthesis/prepare-run";
 import { materializeSlackBatches } from "../ingestion/slack/materialize-batches";
+import { runSlackBackfillDispatch } from "../ingestion/slack/backfill";
 import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
@@ -12,6 +13,7 @@ import type { ScheduledTaskRow } from "../types/tables";
 // substitute fakes without mock.module's cross-file leakage.
 export interface DispatchDependencies {
   materializeSlackBatches: typeof materializeSlackBatches;
+  runSlackBackfillDispatch: typeof runSlackBackfillDispatch;
   launchSynthesisRun: typeof launchSynthesisRun;
   getPendingSynthesisSourceItemIds: typeof getPendingSynthesisSourceItemIds;
   launchSummarizationBatch: typeof launchSummarizationBatch;
@@ -19,6 +21,7 @@ export interface DispatchDependencies {
 
 const defaultDependencies: DispatchDependencies = {
   materializeSlackBatches,
+  runSlackBackfillDispatch,
   launchSynthesisRun,
   getPendingSynthesisSourceItemIds,
   launchSummarizationBatch,
@@ -95,6 +98,58 @@ async function dispatchSynthesizeWorkspace(
   }
 }
 
+// No retry here either -- the backfill's own cursor_json checkpoint after
+// every page (and its 429 backoff via next_eligible_attempt_at) already
+// make a crash or a rate limit resumable from the next scheduled tick.
+async function dispatchSlackBackfill(
+  task: ScheduledTaskRow,
+  client: SupabaseClient,
+  deps: DispatchDependencies,
+): Promise<void> {
+  if (!task.source_connection_id) {
+    throw new Error(`slack_backfill task ${task.id} has no source_connection_id`);
+  }
+
+  const { data, error } = await client
+    .from("source_connections")
+    .select("id, workspace_id, status, credential_id, config_json, cursor_json, workspaces!inner(organization_id)")
+    .eq("id", task.source_connection_id)
+    .eq("workspace_id", task.workspace_id)
+    .eq("provider", "slack")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return;
+
+  const row = data as unknown as {
+    id: string;
+    workspace_id: string;
+    status: string;
+    credential_id: string | null;
+    config_json: Record<string, unknown> | null;
+    cursor_json: Record<string, unknown> | null;
+    workspaces: { organization_id: string } | { organization_id: string }[] | null;
+  };
+  if (row.status !== "active" && row.status !== "degraded") return;
+  if (!row.credential_id) return;
+
+  const organizationId = Array.isArray(row.workspaces)
+    ? row.workspaces[0]?.organization_id
+    : row.workspaces?.organization_id;
+  if (!organizationId) return;
+
+  await deps.runSlackBackfillDispatch(
+    {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      organization_id: organizationId,
+      credential_id: row.credential_id,
+      config_json: row.config_json,
+      cursor_json: row.cursor_json,
+    },
+    client,
+  );
+}
+
 // No retry here either -- summarization sessions are individually leased
 // (agent_sessions.summary_status/summary_lease_until), so a crash just
 // leaves them for the next tick's claim to pick back up.
@@ -144,6 +199,10 @@ export async function dispatchScheduledTask(
   }
   if (fresh.task_type === "summarize_sessions") {
     await dispatchSummarizeSessions(fresh, options.config, options.client, deps);
+    return fresh;
+  }
+  if (fresh.task_type === "slack_backfill") {
+    await dispatchSlackBackfill(fresh, options.client, deps);
     return fresh;
   }
   // rebuild_projection: no projection exists yet -- fail loud, don't silently succeed.

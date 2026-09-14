@@ -271,9 +271,15 @@ unless you're prepared to babysit the prompts.
 
 Lists all six providers and their status — `disconnected`, `pending`,
 `connected`, `degraded`, or `error`. Slack connections also report their
-current `channel_ids`. Granola is the one provider that can list more than
-one live connection at once: a personal row per connecting teammate, plus at
-most one workspace-key row (`account_kind: "workspace"`, no `is_mine`).
+current `channel_ids` and a `backfill` object (`status`, `cutoff`,
+`completed_at`, `last_error`) tracking the seven-day history backfill that
+starts automatically when a Slack connection activates. `status` is
+`in_progress` while paging through history/replies, `partial` if the last
+attempt hit a rate limit or error (retried automatically), and `completed`
+once every configured channel is covered back to the fixed `cutoff`.
+Granola is the one provider that can list more than one live connection at
+once: a personal row per connecting teammate, plus at most one
+workspace-key row (`account_kind: "workspace"`, no `is_mine`).
 
 **Fireflies and Granola stay `pending` until they have proof the webhook
 actually works** — not just until credentials are stored. The backend flips

@@ -12,6 +12,7 @@ import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
+import { initializeSlackBackfillForConnection, registerSlackBackfillTask } from "../ingestion/slack/backfill";
 import {
   joinPublicSlackChannels,
   listPublicSlackChannels,
@@ -150,9 +151,30 @@ type ListedConnectionRow = Pick<
   | "last_success_at"
   | "last_error_at"
   | "config_json"
+  | "cursor_json"
   | "updated_at"
   | "connected_by_user_id"
 >;
+
+interface SlackBackfillSummary {
+  status: string;
+  cutoff: string | null;
+  completed_at: string | null;
+  last_error: string | null;
+}
+
+function slackBackfillSummary(cursorJson: SourceConnectionRow["cursor_json"]): SlackBackfillSummary | null {
+  const raw = (cursorJson as { slack_backfill?: unknown } | null)?.slack_backfill;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const state = raw as Record<string, unknown>;
+  if (typeof state.status !== "string") return null;
+  return {
+    status: state.status,
+    cutoff: typeof state.cutoff === "string" ? state.cutoff : null,
+    completed_at: typeof state.completed_at === "string" ? state.completed_at : null,
+    last_error: typeof state.last_error === "string" ? state.last_error : null,
+  };
+}
 
 function connectionSelectionRank(status: SourceConnectionRow["status"]): number {
   if (status === "active" || status === "degraded") return 0;
@@ -259,7 +281,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
   // separately, since it's the same table and workspace filter either way.
   const { data, error } = await serviceClient
     .from("source_connections")
-    .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, updated_at, connected_by_user_id")
+    .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, cursor_json, updated_at, connected_by_user_id")
     .eq("workspace_id", req.params.id)
     .in("provider", [...SINGLETON_CONNECTION_PROVIDERS]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
@@ -283,6 +305,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     last_success_at: string | null;
     last_error_at: string | null;
     channel_ids?: string[];
+    backfill?: SlackBackfillSummary;
     id?: string;
     is_mine?: boolean;
     account_kind?: "personal" | "workspace";
@@ -302,6 +325,9 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
                   (value): value is string => typeof value === "string",
                 )
               : [],
+            ...(slackBackfillSummary(connection.cursor_json)
+              ? { backfill: slackBackfillSummary(connection.cursor_json)! }
+              : {}),
           }
         : {}),
     }];
@@ -1023,6 +1049,14 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       // to drop events -- it's the only ingestion path today and untested so far.
     } else if (isSlack) {
       await registerSlackBatchMaterializationTask(
+        { id: connectionId, workspace_id: req.params.id },
+        serviceClient,
+      );
+      await initializeSlackBackfillForConnection(
+        { id: connectionId, workspace_id: req.params.id },
+        serviceClient,
+      );
+      await registerSlackBackfillTask(
         { id: connectionId, workspace_id: req.params.id },
         serviceClient,
       );

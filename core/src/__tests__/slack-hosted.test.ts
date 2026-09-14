@@ -3,12 +3,15 @@ import { readFileSync } from "fs";
 import {
   buildSlackManifestUrl,
   fetchSlackChannels,
+  fetchSlackConversationHistory,
+  fetchSlackConversationReplies,
   joinPublicSlackChannels,
   leavePublicSlackChannels,
   listPublicSlackChannels,
   listSlackChannels,
   slackManifest,
   SlackProviderError,
+  SlackRateLimitedError,
   type SlackProviderErrorCode,
   validateSlackTokenFormat,
 } from "../integrations/slack-hosted";
@@ -207,5 +210,103 @@ describe("hosted Slack channel membership", () => {
         expect(JSON.stringify(error)).not.toContain(token);
       }
     }
+  });
+});
+
+describe("Slack conversation history/replies", () => {
+  it("fetchSlackConversationHistory sends oldest/cursor/limit and parses has_more + next_cursor", async () => {
+    const fetchFn = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/api/conversations.history");
+      expect(url.searchParams.get("channel")).toBe("C1");
+      expect(url.searchParams.get("oldest")).toBe("1700000000.000000");
+      expect(url.searchParams.get("cursor")).toBe("page-2");
+      expect(url.searchParams.get("limit")).toBe("50");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer xoxb-token");
+      return Response.json({
+        ok: true,
+        messages: [{ ts: "1", text: "hi" }],
+        has_more: true,
+        response_metadata: { next_cursor: "page-3" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await fetchSlackConversationHistory(
+      "xoxb-token",
+      "C1",
+      { oldest: "1700000000.000000", cursor: "page-2", limit: 50 },
+      fetchFn,
+    );
+    expect(result).toEqual({
+      messages: [{ ts: "1", text: "hi" }],
+      hasMore: true,
+      nextCursor: "page-3",
+    });
+  });
+
+  it("fetchSlackConversationHistory reports no next cursor at the last page", async () => {
+    const fetchFn = mock(async () => Response.json({ ok: true, messages: [], has_more: false })) as unknown as typeof fetch;
+    const result = await fetchSlackConversationHistory("xoxb-token", "C1", {}, fetchFn);
+    expect(result).toEqual({ messages: [], hasMore: false, nextCursor: null });
+  });
+
+  it("fetchSlackConversationReplies sends channel/ts/cursor", async () => {
+    const fetchFn = mock(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/api/conversations.replies");
+      expect(url.searchParams.get("channel")).toBe("C1");
+      expect(url.searchParams.get("ts")).toBe("100.0");
+      expect(url.searchParams.get("cursor")).toBe("r-cursor");
+      return Response.json({
+        ok: true,
+        messages: [{ ts: "100.0" }, { ts: "100.1", text: "reply" }],
+        response_metadata: { next_cursor: "" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await fetchSlackConversationReplies("xoxb-token", "C1", "100.0", { cursor: "r-cursor" }, fetchFn);
+    expect(result).toEqual({
+      messages: [{ ts: "100.0" }, { ts: "100.1", text: "reply" }],
+      hasMore: false,
+      nextCursor: null,
+    });
+  });
+
+  it("throws SlackRateLimitedError with the Retry-After header on HTTP 429", async () => {
+    const fetchFn = mock(async () => new Response("rate limited", {
+      status: 429,
+      headers: { "Retry-After": "17" },
+    })) as unknown as typeof fetch;
+
+    await expect(fetchSlackConversationHistory("xoxb-token", "C1", {}, fetchFn)).rejects.toMatchObject({
+      retryAfterSeconds: 17,
+    });
+  });
+
+  it("falls back to a default retry delay when Retry-After is missing or invalid", async () => {
+    const fetchFn = mock(async () => new Response("rate limited", { status: 429 })) as unknown as typeof fetch;
+    let error: unknown;
+    try {
+      await fetchSlackConversationReplies("xoxb-token", "C1", "100.0", {}, fetchFn);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(SlackRateLimitedError);
+    expect((error as SlackRateLimitedError).retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it("treats an ok:false error:\"ratelimited\" envelope the same as an HTTP 429", async () => {
+    const fetchFn = mock(async () => Response.json({ ok: false, error: "ratelimited" })) as unknown as typeof fetch;
+    await expect(fetchSlackConversationHistory("xoxb-token", "C1", {}, fetchFn)).rejects.toBeInstanceOf(SlackRateLimitedError);
+  });
+
+  it("raises a stable provider error code for a malformed history/replies response", async () => {
+    const fetchFn = mock(async () => Response.json({ ok: true, messages: "not-an-array" })) as unknown as typeof fetch;
+    await expect(fetchSlackConversationHistory("xoxb-token", "C1", {}, fetchFn)).rejects.toMatchObject({
+      code: "slack_history_failed",
+    });
+    await expect(fetchSlackConversationReplies("xoxb-token", "C1", "1.0", {}, fetchFn)).rejects.toMatchObject({
+      code: "slack_replies_failed",
+    });
   });
 });

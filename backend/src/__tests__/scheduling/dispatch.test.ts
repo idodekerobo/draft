@@ -39,15 +39,12 @@ function fakeClient(scheduledTaskRow: ScheduledTaskRow | null, connectionRow?: R
         };
       }
       if (table === "source_connections") {
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                single: async () => ({ data: connectionRow, error: null }),
-              }),
-            }),
-          }),
+        const chain = {
+          eq: () => chain,
+          single: async () => ({ data: connectionRow, error: null }),
+          maybeSingle: async () => ({ data: connectionRow ?? null, error: null }),
         };
+        return { select: () => chain };
       }
       throw new Error(`Unexpected table ${table}`);
     },
@@ -61,6 +58,7 @@ function neverCalledDeps(): DispatchDependencies {
   };
   return {
     materializeSlackBatches: mock(shouldNotBeCalled) as unknown as DispatchDependencies["materializeSlackBatches"],
+    runSlackBackfillDispatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["runSlackBackfillDispatch"],
     launchSynthesisRun: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSynthesisRun"],
     getPendingSynthesisSourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"],
     launchSummarizationBatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSummarizationBatch"],
@@ -247,5 +245,74 @@ describe("dispatchScheduledTask", () => {
     expect(deps.launchSummarizationBatch).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: task.workspace_id }),
     );
+  });
+
+  it("routes slack_backfill to the backfill dispatcher with a resolved organization_id", async () => {
+    const task = baseTask({
+      task_type: "slack_backfill",
+      source_connection_id: "conn-3",
+      schedule_kind: "interval",
+      cron_expression: null,
+      interval_seconds: 60,
+    });
+    const client = fakeClient(task, {
+      id: "conn-3",
+      workspace_id: task.workspace_id,
+      status: "active",
+      credential_id: "cred-1",
+      config_json: { channel_ids: ["C1"] },
+      cursor_json: {},
+      workspaces: { organization_id: "org-1" },
+    });
+    const deps = neverCalledDeps();
+    deps.runSlackBackfillDispatch = mock(async () => undefined) as unknown as DispatchDependencies["runSlackBackfillDispatch"];
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.runSlackBackfillDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "conn-3",
+        workspace_id: task.workspace_id,
+        organization_id: "org-1",
+        credential_id: "cred-1",
+      }),
+      client,
+    );
+  });
+
+  it("skips a slack_backfill dispatch when the connection has no credential yet", async () => {
+    const task = baseTask({ task_type: "slack_backfill", source_connection_id: "conn-4" });
+    const client = fakeClient(task, {
+      id: "conn-4",
+      workspace_id: task.workspace_id,
+      status: "active",
+      credential_id: null,
+      config_json: {},
+      cursor_json: {},
+      workspaces: { organization_id: "org-1" },
+    });
+    const deps = neverCalledDeps();
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.runSlackBackfillDispatch).not.toHaveBeenCalled();
+  });
+
+  it("skips a slack_backfill dispatch for a revoked connection", async () => {
+    const task = baseTask({ task_type: "slack_backfill", source_connection_id: "conn-5" });
+    const client = fakeClient(task, {
+      id: "conn-5",
+      workspace_id: task.workspace_id,
+      status: "revoked",
+      credential_id: "cred-1",
+      config_json: {},
+      cursor_json: {},
+      workspaces: { organization_id: "org-1" },
+    });
+    const deps = neverCalledDeps();
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.runSlackBackfillDispatch).not.toHaveBeenCalled();
   });
 });

@@ -22,9 +22,17 @@ export interface RawHostedConnectionSummary {
   last_success_at?: unknown;
   last_error_at?: unknown;
   channel_ids?: unknown;
+  backfill?: unknown;
   id?: unknown;
   is_mine?: unknown;
   account_kind?: unknown;
+}
+
+export interface HostedConnectionBackfillSummary {
+  status: string;
+  cutoff: string | null;
+  completed_at: string | null;
+  last_error: string | null;
 }
 
 export interface HostedConnectionSummary {
@@ -35,6 +43,19 @@ export interface HostedConnectionSummary {
   last_success_at: string | null;
   last_error_at: string | null;
   channel_ids?: string[];
+  backfill?: HostedConnectionBackfillSummary;
+}
+
+function normalizeBackfillSummary(value: unknown): HostedConnectionBackfillSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.status !== "string") return undefined;
+  return {
+    status: raw.status,
+    cutoff: typeof raw.cutoff === "string" ? raw.cutoff : null,
+    completed_at: typeof raw.completed_at === "string" ? raw.completed_at : null,
+    last_error: typeof raw.last_error === "string" ? raw.last_error : null,
+  };
 }
 
 function normalizedProvider(value: unknown): HostedConnectionProvider | null {
@@ -90,6 +111,8 @@ export function normalizeHostedConnection(
     result.channel_ids = Array.isArray(raw?.channel_ids)
       ? raw.channel_ids.filter((value): value is string => typeof value === "string")
       : [];
+    const backfill = normalizeBackfillSummary(raw?.backfill);
+    if (backfill) result.backfill = backfill;
   }
   return result;
 }
