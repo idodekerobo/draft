@@ -240,7 +240,7 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
 
   it("returns the summary content when a coding_session source_item is linked", async () => {
     state.sourceItems.push({
-      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "ready",
+      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "active",
       metadata_json: { agent_session_id: "s1" }, content_markdown: "# Summary", occurred_at: "2026-01-01T00:00:00Z",
       visibility: "shared", owner_user_id: null,
     });
@@ -250,7 +250,7 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
 
   it("excludes a private summary source_item owned by a different user", async () => {
     state.sourceItems.push({
-      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "ready",
+      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "active",
       metadata_json: { agent_session_id: "s1" }, content_markdown: "# Secret", occurred_at: "2026-01-01T00:00:00Z",
       visibility: "private", owner_user_id: "someone-else",
     });
@@ -260,7 +260,7 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
 
   it("includes a private summary source_item owned by the caller", async () => {
     state.sourceItems.push({
-      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "ready",
+      workspace_id: workspaceId, item_type: "coding_session", lifecycle_status: "active",
       metadata_json: { agent_session_id: "s1" }, content_markdown: "# Mine", occurred_at: "2026-01-01T00:00:00Z",
       visibility: "private", owner_user_id: caller.userId,
     });

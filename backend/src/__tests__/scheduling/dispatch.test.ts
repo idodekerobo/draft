@@ -62,7 +62,7 @@ function neverCalledDeps(): DispatchDependencies {
   return {
     materializeSlackBatches: mock(shouldNotBeCalled) as unknown as DispatchDependencies["materializeSlackBatches"],
     launchSynthesisRun: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSynthesisRun"],
-    getReadySourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getReadySourceItemIds"],
+    getPendingSynthesisSourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"],
     launchSummarizationBatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSummarizationBatch"],
   };
 }
@@ -201,22 +201,22 @@ describe("dispatchScheduledTask", () => {
     },
   );
 
-  it("no-ops a synthesize_workspace dispatch when there are no ready source items", async () => {
+  it("no-ops a synthesize_workspace dispatch when there are no pending source items", async () => {
     const task = baseTask({ task_type: "synthesize_workspace" });
     const client = fakeClient(task);
     const deps = neverCalledDeps();
-    deps.getReadySourceItemIds = mock(async () => []) as unknown as DispatchDependencies["getReadySourceItemIds"];
+    deps.getPendingSynthesisSourceItemIds = mock(async () => []) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"];
 
     await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
 
     expect(deps.launchSynthesisRun).not.toHaveBeenCalled();
   });
 
-  it("launches synthesis with the occurrence-derived options when ready items exist", async () => {
+  it("launches synthesis with the occurrence-derived options when pending items exist", async () => {
     const task = baseTask({ task_type: "synthesize_workspace" });
     const client = fakeClient(task);
     const deps = neverCalledDeps();
-    deps.getReadySourceItemIds = mock(async () => ["item-1", "item-2"]) as unknown as DispatchDependencies["getReadySourceItemIds"];
+    deps.getPendingSynthesisSourceItemIds = mock(async () => ["item-1", "item-2"]) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"];
     deps.launchSynthesisRun = mock(async () => ({
       runId: "run-1",
       machineId: "machine-1",

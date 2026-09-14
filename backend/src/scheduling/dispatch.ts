@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { OccurrenceAlreadyDispatchedError } from "../synthesis/prepare-run";
 import { materializeSlackBatches } from "../ingestion/slack/materialize-batches";
-import { getReadySourceItemIds } from "../synthesis/get-ready-source-items";
+import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
 import type { SandboxDeploymentConfig } from "../sandbox";
@@ -13,14 +13,14 @@ import type { ScheduledTaskRow } from "../types/tables";
 export interface DispatchDependencies {
   materializeSlackBatches: typeof materializeSlackBatches;
   launchSynthesisRun: typeof launchSynthesisRun;
-  getReadySourceItemIds: typeof getReadySourceItemIds;
+  getPendingSynthesisSourceItemIds: typeof getPendingSynthesisSourceItemIds;
   launchSummarizationBatch: typeof launchSummarizationBatch;
 }
 
 const defaultDependencies: DispatchDependencies = {
   materializeSlackBatches,
   launchSynthesisRun,
-  getReadySourceItemIds,
+  getPendingSynthesisSourceItemIds,
   launchSummarizationBatch,
 };
 
@@ -73,7 +73,7 @@ async function dispatchSynthesizeWorkspace(
   client: SupabaseClient,
   deps: DispatchDependencies,
 ): Promise<void> {
-  const sourceItemIds = await deps.getReadySourceItemIds(task.workspace_id, client);
+  const sourceItemIds = await deps.getPendingSynthesisSourceItemIds(task.workspace_id, client);
   if (sourceItemIds.length === 0) return; // avoids spending quota on an empty run
 
   try {

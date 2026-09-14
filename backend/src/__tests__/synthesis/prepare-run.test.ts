@@ -22,7 +22,7 @@ interface FakeClientOptions {
   sourceItems?: Array<{
     id: string;
     workspace_id: string;
-    lifecycle_status: "ready" | "superseded" | "deleted";
+    lifecycle_status: "active" | "superseded" | "deleted";
     external_version: string;
     content_hash: string | null;
   }>;
@@ -289,14 +289,14 @@ describe("prepareRun", () => {
         {
           id: ids.sourceA,
           workspace_id: ids.workspace,
-          lifecycle_status: "ready",
+          lifecycle_status: "active",
           external_version: "3",
           content_hash: "hash-a",
         },
         {
           id: ids.sourceB,
           workspace_id: ids.workspace,
-          lifecycle_status: "ready",
+          lifecycle_status: "active",
           external_version: "7",
           content_hash: "hash-b",
         },
@@ -356,7 +356,7 @@ describe("prepareRun", () => {
       sourceItems: [{
         id: ids.sourceA,
         workspace_id: "99999999-9999-4999-8999-999999999999",
-        lifecycle_status: "ready",
+        lifecycle_status: "active",
         external_version: "3",
         content_hash: "hash-a",
       }],
@@ -397,7 +397,7 @@ describe("prepareRun", () => {
       sourceItems: [{
         id: ids.sourceA,
         workspace_id: ids.workspace,
-        lifecycle_status: "ready",
+        lifecycle_status: "active",
         external_version: "3",
         content_hash: "hash-a",
       }],
