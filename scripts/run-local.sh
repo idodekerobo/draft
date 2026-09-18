@@ -2,7 +2,7 @@
 set -u
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-ROOT_ENV="$ROOT_DIR/.env.local"
+ROOT_ENV="$ROOT_DIR/${ROOT_ENV_FILE:-.env.local}"
 PIDS=""
 NAMES=""
 SHUTTING_DOWN=0
@@ -110,7 +110,7 @@ trap cleanup EXIT INT TERM HUP
 
 command -v bun >/dev/null 2>&1 || fail "bun is required. Install it, then retry."
 command -v lsof >/dev/null 2>&1 || fail "lsof is required for port preflight checks."
-[ -f "$ROOT_ENV" ] || fail ".env.local is required. Copy .env.example to .env.local and fill in the required values."
+[ -f "$ROOT_ENV" ] || fail "$(basename "$ROOT_ENV") is required. Copy .env.example to $(basename "$ROOT_ENV") and fill in the required values."
 
 # Preserve the existing app-local files during migration. The root file is
 # loaded last, so any non-empty root value becomes the canonical override.
