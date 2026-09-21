@@ -17,6 +17,7 @@ Key routing rules:
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
 - Fly sandbox image/Dockerfile/entrypoint/runner changes, new Fly sandbox environment → invoke fly-sandbox-image
+- Seeding/demo data, testing a migration, running against staging, switching Supabase env → invoke staging-env
 
 ## Writing Code
 - Comments on SQL files that explain the data model or functions are fine
@@ -39,8 +40,9 @@ time:
 1. `supabase migration new <short_name>` — creates the timestamped file in
    `supabase/migrations/`. Do not hand-write the timestamp.
 2. Write the SQL in that generated file.
-3. `supabase db push --linked --dry-run` to preview, then
-   `supabase db push --linked` to apply to the linked remote project.
+3. Apply to **staging first** (see "Staging first" below), verify, then
+   `supabase db push --linked --dry-run` and `supabase db push --linked`
+   against prod.
 4. Update the corresponding file(s) in `db/schemas/`, `db/functions/`,
    and/or `db/storage/` by hand to match the new state. This does not
    happen automatically — never skip it.
@@ -49,7 +51,23 @@ Never write raw SQL directly against the remote database outside this flow,
 and never leave `db/schemas/`, `db/functions/`, or `db/storage/` out of
 sync with what's actually applied.
 
-Do not push to the linked Supabase project until you get explicit approval that I'm good with the changes.
+Do not push to the prod Supabase project until you get explicit approval that I'm good with the changes.
+
+## Staging first
+
+A separate staging Supabase project exists. Prod is the default target of
+`.env.local` and the linked CLI, so every risky action must be redirected to
+staging deliberately. Invoke the `staging-env` skill for the exact commands.
+
+- Run `scripts/supabase-target.sh status` before any `supabase` command that
+  touches a remote DB. The CLI link is global state.
+- Test and verify every migration on staging before it goes to prod.
+- Run seed, demo, wipe and other data-writing scripts (`backend/scripts/*`)
+  against staging only, via `bun --env-file=.env.staging run ...`. Never run
+  them bare, and never against prod unless I name prod explicitly.
+- Run the app for manual testing with `make run-local env=staging`.
+- Leave the CLI linked to prod when a session ends
+  (`scripts/supabase-target.sh prod`).
 
 <!-- draft:begin (managed by Draft — do not edit this block) -->
 ## Draft context
