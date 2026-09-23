@@ -29,6 +29,7 @@ export async function GET(req: Request): Promise<Response> {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        Origin: config.appUrl,
         ...(cookie ? { cookie } : {}),
       },
       body: JSON.stringify({ accept, oauth_query: oauthQuery }),
