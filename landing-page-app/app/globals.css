@@ -674,3 +674,246 @@ body {
   .landing-reveal { animation: none; }
   .landing-button, .landing-arrow-link span { transition: none; }
 }
+
+/* ─────────────────────────────────────────────
+   GET STARTED PAGE
+   ───────────────────────────────────────────── */
+.getstarted-page {
+  --getstarted-ink: #1b1c19;
+  --getstarted-muted: #686a63;
+  --getstarted-paper: #f5f2eb;
+  --getstarted-line: rgba(27, 28, 25, 0.14);
+  --getstarted-accent: #b66f2c;
+  display: grid;
+  grid-template-columns: minmax(420px, 0.92fr) minmax(0, 1.08fr);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(182, 111, 44, 0.09), transparent 24rem),
+    var(--getstarted-paper);
+  color: var(--getstarted-ink);
+  overflow: hidden;
+}
+
+.getstarted-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 38px clamp(32px, 5vw, 84px) 30px;
+}
+
+.getstarted-header {
+  display: flex;
+}
+
+.getstarted-copy {
+  margin: auto 0;
+  max-width: 610px;
+  padding: 10vh 0 11vh;
+}
+
+.getstarted-copy h1 {
+  font-size: clamp(3.3rem, 6.2vw, 6.4rem);
+  letter-spacing: -0.085em;
+  line-height: 0.93;
+  margin: 0;
+  max-width: 620px;
+}
+.getstarted-copy h1 span {
+  color: inherit;
+  display: block;
+}
+.getstarted-lede {
+  color: var(--getstarted-muted);
+  font-size: clamp(1.05rem, 1.35vw, 1.28rem);
+  line-height: 1.45;
+  margin: 2.5rem 0 0;
+  max-width: 430px;
+}
+.getstarted-body {
+  color: var(--getstarted-muted);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  margin: 1rem 0 0;
+  max-width: 470px;
+}
+.getstarted-actions {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 2.25rem;
+  width: min(100%, 320px);
+}
+.getstarted-primary {
+  background-color: #111111 !important;
+  border: 1px solid #111111;
+  border-radius: 999px;
+  color: #ffffff !important;
+  font-size: 0.92rem;
+  min-height: 56px;
+  padding: 0.8rem 1.4rem;
+}
+.getstarted-primary:hover { background-color: #33342f !important; }
+.getstarted-call-link {
+  align-items: center;
+  border: 1px solid var(--getstarted-line);
+  border-radius: 999px;
+  color: var(--getstarted-ink);
+  display: inline-flex;
+  font-size: 0.92rem;
+  justify-content: center;
+  min-height: 56px;
+  gap: 0.6rem;
+  text-decoration: none;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+.getstarted-call-link span { color: var(--getstarted-accent); }
+.getstarted-call-link:hover { background: rgba(255, 255, 255, 0.42); border-color: rgba(27, 28, 25, 0.28); transform: translateY(-2px); }
+
+.getstarted-waitlist {
+  animation: getstartedWaitlistIn 450ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  max-height: 190px;
+  margin-top: 1.5rem;
+  overflow: hidden;
+}
+@keyframes getstartedWaitlistIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.getstarted-waitlist label {
+  color: var(--getstarted-muted);
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin-bottom: 0.65rem;
+}
+.getstarted-form-row { display: flex; gap: 0.55rem; }
+.getstarted-form-row input {
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid var(--getstarted-line);
+  border-radius: 6px;
+  color: var(--getstarted-ink);
+  flex: 1;
+  font: inherit;
+  min-width: 0;
+  padding: 0.78rem 0.85rem;
+  outline-color: var(--getstarted-accent);
+}
+.getstarted-form-row button {
+  background: var(--getstarted-ink);
+  border: 0;
+  border-radius: 6px;
+  color: var(--getstarted-paper);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0 1rem;
+  transition: background 180ms ease, transform 180ms ease;
+  white-space: nowrap;
+}
+.getstarted-form-row button:hover { background: var(--getstarted-accent); transform: translateY(-1px); }
+.getstarted-form-row button:disabled { cursor: wait; opacity: 0.65; }
+.getstarted-success { color: var(--getstarted-muted); font-size: 0.9rem; line-height: 1.6; margin: 0; }
+.getstarted-error { color: #9b3c2e; font-size: 0.78rem; margin: 0.65rem 0 0; }
+
+.getstarted-media {
+  margin: 0;
+  position: relative;
+}
+.getstarted-media-frame {
+  align-items: center;
+  background: #f8f9fb;
+  border-left: 1px solid var(--getstarted-line);
+  display: flex;
+  height: 100vh;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.getstarted-media-frame img { max-height: calc(100vh - 80px); object-fit: contain; }
+.getstarted-media figcaption {
+  bottom: 28px;
+  color: rgba(27, 28, 25, 0.52);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  margin: 0;
+  position: absolute;
+  right: 34px;
+  text-align: right;
+}
+
+.getstarted-footer {
+  align-items: end;
+  display: flex;
+  justify-content: space-between;
+  margin-top: auto;
+}
+.getstarted-footer-mark {
+  align-items: center;
+  border: 1px solid var(--getstarted-ink);
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 0.72rem;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+.getstarted-footer nav { display: flex; gap: clamp(1rem, 2vw, 2rem); }
+.getstarted-footer a {
+  color: var(--getstarted-muted);
+  font-size: 0.77rem;
+  text-decoration: none;
+  transition: color 180ms ease;
+}
+.getstarted-footer a:hover { color: var(--getstarted-ink); }
+
+@media (max-width: 900px) {
+  .getstarted-page {
+    display: flex;
+    flex-direction: column;
+  }
+  .getstarted-panel {
+    min-height: 76vh;
+    padding: 28px 32px 24px;
+  }
+  .getstarted-copy {
+    margin: 0;
+    padding: 12vh 0 10vh;
+  }
+  .getstarted-media {
+    height: 55vh;
+    min-height: 420px;
+  }
+  .getstarted-media-frame {
+    border-left: 0;
+    height: 100%;
+  }
+  .getstarted-media figcaption { bottom: 20px; right: 24px; }
+}
+
+@media (max-width: 560px) {
+  .getstarted-panel {
+    min-height: 100vh;
+    padding: 22px 20px 24px;
+  }
+  .getstarted-copy {
+    padding: 12vh 0 10vh;
+  }
+  .getstarted-copy h1 { font-size: clamp(3.45rem, 17vw, 5rem); }
+  .getstarted-lede { font-size: 1.05rem; margin-top: 2rem; }
+  .getstarted-actions { width: 100%; }
+  .getstarted-footer nav { gap: 0.8rem; }
+  .getstarted-footer a { font-size: 0.68rem; }
+  .getstarted-media { height: 48vh; min-height: 320px; }
+  .getstarted-media figcaption { font-size: 0.56rem; left: 20px; right: auto; text-align: left; }
+  .getstarted-form-row { align-items: stretch; flex-direction: column; }
+  .getstarted-form-row button { min-height: 46px; padding: 0 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .getstarted-form-row button,
+  .getstarted-call-link { transition: none; }
+  .getstarted-waitlist { animation: none; }
+}
