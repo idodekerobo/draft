@@ -78,7 +78,8 @@ export type ContextVersionCreationReason =
   | "seed"
   | "synthesis"
   | "manual_edit"
-  | "restore";
+  | "restore"
+  | "memory_provision";
 
 export type ScheduledTaskType =
   | "ingest_source"
