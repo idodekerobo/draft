@@ -4,6 +4,7 @@ import type { FlySandboxRunReceipt } from "../sandbox";
 import { canonicalDocumentsHash } from "./context-version-files";
 import { computeMemoryAdditions, ensureMemoryProvisioned } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
+import { recordError } from "../errors/record-error";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type {
   SourceItemRow,
@@ -102,16 +103,33 @@ export async function prepareRun(
     // run ensures the current day/week/month files exist before the model
     // ever sees them (it can only rewrite pre-existing document paths, see
     // render-prompt.ts's allowedDocumentPaths).
-    const provisioned = await ensureMemoryProvisioned({
-      client,
-      workspaceId: options.workspaceId,
-      baseVersionId: baseContextVersionId,
-      documents: version.documents_json,
-      versionNumber: version.version_number,
-      timezone: workspace.timezone,
-      now: options.now,
-    });
-    baseContextVersionId = provisioned.baseContextVersionId;
+    try {
+      const provisioned = await ensureMemoryProvisioned({
+        client,
+        workspaceId: options.workspaceId,
+        baseVersionId: baseContextVersionId,
+        documents: version.documents_json,
+        versionNumber: version.version_number,
+        timezone: workspace.timezone,
+        now: options.now,
+      });
+      baseContextVersionId = provisioned.baseContextVersionId;
+    } catch (error) {
+      // Recorded with its own code before rethrowing (launchSynthesisRun's
+      // catch also records a generic synthesis_launch_preparation_failed) so
+      // a provisioning failure is distinguishable from every other reason
+      // prepareRun can fail during the same "preparation" stage.
+      await recordError({
+        client,
+        workspaceId: options.workspaceId,
+        operation: "queue",
+        message: "Memory provisioning failed during prepareRun",
+        code: "memory_provision_failed",
+        detail: { baseContextVersionId, versionNumber: version.version_number },
+        error,
+      });
+      throw error;
+    }
   }
 
   const uniqueSourceItemIds = [...new Set(options.sourceItemIds)];

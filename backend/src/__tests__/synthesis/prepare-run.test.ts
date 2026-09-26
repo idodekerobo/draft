@@ -48,6 +48,7 @@ interface FakeClientOptions {
   }>;
   runInsertError?: { message: string; code: string };
   membershipInsertError?: Error;
+  contextVersionInsertError?: { message: string; code: string };
 }
 
 /**
@@ -60,8 +61,9 @@ function createFakeClient(options: FakeClientOptions = {}) {
     runInserts: Record<string, unknown>[];
     membershipInserts: Record<string, unknown>[];
     contextVersionInserts: Record<string, unknown>[];
+    errorInserts: Record<string, unknown>[];
     updates: Array<{ table: string; payload: Record<string, unknown>; id: string }>;
-  } = { order: [], runInserts: [], membershipInserts: [], contextVersionInserts: [], updates: [] };
+  } = { order: [], runInserts: [], membershipInserts: [], contextVersionInserts: [], errorInserts: [], updates: [] };
 
   const currentContextVersionId =
     options.currentContextVersionId === undefined
@@ -122,9 +124,23 @@ function createFakeClient(options: FakeClientOptions = {}) {
           calls.contextVersionInserts.push(payload);
           return {
             select: () => ({
-              single: async () => ({ data: { id: ids.seededVersion }, error: null }),
+              single: async () => {
+                if (options.contextVersionInsertError && payload.creation_reason === "memory_provision") {
+                  return { data: null, error: options.contextVersionInsertError };
+                }
+                return { data: { id: ids.seededVersion }, error: null };
+              },
             }),
           };
+        },
+      };
+    }
+
+    if (table === "errors") {
+      return {
+        insert: async (payload: Record<string, unknown>) => {
+          calls.errorInserts.push(payload);
+          return { error: null };
         },
       };
     }
@@ -321,6 +337,33 @@ describe("prepareRun", () => {
     expect(calls.order[0]).toBe("sweep-select");
     expect(calls.order).toContain("seed-context-version-insert");
     expect(calls.order.indexOf("seed-context-version-insert")).toBeLessThan(calls.order.indexOf("run-insert"));
+  });
+
+  it("records a memory_provision_failed error and rethrows when provisioning fails", async () => {
+    const { client, calls } = createFakeClient({
+      // Empty, so ensureMemoryProvisioned finds everything missing and
+      // actually attempts an insert instead of no-op'ing.
+      existingDocuments: {},
+      sourceItems: [],
+      contextVersionInsertError: { message: "insert failed", code: "23505" },
+    });
+
+    await expect(
+      prepareRun({
+        workspaceId: ids.workspace,
+        triggerType: "manual",
+        sourceItemIds: [],
+        client,
+      }),
+    ).rejects.toMatchObject({ message: "insert failed", code: "23505" });
+
+    expect(calls.errorInserts).toHaveLength(1);
+    const errorInsert = calls.errorInserts[0];
+    expect(errorInsert.workspace_id).toBe(ids.workspace);
+    expect(errorInsert.operation).toBe("queue");
+    expect(errorInsert.message).toBe("Memory provisioning failed during prepareRun");
+    expect((errorInsert.detail_json as Record<string, unknown>).code).toBe("memory_provision_failed");
+    expect(calls.runInserts).toHaveLength(0);
   });
 
   it("assigns position 0..n-1 to source items in the given order and pulls version/hash from source_items", async () => {
