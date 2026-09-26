@@ -11,7 +11,7 @@ The MCP server is read-only. It resolves the caller's team-default workspace fro
 | Tool | Purpose |
 | --- | --- |
 | `context.list` | List the workspace's available context dimensions. |
-| `context.read` | Read one or more dimensions, or all current workspace documents. |
+| `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. |
 | `skills.list` | List shared workspace skills. |
 | `skills.read` | Read one shared skill by name. |
 

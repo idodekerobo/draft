@@ -36,6 +36,8 @@ const MANAGED_BLOCK_BODY = [
   "- `draft auth login` — sign in if a command reports you're not authenticated.",
   "- `draft context list` — discover available context dimensions.",
   "- `draft context read --dimension <name>` (repeatable) or `--all` — read current context.",
+  "- `draft context read --dimension memory --period <today|yesterday|this-week|last-week|this-month|last-month|YYYY-MM-DD|YYYY-MM>` —",
+  "  read one chronological memory document (\"what happened this week\") instead of the current-state map.",
   "- `draft --help` — see all available commands.",
   "",
   "### Source evidence",

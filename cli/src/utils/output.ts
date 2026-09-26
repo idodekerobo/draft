@@ -29,6 +29,7 @@ export function printHelp(): void {
     ["context list",               "List available context dimensions"],
     ["context read --dimension <name>", "Print one or more context dimensions"],
     ["context read --all",         "Print every context dimension"],
+    ["context read --dimension memory --period <today|this-week|...>", "Print one memory period (day/week/month)"],
     ["sources search \"<query>\"", "Search cross-provider source evidence"],
     ["sources read <source_item_id>", "Read a source or an available original representation"],
     ["integrations list",          "List hosted integration status"],
