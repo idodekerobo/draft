@@ -12,7 +12,7 @@ export interface MockBackendState {
   linkCode: string;
   linkPollResponses: (() => Response)[];
   whoamiResponse: () => Response | Promise<Response>;
-  contextResponse: (workspaceId: string) => Response | Promise<Response>;
+  contextResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   refreshResponse: () => Response | Promise<Response>;
   logoutResponse: () => Response | Promise<Response>;
   sessionTokensResponse: (workspaceId: string) => Response | Promise<Response>;
@@ -113,7 +113,7 @@ export function createMockBackend() {
       if (req.method === "GET" && url.pathname === "/whoami") return state.whoamiResponse();
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/context$/.test(url.pathname)) {
         const workspaceId = url.pathname.split("/")[2];
-        return state.contextResponse(workspaceId);
+        return state.contextResponse(workspaceId, url);
       }
       if (req.method === "POST" && url.pathname === "/auth/v1/token") return state.refreshResponse();
       if (req.method === "POST" && url.pathname === "/auth/v1/logout") return state.logoutResponse();

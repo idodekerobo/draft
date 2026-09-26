@@ -199,3 +199,71 @@ describe("draft context read", () => {
     expect(body.available).toEqual([]);
   });
 });
+
+describe("draft context read --period", () => {
+  test("forwards --dimension and --period as query params, prints the resolved document", async () => {
+    let capturedQuery: URLSearchParams | undefined;
+    backend.state.contextResponse = (_workspaceId, url) => {
+      capturedQuery = url.searchParams;
+      return Response.json({
+        versionId: "v4", versionNumber: 4, contentHash: "h4", creationReason: "synthesis", createdAt: "x",
+        documents: docs({ "memory/days/2026-09-25.md": "---\nperiod: day\n---\n\ntoday's entries" }),
+      });
+    };
+
+    const result = await runCli(
+      ["context", "read", "--dimension", "memory", "--period", "today"],
+      { home, apiUrl: backend.url },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("---\nperiod: day\n---\n\ntoday's entries");
+    expect(capturedQuery?.get("dimension")).toBe("memory");
+    expect(capturedQuery?.get("period")).toBe("today");
+  });
+
+  test("JSON mode wraps the single resolved document with snapshot metadata", async () => {
+    backend.state.contextResponse = () => Response.json({
+      versionId: "v4", versionNumber: 4, contentHash: "h4", creationReason: "synthesis", createdAt: "2026-09-25T00:00:00.000Z",
+      documents: docs({ "memory/weeks/2026-09-21.md": "week content" }),
+    });
+    const result = await runCli(
+      ["context", "read", "--dimension", "memory", "--period", "this-week", "--json"],
+      { home, apiUrl: backend.url },
+    );
+    expect(result.exitCode).toBe(0);
+    const body = JSON.parse(result.stdout);
+    expect(body).toMatchObject({ versionId: "v4", versionNumber: 4 });
+    expect(body.documents).toEqual([{ name: "memory", path: "memory/weeks/2026-09-21.md", content: "week content", sha256: undefined }]);
+  });
+
+  test("--period requires exactly one --dimension", async () => {
+    const all = await runCli(["context", "read", "--all", "--period", "today"], { home, apiUrl: backend.url });
+    expect(all.exitCode).toBe(2);
+
+    const multi = await runCli(
+      ["context", "read", "--dimension", "memory", "--dimension", "product", "--period", "today"],
+      { home, apiUrl: backend.url },
+    );
+    expect(multi.exitCode).toBe(2);
+  });
+
+  test("surfaces period_not_found distinctly from a missing dimension", async () => {
+    backend.state.contextResponse = () => Response.json({ error: "period_not_found" }, { status: 404 });
+    const result = await runCli(
+      ["context", "read", "--dimension", "memory", "--period", "last-week", "--json"],
+      { home, apiUrl: backend.url },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "period_not_found" });
+  });
+
+  test("surfaces invalid_period for a period the backend rejects", async () => {
+    backend.state.contextResponse = () => Response.json({ error: "unrecognized period: bogus" }, { status: 400 });
+    const result = await runCli(
+      ["context", "read", "--dimension", "memory", "--period", "bogus", "--json"],
+      { home, apiUrl: backend.url },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_period" });
+  });
+});

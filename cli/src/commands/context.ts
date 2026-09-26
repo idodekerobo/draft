@@ -9,6 +9,8 @@ const SELECTOR_PATTERN = /^[a-z0-9-]+$/;
 function fetchErrorPayload(code: string) {
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
+  if (code === "period_not_found") return errorPayload(code, "No document exists for that period yet.");
+  if (code === "invalid_period") return errorPayload(code, "Unrecognized --period value. See `draft context read --help`.");
   return errorPayload(code, "Could not fetch workspace context right now. Retry shortly.");
 }
 
@@ -50,31 +52,54 @@ export async function runContextList(args: string[]): Promise<number> {
 interface ParsedReadArgs {
   dimensions?: string[];
   all?: boolean;
+  period?: string;
   json: boolean;
   error?: string;
+}
+
+// Reads a "--flag value" or "--flag=value" pair starting at args[i], where
+// the caller has already confirmed arg matches one of those two forms.
+function readValueFlag(args: string[], i: number, flag: string): { value: string; nextIndex: number } | { error: string } {
+  const arg = args[i];
+  if (arg === `--${flag}`) {
+    const value = args[i + 1];
+    return value === undefined ? { error: `--${flag} requires a value` } : { value, nextIndex: i + 1 };
+  }
+  return { value: arg.slice(`--${flag}=`.length), nextIndex: i };
 }
 
 function parseReadArgs(args: string[]): ParsedReadArgs {
   const requested: string[] = [];
   let all = false;
   let json = false;
+  let period: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--json") { json = true; continue; }
     if (arg === "--all") { all = true; continue; }
-    if (arg === "--dimension") {
-      const value = args[++i];
-      if (value === undefined) return { json, error: "--dimension requires a value" };
-      requested.push(value);
+    if (arg === "--dimension" || arg.startsWith("--dimension=")) {
+      const result = readValueFlag(args, i, "dimension");
+      if ("error" in result) return { json, error: result.error };
+      requested.push(result.value);
+      i = result.nextIndex;
       continue;
     }
-    if (arg.startsWith("--dimension=")) { requested.push(arg.slice("--dimension=".length)); continue; }
+    if (arg === "--period" || arg.startsWith("--period=")) {
+      const result = readValueFlag(args, i, "period");
+      if ("error" in result) return { json, error: result.error };
+      period = result.value;
+      i = result.nextIndex;
+      continue;
+    }
     if (arg.startsWith("--")) return { json, error: `unknown flag: ${arg}` };
     return { json, error: `unexpected positional argument: ${arg}` };
   }
 
   if (all && requested.length > 0) return { json, error: "--dimension and --all are mutually exclusive" };
   if (!all && requested.length === 0) return { json, error: "missing selector — pass one or more --dimension <name>, or --all. See `draft context list`." };
+  if (period && (all || requested.length !== 1)) {
+    return { json, error: "--period requires exactly one --dimension (not --all, not multiple)" };
+  }
 
   if (!all) {
     for (const name of requested) {
@@ -88,7 +113,17 @@ function parseReadArgs(args: string[]): ParsedReadArgs {
     if (!seen.has(name)) { seen.add(name); deduped.push(name); }
   }
 
-  return all ? { all: true, json } : { dimensions: deduped, json };
+  return all ? { all: true, json, period } : { dimensions: deduped, json, period };
+}
+
+function snapshotMeta(snapshot: WorkspaceContextSnapshot) {
+  return {
+    versionId: snapshot.versionId,
+    versionNumber: snapshot.versionNumber,
+    contentHash: snapshot.contentHash,
+    creationReason: snapshot.creationReason,
+    createdAt: snapshot.createdAt,
+  };
 }
 
 function renderHuman(snapshot: WorkspaceContextSnapshot, selected: { name: string; path: string }[]): void {
@@ -108,6 +143,30 @@ export async function runContextRead(args: string[]): Promise<number> {
     return EXIT_USAGE_ERROR;
   }
 
+  if (parsed.period) {
+    const dimension = parsed.dimensions![0];
+    const result = await fetchWorkspaceContext({ dimension, period: parsed.period });
+    if (!result.ok) {
+      printFetchError("draft context read", result.code, parsed.json);
+      return EXIT_OPERATIONAL_ERROR;
+    }
+    const entry = Object.entries(result.snapshot.documents)[0];
+    if (!entry) {
+      printFetchError("draft context read", "period_not_found", parsed.json);
+      return EXIT_OPERATIONAL_ERROR;
+    }
+    const [path, doc] = entry;
+    if (parsed.json) {
+      printJsonLine({
+        ...snapshotMeta(result.snapshot),
+        documents: [{ name: dimension, path, content: doc.content, sha256: doc.sha256 }],
+      });
+      return EXIT_SUCCESS;
+    }
+    renderHuman(result.snapshot, [{ name: dimension, path }]);
+    return EXIT_SUCCESS;
+  }
+
   const result = await fetchWorkspaceContext();
   if (!result.ok) {
     printFetchError("draft context read", result.code, parsed.json);
@@ -122,7 +181,7 @@ export async function runContextRead(args: string[]): Promise<number> {
     selected = discovered;
     if (selected.length === 0) {
       if (parsed.json) {
-        printJsonLine({ versionId: result.snapshot.versionId, versionNumber: result.snapshot.versionNumber, contentHash: result.snapshot.contentHash, creationReason: result.snapshot.creationReason, createdAt: result.snapshot.createdAt, documents: [] });
+        printJsonLine({ ...snapshotMeta(result.snapshot), documents: [] });
       } else console.log("No dimensions found.");
       return EXIT_SUCCESS;
     }
@@ -144,11 +203,7 @@ export async function runContextRead(args: string[]): Promise<number> {
 
   if (parsed.json) {
     printJsonLine({
-      versionId: result.snapshot.versionId,
-      versionNumber: result.snapshot.versionNumber,
-      contentHash: result.snapshot.contentHash,
-      creationReason: result.snapshot.creationReason,
-      createdAt: result.snapshot.createdAt,
+      ...snapshotMeta(result.snapshot),
       documents: selected.map((d) => ({ name: d.name, path: d.path, content: result.snapshot.documents[d.path]?.content ?? "", sha256: result.snapshot.documents[d.path]?.sha256 })),
     });
     return EXIT_SUCCESS;
