@@ -77,14 +77,21 @@ export function buildMcpServer(userId: string): McpServer {
   server.registerTool(
     "context.read",
     {
-      description: "Read Draft's maintained business map. For direct evidence, search sources and then read the selected source; the calling agent owns investigation and answer generation.",
+      description: "Read Draft's maintained business map. For direct evidence, search sources and then read the selected source; the calling agent owns investigation and answer generation. For the memory dimension (a chronological log, not a current-state file), pass period to read one day/week/month document instead of the whole accumulated log -- e.g. dimensions: [\"memory\"], period: \"this-week\".",
       inputSchema: z.object({
         dimensions: z.array(z.string()).optional().describe("Dimension names to read; omit for all."),
+        period: z.string().optional().describe("today|yesterday|this-week|last-week|this-month|last-month, or an explicit id (YYYY-MM-DD, week-YYYY-MM-DD, YYYY-MM). Only valid with dimensions: [\"memory\"]."),
       }),
     },
     async (args) => {
       const outcome = await withWorkspace(userId, "mcp.context.read", args, async (workspaceId) => {
-        const result = await getWorkspaceContext(workspaceId);
+        if (args.period && args.dimensions?.length !== 1) {
+          return { error: "period requires exactly one dimension, e.g. dimensions: [\"memory\"]" };
+        }
+        // Which dimension supports periods is workspace-context.ts's call --
+        // it returns "dimension does not support periods: ..." for anything
+        // else, the same way the CLI's HTTP route surfaces it.
+        const result = await getWorkspaceContext(workspaceId, { dimension: args.dimensions?.[0], period: args.period });
         if (!result.ok) return { error: result.error };
         const wanted = args.dimensions?.length
           ? new Set(args.dimensions)

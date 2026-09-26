@@ -10,7 +10,11 @@ export const contextGET = withAuth<ContextRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const result = await getWorkspaceContext(req.params.id);
+  const url = new URL(req.url);
+  const dimension = url.searchParams.get("dimension") ?? undefined;
+  const period = url.searchParams.get("period") ?? undefined;
+
+  const result = await getWorkspaceContext(req.params.id, { dimension, period });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
   const body = JSON.stringify(result.snapshot);
@@ -18,7 +22,7 @@ export const contextGET = withAuth<ContextRequest>(async (req, caller) => {
     workspaceId: req.params.id,
     userId: caller.userId,
     command: "context.read",
-    argsJson: {},
+    argsJson: { dimension, period },
     resultBytes: body.length,
   });
 
