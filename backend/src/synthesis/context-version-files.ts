@@ -75,7 +75,7 @@ export interface BuildRunBundleInput {
   limits: RunBundleLimits;
 }
 
-function sha256(content: string | Uint8Array): string {
+export function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 

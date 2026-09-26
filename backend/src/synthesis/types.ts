@@ -52,6 +52,8 @@ export interface LaunchSynthesisRunOptions {
    * any existing context documents. See render-prompt.ts's bootstrap branch.
    */
   dimensions?: DimensionHint[];
+  /** Injectable clock for memory-period provisioning; defaults to `new Date()`. */
+  now?: Date;
 }
 
 export interface LaunchSynthesisRunResult {

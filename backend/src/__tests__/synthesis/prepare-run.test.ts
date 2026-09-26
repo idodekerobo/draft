@@ -5,7 +5,25 @@ import {
   prepareRun,
   WorkspaceRunAlreadyActiveError,
 } from "../../synthesis/prepare-run";
+import { MEMORY_INDEX_PATH, resolveMemoryPeriod } from "../../synthesis/memory-period";
 import type { FlySandboxRunReceipt } from "../../sandbox";
+
+// Matches whatever "today" the suite actually runs on, so the default fake
+// existing version already has this run's memory documents provisioned --
+// ensureMemoryProvisioned is a no-op for every test below except the ones
+// that deliberately start from an empty context (currentContextVersionId:
+// null), which exercise real provisioning.
+function defaultProvisionedMemoryDocuments(): Record<string, { content: string; sha256: string }> {
+  const now = new Date();
+  const stub = { content: "x", sha256: "a".repeat(64) };
+  const documents: Record<string, { content: string; sha256: string }> = {
+    [MEMORY_INDEX_PATH]: stub,
+  };
+  for (const period of ["today", "this-week", "this-month"] as const) {
+    documents[resolveMemoryPeriod(period, "UTC", now).path] = stub;
+  }
+  return documents;
+}
 
 const ids = {
   workspace: "33333333-3333-4333-8333-333333333333",
@@ -19,6 +37,8 @@ const ids = {
 
 interface FakeClientOptions {
   currentContextVersionId?: string | null;
+  existingDocuments?: Record<string, { content: string; sha256: string }>;
+  existingVersionNumber?: number;
   sourceItems?: Array<{
     id: string;
     workspace_id: string;
@@ -66,7 +86,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
         select: () => ({
           eq: () => ({
             single: async () => ({
-              data: { current_context_version_id: currentContextVersionId },
+              data: { current_context_version_id: currentContextVersionId, timezone: "UTC" },
               error: null,
             }),
           }),
@@ -82,8 +102,23 @@ function createFakeClient(options: FakeClientOptions = {}) {
 
     if (table === "workspace_context_versions") {
       return {
+        select: () => ({
+          eq: () => ({
+            single: async () => ({
+              data: {
+                documents_json: options.existingDocuments ?? defaultProvisionedMemoryDocuments(),
+                version_number: options.existingVersionNumber ?? 3,
+              },
+              error: null,
+            }),
+          }),
+        }),
         insert: (payload: Record<string, unknown>) => {
-          calls.order.push("seed-context-version-insert");
+          calls.order.push(
+            payload.creation_reason === "memory_provision"
+              ? "memory-provision-insert"
+              : "seed-context-version-insert",
+          );
           calls.contextVersionInserts.push(payload);
           return {
             select: () => ({
@@ -263,14 +298,19 @@ describe("prepareRun", () => {
     });
 
     expect(runId).toBe(ids.run);
+    // A single insert seeds the version with memory's stubs already folded
+    // in -- no separate memory-provision insert right on top of it (memory
+    // is auto-provisioned unconditionally -- see prepare-run.ts).
     expect(calls.contextVersionInserts).toHaveLength(1);
     const seeded = calls.contextVersionInserts[0];
     expect(seeded.workspace_id).toBe(ids.workspace);
     expect(seeded.version_number).toBe(1);
-    expect(seeded.documents_json).toEqual({});
     expect(seeded.creation_reason).toBe("seed");
     expect(typeof seeded.content_hash).toBe("string");
     expect(seeded.content_hash).toMatch(/^[0-9a-f]{64}$/);
+    const seededPaths = Object.keys(seeded.documents_json as Record<string, unknown>);
+    expect(seededPaths).toContain(MEMORY_INDEX_PATH);
+    expect(seededPaths.some((p) => p.startsWith("memory/days/"))).toBe(true);
 
     const workspacePointerUpdate = calls.updates.find((update) => update.table === "workspaces");
     expect(workspacePointerUpdate?.payload.current_context_version_id).toBe(ids.seededVersion);
