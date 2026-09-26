@@ -50,6 +50,27 @@ draft context read --all
 
 Context reads go through the authenticated API and return the current workspace snapshot. A missing workspace is an account/onboarding state, not a local initialization step.
 
+### Memory (chronological log)
+
+Unlike the other dimensions, which hold a single current-state document per
+dimension, `memory` is a workspace-wide chronological log of day/week/month
+documents — recomputed continuously rather than only reflecting the latest
+state. Read one period with `--period`:
+
+~~~bash
+draft context read --dimension memory --period today
+draft context read --dimension memory --period this-week
+draft context read --dimension memory --period last-month
+draft context read --dimension memory --period 2026-09-16   # explicit day
+draft context read --dimension memory --period week-2026-09-21   # explicit week, by its Monday
+draft context read --dimension memory --period 2026-09      # explicit month
+~~~
+
+`--period` requires exactly one `--dimension` (not `--all`, not multiple), and
+only `memory` supports it today. Aliases (`today`, `this-week`, `this-month`,
+and their `last-`/`yesterday` counterparts) resolve using the workspace's
+configured timezone, not your local machine's.
+
 ## MCP connection
 
 Draft also exposes the same company brain through an OAuth-protected remote MCP server. Register the hosted endpoint in an MCP-compatible agent:
@@ -61,7 +82,7 @@ https://api.draftai.us/mcp
 The first connection uses Draft's browser sign-in and consent flow. The server is read-only and currently exposes:
 
 - `context.list` — list available context dimensions.
-- `context.read` — read one or more dimensions, or all current workspace documents.
+- `context.read` — read one or more dimensions, or all current workspace documents; pass `period` (with `dimensions: ["memory"]`) to read one chronological memory document instead.
 - `skills.list` — list the workspace's shared skills.
 - `skills.read` — read one shared skill by name.
 

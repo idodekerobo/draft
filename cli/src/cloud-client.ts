@@ -177,27 +177,54 @@ export interface WorkspaceContextSnapshot {
   documents: Record<string, WorkspaceDocument>;
 }
 
+export interface WorkspaceContextFetchFilter {
+  dimension?: string;
+  period?: string;
+}
+
 export type ContextFetchResult =
   | { ok: true; snapshot: WorkspaceContextSnapshot }
-  | { ok: false; code: "not_authenticated" | "auth_busy" | "session_refresh_transient" | "whoami_failed" | "no_workspace" | "context_fetch_failed" };
+  | {
+      ok: false;
+      code:
+        | "not_authenticated"
+        | "auth_busy"
+        | "session_refresh_transient"
+        | "whoami_failed"
+        | "no_workspace"
+        | "context_fetch_failed"
+        | "period_not_found"
+        | "invalid_period";
+    };
 
-export async function fetchWorkspaceContext(): Promise<ContextFetchResult> {
+export async function fetchWorkspaceContext(
+  filter?: WorkspaceContextFetchFilter,
+): Promise<ContextFetchResult> {
   const resolved = await resolveAuthedWorkspace();
   if (!resolved.ok) return resolved;
   if (!resolved.workspaceId) return { ok: false, code: "no_workspace" };
 
   const config = getCliRuntimeConfig();
+  const query = new URLSearchParams();
+  if (filter?.dimension) query.set("dimension", filter.dimension);
+  if (filter?.period) query.set("period", filter.period);
+  const qs = query.toString();
+
   let response: Response;
   try {
-    response = await fetch(`${config.apiBaseUrl}/workspaces/${encodeURIComponent(resolved.workspaceId)}/context`, {
-      headers: { Authorization: `Bearer ${resolved.token}` },
-    });
+    response = await fetch(
+      `${config.apiBaseUrl}/workspaces/${encodeURIComponent(resolved.workspaceId)}/context${qs ? `?${qs}` : ""}`,
+      { headers: { Authorization: `Bearer ${resolved.token}` } },
+    );
   } catch {
     return { ok: false, code: "session_refresh_transient" };
   }
   if (response.status === 404) {
+    const errorBody = await response.json().catch(() => null) as { error?: string } | null;
+    if (errorBody?.error === "period_not_found") return { ok: false, code: "period_not_found" };
     return { ok: true, snapshot: { versionId: "", versionNumber: 0, contentHash: "", creationReason: "", createdAt: "", documents: {} } };
   }
+  if (response.status === 400 && filter?.period) return { ok: false, code: "invalid_period" };
   if (!response.ok) return { ok: false, code: "context_fetch_failed" };
 
   const body = await response.json() as Partial<WorkspaceContextSnapshot>;

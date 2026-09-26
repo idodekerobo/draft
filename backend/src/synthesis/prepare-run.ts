@@ -2,9 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FlySandboxRunReceipt } from "../sandbox";
 import { canonicalDocumentsHash } from "./context-version-files";
+import { computeMemoryAdditions, ensureMemoryProvisioned } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
+import { recordError } from "../errors/record-error";
 import type { LaunchSynthesisRunOptions } from "./types";
-import type { SourceItemRow, WorkspaceRow } from "../types/tables";
+import type {
+  SourceItemRow,
+  WorkspaceContextVersionRow,
+  WorkspaceRow,
+} from "../types/tables";
 
 // Bumped whenever the rendered prompt/schema contract (task #4) changes in a
 // way that should be distinguishable in synthesis_runs.prompt_version history.
@@ -36,7 +42,7 @@ export class OccurrenceAlreadyDispatchedError extends Error {
 export async function prepareRun(
   options: Pick<
     LaunchSynthesisRunOptions,
-    "workspaceId" | "triggerType" | "sourceItemIds" | "scheduledTaskId" | "occurrenceAt" | "client"
+    "workspaceId" | "triggerType" | "sourceItemIds" | "scheduledTaskId" | "occurrenceAt" | "client" | "now"
   >,
 ): Promise<string> {
   const client =
@@ -46,25 +52,28 @@ export async function prepareRun(
 
   const { data: workspaceData, error: workspaceError } = await client
     .from("workspaces")
-    .select("current_context_version_id")
+    .select("current_context_version_id, timezone")
     .eq("id", options.workspaceId)
     .single();
   if (workspaceError) throw workspaceError;
   const workspace = workspaceData as Pick<
     WorkspaceRow,
-    "current_context_version_id"
+    "current_context_version_id" | "timezone"
   >;
   let baseContextVersionId = workspace.current_context_version_id;
   if (!baseContextVersionId) {
-    // workspace can be empty at first run, seed an empty context version inline
-    const emptyDocumentsHash = canonicalDocumentsHash({});
+    // Workspace can be empty at first run. Memory is workspace
+    // infrastructure, not an opt-in dimension, so its stubs are folded
+    // straight into the seed insert rather than seeding {} and then
+    // immediately provisioning a second version on top of it.
+    const seedDocuments = computeMemoryAdditions({}, workspace.timezone, options.now);
     const { data: seededVersion, error: seedError } = await client
       .from("workspace_context_versions")
       .insert({
         workspace_id: options.workspaceId,
         version_number: 1,
-        documents_json: {},
-        content_hash: emptyDocumentsHash,
+        documents_json: seedDocuments,
+        content_hash: canonicalDocumentsHash(seedDocuments),
         creation_reason: "seed",
         summary: "Empty workspace — no context yet",
       })
@@ -78,6 +87,49 @@ export async function prepareRun(
       .update({ current_context_version_id: baseContextVersionId })
       .eq("id", options.workspaceId);
     if (pointerError) throw pointerError;
+  } else {
+    const { data: versionData, error: versionError } = await client
+      .from("workspace_context_versions")
+      .select("documents_json, version_number")
+      .eq("id", baseContextVersionId)
+      .single();
+    if (versionError) throw versionError;
+    const version = versionData as Pick<
+      WorkspaceContextVersionRow,
+      "documents_json" | "version_number"
+    >;
+
+    // Memory is workspace infrastructure, not an opt-in dimension -- every
+    // run ensures the current day/week/month files exist before the model
+    // ever sees them (it can only rewrite pre-existing document paths, see
+    // render-prompt.ts's allowedDocumentPaths).
+    try {
+      const provisioned = await ensureMemoryProvisioned({
+        client,
+        workspaceId: options.workspaceId,
+        baseVersionId: baseContextVersionId,
+        documents: version.documents_json,
+        versionNumber: version.version_number,
+        timezone: workspace.timezone,
+        now: options.now,
+      });
+      baseContextVersionId = provisioned.baseContextVersionId;
+    } catch (error) {
+      // Recorded with its own code before rethrowing (launchSynthesisRun's
+      // catch also records a generic synthesis_launch_preparation_failed) so
+      // a provisioning failure is distinguishable from every other reason
+      // prepareRun can fail during the same "preparation" stage.
+      await recordError({
+        client,
+        workspaceId: options.workspaceId,
+        operation: "queue",
+        message: "Memory provisioning failed during prepareRun",
+        code: "memory_provision_failed",
+        detail: { baseContextVersionId, versionNumber: version.version_number },
+        error,
+      });
+      throw error;
+    }
   }
 
   const uniqueSourceItemIds = [...new Set(options.sourceItemIds)];

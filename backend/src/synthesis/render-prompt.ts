@@ -62,6 +62,29 @@ ${dimensionList}
 `;
 }
 
+// Always present once a workspace has been through prepareRun (which
+// provisions memory/index.md + the current day/week/month stubs before any
+// run is built) -- unlike bootstrapSection this isn't conditional on being
+// the first-ever run.
+function buildMemoryGuidanceSection(contextFiles: ContextFileEntry[]): string {
+  const hasMemory = contextFiles.some((f) => f.logicalPath.startsWith("memory/"));
+  if (!hasMemory) return "";
+
+  return `\n## Memory dimension
+memory/days/<date>.md, memory/weeks/<monday-date>.md, and memory/months/<month>.md
+are a workspace-wide chronological log -- not per-person files. When an entry
+belongs to a specific person, attribute them inline in the prose (e.g. "Alice
+shipped the OAuth redirect fix"); do not split entries into separate files.
+
+The current day/week/month files are mutable, not frozen. When new evidence
+changes what happened today, and that also changes what's true of this week
+or this month, update all of the relevant period files in the same response
+-- there is no separate rollup pass. Each period file starts with a
+frontmatter block (period/start/end); preserve those fields exactly, never
+invent or shift the date range.
+`;
+}
+
 function buildPrompt(
   contextFiles: ContextFileEntry[],
   sourceFiles: SourceFileEntry[],
@@ -81,6 +104,7 @@ function buildPrompt(
     contextFiles.length === 0 && dimensions && dimensions.length > 0
       ? `\n${buildBootstrapSection(dimensions)}\n`
       : "";
+  const memorySection = buildMemoryGuidanceSection(contextFiles);
 
   return `# Draft Synthesis Task
 
@@ -88,7 +112,7 @@ You are a context synthesis agent for Draft, a shared team context layer.
 
 ## Existing context (read-only; paths and content-hashes below are host-verified)
 ${contextList}
-${bootstrapSection}
+${bootstrapSection}${memorySection}
 ## New source material to reconcile against the context above
 ${sourceList}
 

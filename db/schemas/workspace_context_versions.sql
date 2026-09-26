@@ -9,7 +9,7 @@ create table workspace_context_versions (
                                  check (jsonb_typeof(documents_json) = 'object'),
   content_hash                 text not null check (content_hash ~ '^[0-9a-f]{64}$'),
   creation_reason               text not null
-                                 check (creation_reason in ('seed', 'synthesis', 'manual_edit', 'restore')),
+                                 check (creation_reason in ('seed', 'synthesis', 'manual_edit', 'restore', 'memory_provision')),
   synthesis_run_id             uuid,
   restored_from_version_id     uuid,
   summary                      text not null,

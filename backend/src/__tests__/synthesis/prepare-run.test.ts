@@ -5,7 +5,25 @@ import {
   prepareRun,
   WorkspaceRunAlreadyActiveError,
 } from "../../synthesis/prepare-run";
+import { MEMORY_INDEX_PATH, resolveMemoryPeriod } from "../../synthesis/memory-period";
 import type { FlySandboxRunReceipt } from "../../sandbox";
+
+// Matches whatever "today" the suite actually runs on, so the default fake
+// existing version already has this run's memory documents provisioned --
+// ensureMemoryProvisioned is a no-op for every test below except the ones
+// that deliberately start from an empty context (currentContextVersionId:
+// null), which exercise real provisioning.
+function defaultProvisionedMemoryDocuments(): Record<string, { content: string; sha256: string }> {
+  const now = new Date();
+  const stub = { content: "x", sha256: "a".repeat(64) };
+  const documents: Record<string, { content: string; sha256: string }> = {
+    [MEMORY_INDEX_PATH]: stub,
+  };
+  for (const period of ["today", "this-week", "this-month"] as const) {
+    documents[resolveMemoryPeriod(period, "UTC", now).path] = stub;
+  }
+  return documents;
+}
 
 const ids = {
   workspace: "33333333-3333-4333-8333-333333333333",
@@ -19,6 +37,8 @@ const ids = {
 
 interface FakeClientOptions {
   currentContextVersionId?: string | null;
+  existingDocuments?: Record<string, { content: string; sha256: string }>;
+  existingVersionNumber?: number;
   sourceItems?: Array<{
     id: string;
     workspace_id: string;
@@ -28,6 +48,7 @@ interface FakeClientOptions {
   }>;
   runInsertError?: { message: string; code: string };
   membershipInsertError?: Error;
+  contextVersionInsertError?: { message: string; code: string };
 }
 
 /**
@@ -40,8 +61,9 @@ function createFakeClient(options: FakeClientOptions = {}) {
     runInserts: Record<string, unknown>[];
     membershipInserts: Record<string, unknown>[];
     contextVersionInserts: Record<string, unknown>[];
+    errorInserts: Record<string, unknown>[];
     updates: Array<{ table: string; payload: Record<string, unknown>; id: string }>;
-  } = { order: [], runInserts: [], membershipInserts: [], contextVersionInserts: [], updates: [] };
+  } = { order: [], runInserts: [], membershipInserts: [], contextVersionInserts: [], errorInserts: [], updates: [] };
 
   const currentContextVersionId =
     options.currentContextVersionId === undefined
@@ -66,7 +88,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
         select: () => ({
           eq: () => ({
             single: async () => ({
-              data: { current_context_version_id: currentContextVersionId },
+              data: { current_context_version_id: currentContextVersionId, timezone: "UTC" },
               error: null,
             }),
           }),
@@ -82,14 +104,43 @@ function createFakeClient(options: FakeClientOptions = {}) {
 
     if (table === "workspace_context_versions") {
       return {
+        select: () => ({
+          eq: () => ({
+            single: async () => ({
+              data: {
+                documents_json: options.existingDocuments ?? defaultProvisionedMemoryDocuments(),
+                version_number: options.existingVersionNumber ?? 3,
+              },
+              error: null,
+            }),
+          }),
+        }),
         insert: (payload: Record<string, unknown>) => {
-          calls.order.push("seed-context-version-insert");
+          calls.order.push(
+            payload.creation_reason === "memory_provision"
+              ? "memory-provision-insert"
+              : "seed-context-version-insert",
+          );
           calls.contextVersionInserts.push(payload);
           return {
             select: () => ({
-              single: async () => ({ data: { id: ids.seededVersion }, error: null }),
+              single: async () => {
+                if (options.contextVersionInsertError && payload.creation_reason === "memory_provision") {
+                  return { data: null, error: options.contextVersionInsertError };
+                }
+                return { data: { id: ids.seededVersion }, error: null };
+              },
             }),
           };
+        },
+      };
+    }
+
+    if (table === "errors") {
+      return {
+        insert: async (payload: Record<string, unknown>) => {
+          calls.errorInserts.push(payload);
+          return { error: null };
         },
       };
     }
@@ -263,14 +314,19 @@ describe("prepareRun", () => {
     });
 
     expect(runId).toBe(ids.run);
+    // A single insert seeds the version with memory's stubs already folded
+    // in -- no separate memory-provision insert right on top of it (memory
+    // is auto-provisioned unconditionally -- see prepare-run.ts).
     expect(calls.contextVersionInserts).toHaveLength(1);
     const seeded = calls.contextVersionInserts[0];
     expect(seeded.workspace_id).toBe(ids.workspace);
     expect(seeded.version_number).toBe(1);
-    expect(seeded.documents_json).toEqual({});
     expect(seeded.creation_reason).toBe("seed");
     expect(typeof seeded.content_hash).toBe("string");
     expect(seeded.content_hash).toMatch(/^[0-9a-f]{64}$/);
+    const seededPaths = Object.keys(seeded.documents_json as Record<string, unknown>);
+    expect(seededPaths).toContain(MEMORY_INDEX_PATH);
+    expect(seededPaths.some((p) => p.startsWith("memory/days/"))).toBe(true);
 
     const workspacePointerUpdate = calls.updates.find((update) => update.table === "workspaces");
     expect(workspacePointerUpdate?.payload.current_context_version_id).toBe(ids.seededVersion);
@@ -281,6 +337,33 @@ describe("prepareRun", () => {
     expect(calls.order[0]).toBe("sweep-select");
     expect(calls.order).toContain("seed-context-version-insert");
     expect(calls.order.indexOf("seed-context-version-insert")).toBeLessThan(calls.order.indexOf("run-insert"));
+  });
+
+  it("records a memory_provision_failed error and rethrows when provisioning fails", async () => {
+    const { client, calls } = createFakeClient({
+      // Empty, so ensureMemoryProvisioned finds everything missing and
+      // actually attempts an insert instead of no-op'ing.
+      existingDocuments: {},
+      sourceItems: [],
+      contextVersionInsertError: { message: "insert failed", code: "23505" },
+    });
+
+    await expect(
+      prepareRun({
+        workspaceId: ids.workspace,
+        triggerType: "manual",
+        sourceItemIds: [],
+        client,
+      }),
+    ).rejects.toMatchObject({ message: "insert failed", code: "23505" });
+
+    expect(calls.errorInserts).toHaveLength(1);
+    const errorInsert = calls.errorInserts[0];
+    expect(errorInsert.workspace_id).toBe(ids.workspace);
+    expect(errorInsert.operation).toBe("queue");
+    expect(errorInsert.message).toBe("Memory provisioning failed during prepareRun");
+    expect((errorInsert.detail_json as Record<string, unknown>).code).toBe("memory_provision_failed");
+    expect(calls.runInserts).toHaveLength(0);
   });
 
   it("assigns position 0..n-1 to source items in the given order and pulls version/hash from source_items", async () => {
