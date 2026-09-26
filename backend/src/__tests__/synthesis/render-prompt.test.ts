@@ -239,4 +239,24 @@ describe("renderSynthesisPrompt", () => {
     const { prompt } = await renderSynthesisPrompt(bundle);
     expect(prompt).not.toContain("Bootstrap guidance");
   });
+
+  it("includes the memory guidance section once memory/ documents are provisioned", async () => {
+    const input = bundleInput();
+    input.baseVersion = version({
+      "product/index.md": document("# Product\n"),
+      "memory/index.md": document("# Memory\n"),
+      "memory/days/2026-09-25.md": document("---\nperiod: day\nstart: 2026-09-25\nend: 2026-09-25\n---\n\n(no entries yet)\n"),
+    });
+    const bundle = buildValidatedRunBundle(input);
+    const { prompt } = await renderSynthesisPrompt(bundle);
+
+    expect(prompt).toContain("Memory dimension");
+    expect(prompt).toContain("not per-person files");
+  });
+
+  it("omits the memory guidance section when no memory/ documents exist", async () => {
+    const bundle = buildValidatedRunBundle(bundleInput());
+    const { prompt } = await renderSynthesisPrompt(bundle);
+    expect(prompt).not.toContain("Memory dimension");
+  });
 });
