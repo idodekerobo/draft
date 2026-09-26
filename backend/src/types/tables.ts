@@ -76,6 +76,7 @@ export interface WorkspaceRow {
   name: string;
   status: WorkspaceStatus;
   access_mode: WorkspaceAccessMode;
+  timezone: string;
   current_context_version_id: string | null;
   inference_credential_id: string | null;
   runs_enabled: boolean;

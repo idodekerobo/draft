@@ -8,6 +8,7 @@ create table workspaces (
                                  check (status in ('active', 'archived')),
   access_mode                  text not null default 'team_default'
                                  check (access_mode in ('team_default', 'restricted')),
+  timezone                      text not null default 'UTC',
   current_context_version_id  uuid,
   inference_credential_id     uuid,
   runs_enabled                 boolean not null default true,
