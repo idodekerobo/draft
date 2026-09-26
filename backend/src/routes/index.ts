@@ -71,12 +71,14 @@ export const routes = {
   // Top-level-navigation front for the POST-only /oauth2/consent — see
   // oauth-consent-redirect.ts for why the consent page can't call it via fetch.
   "/oauth2/consent-redirect": { GET: oauthConsentRedirect.GET },
-  // RFC 9728/8414 discovery docs live at root, outside the basePath.
+  // RFC 9728/8414 discovery docs live at root, outside the basePath. Both
+  // the bare path and the RFC 8414/9728 path-appended form (for the
+  // "/api/auth" issuer and "/mcp" resource) are valid; Better Auth's handler
+  // recognizes both itself, but Bun's router needs an explicit entry for each.
   "/.well-known/oauth-authorization-server": { GET: WELL_KNOWN_HANDLER },
+  "/.well-known/oauth-authorization-server/api/auth": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/openid-configuration": { GET: WELL_KNOWN_HANDLER },
-  // Both the bare path and the RFC 9728 path-appended form (for the "/mcp"
-  // resource) are valid; Better Auth's handler recognizes both itself, but
-  // Bun's router needs an explicit entry for each.
+  "/.well-known/openid-configuration/api/auth": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/oauth-protected-resource": { GET: WELL_KNOWN_HANDLER },
   "/.well-known/oauth-protected-resource/mcp": { GET: WELL_KNOWN_HANDLER },
   "/mcp": { GET: mcp.GET, POST: mcp.POST, DELETE: mcp.DELETE },
