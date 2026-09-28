@@ -16,7 +16,7 @@ import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfi
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { FirefliesConnectPanel, GranolaConnectPanel, LinearConnectPanel, SessionTrackingPanel, SlackConnectPanel } from "draft-shared-ui/integrations";
-import { GithubConnectPanel } from "../adapters/GithubConnectPanel";
+import { GithubConnectPanel } from "../../adapters/GithubConnectPanel";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

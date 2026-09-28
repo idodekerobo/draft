@@ -1,7 +1,7 @@
 import type { IntegrationDetail } from "draft-shared-ui";
 import { GithubConnectPanel as SharedGithubConnectPanel } from "draft-shared-ui/integrations";
-import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { useGithubInstall } from "../../hooks/useGithubInstall";
+import { useAnalytics } from "../analytics/AnalyticsContext";
+import { useGithubInstall } from "../hooks/useGithubInstall";
 
 interface GithubConnectPanelProps {
   detail: IntegrationDetail | undefined;
