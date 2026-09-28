@@ -48,7 +48,7 @@ log "bun $(bun --version) found"
 # ── 2. Install CLI TypeScript dependencies ────────────────────────────────────
 
 log "Installing CLI dependencies..."
-bun install --cwd "$REPO_ROOT/cli" --silent
+bun install --cwd "$REPO_ROOT/apps/cli" --silent
 log "  Dependencies installed"
 
 # ── 3. Copy draft wrapper to PATH ─────────────────────────────────────────────
@@ -73,7 +73,7 @@ fi
 
 cat > "$INSTALL_DIR/draft" << EOF
 #!/usr/bin/env bash
-exec bun run "$REPO_ROOT/cli/src/index.ts" "\$@"
+exec bun run "$REPO_ROOT/apps/cli/src/index.ts" "\$@"
 EOF
 chmod +x "$INSTALL_DIR/draft"
 log "  draft wrapper installed to $INSTALL_DIR/draft"

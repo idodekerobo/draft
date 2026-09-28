@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/idodekerobo/draft/main/scripts/install-cli.sh | bash
 #
 # Installs to ~/.draft/bin/draft, same layout as the desktop app's installer
-# (desktop/src/main/installer.ts), so `draft update` works either way.
+# (apps/desktop/src/main/installer.ts), so `draft update` works either way.
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ warn() { echo -e "${YELLOW}[Draft]${NC} $1"; }
 err()  { echo -e "${RED}[Draft]${NC} $1" >&2; }
 
 # ── 1. Resolve platform asset name ──────────────────────────────────────────
-# Must match platformAssetName() in cli/src/commands/update.ts exactly.
+# Must match platformAssetName() in apps/cli/src/commands/update.ts exactly.
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"

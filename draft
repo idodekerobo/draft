@@ -2,4 +2,4 @@
 # draft — entry point wrapper
 # Delegates to the TypeScript CLI via bun.
 # Copy to ~/bin/draft or /usr/local/bin/draft for global access.
-exec bun run "$(dirname "$0")/cli/src/index.ts" "$@"
+exec bun run "$(dirname "$0")/apps/cli/src/index.ts" "$@"

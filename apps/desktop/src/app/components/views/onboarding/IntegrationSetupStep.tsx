@@ -1,0 +1,129 @@
+import { useOptimistic, useState } from "react";
+import type { ConnectedAppsStatus } from "../../../../rpc/schema";
+import { FirefliesConnectPanel } from "draft-shared-ui/integrations";
+import { GithubConnectPanel } from "../../adapters/GithubConnectPanel";
+import { GranolaConnectPanel, LinearConnectPanel, SessionTrackingPanel, SlackConnectPanel } from "draft-shared-ui/integrations";
+import { IntegrationSetupCard } from "draft-shared-ui/onboarding";
+
+interface IntegrationSetupStepProps {
+  stepNum: number;
+  totalSteps: number;
+  onBack: () => void;
+  onNext: () => void;
+  connections: ConnectedAppsStatus["integrations"] | null;
+  loadConnections: () => Promise<boolean>;
+}
+
+type IntegrationName = "slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session";
+
+export function IntegrationSetupStep({ stepNum, totalSteps, onBack, onNext, connections, loadConnections }: IntegrationSetupStepProps) {
+  const [expanded, setExpanded] = useState<IntegrationName | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Synchronous providers update optimistically; webhook-driven providers
+  // (Fireflies, Granola) wait for delivery evidence from the backend before
+  // they may appear connected.
+  const [optimisticConnections, markConnected] = useOptimistic(
+    connections,
+    (current, name: IntegrationName) =>
+      current ? { ...current, [name]: { ...current[name], connected: true } } : current,
+  );
+
+  // Returns the refetch promise -- SessionTrackingPanel awaits it to avoid flicker.
+  async function handleConnected(name: IntegrationName): Promise<void> {
+    if (name !== "fireflies" && name !== "granola") markConnected(name);
+    const refreshed = await loadConnections();
+    if (refreshed && name !== "claude_session") setExpanded(null);
+  }
+
+  const allConnected = optimisticConnections
+    && optimisticConnections.slack.connected
+    && optimisticConnections.fireflies.connected
+    && optimisticConnections.linear.connected
+    && optimisticConnections.github.connected
+    && optimisticConnections.granola.connected;
+
+  function toggle(name: IntegrationName, connected?: boolean) {
+    if (connected && name !== "claude_session") return;
+    setError(null);
+    setExpanded((current) => current === name ? null : name);
+  }
+
+  const slack = optimisticConnections?.slack;
+  const fireflies = optimisticConnections?.fireflies;
+  const linear = optimisticConnections?.linear;
+  const github = optimisticConnections?.github;
+  const granola = optimisticConnections?.granola;
+  const claudeSession = optimisticConnections?.claude_session;
+
+  return (
+    <div className="onboarding__body onboarding__body--wide">
+      <div className="onboarding__nav">
+        <button className="onboarding__back" onClick={onBack}>← Back</button>
+        <p className="onboarding__step-indicator">Step {stepNum} of {totalSteps}</p>
+      </div>
+      <h1 className="onboarding__title">Connect your sources</h1>
+      <p className="onboarding__desc">
+        {allConnected
+          ? "All integrations are connected. Draft will check them for updates and synthesize new context automatically."
+          : "Draft routinely checks connected integrations — meeting notes and channel activity — and synthesizes updates into your workspace. Select which to set up now."}
+      </p>
+      {error && <p className="onboarding__error">{error}</p>}
+
+      <div className="onboarding__integration-list">
+        <IntegrationSetupCard title="Slack" description="Capture channel activity for team context" hint="3 steps" connected={slack?.connected ?? false} expanded={expanded === "slack"} onToggle={() => toggle("slack", slack?.connected)}>
+          <SlackConnectPanel detail={slack} classPrefix="onboarding" onConnected={() => handleConnected("slack")} />
+        </IntegrationSetupCard>
+        {slack?.connected && (
+          <p className="onboarding__integration-help">
+            Invite the bot to each channel you selected — run <code>/invite @Draft Context</code> in Slack.
+            The bot reads messages but never posts; this is required for capture to work.
+          </p>
+        )}
+
+        <IntegrationSetupCard title="GitHub" description="Track pull request and commit activity" hint="1 step" connected={github?.connected ?? false} expanded={expanded === "github"} onToggle={() => toggle("github", github?.connected)}>
+          <GithubConnectPanel detail={github} classPrefix="onboarding" onConnected={() => handleConnected("github")} />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard title="Fireflies" description="Import your meeting notes" hint="1 step" connected={fireflies?.connected ?? false} status={fireflies?.status} expanded={expanded === "fireflies"} onToggle={() => toggle("fireflies", fireflies?.connected)} keepContentWhenConnected>
+          <FirefliesConnectPanel
+            detail={fireflies}
+            classPrefix="onboarding"
+            onStatusRefresh={loadConnections}
+            onDone={() => setExpanded(null)}
+          />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard title="Linear" description="Track issues, projects, and cycles" hint="1 step" connected={linear?.connected ?? false} expanded={expanded === "linear"} onToggle={() => toggle("linear", linear?.connected)}>
+          <LinearConnectPanel detail={linear} classPrefix="onboarding" onConnected={() => handleConnected("linear")} />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard title="Granola" description="Import your Granola meeting notes (Business/Enterprise plans)" hint="1 step" connected={granola?.connected ?? false} status={granola?.status} expanded={expanded === "granola"} onToggle={() => toggle("granola", granola?.connected)} keepContentWhenConnected>
+          <GranolaConnectPanel
+            detail={granola}
+            classPrefix="onboarding"
+            onStatusRefresh={loadConnections}
+            onDone={() => setExpanded(null)}
+          />
+        </IntegrationSetupCard>
+
+        <IntegrationSetupCard
+          title="Coding Sessions"
+          description="Capture Claude Code sessions from your repos"
+          hint="1 step"
+          connected={claudeSession?.connected ?? false}
+          expanded={expanded === "claude_session"}
+          onToggle={() => toggle("claude_session", claudeSession?.connected)}
+          keepContentWhenConnected
+        >
+          <SessionTrackingPanel detail={claudeSession} classPrefix="onboarding" onConnected={() => handleConnected("claude_session")} />
+        </IntegrationSetupCard>
+      </div>
+
+      <div className="onboarding__actions" style={{ marginTop: 20 }}>
+        <button className="empty-state__cta onboarding__cta" onClick={onNext}>Continue</button>
+        {!allConnected && <button className="onboarding__skip" onClick={onNext}>Skip all</button>}
+      </div>
+    </div>
+  );
+}
