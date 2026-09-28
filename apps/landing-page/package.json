@@ -1,0 +1,33 @@
+{
+  "name": "landing-page-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "prebuild": "mkdir -p public && cp ../../assets/icon.png app/icon.png && cp ../../assets/og-image.png public/og-image.png && cp ../../assets/og-image.png app/opengraph-image.png && cp ../../assets/onboarding-screenshot.png public/onboarding-screenshot.png && cp ../../assets/context-screenshot.png public/context-screenshot.png && cp ../../assets/github-screenshot.png public/github-screenshot.png && cp ../../assets/granola-screenshot.png public/granola-screenshot.png && cp ../../assets/slack-screenshot.png public/slack-screenshot.png && cp ../../assets/agent-loading-action-items.gif public/agent-loading-action-items.gif",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "crisp-sdk-web": "^1.1.2",
+    "lucide-react": "^0.577.0",
+    "next": "16.1.6",
+    "posthog-js": "^1.360.2",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
