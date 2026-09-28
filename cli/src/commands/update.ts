@@ -173,7 +173,7 @@ export async function runUpdate(args: string[]): Promise<number> {
   try {
     const res = await fetch(asset.browser_download_url);
     if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
-    await Bun.write(tmpPath, res);
+    await Bun.write(tmpPath, await res.arrayBuffer());
     chmodSync(tmpPath, 0o755);
 
     const verify = await capture([tmpPath, "--version"], { timeoutMs: 5_000 });
