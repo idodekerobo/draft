@@ -51,7 +51,20 @@ async function withWorkspace<T>(
 
 /** Builds the read-only tool surface for one already-verified caller (see mcp/route.ts). */
 export function buildMcpServer(userId: string): McpServer {
-  const server = new McpServer({ name: "draft", version: "1.0.0" });
+  const server = new McpServer(
+    {
+      name: "draft",
+      version: "1.0.0",
+      title: "Draft",
+      description:
+        "Self-updating documentation about everything happening in the company: product, team, and priorities. You can also read and search sources directly. Docs: https://github.com/idodekerobo/draft/tree/main/docs",
+      websiteUrl: "https://draftai.us",
+    },
+    {
+      instructions:
+        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach.",
+    },
+  );
 
   server.registerTool(
     "context.list",

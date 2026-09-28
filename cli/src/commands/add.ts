@@ -38,6 +38,7 @@ const MANAGED_BLOCK_BODY = [
   "- `draft context read --dimension <name>` (repeatable) or `--all` — read current context.",
   "- `draft context read --dimension memory --period <today|yesterday|this-week|last-week|this-month|last-month|YYYY-MM-DD|YYYY-MM>` —",
   "  read one chronological memory document (\"what happened this week\") instead of the current-state map.",
+  "  Memory holds daily, weekly, and monthly summaries of what happened in the business.",
   "- `draft --help` — see all available commands.",
   "",
   "### Source evidence",
