@@ -10,7 +10,7 @@ run-local:
 	@ROOT_ENV_FILE=$(if $(env),.env.$(env),.env.local) bash scripts/run-local.sh
 
 run-landing:
-	cd landing-page-app && npm run dev -- --port 3001
+	cd apps/landing-page && npm run dev -- --port 3001
 
 stop:
 	-lsof -ti:3001 | xargs kill -9 2>/dev/null || true
@@ -21,12 +21,12 @@ stop:
 #   make dev-refresh
 #     Compiles fresh `draft` CLI + daemon binaries and bundled runtime (pollers,
 #     synthesizers, intelligence adapters) from current source via prebuild.sh,
-#     then installs straight from that freshly-built desktop/assets/background/
+#     then installs straight from that freshly-built apps/desktop/assets/background/
 #     tree — the same tree a real app bundle ships — to where the real,
 #     globally-installed daemon/CLI run from (~/.draft/bin/draft,
-#     ~/.draft/background/). Use this after changing background/ or cli/ code,
+#     ~/.draft/background/). Use this after changing background/ or apps/cli/ code,
 #     so `draft status`/`draft poll` and the auto-polling daemon loop reflect
-#     your latest changes — `bun run dev` in desktop/ alone does NOT rebuild
+#     your latest changes — `bun run dev` in apps/desktop/ alone does NOT rebuild
 #     either binary.
 #
 #     Deliberately does NOT install from the bare repo-root background/ dir:
@@ -34,18 +34,18 @@ stop:
 #     `bash background/install.sh` silently leaves any previously-installed
 #     bundle in place — including a stale, pre-fix one — since
 #     resolveRuntimeEntrypoint() prefers .js over .ts. Installing from
-#     desktop/assets/background/ (always a full fresh rebuild — prebuild.sh
+#     apps/desktop/assets/background/ (always a full fresh rebuild — prebuild.sh
 #     wipes and recreates it every run) avoids that trap entirely.
 
 .PHONY: dev-refresh
 
 dev-refresh:
 	@echo "[dev-refresh] Compiling fresh CLI + daemon binaries + runtime bundles..."
-	@bash desktop/scripts/prebuild.sh
+	@bash apps/desktop/scripts/prebuild.sh
 	@echo "[dev-refresh] Deploying CLI binary..."
-	@cp desktop/assets/bin/draft ~/.draft/bin/draft
+	@cp apps/desktop/assets/bin/draft ~/.draft/bin/draft
 	@echo "[dev-refresh] Installing daemon (binary + runtime bundles) from freshly built assets..."
-	@bash desktop/assets/background/install.sh
+	@bash apps/desktop/assets/background/install.sh
 	@echo ""
 	@echo "[dev-refresh] Done. Verify with: draft status"
 	@echo ""
@@ -158,18 +158,18 @@ desktop-release:
 		echo ""; \
 		exit 1; \
 	fi
-	@# ── Bump version in electrobun.config.ts ──────────────────────────────────
+	@# ── Bump version in apps/desktop/electrobun.config.ts ─────────────────────
 	@python3 -c "\
 import re; \
 from pathlib import Path; \
-p = Path('desktop/electrobun.config.ts'); \
+p = Path('apps/desktop/electrobun.config.ts'); \
 content = p.read_text(); \
 result = re.sub(r'version: \"[^\"]+\"', 'version: \"$(v)\"', content, count=1); \
 p.write_text(result)"
 	@echo "  Bumped: electrobun.config.ts → $(v)"
 	@# ── Commit version bump (stable only, skip if nothing changed) ─────────────
 	@if [ -z "$(canary)" ]; then \
-		git add desktop/electrobun.config.ts; \
+		git add apps/desktop/electrobun.config.ts; \
 		git diff --cached --quiet \
 			&& echo "  Skipped: version already at $(v)" \
 			|| git commit -m "release: desktop v$(v)"; \
@@ -180,15 +180,15 @@ p.write_text(result)"
 	@echo ""
 	@echo "[desktop-release] Building $(_TAG)..."
 	@echo ""
-	@bun run --cwd desktop $(_BUILD_CMD)
+	@bun run --cwd apps/desktop $(_BUILD_CMD)
 	@# ── Cross-compile CLI binaries (stable only — canary is --prerelease, never fetched) ──
 	@if [ -z "$(canary)" ]; then \
 		echo ""; \
 		echo "[desktop-release] Cross-compiling draft CLI binaries..."; \
-		DRAFT_SUPABASE_URL=$$(python3 -c "import json; print(json.load(open('desktop/src/build-config.json')).get('supabase_url',''))"); \
-		DRAFT_SUPABASE_PUBLISHABLE_KEY=$$(python3 -c "import json; print(json.load(open('desktop/src/build-config.json')).get('supabase_publishable_key',''))"); \
+		DRAFT_SUPABASE_URL=$$(python3 -c "import json; print(json.load(open('apps/desktop/src/build-config.json')).get('supabase_url',''))"); \
+		DRAFT_SUPABASE_PUBLISHABLE_KEY=$$(python3 -c "import json; print(json.load(open('apps/desktop/src/build-config.json')).get('supabase_publishable_key',''))"); \
 		DRAFT_SUPABASE_URL="$$DRAFT_SUPABASE_URL" DRAFT_SUPABASE_PUBLISHABLE_KEY="$$DRAFT_SUPABASE_PUBLISHABLE_KEY" DRAFT_CLI_VERSION="$(v)" \
-			bun run cli/scripts/build-release.ts; \
+			bun run apps/cli/scripts/build-release.ts; \
 	fi
 	@# ── Tag + push ────────────────────────────────────────────────────────────
 	@echo ""
@@ -203,7 +203,7 @@ p.write_text(result)"
 		--title "$(_TAG)" \
 		--generate-notes \
 		$(_GH_FLAGS) \
-		desktop/artifacts/*
+		apps/desktop/artifacts/*
 	@echo ""
 	@echo "[desktop-release] Done. $(_TAG) is live."
 	@echo "  https://github.com/$(DESKTOP_REPO)/releases/tag/$(_TAG)"

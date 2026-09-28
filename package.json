@@ -4,9 +4,9 @@
   "workspaces": [
     "backend",
     "background",
-    "cli",
     "core",
-    "desktop"
+    "shared-ui",
+    "apps/*"
   ],
   "devDependencies": {
     "railway": "3.11.0"

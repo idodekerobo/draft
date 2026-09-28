@@ -35,14 +35,14 @@ CLAUDE.md
 .conductor/
 
 node_modules
-cli/node_modules
+apps/cli/node_modules
 
 
 # output
 draft-bin
 background/draft-background-bin
-desktop/build/
-desktop/artifacts/
+apps/desktop/build/
+apps/desktop/artifacts/
 out
 dist
 *.tgz
@@ -66,7 +66,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
-desktop/src/build-config.json
+apps/desktop/src/build-config.json
 
 internal-apps/
 

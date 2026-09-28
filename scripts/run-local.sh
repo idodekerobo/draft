@@ -115,8 +115,8 @@ command -v lsof >/dev/null 2>&1 || fail "lsof is required for port preflight che
 # Preserve the existing app-local files during migration. The root file is
 # loaded last, so any non-empty root value becomes the canonical override.
 load_dotenv "$ROOT_DIR/backend/.env.local"
-load_dotenv "$ROOT_DIR/web-app/.env.local"
-load_dotenv "$ROOT_DIR/landing-page-app/.env.local"
+load_dotenv "$ROOT_DIR/apps/web/.env.local"
+load_dotenv "$ROOT_DIR/apps/landing-page/.env.local"
 load_dotenv "$ROOT_ENV"
 
 # These are the canonical local-stack names. The root file is authoritative;
@@ -137,7 +137,7 @@ require_port DRAFT_WEB_PORT
 require_port DRAFT_LANDING_PORT
 require_port DRAFT_BACKEND_PORT
 
-for dir in web-app landing-page-app backend desktop; do
+for dir in apps/web apps/landing-page backend apps/desktop; do
   [ -d "$ROOT_DIR/$dir" ] || fail "missing required directory: $dir"
   [ -d "$ROOT_DIR/$dir/node_modules" ] || fail "$dir dependencies are missing. Install them before running make run-local."
 done
@@ -223,10 +223,10 @@ start_service() {
 
 # The explicit --port flags are intentional. Next.js reads PORT from the
 # process environment during CLI parsing, before it loads app-local dotenv.
-start_service web web-app env "${web_env[@]}" bun run dev -- --port "$DRAFT_WEB_PORT"
-start_service landing landing-page-app env "${landing_env[@]}" bun run dev -- --port "$DRAFT_LANDING_PORT"
+start_service web apps/web env "${web_env[@]}" bun run dev -- --port "$DRAFT_WEB_PORT"
+start_service landing apps/landing-page env "${landing_env[@]}" bun run dev -- --port "$DRAFT_LANDING_PORT"
 start_service backend backend env "${backend_env[@]}" bun run dev
-start_service desktop desktop env "${desktop_env[@]}" bun run dev
+start_service desktop apps/desktop env "${desktop_env[@]}" bun run dev
 
 printf 'Draft local stack is running. Press Ctrl-C to stop all services.\n'
 printf '  web:     %s\n' "$DRAFT_APP_URL"

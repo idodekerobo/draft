@@ -73,7 +73,7 @@ Self-hosting runs the same product architecture under your control:
 - **Electrobun desktop app** configured to point at your API and web app.
 - **Bun CLI** configured to point at your API and Supabase project.
 
-The Makefile provides one-command local workflows, but not a single-command production deployment. `make run-local` starts the local web app, landing page, backend, and desktop supervisor. `make dev-refresh` rebuilds and installs the local CLI, daemon binary, and bundled background runtimes after changes to `cli/` or `background/`. A self-hosted production deployment still requires configuring and deploying each service, applying the Supabase migrations, creating the required GitHub App credentials, and providing the backend's Fly Machines configuration.
+The Makefile provides one-command local workflows, but not a single-command production deployment. `make run-local` starts the local web app, landing page, backend, and desktop supervisor. `make dev-refresh` rebuilds and installs the local CLI, daemon binary, and bundled background runtimes after changes to `apps/cli/` or `background/`. A self-hosted production deployment still requires configuring and deploying each service, applying the Supabase migrations, creating the required GitHub App credentials, and providing the backend's Fly Machines configuration.
 
 ### Local development
 
@@ -86,7 +86,7 @@ bun install
 cp .env.example .env.local
 # Fill in the private values in .env.local.
 make run-local
-# After changing cli/ or background/:
+# After changing apps/cli/ or background/:
 make dev-refresh
 ~~~
 
@@ -104,9 +104,9 @@ The full local stack needs a publicly reachable HTTPS value for DRAFT_API_BASE_U
 See the app READMEs for standalone development and deployment configuration:
 
 - [Backend](./backend/README.md)
-- [Desktop](./desktop/README.md)
-- [Web app](./web-app/README.md)
-- [Landing page](./landing-page-app/README.md)
+- [Desktop](./apps/desktop/README.md)
+- [Web app](./apps/web/README.md)
+- [Landing page](./apps/landing-page/README.md)
 - [CLI and agent integration](./cli-agent-plugin/README.md)
 
 ## Repository structure
@@ -114,13 +114,15 @@ See the app READMEs for standalone development and deployment configuration:
 ~~~text
 draft/
 ├── backend/              # Bun API, ingestion, scheduler, and synthesis orchestration
-├── web-app/              # Next.js auth, invite, and browser application
-├── desktop/              # Electrobun desktop workspace client
-├── cli/                  # Bun CLI for hosted or self-hosted API access
+├── apps/
+│   ├── web/              # Next.js auth, invite, and browser application
+│   ├── desktop/          # Electrobun desktop workspace client
+│   ├── landing-page/     # Next.js marketing site
+│   └── cli/              # Bun CLI for hosted or self-hosted API access
+├── shared-ui/            # Shared React onboarding and integration UI
 ├── core/                 # Shared auth, config, runtime, and sync primitives
 ├── background/           # Local daemon/runtime, pollers, and source adapters
 ├── cli-agent-plugin/     # Current, evolving agent connection integrations
-├── landing-page-app/     # Next.js marketing site
 ├── supabase/             # Database migrations and local Supabase configuration
 └── Makefile              # Local stack and release automation
 ~~~
