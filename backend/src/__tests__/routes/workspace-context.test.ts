@@ -7,6 +7,7 @@ let queryResult: { data: unknown; error: { message: string } | null } = {
   error: null,
 };
 let workspaceTimezone = "UTC";
+let queryLogCalls = 0;
 
 function contextVersionQueryBuilder() {
   const builder = {
@@ -37,17 +38,19 @@ mock.module("../../auth/workspace-access", () => ({
 }));
 mock.module("../../db/client", () => ({
   serviceClient: {
-    from: (table: string) =>
-      table === "workspaces" ? workspaceQueryBuilder() : contextVersionQueryBuilder(),
+    from: (table: string) => {
+      if (table === "agent_query_log") return { insert: async () => { queryLogCalls += 1; return { error: null }; } };
+      return table === "workspaces" ? workspaceQueryBuilder() : contextVersionQueryBuilder();
+    },
   },
 }));
 
 const routeModule = await import("../../routes/workspace-context");
 
-function request(params: Record<string, string>, query?: Record<string, string>): Request {
+function request(params: Record<string, string>, query?: Record<string, string>, headers?: HeadersInit): Request {
   const url = new URL("http://internal.test");
   for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value);
-  return Object.assign(new Request(url), { params });
+  return Object.assign(new Request(url, { headers }), { params });
 }
 
 describe("workspace context routes", () => {
@@ -55,6 +58,7 @@ describe("workspace context routes", () => {
     accessResult = null;
     queryResult = { data: null, error: null };
     workspaceTimezone = "UTC";
+    queryLogCalls = 0;
   });
 
   it("returns the latest context snapshot after access is granted", async () => {
@@ -168,5 +172,25 @@ describe("workspace context routes", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toContain("does not support periods");
+  });
+
+  it("logs agent reads but not browser reads", async () => {
+    queryResult = {
+      data: {
+        id: "version-1",
+        version_number: 1,
+        content_hash: "hash-1",
+        creation_reason: "synthesis",
+        created_at: "2026-08-06T00:00:00.000Z",
+        documents_json: {},
+      },
+      error: null,
+    };
+
+    await routeModule.contextGET(request({ id: "workspace-1" }) as never);
+    expect(queryLogCalls).toBe(1);
+
+    await routeModule.contextGET(request({ id: "workspace-1" }, undefined, { origin: "https://app.draftai.us" }) as never);
+    expect(queryLogCalls).toBe(1);
   });
 });
