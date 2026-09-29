@@ -6,16 +6,14 @@ import {
   GranolaConnectPanel,
   LinearConnectPanel,
   ToolList,
+  AGENT_SETUP_PROMPT,
   useIntegrationActions,
   type ToolGroup,
   type ToolId,
 } from "draft-shared-ui";
-import { API_URL } from "@/lib/config";
 import { apiFetch } from "@/lib/api";
 import { webToolStatuses } from "@/lib/tool-statuses";
 import { useWorkspace } from "@/lib/workspace";
-
-export const AGENT_COMMAND = `claude mcp add --transport http draft ${API_URL}/mcp`;
 
 function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola"; query?: string }) {
   const { workspaceId, reloadConnections } = useWorkspace();
@@ -67,7 +65,7 @@ export function WebToolList({ groups, allowDisconnect = false }: { groups?: Tool
       platform="web"
       groups={groups}
       statuses={statuses}
-      agentCommand={AGENT_COMMAND}
+      agentPrompt={AGENT_SETUP_PROMPT}
       agentLastUsedAt={connections.agentLastUsedAt}
       panels={panels}
       connectedActions={allowDisconnect ? {

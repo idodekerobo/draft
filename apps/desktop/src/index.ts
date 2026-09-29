@@ -610,7 +610,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           },
           claudeCode: { connected: claudeCodeConnection?.connected ?? false },
           agentLastUsedAt,
-          agentCommand: `claude mcp add --transport http draft ${apiUrl}/mcp`,
           webAppUrl: process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
           // Settings list view only -- every other consumer above keeps
           // using the folded IntegrationDetail shape. Reuses cloudConnections

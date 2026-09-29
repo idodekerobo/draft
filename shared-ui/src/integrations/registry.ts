@@ -16,7 +16,7 @@ export interface ToolEntry {
 export const TOOL_REGISTRY: ToolEntry[] = [
   { id: "fireflies", name: "Fireflies", description: "Meeting notes from your Fireflies account", group: "meetings", scope: "personal", platforms: ["web", "desktop"], popularity: 80 },
   { id: "granola", name: "Granola", description: "Meeting notes from your Granola account", group: "meetings", scope: "personal", platforms: ["web", "desktop"], popularity: 60 },
-  { id: "claude-code", name: "Claude Code", description: "Gives your agent your team's context", group: "agent", scope: "personal", platforms: ["web", "desktop"], popularity: 100 },
+  { id: "claude-code", name: "Claude Code, Codex or Cursor", description: "Gives your agent your team's context", group: "agent", scope: "personal", platforms: ["web", "desktop"], popularity: 100 },
   { id: "slack", name: "Slack", description: "Reads the channels you choose", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 100 },
   { id: "github", name: "GitHub", description: "Reads pull requests and commits", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 90 },
   { id: "linear", name: "Linear", description: "Reads issues and projects", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 70 },

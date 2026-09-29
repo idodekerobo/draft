@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import {
+  AGENT_SETUP_PROMPT,
   FirefliesConnectPanel,
   GranolaConnectPanel,
   LinearConnectPanel,
@@ -98,7 +99,7 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
       platform="desktop"
       groups={groups}
       statuses={desktopToolStatuses(apps)}
-      agentCommand={apps.agentCommand}
+      agentPrompt={AGENT_SETUP_PROMPT}
       agentLastUsedAt={apps.agentLastUsedAt}
       panels={panels}
       managePanels={managePanels}

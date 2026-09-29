@@ -9,3 +9,4 @@ export * from "./GithubConnectPanel";
 export * from "./registry";
 export * from "./ToolList";
 export * from "./tool-status";
+export * from "./agent-prompt";

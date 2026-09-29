@@ -355,8 +355,6 @@ export interface ConnectedAppsStatus {
   claudeCode: { connected: boolean };
   /** The caller's latest agent (MCP or CLI) query, or null before first use. */
   agentLastUsedAt: string | null;
-  /** Copyable MCP setup command for this deployment's API. */
-  agentCommand: string;
   webAppUrl: string;
   /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
   firefliesConnections: MultiAccountConnectionListItem[];

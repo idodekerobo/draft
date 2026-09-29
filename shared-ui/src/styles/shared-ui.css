@@ -97,7 +97,8 @@
 
 .ui-tool-row__main {
   display: grid;
-  grid-template-columns: 8px minmax(120px, 1fr) minmax(0, 1fr) auto;
+  /* Fixed action column so status text lines up across rows with and without buttons. */
+  grid-template-columns: 8px minmax(0, 1.3fr) minmax(0, 1fr) 132px;
   align-items: center;
   gap: 12px;
   min-height: 48px;
@@ -123,7 +124,7 @@
 }
 
 @media (max-width: 640px) {
-  .ui-tool-row__main { grid-template-columns: 8px 1fr auto; }
+  .ui-tool-row__main { grid-template-columns: 8px minmax(0, 1fr) auto; }
   .ui-tool-row__status { grid-column: 2; grid-row: 2; }
   .ui-tool-row__action { grid-column: 3; grid-row: 1 / span 2; }
   .ui-copy-cmd__text { max-width: 180px; }
@@ -348,3 +349,18 @@
 .ui-reading-row__status { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-secondary); }
 .ui-reading-row__status > span:first-child { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-primary); }
 .ui-reading-row__status small { color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
+
+.ui-tool-row__name code, .ui-flow__subtitle code { font: 0.95em var(--font-mono); white-space: nowrap; }
+.ui-tool-row__details { margin: 0 0 12px 20px; font-size: var(--font-size-secondary); }
+.ui-tool-row__details summary { color: var(--color-accent-text); cursor: pointer; width: fit-content; }
+.ui-tool-row__details summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.ui-prompt {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font: var(--font-size-small) / 1.55 var(--font-mono);
+  white-space: pre-wrap;
+  user-select: all;
+}

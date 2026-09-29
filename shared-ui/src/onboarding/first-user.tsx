@@ -5,7 +5,7 @@ import { contextExcerpt, type ContextFileEntry } from "../context/context-files"
 import type { FlowStep, TrackFn } from "../analytics/events";
 import { ConsentRow } from "../privacy/PrivacyRows";
 import type { ToolStatus } from "../integrations/registry";
-import { CopyableCmd } from "./components";
+import { CopyButton, CopyableCmd } from "./components";
 import { FlowActions, FlowShell, type FlowDestination } from "./flow";
 
 export function GiveSourceScreen({ toolList, hasSource, onImportFolder, onNext, onSkip, onBrowseAll }: {
@@ -76,10 +76,10 @@ export function ReadingScreen({ sources, consent, onConsentChange, onOpenDraft, 
   );
 }
 
-export function FirstContextScreen({ entry, inviteUrl, agentCommand, onOpenContext }: {
+export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContext }: {
   entry: ContextFileEntry;
   inviteUrl: string | null;
-  agentCommand: string;
+  agentPrompt: string;
   onOpenContext: () => void;
 }) {
   return (
@@ -95,20 +95,21 @@ export function FirstContextScreen({ entry, inviteUrl, agentCommand, onOpenConte
         </>
       )}
       <h2 className="ui-group-label">Connect your AI agent</h2>
-      <CopyableCmd cmd={agentCommand} />
+      <p className="ui-flow__subtitle">Tell your agent to install the Draft CLI, then run <code>draft add &lt;agent&gt;</code>. Copy this prompt into it.</p>
+      <CopyButton text={agentPrompt} label="Copy prompt" />
       <FlowActions primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onOpenContext}>Open context</button>} />
     </>
   );
 }
 
 /** First user: Give Draft something to read, Draft is reading, then First context appears. */
-export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentCommand, consent, onConsentChange, onImportFolder, onReadingChange, track, onFinish, onOpenUrl, error }: {
+export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, consent, onConsentChange, onImportFolder, onReadingChange, track, onFinish, onOpenUrl, error }: {
   toolList: ReactNode;
   hasSource: boolean;
   readingSources: ReadingSource[];
   entries: ContextFileEntry[];
   inviteUrl: string | null;
-  agentCommand: string;
+  agentPrompt: string;
   consent: boolean;
   onConsentChange: (next: boolean) => void;
   onImportFolder?: () => void;
@@ -148,7 +149,7 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
         <ReadingScreen sources={readingSources} consent={consent} onConsentChange={onConsentChange} onOpenDraft={() => finish("context", "completed")} onOpenUrl={onOpenUrl} />
       )}
       {shown === "first_context" && first && (
-        <FirstContextScreen entry={first} inviteUrl={inviteUrl} agentCommand={agentCommand} onOpenContext={() => finish("context", "completed")} />
+        <FirstContextScreen entry={first} inviteUrl={inviteUrl} agentPrompt={agentPrompt} onOpenContext={() => finish("context", "completed")} />
       )}
     </FlowShell>
   );

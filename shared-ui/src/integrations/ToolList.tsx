@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CopyableCmd } from "../onboarding/components";
+import { CopyButton } from "../onboarding/components";
 import { groupTools, toolsForPlatform, type Platform, type ToolEntry, type ToolGroup, type ToolId, type ToolState, type ToolStatus } from "./registry";
 
 const DEFAULT_STATUS_TEXT: Record<ToolState, string> = {
@@ -66,27 +66,35 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
   );
 }
 
-/** No dot until the first agent query arrives. */
-export function AgentConnectionRow({ name, command, lastUsedAt }: { name: string; command: string; lastUsedAt: string | null }) {
+/** No dot until the first agent query arrives. The action copies a CLI setup prompt for the agent. */
+export function AgentConnectionRow({ name, prompt, lastUsedAt }: { name: string; prompt: string; lastUsedAt: string | null }) {
   return (
     <li className="ui-tool-row">
       <div className="ui-tool-row__main">
         {lastUsedAt ? <StatusDot state="connected" /> : <span className="ui-dot ui-dot--none" aria-hidden="true" />}
-        <span className="ui-tool-row__name">{name}</span>
+        <span className="ui-tool-row__name">
+          {name}
+          <small>Tell your agent to install the Draft CLI, then run <code>draft add &lt;agent&gt;</code>.</small>
+        </span>
         <span className="ui-tool-row__status" role="status">
           {lastUsedAt ? `Last used ${new Date(lastUsedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Waiting for first use"}
         </span>
-        <span className="ui-tool-row__action ui-tool-row__action--wide"><CopyableCmd cmd={command} /></span>
+        <span className="ui-tool-row__action"><CopyButton text={prompt} label="Copy prompt" /></span>
       </div>
+      <details className="ui-tool-row__details">
+        <summary>See prompt</summary>
+        <pre className="ui-prompt">{prompt}</pre>
+      </details>
     </li>
   );
 }
 
-export function ToolList({ platform, groups, statuses, agentCommand, agentLastUsedAt, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere }: {
+export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUsedAt, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere }: {
   platform: Platform;
   groups?: ToolGroup[];
   statuses: Partial<Record<ToolId, ToolStatus>>;
-  agentCommand: string;
+  /** AGENT_SETUP_PROMPT from integrations/agent-prompt.ts. */
+  agentPrompt: string;
   agentLastUsedAt: string | null;
   panels: Partial<Record<ToolId, (close: () => void) => ReactNode>>;
   connectedActions?: Partial<Record<ToolId, ReactNode>>;
@@ -102,7 +110,7 @@ export function ToolList({ platform, groups, statuses, agentCommand, agentLastUs
           <h3 className="ui-group-label">{label}</h3>
           <ul className="ui-rows">
             {tools.map((tool) => tool.id === "claude-code"
-              ? <AgentConnectionRow key={tool.id} name={tool.name} command={agentCommand} lastUsedAt={agentLastUsedAt} />
+              ? <AgentConnectionRow key={tool.id} name={tool.name} prompt={agentPrompt} lastUsedAt={agentLastUsedAt} />
               : <ConnectionRow key={tool.id} tool={tool} status={statuses[tool.id] ?? { state: "disconnected" }} panel={panels[tool.id]} connectedAction={connectedActions[tool.id]} managePanel={managePanels[tool.id]} unavailableHint={unavailableHint} startHere={tool.id === startHere} />)}
           </ul>
         </section>

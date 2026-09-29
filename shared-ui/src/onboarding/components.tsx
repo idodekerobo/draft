@@ -24,6 +24,25 @@ export function CopyableCmd({ cmd }: { cmd: string }) {
   );
 }
 
+// ── CopyButton ────────────────────────────────────────────────────────────────
+
+/** Outlined copy action for text too long to show inline, such as the agent setup prompt. */
+export function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy() {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2_000);
+    }).catch(() => {});
+  }
+  return (
+    <>
+      <button type="button" className="ui-btn" onClick={handleCopy}>{copied ? "Copied" : label}</button>
+      <span className="ui-visually-hidden" role="status">{copied ? "Copied" : ""}</span>
+    </>
+  );
+}
+
 // ── Setup dimensions ─────────────────────────────────────────────────────────
 
 export const DEFAULT_SETUP_DIMENSIONS = ["company", "product", "team", "priorities"];

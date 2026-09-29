@@ -2,7 +2,7 @@
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
 import { useEffect, useState } from "react";
-import { DEFAULT_SETUP_DIMENSIONS, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, DEFAULT_SETUP_DIMENSIONS, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
 import { events, rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
@@ -153,7 +153,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
       readingSources={readingSources(apps, folderImported)}
       entries={files}
       inviteUrl={inviteUrl}
-      agentCommand={apps.agentCommand}
+      agentPrompt={AGENT_SETUP_PROMPT}
       consent={consent}
       onConsentChange={(next) => void changeConsent(next)}
       onImportFolder={() => void importFolder()}
