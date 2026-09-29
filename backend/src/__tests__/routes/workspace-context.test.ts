@@ -47,7 +47,7 @@ mock.module("../../db/client", () => ({
 
 const routeModule = await import("../../routes/workspace-context");
 
-function request(params: Record<string, string>, query?: Record<string, string>, headers?: HeadersInit): Request {
+function request(params: Record<string, string>, query?: Record<string, string>, headers?: Record<string, string>): Request {
   const url = new URL("http://internal.test");
   for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value);
   return Object.assign(new Request(url, { headers }), { params });

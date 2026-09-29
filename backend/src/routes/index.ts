@@ -6,6 +6,7 @@ import * as connections from "./connections";
 import * as githubCallback from "./github-callback";
 import * as githubInstall from "./github-install";
 import * as health from "./health";
+import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionsIngest from "./sessions-ingest";
@@ -34,6 +35,7 @@ export const routes = {
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
   "/waitlist": { POST: waitlist.POST },
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
+  "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
   "/workspaces/:id/context": { GET: withCors(workspaceContext.contextGET), OPTIONS },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
