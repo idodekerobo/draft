@@ -6,3 +6,5 @@ export * from "./SessionTrackingPanel";
 export * from "./SlackChannelPicker";
 export * from "./SlackConnectPanel";
 export * from "./GithubConnectPanel";
+export * from "./registry";
+export * from "./ToolList";

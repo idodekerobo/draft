@@ -5,7 +5,7 @@ import type { IntegrationDetail } from "../types";
 interface SessionTrackingPanelProps {
   detail: IntegrationDetail | undefined;
   onConnected: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
 }
 
 const ENABLE_COMMAND = "draft sessions enable claude-code";

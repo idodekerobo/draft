@@ -10,6 +10,7 @@ import {
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, readCollaboration, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
+import { documentsToEntries } from "draft-shared-ui/context-files";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
@@ -50,7 +51,6 @@ import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
 import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
 import type {
   AppRPCType,
-  ContextFileEntry,
   IntegrationDetail,
   SlackChannelOption,
   SlackMembershipReconcileResult,
@@ -104,26 +104,6 @@ async function revokeCredentialAdmin(workspaceId: string, credentialId: string):
 
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
-
-const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
-const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
-
-
-function capitalize(str: string): string {
-  return str.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function slugToLabel(slug: string): string {
-  return capitalize(slug.replace(/[-_]/g, " "));
-}
-
-function splitFrontmatter(content: string): { frontmatterRaw: string; body: string } {
-  if (!content.startsWith("---")) return { frontmatterRaw: "", body: content };
-  const end = content.indexOf("\n---", 3);
-  if (end === -1) return { frontmatterRaw: "", body: content };
-  const body = content.slice(end + 4).replace(/^\n/, "");
-  return { frontmatterRaw: content.slice(0, content.length - body.length), body };
-}
 
 /**
  * Render the context that the desktop's Session view previews.
@@ -217,104 +197,6 @@ function buildSessionPreview(): { text: string; tokenEstimate: number } {
 
   const text = lines.join("\n");
   return { text, tokenEstimate: Math.ceil(text.length / 4) };
-}
-
-function logEntryLabel(filename: string): string {
-  const base = filename.replace(/\.md$/, "");
-  // Expect prefix like 20260514_ or 20260514-
-  const match = base.match(/^(\d{4})(\d{2})(\d{2})[_-]/);
-  if (match) {
-    const [, year, month, day] = match;
-    const date = new Date(Number(year), Number(month) - 1, Number(day));
-    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
-  }
-  return slugToLabel(base);
-}
-
-function toContextFileEntry(relativePath: string, content: string): ContextFileEntry | null {
-  const segments = relativePath.split("/");
-  const [group, second, third] = segments;
-  if (!group || CONTEXT_SKIP_ROOT.has(group) || !relativePath.endsWith(".md")) return null;
-
-  const split = splitFrontmatter(content);
-  if (segments.length === 1) {
-    const base = relativePath.replace(/\.md$/, "");
-    return {
-      relativePath,
-      label: slugToLabel(base),
-      content: split.body,
-      frontmatterRaw: split.frontmatterRaw,
-      kind: "standalone",
-      group: base,
-      groupLabel: slugToLabel(base),
-    };
-  }
-
-  if (segments.length === 2 && second === "index.md") {
-    return {
-      relativePath,
-      label: slugToLabel(group),
-      content: split.body,
-      frontmatterRaw: split.frontmatterRaw,
-      kind: "dim",
-      group,
-      groupLabel: slugToLabel(group),
-    };
-  }
-
-  if (segments.length === 3 && second === "log" && third) {
-    return {
-      relativePath,
-      label: logEntryLabel(third),
-      content: split.body,
-      frontmatterRaw: split.frontmatterRaw,
-      kind: "log",
-      group,
-      groupLabel: slugToLabel(group),
-    };
-  }
-
-  if (segments.length === 2 && second) {
-    const base = second.replace(/\.md$/, "");
-    return {
-      relativePath,
-      label: slugToLabel(base),
-      content: split.body,
-      frontmatterRaw: split.frontmatterRaw,
-      kind: "group-child",
-      group,
-      groupLabel: slugToLabel(group),
-    };
-  }
-
-  return null;
-}
-
-function sortContextFileEntries(entries: ContextFileEntry[]): ContextFileEntry[] {
-  return entries.sort((a, b) => {
-    function sortKey(e: ContextFileEntry): [number, number, string, string] {
-      const stdIdx = CONTEXT_DIMENSION_ORDER.indexOf(e.group);
-      if (e.kind === "dim") {
-        return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 0, e.group, ""];
-      }
-      if (e.kind === "log") {
-        return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
-      }
-      if (e.kind === "standalone") return [200, 0, e.group, ""];
-      return [300, 0, e.group, e.relativePath];
-    }
-
-    const ka = sortKey(a);
-    const kb = sortKey(b);
-    for (let i = 0; i < ka.length; i++) {
-      const av = ka[i];
-      const bv = kb[i];
-      if (av === undefined || bv === undefined) break;
-      if (av < bv) return -1;
-      if (av > bv) return 1;
-    }
-    return 0;
-  });
 }
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
@@ -620,12 +502,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             documents: Record<string, { content: string; sha256: string }>;
           }>(`workspaces/${workspaceId}/context`);
 
-          return sortContextFileEntries(
-            Object.entries(context.documents).flatMap(([path, document]) => {
-              const entry = toContextFileEntry(path, document.content);
-              return entry ? [entry] : [];
-            }),
-          );
+          return documentsToEntries(context.documents);
         } catch (error) {
           const authFailure =
             (error instanceof AuthRefreshError && error.kind === "terminal") ||

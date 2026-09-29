@@ -385,24 +385,8 @@ export interface SynthesisSchedule {
   lastEnqueuedAt: string | null;
 }
 
-export interface ContextFileEntry {
-  relativePath: string;
-  label: string;
-  content: string;
-  /** Verbatim YAML frontmatter block (including `---` delimiters), or "" if none. Must be re-prepended on save — content is always frontmatter-stripped. */
-  frontmatterRaw: string;
-  /**
-   * dim       — dimension index.md (has expand arrow for log entries)
-   * log       — log/ entry child of a dim (shown when dim is expanded)
-   * standalone — single root-level .md file (like tensions.md, no expand)
-   * group-child — file inside a multi-file group (decisions/, research/, etc.)
-   */
-  kind: "dim" | "log" | "standalone" | "group-child";
-  /** Dimension or group id — e.g. "company", "decisions", "research" */
-  group: string;
-  /** Human-readable label for the group — used in section headers */
-  groupLabel: string;
-}
+import type { ContextFileEntry } from "draft-shared-ui/context-files";
+export type { ContextFileEntry };
 
 /** A team MCP that is waiting for the user to supply missing API credentials. */
 export interface PendingCredentialMcp {

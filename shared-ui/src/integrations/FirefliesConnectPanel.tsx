@@ -6,7 +6,7 @@ interface FirefliesConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onStatusRefresh: () => boolean | Promise<boolean>;
   onDone: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
 }
 
 interface WebhookInfo {

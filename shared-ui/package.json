@@ -6,7 +6,10 @@
   "exports": {
     ".": "./src/index.ts",
     "./integrations": "./src/integrations/index.ts",
-    "./onboarding": "./src/onboarding/index.ts"
+    "./onboarding": "./src/onboarding/index.ts",
+    "./context-files": "./src/context/context-files.ts",
+    "./styles/tokens.css": "./src/styles/tokens.css",
+    "./styles/shared-ui.css": "./src/styles/shared-ui.css"
   },
   "peerDependencies": {
     "react": ">=19",
@@ -20,5 +23,12 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "typescript": "^5"
+  },
+  "dependencies": {
+    "marked": "^18.0.4"
+  },
+  "scripts": {
+    "test": "bun test",
+    "check-tokens": "bun scripts/check-tokens.ts ../apps/desktop/src/app/index.css src/styles/shared-ui.css"
   }
 }

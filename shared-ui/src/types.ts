@@ -1,3 +1,5 @@
+import type { TrackFn } from "./analytics/events";
+
 export type IntegrationStatus = "disconnected" | "pending" | "connected" | "degraded" | "error";
 
 export interface IntegrationDetail {
@@ -37,7 +39,7 @@ export interface WebhookConnectionResult extends ActionResult {
 export type GithubInstallPhase = "idle" | "awaiting_approval" | "connected" | "error";
 
 export interface IntegrationActions {
-  track: (event: string, properties: Record<string, unknown>) => void;
+  track: TrackFn;
   openUrl: (url: string) => void | Promise<void>;
   getSlackManifestUrl: () => Promise<{ ok: boolean; url?: string; error?: string }>;
   listSlackChannels: (input: { botToken?: string }) => Promise<SlackChannelsResult>;

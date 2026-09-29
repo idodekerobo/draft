@@ -3,7 +3,7 @@ import type { IntegrationDetail, GithubInstallPhase } from "../types";
 interface GithubConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onConnected: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
   phase: GithubInstallPhase;
   error: string | null;
   onConnect: () => void | Promise<void>;

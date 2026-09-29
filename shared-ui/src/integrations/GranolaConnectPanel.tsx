@@ -6,7 +6,7 @@ interface GranolaConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onStatusRefresh: () => boolean | Promise<boolean>;
   onDone: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
 }
 
 const REFRESH_ERROR = "Connection saved, but Draft could not refresh its status. Try again in a moment.";

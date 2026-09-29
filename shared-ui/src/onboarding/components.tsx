@@ -10,16 +10,20 @@ import type { IntegrationStatus } from "../types";
 export function CopyableCmd({ cmd }: { cmd: string }) {
   const [copied, setCopied] = useState(false);
   function handleCopy() {
+    // If the clipboard is blocked, the command text stays selectable.
     void navigator.clipboard.writeText(cmd).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2_000);
-    });
+    }).catch(() => {});
   }
   return (
-    <button className="onboarding__cmd" onClick={handleCopy} title="Copy to clipboard">
-      <span className="onboarding__cmd-text">{cmd}</span>
-      <span className="onboarding__cmd-copy">{copied ? "Copied" : "Copy"}</span>
-    </button>
+    <span className="ui-copy-cmd">
+      <code className="ui-copy-cmd__text">{cmd}</code>
+      <button type="button" className="ui-btn" onClick={handleCopy} aria-label={copied ? "Copied" : `Copy ${cmd}`}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <span className="ui-visually-hidden" role="status">{copied ? "Copied" : ""}</span>
+    </span>
   );
 }
 

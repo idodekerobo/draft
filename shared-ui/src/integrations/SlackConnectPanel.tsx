@@ -7,7 +7,7 @@ interface SlackConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onConnected: () => void | Promise<void>;
   onMembershipUpdated?: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
   mode?: "connect" | "manage";
 }
 
