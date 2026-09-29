@@ -17,7 +17,7 @@ make run-local
 Or run the app alone:
 
 ~~~bash
-cd web-app
+cd apps/web
 bun run dev
 ~~~
 
@@ -33,8 +33,12 @@ Optional values:
 
 ~~~env
 NEXT_PUBLIC_DOWNLOAD_URL=
+NEXT_PUBLIC_POSTHOG_KEY=
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
 PORT=3000
 ~~~
+
+Without NEXT_PUBLIC_POSTHOG_KEY, analytics are off. With a key, nothing is sent until the signed-in user turns on usage data (stored per user, shared with the desktop app). See docs/analytics.md.
 
 NEXT_PUBLIC_API_BASE_URL must be reachable by the browser. All NEXT_PUBLIC_* values are public and may be embedded in browser assets. Never put backend secrets in this app.
 
