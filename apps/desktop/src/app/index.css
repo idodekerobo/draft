@@ -1935,11 +1935,9 @@ button {
 }
 
 .settings__title {
-  font-size: var(--font-size-micro);
+  font-size: var(--font-size-secondary);
   font-weight: 600;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--color-text-primary);
 }
 
 .settings__body {
@@ -1966,12 +1964,16 @@ button {
 }
 
 .settings__section-label {
-  font-size: var(--font-size-micro);
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--font-size-secondary);
+  font-weight: 500;
+  color: var(--color-text-secondary);
   padding: 0 20px 8px;
+}
+
+/* Shared rows (privacy, appearance) inside desktop's padded sections. */
+.settings__section .ui-settings-row {
+  padding: 14px 20px;
+  min-height: 60px;
 }
 
 .settings__section-header {
@@ -2391,47 +2393,6 @@ button {
 .skill-row-anim--exit-right {
   animation: skill-row-exit-right 260ms cubic-bezier(0.4, 0, 1, 1) both;
   pointer-events: none;
-}
-
-/* ── Toggle (iOS-style pill) ─────────────────────────────────────────────────── */
-
-.toggle {
-  flex-shrink: 0;
-  width: 38px;
-  height: 22px;
-  border-radius: 11px;
-  background: rgba(var(--color-overlay-rgb), 0.18);
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  position: relative;
-  transition: background 220ms ease;
-}
-
-.toggle--on {
-  background: var(--color-accent-fill);
-}
-
-.toggle--disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.toggle__thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--color-text-primary);
-  transition: transform 220ms ease;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-}
-
-.toggle--on .toggle__thumb {
-  transform: translateX(16px);
 }
 
 /* ── Segment control ─────────────────────────────────────────────────────────── */

@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import type { AppVersionInfo, LocalConfig, SynthesisSchedule } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { AppearanceRow, PrivacyRows, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -28,28 +28,6 @@ function describeSynthesisCadence(schedule: SynthesisSchedule): string {
     return `Every ${Math.round(schedule.intervalSeconds / 60)} minutes`;
   }
   return schedule.cronExpression ?? "Custom schedule";
-}
-
-// ── Sub-components: Controls ───────────────────────────────────────────────────
-
-interface ToggleProps {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  disabled?: boolean;
-}
-
-function Toggle({ checked, onChange, disabled }: ToggleProps) {
-  return (
-    <button
-      className={`toggle${checked ? " toggle--on" : ""}${disabled ? " toggle--disabled" : ""}`}
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="toggle__thumb" />
-    </button>
-  );
 }
 
 // ── SettingsView ───────────────────────────────────────────────────────────────
@@ -326,7 +304,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                   className="app-row__connect"
                   onClick={() => void rpc.request.applyUpdate()}
                 >
-                  Restart & Update
+                  Restart and update
                 </button>
               ) : (
                 <button
@@ -334,7 +312,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
                   onClick={handleCheckForUpdates}
                   disabled={updateCheckState === "checking"}
                 >
-                  {updateCheckState === "checking" ? "Checking…" : "Check for Updates"}
+                  {updateCheckState === "checking" ? "Checking…" : "Check for updates"}
                 </button>
               )}
             </div>

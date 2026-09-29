@@ -125,8 +125,8 @@ export function AuthForm({
         {busy
           ? "Please wait…"
           : mode === "signup"
-            ? "Create Account"
-            : "Sign In"}
+            ? "Create account"
+            : "Sign in"}
       </button>
       <button
         type="button"
