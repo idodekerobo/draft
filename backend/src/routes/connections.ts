@@ -379,7 +379,18 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     last_error_at: null,
   });
 
-  return Response.json({ connections });
+  const { data: agentData, error: agentError } = await serviceClient
+    .from("agent_query_log")
+    .select("occurred_at")
+    .eq("workspace_id", req.params.id)
+    .eq("user_id", caller.userId)
+    .order("occurred_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (agentError) return errorResponse("agent_lookup_failed", 500, agentError, req.params.id);
+  const agent = { last_used_at: (agentData as { occurred_at: string } | null)?.occurred_at ?? null };
+
+  return Response.json({ connections, agent });
 });
 
 export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, caller) => {

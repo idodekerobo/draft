@@ -3,6 +3,7 @@ import { decryptCredentialPayload, encryptCredentialPayload } from "../../creden
 
 const caller = { userId: "user-1", accessToken: "token-1" };
 const workspaceId = "workspace-1";
+let agentQueries: Array<{ workspace_id: string; user_id: string; occurred_at: string }> = [];
 
 interface Connection {
   id: string;
@@ -193,6 +194,11 @@ function createFakeClient() {
           return { data: returnSingle ? rows[0] ?? null : rows, error: null };
         }
 
+        if (table === "agent_query_log" && operation === "select") {
+          const rows = agentQueries.filter(rowMatches).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+          return { data: returnSingle ? rows[0] ?? null : rows, error: null };
+        }
+
         if (table === "errors" && operation === "insert") {
           if (errorsInsertError) return { data: null, error: errorsInsertError };
           state.errors.push(payload as unknown as OperatorError);
@@ -213,6 +219,12 @@ function createFakeClient() {
         },
         in(column: string, values: unknown[]) {
           inFilters[column] = values;
+          return builder;
+        },
+        order() {
+          return builder;
+        },
+        limit() {
           return builder;
         },
         neq(column: string, value: unknown) {
@@ -559,6 +571,7 @@ afterAll(() => {
 
 beforeEach(() => {
   accessResult = null;
+  agentQueries = [];
   restartedSlackListeners = [];
   stoppedSlackListeners = [];
   slackJoinCalls = [];
@@ -1257,7 +1270,20 @@ describe("workspace connection routes", () => {
           last_error_at: null,
         },
       ],
+      agent: { last_used_at: null },
     });
+  });
+
+  it("reports the caller's latest agent query as agent.last_used_at", async () => {
+    agentQueries = [
+      { workspace_id: workspaceId, user_id: caller.userId, occurred_at: "2026-09-01T00:00:00.000Z" },
+      { workspace_id: workspaceId, user_id: caller.userId, occurred_at: "2026-09-02T00:00:00.000Z" },
+      { workspace_id: workspaceId, user_id: "someone-else", occurred_at: "2026-09-03T00:00:00.000Z" },
+    ];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { agent: { last_used_at: string | null } };
+    expect(body.agent).toEqual({ last_used_at: "2026-09-02T00:00:00.000Z" });
   });
 
   it("reports claude_code as connected once a token is stored", async () => {
