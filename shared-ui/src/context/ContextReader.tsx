@@ -1,3 +1,5 @@
+"use client";
+
 import { useMemo, useState } from "react";
 import { parseFrontmatterFields, type ContextFileEntry } from "./context-files";
 import { renderMarkdown } from "./markdown";

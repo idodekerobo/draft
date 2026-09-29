@@ -8,3 +8,4 @@ export * from "./SlackConnectPanel";
 export * from "./GithubConnectPanel";
 export * from "./registry";
 export * from "./ToolList";
+export * from "./tool-status";

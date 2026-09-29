@@ -1,3 +1,5 @@
+"use client";
+
 import type { IntegrationDetail, GithubInstallPhase } from "../types";
 
 interface GithubConnectPanelProps {

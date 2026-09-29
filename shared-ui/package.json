@@ -9,7 +9,8 @@
     "./onboarding": "./src/onboarding/index.ts",
     "./context-files": "./src/context/context-files.ts",
     "./styles/tokens.css": "./src/styles/tokens.css",
-    "./styles/shared-ui.css": "./src/styles/shared-ui.css"
+    "./styles/shared-ui.css": "./src/styles/shared-ui.css",
+    "./theme": "./src/settings/theme.ts"
   },
   "peerDependencies": {
     "react": ">=19",

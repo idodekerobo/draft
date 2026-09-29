@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useState, type ReactNode } from "react";
 import { contextExcerpt, type ContextFileEntry } from "../context/context-files";
 import type { FlowStep, TrackFn } from "../analytics/events";
@@ -90,7 +92,7 @@ export function ConnectToolsScreen({ toolList, consent, onConsentChange, onNext,
 export type FlowDestination = "context" | "connections";
 
 /** Joiner flow: Here is what Draft knows, then Connect your tools. The host sets the completion flag in onFinish. */
-export function JoinerFlow({ orgName, entries, toolList, consent, onConsentChange, track, onFinish, onOpenUrl }: {
+export function JoinerFlow({ orgName, entries, toolList, consent, onConsentChange, track, onFinish, onOpenUrl, error }: {
   orgName: string;
   entries: ContextFileEntry[];
   toolList: ReactNode;
@@ -99,8 +101,11 @@ export function JoinerFlow({ orgName, entries, toolList, consent, onConsentChang
   track: TrackFn;
   onFinish: (destination: FlowDestination) => void;
   onOpenUrl?: (url: string) => void;
+  /** Shown above the screen, for example when saving the completion flag fails. */
+  error?: string | null;
 }) {
-  const [step, setStep] = useState<FlowStep>("what_draft_knows");
+  // With no context yet there is nothing to read, so start at the tools.
+  const [step, setStep] = useState<FlowStep>(entries.length ? "what_draft_knows" : "connect_tools");
   useEffect(() => { track("onboarding_step_viewed", { step }); }, [step]);
 
   function finish(destination: FlowDestination, outcome: "completed" | "skipped") {
@@ -110,6 +115,7 @@ export function JoinerFlow({ orgName, entries, toolList, consent, onConsentChang
 
   return (
     <FlowShell>
+      {error && <p className="ui-error" role="alert">{error}</p>}
       {step === "what_draft_knows" ? (
         <WhatDraftKnowsScreen
           orgName={orgName}

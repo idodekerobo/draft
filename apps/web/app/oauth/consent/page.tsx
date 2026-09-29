@@ -1,3 +1,4 @@
+import { FlowShell } from "draft-shared-ui";
 import { createClient } from "@/lib/supabase/server";
 import { AuthForm } from "@/components/AuthForm";
 import { ApproveOAuthConsent } from "@/components/ApproveOAuthConsent";
@@ -28,7 +29,7 @@ export default async function OAuthConsentPage({
   } = await client.auth.getUser();
 
   return (
-    <main className="card">
+    <FlowShell>
       <h1>Connect Draft</h1>
       {hasError && <p className="error">Something went wrong. Try again.</p>}
       {user ? (
@@ -39,6 +40,6 @@ export default async function OAuthConsentPage({
           <AuthForm next={`/oauth/consent?${queryString}`} initialMode="login" />
         </>
       )}
-    </main>
+    </FlowShell>
   );
 }

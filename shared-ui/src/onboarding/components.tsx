@@ -1,3 +1,5 @@
+"use client";
+
 // shared.tsx — shared UI components for onboarding steps
 
 import { useEffect, useState, type ReactNode } from "react";

@@ -1,3 +1,5 @@
+"use client";
+
 import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import type { ThemePreference } from "./theme";
 

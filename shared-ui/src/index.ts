@@ -7,3 +7,4 @@ export * from "./settings/theme";
 export * from "./settings/SettingsRow";
 export * from "./privacy/PrivacyRows";
 export * from "./context/ContextReader";
+export * from "./activity/ActivityList";

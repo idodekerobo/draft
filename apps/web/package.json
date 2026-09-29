@@ -13,7 +13,10 @@
     "@supabase/supabase-js": "^2",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "draft-shared-ui": "workspace:*",
+    "draft-core": "workspace:*",
+    "posthog-js": "^1.379.1"
   },
   "devDependencies": {
     "@types/node": "^20",

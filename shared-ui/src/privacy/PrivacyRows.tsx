@@ -1,3 +1,5 @@
+"use client";
+
 import { useId } from "react";
 import { SettingsRow, Toggle } from "../settings/SettingsRow";
 
@@ -40,6 +42,7 @@ export function ConsentRow({ checked, onChange, onOpenUrl }: { checked: boolean;
   );
 }
 
+/** Renders two list items; place inside a `ui-rows` list. */
 export function PrivacyRows({ analyticsConsent, sessionReplay, onAnalyticsChange, onReplayChange, onOpenUrl }: {
   analyticsConsent: boolean;
   sessionReplay: boolean;
@@ -51,18 +54,18 @@ export function PrivacyRows({ analyticsConsent, sessionReplay, onAnalyticsChange
   const replayId = useId();
   return (
     <>
-      <SettingsRow
+      <li><SettingsRow
         label={PRIVACY_COPY.usageLabel}
         labelId={usageId}
         helper={<>{PRIVACY_COPY.usageHelper} <LearnMore onOpenUrl={onOpenUrl} /></>}
         control={<Toggle checked={analyticsConsent} onChange={onAnalyticsChange} labelledBy={usageId} />}
-      />
-      <SettingsRow
+      /></li>
+      <li><SettingsRow
         label={PRIVACY_COPY.replayLabel}
         labelId={replayId}
         helper={PRIVACY_COPY.replayHelper}
         control={<Toggle checked={sessionReplay && analyticsConsent} onChange={onReplayChange} disabled={!analyticsConsent} labelledBy={replayId} />}
-      />
+      /></li>
     </>
   );
 }

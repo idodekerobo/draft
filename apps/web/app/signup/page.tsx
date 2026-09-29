@@ -1,3 +1,4 @@
+import { FlowShell } from "draft-shared-ui";
 import { AuthForm } from "@/components/AuthForm";
 export default async function Signup({
   searchParams,
@@ -7,9 +8,9 @@ export default async function Signup({
   const { invite } = await searchParams;
   const next = invite ? `/invite/${encodeURIComponent(invite)}` : "/";
   return (
-    <main className="card">
+    <FlowShell>
       <h1>Create your Draft account</h1>
       <AuthForm next={next} />
-    </main>
+    </FlowShell>
   );
 }

@@ -3,6 +3,8 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { safeNext } from "@/lib/safe-redirect";
 import { SiGoogle } from "@icons-pack/react-simple-icons";
+import { WaitingForEmail } from "@/components/WaitingForEmail";
+import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 export function AuthForm({
   next: nextProp = "/",
   initialMode = "signup",
@@ -16,6 +18,9 @@ export function AuthForm({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const { track } = useAnalytics();
+  const emailRedirectTo = typeof location === "undefined" ? "" : `${location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -27,7 +32,7 @@ export function AuthForm({
             email,
             password,
             options: {
-              emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+              emailRedirectTo,
             },
           })
         : await client.auth.signInWithPassword({ email, password });
@@ -36,9 +41,10 @@ export function AuthForm({
       setBusy(false);
       return;
     }
+    if (mode === "signup") track("account_created", { method: "email" });
     if (result.data.session) location.assign(next);
     else {
-      setError("Check your email to confirm your account.");
+      setWaiting(true);
       setBusy(false);
     }
   }
@@ -55,6 +61,17 @@ export function AuthForm({
       setError(result.error.message);
       setBusy(false);
     }
+  }
+  if (waiting) {
+    return (
+      <WaitingForEmail
+        email={email}
+        password={password}
+        next={next}
+        emailRedirectTo={emailRedirectTo}
+        onBack={() => { setWaiting(false); setPassword(""); }}
+      />
+    );
   }
   return (
     <form onSubmit={submit}>
@@ -100,10 +117,7 @@ export function AuthForm({
         />
       </label>
       {error && (
-        <p
-          className={error.startsWith("Check your email") ? "status" : "error"}
-          role="status"
-        >
+        <p className="error" role="alert">
           {error}
         </p>
       )}

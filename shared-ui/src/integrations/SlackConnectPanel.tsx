@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useIntegrationActions } from "./IntegrationActionsContext";
 import type { IntegrationDetail } from "../types";
