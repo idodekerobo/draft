@@ -66,7 +66,7 @@ export default async function Invite({ params }: { params: Promise<{ token: stri
         <>
           <h1>You&apos;re invited to join {invite.organization_name}</h1>
           <p>{invite.team_name}. Create an account or sign in to join.</p>
-          <AuthForm next={invitePath} />
+          <AuthForm next={invitePath} initialMode="signup" allowSignup />
         </>
       )}
     </FlowShell>

@@ -7,13 +7,15 @@ import { WaitingForEmail } from "@/components/WaitingForEmail";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 export function AuthForm({
   next: nextProp = "/",
-  initialMode = "signup",
+  initialMode = "login",
+  allowSignup = false,
 }: {
   next?: string;
   initialMode?: "signup" | "login";
+  allowSignup?: boolean;
 }) {
   const next = safeNext(nextProp);
-  const [mode, setMode] = useState(initialMode);
+  const [mode, setMode] = useState(allowSignup ? initialMode : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,7 +29,7 @@ export function AuthForm({
     setBusy(true);
     const client = createClient();
     const result =
-      mode === "signup"
+      allowSignup && mode === "signup"
         ? await client.auth.signUp({
             email,
             password,
@@ -41,7 +43,7 @@ export function AuthForm({
       setBusy(false);
       return;
     }
-    if (mode === "signup") track("account_created", { method: "email" });
+    if (allowSignup && mode === "signup") track("account_created", { method: "email" });
     if (result.data.session) location.assign(next);
     else {
       setWaiting(true);
@@ -87,7 +89,7 @@ export function AuthForm({
       <div className="auth-divider" aria-hidden="true">
         <span />
         <small>
-          {mode === "signup"
+          {allowSignup && mode === "signup"
             ? "or create an account with email"
             : "or sign in with email"}
         </small>
@@ -110,7 +112,7 @@ export function AuthForm({
           type="password"
           minLength={6}
           required
-          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          autoComplete={allowSignup && mode === "signup" ? "new-password" : "current-password"}
           placeholder="At least 6 characters"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -124,20 +126,22 @@ export function AuthForm({
       <button disabled={busy}>
         {busy
           ? "Please wait…"
-          : mode === "signup"
+          : allowSignup && mode === "signup"
             ? "Create account"
             : "Sign in"}
       </button>
-      <button
-        type="button"
-        className="mode-switch"
-        disabled={busy}
-        onClick={() => setMode(mode === "signup" ? "login" : "signup")}
-      >
-        {mode === "signup"
-          ? "Already have an account? Sign in"
-          : "Need an account? Sign up"}
-      </button>
+      {allowSignup && (
+        <button
+          type="button"
+          className="mode-switch"
+          disabled={busy}
+          onClick={() => setMode(mode === "signup" ? "login" : "signup")}
+        >
+          {mode === "signup"
+            ? "Already have an account? Sign in"
+            : "Need an account? Sign up"}
+        </button>
+      )}
     </form>
   );
 }

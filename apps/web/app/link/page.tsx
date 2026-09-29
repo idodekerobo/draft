@@ -25,7 +25,7 @@ export default async function LinkPage({
         <ApprovePairing code={code} />
       ) : (
         <>
-          <p>Sign in or create an account to continue.</p>
+          <p>Sign in to continue.</p>
           <AuthForm
             next={`/link?code=${encodeURIComponent(code)}`}
             initialMode="login"

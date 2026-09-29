@@ -1,10 +1,10 @@
 # Draft web app
 
-This is the authenticated Next.js application for Draft. It provides browser-based signup and sign-in, desktop pairing, team invite acceptance, and a small authenticated workspace surface. It talks to the configured Draft Bun backend for workspace identity and API operations.
+This is the authenticated Next.js application for Draft. It provides browser-based sign-in, invite-based account creation and team acceptance, desktop pairing, and a small authenticated workspace surface. It talks to the configured Draft Bun backend for workspace identity and API operations.
 
 ## Hosted Draft
 
-The hosted app is available at [app.draftai.us](https://app.draftai.us). Users can create an account there or follow an invite link from a workspace administrator.
+The hosted app is available at [app.draftai.us](https://app.draftai.us). Users sign in there or follow an invite link from a workspace administrator to create an account and join a team.
 
 ## Local development
 
