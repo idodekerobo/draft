@@ -1,5 +1,6 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
+import { recordRouteError } from "../errors/route-error";
 import type { UserRow } from "../types/tables";
 
 type PrivacyFields = Pick<UserRow, "analytics_consent" | "analytics_consent_at" | "session_replay_enabled">;
@@ -20,6 +21,14 @@ function isPrivacyBody(value: unknown): value is PrivacyBody {
 
 const PRIVACY_COLUMNS = "analytics_consent, analytics_consent_at, session_replay_enabled";
 
+// Privacy is per user, but errors rows are per workspace, so look up the
+// caller's workspace only when something failed.
+function recordPrivacyError(userId: string, operation: "read" | "commit", errorCode: string, error: unknown): void {
+  void Promise.resolve(serviceClient.rpc("get_user_identity", { p_user_id: userId }).maybeSingle<{ workspace_id: string | null }>())
+    .then(({ data }) => data?.workspace_id ?? null, () => null)
+    .then((workspaceId) => recordRouteError({ workspaceId, operation, errorCode, error }));
+}
+
 // Consent follows the user across web and desktop. Withdrawing consent also
 // turns replay off, and replay can never be on without consent.
 export const PATCH = withAuth(async (req, caller) => {
@@ -31,7 +40,10 @@ export const PATCH = withAuth(async (req, caller) => {
     .select(PRIVACY_COLUMNS)
     .eq("id", caller.userId)
     .single<PrivacyFields>();
-  if (readError || !current) return Response.json({ error: readError?.message ?? "not_found" }, { status: 500 });
+  if (readError || !current) {
+    recordPrivacyError(caller.userId, "read", "privacy_read_failed", readError);
+    return Response.json({ error: readError?.message ?? "not_found" }, { status: 500 });
+  }
 
   const consent = body.analytics_consent ?? current.analytics_consent;
   if (body.session_replay_enabled && consent !== true) {
@@ -52,7 +64,10 @@ export const PATCH = withAuth(async (req, caller) => {
     .eq("id", caller.userId)
     .select(PRIVACY_COLUMNS)
     .single<PrivacyFields>();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) {
+    recordPrivacyError(caller.userId, "commit", "privacy_update_failed", error);
+    return Response.json({ error: error.message }, { status: 500 });
+  }
 
   return Response.json(data);
 });
