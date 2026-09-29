@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, typ
 import { PLATFORM_PROPERTY, type TrackFn } from "draft-shared-ui";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
+const MAX_PENDING = 100;
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
 
 interface AnalyticsUser {
@@ -28,6 +29,8 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   // Events before consent wait here. They are sent only if consent is granted
   // in this tab, and dropped on opt-out.
   const pending = useRef<Array<[string, Record<string, unknown>]>>([]);
+  // Child effects run first, so the user can arrive before init; apply it after.
+  const latestUser = useRef<AnalyticsUser | null>(null);
 
   useEffect(() => {
     if (!POSTHOG_KEY || initialized.current) return;
@@ -42,15 +45,16 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     });
     posthog.register({ [PLATFORM_PROPERTY]: "web" });
     initialized.current = true;
+    applyUser(latestUser.current);
   }, []);
 
   const track = useCallback(((event, props) => {
     if (!POSTHOG_KEY) return;
     if (optedIn.current) posthog.capture(event, props);
-    else pending.current.push([event, props]);
+    else if (pending.current.length < MAX_PENDING) pending.current.push([event, props]);
   }) as TrackFn, []);
 
-  const syncUser = useCallback((user: AnalyticsUser | null) => {
+  const applyUser = useCallback((user: AnalyticsUser | null) => {
     if (!POSTHOG_KEY || !initialized.current) return;
     if (user?.analytics_consent === true) {
       if (!optedIn.current) {
@@ -72,6 +76,11 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       optedIn.current = false;
     }
   }, []);
+
+  const syncUser = useCallback((user: AnalyticsUser | null) => {
+    latestUser.current = user;
+    applyUser(user);
+  }, [applyUser]);
 
   const value = useMemo(() => ({ track, syncUser }), [track, syncUser]);
   return <AnalyticsContext.Provider value={value}>{children}</AnalyticsContext.Provider>;

@@ -15,8 +15,17 @@ function StatusDot({ state }: { state: ToolState }) {
   return <span className={`ui-dot ui-dot--${state}`} aria-hidden="true" />;
 }
 
-export function ConnectionRow({ tool, status, panel, connectedAction, unavailableHint }: {
+export interface ManagePanel {
+  label: string;
+  render: (close: () => void) => ReactNode;
+}
+
+export function ConnectionRow({ tool, status, panel, connectedAction, managePanel, unavailableHint, startHere }: {
   tool: ToolEntry;
+  /** Panel reachable once connected, for example Slack's channel picker. */
+  managePanel?: ManagePanel;
+  /** Neutral label for the one suggested first source (never a colored tag). */
+  startHere?: boolean;
   status: ToolStatus;
   /** Shown on the right once connected, for example Disconnect or Manage channels. */
   connectedAction?: ReactNode;
@@ -34,11 +43,14 @@ export function ConnectionRow({ tool, status, panel, connectedAction, unavailabl
       <div className="ui-tool-row__main">
         <StatusDot state={status.state} />
         <span className="ui-tool-row__name">
-          {tool.name}
+          <span>{tool.name}{startHere && <span className="ui-tool-row__tag">Start here</span>}</span>
           {subline && <small>{subline}</small>}
         </span>
         <span className="ui-tool-row__status" role="status">{statusText}</span>
         <span className="ui-tool-row__action">
+          {connected && managePanel && (
+            <button type="button" className="ui-btn" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Close" : managePanel.label}</button>
+          )}
           {connected && connectedAction}
           {!connected && panel && (
             <button type="button" className={open ? "ui-btn" : "ui-btn ui-btn--primary"} aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -48,7 +60,8 @@ export function ConnectionRow({ tool, status, panel, connectedAction, unavailabl
         </span>
       </div>
       {!connected && !panel && unavailableHint && <p className="ui-tool-row__hint">{unavailableHint}</p>}
-      {open && panel && <div className="ui-tool-row__panel">{panel(() => setOpen(false))}</div>}
+      {open && !connected && panel && <div className="ui-tool-row__panel">{panel(() => setOpen(false))}</div>}
+      {open && connected && managePanel && <div className="ui-tool-row__panel">{managePanel.render(() => setOpen(false))}</div>}
     </li>
   );
 }
@@ -69,7 +82,7 @@ export function AgentConnectionRow({ name, command, lastUsedAt }: { name: string
   );
 }
 
-export function ToolList({ platform, groups, statuses, agentCommand, agentLastUsedAt, panels, connectedActions = {}, unavailableHint }: {
+export function ToolList({ platform, groups, statuses, agentCommand, agentLastUsedAt, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere }: {
   platform: Platform;
   groups?: ToolGroup[];
   statuses: Partial<Record<ToolId, ToolStatus>>;
@@ -77,7 +90,9 @@ export function ToolList({ platform, groups, statuses, agentCommand, agentLastUs
   agentLastUsedAt: string | null;
   panels: Partial<Record<ToolId, (close: () => void) => ReactNode>>;
   connectedActions?: Partial<Record<ToolId, ReactNode>>;
+  managePanels?: Partial<Record<ToolId, ManagePanel>>;
   unavailableHint?: string;
+  startHere?: ToolId;
 }) {
   const grouped = groupTools(toolsForPlatform(platform, groups), statuses);
   return (
@@ -88,7 +103,7 @@ export function ToolList({ platform, groups, statuses, agentCommand, agentLastUs
           <ul className="ui-rows">
             {tools.map((tool) => tool.id === "claude-code"
               ? <AgentConnectionRow key={tool.id} name={tool.name} command={agentCommand} lastUsedAt={agentLastUsedAt} />
-              : <ConnectionRow key={tool.id} tool={tool} status={statuses[tool.id] ?? { state: "disconnected" }} panel={panels[tool.id]} connectedAction={connectedActions[tool.id]} unavailableHint={unavailableHint} />)}
+              : <ConnectionRow key={tool.id} tool={tool} status={statuses[tool.id] ?? { state: "disconnected" }} panel={panels[tool.id]} connectedAction={connectedActions[tool.id]} managePanel={managePanels[tool.id]} unavailableHint={unavailableHint} startHere={tool.id === startHere} />)}
           </ul>
         </section>
       ))}

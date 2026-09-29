@@ -1,37 +1,22 @@
-// SettingsView.tsx — user-configurable settings + connected apps
+// SettingsView.tsx — user-configurable settings
 //
 // Sections (top → bottom):
-//   Context             — Apply team context mode
-//   Input Sources       — which integrations are connected; disconnect action
-//   System              — Draft Cloud sign-in, notifications, synthesis schedule
-//   Privacy             — interaction recording opt-out
-//   Updates             — current version, check for updates
+//   System     — Draft Cloud sign-in, notifications, synthesis schedule
+//   Privacy    — usage data and session replay, stored on the account
+//   Appearance — Light, Dark, System
+//   Updates    — current version, check for updates
 //
-// Connected apps data (getConnectedApps) and settings (getLocalConfig) are
-// loaded in parallel on mount and on every profile switch.
+// Sources and tools live in ConnectionsView.
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppVersionInfo, ConnectedAppsStatus, IntegrationDetail, LocalConfig, MultiAccountConnectionListItem, SynthesisSchedule } from "../../../rpc/schema";
+import type { AppVersionInfo, LocalConfig, SynthesisSchedule } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { FirefliesConnectPanel, GranolaConnectPanel, LinearConnectPanel, SessionTrackingPanel, SlackConnectPanel } from "draft-shared-ui/integrations";
-import { GithubConnectPanel } from "../../adapters/GithubConnectPanel";
+import { AppearanceRow, PrivacyRows, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1)  return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24)   return `${diffH}h ago`;
-  const diffD = Math.floor(diffH / 24);
-  return `${diffD}d ago`;
-}
 
 // Only one cadence is offered today (see register-workspace-synthesis.ts); falls
 // back to the raw cron/interval if a workspace ever has something else.
@@ -67,295 +52,6 @@ function Toggle({ checked, onChange, disabled }: ToggleProps) {
   );
 }
 
-interface SegmentControlProps {
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}
-
-function SegmentControl({ value, options, onChange }: SegmentControlProps) {
-  return (
-    <div className="segment-control" role="group">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          className={`segment-control__btn${value === opt.value ? " segment-control__btn--active" : ""}`}
-          onClick={() => onChange(opt.value)}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ── Sub-components: Connected Apps ─────────────────────────────────────────────
-
-const SOURCE_LABELS: Record<string, string> = {
-  slack:          "Slack",
-  fireflies:      "Fireflies",
-  linear:         "Linear",
-  github:         "GitHub",
-  granola:        "Granola",
-  claude_session: "Coding Sessions",
-};
-
-interface InputSourceRowProps {
-  sourceKey: "slack" | "fireflies" | "linear" | "github" | "claude_session";
-  detail: IntegrationDetail;
-  onDisconnect: () => void;
-  onToggleConnect: () => void;
-  isDisconnecting: boolean;
-  isExpanded: boolean;
-  /** Shown next to Disconnect when already connected — e.g. "Update channels" for Slack. */
-  connectedAction?: { label: string; onClick: () => void };
-  children?: ReactNode;
-}
-
-function InputSourceRow({
-  sourceKey,
-  detail,
-  onDisconnect,
-  onToggleConnect,
-  isDisconnecting,
-  isExpanded,
-  connectedAction,
-  children,
-}: InputSourceRowProps) {
-  const needsAttention = detail.connected && detail.healthStatus === "needs_attention";
-
-  function buildMeta(): string {
-    if (detail.status === "pending") {
-      return sourceKey === "fireflies" ? "Pending webhook verification" : "Setup pending";
-    }
-    if (!detail.connected) return "Not connected";
-    const parts: string[] = [];
-    if (detail.mode)     parts.push(detail.mode);
-    if (detail.channels !== null) parts.push(`${detail.channels} channels`);
-    const time = relativeTime(detail.lastConnected);
-    if (time) parts.push(time);
-    return parts.length > 0 ? parts.join(" · ") : "On";
-  }
-
-  return (
-    <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
-      <div className="app-row__main">
-        <div className="app-row__left">
-          <span className={`app-row__status-dot${needsAttention ? " app-row__status-dot--attention" : detail.connected ? " app-row__status-dot--on" : ""}`} />
-          <div className="app-row__text">
-            <span className="app-row__name">{SOURCE_LABELS[sourceKey] ?? sourceKey}</span>
-            <span className="app-row__meta">{buildMeta()}</span>
-            {needsAttention && (
-              <span className="app-row__warning">
-                Needs attention — {detail.healthMessage ?? "Draft cannot currently reach this source."} Reconnect the integration if this persists.
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="app-row__right">
-          {detail.connected ? (
-            <>
-              {connectedAction && (
-                <button className="app-row__manage" onClick={connectedAction.onClick}>
-                  {connectedAction.label}
-                </button>
-              )}
-              <button
-                className="app-row__disconnect"
-                onClick={onDisconnect}
-                disabled={isDisconnecting}
-              >
-                {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-              </button>
-            </>
-          ) : (
-            <button
-              className="app-row__connect"
-              onClick={onToggleConnect}
-            >
-              {isExpanded ? "Close" : detail.status === "pending" ? "Finish setup" : "Connect"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {isExpanded && children}
-    </div>
-  );
-}
-
-// ── Fireflies: multi-account list ──────────────────────────────────────────────
-//
-// Fireflies is the one multi-account provider (each teammate connects their
-// own account) -- every other Input Source stays a single row via
-// InputSourceRow above. This renders one row per teammate's connection
-// (view-only for rows that aren't yours) plus a "Connect your account" row
-// that opens the same FirefliesConnectPanel used for the singleton sources.
-
-interface FirefliesConnectionsRowProps {
-  connections: MultiAccountConnectionListItem[];
-  isExpanded: boolean;
-  isDisconnecting: boolean;
-  onToggleConnect: () => void;
-  onDisconnect: () => void;
-  children?: ReactNode;
-}
-
-function FirefliesConnectionsRow({
-  connections: rows,
-  isExpanded,
-  isDisconnecting,
-  onToggleConnect,
-  onDisconnect,
-  children,
-}: FirefliesConnectionsRowProps) {
-  const mine = rows.find((row) => row.is_mine && row.connected);
-  const teammates = rows.filter((row) => !row.is_mine && row.connected);
-
-  return (
-    <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
-      <div className="app-row__main">
-        <div className="app-row__left">
-          <span className={`app-row__status-dot${mine ? " app-row__status-dot--on" : ""}`} />
-          <div className="app-row__text">
-            <span className="app-row__name">Fireflies</span>
-            <span className="app-row__meta">
-              {mine
-                ? `Connected as ${mine.display_name ?? "you"}`
-                : "Not connected"}
-              {teammates.length > 0
-                ? ` · ${teammates.length} teammate${teammates.length === 1 ? "" : "s"} connected`
-                : ""}
-            </span>
-          </div>
-        </div>
-
-        <div className="app-row__right">
-          {mine ? (
-            <button
-              className="app-row__disconnect"
-              onClick={onDisconnect}
-              disabled={isDisconnecting}
-            >
-              {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
-          ) : (
-            <button className="app-row__connect" onClick={onToggleConnect}>
-              {isExpanded ? "Close" : "Connect your account"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {teammates.length > 0 && (
-        <ul className="app-row__teammates">
-          {teammates.map((row) => (
-            <li key={row.id ?? row.display_name ?? "teammate"} className="app-row__teammate">
-              {row.display_name ?? "A teammate"} — {row.status}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {isExpanded && children}
-    </div>
-  );
-}
-
-// ── Granola: multi-account list + a separate workspace-key row ─────────────────
-//
-// Personal keys behave like Fireflies above; the workspace key (no owner)
-// renders as its own line with its own disconnect action.
-
-interface GranolaConnectionsRowProps {
-  connections: MultiAccountConnectionListItem[];
-  isExpanded: boolean;
-  isDisconnecting: boolean;
-  onToggleConnect: () => void;
-  onDisconnectPersonal: () => void;
-  onDisconnectWorkspace: () => void;
-  children?: ReactNode;
-}
-
-function GranolaConnectionsRow({
-  connections: rows,
-  isExpanded,
-  isDisconnecting,
-  onToggleConnect,
-  onDisconnectPersonal,
-  onDisconnectWorkspace,
-  children,
-}: GranolaConnectionsRowProps) {
-  const personalRows = rows.filter((row) => row.account_kind !== "workspace");
-  const mine = personalRows.find((row) => row.is_mine && row.connected);
-  const teammates = personalRows.filter((row) => !row.is_mine && row.connected);
-  const workspaceRow = rows.find((row) => row.account_kind === "workspace" && row.connected);
-
-  return (
-    <div className={`app-row app-row--source${isExpanded ? " app-row--expanded" : ""}`}>
-      <div className="app-row__main">
-        <div className="app-row__left">
-          <span className={`app-row__status-dot${mine || workspaceRow ? " app-row__status-dot--on" : ""}`} />
-          <div className="app-row__text">
-            <span className="app-row__name">Granola</span>
-            <span className="app-row__meta">
-              {mine
-                ? `Connected as ${mine.display_name ?? "you"}`
-                : "Not connected"}
-              {teammates.length > 0
-                ? ` · ${teammates.length} teammate${teammates.length === 1 ? "" : "s"} connected`
-                : ""}
-              {workspaceRow ? " · Workspace key connected" : ""}
-            </span>
-          </div>
-        </div>
-
-        <div className="app-row__right">
-          {mine ? (
-            <button
-              className="app-row__disconnect"
-              onClick={onDisconnectPersonal}
-              disabled={isDisconnecting}
-            >
-              {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
-          ) : (
-            <button className="app-row__connect" onClick={onToggleConnect}>
-              {isExpanded ? "Close" : "Connect"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {teammates.length > 0 && (
-        <ul className="app-row__teammates">
-          {teammates.map((row) => (
-            <li key={row.id ?? row.display_name ?? "teammate"} className="app-row__teammate">
-              {row.display_name ?? "A teammate"} — {row.status}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {workspaceRow && (
-        <div className="app-row__teammate">
-          Workspace key — {workspaceRow.display_name ?? "connected"} ({workspaceRow.status})
-          <button
-            className="app-row__disconnect"
-            onClick={onDisconnectWorkspace}
-            disabled={isDisconnecting}
-          >
-            {isDisconnecting ? "Disconnecting…" : "Disconnect"}
-          </button>
-        </div>
-      )}
-
-      {isExpanded && children}
-    </div>
-  );
-}
-
 // ── SettingsView ───────────────────────────────────────────────────────────────
 
 interface SettingsViewProps {
@@ -365,13 +61,9 @@ interface SettingsViewProps {
 
 export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProps) {
   const [settings, setSettings]           = useState<LocalConfig | null>(null);
-  const [apps, setApps]                   = useState<ConnectedAppsStatus | null>(null);
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState<"slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session" | null>(null);
-  const [expandedSource, setExpandedSource] = useState<"slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session" | null>(null);
-  const [slackPanelMode, setSlackPanelMode] = useState<"connect" | "manage">("connect");
   const [versionInfo, setVersionInfo]     = useState<AppVersionInfo | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
@@ -379,25 +71,30 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [synthesisSchedule, setSynthesisSchedule] = useState<SynthesisSchedule | null>(null);
   const [synthesisSaving, setSynthesisSaving] = useState(false);
 
-  const { config: analyticsConfig, setReplayEnabled, track } = useAnalytics();
+  const { privacy, setConsent, setReplayEnabled } = useAnalytics();
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      return isThemePreference(stored) ? stored : "system";
+    } catch {
+      return "system";
+    }
+  });
   const { cloudSignIn, cloudSignInError, handleCloudSignIn, handleCloudSignOut } = useCloudSignIn();
 
   // ── Load ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     setSettings(null);
-    setApps(null);
     setLoadError(null);
 
     Promise.all([
       rpc.request.getLocalConfig(),
-      rpc.request.getConnectedApps(),
       rpc.request.getAppVersion(),
       rpc.request.getCrispConfig(),
       rpc.request.getSynthesisSchedule(),
     ])
-      .then(([config, connectedApps, appVersion, crispConfig, synthesisSchedule]) => {
+      .then(([config, appVersion, crispConfig, synthesisSchedule]) => {
         setSettings(config);
-        setApps(connectedApps);
         setVersionInfo(appVersion);
         setCalUrl(crispConfig.cal_url);
         setSynthesisSchedule(synthesisSchedule);
@@ -454,41 +151,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     }
   }
 
-  // ── Disconnect ─────────────────────────────────────────────────────────────
-  async function handleDisconnect(
-    source: "slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session",
-    accountKind?: "personal" | "workspace",
-  ) {
-    if (!apps) return;
-    setDisconnecting(source);
-    try {
-      const result = await rpc.request.disconnectIntegration({ source, ...(accountKind ? { accountKind } : {}) });
-      if (result.ok) {
-        if (source === "slack") {
-          setSlackPanelMode("connect");
-          setExpandedSource((current) => current === "slack" ? null : current);
-        }
-        if (source === "fireflies" || source === "granola") {
-          await tryRefreshConnectedApps();
-        } else {
-          setApps({
-            ...apps,
-            integrations: {
-              ...apps.integrations,
-              [source]: { ...apps.integrations[source], connected: false },
-            },
-          });
-        }
-      } else {
-        setSaveError(result.error ?? "Disconnect failed.");
-      }
-    } catch {
-      setSaveError("Disconnect failed.");
-    } finally {
-      setDisconnecting(null);
-    }
-  }
-
   // ── Synthesis schedule ─────────────────────────────────────────────────────
   async function handleToggleSynthesis(enabled: boolean) {
     if (!synthesisSchedule) return;
@@ -511,30 +173,18 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     }
   }
 
-  async function tryRefreshConnectedApps(): Promise<boolean> {
+  async function savePrivacy(save: () => Promise<void>) {
     try {
-      const updated = await rpc.request.getConnectedApps();
-      setApps(updated);
-      return true;
+      await save();
     } catch {
-      return false;
+      setSaveError("Could not save your privacy choice. Sign in and try again.");
     }
   }
 
-  async function refreshConnectedApps() {
-    await tryRefreshConnectedApps();
-  }
-
-  function toggleSlackPanel(mode: "connect" | "manage") {
-    setSaveError(null);
-    setExpandedSource((current) => {
-      const alreadyOpenSameMode = current === "slack" && slackPanelMode === mode;
-      if (alreadyOpenSameMode) {
-        return null;
-      }
-      setSlackPanelMode(mode);
-      return "slack";
-    });
+  function changeTheme(next: ThemePreference) {
+    setTheme(next);
+    applyTheme(next);
+    try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch {}
   }
 
   // ── Check for updates ──────────────────────────────────────────────────────
@@ -553,7 +203,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
     );
   }
 
-  if (!settings || !apps) {
+  if (!settings) {
     return (
       <div className="settings">
         <SettingsHeader />
@@ -576,90 +226,6 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
       <SettingsHeader />
 
       <div className="settings__body">
-
-        {/* ── Input Sources ──────────────────────────────────────────────── */}
-        <section className="settings__section">
-          <h2 className="settings__section-label">Input Sources</h2>
-          <div className="settings__rows">
-            <FirefliesConnectionsRow
-              connections={apps.firefliesConnections}
-              isExpanded={expandedSource === "fireflies"}
-              isDisconnecting={disconnecting === "fireflies"}
-              onToggleConnect={() => setExpandedSource((current) => current === "fireflies" ? null : "fireflies")}
-              onDisconnect={() => void handleDisconnect("fireflies")}
-            >
-              <FirefliesConnectPanel
-                detail={apps.integrations.fireflies}
-                classPrefix="app-row"
-                onStatusRefresh={tryRefreshConnectedApps}
-                onDone={() => setExpandedSource(null)}
-              />
-            </FirefliesConnectionsRow>
-
-            <GranolaConnectionsRow
-              connections={apps.granolaConnections}
-              isExpanded={expandedSource === "granola"}
-              isDisconnecting={disconnecting === "granola"}
-              onToggleConnect={() => setExpandedSource((current) => current === "granola" ? null : "granola")}
-              onDisconnectPersonal={() => void handleDisconnect("granola", "personal")}
-              onDisconnectWorkspace={() => void handleDisconnect("granola", "workspace")}
-            >
-              <GranolaConnectPanel
-                detail={apps.integrations.granola}
-                classPrefix="app-row"
-                onStatusRefresh={tryRefreshConnectedApps}
-                onDone={() => setExpandedSource(null)}
-              />
-            </GranolaConnectionsRow>
-
-            {(["linear", "slack", "github", "claude_session"] as const).map((key) => (
-              <InputSourceRow
-                key={key}
-                sourceKey={key}
-                detail={apps.integrations[key]}
-                onDisconnect={() => void handleDisconnect(key)}
-                onToggleConnect={() => {
-                  if (key === "slack") {
-                    toggleSlackPanel("connect");
-                  } else {
-                    setExpandedSource((current) => current === key ? null : key);
-                  }
-                }}
-                isDisconnecting={disconnecting === key}
-                isExpanded={expandedSource === key}
-                connectedAction={
-                  key === "slack" ? { label: "Manage channels", onClick: () => toggleSlackPanel("manage") } :
-                  key === "claude_session" ? { label: "Setup guide", onClick: () => setExpandedSource((current) => current === "claude_session" ? null : "claude_session") } :
-                  undefined
-                }
-              >
-                {key === "linear" && (
-                  <LinearConnectPanel detail={apps.integrations.linear} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
-                )}
-
-                {key === "slack" && (
-                  <SlackConnectPanel
-                    detail={apps.integrations.slack}
-                    mode={slackPanelMode}
-                    classPrefix="app-row"
-                    onMembershipUpdated={refreshConnectedApps}
-                    onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }}
-                  />
-                )}
-
-                {key === "github" && (
-                  <GithubConnectPanel detail={apps.integrations.github} classPrefix="app-row" onConnected={async () => { await refreshConnectedApps(); setExpandedSource(null); }} />
-                )}
-
-                {key === "claude_session" && (
-                  // Stays expanded after connecting (no setExpandedSource(null)) so the
-                  // per-repo setup guide it renders next is visible immediately.
-                  <SessionTrackingPanel detail={apps.integrations.claude_session} classPrefix="app-row" onConnected={refreshConnectedApps} />
-                )}
-              </InputSourceRow>
-            ))}
-          </div>
-        </section>
 
         {/* ── System ─────────────────────────────────────────────────────── */}
         <section className="settings__section">
@@ -723,29 +289,26 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
         </section>
 
         {/* ── Privacy ─────────────────────────────────────────────────────── */}
-        {analyticsConfig?.consent === "opted_in" && (
-          <section className="settings__section">
-            <h2 className="settings__section-label">Privacy</h2>
-            <div className="settings__rows">
-              <div className="settings__row">
-                <div className="settings__row-content">
-                  <span className="settings__row-label">Share interaction recordings</span>
-                  <span className="settings__row-desc">
-                    Masked — no text or file content is ever captured. Helps us improve
-                    navigation and layout.
-                  </span>
-                </div>
-                <Toggle
-                  checked={analyticsConfig.replay_enabled}
-                  onChange={(v) => {
-                    if (v) track("analytics_consent_granted", {});
-                    void setReplayEnabled(v);
-                  }}
-                />
-              </div>
-            </div>
-          </section>
-        )}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Privacy</h2>
+          <ul className="ui-rows">
+            <PrivacyRows
+              analyticsConsent={privacy?.analyticsConsent ?? false}
+              sessionReplay={privacy?.sessionReplay ?? false}
+              onAnalyticsChange={(next) => void savePrivacy(() => setConsent(next))}
+              onReplayChange={(next) => void savePrivacy(() => setReplayEnabled(next))}
+              onOpenUrl={(url) => rpc.send.openUrl({ url })}
+            />
+          </ul>
+        </section>
+
+        {/* ── Appearance ──────────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Appearance</h2>
+          <ul className="ui-rows">
+            <li><AppearanceRow value={theme} onChange={changeTheme} /></li>
+          </ul>
+        </section>
 
         {/* ── Updates ─────────────────────────────────────────────────────── */}
         <section className="settings__section">

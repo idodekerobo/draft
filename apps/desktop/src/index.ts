@@ -61,6 +61,7 @@ import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
+import { getPrivacy, setPrivacy } from "./main/privacy";
 import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 import { randomUUID } from "crypto";
 import {
@@ -532,13 +533,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         // fetched below in one round trip. No per-profile integrations.json
         // read remains for this list.
         let cloudConnections: unknown = null;
+        let agentLastUsedAt: string | null = null;
         const cloudWorkspaceId = getCachedWorkspaceId();
         if (cloudWorkspaceId) {
           try {
-            const response = await fetchServerJSON<{ connections: unknown }>(
+            const response = await fetchServerJSON<{ connections: unknown; agent?: { last_used_at?: string | null } }>(
               `workspaces/${cloudWorkspaceId}/connections`,
             );
             cloudConnections = response.connections;
+            agentLastUsedAt = response.agent?.last_used_at ?? null;
           } catch {
             cloudConnections = null;
           }
@@ -561,6 +564,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             mode: null,
             channels: key === "slack" ? (cloud?.channel_ids?.length ?? 0) : null,
             channelIds: key === "slack" ? (cloud?.channel_ids ?? []) : undefined,
+            displayName: cloud?.display_name ?? null,
           };
         }
 
@@ -605,6 +609,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             claude_session: claudeSessionDetail,
           },
           claudeCode: { connected: claudeCodeConnection?.connected ?? false },
+          agentLastUsedAt,
+          agentCommand: `claude mcp add --transport http draft ${apiUrl}/mcp`,
+          webAppUrl: process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
           // Settings list view only -- every other consumer above keeps
           // using the folded IntegrationDetail shape. Reuses cloudConnections
           // (already fetched once above) instead of a second round trip.
@@ -1494,6 +1501,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Write failed." };
+        }
+      },
+
+      getPrivacy: async ({ signedIn }) => getPrivacy(signedIn),
+
+      setPrivacy: async (patch) => {
+        try {
+          return { ok: true, privacy: await setPrivacy(patch) };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Could not save your privacy choice." };
         }
       },
 

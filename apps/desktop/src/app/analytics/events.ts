@@ -7,28 +7,25 @@
 // workspace names, or user-entered text. Use coded values only (tool names, view names,
 // error codes).
 
-import type { View, OnboardingStep } from "../types";
+import type { SharedAnalyticsEvent } from "draft-shared-ui";
+import type { View } from "../types";
 
-export type AnalyticsEvent =
+// Onboarding and integration events are shared with web (draft-shared-ui/analytics/events.ts).
+export type AnalyticsEvent = SharedAnalyticsEvent | DesktopAnalyticsEvent;
+
+type DesktopAnalyticsEvent =
   | { event: "app_launched";               props: { user_state: string } }
-  | { event: "onboarding_step_viewed";     props: { step: OnboardingStep } }
-  | { event: "onboarding_completed";       props: { tools_selected: string[] } }
-  | { event: "onboarding_abandoned";       props: { last_step: OnboardingStep } }
   | { event: "view_navigated";             props: { view: View } }
   | { event: "proposal_actioned";          props: { action: "accepted" | "rejected"; source: string } }
   | { event: "daemon_start_attempted";     props: Record<string, never> }
   | { event: "daemon_start_succeeded";     props: { duration_ms: number } }
   | { event: "daemon_start_failed";        props: { error_code: string } }
-  | { event: "integration_connected";      props: { source: string } }
-  | { event: "integration_disconnected";   props: { source: string } }
-  | { event: "integration_channels_updated"; props: { source: string } }
   | { event: "tool_installed";             props: { tool: string } }
   | { event: "install_failed";             props: { tool: string; step_label: string } }
   | { event: "context_section_toggled";    props: { section: string; enabled: boolean } }
   | { event: "context_doc_viewed";         props: { kind: "dim" | "log" | "standalone" | "group-child"; group: string } }
   | { event: "context_doc_expanded";       props: { group: string } }
   | { event: "context_dimension_added";    props: Record<string, never> }
-  | { event: "analytics_consent_granted";  props: Record<string, never> }
   | { event: "profile_actioned";           props: { action: "created" | "selected" } }
   | { event: "install_skipped";            props: { tools: string[] } }
   | { event: "onboarding_path_chosen";      props: { path: "join" | "solo" } }

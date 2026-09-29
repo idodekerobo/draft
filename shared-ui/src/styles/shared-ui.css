@@ -341,3 +341,9 @@
   .ui-shell__footer { display: none; }
   .ui-page { padding: 24px 16px 48px; }
 }
+
+.ui-tool-row__tag { margin-left: 8px; color: var(--color-text-secondary); font-size: var(--font-size-small); }
+.ui-reading-row { display: grid; grid-template-columns: 140px 1fr; gap: 12px; padding: 12px 0; }
+.ui-reading-row__status { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-secondary); }
+.ui-reading-row__status > span:first-child { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-primary); }
+.ui-reading-row__status small { color: var(--color-text-secondary); font-size: var(--font-size-secondary); }

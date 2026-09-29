@@ -1,3 +1,3 @@
 export * from "./components";
-export * from "./HeadlessSetupActionsContext";
 export * from "./flow";
+export * from "./first-user";

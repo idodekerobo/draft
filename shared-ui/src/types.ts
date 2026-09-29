@@ -52,12 +52,3 @@ export interface IntegrationActions {
   selectSessionRepoFolder: () => Promise<{ folderPath?: string }>;
   enableSessionCaptureForRepo: (input: { folderPath: string }) => Promise<ActionResult>;
 }
-
-export interface HeadlessSetupActions {
-  getAvailableRunners: () => Promise<{ runners: Array<{ name: "claude" | "codex"; installed: boolean }> }>;
-  subscribeToProgress: (listener: (progress: { phase: "starting" | "running" | "writing" | "complete" | "error"; label: string; error?: string }) => void) => () => void;
-  getContextFiles: () => Promise<Array<{ label: string }>>;
-  selectSetupFolder: () => Promise<{ folderPath?: string }>;
-  runHeadlessSetup: (input: { mode: "import" | "github"; runner: "claude" | "codex"; dimensions: string[]; folderPath?: string; githubUrl?: string }) => Promise<ActionResult>;
-  openWorkspaceInFinder: () => void | Promise<void>;
-}

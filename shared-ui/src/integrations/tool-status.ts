@@ -31,7 +31,8 @@ export function toolStatusesFromConnections(personal: NormalizedConnection[], te
   const statuses: Partial<Record<ToolId, ToolStatus>> = {};
   for (const id of PERSONAL) {
     const mine = personal.find((connection) => connection.provider === id && connection.is_mine && connection.account_kind !== "workspace");
-    statuses[id] = toStatus(mine, "Waiting for first meeting");
+    const workspaceKey = personal.find((connection) => connection.provider === id && connection.account_kind === "workspace" && connection.status === "connected");
+    statuses[id] = !mine && workspaceKey ? { state: "connected", detail: "Workspace key" } : toStatus(mine, "Waiting for first meeting");
   }
   for (const id of TEAM) {
     statuses[id] = toStatus(team.find((connection) => connection.provider === id), "Setup pending");

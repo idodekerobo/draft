@@ -22,8 +22,9 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "context",   label: "Context"   },
-  { id: "activity",  label: "Activity"  },
+  { id: "context",     label: "Context"     },
+  { id: "connections", label: "Connections" },
+  { id: "activity",    label: "Activity"    },
   { id: "settings",  label: "Settings"  },
 ];
 

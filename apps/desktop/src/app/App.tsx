@@ -17,7 +17,8 @@ import { Sidebar } from "./components/Sidebar";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
-import { OnboardingView } from "./components/views/OnboardingView";
+import { ConnectionsView } from "./components/views/ConnectionsView";
+import { DesktopOnboarding } from "./components/views/onboarding/DesktopOnboarding";
 import { SupportPanel } from "./components/SupportPanel";
 import { useCrispChat } from "./support/useCrispChat";
 
@@ -44,6 +45,9 @@ export function App() {
   const [contextSnapshot, setContextSnapshot] = useState<{ workspaceId: string | null; files: ContextFileEntry[] }>({ workspaceId: null, files: [] });
   const [contextLoading, setContextLoading] = useState(false);
   const contextRequestRef = useRef(0);
+  const contextSnapshotRef = useRef<ContextFileEntry[]>([]);
+  const landedRef = useRef(false);
+  const sawEmptyContextRef = useRef(false);
   const identity = useUserIdentity();
   const { workspaceId, hydrated: identityHydrated, signedIn } = identity;
   const workspaceIdRef = useRef(workspaceId);
@@ -132,6 +136,32 @@ export function App() {
     setContextLoading(Boolean(workspaceId && signedIn));
     if (workspaceId && signedIn) void reloadContextFiles();
   }, [workspaceId, signedIn, reloadContextFiles]);
+
+  useEffect(() => { contextSnapshotRef.current = contextSnapshot.files; }, [contextSnapshot]);
+
+  const contextSettled = Boolean(workspaceId) && !contextLoading && contextSnapshot.workspaceId === workspaceId;
+  const contextEmpty = contextSettled && contextSnapshot.files.length === 0;
+
+  // On launch, land on Connections when the workspace has no context yet.
+  useEffect(() => {
+    if (landedRef.current || !contextSettled || !identity.onboardingCompletedAt) return;
+    landedRef.current = true;
+    if (contextEmpty) setActiveView("connections");
+  }, [contextSettled, contextEmpty, identity.onboardingCompletedAt]);
+
+  // While the workspace is empty, check every minute and notify once context lands.
+  useEffect(() => {
+    if (!contextSettled) return;
+    if (contextEmpty) {
+      sawEmptyContextRef.current = true;
+      const timer = setInterval(() => void reloadContextFiles(), 60_000);
+      return () => clearInterval(timer);
+    }
+    if (sawEmptyContextRef.current) {
+      sawEmptyContextRef.current = false;
+      rpc.send.sendNotification({ title: "Your team's context is ready", subtitle: "", body: "Open Draft to read it." });
+    }
+  }, [contextSettled, contextEmpty, reloadContextFiles]);
 
   // ── Push: profile changed (CLI-driven or desktop-driven) ──────────────────
   useEffect(() => {
@@ -260,7 +290,17 @@ export function App() {
           ) : !identityHydrated ? (
             <div className="empty-state">Loading…</div>
           ) : !justCompletedOnboarding && (!identity.signedIn || !identity.onboardingCompletedAt) ? (
-            <OnboardingView onComplete={async () => { setJustCompletedOnboarding(true); await fetchStatus(); await reloadContextFiles(); }} />
+            <DesktopOnboarding
+              files={contextSnapshot.workspaceId === workspaceId ? contextSnapshot.files : []}
+              loading={contextLoading || contextSnapshot.workspaceId !== workspaceId}
+              reloadFiles={reloadContextFiles}
+              onComplete={async (destination) => {
+                setJustCompletedOnboarding(true);
+                await reloadContextFiles();
+                // Land on Context when documents exist, otherwise Connections.
+                setActiveView(destination === "connections" || contextSnapshotRef.current.length === 0 ? "connections" : "context");
+              }}
+            />
           ) : (
             <>
               {activeView === "context" && (
@@ -279,6 +319,7 @@ export function App() {
                   loading={contextLoading || contextSnapshot.workspaceId !== workspaceId}
                 />
               )}
+              {activeView === "connections" && <ConnectionsView key={activeProfile} />}
               {activeView === "activity" && (
                 <ActivityView key={activeProfile} />
               )}

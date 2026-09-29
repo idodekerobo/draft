@@ -261,6 +261,13 @@ export interface AppVersionInfo {
   channel: string;
 }
 
+/** The account's analytics choice. userId is null when signed out. */
+export interface PrivacyState {
+  userId: string | null;
+  analyticsConsent: boolean;
+  sessionReplay: boolean;
+}
+
 export interface AnalyticsConfig {
   consent: "pending" | "opted_in" | "opted_out";
   replay_enabled: boolean;
@@ -308,6 +315,8 @@ export interface IntegrationDetail {
   channels: number | null;
   /** Slack: persisted bot membership returned by the cloud connection status. */
   channelIds?: string[];
+  /** Connected account name, for example the Slack workspace or GitHub org. */
+  displayName?: string | null;
 }
 
 /**
@@ -344,6 +353,11 @@ export interface ConnectedAppsStatus {
     claude_session: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
+  /** The caller's latest agent (MCP or CLI) query, or null before first use. */
+  agentLastUsedAt: string | null;
+  /** Copyable MCP setup command for this deployment's API. */
+  agentCommand: string;
+  webAppUrl: string;
   /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
   firefliesConnections: MultiAccountConnectionListItem[];
   /** Every Granola connection in the workspace, personal rows plus the workspace-key row if any (Settings list view only) -- see MultiAccountConnectionListItem. */
@@ -615,6 +629,8 @@ export type AppRPCType = {
 
       /** Patch analytics config (consent, replay_enabled, etc.) in ~/.draft/config.json. */
       setAnalyticsConfig: { params: Partial<AnalyticsConfig>; response: ActionResult };
+      getPrivacy: { params: { signedIn: boolean }; response: PrivacyState };
+      setPrivacy: { params: { analytics_consent?: boolean; session_replay_enabled?: boolean }; response: ActionResult & { privacy?: PrivacyState } };
 
       /** Apply a staged update — quits + relaunches. Only valid when updateReady is true. */
       applyUpdate: { params: void; response: ActionResult };

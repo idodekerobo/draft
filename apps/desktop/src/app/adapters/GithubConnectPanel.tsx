@@ -6,7 +6,7 @@ import { useGithubInstall } from "../hooks/useGithubInstall";
 interface GithubConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onConnected: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
 }
 
 export function GithubConnectPanel({ detail, onConnected, classPrefix }: GithubConnectPanelProps) {
