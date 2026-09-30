@@ -64,7 +64,9 @@ export const auth = betterAuth({
       loginPage: `${config.appUrl}/oauth/login`,
       consentPage: `${config.appUrl}/oauth/consent`,
       scopes: ["read", "write"],
-      clientRegistrationDefaultScopes: ["read"],
+      // Also caps what CIMD clients may request at /authorize.
+      clientRegistrationDefaultScopes: ["read", "write"],
+      clientRegistrationAllowedScopes: ["read", "write"],
       // DCR left off for v1 — Claude Code and ChatGPT/Codex both prefer
       // CIMD automatically (allowDynamicClientRegistration defaults false).
     }),

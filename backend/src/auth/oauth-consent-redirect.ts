@@ -20,9 +20,12 @@ export async function GET(req: Request): Promise<Response> {
   const accept = url.searchParams.get("accept") === "true";
   const oauthQuery = url.searchParams.get("oauth_query");
   const errorRedirect = `${config.appUrl}/oauth/consent?error=1`;
-  if (!oauthQuery) return Response.redirect(errorRedirect, 302);
-
   const cookie = req.headers.get("cookie");
+  console.log("oauth-consent-redirect: request", { accept, hasOauthQuery: !!oauthQuery, hasCookie: !!cookie });
+  if (!oauthQuery) {
+    console.error("oauth-consent-redirect: missing oauth_query");
+    return Response.redirect(errorRedirect, 302);
+  }
 
   try {
     const consentRequest = new Request(`${config.apiBaseUrl}/api/auth/oauth2/consent`, {
@@ -40,7 +43,10 @@ export async function GET(req: Request): Promise<Response> {
       return Response.redirect(errorRedirect, 302);
     }
     const result = (await response.json()) as { redirect_uri?: string };
-    if (!result.redirect_uri) return Response.redirect(errorRedirect, 302);
+    if (!result.redirect_uri) {
+      console.error("oauth-consent-redirect: no redirect_uri in response", result);
+      return Response.redirect(errorRedirect, 302);
+    }
     return Response.redirect(result.redirect_uri, 302);
   } catch (error) {
     console.error("oauth-consent-redirect: consent failed", error);

@@ -32,7 +32,7 @@ const protectedHandler = requireMcpAuth(
       } as never,
     });
   },
-  { resource: config.mcpResourceUrl, requiredScopes: ["read"] },
+  { resource: config.mcpResourceUrl, requiredScopes: ["read", "write"] },
 );
 
 export const GET = protectedHandler;
