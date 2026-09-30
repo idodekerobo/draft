@@ -182,6 +182,14 @@ describe("skills routes", () => {
     expect((await response.json()).error).toBe("duplicate_name");
   });
 
+  it("rejects content over the size cap", async () => {
+    const response = await routeModule.skillsPOST(
+      request({ id: "ws-1" }, { name: "big", description: "d", content: "x".repeat(100 * 1024 + 1) }) as never,
+    );
+    expect(response.status).toBe(413);
+    expect((await response.json()).error).toBe("content_too_large");
+  });
+
   it("read 404s for an unknown skill", async () => {
     const response = await routeModule.skillsREAD(request({ id: "ws-1", name: "nope" }) as never);
     expect(response.status).toBe(404);

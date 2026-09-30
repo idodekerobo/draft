@@ -4,7 +4,7 @@ import { serviceClient } from "../db/client";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
 import { getWorkspaceContext } from "../services/workspace-context";
-import { listSkills, readSkill } from "../services/skills";
+import { addSkill, listSkills, readSkill } from "../services/skills";
 import { readSource, searchSources } from "../services/sources";
 
 /** Derives the caller's single workspace server-side; no tool takes a workspaceId argument. */
@@ -49,8 +49,8 @@ async function withWorkspace<T>(
   return { isError: false, result };
 }
 
-/** Builds the read-only tool surface for one already-verified caller (see mcp/route.ts). */
-export function buildMcpServer(userId: string): McpServer {
+/** Builds the tool surface for one already-verified caller; write tools also need the `write` scope (see mcp/route.ts). */
+export function buildMcpServer(userId: string, scopes: string[] = []): McpServer {
   const server = new McpServer(
     {
       name: "draft",
@@ -62,7 +62,7 @@ export function buildMcpServer(userId: string): McpServer {
     },
     {
       instructions:
-        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach.",
+        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach. When the user asks you to save a workflow as a skill, use skills.add.",
     },
   );
 
@@ -205,6 +205,37 @@ export function buildMcpServer(userId: string): McpServer {
     async (args) => {
       const outcome = await withWorkspace(userId, "mcp.skills.read", args, async (workspaceId) => {
         const result = await readSkill(workspaceId, args.name);
+        if (!result.ok) return { error: result.error };
+        return result.skill;
+      });
+      if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
+      return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
+    },
+  );
+
+  server.registerTool(
+    "skills.add",
+    {
+      description: "Create a new shared skill for the whole team. Use only when the user asks to save a skill. Write the description for a teammate who was not in this session. Fails with duplicate_name if the name exists; it cannot overwrite a skill.",
+      inputSchema: z.object({
+        name: z.string().describe("Lowercase words joined by hyphens, e.g. weekly-customer-recap. Max 64 characters."),
+        description: z.string().min(1).describe("One or two sentences on what the skill does and when to use it."),
+        content: z.string().min(1).describe("The full skill in markdown. May start with YAML frontmatter."),
+        license: z.string().optional(),
+        compatibility: z.string().optional(),
+        allowed_tools: z.string().optional(),
+      }),
+    },
+    async (args) => {
+      if (!scopes.includes("write")) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "insufficient_scope: this connection only has read access. Re-authorize the Draft connection and approve write access." }],
+        };
+      }
+      const logArgs = { name: args.name, contentBytes: Buffer.byteLength(args.content, "utf8") };
+      const outcome = await withWorkspace(userId, "mcp.skills.add", logArgs, async (workspaceId) => {
+        const result = await addSkill(workspaceId, userId, args);
         if (!result.ok) return { error: result.error };
         return result.skill;
       });

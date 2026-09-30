@@ -9,9 +9,11 @@ const config = loadConfig();
 // Stateless serving: a fresh McpServer is built per request from the
 // verified caller's userId, so tool state never leaks across callers.
 const mcpHttpHandler = createMcpHandler((ctx) => {
-  const userId = (ctx.authInfo as { userId?: string } | undefined)?.userId;
+  const authInfo = ctx.authInfo as { userId?: string; scopes?: string[] } | undefined;
+  const userId = authInfo?.userId;
+  const scopes = authInfo?.scopes ?? [];
   if (!userId) throw new Error("buildMcpServer called without a verified caller");
-  return buildMcpServer(userId);
+  return buildMcpServer(userId, scopes);
 });
 
 /** Verifies the bearer token against Better Auth's JWKS and forwards the claims as MCP AuthInfo. */
@@ -30,7 +32,7 @@ const protectedHandler = requireMcpAuth(
       } as never,
     });
   },
-  { resource: config.mcpResourceUrl, requiredScopes: ["read"] },
+  { resource: config.mcpResourceUrl, requiredScopes: ["read", "write"] },
 );
 
 export const GET = protectedHandler;

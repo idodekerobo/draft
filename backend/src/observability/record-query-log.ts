@@ -16,6 +16,7 @@ export type AgentQueryLogCommand =
   | "mcp.sessions.search"
   | "mcp.skills.list"
   | "mcp.skills.read"
+  | "mcp.skills.add"
   | "mcp.sources.search"
   | "mcp.sources.read";
 

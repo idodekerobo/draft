@@ -1,120 +1,13 @@
-import yaml from "js-yaml";
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import type { SkillRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
-import { listSkills, loadActiveSkill, readSkill, serializeSkill } from "../services/skills";
+import { addSkill, listSkills, readSkill, resolveFields, serializeSkill, type AddOrUpdateBody } from "../services/skills";
 
 type SkillsRequest = Bun.BunRequest<"/workspaces/:id/skills">;
 type SkillRequest = Bun.BunRequest<"/workspaces/:id/skills/:name">;
-
-const NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const NAME_MAX_LENGTH = 64;
-
-interface FrontmatterFields {
-  name?: string;
-  description?: string;
-  license?: string;
-  compatibility?: string;
-  metadata?: Record<string, unknown>;
-  allowedTools?: string;
-}
-
-type FrontmatterResult =
-  | { ok: true; fields: FrontmatterFields | null }
-  | { ok: false };
-
-/** Parses a leading `---\n...\n---` YAML block, if any. Malformed YAML is a failure, not a no-op. */
-function parseFrontmatter(content: string): FrontmatterResult {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(content);
-  if (!match) return { ok: true, fields: null };
-
-  let parsed: unknown;
-  try {
-    parsed = yaml.load(match[1]!);
-  } catch {
-    return { ok: false };
-  }
-  if (parsed === null || parsed === undefined) return { ok: true, fields: null };
-  if (typeof parsed !== "object" || Array.isArray(parsed)) return { ok: false };
-
-  const body = parsed as Record<string, unknown>;
-  const fields: FrontmatterFields = {};
-  if (typeof body.name === "string") fields.name = body.name;
-  if (typeof body.description === "string") fields.description = body.description;
-  if (typeof body.license === "string") fields.license = body.license;
-  if (typeof body.compatibility === "string") fields.compatibility = body.compatibility;
-  if (typeof body["allowed-tools"] === "string") fields.allowedTools = body["allowed-tools"] as string;
-  if (body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)) {
-    fields.metadata = body.metadata as Record<string, unknown>;
-  }
-  return { ok: true, fields };
-}
-
-function isValidName(name: string): boolean {
-  return name.length > 0 && name.length <= NAME_MAX_LENGTH && NAME_PATTERN.test(name);
-}
-
-interface AddOrUpdateBody {
-  name?: string;
-  description?: string;
-  content?: string;
-  license?: string;
-  compatibility?: string;
-  metadata?: Record<string, unknown>;
-  allowed_tools?: string;
-}
-
-interface ResolvedFields {
-  name: string;
-  description: string;
-  license: string | null;
-  compatibility: string | null;
-  metadata: Record<string, unknown> | null;
-  allowedTools: string | null;
-  content: string;
-}
-
-type ResolveResult =
-  | { ok: true; fields: ResolvedFields }
-  | { ok: false; status: number; error: string };
-
-function resolveFields(body: AddOrUpdateBody): ResolveResult {
-  const content = typeof body.content === "string" ? body.content : "";
-  if (content.length === 0) {
-    return { ok: false, status: 400, error: "missing_content" };
-  }
-
-  const frontmatter = parseFrontmatter(content);
-  if (!frontmatter.ok) {
-    return { ok: false, status: 400, error: "malformed_frontmatter" };
-  }
-  const parsed = frontmatter.fields ?? {};
-
-  const name = body.name ?? parsed.name;
-  const description = body.description ?? parsed.description;
-  if (!name || !description) {
-    return { ok: false, status: 400, error: "missing_required_fields" };
-  }
-  if (!isValidName(name)) {
-    return { ok: false, status: 400, error: "invalid_name" };
-  }
-
-  return {
-    ok: true,
-    fields: {
-      name,
-      description,
-      license: body.license ?? parsed.license ?? null,
-      compatibility: body.compatibility ?? parsed.compatibility ?? null,
-      metadata: body.metadata ?? parsed.metadata ?? null,
-      allowedTools: body.allowed_tools ?? parsed.allowedTools ?? null,
-      content,
-    },
-  };
-}
 
 export const skillsGET = withAuth<SkillsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
@@ -163,33 +56,10 @@ export const skillsPOST = withAuth<SkillsRequest>(async (req, caller) => {
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const resolved = resolveFields(body);
-  if (!resolved.ok) return Response.json({ error: resolved.error }, { status: resolved.status });
-  const fields = resolved.fields;
+  const result = await addSkill(req.params.id, caller.userId, body);
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
-  const { data, error } = await serviceClient
-    .from("skills")
-    .insert({
-      workspace_id: req.params.id,
-      name: fields.name,
-      description: fields.description,
-      license: fields.license,
-      compatibility: fields.compatibility,
-      metadata: fields.metadata,
-      allowed_tools: fields.allowedTools,
-      content: fields.content,
-      created_by: caller.userId,
-    })
-    .select("*")
-    .single<SkillRow>();
-
-  if (error) {
-    if (error.code === "23505") return Response.json({ error: "duplicate_name" }, { status: 409 });
-    recordRouteError({ workspaceId: req.params.id, operation: "commit", errorCode: "skills_add_failed", error });
-    return Response.json({ error: "skills_add_failed" }, { status: 500 });
-  }
-
-  return Response.json(serializeSkill(data), { status: 201 });
+  return Response.json(result.skill, { status: 201 });
 });
 
 export const skillsPATCH = withAuth<SkillRequest>(async (req, caller) => {

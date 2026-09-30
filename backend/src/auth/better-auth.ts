@@ -63,8 +63,10 @@ export const auth = betterAuth({
       // separate app.* origin, not served by this Bun process.
       loginPage: `${config.appUrl}/oauth/login`,
       consentPage: `${config.appUrl}/oauth/consent`,
-      scopes: ["read"],
-      clientRegistrationDefaultScopes: ["read"],
+      scopes: ["read", "write"],
+      // Also caps what CIMD clients may request at /authorize.
+      clientRegistrationDefaultScopes: ["read", "write"],
+      clientRegistrationAllowedScopes: ["read", "write"],
       // DCR left off for v1 — Claude Code and ChatGPT/Codex both prefer
       // CIMD automatically (allowDynamicClientRegistration defaults false).
     }),
