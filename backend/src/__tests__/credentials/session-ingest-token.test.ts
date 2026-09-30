@@ -29,6 +29,7 @@ interface FakeRow {
   last_used_at: string | null;
   session_project_id: string | null;
   allowed_providers: string[] | null;
+  created_by_user_id: string | null;
 }
 
 function createFakeClient() {
@@ -52,6 +53,7 @@ function createFakeClient() {
           last_used_at: null,
           session_project_id: payload.session_project_id ?? null,
           allowed_providers: payload.allowed_providers ?? null,
+          created_by_user_id: payload.created_by_user_id ?? null,
         };
         rows.push(row);
         return {
@@ -145,6 +147,13 @@ describe("mintSessionIngestToken / resolveIngestCredentialScope", () => {
     expect(resolved?.sessionProjectId).toBe(sessionProjectId);
     expect(resolved?.allowedProviders).toEqual(["claude-code"]);
     expect(fake.rows[0]?.last_used_at).not.toBeNull();
+  });
+
+  it("records who minted the credential", async () => {
+    await mintSessionIngestToken(fake.client, { workspaceId, label: null, sessionProjectId, allowedProviders: ["claude-code"], createdByUserId: "user-1" });
+    await mintSessionIngestToken(fake.client, { workspaceId, label: null, sessionProjectId, allowedProviders: ["claude-code"] });
+    expect(fake.rows[0]?.created_by_user_id).toBe("user-1");
+    expect(fake.rows[1]?.created_by_user_id).toBeNull();
   });
 
   it("a token minted for project A does not resolve project B's scope", async () => {

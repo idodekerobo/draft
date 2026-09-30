@@ -53,6 +53,7 @@ export const POST = withAuth<SessionTokensRequest>(async (req, caller) => {
       label: body.label ?? null,
       sessionProjectId,
       allowedProviders: body.allowedProviders,
+      createdByUserId: caller.userId,
     });
     return Response.json({
       id: minted.id,
