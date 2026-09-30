@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { AppearanceRow, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, DataBoundary, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, queryKeys, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { apiFetch } from "@/lib/api";
+import { scheduleQueryOptions, type Schedule } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
-
-interface Schedule {
-  enabled: boolean;
-}
 
 function useThemePreference(): [ThemePreference, (next: ThemePreference) => void] {
   const [preference, setPreference] = useState<ThemePreference>("system");
@@ -26,27 +23,37 @@ function useThemePreference(): [ThemePreference, (next: ThemePreference) => void
   return [preference, update];
 }
 
-export default function SettingsPage() {
-  const { identity, workspaceId, updatePrivacy } = useWorkspace();
-  const [theme, setTheme] = useThemePreference();
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
-  const [error, setError] = useState<string | null>(null);
+function SynthesisRow({ onError }: { onError: (message: string) => void }) {
+  const { workspaceId } = useWorkspace();
   const synthesisId = useId();
+  const { data: schedule } = useSuspenseQuery(scheduleQueryOptions(workspaceId, apiFetch));
+  const toggle = useOptimisticMutation<Schedule, boolean>({
+    queryKey: queryKeys.synthesisSchedule(workspaceId),
+    mutationFn: (enabled) => apiFetch<Schedule>(`/workspaces/${workspaceId}/synthesis-schedule`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+    apply: (_current, enabled) => ({ enabled }),
+    onError: () => onError("Could not save. Try again."),
+  });
+  return (
+    <>
+      <h2 className="ui-group-label">Synthesis</h2>
+      <ul className="ui-rows">
+        <li>
+          <SettingsRow
+            label="Update team context"
+            labelId={synthesisId}
+            helper="Draft reads new sources hourly during the day and every few hours overnight (UTC)."
+            control={<Toggle checked={schedule.enabled} onChange={(next) => toggle.mutate(next)} labelledBy={synthesisId} />}
+          />
+        </li>
+      </ul>
+    </>
+  );
+}
 
-  useEffect(() => {
-    apiFetch<Schedule>(`/workspaces/${workspaceId}/synthesis-schedule`).then(setSchedule).catch(() => setSchedule(null));
-  }, [workspaceId]);
-
-  async function toggleSynthesis(enabled: boolean) {
-    const previous = schedule;
-    setSchedule((current) => current && { ...current, enabled });
-    try {
-      setSchedule(await apiFetch<Schedule>(`/workspaces/${workspaceId}/synthesis-schedule`, { method: "PATCH", body: JSON.stringify({ enabled }) }));
-    } catch {
-      setSchedule(previous);
-      setError("Could not save. Try again.");
-    }
-  }
+export default function SettingsPage() {
+  const { identity, updatePrivacy } = useWorkspace();
+  const [theme, setTheme] = useThemePreference();
+  const [error, setError] = useState<string | null>(null);
 
   async function savePrivacy(patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) {
     setError(null);
@@ -78,21 +85,10 @@ export default function SettingsPage() {
         </li>
       </ul>
 
-      {schedule && (
-        <>
-          <h2 className="ui-group-label">Synthesis</h2>
-          <ul className="ui-rows">
-            <li>
-              <SettingsRow
-                label="Update team context"
-                labelId={synthesisId}
-                helper="Draft reads new sources hourly during the day and every few hours overnight (UTC)."
-                control={<Toggle checked={schedule.enabled} onChange={(next) => void toggleSynthesis(next)} labelledBy={synthesisId} />}
-              />
-            </li>
-          </ul>
-        </>
-      )}
+      {/* The schedule row is optional: hide it while loading or if it fails. */}
+      <DataBoundary fallback={null} errorFallback={null}>
+        <SynthesisRow onError={setError} />
+      </DataBoundary>
 
       <h2 className="ui-group-label">Privacy</h2>
       <ul className="ui-rows">

@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "draft-shared-ui";
+import { apiFetch } from "@/lib/api";
+import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
 
 const NAV_ITEMS = [
@@ -13,7 +16,9 @@ const NAV_ITEMS = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { identity, hasUnseenContext } = useWorkspace();
+  const { identity, workspaceId, seenContextVersion } = useWorkspace();
+  const { data: snapshot } = useQuery(contextQueryOptions(workspaceId, apiFetch));
+  const hasUnseenContext = snapshot != null && seenContextVersion !== null && snapshot.versionNumber > seenContextVersion;
   return (
     <div className="ui-shell">
       <nav className="ui-shell__nav" aria-label="Main">

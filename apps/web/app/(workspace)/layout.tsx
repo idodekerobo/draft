@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
-import { FlowShell } from "draft-shared-ui";
-import { getServerIdentity } from "@/lib/server-identity";
+import { FlowShell, HydrationBoundary, dehydrate, makeQueryClient } from "draft-shared-ui";
+import { WebQueryProvider } from "@/lib/query-provider";
+import { getServerAccessToken, getServerIdentity } from "@/lib/server-identity";
+import { prefetchWorkspace } from "@/lib/server-prefetch";
 import { WorkspaceProvider } from "@/lib/workspace";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
@@ -25,5 +27,15 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
       </FlowShell>
     );
   }
-  return <WorkspaceProvider identity={{ ...identity, workspace_id: identity.workspace_id }}>{children}</WorkspaceProvider>;
+  // One client per request; the browser gets this cache through HydrationBoundary.
+  const queryClient = makeQueryClient();
+  const token = await getServerAccessToken();
+  if (token) await prefetchWorkspace(queryClient, identity.workspace_id, token);
+  return (
+    <WebQueryProvider workspaceId={identity.workspace_id}>
+      <HydrationBoundary state={dehydrate(queryClient)}>
+        <WorkspaceProvider identity={{ ...identity, workspace_id: identity.workspace_id }}>{children}</WorkspaceProvider>
+      </HydrationBoundary>
+    </WebQueryProvider>
+  );
 }

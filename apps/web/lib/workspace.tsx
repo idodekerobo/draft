@@ -1,39 +1,21 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { documentsToEntries, type ContextFileEntry } from "draft-shared-ui/context-files";
-import { IntegrationActionsProvider, type IntegrationActions, type TeamSessionRepo, type TeamSessionReposState, type TrackFn } from "draft-shared-ui";
+import { IntegrationActionsProvider, queryKeys, useQueryClient, type IntegrationActions, type TrackFn } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import type { Identity } from "@/lib/identity";
-
-export type ContextState =
-  | { status: "loading" }
-  | { status: "empty" }
-  | { status: "error" }
-  | { status: "ready"; entries: ContextFileEntry[]; versionNumber: number; createdAt: string };
-
-export interface ConnectionsState {
-  status: "loading" | "ready" | "error";
-  connections: unknown[];
-  agentLastUsedAt: string | null;
-}
+import type { ConnectionsBody } from "@/lib/queries";
 
 interface WorkspaceValue {
   identity: Identity;
   workspaceId: string;
   orgName: string;
-  context: ContextState;
-  reloadContext: () => Promise<void>;
-  connections: ConnectionsState;
-  reloadConnections: () => Promise<boolean>;
-  sessionRepos: TeamSessionReposState;
-  reloadSessionRepos: () => Promise<boolean>;
   updatePrivacy: (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => Promise<void>;
   completeOnboarding: () => Promise<void>;
-  /** True when the context version is newer than the last one this browser showed. */
-  hasUnseenContext: boolean;
-  markContextSeen: () => void;
+  /** Last context version this browser showed. Null until read from storage. */
+  seenContextVersion: number | null;
+  markContextSeen: (versionNumber: number) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceValue | null>(null);
@@ -53,67 +35,27 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Loads context once per session and shares it with every page. */
+/** Holds identity and stable actions. Server data lives in the query cache. */
 export function WorkspaceProvider({ identity: initialIdentity, children }: { identity: Identity & { workspace_id: string }; children: ReactNode }) {
   const { track, syncUser } = useAnalytics();
+  const queryClient = useQueryClient();
   const [identity, setIdentity] = useState<Identity>(initialIdentity);
   const [orgName, setOrgName] = useState("your team");
-  const [context, setContext] = useState<ContextState>({ status: "loading" });
-  const [connections, setConnections] = useState<ConnectionsState>({ status: "loading", connections: [], agentLastUsedAt: null });
-  const [sessionRepos, setSessionRepos] = useState<TeamSessionReposState>({ status: "loading", repos: [] });
   const workspaceId = initialIdentity.workspace_id;
   const seenKey = `draft.seenContextVersion.${workspaceId}`;
-  const [seenVersion, setSeenVersion] = useState<number | null>(null);
+  const [seenContextVersion, setSeenContextVersion] = useState<number | null>(null);
 
   useEffect(() => {
     setOrgName(readOrgName());
-    try { setSeenVersion(Number(localStorage.getItem(seenKey) ?? 0)); } catch { setSeenVersion(0); }
+    try { setSeenContextVersion(Number(localStorage.getItem(seenKey) ?? 0)); } catch { setSeenContextVersion(0); }
   }, [seenKey]);
 
-  const markContextSeen = useCallback(() => {
-    if (context.status !== "ready") return;
-    setSeenVersion(context.versionNumber);
-    try { localStorage.setItem(seenKey, String(context.versionNumber)); } catch {}
-  }, [context, seenKey]);
-  const hasUnseenContext = context.status === "ready" && seenVersion !== null && context.versionNumber > seenVersion;
+  const markContextSeen = useCallback((versionNumber: number) => {
+    setSeenContextVersion(versionNumber);
+    try { localStorage.setItem(seenKey, String(versionNumber)); } catch {}
+  }, [seenKey]);
+
   useEffect(() => { syncUser(identity); }, [identity, syncUser]);
-
-  const reloadContext = useCallback(async () => {
-    try {
-      const snapshot = await apiFetch<{ versionNumber: number; createdAt: string; documents: Record<string, { content: string }> }>(`/workspaces/${workspaceId}/context`);
-      setContext({ status: "ready", entries: documentsToEntries(snapshot.documents), versionNumber: snapshot.versionNumber, createdAt: snapshot.createdAt });
-    } catch (error) {
-      setContext(error instanceof ApiError && error.code === "no_context_yet" ? { status: "empty" } : { status: "error" });
-    }
-  }, [workspaceId]);
-
-  const reloadConnections = useCallback(async () => {
-    try {
-      const body = await apiFetch<{ connections: unknown[]; agent?: { last_used_at: string | null } }>(`/workspaces/${workspaceId}/connections`);
-      setConnections({ status: "ready", connections: body.connections, agentLastUsedAt: body.agent?.last_used_at ?? null });
-      return true;
-    } catch {
-      setConnections((current) => ({ ...current, status: "error" }));
-      return false;
-    }
-  }, [workspaceId]);
-
-  const reloadSessionRepos = useCallback(async () => {
-    try {
-      const body = await apiFetch<{ projects: TeamSessionRepo[] }>(`/workspaces/${workspaceId}/sessions/projects`);
-      setSessionRepos({ status: "ready", repos: body.projects });
-      return true;
-    } catch {
-      setSessionRepos((current) => ({ status: "error", repos: current.repos }));
-      return false;
-    }
-  }, [workspaceId]);
-
-  useEffect(() => {
-    void reloadContext();
-    void reloadConnections();
-    void reloadSessionRepos();
-  }, [reloadContext, reloadConnections, reloadSessionRepos]);
 
   const updatePrivacy = useCallback(async (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => {
     const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at" | "session_replay_enabled">>("/me/privacy", {
@@ -137,11 +79,16 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
         return { ok: false, error: errorMessage(error, fallback) };
       }
     }
+    // Read at call time so a connections refetch does not rebuild these actions.
+    function hasMyConnection(): boolean {
+      const cached = queryClient.getQueryData<ConnectionsBody>(queryKeys.connections(workspaceId));
+      return cached?.connections.some((row) => (row as { is_mine?: boolean }).is_mine === true) ?? false;
+    }
     const unavailable = async () => ({ ok: false, error: "Use the Draft desktop app for this." });
     return {
       track: ((event: string, props: Record<string, unknown>) => {
         (track as (name: string, properties: Record<string, unknown>) => void)(event, props);
-        if (event === "integration_connected" && !connections.connections.some((row) => (row as { is_mine?: boolean }).is_mine === true)) {
+        if (event === "integration_connected" && !hasMyConnection()) {
           track("first_tool_connected", { source: String(props.source) });
         }
       }) as TrackFn,
@@ -158,11 +105,11 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
       selectSessionRepoFolder: async () => ({}),
       enableSessionCaptureForRepo: unavailable,
     };
-  }, [workspaceId, track, connections.connections]);
+  }, [workspaceId, track, queryClient]);
 
   const value = useMemo<WorkspaceValue>(() => ({
-    identity, workspaceId, orgName, context, reloadContext, connections, reloadConnections, sessionRepos, reloadSessionRepos, updatePrivacy, completeOnboarding, hasUnseenContext, markContextSeen,
-  }), [identity, workspaceId, orgName, context, reloadContext, connections, reloadConnections, sessionRepos, reloadSessionRepos, updatePrivacy, completeOnboarding, hasUnseenContext, markContextSeen]);
+    identity, workspaceId, orgName, updatePrivacy, completeOnboarding, seenContextVersion, markContextSeen,
+  }), [identity, workspaceId, orgName, updatePrivacy, completeOnboarding, seenContextVersion, markContextSeen]);
 
   return (
     <WorkspaceContext.Provider value={value}>

@@ -1,21 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FlowShell, JoinerFlow, type FlowDestination } from "draft-shared-ui";
+import { DataBoundary, FlowShell, JoinerFlow, useSuspenseQuery, type FlowDestination } from "draft-shared-ui";
+import { documentsToEntries, type ContextFileEntry } from "draft-shared-ui/context-files";
 import { WebToolList } from "@/components/WebToolList";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
+import { apiFetch } from "@/lib/api";
+import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
 
-export default function WelcomePage() {
+function Welcome({ entries }: { entries: ContextFileEntry[] }) {
   const router = useRouter();
   const { track } = useAnalytics();
-  const { identity, orgName, context, updatePrivacy, completeOnboarding } = useWorkspace();
+  const { identity, orgName, updatePrivacy, completeOnboarding } = useWorkspace();
   const [error, setError] = useState<string | null>(null);
-
-  if (context.status === "loading") {
-    return <FlowShell><p className="ui-muted" role="status">Loading your team&apos;s context…</p></FlowShell>;
-  }
 
   async function finish(destination: FlowDestination) {
     setError(null);
@@ -40,7 +39,7 @@ export default function WelcomePage() {
   return (
     <JoinerFlow
       orgName={orgName}
-      entries={context.status === "ready" ? context.entries : []}
+      entries={entries}
       toolList={<WebToolList groups={["meetings", "agent", "team"]} />}
       consent={identity.analytics_consent === true}
       onConsentChange={(next) => void changeConsent(next)}
@@ -48,5 +47,22 @@ export default function WelcomePage() {
       onFinish={(destination) => void finish(destination)}
       error={error}
     />
+  );
+}
+
+function WelcomeWithContext() {
+  const { workspaceId } = useWorkspace();
+  const { data: snapshot } = useSuspenseQuery(contextQueryOptions(workspaceId, apiFetch));
+  const entries = useMemo(() => (snapshot ? documentsToEntries(snapshot.documents) : []), [snapshot]);
+  return <Welcome entries={entries} />;
+}
+
+export default function WelcomePage() {
+  const loading = <FlowShell><p className="ui-muted" role="status">Loading your team&apos;s context…</p></FlowShell>;
+  // A failed context fetch still lets people finish onboarding, as before.
+  return (
+    <DataBoundary fallback={loading} errorFallback={<Welcome entries={[]} />}>
+      <WelcomeWithContext />
+    </DataBoundary>
   );
 }

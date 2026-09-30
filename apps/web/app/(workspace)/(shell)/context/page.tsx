@@ -1,25 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
-import { ContextReader } from "draft-shared-ui";
+import { useEffect, useMemo } from "react";
+import { ContextReader, DataBoundary, useSuspenseQuery } from "draft-shared-ui";
+import { documentsToEntries } from "draft-shared-ui/context-files";
+import { apiFetch } from "@/lib/api";
+import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
 
-export default function ContextPage() {
-  const { context, reloadContext, markContextSeen } = useWorkspace();
-  useEffect(() => { markContextSeen(); }, [markContextSeen]);
+function ContextBody() {
+  const { workspaceId, markContextSeen } = useWorkspace();
+  const { data: snapshot } = useSuspenseQuery(contextQueryOptions(workspaceId, apiFetch));
+  const entries = useMemo(() => (snapshot ? documentsToEntries(snapshot.documents) : []), [snapshot]);
+  const versionNumber = snapshot?.versionNumber;
+  useEffect(() => {
+    if (versionNumber !== undefined) markContextSeen(versionNumber);
+  }, [versionNumber, markContextSeen]);
 
-  if (context.status === "loading") return <p className="ui-page ui-muted" role="status">Loading context…</p>;
-  if (context.status === "error") {
-    return (
-      <div className="ui-page">
-        <p className="ui-error" role="alert">
-          Could not load your team&apos;s context. <button type="button" className="ui-link" onClick={() => void reloadContext()}>Try again</button>
-        </p>
-      </div>
-    );
-  }
-  if (context.status === "empty") {
+  if (!snapshot) {
     return (
       <div className="ui-page">
         <h1 className="ui-page__title">Draft is still learning about your team</h1>
@@ -27,5 +25,22 @@ export default function ContextPage() {
       </div>
     );
   }
-  return <ContextReader entries={context.entries} snapshotCreatedAt={context.createdAt} />;
+  return <ContextReader entries={entries} snapshotCreatedAt={snapshot.createdAt} />;
+}
+
+export default function ContextPage() {
+  return (
+    <DataBoundary
+      fallback={<p className="ui-page ui-muted" role="status">Loading context…</p>}
+      errorFallback={(retry) => (
+        <div className="ui-page">
+          <p className="ui-error" role="alert">
+            Could not load your team&apos;s context. <button type="button" className="ui-link" onClick={retry}>Try again</button>
+          </p>
+        </div>
+      )}
+    >
+      <ContextBody />
+    </DataBoundary>
+  );
 }

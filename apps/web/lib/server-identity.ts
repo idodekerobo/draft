@@ -8,12 +8,21 @@ export type ServerIdentity =
   | { state: "api_down" }
   | { state: "ok"; identity: Identity };
 
-/** Once per request, shared by nested layouts. */
-export const getServerIdentity = cache(async (): Promise<ServerIdentity> => {
+const getServerSession = cache(async () => {
   const client = await createClient();
   const {
     data: { session },
   } = await client.auth.getSession();
+  return session;
+});
+
+export async function getServerAccessToken(): Promise<string | null> {
+  return (await getServerSession())?.access_token ?? null;
+}
+
+/** Once per request, shared by nested layouts. */
+export const getServerIdentity = cache(async (): Promise<ServerIdentity> => {
+  const session = await getServerSession();
   if (!session) return { state: "signed_out" };
   try {
     const response = await fetch(`${API_URL}/whoami`, {
