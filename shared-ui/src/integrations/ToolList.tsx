@@ -77,7 +77,7 @@ export function AgentConnectionRow({ name, prompt, lastUsedAt }: { name: string;
           <small>Tell your agent to install the Draft CLI, then run <code>draft add &lt;agent&gt;</code>.</small>
         </span>
         <span className="ui-tool-row__status" role="status">
-          {lastUsedAt ? `Last used ${new Date(lastUsedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Waiting for first use"}
+          {lastUsedAt ? `Last used ${new Date(lastUsedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "No activity yet"}
         </span>
         <span className="ui-tool-row__action"><CopyButton text={prompt} label="Copy prompt" /></span>
       </div>
