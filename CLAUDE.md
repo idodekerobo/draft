@@ -23,6 +23,7 @@ Key routing rules:
 - Comments on SQL files that explain the data model or functions are fine
 - For source code, only leave comments for code that is unituitive from the code itself. When you do, you should keep them clean/concise trying not to exceed 3 lines.
 - `// TODO:` comments are acceptable for future work or items that need to be picked up later.
+- Do not reference plan files, task numbers or ID's in the comments of code. Plan files are ephemeral and not tracked long term.
 
 ## Database changes (backend/Supabase)
 
