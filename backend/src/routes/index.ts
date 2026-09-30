@@ -9,6 +9,7 @@ import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
+import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
 import * as sessionsSearch from "./sessions-search";
 import * as sessionTokens from "./session-tokens";
@@ -51,6 +52,7 @@ export const routes = {
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
   "/workspaces/:id/sessions/tokens/:credentialId": { DELETE: sessionTokens.DELETE },
   "/workspaces/:id/sessions": { GET: sessions.GET },
+  "/workspaces/:id/sessions/projects": { GET: withCors(sessionProjects.GET), OPTIONS },
   "/workspaces/:id/sessions/search": { GET: sessionsSearch.GET },
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
