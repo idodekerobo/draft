@@ -1,7 +1,7 @@
 "use client";
 
-// posthog-js is imported only here. No key means analytics no-ops, as on OSS desktop builds.
-import posthog from "posthog-js";
+// posthog-js is imported only here, and lazily. No key means analytics no-ops, as on OSS desktop builds.
+import type { PostHog } from "posthog-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { PLATFORM_PROPERTY, type TrackFn } from "draft-shared-ui";
 
@@ -24,6 +24,7 @@ interface AnalyticsValue {
 const AnalyticsContext = createContext<AnalyticsValue>({ track: () => {}, syncUser: () => {} });
 
 export function AnalyticsProvider({ children }: { children: ReactNode }) {
+  const posthogRef = useRef<PostHog | null>(null);
   const initialized = useRef(false);
   const optedIn = useRef(false);
   // Events before consent wait here. They are sent only if consent is granted
@@ -34,28 +35,33 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!POSTHOG_KEY || initialized.current) return;
-    posthog.init(POSTHOG_KEY, {
-      api_host: POSTHOG_HOST,
-      autocapture: false,
-      capture_pageview: false,
-      opt_out_capturing_by_default: true,
-      persistence: "localStorage",
-      disable_session_recording: true,
-      session_recording: { maskAllInputs: true, maskTextSelector: "*" },
+    void import("posthog-js").then(({ default: posthog }) => {
+      if (initialized.current) return;
+      posthog.init(POSTHOG_KEY, {
+        api_host: POSTHOG_HOST,
+        autocapture: false,
+        capture_pageview: false,
+        opt_out_capturing_by_default: true,
+        persistence: "localStorage",
+        disable_session_recording: true,
+        session_recording: { maskAllInputs: true, maskTextSelector: "*" },
+      });
+      posthog.register({ [PLATFORM_PROPERTY]: "web" });
+      posthogRef.current = posthog;
+      initialized.current = true;
+      applyUser(latestUser.current);
     });
-    posthog.register({ [PLATFORM_PROPERTY]: "web" });
-    initialized.current = true;
-    applyUser(latestUser.current);
   }, []);
 
   const track = useCallback(((event, props) => {
     if (!POSTHOG_KEY) return;
-    if (optedIn.current) posthog.capture(event, props);
+    if (optedIn.current) posthogRef.current?.capture(event, props);
     else if (pending.current.length < MAX_PENDING) pending.current.push([event, props]);
   }) as TrackFn, []);
 
   const applyUser = useCallback((user: AnalyticsUser | null) => {
-    if (!POSTHOG_KEY || !initialized.current) return;
+    const posthog = posthogRef.current;
+    if (!POSTHOG_KEY || !posthog) return;
     if (user?.analytics_consent === true) {
       if (!optedIn.current) {
         posthog.opt_in_capturing();
