@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { documentsToEntries, type ContextFileEntry } from "draft-shared-ui/context-files";
-import { IntegrationActionsProvider, type IntegrationActions, type TrackFn } from "draft-shared-ui";
+import { IntegrationActionsProvider, type IntegrationActions, type TeamSessionRepo, type TeamSessionReposState, type TrackFn } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import type { Identity } from "@/lib/identity";
@@ -27,6 +27,8 @@ interface WorkspaceValue {
   reloadContext: () => Promise<void>;
   connections: ConnectionsState;
   reloadConnections: () => Promise<boolean>;
+  sessionRepos: TeamSessionReposState;
+  reloadSessionRepos: () => Promise<boolean>;
   updatePrivacy: (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   /** True when the context version is newer than the last one this browser showed. */
@@ -58,6 +60,7 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
   const [orgName, setOrgName] = useState("your team");
   const [context, setContext] = useState<ContextState>({ status: "loading" });
   const [connections, setConnections] = useState<ConnectionsState>({ status: "loading", connections: [], agentLastUsedAt: null });
+  const [sessionRepos, setSessionRepos] = useState<TeamSessionReposState>({ status: "loading", repos: [] });
   const workspaceId = initialIdentity.workspace_id;
   const seenKey = `draft.seenContextVersion.${workspaceId}`;
   const [seenVersion, setSeenVersion] = useState<number | null>(null);
@@ -95,10 +98,22 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
     }
   }, [workspaceId]);
 
+  const reloadSessionRepos = useCallback(async () => {
+    try {
+      const body = await apiFetch<{ projects: TeamSessionRepo[] }>(`/workspaces/${workspaceId}/sessions/projects`);
+      setSessionRepos({ status: "ready", repos: body.projects });
+      return true;
+    } catch {
+      setSessionRepos((current) => ({ status: "error", repos: current.repos }));
+      return false;
+    }
+  }, [workspaceId]);
+
   useEffect(() => {
     void reloadContext();
     void reloadConnections();
-  }, [reloadContext, reloadConnections]);
+    void reloadSessionRepos();
+  }, [reloadContext, reloadConnections, reloadSessionRepos]);
 
   const updatePrivacy = useCallback(async (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => {
     const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at" | "session_replay_enabled">>("/me/privacy", {
@@ -139,15 +154,15 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
       listSlackChannels: unavailable,
       connectSlack: unavailable,
       updateSlackChannels: async () => ({ ok: false, channelIds: [], failed: [], error: "Use the Draft desktop app for this." }),
-      connectSessionTracking: unavailable,
+      connectSessionTracking: () => connect<{ ok: true }>({ provider: "claude_session" }, "Could not turn on coding sessions."),
       selectSessionRepoFolder: async () => ({}),
       enableSessionCaptureForRepo: unavailable,
     };
   }, [workspaceId, track, connections.connections]);
 
   const value = useMemo<WorkspaceValue>(() => ({
-    identity, workspaceId, orgName, context, reloadContext, connections, reloadConnections, updatePrivacy, completeOnboarding, hasUnseenContext, markContextSeen,
-  }), [identity, workspaceId, orgName, context, reloadContext, connections, reloadConnections, updatePrivacy, completeOnboarding, hasUnseenContext, markContextSeen]);
+    identity, workspaceId, orgName, context, reloadContext, connections, reloadConnections, sessionRepos, reloadSessionRepos, updatePrivacy, completeOnboarding, hasUnseenContext, markContextSeen,
+  }), [identity, workspaceId, orgName, context, reloadContext, connections, reloadConnections, sessionRepos, reloadSessionRepos, updatePrivacy, completeOnboarding, hasUnseenContext, markContextSeen]);
 
   return (
     <WorkspaceContext.Provider value={value}>

@@ -52,3 +52,18 @@ export interface IntegrationActions {
   selectSessionRepoFolder: () => Promise<{ folderPath?: string }>;
   enableSessionCaptureForRepo: (input: { folderPath: string }) => Promise<ActionResult>;
 }
+
+/** One repo with session capture on, from GET /workspaces/:id/sessions/projects. */
+export interface TeamSessionRepo {
+  id: string;
+  label: string | null;
+  created_at: string;
+  created_by: { user_id: string; display: string; is_me: boolean } | null;
+  last_upload_at: string | null;
+  session_count: number;
+  contributors: Array<{ display: string; is_me: boolean; verified: boolean }>;
+}
+
+export type TeamSessionReposState =
+  | { status: "loading" | "error"; repos: TeamSessionRepo[] }
+  | { status: "ready"; repos: TeamSessionRepo[] };

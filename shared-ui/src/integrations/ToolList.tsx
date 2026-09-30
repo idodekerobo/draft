@@ -36,7 +36,9 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
   const [open, setOpen] = useState(false);
   const connected = status.state === "connected";
   const statusText = status.detail || DEFAULT_STATUS_TEXT[status.state];
-  const subline = !connected && tool.scope === "workspace" ? `Connects ${tool.name} for your whole team` : null;
+  const subline = tool.scope === "personal"
+    ? "Your account"
+    : connected ? "Whole team" : `Connects ${tool.name} for your whole team`;
 
   return (
     <li className="ui-tool-row">
@@ -105,8 +107,8 @@ export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUse
   const grouped = groupTools(toolsForPlatform(platform, groups), statuses);
   return (
     <div className="ui-tool-list">
-      {grouped.map(({ group, label, tools }) => (
-        <section key={group} className="ui-tool-list__group" aria-label={label}>
+      {grouped.map(({ section, label, tools }) => (
+        <section key={section} className="ui-tool-list__group" aria-label={label}>
           <h3 className="ui-group-label">{label}</h3>
           <ul className="ui-rows">
             {tools.map((tool) => tool.id === "claude-code"

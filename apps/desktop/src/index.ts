@@ -11,6 +11,7 @@ import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, readCollaboration, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { documentsToEntries } from "draft-shared-ui/context-files";
+import type { TeamSessionRepo } from "draft-shared-ui";
 import { capture } from "./exec";
 import { spawnHeadlessAgent } from "draft-core/agents/headless";
 import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
@@ -548,6 +549,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
         const hostedConnections = normalizeHostedConnections(cloudConnections ?? []);
 
+        let sessionRepos: { ok: boolean; repos: TeamSessionRepo[] } = { ok: false, repos: [] };
+        if (cloudWorkspaceId) {
+          try {
+            const response = await fetchServerJSON<{ projects: TeamSessionRepo[] }>(`workspaces/${cloudWorkspaceId}/sessions/projects`);
+            sessionRepos = { ok: true, repos: response.projects };
+          } catch {
+            sessionRepos = { ok: false, repos: [] };
+          }
+        }
+
         // Every integrationDetail key is now cloud-backed, so there's no
         // local-flag/health-file fallback branch left to maintain.
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
@@ -610,6 +621,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           },
           claudeCode: { connected: claudeCodeConnection?.connected ?? false },
           agentLastUsedAt,
+          sessionRepos,
           webAppUrl: process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
           // Settings list view only -- every other consumer above keeps
           // using the folded IntegrationDetail shape. Reuses cloudConnections

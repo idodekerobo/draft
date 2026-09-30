@@ -364,3 +364,11 @@
   white-space: pre-wrap;
   user-select: all;
 }
+
+/* ── Team session repos ────────────────────────────────────────────────────── */
+
+.ui-sessions-panel { display: flex; flex-direction: column; gap: 16px; max-width: 560px; }
+.ui-repo-list { max-width: 560px; }
+.ui-repo-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 0; }
+.ui-repo-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--color-text-primary); font-size: var(--font-size-secondary); font-weight: 500; }
+.ui-repo-row__name small { color: var(--color-text-secondary); font-size: var(--font-size-micro); font-weight: 400; }

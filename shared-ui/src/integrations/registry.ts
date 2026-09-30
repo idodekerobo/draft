@@ -1,6 +1,9 @@
 export type Platform = "web" | "desktop";
 export type ToolId = "fireflies" | "granola" | "claude-code" | "slack" | "github" | "linear" | "coding-sessions";
-export type ToolGroup = "meetings" | "agent" | "team" | "computer";
+/** "sessions" is omitted from the onboarding group lists, which keep their current tools. */
+export type ToolGroup = "meetings" | "agent" | "team" | "sessions";
+/** Page headings. Data flowing into Draft, and Draft feeding an agent. */
+export type ToolSection = "sources" | "agent";
 
 export interface ToolEntry {
   id: ToolId;
@@ -20,17 +23,15 @@ export const TOOL_REGISTRY: ToolEntry[] = [
   { id: "slack", name: "Slack", description: "Reads the channels you choose", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 100 },
   { id: "github", name: "GitHub", description: "Reads pull requests and commits", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 90 },
   { id: "linear", name: "Linear", description: "Reads issues and projects", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 70 },
-  { id: "coding-sessions", name: "Coding sessions", description: "Captures finished Claude Code sessions from a folder", group: "computer", scope: "personal", platforms: ["desktop"], popularity: 50 },
+  { id: "coding-sessions", name: "Coding sessions", description: "Captures finished Claude Code sessions from your repos", group: "sessions", scope: "workspace", platforms: ["web", "desktop"], popularity: 50 },
 ];
 
-export const TOOL_GROUP_LABELS: Record<ToolGroup, string> = {
-  meetings: "Your meetings",
-  agent: "Your AI agent",
-  team: "Connected for your team",
-  computer: "On this computer",
-};
+const GROUP_ORDER: ToolGroup[] = ["meetings", "agent", "team", "sessions"];
 
-const GROUP_ORDER: ToolGroup[] = ["meetings", "agent", "team", "computer"];
+export const SECTIONS: Array<{ id: ToolSection; label: string; groups: ToolGroup[] }> = [
+  { id: "sources", label: "Sources", groups: ["meetings", "team", "sessions"] },
+  { id: "agent", label: "Use Draft in your agent", groups: ["agent"] },
+];
 
 export type ToolState = "connected" | "pending" | "error" | "disconnected";
 
@@ -44,13 +45,13 @@ export function toolsForPlatform(platform: Platform, groups: ToolGroup[] = GROUP
   return TOOL_REGISTRY.filter((tool) => tool.platforms.includes(platform) && groups.includes(tool.group));
 }
 
-/** Groups tools in display order. Within a group, connected tools come first, then by popularity. */
-export function groupTools(tools: ToolEntry[], statuses: Partial<Record<ToolId, ToolStatus>>): Array<{ group: ToolGroup; label: string; tools: ToolEntry[] }> {
+/** Groups tools under the page sections. Within a section, connected tools come first, then by popularity. */
+export function groupTools(tools: ToolEntry[], statuses: Partial<Record<ToolId, ToolStatus>>): Array<{ section: ToolSection; label: string; tools: ToolEntry[] }> {
   const rank = (tool: ToolEntry) => (statuses[tool.id]?.state === "connected" ? 0 : 1);
-  return GROUP_ORDER.flatMap((group) => {
-    const inGroup = tools
-      .filter((tool) => tool.group === group)
+  return SECTIONS.flatMap(({ id, label, groups }) => {
+    const inSection = tools
+      .filter((tool) => groups.includes(tool.group))
       .sort((a, b) => rank(a) - rank(b) || b.popularity - a.popularity);
-    return inGroup.length ? [{ group, label: TOOL_GROUP_LABELS[group], tools: inGroup }] : [];
+    return inSection.length ? [{ section: id, label, tools: inSection }] : [];
   });
 }

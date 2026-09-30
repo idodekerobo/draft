@@ -2,12 +2,15 @@
 
 import { useState, type ReactNode } from "react";
 import {
+  CodingSessionsPanel,
   FirefliesConnectPanel,
   GranolaConnectPanel,
   LinearConnectPanel,
   ToolList,
   AGENT_SETUP_PROMPT,
+  codingSessionsStatus,
   useIntegrationActions,
+  type ManagePanel,
   type ToolGroup,
   type ToolId,
 } from "draft-shared-ui";
@@ -40,17 +43,31 @@ function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "g
   );
 }
 
-/** Web only connects personal tools and Linear; Slack and GitHub need the desktop app for now. */
+/** Web connects personal tools, Linear and coding sessions; Slack and GitHub need the desktop app for now. */
 export function WebToolList({ groups, allowDisconnect = false }: { groups?: ToolGroup[]; allowDisconnect?: boolean }) {
-  const { connections, reloadConnections } = useWorkspace();
-  const statuses = webToolStatuses(connections.connections);
+  const { connections, reloadConnections, sessionRepos, reloadSessionRepos } = useWorkspace();
+  const baseStatuses = webToolStatuses(connections.connections);
+  const sessionsOn = baseStatuses["coding-sessions"]?.state === "connected";
+  const statuses = { ...baseStatuses, "coding-sessions": codingSessionsStatus(sessionsOn, sessionRepos) };
   const refresh = () => reloadConnections();
+
+  const sessionsPanel = () => (
+    <CodingSessionsPanel
+      detail={{ connected: sessionsOn, status: sessionsOn ? "connected" : "disconnected" }}
+      repos={sessionRepos}
+      onReloadRepos={reloadSessionRepos}
+      onConnected={async () => { await refresh(); }}
+      canPickRepo={false}
+    />
+  );
 
   const panels: Partial<Record<ToolId, (close: () => void) => ReactNode>> = {
     fireflies: (close) => <FirefliesConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     granola: (close) => <GranolaConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     linear: (close) => <LinearConnectPanel detail={undefined} classPrefix="ui-panel" onConnected={async () => { await refresh(); close(); }} />,
+    "coding-sessions": () => sessionsPanel(),
   };
+  const managePanels: Partial<Record<ToolId, ManagePanel>> = { "coding-sessions": { label: "View repos", render: () => sessionsPanel() } };
 
   if (connections.status === "error") {
     return (
@@ -68,6 +85,7 @@ export function WebToolList({ groups, allowDisconnect = false }: { groups?: Tool
       agentPrompt={AGENT_SETUP_PROMPT}
       agentLastUsedAt={connections.agentLastUsedAt}
       panels={panels}
+      managePanels={managePanels}
       connectedActions={allowDisconnect ? {
         fireflies: <DisconnectButton provider="fireflies" />,
         granola: <DisconnectButton provider="granola" query="?account_kind=personal" />,

@@ -355,6 +355,8 @@ export interface ConnectedAppsStatus {
   claudeCode: { connected: boolean };
   /** The caller's latest agent (MCP or CLI) query, or null before first use. */
   agentLastUsedAt: string | null;
+  /** Repos with session capture on across the workspace. `ok: false` when the list could not be loaded. */
+  sessionRepos: { ok: boolean; repos: TeamSessionRepo[] };
   webAppUrl: string;
   /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
   firefliesConnections: MultiAccountConnectionListItem[];
@@ -398,6 +400,7 @@ export interface SynthesisSchedule {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
+import type { TeamSessionRepo } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 /** A team MCP that is waiting for the user to supply missing API credentials. */

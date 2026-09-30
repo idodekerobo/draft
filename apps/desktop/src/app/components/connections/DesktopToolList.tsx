@@ -1,13 +1,15 @@
 import { useState, type ReactNode } from "react";
 import {
   AGENT_SETUP_PROMPT,
+  CodingSessionsPanel,
   FirefliesConnectPanel,
   GranolaConnectPanel,
   LinearConnectPanel,
-  SessionTrackingPanel,
   SlackConnectPanel,
   ToolList,
+  codingSessionsStatus,
   toolStatusesFromConnections,
+  type TeamSessionReposState,
   type ManagePanel,
   type ToolGroup,
   type ToolId,
@@ -19,6 +21,10 @@ import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { GithubConnectPanel } from "../../adapters/GithubConnectPanel";
 
 type Source = "slack" | "fireflies" | "linear" | "github" | "granola" | "claude_session";
+
+function sessionReposState(apps: ConnectedAppsStatus): TeamSessionReposState {
+  return { status: apps.sessionRepos.ok ? "ready" : "error", repos: apps.sessionRepos.repos };
+}
 
 export function desktopToolStatuses(apps: ConnectedAppsStatus): Partial<Record<ToolId, ToolStatus>> {
   const team = (["slack", "github", "linear"] as const).map((provider) => ({
@@ -32,7 +38,7 @@ export function desktopToolStatuses(apps: ConnectedAppsStatus): Partial<Record<T
   ];
   return {
     ...toolStatusesFromConnections(personal, team),
-    "coding-sessions": apps.integrations.claude_session.connected ? { state: "connected", detail: "On" } : { state: "disconnected" },
+    "coding-sessions": codingSessionsStatus(apps.integrations.claude_session.connected, sessionReposState(apps)),
   };
 }
 
@@ -71,18 +77,27 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
 }) {
   const reload = async () => { await refresh(); };
   const connectedAndClose = (close: () => void) => async () => { await refresh(); close(); };
+  const sessionsPanel = () => (
+    <CodingSessionsPanel
+      detail={apps.integrations.claude_session}
+      repos={sessionReposState(apps)}
+      onReloadRepos={refresh}
+      onConnected={reload}
+      canPickRepo
+    />
+  );
   const panels: Partial<Record<ToolId, (close: () => void) => ReactNode>> = {
     fireflies: (close) => <FirefliesConnectPanel detail={apps.integrations.fireflies} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     granola: (close) => <GranolaConnectPanel detail={apps.integrations.granola} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     linear: (close) => <LinearConnectPanel detail={apps.integrations.linear} classPrefix="ui-panel" onConnected={connectedAndClose(close)} />,
     slack: (close) => <SlackConnectPanel detail={apps.integrations.slack} mode="connect" classPrefix="ui-panel" onMembershipUpdated={reload} onConnected={connectedAndClose(close)} />,
     github: (close) => <GithubConnectPanel detail={apps.integrations.github} classPrefix="ui-panel" onConnected={connectedAndClose(close)} />,
-    "coding-sessions": () => <SessionTrackingPanel detail={apps.integrations.claude_session} classPrefix="ui-panel" onConnected={reload} />,
+    "coding-sessions": () => sessionsPanel(),
   };
 
   const managePanels: Partial<Record<ToolId, ManagePanel>> = allowManage ? {
     slack: { label: "Manage channels", render: () => <SlackConnectPanel detail={apps.integrations.slack} mode="manage" classPrefix="ui-panel" onMembershipUpdated={reload} onConnected={reload} /> },
-    "coding-sessions": { label: "Setup guide", render: () => <SessionTrackingPanel detail={apps.integrations.claude_session} classPrefix="ui-panel" onConnected={reload} /> },
+    "coding-sessions": { label: "View repos", render: () => sessionsPanel() },
   } : {};
 
   const connectedActions: Partial<Record<ToolId, ReactNode>> = allowManage ? {
