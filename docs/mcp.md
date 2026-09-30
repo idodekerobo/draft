@@ -6,7 +6,7 @@ Draft exposes the company brain to MCP-compatible agents through a remote, OAuth
 https://api.draftai.us/mcp
 ~~~
 
-The MCP server is read-only. It resolves the caller's team-default workspace from the authenticated account, checks workspace access, and currently exposes:
+The MCP server is read-only except for `skills.add`, which needs the `write` OAuth scope. It resolves the caller's team-default workspace from the authenticated account, checks workspace access, and currently exposes:
 
 | Tool | Purpose |
 | --- | --- |
@@ -14,6 +14,7 @@ The MCP server is read-only. It resolves the caller's team-default workspace fro
 | `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. |
 | `skills.list` | List shared workspace skills. |
 | `skills.read` | Read one shared skill by name. |
+| `skills.add` | Create a new shared skill. Needs the `write` scope. Fails with `duplicate_name` if the name exists; it cannot overwrite or delete a skill. |
 
 ## Connect Claude Code
 
