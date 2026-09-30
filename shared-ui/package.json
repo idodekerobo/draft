@@ -26,6 +26,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.0",
     "marked": "^18.0.4"
   },
   "scripts": {
