@@ -17,7 +17,8 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  await supabase.auth.getUser();
+  // getClaims refreshes near-expiry sessions and verifies the JWT locally with asymmetric keys.
+  await supabase.auth.getClaims();
   return response;
 }
 export const config = {
