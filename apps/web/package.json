@@ -2,6 +2,7 @@
   "name": "draft-web-app",
   "private": true,
   "scripts": {
+    "prebuild": "cp ../../assets/icon.png app/icon.png",
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint",
