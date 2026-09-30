@@ -17,7 +17,7 @@ function addHeaders(response: Response, origin: string | null): Response {
     // session bridge/consent flow.
     response.headers.set("Access-Control-Allow-Credentials", "true");
   }
-  response.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  response.headers.set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
   return response;
 }

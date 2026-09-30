@@ -10,10 +10,11 @@ From the repository root:
 make run-local
 ~~~
 
-Or run it alone:
+Or run it alone. The landing page installs outside the repo workspaces:
 
 ~~~bash
-cd landing-page-app
+cd apps/landing-page
+npm install --workspaces=false
 bun run dev -- --port 3001
 ~~~
 
@@ -38,7 +39,7 @@ The Crisp history route also uses server-side CRISP_HISTORY_SECRET, CRISP_API_ID
 ## Build
 
 ~~~bash
-cd landing-page-app
+cd apps/landing-page
 bun run build
 bun run start
 ~~~

@@ -1,10 +1,10 @@
 # Draft web app
 
-This is the authenticated Next.js application for Draft. It provides browser-based signup and sign-in, desktop pairing, team invite acceptance, and a small authenticated workspace surface. It talks to the configured Draft Bun backend for workspace identity and API operations.
+This is the authenticated Next.js application for Draft. It provides browser-based sign-in, invite-based account creation and team acceptance, desktop pairing, and a small authenticated workspace surface. It talks to the configured Draft Bun backend for workspace identity and API operations.
 
 ## Hosted Draft
 
-The hosted app is available at [app.draftai.us](https://app.draftai.us). Users can create an account there or follow an invite link from a workspace administrator.
+The hosted app is available at [app.draftai.us](https://app.draftai.us). Users sign in there or follow an invite link from a workspace administrator to create an account and join a team.
 
 ## Local development
 
@@ -17,7 +17,7 @@ make run-local
 Or run the app alone:
 
 ~~~bash
-cd web-app
+cd apps/web
 bun run dev
 ~~~
 
@@ -33,8 +33,12 @@ Optional values:
 
 ~~~env
 NEXT_PUBLIC_DOWNLOAD_URL=
+NEXT_PUBLIC_POSTHOG_KEY=
+NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
 PORT=3000
 ~~~
+
+Without NEXT_PUBLIC_POSTHOG_KEY, analytics are off. With a key, nothing is sent until the signed-in user turns on usage data (stored per user, shared with the desktop app). See docs/analytics.md.
 
 NEXT_PUBLIC_API_BASE_URL must be reachable by the browser. All NEXT_PUBLIC_* values are public and may be embedded in browser assets. Never put backend secrets in this app.
 

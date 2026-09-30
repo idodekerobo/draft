@@ -1,3 +1,4 @@
+import { FlowShell } from "draft-shared-ui";
 import { createClient } from "@/lib/supabase/server";
 import { AuthForm } from "@/components/AuthForm";
 import { ResumeOAuthAuthorize } from "@/components/ResumeOAuthAuthorize";
@@ -22,7 +23,7 @@ export default async function OAuthLoginPage({
   } = await client.auth.getUser();
 
   return (
-    <main className="card">
+    <FlowShell>
       <h1>Connect Draft</h1>
       {user ? (
         <ResumeOAuthAuthorize query={queryString} />
@@ -35,6 +36,6 @@ export default async function OAuthLoginPage({
           />
         </>
       )}
-    </main>
+    </FlowShell>
   );
 }

@@ -64,6 +64,8 @@ export default {
     copy: {
       "src/app/index.html": "views/app/index.html",
       "src/app/index.css":  "views/app/index.css",
+      "../../shared-ui/src/styles/tokens.css": "views/app/tokens.css",
+      "../../shared-ui/src/styles/shared-ui.css": "views/app/shared-ui.css",
       // Bundled at build time by desktop/scripts/prebuild.sh
       "assets/background/": "background/",
     },

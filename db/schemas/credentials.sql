@@ -23,6 +23,7 @@ create table credentials (
   last_used_at             timestamptz,
   session_project_id       uuid,
   allowed_providers        text[],
+  created_by_user_id       uuid references users(id) on delete set null,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),
 

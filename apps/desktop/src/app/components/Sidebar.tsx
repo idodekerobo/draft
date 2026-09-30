@@ -4,7 +4,7 @@
 // No icons in colored circles — hairline separator list rows only.
 
 import { createPortal } from "react-dom";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { View } from "../types";
 
 interface SidebarProps {
@@ -22,12 +22,13 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "context",   label: "Context"   },
-  { id: "activity",  label: "Activity"  },
+  { id: "context",     label: "Context"     },
+  { id: "connections", label: "Connections" },
+  { id: "activity",    label: "Activity"    },
   { id: "settings",  label: "Settings"  },
 ];
 
-export function Sidebar({ activeView, onNavigate, activeProfile, profiles, onSwitchProfile, onOpenFeedback }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ activeView, onNavigate, activeProfile, profiles, onSwitchProfile, onOpenFeedback }: SidebarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownPos, setDropdownPos]   = useState<{ bottom: number; left: number } | null>(null);
   const chipRef     = useRef<HTMLButtonElement>(null);
@@ -140,4 +141,4 @@ export function Sidebar({ activeView, onNavigate, activeProfile, profiles, onSwi
       )}
     </nav>
   );
-}
+});

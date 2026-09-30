@@ -10,11 +10,17 @@ create table users (
                          check (status in ('invited', 'active', 'disabled')),
   last_seen_at        timestamptz,
   onboarding_completed_at timestamptz,
+  -- null = not asked (treated as off). Changed only through PATCH /me/privacy.
+  analytics_consent   boolean,
+  analytics_consent_at timestamptz,
+  session_replay_enabled boolean not null default false,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now(),
 
   foreign key (primary_team_id, organization_id)
-    references teams(id, organization_id) on delete restrict
+    references teams(id, organization_id) on delete restrict,
+  constraint users_session_replay_requires_consent
+    check (not session_replay_enabled or analytics_consent is true)
 );
 
 alter table users enable row level security;

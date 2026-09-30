@@ -10,6 +10,7 @@ interface CredentialRow {
   provider: string;
   label: string | null;
   status: string;
+  created_by_user_id: string | null;
 }
 
 const state: { credentials: CredentialRow[] } = { credentials: [] };
@@ -22,6 +23,11 @@ beforeAll(() => {
 function createFakeClient() {
   return {
     from(table: string) {
+      if (table === "session_projects") {
+        return {
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "project-1" }, error: null }) }) }) }),
+        };
+      }
       if (table !== "credentials") throw new Error(`Unexpected table: ${table}`);
       return {
         insert(payload: Partial<CredentialRow> & { encrypted_payload: unknown; encryption_key_version: string }) {
@@ -31,6 +37,7 @@ function createFakeClient() {
             provider: payload.provider!,
             label: payload.label ?? null,
             status: payload.status ?? "active",
+            created_by_user_id: payload.created_by_user_id ?? null,
           };
           state.credentials.push(row);
           return {
@@ -72,20 +79,27 @@ function request(body?: unknown): Request {
   );
 }
 
+const validBody = { label: "my-repo", projectKey: "key-1", allowedProviders: ["claude-code"] };
+
 describe("POST /workspaces/:id/sessions/tokens", () => {
   it("mints a token once, formatted draft_sit_<credentialId>_<secret>", async () => {
-    const response = await routeModule.POST(request({ label: "my-repo" }) as never);
+    const response = await routeModule.POST(request(validBody) as never);
     expect(response.status).toBe(200);
     const body = await response.json() as { id: string; token: string };
     expect(body.id).toBe(state.credentials[0]?.id);
     expect(body.token.startsWith(`draft_sit_${body.id}_`)).toBe(true);
-    expect(state.credentials[0]?.provider).toBe("claude_session_ingest");
+    expect(state.credentials[0]?.provider).toBe("agent_session_ingest");
     expect(state.credentials[0]?.label).toBe("my-repo");
     expect(state.credentials[0]?.status).toBe("active");
   });
 
+  it("records the caller as the credential's creator", async () => {
+    await routeModule.POST(request(validBody) as never);
+    expect(state.credentials[0]?.created_by_user_id).toBe(caller.userId);
+  });
+
   it("mints without a label", async () => {
-    const response = await routeModule.POST(request(undefined) as never);
+    const response = await routeModule.POST(request({ ...validBody, label: undefined }) as never);
     expect(response.status).toBe(200);
     expect(state.credentials[0]?.label).toBeNull();
   });
@@ -97,7 +111,7 @@ describe("POST /workspaces/:id/sessions/tokens", () => {
 
   it("returns the workspace access denial before minting", async () => {
     accessResult = Response.json({ error: "forbidden" }, { status: 403 });
-    const response = await routeModule.POST(request({}) as never);
+    const response = await routeModule.POST(request(validBody) as never);
     expect(response.status).toBe(403);
     expect(state.credentials).toHaveLength(0);
   });

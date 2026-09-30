@@ -1,3 +1,5 @@
+import type { TrackFn } from "./analytics/events";
+
 export type IntegrationStatus = "disconnected" | "pending" | "connected" | "degraded" | "error";
 
 export interface IntegrationDetail {
@@ -37,7 +39,7 @@ export interface WebhookConnectionResult extends ActionResult {
 export type GithubInstallPhase = "idle" | "awaiting_approval" | "connected" | "error";
 
 export interface IntegrationActions {
-  track: (event: string, properties: Record<string, unknown>) => void;
+  track: TrackFn;
   openUrl: (url: string) => void | Promise<void>;
   getSlackManifestUrl: () => Promise<{ ok: boolean; url?: string; error?: string }>;
   listSlackChannels: (input: { botToken?: string }) => Promise<SlackChannelsResult>;
@@ -51,11 +53,17 @@ export interface IntegrationActions {
   enableSessionCaptureForRepo: (input: { folderPath: string }) => Promise<ActionResult>;
 }
 
-export interface HeadlessSetupActions {
-  getAvailableRunners: () => Promise<{ runners: Array<{ name: "claude" | "codex"; installed: boolean }> }>;
-  subscribeToProgress: (listener: (progress: { phase: "starting" | "running" | "writing" | "complete" | "error"; label: string; error?: string }) => void) => () => void;
-  getContextFiles: () => Promise<Array<{ label: string }>>;
-  selectSetupFolder: () => Promise<{ folderPath?: string }>;
-  runHeadlessSetup: (input: { mode: "import" | "github"; runner: "claude" | "codex"; dimensions: string[]; folderPath?: string; githubUrl?: string }) => Promise<ActionResult>;
-  openWorkspaceInFinder: () => void | Promise<void>;
+/** One repo with session capture on, from GET /workspaces/:id/sessions/projects. */
+export interface TeamSessionRepo {
+  id: string;
+  label: string | null;
+  created_at: string;
+  created_by: { user_id: string; display: string; is_me: boolean } | null;
+  last_upload_at: string | null;
+  session_count: number;
+  contributors: Array<{ display: string; is_me: boolean; verified: boolean }>;
 }
+
+export type TeamSessionReposState =
+  | { status: "loading" | "error"; repos: TeamSessionRepo[] }
+  | { status: "ready"; repos: TeamSessionRepo[] };

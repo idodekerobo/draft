@@ -4,6 +4,7 @@ import { serviceClient } from "../db/client";
 import type { AgentMessageRow, AgentSessionRow, SourceItemRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
+import { loadDisplayNames } from "./session-display-names";
 import { resolveUserFilter } from "./sessions-identity";
 
 type SessionsRequest = Bun.BunRequest<"/workspaces/:id/sessions">;
@@ -52,25 +53,10 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
   const userIds = [...new Set(rows.map((r) => r.user_id).filter((id): id is string => id !== null))];
   const contributorIds = [...new Set(rows.map((r) => r.contributor_id).filter((id): id is string => id !== null))];
 
-  const [usersResult, contributorsResult] = await Promise.all([
-    userIds.length > 0
-      ? serviceClient.from("users").select("id, display_name, email").in("id", userIds)
-      : Promise.resolve({ data: [], error: null }),
-    contributorIds.length > 0
-      ? serviceClient.from("session_contributors").select("id, git_display_name, git_email").in("id", contributorIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  if (usersResult.error) return errorResponse("users_lookup_failed", 500, usersResult.error, req.params.id);
-  if (contributorsResult.error) return errorResponse("contributors_lookup_failed", 500, contributorsResult.error, req.params.id);
-
-  const usersById = new Map(
-    ((usersResult.data ?? []) as { id: string; display_name: string | null; email: string }[])
-      .map((u) => [u.id, u.display_name ?? u.email]),
-  );
-  const contributorsById = new Map(
-    ((contributorsResult.data ?? []) as { id: string; git_display_name: string | null; git_email: string }[])
-      .map((c) => [c.id, c.git_display_name ?? c.git_email]),
-  );
+  const names = await loadDisplayNames(serviceClient, userIds, contributorIds);
+  if (!names.ok) return errorResponse(names.code, 500, names.detail, req.params.id);
+  const usersById = names.users;
+  const contributorsById = names.contributors;
 
   const body = {
     sessions: rows.map((row) => ({

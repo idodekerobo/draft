@@ -7,16 +7,17 @@ import { usePathname } from 'next/navigation';
 
 // Init at module level so posthog is ready before the first render.
 // The typeof window guard prevents this from running during SSR.
-if (typeof window !== 'undefined') {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+// TODO: gate init behind a cookie consent banner.
+if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
     api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
     capture_pageview: false,
     capture_pageleave: true,
     session_recording: {
-      maskAllInputs: false,
-      maskInputOptions: { password: true },
+      maskAllInputs: true,
     },
   });
+  posthog.register({ platform: 'landing' });
 }
 
 function PostHogPageView() {

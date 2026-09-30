@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useIntegrationActions } from "./IntegrationActionsContext";
 import type { IntegrationDetail } from "../types";
@@ -6,7 +8,7 @@ interface FirefliesConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onStatusRefresh: () => boolean | Promise<boolean>;
   onDone: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
 }
 
 interface WebhookInfo {

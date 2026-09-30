@@ -1,3 +1,5 @@
+"use client";
+
 // SlackChannelPicker.tsx — channel checkbox list for Slack connection and membership management.
 
 import { useEffect, useState } from "react";

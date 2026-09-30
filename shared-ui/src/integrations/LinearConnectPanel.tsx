@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useIntegrationActions } from "./IntegrationActionsContext";
 import type { IntegrationDetail } from "../types";
@@ -5,7 +7,7 @@ import type { IntegrationDetail } from "../types";
 interface LinearConnectPanelProps {
   detail: IntegrationDetail | undefined;
   onConnected: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
 }
 
 export function LinearConnectPanel({ onConnected, classPrefix }: LinearConnectPanelProps) {

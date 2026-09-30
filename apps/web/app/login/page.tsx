@@ -1,3 +1,4 @@
+import { FlowShell } from "draft-shared-ui";
 import { AuthForm } from "@/components/AuthForm";
 export default async function Login({
   searchParams,
@@ -6,9 +7,9 @@ export default async function Login({
 }) {
   const p = await searchParams;
   return (
-    <main className="card">
+    <FlowShell>
       <h1>Sign in to Draft</h1>
       <AuthForm initialMode="login" next={p.next || "/"} />
-    </main>
+    </FlowShell>
   );
 }

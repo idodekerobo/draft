@@ -11,6 +11,9 @@ returns table (
   organization_role text,
   status text,
   onboarding_completed_at timestamptz,
+  analytics_consent boolean,
+  analytics_consent_at timestamptz,
+  session_replay_enabled boolean,
   workspace_id uuid
 )
 language sql
@@ -27,6 +30,9 @@ as $$
     u.organization_role,
     u.status,
     u.onboarding_completed_at,
+    u.analytics_consent,
+    u.analytics_consent_at,
+    u.session_replay_enabled,
     workspace.id as workspace_id
   from public.users u
   left join lateral (

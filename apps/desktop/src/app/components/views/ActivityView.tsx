@@ -1,8 +1,9 @@
 // ActivityView.tsx — cloud synthesis run history
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import { DataBoundary, useRuns } from "draft-shared-ui";
 import type { WorkspaceRun } from "../../../rpc/schema";
-import { events, rpc } from "../../rpc";
+import { useWorkspaceKey } from "../../DesktopQueryProvider";
 
 // ── Format helpers ─────────────────────────────────────────────────────────────
 
@@ -137,49 +138,20 @@ function ActivityRunRow({ run }: { run: WorkspaceRun }) {
 
 // ── Main view ──────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 30_000;
+function ActivityRuns() {
+  // The desktop DraftApi returns full WorkspaceRun rows.
+  const runs = useRuns(useWorkspaceKey()).data as WorkspaceRun[];
+  if (runs.length === 0) return <ActivityEmptyPrompt />;
+  return (
+    <div className="activity__list">
+      {runs.map((run) => (
+        <ActivityRunRow key={run.id} run={run} />
+      ))}
+    </div>
+  );
+}
 
 export function ActivityView() {
-  const [runs, setRuns]       = useState<WorkspaceRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
-  const isMounted             = useRef(true);
-
-  async function refresh() {
-    try {
-      const next = await rpc.request.getWorkspaceRuns();
-      if (!isMounted.current) return;
-      setRuns(next);
-      setError(null);
-    } catch {
-      if (!isMounted.current) return;
-      setError("Could not load activity.");
-    } finally {
-      if (isMounted.current) setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    isMounted.current = true;
-    void refresh();
-
-    const offProfile = events.on("profileChanged", () => void refresh());
-
-    function onVisibility() {
-      if (document.visibilityState === "visible") void refresh();
-    }
-    document.addEventListener("visibilitychange", onVisibility);
-
-    const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
-
-    return () => {
-      isMounted.current = false;
-      offProfile();
-      document.removeEventListener("visibilitychange", onVisibility);
-      clearInterval(timer);
-    };
-  }, []);
-
   return (
     <div className="activity">
       <div className="activity__header">
@@ -187,25 +159,16 @@ export function ActivityView() {
       </div>
 
       <div className="activity__body">
-        {error && (
-          <div className="activity__error">{error}</div>
-        )}
-
-        {!error && loading && (
-          <div className="activity__loading">Loading…</div>
-        )}
-
-        {!error && !loading && runs.length === 0 && (
-          <ActivityEmptyPrompt />
-        )}
-
-        {!error && !loading && runs.length > 0 && (
-          <div className="activity__list">
-            {runs.map((run) => (
-              <ActivityRunRow key={run.id} run={run} />
-            ))}
-          </div>
-        )}
+        <DataBoundary
+          fallback={<div className="activity__loading">Loading…</div>}
+          errorFallback={(retry) => (
+            <div className="activity__error">
+              Could not load activity. <button type="button" className="ui-link" onClick={retry}>Try again</button>
+            </div>
+          )}
+        >
+          <ActivityRuns />
+        </DataBoundary>
       </div>
     </div>
   );

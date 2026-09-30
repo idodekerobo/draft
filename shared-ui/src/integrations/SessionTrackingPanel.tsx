@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useIntegrationActions } from "./IntegrationActionsContext";
 import type { IntegrationDetail } from "../types";
@@ -5,7 +7,11 @@ import type { IntegrationDetail } from "../types";
 interface SessionTrackingPanelProps {
   detail: IntegrationDetail | undefined;
   onConnected: () => void | Promise<void>;
-  classPrefix: "onboarding" | "app-row";
+  classPrefix: "onboarding" | "app-row" | "ui-panel";
+  /** Web has no folder picker; it shows only the CLI command. */
+  showRepoPicker?: boolean;
+  /** Called after a repo is enabled from the picker, so callers can reload the repo list. */
+  onRepoEnabled?: () => void | Promise<void>;
 }
 
 const ENABLE_COMMAND = "draft sessions enable claude-code";
@@ -17,7 +23,7 @@ interface RepoResult {
 }
 
 // Structurally mirrors FirefliesConnectPanel, but with no credential input.
-export function SessionTrackingPanel({ detail, onConnected, classPrefix }: SessionTrackingPanelProps) {
+export function SessionTrackingPanel({ detail, onConnected, classPrefix, showRepoPicker = true, onRepoEnabled }: SessionTrackingPanelProps) {
   const { track, connectSessionTracking, selectSessionRepoFolder, enableSessionCaptureForRepo } = useIntegrationActions();
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -58,7 +64,10 @@ export function SessionTrackingPanel({ detail, onConnected, classPrefix }: Sessi
         ...current,
         { path: folderPath, ok: result.ok, message: result.ok ? "Enabled" : (result.error ?? "Could not enable this repo.") },
       ]);
-      if (result.ok) track("integration_connected", { source: "claude_session_repo" });
+      if (result.ok) {
+        track("integration_connected", { source: "claude_session_repo" });
+        await onRepoEnabled?.();
+      }
     } finally {
       setEnabling(false);
     }
@@ -74,23 +83,27 @@ export function SessionTrackingPanel({ detail, onConnected, classPrefix }: Sessi
     return (
       <div className={`${classPrefix}__connect-panel`}>
         <span className={`${classPrefix}__panel-label`}>Set up each repo</span>
-        <span className={`${classPrefix}__panel-help`}>
-          Coding sessions are on for this workspace. Pick a repo on this Mac to enable it directly:
-        </span>
-        <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void addRepo()} disabled={enabling}>
-          {enabling ? "Enabling…" : "Choose a repo…"}
-        </button>
-        {repoResults.length > 0 && (
-          <ul className={`${classPrefix}__repo-list`}>
-            {repoResults.map((repo) => (
-              <li key={repo.path} className={repo.ok ? undefined : `${classPrefix}__validation`}>
-                {repo.path.split("/").pop()} — {repo.message}
-              </li>
-            ))}
-          </ul>
+        {showRepoPicker && (
+          <>
+            <span className={`${classPrefix}__panel-help`}>
+              Coding sessions are on for this workspace. Pick a repo on this Mac to enable it directly:
+            </span>
+            <button type="button" className={`${classPrefix}__connect ${classPrefix}__panel-action`} onClick={() => void addRepo()} disabled={enabling}>
+              {enabling ? "Enabling…" : "Choose a repo…"}
+            </button>
+            {repoResults.length > 0 && (
+              <ul className={`${classPrefix}__repo-list`}>
+                {repoResults.map((repo) => (
+                  <li key={repo.path} className={repo.ok ? undefined : `${classPrefix}__validation`}>
+                    {repo.path.split("/").pop()} — {repo.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
         <span className={`${classPrefix}__panel-help`}>
-          You — or your coding agent — can also enable it via the CLI. Run this in the repo:
+          {showRepoPicker ? "You — or your coding agent — can also enable it via the CLI. Run this in the repo:" : "To capture a repo, run this in it (you or your coding agent):"}
         </span>
         <div className={`${classPrefix}__copy-row`}>
           <code>{ENABLE_COMMAND}</code>

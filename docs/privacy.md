@@ -48,7 +48,7 @@ Self-hosting does not automatically remove third-party processing. Supabase, Fly
 
 ## Analytics
 
-The desktop and landing applications have optional analytics configuration. Review the configured PostHog and support settings for the deployment before enabling them. Do not assume hosted and self-hosted analytics have the same destination.
+Product analytics are off by default. When a signed-in person turns on **Share usage data**, the web and desktop apps send coded usage events to PostHog, linked to that person's Draft account id (not their name or email). The choice is stored on the account, so it covers both apps. Session replay is a separate, default-off switch, and it masks all text and inputs. Nothing you type and no context, file or message content is sent. Builds without a PostHog key send nothing. See [analytics.md](analytics.md) for the full event list, identifiers, and how to withdraw or ask for deletion.
 
 ## Team collaboration
 

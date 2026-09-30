@@ -161,6 +161,7 @@ web_env=(
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY"
   "NEXT_PUBLIC_API_BASE_URL=$DRAFT_API_BASE_URL"
   "NEXT_PUBLIC_DOWNLOAD_URL=${NEXT_PUBLIC_DOWNLOAD_URL:-https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg}"
+  "NEXT_PUBLIC_POSTHOG_HOST=${NEXT_PUBLIC_POSTHOG_HOST:-https://us.i.posthog.com}"
 )
 
 landing_env=(

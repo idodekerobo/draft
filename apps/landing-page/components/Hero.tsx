@@ -4,7 +4,7 @@
 import { useEffect, useRef } from "react";
 import { openWaitlistModal } from "@/components/WaitlistModal";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "#";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.draftai.us";
 
 export default function Hero() {
   const containerRef = useRef<HTMLDivElement>(null);

@@ -6,8 +6,10 @@ import * as connections from "./connections";
 import * as githubCallback from "./github-callback";
 import * as githubInstall from "./github-install";
 import * as health from "./health";
+import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
+import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
 import * as sessionsSearch from "./sessions-search";
 import * as sessionTokens from "./session-tokens";
@@ -34,12 +36,13 @@ export const routes = {
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
   "/waitlist": { POST: waitlist.POST },
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
-  "/workspaces/:id/context": { GET: workspaceContext.contextGET },
-  "/workspaces/:id/connections": { GET: connections.GET, POST: connections.POST },
-  "/workspaces/:id/connections/:provider": { PATCH: connections.PATCH, DELETE: connections.DELETE },
-  "/workspaces/:id/connections/:provider/channels": { GET: connections.CHANNELS_GET },
-  "/workspaces/:id/synthesis-runs": { GET: synthesisRuns.GET, POST: synthesisRuns.POST },
-  "/workspaces/:id/synthesis-schedule": { GET: synthesisSchedule.GET, PATCH: synthesisSchedule.PATCH },
+  "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
+  "/workspaces/:id/context": { GET: withCors(workspaceContext.contextGET), OPTIONS },
+  "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
+  "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
+  "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
+  "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
+  "/workspaces/:id/synthesis-schedule": { GET: withCors(synthesisSchedule.GET), PATCH: withCors(synthesisSchedule.PATCH), OPTIONS },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/sources/search": { POST: sources.searchPOST },
   "/workspaces/:id/sources/:sourceItemId/read": { POST: sources.readPOST },
@@ -49,6 +52,7 @@ export const routes = {
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
   "/workspaces/:id/sessions/tokens/:credentialId": { DELETE: sessionTokens.DELETE },
   "/workspaces/:id/sessions": { GET: sessions.GET },
+  "/workspaces/:id/sessions/projects": { GET: withCors(sessionProjects.GET), OPTIONS },
   "/workspaces/:id/sessions/search": { GET: sessionsSearch.GET },
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },

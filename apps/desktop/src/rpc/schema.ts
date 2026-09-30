@@ -261,6 +261,13 @@ export interface AppVersionInfo {
   channel: string;
 }
 
+/** The account's analytics choice. userId is null when signed out. */
+export interface PrivacyState {
+  userId: string | null;
+  analyticsConsent: boolean;
+  sessionReplay: boolean;
+}
+
 export interface AnalyticsConfig {
   consent: "pending" | "opted_in" | "opted_out";
   replay_enabled: boolean;
@@ -308,6 +315,8 @@ export interface IntegrationDetail {
   channels: number | null;
   /** Slack: persisted bot membership returned by the cloud connection status. */
   channelIds?: string[];
+  /** Connected account name, for example the Slack workspace or GitHub org. */
+  displayName?: string | null;
 }
 
 /**
@@ -344,6 +353,13 @@ export interface ConnectedAppsStatus {
     claude_session: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
+  /** The caller's latest agent (MCP or CLI) query, or null before first use. */
+  agentLastUsedAt: string | null;
+  /** Repos with session capture on across the workspace. `ok: false` when the list could not be loaded. */
+  sessionRepos: { ok: boolean; repos: TeamSessionRepo[] };
+  /** API base URL, so the MCP endpoint shown in Connections matches this deployment. */
+  apiBaseUrl: string;
+  webAppUrl: string;
   /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
   firefliesConnections: MultiAccountConnectionListItem[];
   /** Every Granola connection in the workspace, personal rows plus the workspace-key row if any (Settings list view only) -- see MultiAccountConnectionListItem. */
@@ -385,24 +401,9 @@ export interface SynthesisSchedule {
   lastEnqueuedAt: string | null;
 }
 
-export interface ContextFileEntry {
-  relativePath: string;
-  label: string;
-  content: string;
-  /** Verbatim YAML frontmatter block (including `---` delimiters), or "" if none. Must be re-prepended on save — content is always frontmatter-stripped. */
-  frontmatterRaw: string;
-  /**
-   * dim       — dimension index.md (has expand arrow for log entries)
-   * log       — log/ entry child of a dim (shown when dim is expanded)
-   * standalone — single root-level .md file (like tensions.md, no expand)
-   * group-child — file inside a multi-file group (decisions/, research/, etc.)
-   */
-  kind: "dim" | "log" | "standalone" | "group-child";
-  /** Dimension or group id — e.g. "company", "decisions", "research" */
-  group: string;
-  /** Human-readable label for the group — used in section headers */
-  groupLabel: string;
-}
+import type { ContextFileEntry } from "draft-shared-ui/context-files";
+import type { TeamSessionRepo } from "draft-shared-ui";
+export type { ContextFileEntry };
 
 /** A team MCP that is waiting for the user to supply missing API credentials. */
 export interface PendingCredentialMcp {
@@ -631,6 +632,8 @@ export type AppRPCType = {
 
       /** Patch analytics config (consent, replay_enabled, etc.) in ~/.draft/config.json. */
       setAnalyticsConfig: { params: Partial<AnalyticsConfig>; response: ActionResult };
+      getPrivacy: { params: { signedIn: boolean }; response: PrivacyState };
+      setPrivacy: { params: { analytics_consent?: boolean; session_replay_enabled?: boolean }; response: ActionResult & { privacy?: PrivacyState } };
 
       /** Apply a staged update — quits + relaunches. Only valid when updateReady is true. */
       applyUpdate: { params: void; response: ActionResult };

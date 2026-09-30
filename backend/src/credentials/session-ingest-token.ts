@@ -41,6 +41,7 @@ export interface MintScopedTokenInput {
   label: string | null;
   sessionProjectId: string;
   allowedProviders: string[];
+  createdByUserId?: string;
 }
 
 async function mint(
@@ -51,6 +52,7 @@ async function mint(
     label: string | null;
     session_project_id: string | null;
     allowed_providers: string[] | null;
+    created_by_user_id?: string | null;
   },
 ): Promise<{ id: string; token: string }> {
   const secret = randomBytes(32).toString("base64url");
@@ -83,6 +85,7 @@ export async function mintSessionIngestToken(
     label: input.label,
     session_project_id: input.sessionProjectId,
     allowed_providers: input.allowedProviders,
+    created_by_user_id: input.createdByUserId ?? null,
   });
 }
 
