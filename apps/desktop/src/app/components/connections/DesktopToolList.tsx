@@ -8,6 +8,7 @@ import {
   SlackConnectPanel,
   ToolList,
   codingSessionsStatus,
+  mcpUrl,
   toolStatusesFromConnections,
   type TeamSessionReposState,
   type ManagePanel,
@@ -116,6 +117,7 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
       statuses={desktopToolStatuses(apps)}
       agentPrompt={AGENT_SETUP_PROMPT}
       agentLastUsedAt={apps.agentLastUsedAt}
+      mcpUrl={mcpUrl(apps.apiBaseUrl)}
       panels={panels}
       managePanels={managePanels}
       connectedActions={connectedActions}

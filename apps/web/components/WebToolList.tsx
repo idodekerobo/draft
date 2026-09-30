@@ -9,12 +9,14 @@ import {
   ToolList,
   AGENT_SETUP_PROMPT,
   codingSessionsStatus,
+  mcpUrl,
   useIntegrationActions,
   type ManagePanel,
   type ToolGroup,
   type ToolId,
 } from "draft-shared-ui";
 import { apiFetch } from "@/lib/api";
+import { API_URL } from "@/lib/config";
 import { webToolStatuses } from "@/lib/tool-statuses";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -84,6 +86,7 @@ export function WebToolList({ groups, allowDisconnect = false }: { groups?: Tool
       statuses={statuses}
       agentPrompt={AGENT_SETUP_PROMPT}
       agentLastUsedAt={connections.agentLastUsedAt}
+      mcpUrl={mcpUrl(API_URL)}
       panels={panels}
       managePanels={managePanels}
       connectedActions={allowDisconnect ? {

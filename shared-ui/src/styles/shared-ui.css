@@ -372,3 +372,8 @@
 .ui-repo-row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 0; }
 .ui-repo-row__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--color-text-primary); font-size: var(--font-size-secondary); font-weight: 500; }
 .ui-repo-row__name small { color: var(--color-text-secondary); font-size: var(--font-size-micro); font-weight: 400; }
+
+.ui-mcp { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; max-width: 560px; }
+.ui-mcp p { margin: 0; }
+.ui-mcp__snippet { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.ui-mcp__snippet .ui-prompt { align-self: stretch; margin: 0; }

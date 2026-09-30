@@ -622,6 +622,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           claudeCode: { connected: claudeCodeConnection?.connected ?? false },
           agentLastUsedAt,
           sessionRepos,
+          apiBaseUrl: apiUrl,
           webAppUrl: process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
           // Settings list view only -- every other consumer above keeps
           // using the folded IntegrationDetail shape. Reuses cloudConnections

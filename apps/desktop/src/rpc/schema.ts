@@ -357,6 +357,8 @@ export interface ConnectedAppsStatus {
   agentLastUsedAt: string | null;
   /** Repos with session capture on across the workspace. `ok: false` when the list could not be loaded. */
   sessionRepos: { ok: boolean; repos: TeamSessionRepo[] };
+  /** API base URL, so the MCP endpoint shown in Connections matches this deployment. */
+  apiBaseUrl: string;
   webAppUrl: string;
   /** Every Fireflies connection in the workspace (Settings list view only) -- see MultiAccountConnectionListItem. */
   firefliesConnections: MultiAccountConnectionListItem[];

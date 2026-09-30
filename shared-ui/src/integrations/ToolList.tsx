@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { CopyButton } from "../onboarding/components";
+import { mcpSetupSnippets } from "./mcp";
 import { groupTools, toolsForPlatform, type Platform, type ToolEntry, type ToolGroup, type ToolId, type ToolState, type ToolStatus } from "./registry";
 
 const DEFAULT_STATUS_TEXT: Record<ToolState, string> = {
@@ -69,7 +70,7 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
 }
 
 /** No dot until the first agent query arrives. The action copies a CLI setup prompt for the agent. */
-export function AgentConnectionRow({ name, prompt, lastUsedAt }: { name: string; prompt: string; lastUsedAt: string | null }) {
+export function AgentConnectionRow({ name, prompt, mcpUrl, lastUsedAt }: { name: string; prompt: string; mcpUrl: string; lastUsedAt: string | null }) {
   return (
     <li className="ui-tool-row">
       <div className="ui-tool-row__main">
@@ -87,17 +88,33 @@ export function AgentConnectionRow({ name, prompt, lastUsedAt }: { name: string;
         <summary>See prompt</summary>
         <pre className="ui-prompt">{prompt}</pre>
       </details>
+      <details className="ui-tool-row__details">
+        <summary>Connect with MCP instead</summary>
+        <div className="ui-mcp">
+          <p className="ui-muted">Draft&apos;s MCP server is at <code>{mcpUrl}</code>. Your first connection opens a browser sign-in.</p>
+          {mcpSetupSnippets(mcpUrl).map(({ agent, hint, snippet }) => (
+            <div key={agent} className="ui-mcp__snippet">
+              <span className="ui-muted">{agent} · {hint}</span>
+              <pre className="ui-prompt">{snippet}</pre>
+              <CopyButton text={snippet} label={`Copy ${agent} setup`} />
+            </div>
+          ))}
+          <p className="ui-muted">Other MCP clients: add a remote HTTP server with the URL above.</p>
+        </div>
+      </details>
     </li>
   );
 }
 
-export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUsedAt, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere }: {
+export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUsedAt, mcpUrl, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere }: {
   platform: Platform;
   groups?: ToolGroup[];
   statuses: Partial<Record<ToolId, ToolStatus>>;
   /** AGENT_SETUP_PROMPT from integrations/agent-prompt.ts. */
   agentPrompt: string;
   agentLastUsedAt: string | null;
+  /** Full MCP endpoint, from mcpUrl(apiBaseUrl). */
+  mcpUrl: string;
   panels: Partial<Record<ToolId, (close: () => void) => ReactNode>>;
   connectedActions?: Partial<Record<ToolId, ReactNode>>;
   managePanels?: Partial<Record<ToolId, ManagePanel>>;
@@ -112,7 +129,7 @@ export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUse
           <h3 className="ui-group-label">{label}</h3>
           <ul className="ui-rows">
             {tools.map((tool) => tool.id === "claude-code"
-              ? <AgentConnectionRow key={tool.id} name={tool.name} prompt={agentPrompt} lastUsedAt={agentLastUsedAt} />
+              ? <AgentConnectionRow key={tool.id} name={tool.name} prompt={agentPrompt} mcpUrl={mcpUrl} lastUsedAt={agentLastUsedAt} />
               : <ConnectionRow key={tool.id} tool={tool} status={statuses[tool.id] ?? { state: "disconnected" }} panel={panels[tool.id]} connectedAction={connectedActions[tool.id]} managePanel={managePanels[tool.id]} unavailableHint={unavailableHint} startHere={tool.id === startHere} />)}
           </ul>
         </section>
