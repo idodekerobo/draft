@@ -1,13 +1,15 @@
 // StatusBar.tsx — compact single-line toolbar at the top of the main window
 //
-// Self-polls cloud data (same pattern as ActivityView.tsx):
+// Reads two shared queries (also used by Activity and Connections):
 //   Connected count — from getConnectedApps's cloud connections
 //     (slack/fireflies/linear; claudeCode counted separately)
 //   Last sync — most recent run from getWorkspaceRuns
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useState } from "react";
+import { runsQueryOptions, useDraftApi, useQuery } from "draft-shared-ui";
 import type { ConnectedAppsStatus, WorkspaceRun } from "../../rpc/schema";
-import { events, rpc } from "../rpc";
+import { useWorkspaceKey } from "../DesktopQueryProvider";
+import { useConnectedApps } from "../hooks/useConnectedApps";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +20,7 @@ function getConnectedCount(apps: ConnectedAppsStatus | null): number {
     .filter(Boolean).length;
 }
 
-function getLastSyncLabel(run: WorkspaceRun | null): string | null {
+function getLastSyncLabel(run: Pick<WorkspaceRun, "completedAt" | "startedAt"> | null): string | null {
   const ts = run?.completedAt ?? run?.startedAt ?? null;
   if (!ts) return null;
   const diffMins = (Date.now() - new Date(ts).getTime()) / 60_000;
@@ -29,50 +31,20 @@ function getLastSyncLabel(run: WorkspaceRun | null): string | null {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 30_000;
-
-export function StatusBar() {
-  const [apps, setApps]           = useState<ConnectedAppsStatus | null>(null);
-  const [lastRun, setLastRun]     = useState<WorkspaceRun | null>(null);
-  const isMounted                 = useRef(true);
-
-  async function refresh() {
-    try {
-      const [appsResult, runs] = await Promise.all([
-        rpc.request.getConnectedApps(),
-        rpc.request.getWorkspaceRuns(),
-      ]);
-      if (!isMounted.current) return;
-      setApps(appsResult);
-      setLastRun(runs[0] ?? null);
-    } catch {
-      // Non-fatal — bar just shows nothing until the next poll succeeds.
-    }
-  }
-
+// Non-critical, so it uses plain queries: blank while loading or on error,
+// and it fills in once a poll succeeds.
+export const StatusBar = memo(function StatusBar() {
+  const { apps } = useConnectedApps();
+  // The label is relative to now, and unchanged poll data would not re-render it.
+  const [, setTick] = useState(0);
   useEffect(() => {
-    isMounted.current = true;
-    void refresh();
-
-    const offProfile = events.on("profileChanged", () => void refresh());
-
-    function onVisibility() {
-      if (document.visibilityState === "visible") void refresh();
-    }
-    document.addEventListener("visibilitychange", onVisibility);
-
-    const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
-
-    return () => {
-      isMounted.current = false;
-      offProfile();
-      document.removeEventListener("visibilitychange", onVisibility);
-      clearInterval(timer);
-    };
+    const id = setInterval(() => setTick((tick) => tick + 1), 30_000);
+    return () => clearInterval(id);
   }, []);
+  const { data: runs } = useQuery(runsQueryOptions(useDraftApi(), useWorkspaceKey()));
 
   const connectedCount = getConnectedCount(apps);
-  const lastSyncLabel  = getLastSyncLabel(lastRun);
+  const lastSyncLabel  = getLastSyncLabel(runs?.[0] ?? null);
   const statusLine     = connectedCount > 0
     ? `${connectedCount} connected${lastSyncLabel ? ` · ${lastSyncLabel}` : ""}`
     : lastSyncLabel;
@@ -86,4 +58,4 @@ export function StatusBar() {
       </div>
     </header>
   );
-}
+});

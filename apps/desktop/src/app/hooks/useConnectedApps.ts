@@ -1,22 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
-import type { ConnectedAppsStatus } from "../../rpc/schema";
-import { rpc } from "../rpc";
+import { useQuery, useRefreshQuery, useSuspenseQuery } from "draft-shared-ui";
+import { useWorkspaceKey } from "../DesktopQueryProvider";
+import { connectedAppsQueryOptions } from "../queries";
 
+/** Non-suspending: for flows that render their own loading state. */
 export function useConnectedApps() {
-  const [apps, setApps] = useState<ConnectedAppsStatus | null>(null);
-  const [failed, setFailed] = useState(false);
+  const workspaceKey = useWorkspaceKey();
+  const { data, isError } = useQuery(connectedAppsQueryOptions(workspaceKey));
+  const refresh = useRefreshQuery(connectedAppsQueryOptions(workspaceKey).queryKey);
+  return { apps: data ?? null, failed: isError && !data, refresh };
+}
 
-  const refresh = useCallback(async (): Promise<boolean> => {
-    try {
-      setApps(await rpc.request.getConnectedApps());
-      setFailed(false);
-      return true;
-    } catch {
-      setFailed(true);
-      return false;
-    }
-  }, []);
-
-  useEffect(() => { void refresh(); }, [refresh]);
-  return { apps, failed, refresh };
+/** Suspends until loaded. Wrap the caller in a DataBoundary. */
+export function useConnectedAppsSuspense() {
+  const workspaceKey = useWorkspaceKey();
+  const { data } = useSuspenseQuery(connectedAppsQueryOptions(workspaceKey));
+  return { apps: data, refresh: useRefreshQuery(connectedAppsQueryOptions(workspaceKey).queryKey) };
 }

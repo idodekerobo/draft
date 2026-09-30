@@ -10,6 +10,7 @@ import { App } from "./App";
 import { AnalyticsProvider } from "./analytics/AnalyticsContext";
 import { UserIdentityProvider } from "./identity/UserIdentityContext";
 import { DesktopSharedProviders } from "./DesktopSharedProviders";
+import { DesktopQueryProvider } from "./DesktopQueryProvider";
 
 try {
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -22,9 +23,11 @@ if (!container) throw new Error("[draft-desktop] #root element not found in inde
 createRoot(container).render(
   <UserIdentityProvider>
     <AnalyticsProvider>
-      <DesktopSharedProviders>
-        <App />
-      </DesktopSharedProviders>
+      <DesktopQueryProvider>
+        <DesktopSharedProviders>
+          <App />
+        </DesktopSharedProviders>
+      </DesktopQueryProvider>
     </AnalyticsProvider>
   </UserIdentityProvider>
 );
