@@ -39,9 +39,10 @@ export async function GET(req: Request): Promise<Response> {
       console.error("oauth-consent-redirect: consent failed", response.status, await response.text());
       return Response.redirect(errorRedirect, 302);
     }
-    const result = (await response.json()) as { redirect_uri?: string };
-    if (!result.redirect_uri) return Response.redirect(errorRedirect, 302);
-    return Response.redirect(result.redirect_uri, 302);
+    const result = (await response.json()) as { url?: string; redirect_uri?: string };
+    const target = result.url ?? result.redirect_uri;
+    if (!target) return Response.redirect(errorRedirect, 302);
+    return Response.redirect(target, 302);
   } catch (error) {
     console.error("oauth-consent-redirect: consent failed", error);
     return Response.redirect(errorRedirect, 302);
