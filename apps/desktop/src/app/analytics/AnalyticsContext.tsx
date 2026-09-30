@@ -2,8 +2,8 @@
 // PostHog is never imported outside this file — it is the single SDK boundary.
 // Consent lives on the Draft account (PATCH /me/privacy), shared with web.
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import posthog from "posthog-js";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { PostHog } from "posthog-js";
 import { PLATFORM_PROPERTY } from "draft-shared-ui";
 import type { PrivacyState } from "../../rpc/schema";
 import type { AnalyticsEvent } from "./events";
@@ -34,12 +34,14 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   const { signedIn, hydrated } = useUserIdentity();
   const [initialized, setInitialized] = useState(false);
   const [privacy, setPrivacyState] = useState<PrivacyState | null>(null);
+  const posthogRef = useRef<PostHog | null>(null);
   const optedIn = useRef(false);
   const pendingRef = useRef<Array<{ event: string; props: Record<string, unknown> }>>([]);
 
   useEffect(() => {
-    void rpc.request.getAnalyticsConfig().then((cfg) => {
+    void rpc.request.getAnalyticsConfig().then(async (cfg) => {
       if (!cfg.posthog_key) return; // OSS builds or missing build-config.json — silently skip
+      const { default: posthog } = await import("posthog-js");
       posthog.init(cfg.posthog_key, {
         api_host: cfg.posthog_host ?? "https://us.i.posthog.com",
         defaults: "2026-05-30",
@@ -51,13 +53,15 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         opt_out_capturing_by_default: true,
       });
       posthog.register({ [PLATFORM_PROPERTY]: "desktop" });
+      posthogRef.current = posthog;
       setInitialized(true);
     });
   }, []);
 
   const apply = useCallback((next: PrivacyState) => {
     setPrivacyState(next);
-    if (!initialized) return;
+    const posthog = posthogRef.current;
+    if (!initialized || !posthog) return;
     if (next.analyticsConsent) {
       if (!optedIn.current) {
         posthog.opt_in_capturing();
@@ -91,7 +95,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         if (pendingRef.current.length < MAX_PENDING) pendingRef.current.push({ event, props });
         return;
       }
-      posthog.capture(event, props);
+      posthogRef.current?.capture(event, props);
     },
     []
   ) as AnalyticsContextValue["track"];
@@ -104,13 +108,18 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 
   const setConsent = useCallback(async (granted: boolean) => {
     await save({ analytics_consent: granted });
-    if (granted && optedIn.current) posthog.capture("analytics_consent_granted", {});
+    if (granted && optedIn.current) posthogRef.current?.capture("analytics_consent_granted", {});
   }, [save]);
 
   const setReplayEnabled = useCallback((enabled: boolean) => save({ session_replay_enabled: enabled }), [save]);
 
+  const value = useMemo(
+    () => ({ track, privacy, setConsent, setReplayEnabled }),
+    [track, privacy, setConsent, setReplayEnabled],
+  );
+
   return (
-    <AnalyticsContext.Provider value={{ track, privacy, setConsent, setReplayEnabled }}>
+    <AnalyticsContext.Provider value={value}>
       {children}
     </AnalyticsContext.Provider>
   );
