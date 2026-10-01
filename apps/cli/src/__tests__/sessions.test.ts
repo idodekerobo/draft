@@ -43,6 +43,8 @@ describe("draft sessions enable", () => {
     });
     expect(typeof config.projectKey).toBe("string");
     expect(config.projectKey.length).toBeGreaterThan(0);
+    const connectRequest = backend.state.requests.find((r) => r.method === "POST" && r.url.endsWith("/connections"));
+    expect(JSON.parse(connectRequest!.body)).toEqual({ provider: "claude_session" });
     expect(statSync(configPath).mode & 0o777).toBe(0o600);
 
     const hookScriptPath = join(project, ".claude", "draft", "capture-session.sh");
@@ -64,6 +66,24 @@ describe("draft sessions enable", () => {
     await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
     const result = await runCli(["sessions", "enable", "claude-code", "--dir", project, "--json"], { home, apiUrl: backend.url });
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "ok", hookChanged: false });
+    expect(backend.state.requests.filter((r) => r.method === "POST" && r.url.endsWith("/connections"))).toHaveLength(2);
+  });
+
+  test("repairs placeholder configs by minting real project credentials", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    const path = join(project, ".claude", "draft", "config.json");
+    writeFileSync(path, JSON.stringify({ backendUrl: "${DRAFT_BACKEND_URL}", workspaceId: "${DRAFT_WORKSPACE_ID}", ingestToken: "${DRAFT_INGEST_TOKEN}", projectId: "${DRAFT_PROJECT_ID}", projectKey: "${DRAFT_PROJECT_KEY}", allowedProviders: ["claude-code"] }));
+    const result = await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(readFileSync(path, "utf8")).backendUrl).toBe(backend.url);
+    expect(backend.state.requests.filter((r) => r.method === "POST" && r.url.endsWith("/sessions/tokens"))).toHaveLength(2);
+  });
+
+  test("does not report success or install capture when tracking activation fails", async () => {
+    backend.state.connectionsConnectResponse = () => Response.json({ error: "schedule_registration_failed" }, { status: 500 });
+    const result = await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(existsSync(join(project, ".claude", "draft", "config.json"))).toBe(false);
   });
 
   test("unsupported agent reports a clear not-yet-supported error", async () => {

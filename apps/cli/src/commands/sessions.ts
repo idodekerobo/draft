@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { dirname, isAbsolute, join, resolve } from "path";
 import {
   adminRevokeSessionIngestToken,
+  connectIntegration,
   fetchSessionRead,
   fetchSessions,
   fetchSessionsSearch,
@@ -49,7 +50,14 @@ interface SessionCaptureConfig {
 type LegacyOrScopedConfig = Partial<SessionCaptureConfig> & { backendUrl?: string; workspaceId?: string; ingestToken?: string };
 
 function isScopedConfig(config: LegacyOrScopedConfig): config is SessionCaptureConfig {
-  return !!(config.backendUrl && config.workspaceId && config.ingestToken && config.projectId && config.projectKey && config.allowedProviders);
+  if (!(config.backendUrl && config.workspaceId && config.ingestToken && config.projectId && config.projectKey)) return false;
+  if ([config.backendUrl, config.workspaceId, config.ingestToken, config.projectId, config.projectKey].some((value) => value.includes("${"))) return false;
+  try {
+    const url = new URL(config.backendUrl);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+  } catch { return false; }
+  return config.ingestToken.startsWith(INGEST_TOKEN_PREFIX) &&
+    Array.isArray(config.allowedProviders) && config.allowedProviders.includes("claude-code-session");
 }
 
 function isAgent(value: string): value is Agent {
@@ -296,6 +304,12 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   }
 
   const existing = readLocalConfig(dir);
+
+  const connected = await connectIntegration({ provider: "claude_session" });
+  if (!connected.ok) {
+    printFetchError("draft sessions enable", connected.code, json);
+    return EXIT_OPERATIONAL_ERROR;
+  }
 
   let config: SessionCaptureConfig;
   let mintedCredentialId: string | null = null;

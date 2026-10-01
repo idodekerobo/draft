@@ -31,6 +31,7 @@ interface Credential {
 }
 
 interface ScheduledTask {
+  id?: string;
   workspace_id: string;
   source_connection_id?: string;
   task_type: string;
@@ -40,6 +41,7 @@ interface ScheduledTask {
 
 interface Workspace {
   id: string;
+  timezone?: string;
   inference_credential_id: string | null;
 }
 
@@ -178,13 +180,17 @@ function createFakeClient() {
         }
 
         if (table === "scheduled_tasks") {
+          if (operation === "select") {
+            const rows = state.scheduledTasks.filter(rowMatches);
+            return { data: returnSingle ? rows[0] ?? null : rows, error: null };
+          }
           if (operation === "update") {
             const rows = state.scheduledTasks.filter((candidate) => matches(candidate, filters));
             for (const row of rows) Object.assign(row, payload);
             return { data: null, error: null };
           }
           if (operation === "upsert") {
-            state.scheduledTasks.push(payload as unknown as ScheduledTask);
+            state.scheduledTasks.push({ id: `task-${state.scheduledTasks.length}`, ...payload } as unknown as ScheduledTask);
             return { data: null, error: null };
           }
         }
@@ -1862,6 +1868,27 @@ describe("workspace connection routes", () => {
     const connection = state.connections.find((c) => c.provider === "claude_session");
     expect(connection?.status).toBe("active");
     expect(connection?.connection_key).toBe("agent-sessions");
+    expect(state.scheduledTasks.find((task) => task.task_type === "summarize_sessions")).toMatchObject({
+      enabled: true, cron_expression: "0 3 * * *", timezone: "UTC",
+    });
+  });
+
+  it("claude_session: reconnect preserves an existing custom summary schedule", async () => {
+    state.scheduledTasks.push({ id: "summary-task", workspace_id: workspaceId, task_type: "summarize_sessions", task_key: workspaceId, enabled: false, ...{ cron_expression: "0 5 * * *", timezone: "America/New_York" } });
+    const response = await routeModule.POST(request("POST", { id: workspaceId }, { provider: "claude_session" }) as never);
+    expect(response.status).toBe(200);
+    const tasks = state.scheduledTasks.filter((task) => task.task_type === "summarize_sessions");
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ enabled: true, cron_expression: "0 5 * * *", timezone: "America/New_York" });
+  });
+
+  it("claude_session: schedules nightly summaries in the workspace timezone", async () => {
+    state.workspaces[0]!.timezone = "America/New_York";
+    const response = await routeModule.POST(request("POST", { id: workspaceId }, { provider: "claude_session" }) as never);
+    expect(response.status).toBe(200);
+    expect(state.scheduledTasks.find((task) => task.task_type === "summarize_sessions")).toMatchObject({
+      cron_expression: "0 3 * * *", timezone: "America/New_York", enabled: true,
+    });
   });
 
   it("claude_session: DELETE revokes without touching scheduled_tasks", async () => {

@@ -319,6 +319,7 @@ export interface HostedConnectionTransport {
 }
 
 export type HostedConnectBody =
+  | { provider: "claude_session" }
   | { provider: "fireflies"; api_token: string }
   | { provider: "linear"; api_token: string }
   | { provider: "granola"; api_token: string; account_kind: "personal" | "workspace" }
@@ -484,6 +485,8 @@ function decodeOk(value: unknown): { ok: true } | null {
 
 function connectRequestBody(body: HostedConnectBody): HostedConnectBody {
   switch (body.provider) {
+    case "claude_session":
+      return { provider: "claude_session" };
     case "fireflies":
     case "linear":
       return { provider: body.provider, api_token: body.api_token };

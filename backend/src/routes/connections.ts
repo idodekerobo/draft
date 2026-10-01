@@ -36,6 +36,7 @@ import { ingestGranolaNote } from "../ingestion/granola/normalize";
 import type { SourceConnectionProvider } from "../types/enums";
 import type { SourceConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
+import { registerSessionSummaryTask } from "../summarization/register-session-summaries";
 
 // Providers where a workspace may hold more than one live connection at
 // once (one per connecting teammate). Every other provider stays a
@@ -508,6 +509,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     // No credential, no webhook -- just a status flip on the same
     // connection_key materialize-summary.ts auto-creates.
     try {
+      await registerSessionSummaryTask(req.params.id, serviceClient);
       await upsertSourceConnection(serviceClient, {
         workspace_id: req.params.id,
         provider: "claude_session",
