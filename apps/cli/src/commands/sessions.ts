@@ -20,6 +20,7 @@ import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, p
 import { bold, cyan, dim, red } from "../utils/output.ts";
 import {
   CAPTURE_CONFIG_FILE,
+  CAPTURE_SCRIPT_VERSION,
   DRAFT_DIR,
   HOOK_SCRIPT_FILE,
   buildCaptureScript,
@@ -482,6 +483,15 @@ function isExecutable(path: string): boolean {
   }
 }
 
+function readInstalledScriptVersion(dir: string): number | null {
+  try {
+    const match = readFileSync(hookScriptPath(dir), "utf8").match(/^# draft-capture-script-version: (\d+)$/m);
+    return match ? Number(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function runSessionsStatus(args: string[]): Promise<number> {
   const json = args.includes("--json");
   let dir: string | undefined;
@@ -502,6 +512,8 @@ export async function runSessionsStatus(args: string[]): Promise<number> {
   const credentialFormatValid = !!rawConfig?.ingestToken?.startsWith(INGEST_TOKEN_PREFIX);
   const draftBinaryPath = resolveDraftBinaryPath(process.env, isExecutable);
   const lastEvent = readLastIngestEvent(resolvedDir);
+  const scriptVersion = readInstalledScriptVersion(resolvedDir);
+  const scriptCurrent = scriptVersion === CAPTURE_SCRIPT_VERSION;
 
   if (json) {
     printJsonLine({
@@ -514,6 +526,8 @@ export async function runSessionsStatus(args: string[]): Promise<number> {
       projectId: projectScoped ? (rawConfig as SessionCaptureConfig).projectId : null,
       credentialFormatValid,
       draftBinaryPath,
+      captureScriptVersion: scriptVersion,
+      captureScriptCurrent: scriptCurrent,
       lastIngestAttempt: lastEvent,
     });
     return EXIT_SUCCESS;
@@ -525,6 +539,13 @@ export async function runSessionsStatus(args: string[]): Promise<number> {
   console.log(`project scope: ${projectScoped ? "project-scoped" : configExists ? "legacy (workspace-scoped)" : "n/a"}`);
   console.log(`credential shape: ${credentialFormatValid ? "looks valid" : "missing or malformed"}`);
   console.log(`draft binary: ${draftBinaryPath ?? "not found on any resolved path"}`);
+  console.log(
+    `capture script: ${
+      scriptCurrent
+        ? `v${scriptVersion} (current)`
+        : `${scriptVersion === null ? "unversioned or missing" : `v${scriptVersion}`} (outdated) — run \`draft sessions enable claude-code\` to update it`
+    }`,
+  );
   console.log(`last ingest attempt: ${lastEvent ? `${lastEvent.status} at ${lastEvent.ts}${lastEvent.detail ? ` (${lastEvent.detail})` : ""}` : "none recorded"}`);
   return EXIT_SUCCESS;
 }
@@ -602,6 +623,55 @@ function gitConfigValue(cwd: string, key: string): string | null {
   }
 }
 
+const UPLOAD_TIMEOUT_MS = 20_000;
+const REPORT_TIMEOUT_MS = 5_000;
+const USER_TOKEN_TIMEOUT_MS = 5_000;
+const DEFAULT_REPORT_BACKEND = "https://api.draftai.us";
+
+// Resolves null on timeout. Clears its timer so a settled call can't hold the process open.
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolveTimeout) => {
+    timer = setTimeout(() => resolveTimeout(null), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function hasPlaceholder(config: LegacyOrScopedConfig): boolean {
+  return [config.backendUrl, config.workspaceId, config.ingestToken, config.projectId, config.projectKey].some(
+    (value) => typeof value === "string" && value.includes("${"),
+  );
+}
+
+// Best-effort and time-capped: lands in the backend's errors table, never throws.
+async function reportCaptureFailure(config: LegacyOrScopedConfig, code: string, reason: string, hookReason?: string): Promise<void> {
+  try {
+    const usable = !!config.backendUrl && /^https?:\/\//.test(config.backendUrl) && !config.backendUrl.includes("${");
+    const base = usable ? config.backendUrl!.replace(/\/+$/, "") : DEFAULT_REPORT_BACKEND;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (config.ingestToken?.startsWith(INGEST_TOKEN_PREFIX)) headers.Authorization = `Bearer ${config.ingestToken}`;
+    await fetch(`${base}/sessions/ingest-errors`, {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(REPORT_TIMEOUT_MS),
+      body: JSON.stringify({
+        code,
+        reason: reason.slice(0, 200),
+        scriptVersion: "cli",
+        os: process.platform,
+        hookReason,
+        workspaceId: config.workspaceId,
+      }),
+    });
+  } catch {
+    // reporting must never affect the hook
+  }
+}
+
 /** Hook-only. Never blocks Claude Code: always exits 0, logging failures instead of surfacing them. */
 export async function runSessionsIngest(): Promise<number> {
   let hookInput: { session_id?: string; transcript_path?: string; cwd?: string; reason?: string };
@@ -621,14 +691,22 @@ export async function runSessionsIngest(): Promise<number> {
     return EXIT_SUCCESS;
   }
 
+  if (hasPlaceholder(resolved.config)) {
+    logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "placeholder-config" });
+    await reportCaptureFailure(resolved.config, "placeholder-config", "config.json holds a placeholder value", hookInput.reason);
+    return EXIT_SUCCESS;
+  }
+
   if (!hookInput.session_id || !hookInput.transcript_path || !existsSync(hookInput.transcript_path)) {
     logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "missing-transcript" });
+    await reportCaptureFailure(resolved.config, "missing-transcript", "hook input had no readable transcript", hookInput.reason);
     return EXIT_SUCCESS;
   }
 
   const gitEmail = gitConfigValue(cwd, "user.email");
   if (!gitEmail) {
     logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "missing-git-email" });
+    await reportCaptureFailure(resolved.config, "missing-git-email", "git user.email is not set", hookInput.reason);
     return EXIT_SUCCESS;
   }
   const displayName = gitConfigValue(cwd, "user.name");
@@ -651,28 +729,38 @@ export async function runSessionsIngest(): Promise<number> {
   });
 
   const headers: Record<string, string> = { Authorization: `Bearer ${resolved.config.ingestToken}` };
-  const tokenResult = await requireAccessToken();
-  if (tokenResult.ok) headers["X-Draft-User-Token"] = tokenResult.token;
+  // Linking the session to a signed-in user is optional: any failure or slow
+  // refresh falls back to the git-email contributor.
+  try {
+    const tokenResult = await withTimeout(requireAccessToken(), USER_TOKEN_TIMEOUT_MS);
+    if (tokenResult?.ok) headers["X-Draft-User-Token"] = tokenResult.token;
+  } catch {
+    // no user token
+  }
 
   try {
     const response = await fetch(`${resolved.config.backendUrl}/sessions/ingest?${query.toString()}`, {
       method: "POST",
       headers,
       body: transcript,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     });
-    logIngestEvent({
-      status: response.ok ? "success" : "failure",
-      dir: resolved.dir,
-      sessionId: hookInput.session_id,
-      detail: response.ok ? undefined : `status=${response.status}`,
-    });
+    if (response.ok) {
+      logIngestEvent({ status: "success", dir: resolved.dir, sessionId: hookInput.session_id });
+      return EXIT_SUCCESS;
+    }
+    const body = await response.text().catch(() => "");
+    if (response.status === 403 && body.includes("session_tracking_disabled")) {
+      logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "session_tracking_disabled" });
+      return EXIT_SUCCESS;
+    }
+    logIngestEvent({ status: "failure", dir: resolved.dir, sessionId: hookInput.session_id, detail: `status=${response.status}` });
+    await reportCaptureFailure(resolved.config, `http-${response.status}`, body, hookInput.reason);
   } catch (err) {
-    logIngestEvent({
-      status: "failure",
-      dir: resolved.dir,
-      sessionId: hookInput.session_id,
-      detail: err instanceof Error ? err.message : String(err),
-    });
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    const message = err instanceof Error ? err.message : String(err);
+    logIngestEvent({ status: "failure", dir: resolved.dir, sessionId: hookInput.session_id, detail: message });
+    await reportCaptureFailure(resolved.config, timedOut ? "upload-timeout" : "upload-failed", message, hookInput.reason);
   }
   return EXIT_SUCCESS;
 }

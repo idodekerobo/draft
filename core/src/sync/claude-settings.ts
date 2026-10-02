@@ -6,7 +6,7 @@ import { atomicPatch, ParseError } from "./atomic-write";
 
 export interface ClaudeSettings {
   hooks?: {
-    SessionEnd?: Array<{ hooks: Array<{ type: string; command: string; timeout?: number }> }>;
+    SessionEnd?: Array<{ hooks: Array<{ type: string; command: string; timeout?: number; async?: boolean }> }>;
     [key: string]: unknown;
   };
   [key: string]: unknown;

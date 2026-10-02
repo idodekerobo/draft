@@ -130,6 +130,29 @@ describe("recordError", () => {
     expect(inserts[0].detail_json).toEqual({ safe: "yes", self: { safe: "yes", self: "[Circular]" } });
   });
 
+  it("inserts a workspace-less row only when allowUnattributed is set, and drops record links", async () => {
+    const { client, inserts } = fakeClient();
+    await recordError({
+      client,
+      workspaceId: null,
+      allowUnattributed: true,
+      sourceConnectionId: "conn-1",
+      scheduledTaskId: "task-1",
+      synthesisRunId: "run-1",
+      operation: "ingestion",
+      message: "hook failed",
+      code: "upload-failed",
+    });
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toMatchObject({
+      workspace_id: null,
+      source_connection_id: null,
+      scheduled_task_id: null,
+      synthesis_run_id: null,
+      operation: "ingestion",
+    });
+  });
+
   it("does not insert without a workspace and emits a safe structured fallback", async () => {
     const { client, inserts } = fakeClient();
     let stderrOutput = "";

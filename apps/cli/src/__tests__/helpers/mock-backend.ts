@@ -24,6 +24,7 @@ export interface MockBackendState {
   sessionsSearchResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   sessionsIngestRequests: { url: string; headers: Record<string, string>; body: string }[];
   sessionsIngestResponse: () => Response | Promise<Response>;
+  sessionsIngestErrorRequests: { headers: Record<string, string>; body: string }[];
   requests: CapturedRequest[];
   connectionsListResponse: (workspaceId: string) => Response | Promise<Response>;
   connectionsConnectResponse: (workspaceId: string) => Response | Promise<Response>;
@@ -65,6 +66,7 @@ export function createMockBackend() {
     sessionsSearchResponse: () => Response.json({ sessions: [] }),
     sessionsIngestRequests: [],
     sessionsIngestResponse: () => Response.json({ ok: true, sessionId: "session-1" }),
+    sessionsIngestErrorRequests: [],
     requests: [],
     connectionsListResponse: () => Response.json({ connections: [] }),
     connectionsConnectResponse: () => Response.json({ ok: true }),
@@ -143,6 +145,10 @@ export function createMockBackend() {
       if (req.method === "POST" && url.pathname === "/sessions/ingest") {
         state.sessionsIngestRequests.push({ url: req.url, headers, body: await req.text() });
         return state.sessionsIngestResponse();
+      }
+      if (req.method === "POST" && url.pathname === "/sessions/ingest-errors") {
+        state.sessionsIngestErrorRequests.push({ headers, body: await req.text() });
+        return Response.json({ ok: true }, { status: 202 });
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/connections$/.test(url.pathname)) {
         return state.connectionsListResponse(url.pathname.split("/")[2]!);

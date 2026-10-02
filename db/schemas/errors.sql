@@ -3,7 +3,9 @@
 -- provider URLs -- a code-review invariant, not a schema constraint.
 create table errors (
   id                       uuid primary key default gen_random_uuid(),
-  workspace_id             uuid not null references workspaces(id) on delete cascade,
+  -- Null for failures that belong to no workspace (e.g. a capture hook with an
+  -- invalid ingest token). Such rows are readable only through the service role.
+  workspace_id             uuid references workspaces(id) on delete cascade,
   source_connection_id     uuid,
   scheduled_task_id        uuid,
   synthesis_run_id         uuid,
@@ -14,6 +16,13 @@ create table errors (
   detail_json              jsonb not null default '{}',
   stack_trace              text,
   created_at               timestamptz not null default now(),
+
+  -- The composite foreign keys below use MATCH SIMPLE and skip the check when
+  -- workspace_id is null, so a workspace-less row must carry no links.
+  constraint errors_unattributed_has_no_links check (
+    workspace_id is not null
+    or (source_connection_id is null and scheduled_task_id is null and synthesis_run_id is null)
+  ),
 
   foreign key (source_connection_id, workspace_id)
     references source_connections(id, workspace_id) on delete restrict,
