@@ -31,6 +31,7 @@ const pStyle: React.CSSProperties = {
 };
 
 const ulStyle: React.CSSProperties = {
+  listStyleType: "disc",
   paddingLeft: "1.25rem",
   marginBottom: "1rem",
   display: "flex",
@@ -47,14 +48,14 @@ const capsStyle: React.CSSProperties = {
 
 export default function TermsPage() {
   return (
-    <main>
+    <main className="information-page">
       <Nav />
 
       <section
         style={{
           maxWidth: "760px",
           margin: "0 auto",
-          padding: "8rem 2rem 6rem",
+          padding: "3rem 1.25rem 5rem",
         }}
       >
         {/* Header */}
@@ -107,9 +108,9 @@ export default function TermsPage() {
         >
           <h2 style={h2Style}>1. Acceptance of Terms</h2>
           <p style={pStyle}>
-            These Terms of Use ("Terms") govern your access to and use of Product Manager Agent and all
-            related services (collectively, the "Service"), operated by Idode Kerobo (sole proprietor)
-            ("we," "us," or "our"). By accessing or using the Service, you agree to be bound by these
+            These Terms of Use (&quot;Terms&quot;) govern your access to and use of Product Manager Agent and all
+            related services (collectively, the &quot;Service&quot;), operated by Idode Kerobo (sole proprietor)
+            (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;). By accessing or using the Service, you agree to be bound by these
             Terms. If you do not agree to these Terms, do not use the Service.
           </p>
           <p style={pStyle}>
@@ -291,7 +292,7 @@ export default function TermsPage() {
 
           <h2 style={h2Style}>11. Disclaimer of Warranties</h2>
           <p style={capsStyle}>
-            THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS WITHOUT WARRANTIES OF ANY
+            THE SERVICE IS PROVIDED ON AN &quot;AS IS&quot; AND &quot;AS AVAILABLE&quot; BASIS WITHOUT WARRANTIES OF ANY
             KIND, EITHER EXPRESS OR IMPLIED. TO THE FULLEST EXTENT PERMITTED BY LAW, WE DISCLAIM ALL
             WARRANTIES, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
             PURPOSE, ACCURACY, AND NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE
@@ -316,7 +317,7 @@ export default function TermsPage() {
           <h2 style={h2Style}>13. Indemnification</h2>
           <p style={pStyle}>
             You agree to indemnify, defend, and hold harmless Idode Kerobo from and against any claims,
-            damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees)
+            damages, losses, liabilities, costs, and expenses (including reasonable attorneys&apos; fees)
             arising from: (a) your use of the Service; (b) your breach of these Terms; (c) your
             violation of any applicable law or third-party rights; or (d) any content you input into or
             transmit through the Service.
@@ -374,10 +375,10 @@ export default function TermsPage() {
             <br />
             Email:{" "}
             <a
-              href="mailto:idode.kerobo@gmail.com"
+              href="mailto:idode@draftai.us"
               style={{ color: "var(--color-accent)", textDecoration: "none" }}
             >
-              idode.kerobo@gmail.com
+              idode@draftai.us
             </a>
           </p>
 
