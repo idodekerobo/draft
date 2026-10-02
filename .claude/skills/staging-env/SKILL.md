@@ -5,12 +5,20 @@ description: Switch between the staging and prod Supabase environments — run t
 
 # Skill: staging-env
 
-Two Supabase projects exist. Prod is the default everywhere; staging is opt-in.
+Two Supabase projects exist. Staging is the default for bare commands; prod is
+opt-in and always explicit.
 
 | | Env file | Supabase CLI target |
 |---|---|---|
-| prod | `.env.local` | `scripts/supabase-target.sh prod` |
+| prod | `.env.production` (gitignored) | `scripts/supabase-target.sh prod` |
 | staging | `.env.staging` (gitignored) | `scripts/supabase-target.sh staging` |
+
+`.env.development` is a symlink to `.env.staging`. Bun loads it when `NODE_ENV`
+is unset, so a bare `bun run ...` or `bun -e ...` from the repo root gets staging
+values. Create it once per checkout: `ln -s .env.staging .env.development`.
+Prod loads only through `--env-file=.env.production` or `NODE_ENV=production`.
+Bun reads env files from the current directory, so a bare run from a
+subdirectory loads nothing.
 
 ## 1. Always check the target first
 
@@ -24,7 +32,8 @@ The CLI link (`supabase/.temp/project-ref`) is global state. It decides where
 ## 2. Run the app against staging
 
 ```
-make run-local env=staging     # prod stays the default: make run-local
+make run-local                 # staging is the default
+make run-local env=production  # prod, only when the user asks
 ```
 
 Ports 3000/3001/8787 are shared. Do not run both at once.
@@ -32,13 +41,13 @@ Ports 3000/3001/8787 are shared. Do not run both at once.
 
 ## 3. Run seed / demo scripts against staging
 
-Never run a seed script bare. `.env.local` is prod. Always pass the env file:
+A bare run loads staging, but pass the env file anyway so the target is explicit:
 
 ```
 bun --env-file=.env.staging run backend/scripts/seed-demo-nonprofit.ts
 ```
 
-`--env-file` overrides the auto-loaded `.env.local` (verified). Before running a
+`--env-file` overrides the auto-loaded `.env.development` (verified). Before running a
 script that writes data, confirm the target:
 
 ```
@@ -59,7 +68,7 @@ user explicitly names prod.
 5. Update `db/schemas/`, `db/functions/`, `db/storage/` by hand.
 6. Get explicit user approval, then `scripts/supabase-target.sh prod`,
    dry-run, push.
-7. Leave the CLI linked to **prod** when done (`scripts/supabase-target.sh prod`).
+7. Leave the CLI linked to **staging** when done (`scripts/supabase-target.sh staging`).
    Always run `status` at the end of the session.
 
 ## 5. What `db push` does NOT carry to a new environment
@@ -72,9 +81,19 @@ Set in that env's `.env.*` file, and use a distinct value from prod:
 - `BETTER_AUTH_DATABASE_URL` (direct Postgres string), `BETTER_AUTH_SECRET`
 - `INFERENCE_CREDENTIAL_KEK_V1`
 
-## 6. Known gap: shared third-party resources
+## 6. Staging Fly sandbox
 
-`.env.staging` was cloned from `.env.local`. These still point at prod:
-GitHub App, Fly app/image/token, Slack, `DRAFT_API_BASE_URL` tunnel.
-Seeding fake data is safe. Triggering real synthesis runs, webhooks or Fly
-sandboxes from staging uses prod's accounts. Point them at test resources first.
+Staging has its own Fly app, `draft-sandbox-staging`, with its own image
+(`FLY_APP_NAME` and `FLY_SANDBOX_IMAGE` in `.env.staging`). Sandbox runs from
+staging no longer touch the prod Fly app. When the runner or the backend-runner
+contract changes, rebuild the staging image first with the `fly-sandbox-image`
+skill, test there, then do prod. The sandbox calls back to `DRAFT_API_BASE_URL`,
+so staging needs a reachable HTTPS tunnel to your local backend.
+
+## 7. Known gap: shared third-party resources
+
+`.env.staging` was cloned from the prod env file. These may still point at prod:
+GitHub App, Slack, `DRAFT_API_BASE_URL` tunnel, and the Fly API token (one
+personal-org token covers both Fly apps). Seeding fake data is safe. Triggering
+webhooks or real integrations from staging uses prod's accounts. Point them at
+test resources first.

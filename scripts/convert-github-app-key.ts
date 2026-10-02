@@ -24,5 +24,5 @@ const pkcs8Pem = createPrivateKey({ key: pkcs1Pem, format: "pem" })
 
 const oneLine = pkcs8Pem.replace(/\r?\n/g, "\\n");
 
-console.log("\nConverted to PKCS#8. Paste this into the root .env.local:\n");
+console.log("\nConverted to PKCS#8. Paste this into the root .env.staging:\n");
 console.log(`GITHUB_APP_PRIVATE_KEY="${oneLine}"`);

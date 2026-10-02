@@ -2,7 +2,7 @@ function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(
-      `Missing required env var ${name}. Check backend/.env.local.`,
+      `Missing required env var ${name}. Check the root .env.staging or .env.production file.`,
     );
   }
   return value;

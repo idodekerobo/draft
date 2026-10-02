@@ -83,8 +83,10 @@ The repository includes a local stack launcher for the web app, landing page, ba
 git clone https://github.com/idodekerobo/draft.git
 cd draft
 bun install
-cp .env.example .env.local
-# Fill in the private values in .env.local.
+cp .env.example .env.staging
+# Fill in the private values in .env.staging.
+# Bare `bun run` scripts load staging through this symlink:
+ln -s .env.staging .env.development
 make run-local
 # After changing apps/cli/ or background/:
 make dev-refresh
