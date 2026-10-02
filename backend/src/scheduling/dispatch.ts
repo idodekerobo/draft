@@ -5,6 +5,8 @@ import { materializeSlackBatches } from "../ingestion/slack/materialize-batches"
 import { runSlackBackfillDispatch } from "../ingestion/slack/backfill";
 import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
+import { retryPlan } from "../synthesis/handle-run-failure";
+import { getLatestSynthesisRun } from "../synthesis/latest-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
@@ -16,6 +18,7 @@ export interface DispatchDependencies {
   runSlackBackfillDispatch: typeof runSlackBackfillDispatch;
   launchSynthesisRun: typeof launchSynthesisRun;
   getPendingSynthesisSourceItemIds: typeof getPendingSynthesisSourceItemIds;
+  getLatestSynthesisRun: typeof getLatestSynthesisRun;
   launchSummarizationBatch: typeof launchSummarizationBatch;
 }
 
@@ -24,6 +27,7 @@ const defaultDependencies: DispatchDependencies = {
   runSlackBackfillDispatch,
   launchSynthesisRun,
   getPendingSynthesisSourceItemIds,
+  getLatestSynthesisRun,
   launchSummarizationBatch,
 };
 
@@ -66,8 +70,8 @@ async function dispatchIngestSource(
   }
 }
 
-// No retry here either -- a crash is handled by the next scheduled
-// occurrence plus the stale-run sweep, not by hammering WorkspaceRunAlreadyActiveError.
+// Fast retries of a failed run belong to retryFailedSynthesisRuns; this slot
+// only steps aside while a retry is waiting out its backoff.
 async function dispatchSynthesizeWorkspace(
   task: ScheduledTaskRow,
   occurrenceAt: string,
@@ -75,6 +79,12 @@ async function dispatchSynthesizeWorkspace(
   client: SupabaseClient,
   deps: DispatchDependencies,
 ): Promise<void> {
+  const latestRun = await deps.getLatestSynthesisRun(client, task.workspace_id);
+  if (latestRun?.status === "failed" && latestRun.completed_at) {
+    const { nextRetryAt } = retryPlan(latestRun.attempt, new Date(latestRun.completed_at));
+    if (nextRetryAt && nextRetryAt > new Date()) return;
+  }
+
   const sourceItemIds = await deps.getPendingSynthesisSourceItemIds(task.workspace_id, client);
   if (sourceItemIds.length === 0) return; // avoids spending quota on an empty run
 

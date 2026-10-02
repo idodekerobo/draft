@@ -61,6 +61,7 @@ function neverCalledDeps(): DispatchDependencies {
     runSlackBackfillDispatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["runSlackBackfillDispatch"],
     launchSynthesisRun: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSynthesisRun"],
     getPendingSynthesisSourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"],
+    getLatestSynthesisRun: mock(async () => null) as unknown as DispatchDependencies["getLatestSynthesisRun"],
     launchSummarizationBatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSummarizationBatch"],
   };
 }
@@ -232,6 +233,32 @@ describe("dispatchScheduledTask", () => {
         occurrenceAt: task.next_due_at,
       }),
     );
+  });
+
+  it.each([
+    { label: "skips the slot while a retry is still waiting out its backoff", failedMinutesAgo: 2, launches: 0 },
+    { label: "runs the slot once the retry backoff has passed", failedMinutesAgo: 6, launches: 1 },
+  ])("$label", async ({ failedMinutesAgo, launches }) => {
+    const task = baseTask({ task_type: "synthesize_workspace" });
+    const client = fakeClient(task);
+    const deps = neverCalledDeps();
+    deps.getLatestSynthesisRun = mock(async () => ({
+      id: "failed-1",
+      status: "failed",
+      attempt: 1,
+      scheduled_task_id: task.id,
+      completed_at: new Date(Date.now() - failedMinutesAgo * 60_000).toISOString(),
+    })) as unknown as DispatchDependencies["getLatestSynthesisRun"];
+    deps.getPendingSynthesisSourceItemIds = mock(async () => ["item-1"]) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"];
+    deps.launchSynthesisRun = mock(async () => ({
+      runId: "run-1",
+      machineId: "machine-1",
+      bundleHash: "hash",
+    })) as unknown as DispatchDependencies["launchSynthesisRun"];
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.launchSynthesisRun).toHaveBeenCalledTimes(launches);
   });
 
   it("routes summarize_sessions to the summarization batch launcher", async () => {
