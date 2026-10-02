@@ -2,11 +2,11 @@
 
 Draft can send product usage events to [PostHog](https://posthog.com). This page lists what is sent, how it is linked to you, and how to turn it off.
 
-## Off by default
+## On by default, opt out any time
 
-Usage data is off until you turn it on. You can turn it on in the last onboarding screen ("Share usage data") or in **Settings > Privacy**, in the web app or the desktop app. Your choice is stored on your Draft account, so one choice covers both apps. Until you turn it on, the apps send nothing to PostHog.
+New accounts start with usage data on, including session replay. You can turn it off in **Settings > Privacy** ("Share usage data"), in the web app or the desktop app. Your choice is stored on your Draft account, so one choice covers both apps. Accounts created before this change keep the choice they had. When usage data is off, the apps send nothing to PostHog.
 
-Session replay is a separate switch in **Settings > Privacy**. It is off by default and can only be on while usage data is on.
+There is no separate replay switch. Replay runs whenever usage data is on.
 
 Builds without a PostHog key (for example self-hosted and open-source builds) send no analytics at all.
 
@@ -30,7 +30,7 @@ When you turn usage data off, the apps stop sending events and reset the PostHog
 
 ## Session replay
 
-When replay is on, PostHog records how you move through the app to help fix bugs. All text and all inputs are masked, so the recording shows layout and clicks, not content.
+While usage data is on, PostHog records how you move through the app to help fix bugs. All text and all inputs are masked, so the recording shows layout and clicks, not content.
 
 ## Events
 
@@ -44,7 +44,7 @@ Shared by web and desktop (`shared-ui/src/analytics/events.ts`):
 | `onboarding_step_viewed` | `step` |
 | `onboarding_completed` | `step` where it finished |
 | `onboarding_skipped` | `step` where it was skipped |
-| `analytics_consent_granted` | none |
+| `analytics_consent_granted` | none (sent when you turn usage data back on in Settings) |
 | `first_tool_connected` | `source` (tool name) |
 | `integration_connected`, `integration_disconnected`, `integration_channels_updated` | `source` (tool name) |
 

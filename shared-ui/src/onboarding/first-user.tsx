@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { contextExcerpt, type ContextFileEntry } from "../context/context-files";
 import type { FlowStep, TrackFn } from "../analytics/events";
-import { ConsentRow } from "../privacy/PrivacyRows";
 import type { ToolStatus } from "../integrations/registry";
 import { CopyButton, CopyableCmd } from "./components";
 import { FlowActions, FlowShell, type FlowDestination } from "./flow";
@@ -42,12 +41,9 @@ export interface ReadingSource {
 }
 
 /** Honest wait copy, no promise of a notification. No Skip. */
-export function ReadingScreen({ sources, consent, onConsentChange, onOpenDraft, onOpenUrl }: {
+export function ReadingScreen({ sources, onOpenDraft }: {
   sources: ReadingSource[];
-  consent: boolean;
-  onConsentChange: (next: boolean) => void;
   onOpenDraft: () => void;
-  onOpenUrl?: (url: string) => void;
 }) {
   return (
     <>
@@ -64,9 +60,6 @@ export function ReadingScreen({ sources, consent, onConsentChange, onOpenDraft, 
             </span>
           </li>
         ))}
-      </ul>
-      <ul className="ui-rows ui-flow__consent">
-        <li><ConsentRow checked={consent} onChange={onConsentChange} onOpenUrl={onOpenUrl} /></li>
       </ul>
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onOpenDraft}>Open Draft</button>}
@@ -103,21 +96,18 @@ export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContex
 }
 
 /** First user: Give Draft something to read, Draft is reading, then First context appears. */
-export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, consent, onConsentChange, onImportFolder, onReadingChange, track, onFinish, onOpenUrl, error }: {
+export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, onReadingChange, track, onFinish, error }: {
   toolList: ReactNode;
   hasSource: boolean;
   readingSources: ReadingSource[];
   entries: ContextFileEntry[];
   inviteUrl: string | null;
   agentPrompt: string;
-  consent: boolean;
-  onConsentChange: (next: boolean) => void;
   onImportFolder?: () => void;
   /** Lets the host poll only while "Draft is reading" is shown. */
   onReadingChange?: (reading: boolean) => void;
   track: TrackFn;
   onFinish: (destination: FlowDestination) => void;
-  onOpenUrl?: (url: string) => void;
   error?: string | null;
 }) {
   const [step, setStep] = useState<FlowStep>("give_source");
@@ -146,7 +136,7 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
         />
       )}
       {shown === "reading" && (
-        <ReadingScreen sources={readingSources} consent={consent} onConsentChange={onConsentChange} onOpenDraft={() => finish("context", "completed")} onOpenUrl={onOpenUrl} />
+        <ReadingScreen sources={readingSources} onOpenDraft={() => finish("context", "completed")} />
       )}
       {shown === "first_context" && first && (
         <FirstContextScreen entry={first} inviteUrl={inviteUrl} agentPrompt={agentPrompt} onOpenContext={() => finish("context", "completed")} />

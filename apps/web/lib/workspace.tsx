@@ -11,7 +11,7 @@ interface WorkspaceValue {
   identity: Identity;
   workspaceId: string;
   orgName: string;
-  updatePrivacy: (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => Promise<void>;
+  updatePrivacy: (patch: { analytics_consent: boolean }) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   /** Last context version this browser showed. Null until read from storage. */
   seenContextVersion: number | null;
@@ -57,8 +57,8 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
 
   useEffect(() => { syncUser(identity); }, [identity, syncUser]);
 
-  const updatePrivacy = useCallback(async (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => {
-    const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at" | "session_replay_enabled">>("/me/privacy", {
+  const updatePrivacy = useCallback(async (patch: { analytics_consent: boolean }) => {
+    const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at">>("/me/privacy", {
       method: "PATCH",
       body: JSON.stringify(patch),
     });

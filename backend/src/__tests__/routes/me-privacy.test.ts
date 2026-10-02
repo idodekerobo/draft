@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 
-type Row = { analytics_consent: boolean | null; analytics_consent_at: string | null; session_replay_enabled: boolean };
+type Row = { analytics_consent: boolean | null; analytics_consent_at: string | null };
 let row: Row;
 let updateError: { message: string } | null = null;
 let recordedErrors: Array<Record<string, unknown>> = [];
@@ -40,7 +40,7 @@ function patch(body: unknown): Promise<Response> {
 
 describe("PATCH /me/privacy", () => {
   beforeEach(() => {
-    row = { analytics_consent: null, analytics_consent_at: null, session_replay_enabled: false };
+    row = { analytics_consent: null, analytics_consent_at: null };
     updateError = null;
     recordedErrors = [];
   });
@@ -54,32 +54,18 @@ describe("PATCH /me/privacy", () => {
     expect((recordedErrors[0]!.detail_json as { code: string }).code).toBe("privacy_update_failed");
   });
 
-  it("rejects replay without consent", async () => {
-    const response = await patch({ session_replay_enabled: true });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "replay_requires_consent" });
-  });
-
-  it("sets consent_at on grant and on withdrawal, and withdrawal turns replay off", async () => {
-    const granted = await (await patch({ analytics_consent: true, session_replay_enabled: true })).json() as Row;
+  it("sets consent_at on grant and on withdrawal", async () => {
+    const granted = await (await patch({ analytics_consent: true })).json() as Row;
     expect(granted.analytics_consent).toBe(true);
-    expect(granted.session_replay_enabled).toBe(true);
     expect(granted.analytics_consent_at).not.toBeNull();
 
     row.analytics_consent_at = "earlier";
     const withdrawn = await (await patch({ analytics_consent: false })).json() as Row;
     expect(withdrawn.analytics_consent).toBe(false);
-    expect(withdrawn.session_replay_enabled).toBe(false);
     expect(withdrawn.analytics_consent_at).not.toBe("earlier");
   });
 
-  it("changes replay alone without touching consent_at", async () => {
-    row = { analytics_consent: true, analytics_consent_at: "t0", session_replay_enabled: false };
-    const body = await (await patch({ session_replay_enabled: true })).json() as Row;
-    expect(body).toEqual({ analytics_consent: true, analytics_consent_at: "t0", session_replay_enabled: true });
-  });
-
-  it.each([{}, { analytics_consent: "yes" }, { other: true }, null])("rejects invalid body %j", async (body) => {
+  it.each([{}, { analytics_consent: "yes" }, { other: true }, { analytics_consent: true, other: true }, null])("rejects invalid body %j", async (body) => {
     expect((await patch(body)).status).toBe(400);
   });
 });

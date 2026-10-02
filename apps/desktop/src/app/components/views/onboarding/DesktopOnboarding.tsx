@@ -58,7 +58,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
   onComplete: (destination: FlowDestination) => void;
 }) {
   const identity = useUserIdentity();
-  const { track, privacy, setConsent } = useAnalytics();
+  const { track } = useAnalytics();
   const { apps, refresh } = useConnectedApps();
   const [error, setError] = useState<string | null>(null);
   const [folderImported, setFolderImported] = useState(false);
@@ -104,15 +104,6 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     onComplete(destination);
   }
 
-  async function changeConsent(next: boolean) {
-    setError(null);
-    try {
-      await setConsent(next);
-    } catch {
-      setError("Could not save your privacy choice. Try again.");
-    }
-  }
-
   async function importFolder() {
     setError(null);
     const picked = await rpc.request.selectUploadFolder();
@@ -126,7 +117,6 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     }
   }
 
-  const consent = privacy?.analyticsConsent ?? false;
   const statuses = desktopToolStatuses(apps);
   const hasSource = folderImported || Object.values(statuses).some((status) => status?.state === "connected" || status?.state === "pending");
 
@@ -136,11 +126,8 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
         orgName="your team"
         entries={files}
         toolList={<DesktopToolList apps={apps} refresh={refresh} groups={["meetings", "agent", "team"]} />}
-        consent={consent}
-        onConsentChange={(next) => void changeConsent(next)}
         track={track}
         onFinish={(destination) => void finish(destination)}
-        onOpenUrl={(url) => rpc.send.openUrl({ url })}
         error={error}
       />
     );
@@ -154,13 +141,10 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
       entries={files}
       inviteUrl={inviteUrl}
       agentPrompt={AGENT_SETUP_PROMPT}
-      consent={consent}
-      onConsentChange={(next) => void changeConsent(next)}
       onImportFolder={() => void importFolder()}
       onReadingChange={setReading}
       track={track}
       onFinish={(destination) => void finish(destination)}
-      onOpenUrl={(url) => rpc.send.openUrl({ url })}
       error={error}
     />
   );
