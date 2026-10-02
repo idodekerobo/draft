@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execSync } from "child_process";
@@ -220,6 +220,76 @@ describe("draft sessions ingest (hook-only)", () => {
     expect(req.url).toContain("sessionId=sess-1");
     expect(req.url).toContain("gitEmail=dev%40example.com");
     expect(req.headers.authorization).toBe("Bearer draft_sit_cred-1_secret");
+  });
+
+  async function enableAndIngest() {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    const transcriptPath = join(project, "transcript.jsonl");
+    writeFileSync(transcriptPath, `${JSON.stringify({ type: "user", timestamp: "2026-01-01T00:00:00Z", message: { role: "user", content: "hi" } })}\n`);
+    return runCli(["sessions", "ingest"], {
+      home,
+      apiUrl: backend.url,
+      cwd: project,
+      env: { CLAUDE_PROJECT_DIR: project },
+      stdin: JSON.stringify({ session_id: "sess-1", transcript_path: transcriptPath, cwd: project, reason: "clear" }),
+    });
+  }
+
+  test("reports a rejected upload to the backend errors endpoint", async () => {
+    backend.state.sessionsIngestResponse = () => Response.json({ ok: false, error: "provider_not_allowed" }, { status: 403 });
+    const result = await enableAndIngest();
+    expect(result.exitCode).toBe(0);
+    expect(backend.state.sessionsIngestErrorRequests).toHaveLength(1);
+    const report = JSON.parse(backend.state.sessionsIngestErrorRequests[0]!.body);
+    expect(report).toMatchObject({ code: "http-403", hookReason: "clear", workspaceId: "ws-1" });
+    expect(backend.state.sessionsIngestErrorRequests[0]!.headers.authorization).toBe("Bearer draft_sit_cred-1_secret");
+  });
+
+  test("does not report session_tracking_disabled: that is policy, not a failure", async () => {
+    backend.state.sessionsIngestResponse = () => Response.json({ ok: false, error: "session_tracking_disabled" }, { status: 403 });
+    const result = await enableAndIngest();
+    expect(result.exitCode).toBe(0);
+    expect(backend.state.sessionsIngestErrorRequests).toHaveLength(0);
+  });
+
+  test("a config with placeholder values sends no transcript and no token, and reports once", async () => {
+    mkdirSync(join(project, ".claude", "draft"), { recursive: true });
+    writeFileSync(
+      join(project, ".claude", "draft", "config.json"),
+      JSON.stringify({
+        backendUrl: backend.url,
+        workspaceId: "${DRAFT_WORKSPACE_ID}",
+        ingestToken: "${DRAFT_INGEST_TOKEN}",
+        projectId: "${DRAFT_PROJECT_ID}",
+        projectKey: "${DRAFT_PROJECT_KEY}",
+      }),
+    );
+    const transcriptPath = join(project, "transcript.jsonl");
+    writeFileSync(transcriptPath, "{}\n");
+    const result = await runCli(["sessions", "ingest"], {
+      home,
+      apiUrl: backend.url,
+      cwd: project,
+      env: { CLAUDE_PROJECT_DIR: project },
+      stdin: JSON.stringify({ session_id: "sess-1", transcript_path: transcriptPath, cwd: project, reason: "clear" }),
+    });
+    expect(result.exitCode).toBe(0);
+    expect(backend.state.sessionsIngestRequests).toHaveLength(0);
+    expect(backend.state.sessionsIngestErrorRequests).toHaveLength(1);
+    expect(JSON.parse(backend.state.sessionsIngestErrorRequests[0]!.body).code).toBe("placeholder-config");
+    expect(backend.state.sessionsIngestErrorRequests[0]!.headers.authorization).toBeUndefined();
+  });
+});
+
+describe("draft sessions status", () => {
+  test("flags a capture script written before versioning", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    const current = await runCli(["sessions", "status", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(JSON.parse(current.stdout)).toMatchObject({ captureScriptCurrent: true });
+
+    writeFileSync(join(project, ".claude", "draft", "capture-session.sh"), "#!/usr/bin/env bash\ndraft sessions ingest\n");
+    const stale = await runCli(["sessions", "status", "--dir", project, "--json"], { home, apiUrl: backend.url });
+    expect(JSON.parse(stale.stdout)).toMatchObject({ captureScriptVersion: null, captureScriptCurrent: false });
   });
 });
 
