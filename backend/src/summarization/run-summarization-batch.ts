@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { claimPendingSummarySessions } from "./claim-sessions";
+import { reportExpiredSummaryLeases } from "./report-expired-leases";
 import { renderSessionTranscript } from "./render-transcript";
 import { buildSummarizationBundle } from "./build-bundle";
 import { summarizationJsonSchema } from "./render-prompt";
@@ -26,6 +27,7 @@ export interface LaunchSummarizationBatchResult {
 export async function launchSummarizationBatch(
   options: LaunchSummarizationBatchOptions,
 ): Promise<LaunchSummarizationBatchResult | null> {
+  await reportExpiredSummaryLeases(options.workspaceId, options.client);
   const sessions = await claimPendingSummarySessions(
     options.workspaceId,
     MAX_SESSIONS_PER_BATCH,
