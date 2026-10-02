@@ -20,6 +20,8 @@ export interface RecordErrorInput {
   sourceConnectionId?: string | null;
   scheduledTaskId?: string | null;
   synthesisRunId?: string | null;
+  // Insert a workspace-less row instead of falling back to stderr.
+  allowUnattributed?: boolean;
   client?: SupabaseClient;
 }
 
@@ -106,7 +108,7 @@ function fallback(input: RecordErrorInput, reason: unknown): void {
 
 /** Best-effort persistent operational error logging. This function never rejects. */
 export async function recordError(input: RecordErrorInput): Promise<void> {
-  if (!input.workspaceId) {
+  if (!input.workspaceId && !input.allowUnattributed) {
     fallback(input, "workspace_id_unavailable");
     return;
   }
@@ -118,9 +120,9 @@ export async function recordError(input: RecordErrorInput): Promise<void> {
     const client = input.client ?? (await import("../db/client")).serviceClient;
     const { error } = await client.from("errors").insert({
       workspace_id: input.workspaceId,
-      source_connection_id: input.sourceConnectionId ?? null,
-      scheduled_task_id: input.scheduledTaskId ?? null,
-      synthesis_run_id: input.synthesisRunId ?? null,
+      source_connection_id: input.workspaceId ? input.sourceConnectionId ?? null : null,
+      scheduled_task_id: input.workspaceId ? input.scheduledTaskId ?? null : null,
+      synthesis_run_id: input.workspaceId ? input.synthesisRunId ?? null : null,
       operation: input.operation,
       message: redactString(input.message),
       detail_json: detail,

@@ -11,6 +11,7 @@ import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
+import * as sessionsIngestErrors from "./sessions-ingest-errors";
 import * as sessionsSearch from "./sessions-search";
 import * as sessionTokens from "./session-tokens";
 import * as sessionTokensRotate from "./session-tokens-rotate";
@@ -58,6 +59,7 @@ export const routes = {
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
   "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
   "/sessions/ingest": { POST: sessionsIngest.POST },
+  "/sessions/ingest-errors": { POST: sessionsIngestErrors.POST },
   "/sessions/tokens/rotate": { POST: sessionTokensRotate.POST },
   "/sessions/tokens/revoke": { POST: sessionTokensRevoke.POST },
   "/invites/mine": { GET: invites.mineGET },
