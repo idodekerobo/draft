@@ -1,5 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { parseWorkspaceIdFromSummarizationRunId } from "../../summarization/complete-summarization-callback";
+import {
+  parseRunnerFailure,
+  parseWorkspaceIdFromSummarizationRunId,
+} from "../../summarization/complete-summarization-callback";
+
+describe("parseRunnerFailure", () => {
+  test("recognizes the runner's {error, diagnostics} failure body", () => {
+    expect(
+      parseRunnerFailure({ error: "bundle_fetch_failed", diagnostics: { reason: "hash mismatch" } }),
+    ).toEqual({ error: "bundle_fetch_failed", diagnostics: { reason: "hash mismatch" } });
+  });
+
+  test("ignores a normal batch result and non-object bodies", () => {
+    expect(parseRunnerFailure({ items: [] })).toBeNull();
+    expect(parseRunnerFailure({ items: [], error: "x" })).toBeNull();
+    expect(parseRunnerFailure(null)).toBeNull();
+    expect(parseRunnerFailure([])).toBeNull();
+    expect(parseRunnerFailure({})).toBeNull();
+  });
+});
 
 describe("parseWorkspaceIdFromSummarizationRunId", () => {
   test("extracts the workspace id from a summarize:<workspaceId>:<uuid> run id", () => {

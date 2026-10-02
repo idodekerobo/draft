@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildSummarizationBundle } from "../../summarization/build-bundle";
+import { recomputeBundleHash } from "../../sandbox/claude-code/runner";
 
 describe("buildSummarizationBundle", () => {
   test("assembles a manifest and one rendered prompt file per session", () => {
@@ -38,6 +39,22 @@ describe("buildSummarizationBundle", () => {
     expect(() =>
       buildSummarizationBundle({ organizationId: "org-1", workspaceId: "workspace-1", sessions: [] }),
     ).toThrow("at least one session");
+  });
+
+  test("bundle hash matches the hash the sandbox runner recomputes", () => {
+    const bundle = buildSummarizationBundle({
+      organizationId: "org-1",
+      workspaceId: "workspace-1",
+      sessions: [
+        { session: { id: "session-b" }, transcript: "B" },
+        { session: { id: "session-a" }, transcript: "A" },
+      ],
+    });
+    const files = Object.fromEntries(
+      Object.entries(bundle.files).map(([path, file]) => [path, file.content]),
+    );
+    const reserved = new Set(["input/prompt.md", "input/output-schema.json"]);
+    expect(recomputeBundleHash(files, reserved)).toBe(bundle.bundleHash);
   });
 
   test("bundle hash is deterministic and content-sensitive", () => {

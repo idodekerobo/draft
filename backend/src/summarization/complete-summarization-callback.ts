@@ -18,6 +18,13 @@ export function parseWorkspaceIdFromSummarizationRunId(runId: string): string | 
   return rest.slice(0, separatorIndex);
 }
 
+export function parseRunnerFailure(result: unknown): { error: string; diagnostics: unknown } | null {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) return null;
+  const { error, diagnostics, items } = result as Record<string, unknown>;
+  if (items !== undefined || typeof error !== "string") return null;
+  return { error, diagnostics };
+}
+
 export async function completeSummarizationRunCallback(
   request: Request,
   callbackSecret: string,
@@ -32,6 +39,22 @@ export async function completeSummarizationRunCallback(
     runId = authenticated.runId;
     workspaceId = parseWorkspaceIdFromSummarizationRunId(authenticated.runId);
     if (!workspaceId) throw new Error(`Cannot recover workspace from run id: ${authenticated.runId}`);
+
+    // The runner reports setup failures (e.g. bundle fetch) as {error, diagnostics}
+    // instead of {items}. Record the real reason and ack so it doesn't retry.
+    const runnerFailure = parseRunnerFailure(authenticated.result);
+    if (runnerFailure) {
+      await recordError({
+        client: resolvedClient,
+        workspaceId,
+        operation: "execution",
+        message: `Summarization runner failed: ${runnerFailure.error}`,
+        code: "summarization_runner_failed",
+        detail: { run_id: runId, diagnostics: runnerFailure.diagnostics },
+        error: new Error(`summarization runner reported ${runnerFailure.error}`),
+      });
+      return new Response(null, { status: 204 });
+    }
 
     stage = "validation";
     const items = validateSummarizationResult(authenticated.result);
