@@ -56,17 +56,21 @@ Do not push to the prod Supabase project until you get explicit approval that I'
 
 ## Staging first
 
-A separate staging Supabase project exists. Prod is the default target of
-`.env.local` and the linked CLI, so every risky action must be redirected to
-staging deliberately. Invoke the `staging-env` skill for the exact commands.
+A separate staging Supabase project exists. Bare `bun` scripts and
+`make run-local` load staging (`.env.staging`). Prod values live in
+`.env.production` and are used only by explicit commands, but the linked CLI can
+still point at prod, so check the target first. Invoke the `staging-env` skill
+for the exact commands.
 
 - Run `scripts/supabase-target.sh status` before any `supabase` command that
   touches a remote DB. The CLI link is global state.
 - Test and verify every migration on staging before it goes to prod.
 - Run seed, demo, wipe and other data-writing scripts (`backend/scripts/*`)
-  against staging only, via `bun --env-file=.env.staging run ...`. Never run
-  them bare, and never against prod unless I name prod explicitly.
-- Run the app for manual testing with `make run-local env=staging`.
+  against staging only, via `bun --env-file=.env.staging run ...`. Pass the env
+  file even though a bare run loads staging, and never use `.env.production`
+  unless I name prod explicitly.
+- Run the app for manual testing with `make run-local` (staging by default).
+  Prod is `make run-local env=production`, only when I ask.
 - Leave the CLI linked to prod when a session ends
   (`scripts/supabase-target.sh prod`).
 

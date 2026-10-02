@@ -10,10 +10,10 @@ import { supabaseSessionBridge } from "./better-auth-supabase-bridge-plugin";
 const config = loadConfig();
 
 if (!config.betterAuthDatabaseUrl) {
-  throw new Error("Missing required env var BETTER_AUTH_DATABASE_URL. Check backend/.env.local.");
+  throw new Error("Missing required env var BETTER_AUTH_DATABASE_URL. Check the root .env.staging or .env.production file.");
 }
 if (!config.betterAuthSecret) {
-  throw new Error("Missing required env var BETTER_AUTH_SECRET. Check backend/.env.local.");
+  throw new Error("Missing required env var BETTER_AUTH_SECRET. Check the root .env.staging or .env.production file.");
 }
 
 // Better Auth has no "target schema" option; search_path puts better_auth

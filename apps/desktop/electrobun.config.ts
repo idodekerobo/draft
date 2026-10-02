@@ -17,7 +17,7 @@ const _crispHistorySecret = JSON.stringify(_buildCfg.crisp_history_secret       
 const _calUrl             = JSON.stringify(_buildCfg.cal_url                          ?? "");
 const _ghClientId         = JSON.stringify(_buildCfg.github_oauth_client_id           ?? "");
 const _ghJoinEnabled      = JSON.stringify(_buildCfg.github_join_enabled              ?? false);
-// `make run-local` supplies the root .env.local values for desktop dev. Keep
+// `make run-local` supplies the root .env.staging values for desktop dev. Keep
 // release builds tied to build-config.json so local URLs cannot accidentally
 // be baked into a distributable bundle.
 const _draftApiBaseUrl    = JSON.stringify(isDev ? (process.env.DRAFT_API_BASE_URL ?? _buildCfg.draft_api_base_url) : (_buildCfg.draft_api_base_url ?? "https://api.draftai.us"));

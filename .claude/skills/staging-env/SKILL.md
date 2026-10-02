@@ -5,12 +5,20 @@ description: Switch between the staging and prod Supabase environments — run t
 
 # Skill: staging-env
 
-Two Supabase projects exist. Prod is the default everywhere; staging is opt-in.
+Two Supabase projects exist. Staging is the default for bare commands; prod is
+opt-in and always explicit.
 
 | | Env file | Supabase CLI target |
 |---|---|---|
-| prod | `.env.local` | `scripts/supabase-target.sh prod` |
+| prod | `.env.production` (gitignored) | `scripts/supabase-target.sh prod` |
 | staging | `.env.staging` (gitignored) | `scripts/supabase-target.sh staging` |
+
+`.env.development` is a symlink to `.env.staging`. Bun loads it when `NODE_ENV`
+is unset, so a bare `bun run ...` or `bun -e ...` from the repo root gets staging
+values. Create it once per checkout: `ln -s .env.staging .env.development`.
+Prod loads only through `--env-file=.env.production` or `NODE_ENV=production`.
+Bun reads env files from the current directory, so a bare run from a
+subdirectory loads nothing.
 
 ## 1. Always check the target first
 
@@ -24,7 +32,8 @@ The CLI link (`supabase/.temp/project-ref`) is global state. It decides where
 ## 2. Run the app against staging
 
 ```
-make run-local env=staging     # prod stays the default: make run-local
+make run-local                 # staging is the default
+make run-local env=production  # prod, only when the user asks
 ```
 
 Ports 3000/3001/8787 are shared. Do not run both at once.
@@ -32,13 +41,13 @@ Ports 3000/3001/8787 are shared. Do not run both at once.
 
 ## 3. Run seed / demo scripts against staging
 
-Never run a seed script bare. `.env.local` is prod. Always pass the env file:
+A bare run loads staging, but pass the env file anyway so the target is explicit:
 
 ```
 bun --env-file=.env.staging run backend/scripts/seed-demo-nonprofit.ts
 ```
 
-`--env-file` overrides the auto-loaded `.env.local` (verified). Before running a
+`--env-file` overrides the auto-loaded `.env.development` (verified). Before running a
 script that writes data, confirm the target:
 
 ```
@@ -74,7 +83,7 @@ Set in that env's `.env.*` file, and use a distinct value from prod:
 
 ## 6. Known gap: shared third-party resources
 
-`.env.staging` was cloned from `.env.local`. These still point at prod:
+`.env.staging` was cloned from the prod env file. These may still point at prod:
 GitHub App, Fly app/image/token, Slack, `DRAFT_API_BASE_URL` tunnel.
 Seeding fake data is safe. Triggering real synthesis runs, webhooks or Fly
 sandboxes from staging uses prod's accounts. Point them at test resources first.

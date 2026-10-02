@@ -2,7 +2,7 @@
 set -u
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-ROOT_ENV="$ROOT_DIR/${ROOT_ENV_FILE:-.env.local}"
+ROOT_ENV="$ROOT_DIR/${ROOT_ENV_FILE:-.env.staging}"
 PIDS=""
 NAMES=""
 SHUTTING_DOWN=0
@@ -55,7 +55,7 @@ load_dotenv() {
 require_env_var() {
   var_name=$1
   var_value=${!var_name:-}
-  [ -n "$var_value" ] || fail ".env.local and preserved app env files are missing $var_name. Add it without committing secrets."
+  [ -n "$var_value" ] || fail "$(basename "$ROOT_ENV") and preserved app env files are missing $var_name. Add it without committing secrets."
 }
 
 require_url() {

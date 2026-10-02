@@ -21,8 +21,9 @@ From the repository root:
 
 ~~~bash
 bun install
-cp .env.example .env.local
+cp .env.example .env.staging
 # Fill in the private values.
+ln -s .env.staging .env.development   # bare `bun run` scripts load staging
 make run-local
 ~~~
 

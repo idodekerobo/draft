@@ -13,7 +13,7 @@
 // Opens a local page that auto-POSTs the manifest to GitHub, waits for
 // GitHub's redirect back to the manifest's fixed localhost redirect_url,
 // exchanges the resulting code for the App's credentials, and prints them
-// ready to paste into the root .env.local (dev — forwarded to the backend
+// ready to paste into the root .env.staging (dev — forwarded to the backend
 // process by scripts/run-local.sh's backend_env array) or Railway env vars
 // (prod).
 
@@ -150,7 +150,7 @@ async function main() {
     .toString();
   const pemOneLine = pkcs8Pem.replace(/\r?\n/g, "\\n");
 
-  console.log("\nGitHub App created. Paste these into the root .env.local (dev) or Railway env vars (prod):\n");
+  console.log("\nGitHub App created. Paste these into the root .env.staging (dev) or Railway env vars (prod):\n");
   console.log(`GITHUB_APP_ID=${app.id}`);
   console.log(`GITHUB_APP_SLUG=${app.slug}`);
   console.log(`GITHUB_APP_WEBHOOK_SECRET=${app.webhook_secret}`);

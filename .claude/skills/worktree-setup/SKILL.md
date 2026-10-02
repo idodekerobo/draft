@@ -9,11 +9,15 @@ When preparing a Draft worktree, identify the canonical checkout and the target
 worktree with `git worktree list`. Then do all of the following from the target
 worktree:
 
-1. Copy the canonical checkout's root-level `.env.local` and ignored desktop
-   configuration every time, even when the target worktree already has copies:
+1. Copy the canonical checkout's root-level `.env.production` and `.env.staging`
+   and ignored desktop configuration every time, even when the target worktree
+   already has copies. Recreate the `.env.development` symlink so bare scripts
+   load staging:
 
    ```bash
-   cp "$SOURCE_ROOT/.env.local" "$TARGET_ROOT/.env.local"
+   cp "$SOURCE_ROOT/.env.production" "$TARGET_ROOT/.env.production"
+   cp "$SOURCE_ROOT/.env.staging" "$TARGET_ROOT/.env.staging"
+   ln -sf .env.staging "$TARGET_ROOT/.env.development"
    cp "$SOURCE_ROOT/apps/desktop/src/build-config.json" "$TARGET_ROOT/apps/desktop/src/build-config.json"
    ```
 
@@ -33,12 +37,12 @@ worktree:
 3. Link the worktree to the Supabase project so `supabase db push`/`diff`
    work from it (each worktree has its own gitignored link state under
    `supabase/.temp/`, so this does not carry over from the canonical
-   checkout). Derive the project ref from the copied `.env.local`'s
+   checkout). Derive the project ref from the copied `.env.production`'s
    `SUPABASE_URL` (`https://<ref>.supabase.co`) rather than asking the user
    for it or guessing:
 
    ```bash
-   ref=$(grep '^SUPABASE_URL=' "$TARGET_ROOT/.env.local" | sed -E 's#.*https://([a-z0-9]+)\.supabase\.co.*#\1#')
+   ref=$(grep '^SUPABASE_URL=' "$TARGET_ROOT/.env.production" | sed -E 's#.*https://([a-z0-9]+)\.supabase\.co.*#\1#')
    supabase link --project-ref "$ref"
    ```
 

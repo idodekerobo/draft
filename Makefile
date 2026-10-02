@@ -1,13 +1,13 @@
 .PHONY: run-local run-landing stop
 
 # Starts web (3000), landing (3001), API (8787), and desktop in one foreground
-# supervisor. Copy .env.example to the root .env.local before starting. Core/
+# supervisor. Copy .env.example to the root .env.staging before starting. Core/
 # background are intentionally excluded. Stop all children with Ctrl-C.
 #
-#   make run-local              # loads .env.local (prod-linked Supabase)
-#   make run-local env=staging  # loads .env.staging instead
+#   make run-local                  # loads .env.staging
+#   make run-local env=production   # loads .env.production (prod) instead
 run-local:
-	@ROOT_ENV_FILE=$(if $(env),.env.$(env),.env.local) bash scripts/run-local.sh
+	@ROOT_ENV_FILE=.env.$(if $(env),$(env),staging) bash scripts/run-local.sh
 
 run-landing:
 	cd apps/landing-page && npm run dev -- --port 3001

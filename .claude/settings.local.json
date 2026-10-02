@@ -31,7 +31,7 @@
       "WebFetch(domain:developers.cloudflare.com)",
       "WebFetch(domain:community.fly.io)",
       "Bash(bun run *)",
-      "Bash(grep -o \"^CLAUDE_CODE_OAUTH_TOKEN=.\\\\{0,15\\\\}\" .env.local)",
+      "Bash(grep -o \"^CLAUDE_CODE_OAUTH_TOKEN=.\\\\{0,15\\\\}\" .env.production)",
       "Bash(SPIKE3_CRASH_AT=after_commit bun run scripts/spike3-round-trip.ts)",
       "Bash(git stash *)",
       "Bash(bunx tsc *)",
