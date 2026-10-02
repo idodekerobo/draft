@@ -35,7 +35,6 @@ export interface UpdateCheckEntry {
 
 export interface AnalyticsConfig {
   consent: "pending" | "opted_in" | "opted_out";
-  replay_enabled: boolean;
   anonymous_id: string;
   posthog_host?: string;
   posthog_key?: string;
@@ -62,7 +61,6 @@ export function ensureAnalyticsConfig(config: DraftConfig): AnalyticsConfig {
   if (config.analytics?.anonymous_id) return config.analytics;
   return {
     consent: "pending",
-    replay_enabled: false,
     anonymous_id: crypto.randomUUID(),
     ...config.analytics,
   };

@@ -48,7 +48,7 @@ Self-hosting does not automatically remove third-party processing. Supabase, Fly
 
 ## Analytics
 
-Product analytics are off by default. When a signed-in person turns on **Share usage data**, the web and desktop apps send coded usage events to PostHog, linked to that person's Draft account id (not their name or email). The choice is stored on the account, so it covers both apps. Session replay is a separate, default-off switch, and it masks all text and inputs. Nothing you type and no context, file or message content is sent. Builds without a PostHog key send nothing. See [analytics.md](analytics.md) for the full event list, identifiers, and how to withdraw or ask for deletion.
+Product analytics are on by default for new accounts, and anyone can turn them off with **Share usage data** in Settings. While it is on, the web and desktop apps send coded usage events to PostHog, linked to that person's Draft account id (not their name or email). The choice is stored on the account, so it covers both apps. Session replay runs with it and masks all text and inputs. Nothing you type and no context, file or message content is sent. Builds without a PostHog key send nothing. See [analytics.md](analytics.md) for the full event list, identifiers, and how to withdraw or ask for deletion.
 
 ## Team collaboration
 

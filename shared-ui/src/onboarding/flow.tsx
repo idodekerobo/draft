@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { contextExcerpt, type ContextFileEntry } from "../context/context-files";
 import type { FlowStep, TrackFn } from "../analytics/events";
-import { ConsentRow } from "../privacy/PrivacyRows";
 
 /** Full window, no sidebar, one centered column. Also used by web-only screens (invite, confirm join). */
 export function FlowShell({ children }: { children: ReactNode }) {
@@ -62,14 +61,11 @@ export function WhatDraftKnowsScreen({ orgName, entries, onOpenContext, onConnec
   );
 }
 
-export function ConnectToolsScreen({ toolList, consent, onConsentChange, onNext, onSkip, onBrowseAll, onOpenUrl }: {
+export function ConnectToolsScreen({ toolList, onNext, onSkip, onBrowseAll }: {
   toolList: ReactNode;
-  consent: boolean;
-  onConsentChange: (next: boolean) => void;
   onNext: () => void;
   onSkip: () => void;
   onBrowseAll: () => void;
-  onOpenUrl?: (url: string) => void;
 }) {
   return (
     <>
@@ -77,9 +73,6 @@ export function ConnectToolsScreen({ toolList, consent, onConsentChange, onNext,
       <p className="ui-flow__subtitle">Your meetings and agent are yours. Team sources are already set up.</p>
       {toolList}
       <button type="button" className="ui-link ui-flow__browse" onClick={onBrowseAll}>Browse all tools</button>
-      <ul className="ui-rows ui-flow__consent">
-        <li><ConsentRow checked={consent} onChange={onConsentChange} onOpenUrl={onOpenUrl} /></li>
-      </ul>
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onNext}>Next</button>}
         secondary={<button type="button" className="ui-link" onClick={onSkip}>Skip</button>}
@@ -92,15 +85,12 @@ export function ConnectToolsScreen({ toolList, consent, onConsentChange, onNext,
 export type FlowDestination = "context" | "connections";
 
 /** Joiner flow: Here is what Draft knows, then Connect your tools. The host sets the completion flag in onFinish. */
-export function JoinerFlow({ orgName, entries, toolList, consent, onConsentChange, track, onFinish, onOpenUrl, error }: {
+export function JoinerFlow({ orgName, entries, toolList, track, onFinish, error }: {
   orgName: string;
   entries: ContextFileEntry[];
   toolList: ReactNode;
-  consent: boolean;
-  onConsentChange: (next: boolean) => void;
   track: TrackFn;
   onFinish: (destination: FlowDestination) => void;
-  onOpenUrl?: (url: string) => void;
   /** Shown above the screen, for example when saving the completion flag fails. */
   error?: string | null;
 }) {
@@ -126,12 +116,9 @@ export function JoinerFlow({ orgName, entries, toolList, consent, onConsentChang
       ) : (
         <ConnectToolsScreen
           toolList={toolList}
-          consent={consent}
-          onConsentChange={onConsentChange}
           onNext={() => finish("context", "completed")}
           onSkip={() => finish("context", "skipped")}
           onBrowseAll={() => finish("connections", "completed")}
-          onOpenUrl={onOpenUrl}
         />
       )}
     </FlowShell>

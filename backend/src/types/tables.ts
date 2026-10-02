@@ -66,7 +66,6 @@ export interface UserRow {
   onboarding_completed_at: string | null;
   analytics_consent: boolean | null;
   analytics_consent_at: string | null;
-  session_replay_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

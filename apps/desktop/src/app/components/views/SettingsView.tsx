@@ -141,7 +141,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
 
-  const { privacy, setConsent, setReplayEnabled } = useAnalytics();
+  const { privacy, setConsent } = useAnalytics();
   const [theme, setTheme] = useState<ThemePreference>(() => {
     try {
       const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -273,9 +273,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
           <ul className="ui-rows">
             <PrivacyRows
               analyticsConsent={privacy?.analyticsConsent ?? false}
-              sessionReplay={privacy?.sessionReplay ?? false}
               onAnalyticsChange={(next) => void savePrivacy(() => setConsent(next))}
-              onReplayChange={(next) => void savePrivacy(() => setReplayEnabled(next))}
               onOpenUrl={(url) => rpc.send.openUrl({ url })}
             />
           </ul>

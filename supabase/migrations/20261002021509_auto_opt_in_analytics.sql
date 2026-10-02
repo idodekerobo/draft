@@ -1,6 +1,25 @@
--- Returns the authenticated user's application identity and their team's
--- default workspace in one database query. The function is restricted to the
--- backend service role because it accepts an explicit user id.
+-- New users start opted in to analytics (replay follows consent), so the
+-- separate session_replay_enabled flag is removed. Existing users keep their state.
+
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.users (id, email, status, organization_role, analytics_consent, analytics_consent_at)
+  values (new.id, new.email, 'invited', 'member', true, now())
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop function if exists public.get_user_identity(uuid);
+
+alter table public.users drop constraint users_session_replay_requires_consent;
+alter table public.users drop column session_replay_enabled;
+
 create or replace function public.get_user_identity(p_user_id uuid)
 returns table (
   id uuid,

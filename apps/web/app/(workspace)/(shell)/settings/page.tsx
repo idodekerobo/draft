@@ -55,7 +55,7 @@ export default function SettingsPage() {
   const [theme, setTheme] = useThemePreference();
   const [error, setError] = useState<string | null>(null);
 
-  async function savePrivacy(patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) {
+  async function savePrivacy(patch: { analytics_consent: boolean }) {
     setError(null);
     try {
       await updatePrivacy(patch);
@@ -94,9 +94,7 @@ export default function SettingsPage() {
       <ul className="ui-rows">
         <PrivacyRows
           analyticsConsent={identity.analytics_consent === true}
-          sessionReplay={identity.session_replay_enabled}
           onAnalyticsChange={(next) => void savePrivacy({ analytics_consent: next })}
-          onReplayChange={(next) => void savePrivacy({ session_replay_enabled: next })}
         />
       </ul>
 

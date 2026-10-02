@@ -218,7 +218,6 @@
 .ui-flow__buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .ui-flow__note { margin: 12px 0 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-flow__browse { margin-top: 16px; font-size: var(--font-size-secondary); }
-.ui-flow__consent { margin-top: 24px; }
 .ui-flow__field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-flow__divider { height: 1px; margin: 24px 0; background: var(--color-border); border: 0; }
 

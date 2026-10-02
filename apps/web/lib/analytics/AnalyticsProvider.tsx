@@ -12,7 +12,6 @@ const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posth
 interface AnalyticsUser {
   id: string;
   analytics_consent: boolean | null;
-  session_replay_enabled: boolean;
 }
 
 interface AnalyticsValue {
@@ -69,9 +68,8 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         optedIn.current = true;
         for (const [event, props] of pending.current) posthog.capture(event, props);
         pending.current = [];
+        posthog.startSessionRecording();
       }
-      if (user.session_replay_enabled) posthog.startSessionRecording();
-      else posthog.stopSessionRecording();
       return;
     }
     pending.current = [];

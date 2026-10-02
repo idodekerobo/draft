@@ -13,7 +13,7 @@ import { useWorkspace } from "@/lib/workspace";
 function Welcome({ entries }: { entries: ContextFileEntry[] }) {
   const router = useRouter();
   const { track } = useAnalytics();
-  const { identity, orgName, updatePrivacy, completeOnboarding } = useWorkspace();
+  const { orgName, completeOnboarding } = useWorkspace();
   const [error, setError] = useState<string | null>(null);
 
   async function finish(destination: FlowDestination) {
@@ -27,22 +27,11 @@ function Welcome({ entries }: { entries: ContextFileEntry[] }) {
     }
   }
 
-  async function changeConsent(next: boolean) {
-    setError(null);
-    try {
-      await updatePrivacy({ analytics_consent: next });
-    } catch {
-      setError("Could not save your privacy choice. Try again.");
-    }
-  }
-
   return (
     <JoinerFlow
       orgName={orgName}
       entries={entries}
       toolList={<WebToolList groups={["meetings", "agent", "team"]} />}
-      consent={identity.analytics_consent === true}
-      onConsentChange={(next) => void changeConsent(next)}
       track={track}
       onFinish={(destination) => void finish(destination)}
       error={error}

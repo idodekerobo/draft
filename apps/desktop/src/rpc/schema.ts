@@ -265,12 +265,10 @@ export interface AppVersionInfo {
 export interface PrivacyState {
   userId: string | null;
   analyticsConsent: boolean;
-  sessionReplay: boolean;
 }
 
 export interface AnalyticsConfig {
   consent: "pending" | "opted_in" | "opted_out";
-  replay_enabled: boolean;
   anonymous_id: string;
   posthog_host?: string;
   /** Runtime-only: sourced from build-config.json, never persisted to ~/.draft/config.json. */
@@ -630,10 +628,10 @@ export type AppRPCType = {
       /** Read analytics config from ~/.draft/config.json. Generates anonymous_id on first call. */
       getAnalyticsConfig: { params: void; response: AnalyticsConfig };
 
-      /** Patch analytics config (consent, replay_enabled, etc.) in ~/.draft/config.json. */
+      /** Patch analytics config (consent, etc.) in ~/.draft/config.json. */
       setAnalyticsConfig: { params: Partial<AnalyticsConfig>; response: ActionResult };
       getPrivacy: { params: { signedIn: boolean }; response: PrivacyState };
-      setPrivacy: { params: { analytics_consent?: boolean; session_replay_enabled?: boolean }; response: ActionResult & { privacy?: PrivacyState } };
+      setPrivacy: { params: { analytics_consent: boolean }; response: ActionResult & { privacy?: PrivacyState } };
 
       /** Apply a staged update — quits + relaunches. Only valid when updateReady is true. */
       applyUpdate: { params: void; response: ActionResult };

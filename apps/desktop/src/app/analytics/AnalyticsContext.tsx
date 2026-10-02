@@ -18,16 +18,14 @@ interface AnalyticsContextValue {
     props: Extract<AnalyticsEvent, { event: E["event"] }>["props"]
   ) => void;
   privacy: PrivacyState | null;
-  /** Usage analytics only. Replay stays a separate switch. */
+  /** Usage analytics and session replay together. */
   setConsent: (granted: boolean) => Promise<void>;
-  setReplayEnabled: (enabled: boolean) => Promise<void>;
 }
 
 const AnalyticsContext = createContext<AnalyticsContextValue>({
   track: () => {},
   privacy: null,
   setConsent: async () => {},
-  setReplayEnabled: async () => {},
 });
 
 export function AnalyticsProvider({ children }: { children: ReactNode }) {
@@ -68,11 +66,10 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         optedIn.current = true;
         pendingRef.current.forEach(({ event, props }) => posthog.capture(event, props));
         pendingRef.current = [];
+        posthog.startSessionRecording();
       }
       // User id only, never email or name. Signed out: PostHog keeps its own anonymous id.
       if (next.userId) posthog.identify(next.userId);
-      if (next.sessionReplay) posthog.startSessionRecording();
-      else posthog.stopSessionRecording();
       return;
     }
     pendingRef.current = [];
@@ -100,7 +97,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     []
   ) as AnalyticsContextValue["track"];
 
-  const save = useCallback(async (patch: { analytics_consent?: boolean; session_replay_enabled?: boolean }) => {
+  const save = useCallback(async (patch: { analytics_consent: boolean }) => {
     const result = await rpc.request.setPrivacy(patch);
     if (!result.ok || !result.privacy) throw new Error(result.error ?? "Could not save your privacy choice.");
     apply(result.privacy);
@@ -111,11 +108,9 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     if (granted && optedIn.current) posthogRef.current?.capture("analytics_consent_granted", {});
   }, [save]);
 
-  const setReplayEnabled = useCallback((enabled: boolean) => save({ session_replay_enabled: enabled }), [save]);
-
   const value = useMemo(
-    () => ({ track, privacy, setConsent, setReplayEnabled }),
-    [track, privacy, setConsent, setReplayEnabled],
+    () => ({ track, privacy, setConsent }),
+    [track, privacy, setConsent],
   );
 
   return (
