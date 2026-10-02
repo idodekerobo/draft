@@ -16,6 +16,7 @@ interface FakeClientOptions {
   transcriptUpdateResult?: { error: Error | null };
   transcriptUpdateThrows?: boolean;
   rpcResult?: { status: "committed" | "stale"; new_version_id: string | null };
+  rpcThrows?: boolean;
 }
 
 /**
@@ -29,7 +30,9 @@ function createFakeClient(options: FakeClientOptions = {}) {
   const calls: {
     transcriptUpdates: Array<{ payload: Record<string, unknown>; id: string }>;
     rpcCalls: Array<{ fn: string; args: Record<string, unknown> }>;
-  } = { transcriptUpdates: [], rpcCalls: [] };
+    failedUpdates: Array<Record<string, unknown>>;
+    errorInserts: Array<Record<string, unknown>>;
+  } = { transcriptUpdates: [], rpcCalls: [], failedUpdates: [], errorInserts: [] };
 
   const runRow = { id: runId, workspace_id: workspaceId, base_context_version_id: baseVersionId };
   const baseDocuments = { "company/index.md": { content: "base content", sha256: "b".repeat(64) } };
@@ -46,12 +49,39 @@ function createFakeClient(options: FakeClientOptions = {}) {
           }),
         }),
         update: (payload: Record<string, unknown>) => ({
-          eq: async (_column: string, id: string) => {
-            calls.transcriptUpdates.push({ payload, id });
-            if (options.transcriptUpdateThrows) throw new Error("connection reset");
-            return options.transcriptUpdateResult ?? { error: null };
+          eq: (_column: string, id: string) => {
+            // failSynthesisRun's conditional update: .eq().in().select()
+            const failure = {
+              in: () => ({
+                select: async () => {
+                  calls.failedUpdates.push(payload);
+                  return {
+                    data: [{ workspace_id: workspaceId, scheduled_task_id: null, attempt: 1, retry_of_run_id: null, sandbox_machine_id: "machine-1" }],
+                    error: null,
+                  };
+                },
+              }),
+            };
+            // Transcript update: awaited directly after .eq().
+            const transcript = async () => {
+              calls.transcriptUpdates.push({ payload, id });
+              if (options.transcriptUpdateThrows) throw new Error("connection reset");
+              return options.transcriptUpdateResult ?? { error: null };
+            };
+            return Object.assign(failure, {
+              then: (resolve: (value: unknown) => void, reject: (reason: unknown) => void) =>
+                transcript().then(resolve, reject),
+            });
           },
         }),
+      };
+    }
+    if (table === "errors") {
+      return {
+        insert: async (payload: Record<string, unknown>) => {
+          calls.errorInserts.push(payload);
+          return { error: null };
+        },
       };
     }
     if (table === "workspace_context_versions") {
@@ -68,6 +98,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
 
   async function rpc(fn: string, args: Record<string, unknown>) {
     calls.rpcCalls.push({ fn, args });
+    if (options.rpcThrows) throw new Error("commit exploded");
     return { data: options.rpcResult ?? { status: "committed", new_version_id: "66666666-6666-4666-8666-666666666666" }, error: null };
   }
 
@@ -111,23 +142,22 @@ describe("completeSynthesisRunCallback transcript persistence", () => {
     expect(calls.rpcCalls).toHaveLength(1);
   });
 
-  it("writes transcript_json even when validation fails (runner-reported claude_error)", async () => {
+  it("writes transcript_json even when the runner reports a failure (claude_error)", async () => {
     const { client, calls } = createFakeClient();
     const transcript = [{ type: "system" }, { type: "result", is_error: true }];
 
-    await expect(
-      completeSynthesisRunCallback(
-        callbackRequest({
-          run_id: runId,
-          bundle_hash: bundleHash,
-          result: { error: "claude_error", diagnostics: { failureCode: "claude_error" } },
-          transcript,
-        }),
-        secret,
-        client,
-      ),
-    ).rejects.toThrow("invalid outcome: undefined");
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({
+        run_id: runId,
+        bundle_hash: bundleHash,
+        result: { error: "claude_error", diagnostics: { failureCode: "claude_error" } },
+        transcript,
+      }),
+      secret,
+      client,
+    );
 
+    expect(response.status).toBe(204);
     expect(calls.transcriptUpdates).toEqual([{ payload: { transcript_json: transcript }, id: runId }]);
     expect(calls.rpcCalls).toHaveLength(0);
   });
@@ -185,5 +215,73 @@ describe("completeSynthesisRunCallback transcript persistence", () => {
 
     expect(response.status).toBe(204);
     expect(calls.transcriptUpdates).toHaveLength(0);
+  });
+});
+
+describe("completeSynthesisRunCallback failure handling", () => {
+  it("fails the run once and answers 204 for a runner-reported failure", async () => {
+    const { client, calls } = createFakeClient();
+
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({
+        run_id: runId,
+        bundle_hash: bundleHash,
+        result: { error: "claude_exit", diagnostics: { signal: "SIGKILL" } },
+      }),
+      secret,
+      client,
+    );
+
+    expect(response.status).toBe(204);
+    expect(calls.failedUpdates).toHaveLength(1);
+    expect(calls.failedUpdates[0]).toMatchObject({ status: "failed", outcome: "failure" });
+    expect(calls.errorInserts).toHaveLength(1);
+    expect(calls.errorInserts[0]).toMatchObject({ synthesis_run_id: runId, operation: "execution" });
+    expect(calls.errorInserts[0].detail_json).toMatchObject({
+      code: "synthesis_runner_failed",
+      runner_failure_code: "claude_exit",
+      attempt: 1,
+      max_fast_retries: 3,
+      sandbox_machine_id: "machine-1",
+    });
+    expect(calls.rpcCalls).toHaveLength(0);
+  });
+
+  it("fails the run and answers 204 when the result fails validation", async () => {
+    const { client, calls } = createFakeClient();
+
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({
+        run_id: runId,
+        bundle_hash: bundleHash,
+        result: { outcome: "changed", summary: "x", documents: { "not-in-allowlist.md": "y" } },
+      }),
+      secret,
+      client,
+    );
+
+    expect(response.status).toBe(204);
+    expect(calls.failedUpdates).toHaveLength(1);
+    expect(calls.errorInserts).toHaveLength(1);
+    expect(calls.errorInserts[0]).toMatchObject({ operation: "validation" });
+    expect(calls.errorInserts[0].detail_json).toMatchObject({ code: "synthesis_result_invalid" });
+  });
+
+  it("still throws on a commit failure so the runner retries the callback", async () => {
+    const { client, calls } = createFakeClient({ rpcThrows: true });
+
+    await expect(
+      completeSynthesisRunCallback(
+        callbackRequest({
+          run_id: runId,
+          bundle_hash: bundleHash,
+          result: { outcome: "no_change", summary: "nothing changed" },
+        }),
+        secret,
+        client,
+      ),
+    ).rejects.toThrow("commit exploded");
+
+    expect(calls.failedUpdates).toHaveLength(0);
   });
 });

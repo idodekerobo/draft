@@ -6,8 +6,8 @@ import {
 } from "../sandbox";
 import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
 import { commitSynthesisResult } from "./commit-result";
+import { failSynthesisRun } from "./handle-run-failure";
 import {
-  markRunFailed,
   markRunLaunched,
   OccurrenceAlreadyDispatchedError,
   prepareRun,
@@ -17,6 +17,7 @@ import { resolveInferenceCredential } from "./resolve-credential";
 import type {
   LaunchSynthesisRunOptions,
   LaunchSynthesisRunResult,
+  ValidatedSynthesisResult,
 } from "./types";
 import { validateSynthesisResult } from "./validate-result";
 import { recordError } from "../errors/record-error";
@@ -83,19 +84,31 @@ export async function launchSynthesisRun(
     // Not a failure -- another dispatch already claimed this occurrence.
     if (error instanceof OccurrenceAlreadyDispatchedError) throw error;
 
-    await recordError({
-      client,
-      workspaceId: options.workspaceId,
-      scheduledTaskId: options.scheduledTaskId,
-      synthesisRunId: runId,
-      operation: stage === "preparation" || stage === "bundle" ? "queue" : "execution",
-      message: `Synthesis launch failed during ${stage}`,
-      code: `synthesis_launch_${stage}_failed`,
-      detail: { stage, trigger_type: options.triggerType },
-      error,
-    });
+    const operation = stage === "preparation" || stage === "bundle" ? "queue" : "execution";
+    const message = `Synthesis launch failed during ${stage}`;
+    const code = `synthesis_launch_${stage}_failed`;
+    const detail = { stage, trigger_type: options.triggerType };
     if (runId) {
-      await markRunFailed(runId, `Synthesis launch failed during ${stage}`, options.client);
+      await failSynthesisRun({
+        client,
+        runId,
+        failureCode: code,
+        operation,
+        reason: message,
+        error,
+        detail,
+      });
+    } else {
+      await recordError({
+        client,
+        workspaceId: options.workspaceId,
+        scheduledTaskId: options.scheduledTaskId,
+        operation,
+        message,
+        code,
+        detail,
+        error,
+      });
     }
     throw error;
   }
@@ -115,11 +128,6 @@ export async function completeSynthesisRunCallback(
   let stage = "callback_auth";
   let runId: string | undefined;
   let workspaceId: string | null = null;
-  // Captured pre-validation so a runner-reported failure (which has no
-  // `outcome` field and makes validateSynthesisResult throw) still ends up
-  // in the persisted error's detail, instead of being replaced entirely by
-  // the generic "invalid outcome: undefined" validation error.
-  let runnerReportedResult: Record<string, unknown> | undefined;
   try {
     const headerRunId = request.headers.get("x-draft-run-id");
     if (headerRunId) {
@@ -153,17 +161,39 @@ export async function completeSynthesisRunCallback(
       }
     }
 
+    // A runner-reported failure and an invalid result are final: fail the run
+    // once and answer 204 so the runner stops retrying the callback.
     if (typeof authenticated.result === "object" && authenticated.result !== null) {
       const result = authenticated.result as Record<string, unknown>;
-      if ("error" in result) runnerReportedResult = result;
+      if ("error" in result) {
+        const runnerCode = String(result.error);
+        await failSynthesisRun({
+          client: resolvedClient,
+          runId,
+          failureCode: "synthesis_runner_failed",
+          operation: "execution",
+          reason: `Synthesis runner reported a failure: ${runnerCode}`,
+          detail: { runner_failure_code: runnerCode, runner_reported_result: result },
+        });
+        return new Response(null, { status: 204 });
+      }
     }
 
     stage = "validation";
-    const validated = await validateSynthesisResult(
-      runId,
-      authenticated.result,
-      client,
-    );
+    let validated: ValidatedSynthesisResult;
+    try {
+      validated = await validateSynthesisResult(runId, authenticated.result, client);
+    } catch (validationError) {
+      await failSynthesisRun({
+        client: resolvedClient,
+        runId,
+        failureCode: "synthesis_result_invalid",
+        operation: "validation",
+        reason: "Synthesis result failed validation",
+        error: validationError,
+      });
+      return new Response(null, { status: 204 });
+    }
     // validateSynthesisResult's frozen signature (runId, rawResult, client?) has
     // no way to receive the bundle hash, so it returns a placeholder. The real
     // value is only available here, from the authenticated callback request —
@@ -182,7 +212,7 @@ export async function completeSynthesisRunCallback(
       operation: stage === "validation" ? "validation" : stage === "commit" ? "commit" : "auth",
       message: `Synthesis callback failed during ${stage}`,
       code: `synthesis_${stage}_failed`,
-      detail: { stage, ...(runnerReportedResult ? { runner_reported_result: runnerReportedResult } : {}) },
+      detail: { stage },
       error,
     });
     throw error;

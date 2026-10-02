@@ -5,6 +5,7 @@ import { canonicalDocumentsHash } from "./context-version-files";
 import { computeMemoryAdditions, ensureMemoryProvisioned } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";
+import { getLatestSynthesisRun } from "./latest-run";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type {
   SourceItemRow,
@@ -42,7 +43,14 @@ export class OccurrenceAlreadyDispatchedError extends Error {
 export async function prepareRun(
   options: Pick<
     LaunchSynthesisRunOptions,
-    "workspaceId" | "triggerType" | "sourceItemIds" | "scheduledTaskId" | "occurrenceAt" | "client" | "now"
+    | "workspaceId"
+    | "triggerType"
+    | "sourceItemIds"
+    | "scheduledTaskId"
+    | "occurrenceAt"
+    | "retryOfRunId"
+    | "client"
+    | "now"
   >,
 ): Promise<string> {
   const client =
@@ -169,12 +177,20 @@ export async function prepareRun(
 
   // {scheduled_task_id}:{occurrence_at} so duplicate dispatches of the same
   // occurrence collide on one key; {trigger_type}:{uuid} otherwise.
-  if (options.scheduledTaskId && !options.occurrenceAt) {
+  // retry:{failed_run_id} so a failed run gets at most one retry.
+  if (!options.retryOfRunId && options.scheduledTaskId && !options.occurrenceAt) {
     throw new Error("prepareRun: scheduledTaskId requires occurrenceAt for a stable idempotency key");
   }
-  const idempotencyKey = options.scheduledTaskId
-    ? `${options.scheduledTaskId}:${options.occurrenceAt}`
-    : `${options.triggerType}:${randomUUID()}`;
+  const idempotencyKey = options.retryOfRunId
+    ? `retry:${options.retryOfRunId}`
+    : options.scheduledTaskId
+      ? `${options.scheduledTaskId}:${options.occurrenceAt}`
+      : `${options.triggerType}:${randomUUID()}`;
+
+  // Counts consecutive failures: a failed latest run continues the streak,
+  // anything else (success, no runs yet) starts a new one.
+  const latestRun = await getLatestSynthesisRun(client, options.workspaceId);
+  const attempt = latestRun?.status === "failed" ? latestRun.attempt + 1 : 1;
 
   // "preparing", not "queued": synthesis_runs_one_active_writer only guards
   // preparing/running/validating/committing, so the row is protected from
@@ -188,7 +204,8 @@ export async function prepareRun(
       status: "preparing",
       trigger_type: options.triggerType,
       base_context_version_id: baseContextVersionId,
-      attempt: 1,
+      attempt,
+      retry_of_run_id: options.retryOfRunId ?? null,
       prompt_version: PROMPT_VERSION,
     })
     .select("id")
@@ -241,7 +258,6 @@ export async function markRunLaunched(
   receipt: FlySandboxRunReceipt,
   client?: SupabaseClient,
 ): Promise<void> {
-  void receipt;
   const resolvedClient =
     client ?? (await import("../db/client")).serviceClient;
 
@@ -250,29 +266,7 @@ export async function markRunLaunched(
     .update({
       status: "running",
       started_at: new Date().toISOString(),
-    })
-    .eq("id", runId);
-  if (error) throw error;
-}
-
-// Marks a run failed immediately rather than leaving it stuck in an
-// active-writer status until the 30-minute stale sweep catches it. Mirrors
-// the fields sweepStaleSynthesisRuns sets on its bulk update.
-export async function markRunFailed(
-  runId: string,
-  reason: string,
-  client?: SupabaseClient,
-): Promise<void> {
-  const resolvedClient =
-    client ?? (await import("../db/client")).serviceClient;
-
-  const { error } = await resolvedClient
-    .from("synthesis_runs")
-    .update({
-      status: "failed",
-      outcome: "failure",
-      result_summary: reason,
-      completed_at: new Date().toISOString(),
+      sandbox_machine_id: receipt.machineId,
     })
     .eq("id", runId);
   if (error) throw error;
