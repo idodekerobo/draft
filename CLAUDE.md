@@ -71,8 +71,9 @@ for the exact commands.
   unless I name prod explicitly.
 - Run the app for manual testing with `make run-local` (staging by default).
   Prod is `make run-local env=production`, only when I ask.
-- Leave the CLI linked to prod when a session ends
-  (`scripts/supabase-target.sh prod`).
+- Leave the CLI linked to staging when a session ends
+  (`scripts/supabase-target.sh staging`). Switch to prod only for an approved
+  prod step, then switch back.
 
 ## Fly sandbox image
 

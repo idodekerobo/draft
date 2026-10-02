@@ -68,7 +68,7 @@ user explicitly names prod.
 5. Update `db/schemas/`, `db/functions/`, `db/storage/` by hand.
 6. Get explicit user approval, then `scripts/supabase-target.sh prod`,
    dry-run, push.
-7. Leave the CLI linked to **prod** when done (`scripts/supabase-target.sh prod`).
+7. Leave the CLI linked to **staging** when done (`scripts/supabase-target.sh staging`).
    Always run `status` at the end of the session.
 
 ## 5. What `db push` does NOT carry to a new environment
