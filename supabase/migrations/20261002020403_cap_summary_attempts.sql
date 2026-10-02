@@ -1,9 +1,7 @@
--- Claims up to p_limit sessions eligible for summarization: pending, or
--- leased with an expired lease (a worker crashed mid-run), or failed with
--- fewer than 3 attempts. Sessions whose lease expired after 3 attempts are
--- marked skipped first, so no session is retried more than 3 times.
--- Locks eligible rows with SKIP LOCKED so concurrent callers never
--- double-claim, then marks them leased with a fresh expiry.
+-- Cap summarization attempts at 3 for expired leases too. Previously only
+-- 'failed' rows were capped, so a run that never reported per-session results
+-- re-claimed the same sessions forever. Sessions that exhausted their attempts
+-- on an expired lease are now marked 'skipped' before claiming.
 create or replace function claim_pending_summary_sessions(
   p_workspace_id uuid,
   p_limit int,
