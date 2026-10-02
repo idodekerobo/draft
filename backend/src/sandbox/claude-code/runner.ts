@@ -49,7 +49,8 @@ export type RunnerFailureCode =
   | "claude_error"
   | "claude_exit"
   | "incomplete_result"
-  | "bundle_fetch_failed";
+  | "bundle_fetch_failed"
+  | "runner_error";
 
 export interface FinalDiagnosticInput {
   timedOut: boolean;
@@ -105,6 +106,24 @@ export function buildFailureDiagnostics(
 
 function runnerLog(event: string, fields: Record<string, unknown> = {}): void {
   console.error(JSON.stringify({ source: "claude_runner", event, ...fields }));
+}
+
+export class CallbackDeliveryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CallbackDeliveryError";
+  }
+}
+
+// Failure reasons reach logs and the backend errors table, so strip anything
+// that can carry a credential: the callback token, bearer values, signed URLs.
+export function sanitizeReason(error: unknown, token = ""): string {
+  let text = error instanceof Error ? error.message : String(error);
+  if (token) text = text.split(token).join("[REDACTED]");
+  text = text
+    .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+    .replace(/(https?:\/\/[^\s?]+)\?\S*/g, "$1");
+  return text.slice(0, 300);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -279,15 +298,15 @@ async function stopChild(child: ReturnType<typeof import("node:child_process")["
   }
 }
 
-async function callback(
+export async function callback(
   url: string,
   token: string,
   runId: string,
   bundleHash: string,
   body: unknown,
   transcript: unknown[] | undefined,
+  delays: number[] = [0, 1_000, 3_000, 7_000],
 ): Promise<void> {
-  const delays = [0, 1_000, 3_000, 7_000];
   let lastError = "callback failed";
   for (let attempt = 0; attempt < delays.length; attempt += 1) {
     if (delays[attempt]) await new Promise((resolveDelay) => setTimeout(resolveDelay, delays[attempt]));
@@ -341,7 +360,41 @@ async function callback(
       lastError = "callback transport failed";
     }
   }
-  throw new Error(lastError);
+  throw new CallbackDeliveryError(lastError);
+}
+
+export interface RunnerContext {
+  runId: string;
+  bundleHash: string;
+  callbackUrl: string;
+  callbackToken: string;
+}
+
+// Never throws and skips reportAndExit: that path does root-only chown and
+// writes /run/output, which may be exactly what failed.
+export async function reportRunnerFailure(
+  ctx: RunnerContext,
+  error: unknown,
+  delays?: number[],
+): Promise<void> {
+  const reason = sanitizeReason(error, ctx.callbackToken);
+  runnerLog("runner_error", { run_id: ctx.runId, reason });
+  try {
+    await callback(
+      ctx.callbackUrl,
+      ctx.callbackToken,
+      ctx.runId,
+      ctx.bundleHash,
+      { error: "runner_error", diagnostics: { reason } },
+      undefined,
+      delays,
+    );
+  } catch (callbackError) {
+    runnerLog("runner_error_callback_failed", {
+      run_id: ctx.runId,
+      reason: sanitizeReason(callbackError, ctx.callbackToken),
+    });
+  }
 }
 
 async function reportAndExit(input: {
@@ -354,10 +407,18 @@ async function reportAndExit(input: {
   bundleHash: string;
   transcript?: unknown[];
 }): Promise<void> {
-  mkdirSync("/run/output", { recursive: true });
-  chownSync("/run/output", 0, 0);
-  chmodSync("/run/output", 0o750);
-  atomicWriteJson(OUTPUT_PATH, input.finalResult);
+  try {
+    mkdirSync("/run/output", { recursive: true });
+    chownSync("/run/output", 0, 0);
+    chmodSync("/run/output", 0o750);
+    atomicWriteJson(OUTPUT_PATH, input.finalResult);
+  } catch (writeError) {
+    // The callback is the source of truth; a local output file must not block it.
+    runnerLog("output_write_failed", {
+      run_id: input.runId,
+      reason: sanitizeReason(writeError, input.callbackToken),
+    });
+  }
   await callback(
     input.callbackUrl,
     input.callbackToken,
@@ -588,7 +649,7 @@ export function parseBatchManifest(raw: string): BatchManifestEntry[] {
   return entries.slice(0, MAX_BATCH_ENTRIES);
 }
 
-async function runBatch(input: {
+export interface RunBatchInput {
   runId: string;
   bundleHash: string;
   manifestPath: string;
@@ -598,7 +659,15 @@ async function runBatch(input: {
   timeoutMs: number;
   callbackUrl: string;
   callbackToken: string;
-}): Promise<void> {
+}
+
+export async function runBatch(
+  input: RunBatchInput,
+  deps: { runClaudeOnce: typeof runClaudeOnce; reportAndExit: typeof reportAndExit } = {
+    runClaudeOnce,
+    reportAndExit,
+  },
+): Promise<void> {
   if (!existsSync(input.manifestPath) || !resolve(input.manifestPath).startsWith(`${input.inputRoot}/`)) {
     throw new Error("DRAFT_MANIFEST_PATH must name a file beneath /run/input");
   }
@@ -612,30 +681,41 @@ async function runBatch(input: {
       break;
     }
 
-    const promptTarget = join(input.bundleRoot, entry.promptPath);
-    assertWithinInputRoot(promptTarget, input.inputRoot, entry.promptPath);
-    if (!existsSync(promptTarget)) {
-      items.push({ sessionId: entry.id, ok: false, error: { error: "prompt_missing" } });
-      continue;
-    }
-    const prompt = readFileSync(promptTarget, "utf8");
+    // One session that throws must not discard the others' results.
+    try {
+      const promptTarget = join(input.bundleRoot, entry.promptPath);
+      assertWithinInputRoot(promptTarget, input.inputRoot, entry.promptPath);
+      if (!existsSync(promptTarget)) {
+        items.push({ sessionId: entry.id, ok: false, error: { error: "prompt_missing" } });
+        continue;
+      }
+      const prompt = readFileSync(promptTarget, "utf8");
 
-    const scratchStdoutPath = `/run/scratch/claude.stdout.${index}.json`;
-    const result = await runClaudeOnce(
-      prompt,
-      input.serializedSchema,
-      input.timeoutMs,
-      input.runId,
-      scratchStdoutPath,
-    );
-    items.push(
-      result.success
-        ? { sessionId: entry.id, ok: true, payload: result.finalResult }
-        : { sessionId: entry.id, ok: false, error: result.finalResult },
-    );
+      const scratchStdoutPath = `/run/scratch/claude.stdout.${index}.json`;
+      const result = await deps.runClaudeOnce(
+        prompt,
+        input.serializedSchema,
+        input.timeoutMs,
+        input.runId,
+        scratchStdoutPath,
+      );
+      items.push(
+        result.success
+          ? { sessionId: entry.id, ok: true, payload: result.finalResult }
+          : { sessionId: entry.id, ok: false, error: result.finalResult },
+      );
+    } catch (sessionError) {
+      const reason = sanitizeReason(sessionError, input.callbackToken);
+      runnerLog("batch_session_error", { run_id: input.runId, session_id: entry.id, reason });
+      items.push({
+        sessionId: entry.id,
+        ok: false,
+        error: { error: "runner_error", diagnostics: { reason } },
+      });
+    }
   }
 
-  await reportAndExit({
+  await deps.reportAndExit({
     finalResult: { items },
     success: true,
     failureCode: "none",
@@ -646,14 +726,32 @@ async function runBatch(input: {
   });
 }
 
+// Only the callback identifiers are parsed outside the try: without them no
+// failure can be reported. Everything after reports through reportRunnerFailure.
 export async function main(): Promise<void> {
   const runId = required("DRAFT_RUN_ID");
   const bundleHash = required("DRAFT_BUNDLE_HASH");
   if (!/^[0-9a-f]{64}$/.test(bundleHash)) {
     throw new Error("DRAFT_BUNDLE_HASH must be lowercase SHA-256");
   }
-  const callbackUrl = required("DRAFT_CALLBACK_URL");
-  const callbackToken = required("DRAFT_CALLBACK_TOKEN");
+  const ctx: RunnerContext = {
+    runId,
+    bundleHash,
+    callbackUrl: required("DRAFT_CALLBACK_URL"),
+    callbackToken: required("DRAFT_CALLBACK_TOKEN"),
+  };
+  try {
+    await runMainBody(ctx);
+  } catch (error) {
+    // A failed callback was already logged by callback(); don't post again.
+    if (!(error instanceof CallbackDeliveryError)) await reportRunnerFailure(ctx, error);
+    runnerLog("final", { run_id: runId, status: "failed", failure_code: "runner_error" });
+    process.exitCode = 1;
+  }
+}
+
+async function runMainBody(ctx: RunnerContext): Promise<void> {
+  const { runId, bundleHash, callbackUrl, callbackToken } = ctx;
   const bundleUrl = required("DRAFT_BUNDLE_URL");
   new URL(bundleUrl);
   const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
@@ -679,17 +777,10 @@ export async function main(): Promise<void> {
   try {
     await fetchAndWriteBundle(bundleUrl, bundleHash, inputRoot, bundleRoot, reservedPaths);
   } catch (fetchError) {
-    runnerLog("bundle_fetch_failed", {
-      run_id: runId,
-      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
-    });
+    const reason = sanitizeReason(fetchError, callbackToken);
+    runnerLog("bundle_fetch_failed", { run_id: runId, error: reason });
     await reportAndExit({
-      finalResult: {
-        error: "bundle_fetch_failed",
-        diagnostics: {
-          reason: fetchError instanceof Error ? fetchError.message : String(fetchError),
-        },
-      },
+      finalResult: { error: "bundle_fetch_failed", diagnostics: { reason } },
       success: false,
       failureCode: "bundle_fetch_failed",
       callbackUrl,
@@ -756,7 +847,9 @@ export async function main(): Promise<void> {
 
 const invokedPath = process.argv[1] ? realpathSync(resolve(process.argv[1])) : "";
 if (realpathSync(fileURLToPath(import.meta.url)) === invokedPath) {
-  main().catch(() => {
+  // Reached only when a callback identifier is missing, so no callback is possible.
+  main().catch((error) => {
+    runnerLog("runner_error", { reason: sanitizeReason(error) });
     runnerLog("final", { status: "failed", failure_code: "runner_error" });
     process.exitCode = 1;
   });

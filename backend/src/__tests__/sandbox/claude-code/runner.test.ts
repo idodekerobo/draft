@@ -1,11 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   assertWithinInputRoot,
   buildFailureDiagnostics,
+  callback,
   classifyClaudeEnvelopeFailure,
   classifyClaudeFailureChunk,
   extractStructuredOutput,
@@ -18,6 +19,9 @@ import {
   readOutputSchema,
   parseTimeoutSeconds,
   recomputeBundleHash,
+  reportRunnerFailure,
+  runBatch,
+  sanitizeReason,
   sanitizedClaudeEnv,
   shouldRetryCallback,
 } from "../../../sandbox/claude-code/runner";
@@ -337,5 +341,189 @@ describe("batch manifest parsing", () => {
     expect(() => parseBatchManifest("{}")).toThrow("must be a JSON array");
     expect(() => parseBatchManifest('[{"id":"x"}]')).toThrow("promptPath");
     expect(() => parseBatchManifest('[{"id":"","promptPath":"p"}]')).toThrow("promptPath");
+  });
+});
+
+const NO_DELAYS = [0, 0, 0, 0];
+const FAILURE_CTX = {
+  runId: "run-1",
+  bundleHash: "a".repeat(64),
+  callbackUrl: "https://api.example.test/sandbox/callback",
+  callbackToken: "secret-token-value",
+};
+
+async function withFetch<T>(
+  handler: (url: string, init: RequestInit) => Response | Promise<Response>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: RequestInit) =>
+    handler(url, init)) as unknown as typeof fetch;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+describe("sanitizeReason", () => {
+  test("redacts the token, bearer values and URL query strings, then truncates", () => {
+    const error = new Error(
+      "fetch failed https://x.test/bundle?token=abc&sig=def with Bearer eyJhbGci and secret-token-value",
+    );
+    const reason = sanitizeReason(error, "secret-token-value");
+    expect(reason).not.toContain("abc");
+    expect(reason).not.toContain("eyJhbGci");
+    expect(reason).not.toContain("secret-token-value");
+    expect(reason).toContain("https://x.test/bundle");
+    expect(sanitizeReason("x".repeat(500))).toHaveLength(300);
+  });
+
+  test("accepts non-Error throws", () => {
+    expect(sanitizeReason("plain string failure")).toBe("plain string failure");
+  });
+});
+
+describe("reportRunnerFailure", () => {
+  test("posts a runner_error failure body with the run identity headers and no transcript", async () => {
+    let seen: { url: string; init: RequestInit } | undefined;
+    await withFetch(
+      (url, init) => {
+        seen = { url, init };
+        return new Response(null, { status: 204 });
+      },
+      () => reportRunnerFailure(FAILURE_CTX, new Error("boom"), NO_DELAYS),
+    );
+    expect(seen?.url).toBe(FAILURE_CTX.callbackUrl);
+    const headers = seen?.init.headers as Record<string, string>;
+    expect(headers.authorization).toBe(`Bearer ${FAILURE_CTX.callbackToken}`);
+    expect(headers["x-draft-run-id"]).toBe("run-1");
+    expect(headers["idempotency-key"]).toBe(`draft:run-1:${FAILURE_CTX.bundleHash}`);
+    expect(JSON.parse(seen?.init.body as string)).toEqual({
+      run_id: "run-1",
+      bundle_hash: FAILURE_CTX.bundleHash,
+      result: { error: "runner_error", diagnostics: { reason: "boom" } },
+    });
+  });
+
+  test("logs the real error message", async () => {
+    const spy = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await withFetch(
+        () => new Response(null, { status: 204 }),
+        () => reportRunnerFailure(FAILURE_CTX, new Error("manifest exploded"), NO_DELAYS),
+      );
+      const logged = spy.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).toContain('"event":"runner_error"');
+      expect(logged).toContain("manifest exploded");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("never throws when every callback attempt fails", async () => {
+    const spy = spyOn(console, "error").mockImplementation(() => undefined);
+    let calls = 0;
+    try {
+      await withFetch(
+        () => {
+          calls += 1;
+          throw new Error("network down");
+        },
+        () => reportRunnerFailure(FAILURE_CTX, new Error("boom"), NO_DELAYS),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(calls).toBe(4);
+  });
+});
+
+describe("callback retries", () => {
+  test("retries a 5xx and stops at the first success", async () => {
+    const statuses = [500, 200];
+    let calls = 0;
+    await withFetch(
+      () => new Response(null, { status: statuses[calls++] }),
+      () => callback("https://x.test/cb", "t", "run-1", "b".repeat(64), {}, undefined, NO_DELAYS),
+    );
+    expect(calls).toBe(2);
+  });
+
+  test("does not retry a 4xx and throws a delivery error", async () => {
+    let calls = 0;
+    await withFetch(
+      () => {
+        calls += 1;
+        return new Response(null, { status: 400 });
+      },
+      async () => {
+        await expect(
+          callback("https://x.test/cb", "t", "run-1", "b".repeat(64), {}, undefined, NO_DELAYS),
+        ).rejects.toThrow("callback returned HTTP 400");
+      },
+    );
+    expect(calls).toBe(1);
+  });
+});
+
+describe("runBatch", () => {
+  test("a session that throws becomes a failed item and the others still report", async () => {
+    const bundleRoot = mkdtempSync(join(tmpdir(), "draft-batch-"));
+    const inputRoot = join(bundleRoot, "input");
+    for (const id of ["a", "b"]) {
+      mkdirSync(join(inputRoot, "sessions", id), { recursive: true });
+      writeFileSync(join(inputRoot, "sessions", id, "prompt.md"), `prompt ${id}`);
+    }
+    const manifestPath = join(inputRoot, "manifest.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify([
+        { id: "a", promptPath: "input/sessions/a/prompt.md" },
+        { id: "b", promptPath: "input/sessions/b/prompt.md" },
+      ]),
+    );
+
+    let reported: { finalResult: unknown } | undefined;
+    let call = 0;
+    const spy = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await runBatch(
+        {
+          runId: "run-1",
+          bundleHash: "c".repeat(64),
+          manifestPath,
+          serializedSchema: "{}",
+          inputRoot,
+          bundleRoot,
+          timeoutMs: 1_000,
+          callbackUrl: "https://x.test/cb",
+          callbackToken: "tok",
+        },
+        {
+          runClaudeOnce: (async () => {
+            call += 1;
+            if (call === 1) throw new Error("spawn gosu ENOENT");
+            return { success: true, finalResult: { who: "ido" } };
+          }) as never,
+          reportAndExit: (async (input: { finalResult: unknown }) => {
+            reported = input;
+          }) as never,
+        },
+      );
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(reported?.finalResult).toEqual({
+      items: [
+        {
+          sessionId: "a",
+          ok: false,
+          error: { error: "runner_error", diagnostics: { reason: "spawn gosu ENOENT" } },
+        },
+        { sessionId: "b", ok: true, payload: { who: "ido" } },
+      ],
+    });
   });
 });
