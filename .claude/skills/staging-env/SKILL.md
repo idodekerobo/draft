@@ -81,9 +81,19 @@ Set in that env's `.env.*` file, and use a distinct value from prod:
 - `BETTER_AUTH_DATABASE_URL` (direct Postgres string), `BETTER_AUTH_SECRET`
 - `INFERENCE_CREDENTIAL_KEK_V1`
 
-## 6. Known gap: shared third-party resources
+## 6. Staging Fly sandbox
+
+Staging has its own Fly app, `draft-sandbox-staging`, with its own image
+(`FLY_APP_NAME` and `FLY_SANDBOX_IMAGE` in `.env.staging`). Sandbox runs from
+staging no longer touch the prod Fly app. When the runner or the backend-runner
+contract changes, rebuild the staging image first with the `fly-sandbox-image`
+skill, test there, then do prod. The sandbox calls back to `DRAFT_API_BASE_URL`,
+so staging needs a reachable HTTPS tunnel to your local backend.
+
+## 7. Known gap: shared third-party resources
 
 `.env.staging` was cloned from the prod env file. These may still point at prod:
-GitHub App, Fly app/image/token, Slack, `DRAFT_API_BASE_URL` tunnel.
-Seeding fake data is safe. Triggering real synthesis runs, webhooks or Fly
-sandboxes from staging uses prod's accounts. Point them at test resources first.
+GitHub App, Slack, `DRAFT_API_BASE_URL` tunnel, and the Fly API token (one
+personal-org token covers both Fly apps). Seeding fake data is safe. Triggering
+webhooks or real integrations from staging uses prod's accounts. Point them at
+test resources first.

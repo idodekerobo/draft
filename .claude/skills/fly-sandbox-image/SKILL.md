@@ -49,6 +49,14 @@ Work from the env file of the environment you are changing (see the
 Never build into one app and point another environment at it unless the user
 says so.
 
+| Environment | Fly app | Env file |
+|---|---|---|
+| production | `draft-sandbox-prod` | `.env.production` (and Railway) |
+| staging | `draft-sandbox-staging` | `.env.staging` |
+
+Do staging first, check it, then production. The same code builds the same
+digest in both apps, so a matching digest confirms they run the same image.
+
 New environment: pick a name and confirm it with the user before
 `fly apps create` (not obviously reversible).
 
