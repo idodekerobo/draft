@@ -70,6 +70,15 @@ staging deliberately. Invoke the `staging-env` skill for the exact commands.
 - Leave the CLI linked to prod when a session ends
   (`scripts/supabase-target.sh prod`).
 
+## Fly sandbox image
+
+A backend deploy does not rebuild the Fly sandbox image. Each environment keeps
+running the image its config points to, so old runner code can outlive a deploy.
+Invoke the `fly-sandbox-image` skill when you change `backend/src/sandbox/claude-code/`
+or what the backend sends to or expects from the runner. The change is not done
+until the skill's steps are complete. Switching an environment to a new image
+needs my explicit approval.
+
 <!-- draft:begin (managed by Draft — do not edit this block) -->
 ## Draft context
 
