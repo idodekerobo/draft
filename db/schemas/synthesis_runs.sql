@@ -19,6 +19,8 @@ create table synthesis_runs (
   -- Full stream-json transcript (array of message objects) from the sandbox
   -- run, captured on both success and failure.
   transcript_json               jsonb,
+  -- Fly machine id of the sandbox that ran this synthesis.
+  sandbox_machine_id            text,
   needs_input_json              jsonb,
   needs_input_resolution        text,
   needs_input_resolved_at       timestamptz,
