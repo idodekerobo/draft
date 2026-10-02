@@ -9,13 +9,13 @@ export const metadata: Metadata = {
 
 export default function SupportPage() {
   return (
-    <main>
+    <main className="information-page">
       <Nav />
       <div
         style={{
           maxWidth: "680px",
           margin: "0 auto",
-          padding: "6rem 2rem 4rem",
+          padding: "3rem 1.25rem 5rem",
         }}
       >
         <h1
@@ -39,8 +39,8 @@ export default function SupportPage() {
             marginBottom: "2.5rem",
           }}
         >
-          Have a question, found a bug, or need help getting started? We're here
-          for you. Send us an email and we'll get back to you as soon as possible.
+          Have a question, found a bug, or need help getting started? We&apos;re here
+          for you. Send us an email and we&apos;ll get back to you as soon as possible.
         </p>
 
         <div
@@ -65,7 +65,7 @@ export default function SupportPage() {
             Email us
           </span>
           <a
-            href="mailto:idode.kerobo@gmail.com"
+            href="mailto:idode@draftai.us"
             style={{
               fontFamily: "var(--font-body)",
               fontSize: "1rem",
@@ -74,7 +74,7 @@ export default function SupportPage() {
               fontWeight: 500,
             }}
           >
-            idode.kerobo@gmail.com
+            idode@draftai.us
           </a>
         </div>
       </div>

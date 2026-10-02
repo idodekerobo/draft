@@ -31,6 +31,7 @@ const pStyle: React.CSSProperties = {
 };
 
 const ulStyle: React.CSSProperties = {
+  listStyleType: "disc",
   paddingLeft: "1.25rem",
   marginBottom: "1rem",
   display: "flex",
@@ -40,14 +41,14 @@ const ulStyle: React.CSSProperties = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <main>
+    <main className="information-page">
       <Nav />
 
       <section
         style={{
           maxWidth: "760px",
           margin: "0 auto",
-          padding: "8rem 2rem 6rem",
+          padding: "3rem 1.25rem 5rem",
         }}
       >
         {/* Header */}
@@ -100,10 +101,10 @@ export default function PrivacyPolicyPage() {
         >
           <h2 style={h2Style}>1. Introduction</h2>
           <p style={pStyle}>
-            Welcome to Product Manager Agent, operated by Idode Kerobo (sole proprietor) ("we," "us," or
-            "our"). This Privacy Policy explains how we collect, use, disclose, and safeguard your
+            Welcome to Product Manager Agent, operated by Idode Kerobo (sole proprietor) (&quot;we,&quot; &quot;us,&quot; or
+            &quot;our&quot;). This Privacy Policy explains how we collect, use, disclose, and safeguard your
             information when you use our AI-powered product management agent and related services
-            (collectively, the "Service"). By accessing or using the Service, you agree to the terms of
+            (collectively, the &quot;Service&quot;). By accessing or using the Service, you agree to the terms of
             this Privacy Policy.
           </p>
           <p style={pStyle}>
@@ -227,8 +228,8 @@ export default function PrivacyPolicyPage() {
           <p style={pStyle}>
             We use cookies and similar technologies to authenticate users, remember preferences, and
             gather analytics. You may configure your browser to refuse cookies, though some features of
-            the Service may not function properly without them. We do not currently respond to 'Do Not
-            Track' signals, but we respect applicable privacy laws regarding user tracking.
+            the Service may not function properly without them. We do not currently respond to &apos;Do Not
+            Track&apos; signals, but we respect applicable privacy laws regarding user tracking.
           </p>
 
           <h2 style={h2Style}>8. Data Security</h2>
@@ -240,7 +241,7 @@ export default function PrivacyPolicyPage() {
             and to notify us immediately of any suspected unauthorized access to your account.
           </p>
 
-          <h2 style={h2Style}>9. Children's Privacy</h2>
+          <h2 style={h2Style}>9. Children&apos;s Privacy</h2>
           <p style={pStyle}>
             The Service is not specifically directed at children under the age of 13. We do not
             knowingly collect personal information from children under 13. If we become aware that we
@@ -313,10 +314,10 @@ export default function PrivacyPolicyPage() {
             <br />
             Email:{" "}
             <a
-              href="mailto:idode.kerobo@gmail.com"
+              href="mailto:idode@draftai.us"
               style={{ color: "var(--color-accent)", textDecoration: "none" }}
             >
-              idode.kerobo@gmail.com
+              idode@draftai.us
             </a>
           </p>
 

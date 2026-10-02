@@ -1,14 +1,24 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
+import Nav from "@/components/Nav";
+import Footer from "@/components/Footer";
+import { OrbComposing } from "@/components/ui/thinking-orb";
 
 const CAL_LINK = "https://cal.com/idode/learn-about-draft";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
+
+function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
+  return (
+    <div className={`getstarted-orb ${mobile ? "getstarted-orb-mobile" : "getstarted-orb-desktop"}`} aria-hidden="true">
+      <OrbComposing size={380} scale={0.94} speed={0.65} style={{ width: "100%", height: "auto", aspectRatio: "1" }} />
+    </div>
+  );
+}
 
 export default function GetStartedPage() {
   const ph = usePostHog();
@@ -52,12 +62,11 @@ export default function GetStartedPage() {
 
   return (
     <main className="getstarted-page">
+      <Nav showWaitlist={false} />
       <section className="getstarted-panel" aria-labelledby="getstarted-title">
-        <header className="getstarted-header">
-          <Link className="landing-logo" href="/" aria-label="Draft home">
-            Draft<span>.</span>
-          </Link>
-        </header>
+
+
+        <GetStartedOrb mobile />
 
         <div className="getstarted-copy">
           <h1 id="getstarted-title">
@@ -71,7 +80,7 @@ export default function GetStartedPage() {
           <div className="getstarted-actions">
             <button
               type="button"
-              className="landing-button landing-button-primary getstarted-primary"
+              className="minimal-button getstarted-primary"
               onClick={handleOpenWaitlist}
               aria-expanded={waitlistOpen}
               aria-controls="getstarted-waitlist"
@@ -127,18 +136,11 @@ export default function GetStartedPage() {
           )}
         </div>
 
-        <footer className="getstarted-footer">
-          <span aria-hidden="true" className="getstarted-footer-mark">D</span>
-          <nav aria-label="Footer navigation">
-            <Link href="/">Home</Link>
-            <a href="https://github.com/idodekerobo/draft" target="_blank" rel="noopener noreferrer">GitHub</a>
-            <Link href="/privacy-policy">Privacy</Link>
-            <Link href="/terms">Terms</Link>
-          </nav>
-        </footer>
+
       </section>
 
       <figure className="getstarted-media">
+        <GetStartedOrb />
         <div className="getstarted-media-frame">
           <Image
             src="/agent-loading-action-items.gif"
@@ -147,12 +149,12 @@ export default function GetStartedPage() {
             height={1080}
             priority
             unoptimized
-            sizes="(max-width: 900px) 100vw, 50vw"
-            style={{ display: "block", height: "auto", maxHeight: "calc(100vh - 80px)", objectFit: "contain", width: "100%" }}
+            sizes="(max-width: 600px) 90vw, (max-width: 900px) 560px, 42vw"
           />
         </div>
         <figcaption>One company brain. Every agent in sync.</figcaption>
       </figure>
+      <Footer />
     </main>
   );
 }

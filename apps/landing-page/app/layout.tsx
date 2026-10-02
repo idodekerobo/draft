@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { Geist, JetBrains_Mono } from "next/font/google";
 import { PostHogProvider } from "@/lib/PostHogProvider";
 import CrispChat from "@/components/CrispChat";
+import ThemeController from "@/components/ThemeController";
+import WaitlistModal from "@/components/WaitlistModal";
 import "./globals.css";
 
-const jakarta = Plus_Jakarta_Sans({
+const geist = Geist({
   subsets: ["latin"],
-  variable: "--font-jakarta",
+  variable: "--font-geist",
   display: "swap",
 });
 
@@ -44,12 +46,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="light" data-theme="light">
       <body
-        className={`${jakarta.variable} ${jetbrains.variable} antialiased`}
+        className={`${geist.variable} ${jetbrains.variable} antialiased`}
       >
         <PostHogProvider>
+          <ThemeController />
           {children}
+          <WaitlistModal />
         </PostHogProvider>
         <CrispChat />
       </body>

@@ -1,6 +1,8 @@
 # Draft landing page
 
-The landing page is the public Next.js marketing site for Draft. It explains the company-brain product, makes the MCP and CLI agent connection paths explicit, and links users to hosted signup, downloads, support, and the open-source repository. It does not contain the authenticated workspace or the Draft API.
+The landing page is the public Next.js marketing site for Draft. It explains the company-brain product and introduces MCP and CLI agent access. It does not contain the authenticated workspace or the Draft API.
+
+MIT licensed orb animation: https://github.com/usespaceui/ui/tree/main/src/registry/components/orb
 
 ## Local development
 
@@ -35,6 +37,14 @@ NEXT_PUBLIC_POSTHOG_HOST=
 ~~~
 
 The Crisp history route also uses server-side CRISP_HISTORY_SECRET, CRISP_API_IDENTIFIER, and CRISP_API_KEY. Do not share those values with the web app or desktop app.
+
+To change the theme from the browser console:
+
+~~~js
+window.dispatchEvent(new CustomEvent("draft:theme", { detail: { theme: "dark" } }));
+~~~
+
+Use `"light"` for light mode, or omit `detail` to toggle.
 
 ## Build
 
