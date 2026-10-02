@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { buildSummarizationPrompt } from "./render-prompt";
+import { computeBundleHash } from "../sandbox/bundle-hash";
 import type { SandboxRunBundle } from "../sandbox";
 import type { AgentSessionRow } from "../types/tables";
 
@@ -16,10 +17,6 @@ export interface SummarizationBundle extends SandboxRunBundle {
 
 function promptPathFor(sessionId: string): string {
   return `input/sessions/${sessionId}/prompt.md`;
-}
-
-function sha256(content: string): string {
-  return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
 export function buildSummarizationBundle(input: {
@@ -45,12 +42,8 @@ export function buildSummarizationBundle(input: {
   }
   files[MANIFEST_PATH] = { content: `${JSON.stringify(manifest, null, 2)}\n` };
 
-  const bundleHash = sha256(
-    JSON.stringify(
-      Object.keys(files)
-        .sort()
-        .map((path) => [path, sha256(files[path].content)]),
-    ),
+  const bundleHash = computeBundleHash(
+    Object.fromEntries(Object.entries(files).map(([path, file]) => [path, file.content])),
   );
 
   return {

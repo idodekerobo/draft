@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { computeBundleHash } from "../sandbox/bundle-hash";
 import type {
   SourceItemRow,
   SynthesisRunRow,
@@ -302,8 +303,8 @@ export function buildValidatedRunBundle(
   if (totalBytes > limits.maxTotalBytes) {
     throw new Error("bundle exceeds maxTotalBytes");
   }
-  const bundleHash = sha256(
-    JSON.stringify(files.map(([path, file]) => [path, file.sha256, file.bytes])),
+  const bundleHash = computeBundleHash(
+    Object.fromEntries(files.map(([path, file]) => [path, file.content])),
   );
 
   return {
