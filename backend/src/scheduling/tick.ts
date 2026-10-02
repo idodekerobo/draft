@@ -4,6 +4,8 @@ import { computeNextDueAt } from "./next-due-at";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { recordError } from "../errors/record-error";
+import { sweepStaleSynthesisRuns } from "../synthesis/reconcile-stale-runs";
+import { retryFailedSynthesisRuns } from "../synthesis/retry-failed-runs";
 
 export interface RunSchedulingTickOptions {
   client: SupabaseClient;
@@ -68,4 +70,32 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
       .eq("workspace_id", task.workspace_id);
     if (advanceError) throw advanceError;
   }
+
+  // Each step is isolated so one failing never stops the tick.
+  try {
+    await sweepStaleSynthesisRuns(options.client);
+  } catch (sweepError) {
+    await recordTickStepError(options.client, "Stale synthesis run sweep failed", sweepError);
+  }
+  try {
+    await retryFailedSynthesisRuns({ client: options.client, config: options.config, now });
+  } catch (retryError) {
+    await recordTickStepError(options.client, "Failed synthesis run retry failed", retryError);
+  }
+}
+
+async function recordTickStepError(
+  client: SupabaseClient,
+  message: string,
+  error: unknown,
+): Promise<void> {
+  // No workspace to attribute to, so recordError falls back to stderr.
+  await recordError({
+    client,
+    workspaceId: null,
+    operation: "scheduling",
+    message,
+    code: "scheduling_tick_failed",
+    error,
+  });
 }

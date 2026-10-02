@@ -49,6 +49,8 @@ interface FakeClientOptions {
   runInsertError?: { message: string; code: string };
   membershipInsertError?: Error;
   contextVersionInsertError?: { message: string; code: string };
+  // Newest run already in the workspace, as the attempt computation sees it.
+  latestRun?: { id: string; status: string; attempt: number };
 }
 
 /**
@@ -172,6 +174,11 @@ function createFakeClient(options: FakeClientOptions = {}) {
             calls.order.push("sweep-select");
             return { lt: () => emptySweepSelectResult() };
           },
+          eq: () => ({
+            order: () => ({
+              limit: async () => ({ data: options.latestRun ? [options.latestRun] : [], error: null }),
+            }),
+          }),
         }),
         insert: (payload: Record<string, unknown>) => {
           calls.order.push("run-insert");
@@ -567,6 +574,45 @@ describe("prepareRun", () => {
   });
 });
 
+describe("prepareRun attempt tracking", () => {
+  const base = { workspaceId: ids.workspace, triggerType: "manual" as const, sourceItemIds: [] };
+
+  it("continues the streak when the latest run failed", async () => {
+    const { client, calls } = createFakeClient({ latestRun: { id: "r", status: "failed", attempt: 2 } });
+
+    await prepareRun({ ...base, client });
+
+    expect(calls.runInserts[0].attempt).toBe(3);
+  });
+
+  it("resets to 1 when the latest run succeeded", async () => {
+    const { client, calls } = createFakeClient({ latestRun: { id: "r", status: "succeeded", attempt: 3 } });
+
+    await prepareRun({ ...base, client });
+
+    expect(calls.runInserts[0].attempt).toBe(1);
+  });
+
+  it("links a retry to its failed run with a one-per-failure idempotency key", async () => {
+    const { client, calls } = createFakeClient({ latestRun: { id: "failed-1", status: "failed", attempt: 1 } });
+
+    await prepareRun({
+      ...base,
+      triggerType: "retry",
+      retryOfRunId: "failed-1",
+      scheduledTaskId: ids.scheduledTask,
+      client,
+    });
+
+    expect(calls.runInserts[0]).toMatchObject({
+      attempt: 2,
+      retry_of_run_id: "failed-1",
+      idempotency_key: "retry:failed-1",
+      trigger_type: "retry",
+    });
+  });
+});
+
 describe("markRunLaunched", () => {
   it("sets status=running and started_at on the run row", async () => {
     const { client, calls } = createFakeClient();
@@ -578,6 +624,7 @@ describe("markRunLaunched", () => {
     expect(update.table).toBe("synthesis_runs");
     expect(update.id).toBe(ids.run);
     expect(update.payload.status).toBe("running");
+    expect(update.payload.sandbox_machine_id).toBe("machine-1");
     expect(typeof update.payload.started_at).toBe("string");
     expect(() => new Date(update.payload.started_at as string)).not.toThrow();
   });

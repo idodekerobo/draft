@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runSchedulingTick } from "../../scheduling/tick";
 import type { ScheduledTaskRow } from "../../types/tables";
+import { createFakeRunsClient, fakeRun } from "../synthesis/fake-runs-client";
 
 function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   return {
@@ -24,9 +25,10 @@ function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   };
 }
 
-function fakeClient(dueTasks: ScheduledTaskRow[]) {
+function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?: boolean } = {}) {
   const updates: { table: string; payload: Record<string, unknown>; id: string }[] = [];
   const errorInserts: Record<string, unknown>[] = [];
+  const runsClient = createFakeRunsClient({ synthesis_runs: [] }).client;
 
   const client = {
     from: (table: string) => {
@@ -46,6 +48,10 @@ function fakeClient(dueTasks: ScheduledTaskRow[]) {
             }),
           }),
         };
+      }
+      if (table === "synthesis_runs") {
+        if (options.failSynthesisRuns) throw new Error("db down");
+        return runsClient.from(table);
       }
       if (table === "errors") {
         return {
@@ -156,5 +162,41 @@ describe("runSchedulingTick", () => {
 
     expect(dispatch).not.toHaveBeenCalled();
     expect(updates).toHaveLength(0);
+  });
+
+  it("sweeps stale runs from the tick, with no workspace filter", async () => {
+    const dispatch = mock(async () => null);
+    const { client: runsClient, runs } = createFakeRunsClient({
+      synthesis_runs: [
+        fakeRun({
+          id: "stuck",
+          workspace_id: "workspace-z",
+          status: "running",
+          created_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+        }),
+      ],
+    });
+    const { client } = fakeClient([]);
+    const wrapped = {
+      from: (table: string) => (table === "synthesis_runs" ? runsClient.from(table) : client.from(table)),
+    } as unknown as SupabaseClient;
+
+    await runSchedulingTick({ client: wrapped, config: fakeConfig, now: new Date(), dispatch });
+
+    expect(runs[0].status).toBe("failed");
+  });
+
+  it("still advances tasks when the sweep and retry steps fail", async () => {
+    const dispatch = mock(async () => null);
+    const { client, updates } = fakeClient([task({ id: "task-a" })], { failSynthesisRuns: true });
+
+    await runSchedulingTick({
+      client,
+      config: fakeConfig,
+      now: new Date("2026-08-05T10:00:30.000Z"),
+      dispatch,
+    });
+
+    expect(updates).toHaveLength(1);
   });
 });

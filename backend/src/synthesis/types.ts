@@ -44,6 +44,8 @@ export interface LaunchSynthesisRunOptions {
   // ISO 8601 occurrence being fulfilled; required alongside scheduledTaskId
   // for a stable idempotency key.
   occurrenceAt?: string;
+  // Failed run this run retries; gives the run a one-per-failure idempotency key.
+  retryOfRunId?: string;
   config: SandboxDeploymentConfig;
   client?: SupabaseClient;
   /**

@@ -1,88 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { sweepStaleSynthesisRuns } from "../../synthesis/reconcile-stale-runs";
+import { createFakeRunsClient, fakeRun } from "./fake-runs-client";
 
-interface FakeRun {
-  id: string;
-  workspace_id: string;
-  status: string;
-  created_at: string;
-}
-
-type Filter =
-  | { field: string; op: "in"; value: string[] }
-  | { field: string; op: "eq"; value: string }
-  | { field: string; op: "lt"; value: string };
-
-function matches(row: FakeRun, filters: Filter[]): boolean {
-  return filters.every((f) => {
-    const rowValue = (row as unknown as Record<string, string>)[f.field];
-    if (f.op === "in") return f.value.includes(rowValue);
-    if (f.op === "eq") return rowValue === f.value;
-    return rowValue < f.value;
+function createFakeClient(initialRuns: Array<{ id: string; workspace_id: string; status: string; created_at: string }>) {
+  const { client, runs, errorInserts } = createFakeRunsClient({
+    synthesis_runs: initialRuns.map((run) => fakeRun(run)),
   });
-}
-
-/**
- * Fake Supabase client backed by an in-memory row array, so `.in()`/`.lt()`/
- * `.eq()` actually filter data instead of just recording calls.
- */
-function createFakeClient(initialRuns: FakeRun[]) {
-  const rows = initialRuns.map((run) => ({ ...run }));
-  const errorInserts: Record<string, unknown>[] = [];
-
-  function chainable<T>(filters: Filter[], resolve: (filters: Filter[]) => T) {
-    const builder = {
-      in: (field: string, value: string[]) => {
-        filters.push({ field, op: "in", value });
-        return builder;
-      },
-      eq: (field: string, value: string) => {
-        filters.push({ field, op: "eq", value });
-        return builder;
-      },
-      lt: (field: string, value: string) => {
-        filters.push({ field, op: "lt", value });
-        return builder;
-      },
-      then: (onResolve: (value: T) => void) => onResolve(resolve(filters)),
-    };
-    return builder;
-  }
-
-  function from(table: string) {
-    if (table === "synthesis_runs") {
-      return {
-        select: () =>
-          // Cloned so the later update() doesn't mutate this snapshot.
-          chainable<{ data: FakeRun[]; error: null }>([], (filters) => ({
-            data: rows.filter((row) => matches(row, filters)).map((row) => ({ ...row })),
-            error: null,
-          })),
-        update: (payload: Partial<FakeRun>) =>
-          chainable<{ data: null; error: null }>([], (filters) => {
-            for (const row of rows) {
-              if (matches(row, filters)) Object.assign(row, payload);
-            }
-            return { data: null, error: null };
-          }),
-      };
-    }
-
-    if (table === "errors") {
-      return {
-        insert: async (payload: Record<string, unknown>) => {
-          errorInserts.push(payload);
-          return { data: null, error: null };
-        },
-      };
-    }
-
-    throw new Error(`Unexpected table in fake client: ${table}`);
-  }
-
-  const client = { from } as unknown as SupabaseClient;
-  return { client, rows, errorInserts };
+  return { client, rows: runs, errorInserts };
 }
 
 const now = Date.now();
@@ -110,6 +34,40 @@ describe("sweepStaleSynthesisRuns", () => {
       synthesis_run_id: "run-1",
       operation: "execution",
     });
+  });
+
+  it("records the attempt tracking fields and an honest message on the error row", async () => {
+    const { client, rows, errorInserts } = createFakeClient([
+      { id: "run-t", workspace_id: "workspace-a", status: "running", created_at: isoMinutesAgo(45) },
+    ]);
+    rows[0].attempt = 2;
+    rows[0].sandbox_machine_id = "machine-9";
+
+    await sweepStaleSynthesisRuns(client);
+
+    expect(errorInserts[0].message).not.toContain("crashed");
+    expect(errorInserts[0].detail_json).toMatchObject({
+      code: "synthesis_run_stale",
+      failure_code: "synthesis_run_stale",
+      attempt: 2,
+      consecutive_failures: 2,
+      max_fast_retries: 3,
+      fast_retries_exhausted: false,
+      sandbox_machine_id: "machine-9",
+      swept_from_status: "running",
+    });
+    expect(typeof (errorInserts[0].detail_json as Record<string, unknown>).next_retry_at).toBe("string");
+  });
+
+  it("sweeps every workspace when no workspaceId is passed", async () => {
+    const { client, rows } = createFakeClient([
+      { id: "run-g1", workspace_id: "workspace-a", status: "running", created_at: isoMinutesAgo(45) },
+      { id: "run-g2", workspace_id: "workspace-b", status: "preparing", created_at: isoMinutesAgo(45) },
+    ]);
+
+    await sweepStaleSynthesisRuns(client);
+
+    expect(rows.map((r) => r.status)).toEqual(["failed", "failed"]);
   });
 
   it("leaves a recent active-writer row untouched", async () => {

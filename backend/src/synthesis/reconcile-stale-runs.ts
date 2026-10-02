@@ -1,15 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SynthesisRunStatus } from "../types/enums";
-import { recordError } from "../errors/record-error";
-
-// A run stuck in any of these forever (crashed sandbox, dead tunnel) blocks
-// every future run for its workspace until swept.
-const ACTIVE_WRITER_STATUSES: SynthesisRunStatus[] = [
-  "preparing",
-  "running",
-  "validating",
-  "committing",
-];
+import { ACTIVE_WRITER_STATUSES, failSynthesisRun } from "./handle-run-failure";
 
 // 10-minute margin past the sandbox's own 20-minute wall-clock timeout.
 export const STALE_RUN_TIMEOUT_MS = 30 * 60_000;
@@ -25,9 +16,8 @@ export interface SweptRun {
   status: SynthesisRunStatus;
 }
 
-// Fails (does not relaunch) any active-writer row older than the cutoff and
-// logs one `errors` row per swept run, freeing the workspace for its next run.
-// TODO - relaunching a replacement run needs a scheduler; not done here.
+// Fails any active-writer row older than the cutoff and logs one `errors` row
+// per swept run, freeing the workspace. Retrying is the scheduler tick's job.
 export async function sweepStaleSynthesisRuns(
   client: SupabaseClient,
   options: StaleRunSweepOptions = {},
@@ -51,35 +41,20 @@ export async function sweepStaleSynthesisRuns(
   const candidates = (candidateData ?? []) as SweptRun[];
   if (candidates.length === 0) return [];
 
-  const candidateIds = candidates.map((run) => run.id);
-  const { error: updateError } = await client
-    .from("synthesis_runs")
-    .update({
-      status: "failed",
-      outcome: "failure",
-      result_summary:
-        "Reconciliation swept this run: it was still active past the " +
-        "staleness cutoff with no callback, most likely a crashed or " +
-        "unresponsive sandbox.",
-      completed_at: new Date().toISOString(),
-    })
-    .in("id", candidateIds)
-    // Re-checked so a run that completed between the two queries above
-    // isn't clobbered back to "failed".
-    .in("status", ACTIVE_WRITER_STATUSES);
-  if (updateError) throw updateError;
-
+  const swept: SweptRun[] = [];
   for (const run of candidates) {
-    await recordError({
+    const failed = await failSynthesisRun({
       client,
-      workspaceId: run.workspace_id,
-      synthesisRunId: run.id,
+      runId: run.id,
+      failureCode: "synthesis_run_stale",
       operation: "execution",
-      message: `Synthesis run ${run.id} swept as stale from status "${run.status}"`,
-      code: "synthesis_run_stale",
+      reason:
+        `Run was still ${run.status} past the staleness cutoff with no ` +
+        "callback from the sandbox.",
       detail: { swept_from_status: run.status, cutoff: cutoffIso },
     });
+    if (failed) swept.push(run);
   }
 
-  return candidates;
+  return swept;
 }
