@@ -436,7 +436,7 @@ export type AppRPCType = {
       /** Toggle the workspace's synthesis schedule on/off. Cadence editing isn't supported yet. */
       setSynthesisEnabled: { params: { enabled: boolean }; response: ActionResult & { schedule?: SynthesisSchedule } };
 
-      /** Disconnect an input source. github flips connected=false in integrations.json; slack/fireflies/linear/granola/claude_session revoke the workspace's cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
+      /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "claude_session"; accountKind?: "personal" | "workspace" }; response: ActionResult };
 
       /**

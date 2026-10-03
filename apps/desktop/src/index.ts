@@ -575,7 +575,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       disconnectIntegration: async ({ source, accountKind }) => {
         try {
-          if (source === "slack" || source === "fireflies" || source === "linear" || source === "granola" || source === "claude_session") {
+          if (source === "slack" || source === "fireflies" || source === "linear" || source === "github" || source === "granola" || source === "claude_session") {
             const workspaceId = getCachedWorkspaceId();
             if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
             const query = source === "granola" ? `?account_kind=${accountKind ?? "personal"}` : "";
