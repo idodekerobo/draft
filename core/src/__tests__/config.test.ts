@@ -9,7 +9,26 @@ import {
   setActiveProfile,
   getSkillManifestPath,
   getMcpManifestPath,
+  resolveNotificationsEnabled,
 } from "../config";
+
+describe("resolveNotificationsEnabled", () => {
+  it("migrates an enabled profile preference", () => {
+    expect(resolveNotificationsEnabled(undefined, true)).toEqual({ enabled: true, migrated: true });
+  });
+
+  it("migrates a disabled profile preference", () => {
+    expect(resolveNotificationsEnabled(undefined, false)).toEqual({ enabled: false, migrated: true });
+  });
+
+  it("defaults to enabled when no preference exists", () => {
+    expect(resolveNotificationsEnabled(undefined, undefined)).toEqual({ enabled: true, migrated: true });
+  });
+
+  it("uses the global preference and ignores stale profile values after migration", () => {
+    expect(resolveNotificationsEnabled(false, true)).toEqual({ enabled: false, migrated: false });
+  });
+});
 
 const TMP = `/tmp/draft-core-test-${Date.now()}`;
 
