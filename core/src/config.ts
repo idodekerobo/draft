@@ -5,7 +5,7 @@
 // gracefully — callers never need to try/catch config reads.
 
 import { join } from "path";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 
 // ── Path constants ─────────────────────────────────────────────────────────────
 
@@ -249,85 +249,6 @@ export function writeSecrets(workspacePath: string, patch: Partial<Secrets>): vo
   const secrets = { ...(existing.ok ? existing.secrets : {}), ...patch };
   mkdirSync(join(workspacePath, "config"), { recursive: true });
   writeFileSync(secretsPath, JSON.stringify(secrets, null, 2) + "\n", "utf8");
-}
-
-// ── Profile list ───────────────────────────────────────────────────────────────
-
-export interface ProfileDetail {
-  name: string;
-  /** True if the workspace has at least one .md file under its context/ directory. */
-  hasContext: boolean;
-}
-
-export interface ProfileList {
-  /** All profile names, sorted alphabetically. */
-  names: string[];
-  /** The currently active profile (never empty — falls back to "default"). */
-  active: string;
-  details: ProfileDetail[];
-}
-
-/** Recursively check if a directory contains at least one .md file. */
-function hasMarkdownInDir(dir: string): boolean {
-  if (!existsSync(dir)) return false;
-  try {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        if (hasMarkdownInDir(join(dir, entry.name))) return true;
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        return true;
-      }
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
-/**
- * List all named profiles under ~/.draft/workspaces/.
- * Returns the data layer only — callers own the print/display logic.
- *
- * Pass `opts` to override path constants (used in tests).
- */
-export function getProfiles(opts?: ProfileOpts): ProfileList {
-  const wsDir = opts?.workspacesDir ?? WORKSPACES_DIR;
-  const active = getActiveProfile(opts);
-  if (!existsSync(wsDir)) return { names: [], active, details: [] };
-  try {
-    const names = readdirSync(wsDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .sort();
-    const details: ProfileDetail[] = names.map((name) => ({
-      name,
-      hasContext: hasMarkdownInDir(join(wsDir, name, "context")),
-    }));
-    return { names, active, details };
-  } catch {
-    return { names: [], active, details: [] };
-  }
-}
-
-export type CreateProfileResult =
-  | { ok: true; name: string }
-  | { ok: false; reason: "invalid" | "exists" };
-
-/**
- * Create a new named profile (workspace directory) and set it as active.
- * Fails if the name is invalid or the directory already exists.
- */
-export function createProfile(name: string, opts?: ProfileOpts): CreateProfileResult {
-  const trimmed = name.trim();
-  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
-    return { ok: false, reason: "invalid" };
-  }
-  const wsPath = getWorkspacePath(trimmed, opts);
-  if (existsSync(wsPath)) {
-    return { ok: false, reason: "exists" };
-  }
-  mkdirSync(wsPath, { recursive: true });
-  return { ok: true, name: trimmed };
 }
 
 export function readIntegrations(workspacePath: string): IntegrationsResult {

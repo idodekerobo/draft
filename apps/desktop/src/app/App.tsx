@@ -3,8 +3,7 @@
 // Owns:
 //   - Status polling loop (getStatus RPC every 5s, for appState only)
 //   - Active view state (sidebar navigation)
-//   - Active profile state (updated by profileChanged events + switchProfile RPC)
-//   - Profile list (loaded on mount, refreshed on profileChanged)
+//   - Active profile state (updated by profileChanged events)
 //
 // Server data lives in the query cache; see hooks/ and queries.ts.
 
@@ -34,7 +33,6 @@ const STATUS_POLL_MS = 5_000;
 export function App() {
   const [activeView, setActiveView]     = useState<View>("context");
   const [activeProfile, setActiveProfile] = useState<string>("");
-  const [profiles, setProfiles]         = useState<string[]>([]);
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
   // app renders immediately instead of waiting on identityRefreshNeeded's
   // async round trip to land before identity.onboardingCompletedAt updates.
@@ -91,20 +89,6 @@ export function App() {
     };
   }, []);
 
-  // ── Load profile list ──────────────────────────────────────────────────────
-  const loadProfiles = useCallback(async () => {
-    try {
-      const pl = await rpc.request.getProfiles();
-      setProfiles(pl.names);
-      // Also sync active profile in case it diverged.
-      if (pl.active) setActiveProfile(pl.active);
-    } catch {
-      // Non-fatal — profile list stays empty; chip shows current name only.
-    }
-  }, []);
-
-  useEffect(() => { void loadProfiles(); }, [loadProfiles]);
-
   const contextEmpty = contextSettled && contextFiles.length === 0;
 
   // On launch, land on Connections when the workspace has no context yet.
@@ -131,9 +115,8 @@ export function App() {
   useEffect(() => {
     return events.on("profileChanged", ({ profile }) => {
       setActiveProfile(profile);
-      void loadProfiles();  // Refresh list in case a new profile was created.
     });
-  }, [loadProfiles]);
+  }, []);
 
   useBootstrapPolling(workspaceIdRef, setContextFiles, setSyncToast);
 
@@ -142,18 +125,6 @@ export function App() {
     const id = setTimeout(() => setSyncToast(null), 5_000);
     return () => clearTimeout(id);
   }, [syncToast]);
-
-  // ── Profile switch ─────────────────────────────────────────────────────────
-  const handleSwitchProfile = useCallback(async (profile: string) => {
-    try {
-      const result = await rpc.request.switchProfile({ profile });
-      if (result.ok && result.active) {
-        setActiveProfile(result.active);
-      }
-    } catch {
-      // Non-fatal — current profile remains active.
-    }
-  }, []);
 
   // A transition keeps the current view on screen if the next one has to wait.
   const handleNavigate = useCallback((view: View) => {
@@ -175,9 +146,6 @@ export function App() {
         <Sidebar
           activeView={activeView}
           onNavigate={handleNavigate}
-          activeProfile={activeProfile}
-          profiles={profiles}
-          onSwitchProfile={handleSwitchProfile}
           onOpenFeedback={openFeedback}
         />
 

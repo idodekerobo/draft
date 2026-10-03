@@ -6,7 +6,6 @@ import {
   writeSecrets,
   readCollaboration,
   getActiveProfile,
-  getProfiles,
   setActiveProfile,
   getSkillManifestPath,
   getMcpManifestPath,
@@ -141,55 +140,6 @@ describe("workspace-scoped manifest paths", () => {
       .toBe(join(workspacesDir, "personal", "config", "skill-manifest.json"));
     expect(getMcpManifestPath(undefined, opts))
       .toBe(join(workspacesDir, "personal", "config", "mcp-manifest.json"));
-  });
-});
-
-// ── getProfiles ─────────────────────────────────────────────────────────────────
-
-describe("getProfiles", () => {
-  const FAKE_ROOT      = `/tmp/draft-core-profiles-test-${Date.now()}`;
-  const FAKE_WORKSPACES = join(FAKE_ROOT, "workspaces");
-  const FAKE_AP_FILE   = join(FAKE_ROOT, "active-profile");
-
-  afterEach(() => rmSync(FAKE_ROOT, { recursive: true, force: true }));
-
-  const opts = () => ({ workspacesDir: FAKE_WORKSPACES, activeProfileFile: FAKE_AP_FILE });
-
-  it("returns empty names list when workspaces dir does not exist", () => {
-    mkdirSync(FAKE_ROOT, { recursive: true });
-    const result = getProfiles(opts());
-    expect(result.names).toEqual([]);
-  });
-
-  it("lists profile directories sorted alphabetically", () => {
-    mkdirSync(join(FAKE_WORKSPACES, "zebra"), { recursive: true });
-    mkdirSync(join(FAKE_WORKSPACES, "acme"),  { recursive: true });
-    mkdirSync(join(FAKE_WORKSPACES, "myco"),  { recursive: true });
-    const result = getProfiles(opts());
-    expect(result.names).toEqual(["acme", "myco", "zebra"]);
-  });
-
-  it("excludes files — only directories are profiles", () => {
-    mkdirSync(join(FAKE_WORKSPACES, "acme"), { recursive: true });
-    writeFileSync(join(FAKE_WORKSPACES, "not-a-profile.txt"), "hello");
-    const result = getProfiles(opts());
-    expect(result.names).toEqual(["acme"]);
-  });
-
-  it("active field reflects the active-profile file", () => {
-    mkdirSync(join(FAKE_WORKSPACES, "acme"),           { recursive: true });
-    mkdirSync(join(FAKE_WORKSPACES, "draft-pm-agent"), { recursive: true });
-    writeFileSync(FAKE_AP_FILE, "acme");
-    const result = getProfiles(opts());
-    expect(result.active).toBe("acme");
-    expect(result.names).toContain("acme");
-    expect(result.names).toContain("draft-pm-agent");
-  });
-
-  it("active defaults to 'default' when active-profile file is missing", () => {
-    mkdirSync(join(FAKE_WORKSPACES, "acme"), { recursive: true });
-    const result = getProfiles(opts()); // FAKE_AP_FILE does not exist
-    expect(result.active).toBe("default");
   });
 });
 

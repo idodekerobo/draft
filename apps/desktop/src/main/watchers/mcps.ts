@@ -253,7 +253,7 @@ export function stopMcpWatch(): void {
 
 /**
  * Restart the MCP watcher with a new active profile.
- * Called from the switchProfile RPC handler after profile switch completes.
+ * Called after the active profile changes.
  */
 export function restartMcpWatchWithProfile(newProfile: string): void {
   if (!currentHandlers) return;
