@@ -16,12 +16,9 @@ export function DesktopSharedProviders({ children }: { children: ReactNode }) {
     connectFireflies: (input) => rpc.request.connectFireflies(input),
     connectGranola: (input) => rpc.request.connectGranola(input),
     connectLinear: (input) => rpc.request.connectLinear(input),
-    connectSessionTracking: () => rpc.request.connectSessionTracking(),
-    selectSessionRepoFolder: async () => {
-      const result = await rpc.request.selectSessionRepoFolder();
-      return { folderPath: result.folderPath ?? undefined };
-    },
-    enableSessionCaptureForRepo: (input) => rpc.request.enableSessionCaptureForRepo(input),
+    connectSessionTracking: async () => ({ ok: false, error: "Manage coding sessions with the Draft CLI." }),
+    selectSessionRepoFolder: async () => ({}),
+    enableSessionCaptureForRepo: async () => ({ ok: false, error: "Manage coding sessions with the Draft CLI." }),
   }), [track]);
 
   return (

@@ -106,7 +106,6 @@ export interface LocalConfig {
   notificationsEnabled: boolean;
   disabledContextSections: string[];
   codexScanIntervalMinutes: number | null;
-  claudeCodeSynthesis: boolean;
 }
 
 export interface UpdateInfo {
@@ -191,14 +190,10 @@ export interface ConnectedAppsStatus {
     github: IntegrationDetail;
     fireflies: IntegrationDetail;
     linear: IntegrationDetail;
-    /** Workspace-wide coding-session-capture toggle. Not a credentialed integration -- just a status flip. */
-    claude_session: IntegrationDetail;
   };
   claudeCode: { connected: boolean };
   /** The caller's latest agent (MCP or CLI) query, or null before first use. */
   agentLastUsedAt: string | null;
-  /** Repos with session capture on across the workspace. `ok: false` when the list could not be loaded. */
-  sessionRepos: { ok: boolean; repos: TeamSessionRepo[] };
   /** API base URL, so the MCP endpoint shown in Connections matches this deployment. */
   apiBaseUrl: string;
   webAppUrl: string;
@@ -210,7 +205,7 @@ export interface ConnectedAppsStatus {
 
 /**
  * A Slack channel the bot can see, from conversations.list.
- * Mirrors draft-core/integrations/slack's SlackChannel rather than importing it,
+ * Mirrors draft-core/integrations/slack-hosted's SlackChannel rather than importing it,
  * per this file's convention of staying free of Node/Bun-only modules.
  */
 export interface SlackChannelOption {
@@ -244,7 +239,6 @@ export interface SynthesisSchedule {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { TeamSessionRepo } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -282,7 +276,7 @@ export type AppRPCType = {
       setSynthesisEnabled: { params: { enabled: boolean }; response: ActionResult & { schedule?: SynthesisSchedule } };
 
       /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "claude_session"; accountKind?: "personal" | "workspace" }; response: ActionResult };
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear"; accountKind?: "personal" | "workspace" }; response: ActionResult };
 
       /**
        * Connect GitHub via the GitHub App install flow: opens the system
@@ -314,21 +308,6 @@ export type AppRPCType = {
 
       /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
       connectClaudeCode: { params: { token: string }; response: ActionResult };
-
-      /** Turn on the workspace-wide coding-session-capture toggle (no credential). Turn off via disconnectIntegration. */
-      connectSessionTracking: { params: void; response: ActionResult };
-
-      /** Open the native folder picker for choosing a repo to enable coding-session capture in. */
-      selectSessionRepoFolder: { params: void; response: { folderPath: string | null } };
-
-      /** Desktop-native equivalent of `draft sessions enable claude-code --dir <folderPath>` (CLI has a separate auth store). */
-      enableSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult & { hookChanged?: boolean } };
-
-      /** Desktop-native equivalent of `draft sessions rotate --dir <folderPath>`. */
-      rotateSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult };
-
-      /** Desktop-native equivalent of `draft sessions disable --dir <folderPath>`. */
-      disableSessionCaptureForRepo: { params: { folderPath: string }; response: ActionResult & { hookRemoved?: boolean; revoked?: boolean } };
 
       /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
       getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };

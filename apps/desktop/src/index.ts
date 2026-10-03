@@ -3,16 +3,14 @@
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getWorkspacePath, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { documentsToEntries } from "draft-shared-ui/context-files";
-import type { TeamSessionRepo } from "draft-shared-ui";
 import { capture } from "./exec";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack-hosted";
 import {
   normalizeHostedConnections,
   normalizeHostedConnectionList,
-  type RawHostedConnectionSummary,
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
@@ -39,46 +37,6 @@ import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, 
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
-import { randomUUID } from "crypto";
-import {
-  CAPTURE_CONFIG_FILE,
-  DRAFT_DIR as SESSION_DRAFT_DIR,
-  HOOK_SCRIPT_FILE,
-  buildCaptureScript,
-  mergeSessionEndHook,
-  removeSessionEndHook,
-} from "draft-core/sessions";
-import { mutateClaudeSettingsAtomic, writeCaptureConfigAtomic } from "draft-core/sync/claude-settings";
-
-// Mirrors the CLI's SessionCaptureConfig shape (cli/src/commands/sessions.ts)
-// so either installer can read a config the other one wrote.
-interface DesktopSessionCaptureConfig {
-  backendUrl: string;
-  workspaceId: string;
-  ingestToken: string;
-  projectId: string;
-  projectKey: string;
-  allowedProviders: string[];
-  credentialScope: string;
-}
-
-function readSessionCaptureConfig(configPath: string): Partial<DesktopSessionCaptureConfig> | null {
-  if (!existsSync(configPath)) return null;
-  try {
-    return JSON.parse(readFileSync(configPath, "utf8")) as Partial<DesktopSessionCaptureConfig>;
-  } catch {
-    return null;
-  }
-}
-
-function isScopedSessionCaptureConfig(config: Partial<DesktopSessionCaptureConfig>): config is DesktopSessionCaptureConfig {
-  return !!(config.backendUrl && config.workspaceId && config.ingestToken && config.projectId && config.projectKey && config.allowedProviders);
-}
-
-async function revokeCredentialAdmin(workspaceId: string, credentialId: string): Promise<void> {
-  await fetchServer(`workspaces/${workspaceId}/sessions/tokens/${encodeURIComponent(credentialId)}`, { method: "DELETE" });
-}
-
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -288,7 +246,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           notificationsEnabled: preference.enabled,
           disabledContextSections:   c.disabledContextSections   ?? [],
           codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
-          claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
         };
       },
 
@@ -377,16 +334,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
         const hostedConnections = normalizeHostedConnections(cloudConnections ?? []);
 
-        let sessionRepos: { ok: boolean; repos: TeamSessionRepo[] } = { ok: false, repos: [] };
-        if (cloudWorkspaceId) {
-          try {
-            const response = await fetchServerJSON<{ projects: TeamSessionRepo[] }>(`workspaces/${cloudWorkspaceId}/sessions/projects`);
-            sessionRepos = { ok: true, repos: response.projects };
-          } catch {
-            sessionRepos = { ok: false, repos: [] };
-          }
-        }
-
         // Every integrationDetail key is now cloud-backed, so there's no
         // local-flag/health-file fallback branch left to maintain.
         function integrationDetail(key: "granola" | "slack" | "github" | "fireflies" | "linear"): IntegrationDetail {
@@ -408,29 +355,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
 
         const claudeCodeConnection = hostedConnections.find((connection) => connection.provider === "claude-code");
-        const claudeSessionConnection = Array.isArray(cloudConnections)
-          ? cloudConnections.find((connection): connection is RawHostedConnectionSummary =>
-              typeof connection === "object" &&
-              connection !== null &&
-              !Array.isArray(connection) &&
-              "provider" in connection &&
-              connection.provider === "claude_session"
-            )
-          : undefined;
-        const claudeSessionConnected = claudeSessionConnection?.status === "active";
-        const claudeSessionDetail: IntegrationDetail = {
-          connected: claudeSessionConnected,
-          status: claudeSessionConnected ? "connected" : "disconnected",
-          healthStatus: "unknown",
-          healthCheckedAt: null,
-          healthMessage: null,
-          lastConnected: typeof claudeSessionConnection?.last_success_at === "string"
-            ? claudeSessionConnection.last_success_at
-            : null,
-          mode: null,
-          channels: null,
-        };
-
         return {
           tools: {
             "claude-code": toolDetail("claude-code"),
@@ -445,11 +369,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             github:        integrationDetail("github"),
             fireflies:     integrationDetail("fireflies"),
             linear:        integrationDetail("linear"),
-            claude_session: claudeSessionDetail,
           },
           claudeCode: { connected: claudeCodeConnection?.connected ?? false },
           agentLastUsedAt,
-          sessionRepos,
           apiBaseUrl: apiUrl,
           webAppUrl: process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
           // Settings list view only -- every other consumer above keeps
@@ -462,21 +384,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       disconnectIntegration: async ({ source, accountKind }) => {
         try {
-          if (source === "slack" || source === "fireflies" || source === "linear" || source === "github" || source === "granola" || source === "claude_session") {
-            const workspaceId = getCachedWorkspaceId();
-            if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
-            const query = source === "granola" ? `?account_kind=${accountKind ?? "personal"}` : "";
-            await fetchServer(`workspaces/${workspaceId}/connections/${source}${query}`, { method: "DELETE" });
-            return { ok: true };
-          }
-          const workspace = getWorkspacePath(getActiveProfile());
-          const result    = readIntegrations(workspace);
-          const current   = result.ok ? result.integrations : {} as import("draft-core/config").Integrations;
-          const updated   = {
-            ...current,
-            [source]: { ...((current as Record<string, import("draft-core/config").IntegrationEntry | undefined>)[source] ?? {}), connected: false },
-          };
-          writeIntegrations(workspace, updated);
+          const workspaceId = getCachedWorkspaceId();
+          if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+          const query = source === "granola" ? `?account_kind=${accountKind ?? "personal"}` : "";
+          await fetchServer(`workspaces/${workspaceId}/connections/${source}${query}`, { method: "DELETE" });
           return { ok: true };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Disconnect failed." };
@@ -599,151 +510,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not connect Claude Code." };
         }
-      },
-
-      connectSessionTracking: async () => {
-        const workspaceId = getCachedWorkspaceId();
-        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
-        try {
-          await fetchServerJSON<{ ok: true }>(`workspaces/${workspaceId}/connections`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider: "claude_session" }),
-          });
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not turn on coding sessions." };
-        }
-      },
-
-      selectSessionRepoFolder: async () => {
-        try {
-          const [folderPath] = await Utils.openFileDialog({
-            canChooseFiles: false,
-            canChooseDirectory: true,
-            allowsMultipleSelection: false,
-          });
-          return { folderPath: folderPath || null };
-        } catch {
-          return { folderPath: null };
-        }
-      },
-
-      enableSessionCaptureForRepo: async ({ folderPath }) => {
-        if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
-          return { ok: false, error: "Not a valid directory." };
-        }
-        const workspaceId = getCachedWorkspaceId();
-        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
-
-        const draftDir = join(folderPath, SESSION_DRAFT_DIR);
-        const settingsPath = join(folderPath, ".claude", "settings.json");
-        const configPath = join(draftDir, CAPTURE_CONFIG_FILE);
-
-        // Malformed settings.json is refused before minting anything, so a
-        // failed enable never leaves an orphaned credential for this reason.
-        const settingsPreflight = await mutateClaudeSettingsAtomic(settingsPath, (s) => s);
-        if (!settingsPreflight.ok) return { ok: false, error: `${settingsPath} is not valid JSON — fix it by hand, then retry.` };
-
-        const existing = readSessionCaptureConfig(configPath);
-        let sessionConfig: DesktopSessionCaptureConfig;
-        let mintedCredentialId: string | null = null;
-        if (existing && isScopedSessionCaptureConfig(existing)) {
-          sessionConfig = existing;
-        } else {
-          let minted: { id: string; token: string; sessionProjectId: string; credentialScope: string };
-          const projectKey = randomUUID();
-          try {
-            minted = await fetchServerJSON(`workspaces/${workspaceId}/sessions/tokens`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ label: basename(folderPath), projectKey, allowedProviders: ["claude-code-session"] }),
-            });
-          } catch (err) {
-            return { ok: false, error: err instanceof Error ? err.message : "Could not mint an ingest token." };
-          }
-          mintedCredentialId = minted.id;
-          sessionConfig = {
-            backendUrl: apiUrl,
-            workspaceId,
-            ingestToken: minted.token,
-            projectId: minted.sessionProjectId,
-            projectKey,
-            allowedProviders: ["claude-code-session"],
-            credentialScope: minted.credentialScope,
-          };
-        }
-
-        try {
-          mkdirSync(draftDir, { recursive: true });
-          await writeCaptureConfigAtomic(configPath, sessionConfig);
-          const hookPath = join(draftDir, HOOK_SCRIPT_FILE);
-          writeFileSync(hookPath, buildCaptureScript(), { mode: 0o755 });
-          chmodSync(hookPath, 0o755);
-
-          const settingsResult = await mutateClaudeSettingsAtomic(settingsPath, mergeSessionEndHook);
-          if (!settingsResult.ok) {
-            if (mintedCredentialId) await revokeCredentialAdmin(workspaceId, mintedCredentialId).catch(() => {});
-            return { ok: false, error: `${settingsPath} is not valid JSON — fix it by hand, then retry.` };
-          }
-          return { ok: true, hookChanged: settingsResult.changed };
-        } catch (err) {
-          if (mintedCredentialId) await revokeCredentialAdmin(workspaceId, mintedCredentialId).catch(() => {});
-          return { ok: false, error: err instanceof Error ? err.message : "Could not write session-capture files." };
-        }
-      },
-
-      rotateSessionCaptureForRepo: async ({ folderPath }) => {
-        const draftDir = join(folderPath, SESSION_DRAFT_DIR);
-        const configPath = join(draftDir, CAPTURE_CONFIG_FILE);
-        const existing = readSessionCaptureConfig(configPath);
-        if (!existing || !isScopedSessionCaptureConfig(existing)) {
-          return { ok: false, error: "No session-capture credential found for this repo — enable it first." };
-        }
-        let rotated: { id: string; token: string };
-        try {
-          const response = await fetch(`${apiUrl}/sessions/tokens/rotate`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${existing.ingestToken}` },
-          });
-          if (!response.ok) return { ok: false, error: "This project's ingest credential is no longer valid — enable it again." };
-          rotated = await response.json() as { id: string; token: string };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not reach the Draft backend." };
-        }
-        try {
-          await writeCaptureConfigAtomic(configPath, { ...existing, ingestToken: rotated.token });
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not write the rotated credential." };
-        }
-      },
-
-      disableSessionCaptureForRepo: async ({ folderPath }) => {
-        const draftDir = join(folderPath, SESSION_DRAFT_DIR);
-        const configPath = join(draftDir, CAPTURE_CONFIG_FILE);
-        const settingsPath = join(folderPath, ".claude", "settings.json");
-        const existing = readSessionCaptureConfig(configPath);
-
-        let revoked = false;
-        if (existing?.ingestToken) {
-          try {
-            const response = await fetch(`${apiUrl}/sessions/tokens/revoke`, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${existing.ingestToken}` },
-            });
-            revoked = response.ok;
-          } catch {
-            revoked = false;
-          }
-        }
-
-        const settingsResult = await mutateClaudeSettingsAtomic(settingsPath, removeSessionEndHook);
-        if (!settingsResult.ok) {
-          return { ok: false, error: `${settingsPath} is not valid JSON — fix it by hand. The credential was still revoked.`, revoked };
-        }
-        if (existsSync(configPath)) writeFileSync(configPath, "{}\n");
-        return { ok: true, hookRemoved: settingsResult.changed, revoked };
       },
 
       getInviteLink: async () => {
@@ -1242,16 +1008,11 @@ async function syncBundledAssets(): Promise<void> {
   }
 
   // ── Daemon runtime scripts ─────────────────────────────────────────────────
-  // The compiled daemon delegates session synthesis to shell adapters under
-  // ~/.draft/background. Keep that runtime in lockstep with the binary while
-  // preserving user-generated queues, state, logs, and Slack captures.
+  // Keep the Codex scanner and synthesis runtime in lockstep with the daemon
+  // binary while preserving user-generated queues, state, and logs.
   const backgroundDir = getBundledBackgroundDir();
   const runtimeFiles = [
-    "commit-to-team-context.sh",
-    "config.sh",
     "install.sh",
-    "load-team.sh",
-    "on-session-end.sh",
     "start.sh",
     "status.sh",
     "stop.sh",
@@ -1273,20 +1034,6 @@ async function syncBundledAssets(): Promise<void> {
         if (!existsSync(sourceDir)) continue;
         mkdirSync(join(BACKGROUND_DIR, relativeDir), { recursive: true });
         for (const entry of readdirSync(sourceDir)) {
-          // Capture files are user data, not bundled daemon code.
-          if (relativeDir === "integrations" && entry === "slack") {
-            const slackSourceDir = join(sourceDir, entry);
-            const slackTargetDir = join(BACKGROUND_DIR, relativeDir, entry);
-            mkdirSync(slackTargetDir, { recursive: true });
-            for (const slackEntry of readdirSync(slackSourceDir)) {
-              if (slackEntry === "captures") continue;
-              cpSync(join(slackSourceDir, slackEntry), join(slackTargetDir, slackEntry), {
-                recursive: true,
-                force: true,
-              });
-            }
-            continue;
-          }
           cpSync(join(sourceDir, entry), join(BACKGROUND_DIR, relativeDir, entry), {
             recursive: true,
             force: true,
@@ -1295,8 +1042,7 @@ async function syncBundledAssets(): Promise<void> {
       }
 
       // The build manifest is an explicit allowlist of bundled JS entrypoints.
-      // Remove only their raw-TS predecessors; queues, state, captures, prompts,
-      // and any unlisted user files are never cleanup targets.
+      // Remove their raw-TS predecessors so Bun does not prefer stale source.
       const runtimeManifest = join(backgroundDir, ".runtime-bundles");
       if (existsSync(runtimeManifest)) {
         for (const bundledPath of readFileSync(runtimeManifest, "utf8").split(/\r?\n/)) {

@@ -23,7 +23,7 @@ export const TOOL_REGISTRY: ToolEntry[] = [
   { id: "slack", name: "Slack", description: "Reads the channels you choose", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 100 },
   { id: "github", name: "GitHub", description: "Reads pull requests and commits", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 90 },
   { id: "linear", name: "Linear", description: "Reads issues and projects", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 70 },
-  { id: "coding-sessions", name: "Coding sessions", description: "Captures finished Claude Code sessions from your repos", group: "sessions", scope: "workspace", platforms: ["web", "desktop"], popularity: 50 },
+  { id: "coding-sessions", name: "Coding sessions", description: "Captures finished Claude Code sessions from your repos", group: "sessions", scope: "workspace", platforms: ["web"], popularity: 50 },
 ];
 
 const GROUP_ORDER: ToolGroup[] = ["meetings", "agent", "team", "sessions"];

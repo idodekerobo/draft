@@ -4,7 +4,7 @@ Draft has a server-side workspace and local agent connections. The exact deliver
 
 ## At session start
 
-The agent connection reads the configured Draft deployment and makes the current workspace context available to the agent. With MCP, the agent queries the remote workspace during a session. With the CLI, a project instruction block points the agent to explicit context commands; hooks separately capture completed sessions.
+The agent connection reads the configured Draft deployment and makes the current workspace context available to the agent. With MCP, the agent queries the remote workspace during a session. With the CLI, a project instruction block points the agent to explicit context commands. The Claude Code plugin no longer loads local profile context through a SessionStart hook; CLI managed project instructions and MCP provide the context path. Session capture remains a separate CLI managed project hook.
 
 The context comes from the authenticated workspace. It is not a private copy maintained in a team Git repository.
 

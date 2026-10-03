@@ -42,15 +42,14 @@ log "Bundling installed TypeScript runtime entrypoints..."
 RUNTIME_MANIFEST="$ASSETS_DIR/background/.runtime-bundles"
 : > "$RUNTIME_MANIFEST"
 
-# Bundle every executable TS runtime currently present. This intentionally uses
-# the source tree as the manifest so newly migrated pollers/synthesizers cannot
-# be forgotten while type-only/helper modules remain ordinary bundle inputs.
+# Bundle the Codex scanner, Codex synthesizer, and Codex intelligence adapter.
+# Keep the source scan so newly added executable Codex runtimes are included.
 {
   find "$REPO_ROOT/background/integrations" -type f \
     \( -name '*-poller.ts' -o -name '*-analyzer.ts' -o -name '*-scanner.ts' \
-       -o -name 'slack-capture.ts' -o -name 'slack-rebuild.ts' -o -name 'slack-reconcile.ts' \)
-  find "$REPO_ROOT/background/synthesizers" -maxdepth 1 -type f -name '*.ts' ! -name 'synthesis-runtime.ts'
-  find "$REPO_ROOT/background/intelligence" -maxdepth 1 -type f -name '*.ts'
+       \)
+  find "$REPO_ROOT/background/synthesizers" -maxdepth 1 -type f -name 'codex-session.ts'
+  find "$REPO_ROOT/background/intelligence" -maxdepth 1 -type f -name 'codex.ts'
 } | sort | while IFS= read -r runtime_source; do
     relative_path="${runtime_source#"$REPO_ROOT/background/"}"
     relative_output="${relative_path%.ts}.js"
@@ -59,6 +58,16 @@ RUNTIME_MANIFEST="$ASSETS_DIR/background/.runtime-bundles"
     bun build --target=bun --outfile "$runtime_output" "$runtime_source"
     printf '%s\n' "$relative_output" >> "$RUNTIME_MANIFEST"
   done
+
+for expected_bundle in \
+  "integrations/codex/codex-scanner.js" \
+  "synthesizers/codex-session.js" \
+  "intelligence/codex.js"; do
+  if ! grep -Fxq "$expected_bundle" "$RUNTIME_MANIFEST"; then
+    echo "[prebuild] ERROR: required Codex runtime missing from bundle manifest: $expected_bundle" >&2
+    exit 1
+  fi
+done
 
 # Do not ship tests or duplicate raw sources for manifest-listed entrypoints.
 rm -rf "$ASSETS_DIR/background/__tests__"
@@ -76,11 +85,7 @@ cp -R "$ASSETS_DIR/background/." "$SMOKE_INSTALL/"
 trap 'rm -rf "$SMOKE_ROOT"' EXIT
 
 # Bounded per-entrypoint window, no `timeout`/`gtimeout` dependency (poll + kill —
-# portable across a clean macOS with no coreutils installed). Needed because some
-# entrypoints (e.g. slack-capture.ts) are long-running daemons that reconnect
-# forever and never exit on their own; only a startup-time module-resolution
-# failure would surface this fast, so we only need to watch briefly, not wait
-# for the process to finish.
+# portable across a clean macOS with no coreutils installed).
 SMOKE_TIMEOUT_S=8
 
 while IFS= read -r relative_output; do

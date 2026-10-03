@@ -47,7 +47,7 @@ if (existsSync(daemonSrc)) {
 
 // Bun runtime — from Electrobun's own dist; codesigned by Electrobun's build step
 // along with draft and draft-background-bin. Enables zero-install TypeScript
-// integration scripts (slack-capture, and future granola/github TypeScript ports).
+// Codex scanner and synthesis runtime scripts.
 const bunArch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : null;
 if (!bunArch) {
   console.error(`[postbuild] FATAL: unsupported macOS architecture: ${process.arch}`);
