@@ -116,51 +116,6 @@ export function getInstalledTools(): InstalledTool[] {
   return Object.keys(result.config.tools ?? {}) as InstalledTool[];
 }
 
-// ── Secrets schema ─────────────────────────────────────────────────────────────
-
-export interface Secrets {
-  github_connected?: boolean;
-  fireflies_api_token?: string;
-  slack_bot_token?: string;
-  slack_app_token?: string;
-  slack_allowlist_channels?: string[];
-  slack_capture_mode?: "passive" | "tagged";
-  slack_analysis_window_hours?: number;
-  /** GitHub Device Flow OAuth token — used for the API-based team-load transport. */
-  github_oauth_token?: string;
-  /** Display only — never log/analytics. */
-  github_oauth_login?: string;
-}
-
-// ── Integrations schema ────────────────────────────────────────────────────────
-
-export interface IntegrationEntry {
-  connected: boolean;
-  /** Exact Claude MCP server ID selected during setup. */
-  mcp_server_id?: string;
-  mode?: string;
-  workspace?: string;
-  channels?: number;
-  repos?: string[];
-  last_connected?: string;
-  /** How this integration got connected. Absent means the legacy gh-CLI flow. */
-  via?: "gh-cli" | "oauth-device-flow";
-}
-
-export interface Integrations {
-  slack?: IntegrationEntry;
-  github?: IntegrationEntry;
-  fireflies?: IntegrationEntry;
-}
-
-export type IntegrationsResult =
-  | { ok: true; integrations: Integrations }
-  | { ok: false; reason: "missing" | "malformed" };
-
-export type SecretsResult =
-  | { ok: true; secrets: Secrets }
-  | { ok: false; reason: "missing" | "malformed" };
-
 // ── Collaboration schema ────────────────────────────────────────────────────────
 
 export interface Collaboration {
@@ -227,58 +182,6 @@ export function setActiveProfile(profile: string, opts?: ProfileOpts): SetActive
   return { ok: true, active: name };
 }
 
-// ── Secrets ────────────────────────────────────────────────────────────────────
-
-export function readSecrets(workspacePath: string): SecretsResult {
-  const secretsPath = join(workspacePath, "config", "secrets.json");
-  let raw: string;
-  try {
-    raw = readFileSync(secretsPath, "utf8");
-  } catch {
-    return { ok: false, reason: "missing" };
-  }
-  try {
-    const parsed = JSON.parse(raw) as Secrets;
-    return { ok: true, secrets: parsed };
-  } catch {
-    return { ok: false, reason: "malformed" };
-  }
-}
-
-/**
- * Merge a credentials patch into the profile's secrets file.
- * This preserves credentials for integrations configured separately.
- */
-export function writeSecrets(workspacePath: string, patch: Partial<Secrets>): void {
-  const secretsPath = join(workspacePath, "config", "secrets.json");
-  const existing = readSecrets(workspacePath);
-  const secrets = { ...(existing.ok ? existing.secrets : {}), ...patch };
-  mkdirSync(join(workspacePath, "config"), { recursive: true });
-  writeFileSync(secretsPath, JSON.stringify(secrets, null, 2) + "\n", "utf8");
-}
-
-export function readIntegrations(workspacePath: string): IntegrationsResult {
-  const intPath = join(workspacePath, "config", "integrations.json");
-  let raw: string;
-  try {
-    raw = readFileSync(intPath, "utf8");
-  } catch {
-    return { ok: false, reason: "missing" };
-  }
-  try {
-    const parsed = JSON.parse(raw) as Integrations;
-    return { ok: true, integrations: parsed };
-  } catch {
-    return { ok: false, reason: "malformed" };
-  }
-}
-
-export function writeIntegrations(workspacePath: string, integrations: Integrations): void {
-  const intPath = join(workspacePath, "config", "integrations.json");
-  mkdirSync(join(workspacePath, "config"), { recursive: true });
-  writeFileSync(intPath, JSON.stringify(integrations, null, 2) + "\n", "utf8");
-}
-
 // ── Collaboration config ────────────────────────────────────────────────────────
 
 // ── Local (per-machine, per-profile) config ─────────────────────────────────────
@@ -288,7 +191,6 @@ export interface LocalConfig {
   notificationsEnabled?: boolean;
   disabledContextSections?: string[];
   codexScanIntervalMinutes?: number | null;
-  claudeCodeSynthesis?: boolean;
 }
 
 export type LocalConfigResult =

@@ -16,7 +16,7 @@ import {
   validateSlackTokenFormat,
 } from "../integrations/slack-hosted";
 
-const manifestPath = new URL("../../../background/integrations/slack/manifest.json", import.meta.url);
+const manifestPath = new URL("../../../integrations/slack-manifest.json", import.meta.url);
 
 describe("hosted Slack manifest", () => {
   it("matches the canonical manifest imported at compile time", () => {
