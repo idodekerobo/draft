@@ -1,8 +1,9 @@
 // Sidebar.tsx — left navigation panel
 //
-// Active state: left 2px blue border + slightly lighter bg + white text.
+// Active state uses the shared selection and focus tokens.
 // No icons in colored circles — hairline separator list rows only.
 
+import { Brand } from "draft-shared-ui";
 import { createPortal } from "react-dom";
 import { memo, useEffect, useRef, useState } from "react";
 import type { View } from "../types";
@@ -74,20 +75,17 @@ export const Sidebar = memo(function Sidebar({ activeView, onNavigate, activePro
   }
 
   return (
-    <nav className="sidebar">
-      <ul className="sidebar__nav" role="tablist">
+    <nav className="sidebar" aria-label="Main">
+      <div className="sidebar__brand"><Brand /></div>
+      <ul className="sidebar__nav">
         {NAV_ITEMS.map((item) => {
           const isActive = item.id === activeView;
 
           return (
-            <li
-              key={item.id}
-              className={`sidebar__item${isActive ? " sidebar__item--active" : ""}`}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => onNavigate(item.id)}
-            >
-              {item.label}
+            <li key={item.id}>
+              <button type="button" className={`ui-shell__link sidebar__item${isActive ? " sidebar__item--active" : ""}`} aria-current={isActive ? "page" : undefined} onClick={() => onNavigate(item.id)}>
+                {item.label}
+              </button>
             </li>
           );
         })}

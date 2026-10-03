@@ -23,8 +23,9 @@ function ConnectionsBody() {
 
 export function ConnectionsView() {
   return (
-    <div className="ui-page">
+    <div className="ui-page connections">
       <h1 className="ui-page__title">Connections</h1>
+      <p className="ui-page__intro">Bring your sources together. Give your agents the context.</p>
       <DataBoundary fallback={<p className="ui-muted" role="status">Loading connections…</p>} errorMessage="Could not load your connections.">
         <ConnectionsBody />
       </DataBoundary>

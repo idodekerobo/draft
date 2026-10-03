@@ -91,13 +91,14 @@ function DimRow({
             className={`context-dim-row__expand-btn${isExpanded ? " context-dim-row__expand-btn--expanded" : ""}`}
             onClick={onToggle}
             aria-label={isExpanded ? "Collapse" : "Expand"}
+            aria-expanded={isExpanded}
           >
             ▶
           </button>
         )}
       </div>
 
-      <div className={`context-dim-row__logs${isExpanded ? " context-dim-row__logs--expanded" : ""}`}>
+      <div inert={!isExpanded} className={`context-dim-row__logs${isExpanded ? " context-dim-row__logs--expanded" : ""}`}>
         {logs.map((log) => (
           <button
             key={log.relativePath}
@@ -137,7 +138,7 @@ function GroupSection({
 }) {
   return (
     <div className="context-group-section">
-      <button className="context-group-section__header" onClick={onToggle} title={groupLabel}>
+      <button className="context-group-section__header" onClick={onToggle} title={groupLabel} aria-expanded={!isCollapsed}>
         <span>{groupLabel.toUpperCase()}</span>
         <span
           className={`context-group-section__arrow${isCollapsed ? "" : " context-group-section__arrow--expanded"}`}
@@ -147,7 +148,7 @@ function GroupSection({
         </span>
       </button>
 
-      <div className={`context-group-section__children${isCollapsed ? "" : " context-group-section__children--expanded"}`}>
+      <div inert={isCollapsed} className={`context-group-section__children${isCollapsed ? "" : " context-group-section__children--expanded"}`}>
         {children.map((entry) => (
           <TreeItem
             key={entry.relativePath}
