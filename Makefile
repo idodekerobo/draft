@@ -116,6 +116,7 @@ cli-push-branch:
 #
 #   Builds locally, signs, notarizes, tags, and uploads artifacts to GitHub —
 #   the desktop .dmg plus (stable only) standalone `draft` CLI binaries.
+#   Stable version bumps are committed only after the GitHub release succeeds.
 #   Stable releases must be run from main. Canary can run from any branch.
 #   gh CLI must be authenticated: gh auth status
 
@@ -167,15 +168,6 @@ content = p.read_text(); \
 result = re.sub(r'version: \"[^\"]+\"', 'version: \"$(v)\"', content, count=1); \
 p.write_text(result)"
 	@echo "  Bumped: electrobun.config.ts → $(v)"
-	@# ── Commit version bump (stable only, skip if nothing changed) ─────────────
-	@if [ -z "$(canary)" ]; then \
-		git add apps/desktop/electrobun.config.ts; \
-		git diff --cached --quiet \
-			&& echo "  Skipped: version already at $(v)" \
-			|| git commit -m "release: desktop v$(v)"; \
-		git push origin main; \
-		echo "  Pushed: version bump → origin/main"; \
-	fi
 	@# ── Build ─────────────────────────────────────────────────────────────────
 	@echo ""
 	@echo "[desktop-release] Building $(_TAG)..."
@@ -204,6 +196,17 @@ p.write_text(result)"
 		--generate-notes \
 		$(_GH_FLAGS) \
 		apps/desktop/artifacts/*
+	@# ── Commit version bump after the release succeeds (stable only) ────────────
+	@if [ -z "$(canary)" ]; then \
+		git add apps/desktop/electrobun.config.ts; \
+		git diff --cached --quiet -- apps/desktop/electrobun.config.ts \
+			&& echo "  Skipped: version already at $(v)" \
+			|| git commit -m "release: desktop v$(v)" -- apps/desktop/electrobun.config.ts; \
+		git push origin main; \
+		git tag -f $(_TAG); \
+		git push --force origin $(_TAG); \
+		echo "  Pushed: version bump and updated $(_TAG) → origin"; \
+	fi
 	@echo ""
 	@echo "[desktop-release] Done. $(_TAG) is live."
 	@echo "  https://github.com/$(DESKTOP_REPO)/releases/tag/$(_TAG)"
