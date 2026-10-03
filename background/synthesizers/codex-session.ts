@@ -115,7 +115,7 @@ export async function runCodexSession(job: CodexSessionJob, options: {
   const tmp = join(workspace, 'tmp');
   mkdirSync(tmp, { recursive: true });
   const outputPath = join(tmp, `codex-synthesis-${crypto.randomUUID()}`);
-  const intelligence = process.env.DRAFT_SESSION_INTELLIGENCE ?? 'claude-code';
+  const intelligence = process.env.DRAFT_SESSION_INTELLIGENCE ?? 'codex';
   const deps = options.deps ?? systemIntelligenceDeps;
   const snapshot = createContextSnapshot(workspace);
   try {

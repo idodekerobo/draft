@@ -73,4 +73,34 @@ describe('Codex session synthesizer', () => {
       else process.env.DRAFT_SESSION_INTELLIGENCE = previous;
     }
   });
+
+  it('defaults to the Codex adapter when no session adapter is configured', async () => {
+    const { workspace, transcript } = setup();
+    const files = new Map<string, string>([['/bg/intelligence/codex.js', 'stub']]);
+    let adapterPath = '';
+    let prompt = '';
+    const deps: IntelligenceDeps = {
+      async invoke(input) {
+        adapterPath = input.adapterPath;
+        prompt = input.prompt;
+        files.set(input.outputPath, '---\noutcome: no_change\n---\n');
+        return 0;
+      },
+      makeTemp: () => '/prompt',
+      readFile: path => files.get(path)!,
+      writeFile: (path, value) => { files.set(path, value); },
+      removeFile: path => { files.delete(path); },
+      exists: path => files.has(path),
+    };
+    const previous = process.env.DRAFT_SESSION_INTELLIGENCE;
+    delete process.env.DRAFT_SESSION_INTELLIGENCE;
+    try {
+      await runCodexSession({ session_id: 'id', transcript_path: transcript, profile: 'p' }, { workspace, backgroundDir: '/bg', deps });
+      expect(adapterPath).toBe('/bg/intelligence/codex.js');
+      expect(prompt).toContain('synthesized_by: codex');
+    } finally {
+      if (previous === undefined) delete process.env.DRAFT_SESSION_INTELLIGENCE;
+      else process.env.DRAFT_SESSION_INTELLIGENCE = previous;
+    }
+  });
 });

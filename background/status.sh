@@ -41,20 +41,10 @@ echo ""
 
 # ── 3. Dependency checks ───────────────────────────────────────────────────────
 echo "Dependencies:"
-if command -v claude &>/dev/null; then
-    echo "  claude  ... ok"
+if command -v bun &>/dev/null; then
+    echo "  bun     ... ok"
 else
-    echo "  claude  ... NOT FOUND — synthesis disabled until installed"
-fi
-if command -v tmux &>/dev/null; then
-    echo "  tmux    ... ok"
-else
-    echo "  tmux    ... NOT FOUND — claude-code adapter unavailable"
-fi
-if command -v python3 &>/dev/null; then
-    echo "  python3 ... ok"
-else
-    echo "  python3 ... NOT FOUND — daemon requires python3"
+    echo "  bun     ... NOT FOUND — Codex session synthesis unavailable"
 fi
 echo ""
 

@@ -44,9 +44,6 @@ interface Job {
 }
 
 const SYNTHESIS_ADAPTERS = {
-  github: 'github',
-  slack: 'slack',
-  'claude-code-session': 'claude-code-session',
   'codex-session': 'codex-session',
 } as const;
 
@@ -109,7 +106,7 @@ export async function synthesize(
   const jobId          = job.job_id          ?? fallbackJobId;
   const sessionId      = job.session_id      ?? null;
   const reason         = job.reason          ?? 'unknown';
-  const rawSource      = job.source          ?? 'claude-code-session';
+  const rawSource      = job.source          ?? 'codex-session';
   if (!isSynthesisSource(rawSource)) {
     return { status: 'failed', proposalsGenerated: 0, errorMsg: 'invalid synthesis source' };
   }
@@ -128,14 +125,10 @@ export async function synthesize(
   }
 
   // ── Skip missing transcripts before spawning the expensive adapter ─────────
-  // Session-source jobs require a transcript file. Check early to avoid launching
-  // a Claude session that will immediately fail.
-  if (source === 'claude-code-session' || source === 'codex-session') {
-    if (!transcriptPath || !existsSync(transcriptPath)) {
-      const why = !transcriptPath ? 'missing_transcript_path' : 'missing_transcript';
-      slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
-      return { status: 'skipped', proposalsGenerated: 0, skipReason: why };
-    }
+  if (!transcriptPath || !existsSync(transcriptPath)) {
+    const why = !transcriptPath ? 'missing_transcript_path' : 'missing_transcript';
+    slog('info', `synthesize: skipping job (${why} session=${sessionShort} profile=${profile})`);
+    return { status: 'skipped', proposalsGenerated: 0, skipReason: why };
   }
 
   // Codex transcripts remain writable while a session is active. A scanner job
@@ -188,7 +181,7 @@ export async function synthesize(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      // Kill process group so grandchildren (e.g. `claude -p` inside the adapter) are cleaned up
+      // Kill the process group so child processes started by the adapter are cleaned up.
       if (proc.pid) {
         try { process.kill(-proc.pid, 'SIGTERM'); } catch {}
       }
@@ -224,18 +217,11 @@ export async function synthesize(
   // ── Validate and route through the automated maintainer ───────────────────
   let routed;
   try {
-    const intelligence = source === 'slack'
-      ? process.env.DRAFT_SLACK_INTELLIGENCE
-      : source === 'github'
-        ? process.env.DRAFT_GITHUB_INTELLIGENCE
-        : process.env.DRAFT_SESSION_INTELLIGENCE;
-    const inputSource = source === 'claude-code-session' || source === 'codex-session'
-      ? 'session'
-      : source;
+    const intelligence = process.env.DRAFT_SESSION_INTELLIGENCE ?? 'codex';
     routed = routeAutomatedMaintainerOutput(stdoutText, {
       ...(sessionId ? { session_id: sessionId, job_id: jobId } : { job_id: jobId }),
-      input_source: inputSource,
-      synthesized_by: intelligence ?? 'claude-code',
+      input_source: 'session',
+      synthesized_by: intelligence,
       timestamp: job.timestamp ?? startedAt,
       profile,
     }, workspace);

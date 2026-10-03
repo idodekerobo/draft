@@ -21,12 +21,15 @@ function createRun(output: string, jobOverrides: Record<string, unknown> = {}): 
   const root = join(ROOT, String(++testNumber));
   const workspace = join(root, 'workspace');
   const jobPath = join(root, 'job-router-test.json');
+  const transcriptPath = join(root, 'codex-session.jsonl');
   createdRoots.push(root);
   mkdirSync(workspace, { recursive: true });
+  writeFileSync(transcriptPath, '');
   writeFileSync(jobPath, JSON.stringify({
     job_id: `router-test-${testNumber}`,
     profile: 'router-test',
-    source: 'github',
+    source: 'codex-session',
+    transcript_path: transcriptPath,
     reason: 'poll',
     ...jobOverrides,
   }));

@@ -4,8 +4,7 @@ These source adapters describe the local/background synthesis runtime contract. 
 
 This local contract predates the hosted result shape in the backend. Its `needs_input` outcome stages a local flagged proposal, while hosted synthesis stores a `needs_input` array on the synthesis run and may persist it alongside a changed or unchanged result. Do not use this local `proposals/flagged/` behavior as the hosted product workflow.
 
-Files in `synthesizers/` are **source adapters** — each one knows how to handle
-a specific input source (session transcripts, Fireflies meetings, Slack threads).
+`codex-session.ts` is the daemon's Codex transcript adapter.
 
 Source adapters are responsible for:
 - Reading and parsing the input for their source type
@@ -19,11 +18,7 @@ Source adapters are responsible for:
 synthesizers/
   maintainer-contract.ts     # shared outcome contract, imported by every adapter
   synthesis-runtime.ts       # context snapshots + intelligence invocation
-  claude-code-session.ts     # Claude Code session transcripts
   codex-session.ts           # Codex session transcripts
-  fireflies.ts               # Fireflies meeting transcripts
-  slack.ts                   # Slack message batches
-  github.ts                  # merged PRs and releases
 ```
 
 ## Interface
@@ -33,12 +28,12 @@ synthesizers/
 $1 = path to job file (JSON)
 ```
 
-Job file schema (written by on-session-end.sh, confirmed 2026-05-17):
+Job file schema (written by the Codex scanner):
 ```json
 {
   "profile":         "draft-pm-agent",
   "session_id":      "853ea41f-09ef-47d7-a1fa-502c16fc227d",
-  "transcript_path": "/Users/.../.claude/projects/<slug>/<uuid>.jsonl",
+  "transcript_path": "/Users/.../.codex/sessions/<date>/<uuid>.jsonl",
   "cwd":             "/path/to/project",
   "reason":          "prompt_input_exit",
   "timestamp":       "2026-05-17T02:44:08Z"
@@ -74,7 +69,7 @@ rather than a patch.
 ---
 session_id: 853ea41f
 input_source: session
-synthesized_by: claude-code
+synthesized_by: codex
 timestamp: 2026-05-17T02:44:08Z
 profile: draft-pm-agent
 outcome: rewrite
@@ -91,9 +86,6 @@ rewrites:
       [complete new content for context/product/index.md]
 ---
 ```
-
-Meeting sources (`fireflies`) must additionally emit a `meeting_ids` list
-for every outcome — it is how the poller advances its cursor. An empty list is valid.
 
 Contradictions are no longer routed to `context/tensions.md`; an unresolved one is
 `needs_input`. Adapters must never write to `context/tensions.md` — the snapshot they
@@ -113,19 +105,15 @@ its own intelligence config var — use the one for your source, not a generic o
 
 | Source adapter | Intelligence var | Default |
 |---|---|---|
-| `claude-code-session.ts`, `codex-session.ts` | `DRAFT_SESSION_INTELLIGENCE` | `claude-code` |
-| `fireflies.ts` | `DRAFT_FIREFLIES_INTELLIGENCE` | `claude-code` |
-| `slack.ts` | `DRAFT_SLACK_INTELLIGENCE` | `claude-code` |
-| `github.ts` | `DRAFT_GITHUB_INTELLIGENCE` | `claude-code` |
+| `codex-session.ts` | `DRAFT_SESSION_INTELLIGENCE` | `codex` |
 
 Override via environment variable. The same value is recorded as `synthesized_by` on
 the resulting run, so it must be read from the env rather than hardcoded.
 
-Valid values: `claude-code` (tmux TUI, full tool access), `claude-api` (stateless curl, faster/cheaper), `codex` (future).
+Valid value: `codex`.
 
 ```ts
-// Use the var for YOUR source — not DRAFT_SESSION_INTELLIGENCE
-const intelligence = process.env.DRAFT_FIREFLIES_INTELLIGENCE ?? 'claude-code';
+const intelligence = process.env.DRAFT_SESSION_INTELLIGENCE ?? 'codex';
 const snapshot = createContextSnapshot(workspace);
 try {
   return await runIntelligence({
@@ -153,7 +141,6 @@ See `intelligence/README.md` for the intelligence adapter contract.
 5. Describe only your source's evidence in the prompt, then append
    `buildMaintainerContractPrompt()` for the outcome rules. Never restate the outcome
    contract yourself; it drifts.
-6. Write output to `$DRAFT_WORKSPACE/tmp/<source>-…` (not `/tmp/` — Claude Code cannot
-   write there) and return its contents.
+6. Write output to `$DRAFT_WORKSPACE/tmp/<source>-…` and return its contents.
 7. Route the result through `routeAutomatedMaintainerOutput()`. Never write to
    `context/` from an adapter.
