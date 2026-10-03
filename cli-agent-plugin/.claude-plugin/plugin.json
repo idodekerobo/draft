@@ -1,6 +1,6 @@
 {
   "name": "draft",
-  "description": "Shared team context layer for AI coding agents. Install once \u2014 every session starts with full shared context, no re-explaining required.",
+  "description": "Skills and agents for working with Draft shared team context and synthesis.",
   "version": "2.3.3",
   "author": {
     "name": "Draft"

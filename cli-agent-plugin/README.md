@@ -8,9 +8,9 @@ The connection surface is evolving. Today, the CLI and tool-specific hooks are t
 
 Draft gives connected agents access to a shared workspace containing company context, product context, priorities, decisions, and source-derived updates. The workspace is stored in the configured Draft deployment. This directory does not store or synchronize the company brain itself.
 
-The local connection can:
+The CLI managed project connection can:
 
-- Make workspace context available at agent startup.
+- Add project instructions that direct the agent to retrieve workspace context through the CLI.
 - Install a project-local session-end hook.
 - Read a completed transcript from the local project machine.
 - Upload that transcript to the Draft API using a workspace-scoped ingest token.

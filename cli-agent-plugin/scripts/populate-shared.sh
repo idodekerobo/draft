@@ -88,15 +88,6 @@ else
         mkdir -p "$SHARED/skills/$skill"
         curl -fsSL "$GITHUB_RAW/skills/$skill/SKILL.md" -o "$SHARED/skills/$skill/SKILL.md"
     done
-    # draft-connect has subdirectories
-    mkdir -p \
-        "$SHARED/skills/draft-connect/github" \
-        "$SHARED/skills/draft-connect/granola" \
-        "$SHARED/skills/draft-connect/slack"
-    curl -fsSL "$GITHUB_RAW/skills/draft-connect/SKILL.md"          -o "$SHARED/skills/draft-connect/SKILL.md"
-    curl -fsSL "$GITHUB_RAW/skills/draft-connect/github/SKILL.md"   -o "$SHARED/skills/draft-connect/github/SKILL.md"
-    curl -fsSL "$GITHUB_RAW/skills/draft-connect/granola/SKILL.md"  -o "$SHARED/skills/draft-connect/granola/SKILL.md"
-    curl -fsSL "$GITHUB_RAW/skills/draft-connect/slack/SKILL.md"    -o "$SHARED/skills/draft-connect/slack/SKILL.md"
 fi
 echo "[Draft]   skills → $SHARED/skills/"
 
