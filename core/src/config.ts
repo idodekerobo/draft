@@ -50,7 +50,13 @@ export interface DraftConfig {
   /** Separate from last_update_check (plugin) — tracks the CLI binary release channel. */
   last_cli_update_check?: UpdateCheckEntry;
   analytics?: AnalyticsConfig;
+  notificationsEnabled?: boolean;
   last_migration?: number;
+}
+
+export function resolveNotificationsEnabled(globalValue: boolean | undefined, profileValue: boolean | undefined): { enabled: boolean; migrated: boolean } {
+  if (globalValue !== undefined) return { enabled: globalValue, migrated: false };
+  return { enabled: profileValue ?? true, migrated: true };
 }
 
 /**

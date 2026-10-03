@@ -3,12 +3,11 @@
 // Owns:
 //   - Status polling loop (getStatus RPC every 5s, for appState only)
 //   - Active view state (sidebar navigation)
-//   - Active profile state (updated by profileChanged events)
 //
 // Server data lives in the query cache; see hooks/ and queries.ts.
 
 import { useState, useEffect, useRef, useCallback, startTransition } from "react";
-import { events, rpc } from "./rpc";
+import { rpc } from "./rpc";
 import { useAnalytics } from "./analytics/AnalyticsContext";
 import { useUserIdentity } from "./identity/UserIdentityContext";
 import { StatusBar } from "./components/StatusBar";
@@ -32,7 +31,6 @@ const STATUS_POLL_MS = 5_000;
 
 export function App() {
   const [activeView, setActiveView]     = useState<View>("context");
-  const [activeProfile, setActiveProfile] = useState<string>("");
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
   // app renders immediately instead of waiting on identityRefreshNeeded's
   // async round trip to land before identity.onboardingCompletedAt updates.
@@ -51,18 +49,11 @@ export function App() {
   const { track } = useAnalytics();
   const hasLaunchedRef = useRef(false);
 
-  // Ref so event handlers always see the current profile without re-registering.
-  const activeProfileRef = useRef(activeProfile);
-  useEffect(() => { activeProfileRef.current = activeProfile; }, [activeProfile]);
   useEffect(() => { workspaceIdRef.current = workspaceId; }, [workspaceId]);
 
   // ── Shared status fetch ────────────────────────────────────────────────────
   async function fetchStatus() {
     const s = await rpc.request.getStatus();
-    // Seed activeProfile from status on first load only.
-    if (!activeProfileRef.current && s.appState.activeProfile) {
-      setActiveProfile(s.appState.activeProfile);
-    }
     if (!hasLaunchedRef.current) {
       hasLaunchedRef.current = true;
       track("app_launched", { user_state: s.appState.userState });
@@ -111,13 +102,6 @@ export function App() {
     }
   }, [contextSettled, contextEmpty]);
 
-  // ── Push: profile changed (CLI-driven or desktop-driven) ──────────────────
-  useEffect(() => {
-    return events.on("profileChanged", ({ profile }) => {
-      setActiveProfile(profile);
-    });
-  }, []);
-
   useBootstrapPolling(workspaceIdRef, setContextFiles, setSyncToast);
 
   useEffect(() => {
@@ -152,7 +136,7 @@ export function App() {
         <main className="content">
           {/* Settings is always reachable regardless of daemon state. */}
           {settingsOpen && (
-            <SettingsView key={activeProfile} activeProfile={activeProfile} onOpenFeedback={openFeedback} />
+            <SettingsView onOpenFeedback={openFeedback} />
           )}
           {!settingsOpen && !identityHydrated && <div className="empty-state">Loading…</div>}
           {!settingsOpen && showOnboarding && (
@@ -173,16 +157,15 @@ export function App() {
               {/* Stays mounted so the selected document and tree state survive tab changes. */}
               <div className="content__view" hidden={activeView !== "context"}>
                 <ContextViewer
-                  key={`${activeProfile}:${workspaceId ?? "signed-out"}`}
-                  activeProfile={activeProfile}
+                  key={workspaceId ?? "signed-out"}
                   files={contextFiles}
                   setFiles={setContextFiles}
                   reloadFiles={reloadContextFiles}
                   loading={contextLoading}
                 />
               </div>
-              {activeView === "connections" && <ConnectionsView key={activeProfile} />}
-              {activeView === "activity" && <ActivityView key={activeProfile} />}
+              {activeView === "connections" && <ConnectionsView />}
+              {activeView === "activity" && <ActivityView />}
             </>
           )}
         </main>

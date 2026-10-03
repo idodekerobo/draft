@@ -6,7 +6,7 @@
 import { Utils } from "electrobun/bun";
 
 // ── Notification gate ──────────────────────────────────────────────────────────
-// Controlled by the user's notificationsEnabled setting in local.json.
+// Controlled by the user's notificationsEnabled setting in ~/.draft/config.json.
 // Set on startup and updated immediately when the setting changes in the UI.
 
 let notificationsEnabled = true;

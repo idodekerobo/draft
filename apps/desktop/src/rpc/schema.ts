@@ -101,135 +101,6 @@ export interface ActionResult {
   error?: string;
 }
 
-export interface ScannedSkillEntry {
-  name: string;
-  agent: "claude-code" | "codex";
-  dirPath: string;
-  description: string;
-  descriptionTokenCount: number;
-  tokenCount: number;
-  synced?: boolean;
-}
-
-export interface ScanDirError {
-  dir: string;
-  agent: "claude-code" | "codex";
-  message: string;
-}
-
-export interface ScannedMCPEntry {
-  name: string;
-  agent: "claude-code" | "codex";
-  config: Record<string, unknown>;
-}
-
-export interface ScanSkillsResult {
-  skills: ScannedSkillEntry[];
-  scanErrors?: ScanDirError[];
-  mcpServers?: ScannedMCPEntry[];
-}
-
-/** A skill that was detected as a new real directory not yet in the manifest. */
-export interface PendingSkillEntry {
-  id: string;
-  name: string;
-  source_agent: "claude-code" | "codex";
-  source_path: string;
-  skill_dir_hash: string;
-  description: string;
-  tokenCount: number;
-}
-
-/** Both agents have a real directory with the same skill name — needs user resolution. */
-export interface SameNameConflict {
-  name: string;
-  "claude-code": { path: string; skill_dir_hash: string };
-  codex: { path: string; skill_dir_hash: string };
-}
-
-/** User's decision for resolving a same-name skill conflict. */
-export type ConflictResolution =
-  | { action: "use-source"; authoritative_agent: "claude-code" | "codex" }
-  | { action: "keep-local" };
-
-// ── MCP sync types ─────────────────────────────────────────────────────────────
-
-export interface CanonicalMcp {
-  type: "http";
-  url: string;
-  headers?: Record<string, {
-    value_env?: string;
-    value_literal?: string;
-    secret: boolean;
-  }>;
-  disabled?: boolean;
-}
-
-export interface McpManifestSyncEntry {
-  synced_at: string;
-  target_name: string;
-}
-
-export interface McpManifestEntry {
-  id: string;
-  name: string;
-  source_agent: "claude-code" | "codex";
-  sync_canonical: CanonicalMcp;
-  sync_canonical_hash: string;
-  source_snapshot: { original_config: Record<string, unknown> };
-  env_var_mapping: Record<string, string>;
-  synced_to: Partial<Record<"claude-code" | "codex", McpManifestSyncEntry>>;
-  removed_at: string | null;
-  /** "personal" = local personal MCP, "team" = shared via workspace. */
-  kind: "personal" | "team";
-  /** For team MCPs: env var names the local user must supply before install. */
-  pending_secrets?: string[];
-}
-
-export interface McpManifest {
-  version: 5;
-  schema_version: 5;
-  mcps: Record<string, McpManifestEntry>;
-  name_conflicts: Record<string, {
-    agents: Array<"claude-code" | "codex">;
-    resolved: boolean;
-    authoritative_agent: "claude-code" | "codex" | null;
-  }>;
-}
-
-export interface PendingMcpEntry {
-  id: string;
-  name: string;
-  source_agent: "claude-code" | "codex";
-  config: Record<string, unknown>;
-  canonical: CanonicalMcp;
-  conflict?: boolean;
-}
-
-export interface McpConflict {
-  name: string;
-  "claude-code": { config: Record<string, unknown>; canonical: CanonicalMcp };
-  codex: { config: Record<string, unknown>; canonical: CanonicalMcp };
-}
-
-export interface McpDriftEntry {
-  id: string;
-  name: string;
-  source_agent: "claude-code" | "codex";
-  target_agent: "claude-code" | "codex";
-  expected: CanonicalMcp;
-  observed: Record<string, unknown>;
-}
-
-export interface McpReconcileResult {
-  resynced: string[];
-  tombstoned: string[];
-  drifted: McpDriftEntry[];
-  errors: string[];
-}
-
-export type HeadlessSetupPhase = "starting" | "running" | "writing" | "complete" | "error";
-
 export interface LocalConfig {
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
@@ -262,22 +133,6 @@ export interface AnalyticsConfig {
   posthog_host?: string;
   /** Runtime-only: sourced from build-config.json, never persisted to ~/.draft/config.json. */
   posthog_key?: string;
-}
-
-/** Full text injected at session start, with token estimate. */
-export interface SessionPreview {
-  text: string;
-  tokenEstimate: number;
-}
-
-/**
- * A single context section that can be toggled in Settings.
- * "full" = entire file injected; "summary" = frontmatter description only.
- */
-export interface ContextSection {
-  name: string;
-  label: string;
-  injectionMode: "full" | "summary";
 }
 
 /** Detail for a single intelligence tool (claude-code, codex, cursor). */
@@ -392,13 +247,6 @@ import type { ContextFileEntry } from "draft-shared-ui/context-files";
 import type { TeamSessionRepo } from "draft-shared-ui";
 export type { ContextFileEntry };
 
-/** A team MCP that is waiting for the user to supply missing API credentials. */
-export interface PendingCredentialMcp {
-  name: string;
-  url: string;
-  required_secrets: string[];
-}
-
 // ── RPC schema ─────────────────────────────────────────────────────────────────
 
 export type AppRPCType = {
@@ -415,13 +263,10 @@ export type AppRPCType = {
       /** Launch a terminal session for the given tool + profile. */
       launchSession: { params: SessionLaunchConfig; response: LaunchResult };
 
-      /** Start the cross-agent skill watcher. Called after onboarding completes. */
-      startSkillWatcher: { params: void; response: void };
-
-      /** Read per-profile local config. */
+      /** Read local settings and global notification preference. */
       getLocalConfig: { params: void; response: LocalConfig };
 
-      /** Patch per-profile local config. */
+      /** Patch local settings and global notification preference. */
       setLocalConfig: { params: Partial<LocalConfig>; response: ActionResult };
 
       /** List all readable context files for the active workspace. */
@@ -450,39 +295,6 @@ export type AppRPCType = {
 
       /** First-launch install: extract binary, symlink to PATH, run `draft add` for each tool. */
       runInstall: { params: { tools: InstallableTool[] }; response: InstallResult };
-
-      /** Scan Claude Code and Codex skill directories for skills Draft does not manage. */
-      scanSkills: { params: void; response: ScanSkillsResult };
-
-      /** Create cross-agent symlinks for the selected scanned skills. */
-      importSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { created: number; skipped: number } };
-
-      /** Remove cross-agent symlinks for the given skills. */
-      removeSkills: { params: { skills: ScannedSkillEntry[] }; response: ActionResult & { removed: number } };
-
-      /** Return all skills pending approval and any same-name conflicts. */
-      getSkillsPending: { params: void; response: { pending: PendingSkillEntry[]; conflicts: SameNameConflict[] } };
-
-      /** Approve pending skills — create their cross-agent symlinks and mark them approved in the manifest. */
-      approveSkills: { params: { skills: PendingSkillEntry[] }; response: ActionResult & { created: number } };
-
-      /** Resolve a same-name conflict by picking an authoritative agent or keeping both local. */
-      resolveSkillConflict: { params: { conflict: SameNameConflict; resolution: ConflictResolution }; response: ActionResult };
-
-      /** Return all MCP entries pending approval and any same-name conflicts. */
-      getMcpPending: { params: void; response: { pending: PendingMcpEntry[]; conflicts: McpConflict[] } };
-
-      /** Approve pending MCPs — write manifest entries and sync to target agent config. */
-      approveMcps: { params: { mcps: PendingMcpEntry[] }; response: ActionResult };
-
-      /** Resolve an MCP name conflict by picking one agent as authoritative. */
-      resolveMcpConflict: { params: { name: string; authoritative_agent: "claude-code" | "codex" }; response: ActionResult };
-
-      /** Remove a Draft-managed MCP from the manifest and both agent configs. */
-      removeMcp: { params: { id: string }; response: ActionResult };
-
-      /** Return the full MCP manifest. */
-      getMcpManifest: { params: void; response: McpManifest };
 
       /**
        * Persist a Granola API key in Draft Cloud; the server registers the
@@ -543,13 +355,6 @@ export type AppRPCType = {
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
-      /**
-       * Start a non-interactive CLI session to create the active profile's context.
-       * `dimensions` overrides the standard company/product/team/priorities set —
-       * omit to use the default four.
-       */
-      runHeadlessSetup: { params: { mode: "scratch" | "import" | "github"; folderPath?: string; githubUrl?: string; runner?: "claude" | "codex"; dimensions?: string[] }; response: ActionResult };
-
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
 
@@ -587,21 +392,6 @@ export type AppRPCType = {
         response: ActionResult & { inserted?: number; skipped?: string[]; runId?: string; machineId?: string; reason?: string; synthesisError?: string };
       };
 
-      /**
-       * Run inject-context.sh and return the full text that would be injected
-       * at session start, plus a rough token estimate (chars / 4).
-       */
-      getSessionPreview: { params: void; response: SessionPreview };
-
-      /**
-       * List context sections for the active profile — one per context/{name}/index.md
-       * dimension, plus "memory" if personal/memory.md exists.
-       */
-      getContextSections: { params: void; response: ContextSection[] };
-
-      /** Open Finder with the file selected (macOS `open -R`). */
-      revealInFinder: { params: { relativePath: string }; response: ActionResult };
-
       /** Return support config baked in at build time. Empty strings for OSS builds. */
       getCrispConfig: { params: void; response: { website_id: string; cal_url: string; history_endpoint: string; history_secret: string } };
 
@@ -621,9 +411,6 @@ export type AppRPCType = {
 
       /** List the last 50 cloud synthesis runs for the active workspace. Returns [] if signed out or the request fails. */
       getWorkspaceRuns: { params: void; response: WorkspaceRun[] };
-
-      /** Supply a missing secret for a team MCP in pending-credentials state. */
-      setMcpSecret: { params: { name: string; envVar: string; value: string }; response: ActionResult & { nowInstalled: boolean } };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };
@@ -658,35 +445,9 @@ export type AppRPCType = {
   webview: RPCSchema<{
     requests: {};
     messages: {
-      /** A newly installed skill was made available to the other agent. */
-      skillsChanged: { count: number };
-
-      /** Team MCPs were installed or removed (e.g. after draft load). */
-      mcpsChanged: { count: number };
-
-      /** New MCPs were detected and are waiting for user approval in Settings > MCPs. */
-      mcpsPendingApproval: { pending: PendingMcpEntry[] };
-
-      /** Same-name MCP conflict detected — both agents have an entry with the same name. */
-      mcpsConflict: { conflicts: McpConflict[] };
-
-      /** Approved MCPs drifted from their canonical form in a target agent. */
-      mcpsDrifted: { drifted: McpDriftEntry[] };
-
-      /** New skills were detected and are waiting for user approval in Settings > Skills. */
-      skillsPendingApproval: { pending: PendingSkillEntry[] };
-
-      /** Same-name skill conflict detected — both agents have a real directory with the same name. */
-      skillsConflict: { conflicts: SameNameConflict[] };
-
-      /** Status update from the headless context-setup process. */
-      headlessProgress: { phase: HeadlessSetupPhase; label: string; error?: string };
 
       /** Daemon completed a capture cycle. */
       captureComplete: { source: string };
-
-      /** Active profile changed outside or inside desktop. */
-      profileChanged: { profile: string };
 
       /** Bun started an update check. */
       updateCheckStarted: Record<string, never>;
@@ -702,9 +463,6 @@ export type AppRPCType = {
 
       /** Synthesis job completed — renderer should re-fetch activity runs. Reserved for sentinel file watcher (TODO-3); not emitted in v1. */
       runComplete: { profile: string; source: string; status: string; proposalsGenerated: number };
-
-      /** One or more team MCPs are missing credentials after profile switch or load-team. */
-      mcpsPendingCredentials: { mcps: PendingCredentialMcp[] };
 
       signInProgress: {
         phase: "awaiting_approval" | "complete" | "error";

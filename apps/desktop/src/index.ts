@@ -2,19 +2,12 @@
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
-import {
-  createSymlinks, removeSymlinks, scanSkillDirectories, scanMCPConnections,
-  detectPending, reconcileSkillManifest, readSkillManifest, writeSkillManifest,
-  type PendingSkillEntry, type SameNameConflict,
-} from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getWorkspacePath, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, readCollaboration, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getWorkspacePath, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { documentsToEntries } from "draft-shared-ui/context-files";
 import type { TeamSessionRepo } from "draft-shared-ui";
 import { capture } from "./exec";
-import { spawnHeadlessAgent } from "draft-core/agents/headless";
-import { buildHeadlessSetupPrompt } from "draft-core/agents/prompts/setup";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack-hosted";
 import {
   normalizeHostedConnections,
@@ -32,24 +25,6 @@ import {
 import { runInstall, syncExtractedBins } from "./main/installer";
 import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
-import {
-  startActiveProfileWatch,
-  stopActiveProfileWatch,
-} from "./main/watchers/activeProfile";
-import { startSkillWatch, stopSkillWatch, restartSkillWatchWithProfile } from "./main/watchers/skills";
-import { startMcpWatch, stopMcpWatch, restartMcpWatchWithProfile } from "./main/watchers/mcps";
-import {
-  detectMcpPending,
-  approveMcps as approveMcpsCore,
-  setTeamMcpSecret,
-} from "draft-core/sync/mcp-sync";
-import {
-  readMcpManifest,
-  writeMcpManifest,
-  tombstoneMcp,
-} from "draft-core/sync/manifest";
-import { readWorkspaceMcpManifest } from "draft-core/sync/workspace-mcp";
-import { rebuildEnvSh, switchProfileAssets } from "draft-core/sync/team-assets";
 import type {
   AppRPCType,
   IntegrationDetail,
@@ -106,100 +81,6 @@ async function revokeCredentialAdmin(workspaceId: string, credentialId: string):
 
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
-
-/**
- * Render the context that the desktop's Session view previews.
- *
- * This intentionally reads the active profile directly instead of invoking
- * the legacy agent-plugin hook. The agent integrations may be absent while
- * the desktop app and its background daemon remain installed.
- */
-function buildSessionPreview(): { text: string; tokenEstimate: number } {
-  const workspace = getWorkspacePath(getActiveProfile());
-  const contextDir = join(workspace, "context");
-  const personalDir = join(DRAFT_ROOT, "personal");
-  const local = readLocalConfig(workspace);
-  const disabled = new Set(local.ok ? local.config.disabledContextSections ?? [] : []);
-  const lines: string[] = [
-    "# Draft — Workspace Context",
-    "",
-    `**Active profile:** ${getActiveProfile()}`,
-    `**DRAFT_WORKSPACE:** ${workspace}`,
-    "",
-    "## Workspace structure",
-  ];
-
-  if (!existsSync(contextDir)) {
-    lines.push("(context/ not found — run /draft:setup)");
-  } else {
-    try {
-      for (const entry of readdirSync(contextDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (entry.name.startsWith(".")) continue;
-        const entryPath = join(contextDir, entry.name);
-        if (entry.isDirectory()) {
-          lines.push(`${entry.name}/`);
-          for (const child of readdirSync(entryPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-            if (!child.name.startsWith(".")) lines.push(`  ${child.name}`);
-          }
-        } else {
-          lines.push(entry.name);
-        }
-      }
-    } catch {
-      lines.push("(unable to read context structure)");
-    }
-  }
-
-  lines.push("", "## Context index");
-  let indexFiles: string[] = [];
-  try {
-    indexFiles = readdirSync(contextDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !disabled.has(entry.name) && existsSync(join(contextDir, entry.name, "index.md")))
-      .map((entry) => join(contextDir, entry.name, "index.md"))
-      .sort();
-  } catch { /* missing or unreadable context is handled below */ }
-
-  if (indexFiles.length === 0) {
-    lines.push("No context loaded yet — run /draft:setup to initialize your shared context layer.");
-  } else {
-    for (const indexPath of indexFiles) {
-      try {
-        const content = readFileSync(indexPath, "utf8");
-        const dimension = indexPath.split("/").at(-2) ?? "context";
-        const end = content.startsWith("---") ? content.indexOf("\n---", 3) : -1;
-        const frontmatter = end >= 0 ? content.slice(3, end).trim() : content.slice(0, 300).trim();
-        lines.push(`**${dimension}**`, frontmatter, "");
-      } catch { /* skip an unreadable dimension */ }
-    }
-  }
-
-  if (!disabled.has("priorities")) {
-    lines.push("## Current priorities");
-    const priorities = join(contextDir, "priorities", "index.md");
-    try { lines.push(existsSync(priorities) ? readFileSync(priorities, "utf8").trimEnd() : "No priorities recorded yet."); }
-    catch { lines.push("No priorities recorded yet."); }
-  }
-
-  const memoryPath = join(personalDir, "memory.md");
-  if (!disabled.has("memory") && existsSync(memoryPath)) {
-    lines.push("", "## Memory");
-    try { lines.push(readFileSync(memoryPath, "utf8").trimEnd()); }
-    catch { /* missing memory is non-fatal */ }
-  }
-
-  const collaboration = readCollaboration(workspace);
-  if (collaboration.ok && collaboration.collab.mode === "github") {
-    lines.push(
-      "",
-      "## Collaboration",
-      `mode: github`,
-      `teammates: ${(collaboration.collab.teammates ?? []).join(", ") || "—"}`,
-    );
-  }
-
-  const text = lines.join("\n");
-  return { text, tokenEstimate: Math.ceil(text.length / 4) };
-}
 
 // Keys baked in at build time via electrobun.config.ts define → process.env.
 // Falls back to empty string for OSS builds (no build-config.json).
@@ -357,9 +238,6 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "quit-completely") {
-    stopActiveProfileWatch();
-    stopSkillWatch();
-    stopMcpWatch();
     process.exit(0);
   }
 });
@@ -401,9 +279,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspace = getWorkspacePath(getActiveProfile());
         const result = readLocalConfig(workspace);
         const c = result.ok ? result.config : {};
+        const draftResult = readDraftConfig();
+        const config = draftResult.ok ? draftResult.config : { version: "1", tools: {} };
+        const preference = resolveNotificationsEnabled(config.notificationsEnabled, c.notificationsEnabled);
+        if (preference.migrated) writeDraftConfig({ ...config, notificationsEnabled: preference.enabled });
         return {
           launchOnLogin:             c.launchOnLogin             ?? false,
-          notificationsEnabled:      c.notificationsEnabled      ?? true,
+          notificationsEnabled: preference.enabled,
           disabledContextSections:   c.disabledContextSections   ?? [],
           codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
           claudeCodeSynthesis:       c.claudeCodeSynthesis       ?? true,
@@ -413,12 +295,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       setLocalConfig: async (patch) => {
         try {
           const workspace = getWorkspacePath(getActiveProfile());
-          writeLocalConfig(workspace, patch);
+          const { notificationsEnabled, ...localPatch } = patch;
+          if (Object.keys(localPatch).length > 0) writeLocalConfig(workspace, localPatch);
           if (patch.launchOnLogin !== undefined) {
             await applyLoginItem(patch.launchOnLogin);
           }
-          if (patch.notificationsEnabled !== undefined) {
-            setNotificationsEnabled(patch.notificationsEnabled);
+          if (notificationsEnabled !== undefined) {
+            const result = readDraftConfig();
+            const config = result.ok ? result.config : { version: "1", tools: {} };
+            writeDraftConfig({ ...config, notificationsEnabled });
+            const { setNotificationsEnabled } = await import("./main/notifications");
+            setNotificationsEnabled(notificationsEnabled);
           }
           return { ok: true };
         } catch (err) {
@@ -584,10 +471,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           }
           const workspace = getWorkspacePath(getActiveProfile());
           const result    = readIntegrations(workspace);
-          const current   = result.ok ? result.integrations : {};
+          const current   = result.ok ? result.integrations : {} as import("draft-core/config").Integrations;
           const updated   = {
             ...current,
-            [source]: { ...(current[source] ?? {}), connected: false },
+            [source]: { ...((current as Record<string, import("draft-core/config").IntegrationEntry | undefined>)[source] ?? {}), connected: false },
           };
           writeIntegrations(workspace, updated);
           return { ok: true };
@@ -647,256 +534,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         return { ok: true };
       },
 
-      getSessionPreview: async () => {
-        return buildSessionPreview();
-      },
-
-      getContextSections: async () => {
-        const workspace = getWorkspacePath(getActiveProfile());
-        const contextDir = join(workspace, "context");
-        const sections: import("./rpc/schema").ContextSection[] = [];
-
-        function capitalize(s: string): string {
-          return s.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-        }
-
-        if (existsSync(contextDir)) {
-          let names: string[];
-          try { names = readdirSync(contextDir, { withFileTypes: true })
-            .filter((e) => e.isDirectory() && existsSync(join(contextDir, e.name, "index.md")))
-            .map((e) => e.name)
-            .sort();
-          } catch { names = []; }
-
-          for (const name of names) {
-            sections.push({
-              name,
-              label: capitalize(name),
-              injectionMode: name === "priorities" ? "full" : "summary",
-            });
-          }
-        }
-
-        // Memory is a fixed global section
-        const memoryPath = join(process.env.HOME ?? "", ".draft", "personal", "memory.md");
-        if (existsSync(memoryPath)) {
-          sections.push({ name: "memory", label: "Memory", injectionMode: "full" });
-        }
-
-        return sections;
-      },
-
-      revealInFinder: async ({ relativePath }: { relativePath: string }) => {
-        try {
-          const workspace = getWorkspacePath(getActiveProfile());
-          const absPath = join(workspace, "context", relativePath);
-          if (!existsSync(absPath)) {
-            return { ok: false, error: "File not found." };
-          }
-          Bun.spawn(["open", "-R", absPath], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to reveal in Finder." };
-        }
-      },
-
       runInstall: async ({ tools }) => {
         console.log(`[rpc] runInstall called — tools: ${JSON.stringify(tools)}`);
         const result = await runInstall(tools);
         console.log(`[rpc] runInstall returned — ok: ${result.ok}, steps: ${result.steps.length}`);
         return result;
-      },
-
-      scanSkills: async () => {
-        const { skills, errors } = scanSkillDirectories();
-        const mcpServers = scanMCPConnections();
-        const manifest = readSkillManifest();
-        return {
-          skills: skills.map(({ name, agent, dirPath, description, descriptionTokenCount, tokenCount }) => {
-            const entry = manifest.skills[`${agent}:${name}`];
-            const synced = entry?.status === "approved" && Object.keys(entry.synced_to ?? {}).length > 0;
-            return { name, agent, dirPath, description, descriptionTokenCount, tokenCount, synced };
-          }),
-          scanErrors: errors,
-          mcpServers: mcpServers.map(({ name, agent, config }) => ({ name, agent, config })),
-        };
-      },
-
-      importSkills: async ({ skills }) => {
-        const { skills: available } = scanSkillDirectories();
-        const selected = skills.flatMap((requested) => {
-          const match = available.find((skill) =>
-            skill.name === requested.name
-            && skill.agent === requested.agent
-            && skill.dirPath === requested.dirPath,
-          );
-          return match ? [match] : [];
-        });
-        const result = createSymlinks(selected);
-        return {
-          ok: result.errors.length === 0,
-          created: result.created.length,
-          skipped: result.skipped.length,
-          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
-        };
-      },
-
-      removeSkills: async ({ skills }) => {
-        const { skills: available } = scanSkillDirectories();
-        const selected = skills.flatMap((requested) => {
-          const match = available.find((skill) =>
-            skill.name === requested.name
-            && skill.agent === requested.agent
-            && skill.dirPath === requested.dirPath,
-          );
-          return match ? [match] : [];
-        });
-        const result = removeSymlinks(selected);
-        return {
-          ok: result.errors.length === 0,
-          removed: result.removed.length,
-          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
-        };
-      },
-
-      startSkillWatcher: async () => {
-        const profile = getActiveProfile();
-        startSkillWatch({
-          onSkillsPending: (pending) => {
-            try { rpc.send.skillsPendingApproval({ pending }); } catch {}
-          },
-          onSkillsConflict: (conflicts) => {
-            try { rpc.send.skillsConflict({ conflicts }); } catch {}
-          },
-          onSkillsChanged: (count) => {
-            try { rpc.send.skillsChanged({ count }); } catch {}
-          },
-          onReconciled: (_result) => {},
-        }, { activeProfile: profile });
-      },
-
-      getSkillsPending: async () => {
-        return detectPending();
-      },
-
-      approveSkills: async ({ skills }) => {
-        const scannedSkills = skills.map((p: PendingSkillEntry) => ({
-          name: p.name,
-          agent: p.source_agent,
-          dirPath: p.source_path,
-          files: [],
-          description: p.description,
-          descriptionTokenCount: 0,
-          tokenCount: p.tokenCount,
-        }));
-        const result = createSymlinks(scannedSkills);
-        return {
-          ok: result.errors.length === 0,
-          created: result.created.length,
-          ...(result.errors.length > 0 ? { error: result.errors.join("\n") } : {}),
-        };
-      },
-
-      resolveSkillConflict: async ({ conflict, resolution }: { conflict: SameNameConflict; resolution: { action: string; authoritative_agent?: string } }) => {
-        if (resolution.action === "keep-local") {
-          // Mark both entries in the manifest as conflict/skipped — no symlinks
-          try {
-            const manifest = readSkillManifest();
-            const now = new Date().toISOString();
-            // Record the conflict as resolved with no sync
-            manifest.name_conflicts[conflict.name] = {
-              agents: ["claude-code", "codex"],
-              resolved: true,
-              authoritative_agent: null,
-            };
-            writeSkillManifest(manifest);
-            return { ok: true };
-          } catch (err) {
-            return { ok: false, error: err instanceof Error ? err.message : "Could not update manifest." };
-          }
-        }
-
-        if (resolution.action === "use-source" && resolution.authoritative_agent) {
-          const authAgent = resolution.authoritative_agent as "claude-code" | "codex";
-          const sourcePath = conflict[authAgent].path;
-          const targetAgent: "claude-code" | "codex" = authAgent === "claude-code" ? "codex" : "claude-code";
-
-          const skill = {
-            name: conflict.name,
-            agent: authAgent,
-            dirPath: sourcePath,
-            files: [],
-            description: "",
-            descriptionTokenCount: 0,
-            tokenCount: 0,
-          };
-
-          const result = createSymlinks([skill]);
-          if (result.errors.length > 0) {
-            return { ok: false, error: result.errors.join("\n") };
-          }
-          if (result.conflicts.length > 0) {
-            return {
-              ok: false,
-              error: `Cannot sync: a different entry already exists at the target. Rename or remove ~/.${targetAgent === "codex" ? "codex" : "claude"}/skills/${conflict.name} first.`,
-            };
-          }
-          return { ok: true };
-        }
-
-        return { ok: false, error: "Unknown resolution action." };
-      },
-
-      getMcpPending: async () => {
-        return detectMcpPending();
-      },
-
-      approveMcps: async ({ mcps }) => {
-        try {
-          const result = await approveMcpsCore(mcps);
-          if (result.errors.length > 0 || result.conflicts.length > 0) {
-            const parts = [
-              ...result.errors,
-              ...result.conflicts.map((c) => `${c.name}: ${c.reason}`),
-            ];
-            return { ok: false, error: parts.join("; ") };
-          }
-          // A newly-approved Codex-bound personal MCP's secret must be
-          // sourceable immediately, not only after the next profile switch.
-          try { rebuildEnvSh(getActiveProfile()); } catch { /* non-fatal */ }
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to approve MCPs." };
-        }
-      },
-
-      resolveMcpConflict: async ({ name, authoritative_agent }) => {
-        try {
-          const manifest = readMcpManifest();
-          manifest.name_conflicts[name] = {
-            agents: ["claude-code", "codex"],
-            resolved: true,
-            authoritative_agent,
-          };
-          writeMcpManifest(manifest);
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to resolve conflict." };
-        }
-      },
-
-      removeMcp: async ({ id }) => {
-        try {
-          tombstoneMcp(id);
-          // Reconcile will handle removing from target configs on next watcher cycle
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Failed to remove MCP." };
-        }
-      },
-
-      getMcpManifest: async () => {
-        return readMcpManifest();
       },
 
       connectGranola: async ({ apiKey, accountKind }) => {
@@ -1351,53 +993,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      runHeadlessSetup: async ({ mode, folderPath, githubUrl, runner, dimensions }) => {
-        const workspace = getWorkspacePath(getActiveProfile());
-
-        let importSummary: string | undefined;
-        if (mode === "import") {
-          if (!folderPath || !existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
-            return { ok: false, error: "Choose a valid local folder to import." };
-          }
-          try {
-            const entries = readdirSync(folderPath, { recursive: true, withFileTypes: true })
-              .filter((entry) => entry.isFile())
-              .slice(0, 100)
-              .map((entry) => entry.name);
-            importSummary = `Local folder: ${folderPath}\nFiles (first ${entries.length}):\n${entries.map((entry) => `- ${entry}`).join("\n")}`;
-          } catch {
-            return { ok: false, error: "Could not read the selected folder." };
-          }
-        } else if (mode === "github") {
-          if (!githubUrl?.trim()) return { ok: false, error: "Paste a GitHub repository URL." };
-          if (!githubUrl.trim().match(/github\.com\/([^/]+\/[^/]+)/)) {
-            return { ok: false, error: "Enter a valid GitHub URL (e.g. https://github.com/owner/repo)." };
-          }
-          importSummary = `GitHub repository: ${githubUrl.trim()}\nClone this repo into a temp directory, read its README and top-level structure, and use that as context for the workspace. Use \`gh repo clone\` first (handles private repos via authenticated GitHub CLI). If gh is not installed or fails, fall back to \`git clone --depth 1\`. Delete the temp clone when done.`;
-        }
-
-        const integrations = readIntegrations(workspace);
-        const connectedIntegrations = integrations.ok
-          ? Object.entries(integrations.integrations)
-              .filter(([, entry]) => entry.connected)
-              .map(([name]) => name)
-          : [];
-
-        const prompt = buildHeadlessSetupPrompt({
-          workspace,
-          installedTools: getInstalledTools(),
-          connectedIntegrations,
-          importSummary,
-          dimensions,
-        });
-
-        return spawnHeadlessAgent({
-          runner: runner ?? "claude",
-          prompt,
-          onProgress: (p) => { try { rpc.send.headlessProgress(p); } catch {} },
-        });
-      },
-
       applyUpdate: async () => {
         try {
           if (!Electrobun.Updater.updateInfo()?.updateReady) {
@@ -1476,22 +1071,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch {
           return [];
         }
-      },
-
-      setMcpSecret: async ({ name, envVar, value }) => {
-        const profile = getActiveProfile();
-        // Team-MCP secrets are profile-scoped (same path resolvePaths uses in
-        // team-assets.ts) — without this the secret lands in the global
-        // secrets.json and the next profile switch, which reads the
-        // profile-scoped file, would flip the MCP back to pending-secrets.
-        const result = await setTeamMcpSecret(name, profile, envVar, value, {
-          statePath: join(getWorkspacePath(profile), "config"),
-        });
-        if (!result.ok) return { ok: false, error: result.error, nowInstalled: false };
-        if (result.nowInstalled) {
-          try { rebuildEnvSh(profile); } catch { /* non-fatal */ }
-        }
-        return { ok: true, nowInstalled: result.nowInstalled };
       },
 
       startBrowserSignIn: async () => {
@@ -1814,66 +1393,12 @@ setTimeout(async () => {
   const profile = getActiveProfile();
   console.log(`[draft-desktop] profile=${profile}`);
 
-  // Apply persisted notification preference before starting any watchers.
-  const wsPath = getWorkspacePath(getActiveProfile());
-  const localCfg = readLocalConfig(wsPath);
-  if (localCfg.ok && localCfg.config.notificationsEnabled === false) {
-    setNotificationsEnabled(false);
-  }
-
-  // Skill and MCP watchers auto-sync between agents. Defer during onboarding so the
-  // scan-import step controls what gets synced. For returning users, start immediately.
-  const appState = getAppState();
-  if (appState.userState !== "no-profile") {
-    startSkillWatch({
-      onSkillsPending: (pending) => {
-        try { rpc.send.skillsPendingApproval({ pending }); } catch {}
-      },
-      onSkillsConflict: (conflicts) => {
-        try { rpc.send.skillsConflict({ conflicts }); } catch {}
-      },
-      onSkillsChanged: (count) => {
-        try { rpc.send.skillsChanged({ count }); } catch {}
-      },
-      onReconciled: (_result) => {
-        // Reconcile result logged internally; no UI action needed unless repaired > 0
-        // (onSkillsChanged is called separately when repaired.length > 0)
-      },
-    }, { activeProfile: getActiveProfile() });
-
-    startMcpWatch({
-      onMcpsPending: (pending) => {
-        try { rpc.send.mcpsPendingApproval({ pending }); } catch {}
-      },
-      onMcpsConflict: (conflicts) => {
-        try { rpc.send.mcpsConflict({ conflicts }); } catch {}
-      },
-      onMcpsDrifted: (drifted) => {
-        try { rpc.send.mcpsDrifted({ drifted }); } catch {}
-      },
-      onReconciled: (_result) => {},
-      onMcpsPendingCredentials: (mcps) => {
-        try { rpc.send.mcpsPendingCredentials({ mcps }); } catch {}
-      },
-      onTeamMcpsChanged: (count) => {
-        try { rpc.send.mcpsChanged({ count }); } catch {}
-      },
-    }, { activeProfile: getActiveProfile() });
-  }
-
-  // Watch ~/.draft/active-profile for CLI-driven profile switches (e.g. `draft switch`).
-  startActiveProfileWatch({
-    onProfileChanged: (profile, previousProfile) => {
-      void switchProfileAssets(previousProfile, profile).catch(() => {
-        // The CLI may already have completed the idempotent lifecycle. Watchers
-        // still need to follow the active profile if a later rescan is required.
-      }).finally(() => {
-        restartSkillWatchWithProfile(profile);
-        restartMcpWatchWithProfile(profile);
-        try { rpc.send.profileChanged({ profile }); } catch {}
-      });
-    },
-  });
+  const globalConfigResult = readDraftConfig();
+  const globalConfig = globalConfigResult.ok ? globalConfigResult.config : { version: "1", tools: {} };
+  const localConfig = readLocalConfig(getWorkspacePath(profile));
+  const preference = resolveNotificationsEnabled(globalConfig.notificationsEnabled, localConfig.ok ? localConfig.config.notificationsEnabled : undefined);
+  if (preference.migrated) writeDraftConfig({ ...globalConfig, notificationsEnabled: preference.enabled });
+  setNotificationsEnabled(preference.enabled);
 
   // Silent update check on launch — pushes updateAvailable if a new version is ready.
   void checkAndDownloadUpdate(true);

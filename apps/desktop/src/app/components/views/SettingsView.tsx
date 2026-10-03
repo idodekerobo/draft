@@ -35,10 +35,10 @@ function describeSynthesisCadence(schedule: SynthesisSchedule): string {
 // ── Rows that load their own data ─────────────────────────────────────────────
 // Each suspends on its own, so the rest of the page renders immediately.
 
-function NotificationsRow({ activeProfile, onError }: { activeProfile: string; onError: (message: string) => void }) {
-  const { data: settings } = useSuspenseQuery(localConfigQueryOptions(activeProfile));
+function NotificationsRow({ onError }: { onError: (message: string) => void }) {
+  const { data: settings } = useSuspenseQuery(localConfigQueryOptions);
   const patch = useOptimisticMutation<LocalConfig, Partial<LocalConfig>>({
-    queryKey: localConfigQueryOptions(activeProfile).queryKey,
+    queryKey: localConfigQueryOptions.queryKey,
     mutationFn: async (update) => {
       const result = await rpc.request.setLocalConfig(update);
       if (!result.ok) throw new Error(result.error ?? "Save failed.");
@@ -131,11 +131,10 @@ function BookCallButton() {
 // ── SettingsView ───────────────────────────────────────────────────────────────
 
 interface SettingsViewProps {
-  activeProfile: string;
   onOpenFeedback?: () => void;
 }
 
-export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProps) {
+export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
   const [saveError, setSaveError]         = useState<string | null>(null);
   const [saveNotice, setSaveNotice]       = useState<string | null>(null);
   const [updateCheckState, setUpdateCheckState] = useState<"idle" | "checking" | "available" | "up-to-date" | "failed">("idle");
@@ -258,7 +257,7 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
               </button>
             </div>
             <DataBoundary fallback={<RowSkeleton label="Enable notifications" />} errorFallback={null}>
-              <NotificationsRow activeProfile={activeProfile} onError={setSaveError} />
+              <NotificationsRow onError={setSaveError} />
             </DataBoundary>
             {/* Only shown when the schedule loads, as before. */}
             <DataBoundary fallback={<RowSkeleton label="Synthesize workspace context" />} errorFallback={null}>
