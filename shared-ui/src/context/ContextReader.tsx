@@ -63,6 +63,16 @@ export function ContextReader({ entries, snapshotCreatedAt, onSelect }: {
           </section>
         ))}
       </nav>
+      <label className="ui-context__select-wrap">
+        <span className="ui-context__select-label">Context document</span>
+        <select className="ui-input ui-context__select" value={selected?.relativePath ?? ""} onChange={(event) => {
+          const entry = readable.find((file) => file.relativePath === event.target.value);
+          if (entry) select(entry);
+        }}>
+          {topLevel.map((entry) => <option key={entry.relativePath} value={entry.relativePath}>{entry.label}</option>)}
+          {[...groups].map(([label, children]) => <optgroup key={label} label={label}>{children.map((entry) => <option key={entry.relativePath} value={entry.relativePath}>{entry.label}</option>)}</optgroup>)}
+        </select>
+      </label>
       {selected && (
         <article className="ui-context__doc">
           <div className="ui-context__meta">

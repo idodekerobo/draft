@@ -157,6 +157,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@tanstack/react-query": "^5.104.0",
+        "lucide-react": "^0.577.0",
         "marked": "^18.0.4",
       },
       "devDependencies": {

@@ -3,6 +3,9 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+button, a, [role="button"] { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+
 html, body { min-height: 100%; }
 
 body {
@@ -31,6 +34,15 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   font: var(--font-size-body) var(--font-ui);
 }
 .ui-flow__column input::placeholder { color: var(--color-text-tertiary); }
+
+@media (pointer: coarse) {
+  input, textarea, select, .ui-input, .ui-panel__input { font-size: 16px; }
+}
+@media (max-width: 720px) {
+  .ui-shell { min-height: 100vh; min-height: 100dvh; }
+  .ui-shell__nav { padding-top: max(8px, env(safe-area-inset-top, 0px)); }
+  .ui-page { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+}
 
 :where(.ui-flow__column) button:not([class]),
 :where(.ui-flow__column) a.button {
@@ -62,7 +74,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   font: 500 var(--font-size-body) var(--font-ui);
   cursor: pointer;
 }
-.google-button:hover:not(:disabled) { background: var(--color-bg-hover); }
+@media (hover: hover) and (pointer: fine) { .google-button:hover:not(:disabled) { background: var(--color-bg-hover); } }
 
 .auth-divider { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
 .auth-divider span { height: 1px; background: var(--color-border); }

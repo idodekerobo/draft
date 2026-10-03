@@ -55,3 +55,22 @@ export function groupTools(tools: ToolEntry[], statuses: Partial<Record<ToolId, 
     return inSection.length ? [{ section: id, label, tools: inSection }] : [];
   });
 }
+
+const TOOL_ALIASES: Partial<Record<ToolId, string[]>> = {
+  "claude-code": ["claude", "codex", "cursor", "agent"],
+  "coding-sessions": ["sessions", "terminal"],
+  github: ["gh"],
+};
+
+export function filterToolGroups(
+  sections: Array<{ section: ToolSection; label: string; tools: ToolEntry[] }>,
+  query: string,
+): Array<{ section: ToolSection; label: string; tools: ToolEntry[] }> {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return sections;
+  return sections.map((section) => ({
+    ...section,
+    tools: section.tools.filter((tool) => [tool.name, ...(TOOL_ALIASES[tool.id] ?? [])]
+      .some((value) => value.toLocaleLowerCase().includes(normalized))),
+  })).filter((section) => section.tools.length > 0);
+}

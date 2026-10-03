@@ -101,6 +101,7 @@ function WebToolListBody({ groups, allowDisconnect }: { groups?: ToolGroup[]; al
         granola: <DisconnectButton provider="granola" query="?account_kind=personal" />,
       } : {}}
       unavailableHint="Ask your admin to connect this in the Draft desktop app."
+      searchable
     />
   );
 }

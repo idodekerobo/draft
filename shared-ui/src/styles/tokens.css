@@ -1,100 +1,94 @@
-/* Draft design tokens, shared by desktop and web. Components read only var(--color-*).
-   Theme: no data-theme follows the OS; data-theme="light" or "dark" forces one.
-   The light block is repeated for the media query; keep the two in sync. */
-
+/* Shared visual tokens for web and desktop. System mode follows the OS. */
 :root {
   color-scheme: dark;
-
-  --color-bg-primary:     #1c1c1e;
-  --color-bg-sidebar:     #2c2c2e;
-  --color-bg-surface:     #3a3a3c;
-  --color-bg-elevated:    #3a3a3c;
-  --color-bg-hover:       rgba(255, 255, 255, 0.06);
-  --color-surface-raised: #2a2a2a;
-  --color-overlay-rgb:    255, 255, 255;
-
-  --color-text-primary:   #ffffff;
-  --color-text-secondary: rgba(255, 255, 255, 0.55);
-  --color-text-tertiary:  rgba(255, 255, 255, 0.3);
-  --color-text-muted:     var(--color-text-tertiary);
-  --color-text-on-accent: #ffffff;
-
-  --color-accent-fill:    #0060df;
-  --color-accent-text:    #409cff;
-  --color-accent-blue:    var(--color-accent-text);
-  --color-focus:          var(--color-accent-text);
-
-  --color-status-green:   #30d158;
-  --color-status-yellow:  #ffd60a;
-  --color-status-red:     #ff6961;
-
-  --color-border:         rgba(255, 255, 255, 0.08);
-  --color-border-strong:  rgba(255, 255, 255, 0.14);
-
-  --font-ui:   -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-bg-primary: #211f1d;
+  --color-bg-sidebar: #292623;
+  --color-bg-surface: #322e2a;
+  --color-bg-elevated: #322e2a;
+  --color-bg-hover: rgba(255,255,255,.055);
+  --color-surface-raised: #322e2a;
+  --color-overlay-rgb: 255,255,255;
+  --color-text-primary: #f3efe9;
+  --color-text-secondary: #b5aca2;
+  --color-text-tertiary: #a69d94;
+  --color-text-muted: var(--color-text-tertiary);
+  --color-text-on-accent: #292521;
+  --color-accent-fill: #f3efe9;
+  --color-accent-text: #ff914d;
+  --color-accent-blue: var(--color-accent-text);
+  --color-selected-bg: #37322d;
+  --color-selected-text: #f3efe9;
+  --color-brand-start: #ffde59;
+  --color-brand-end: #ff914d;
+  --color-focus: #ff914d;
+  --color-status-green: #62c783;
+  --color-status-yellow: #e8ba55;
+  --color-status-red: #ed7b72;
+  --color-border: #433d36;
+  --color-border-strong: #766c61;
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  --font-size-sidebar:   13px;
-  --font-size-body:      14px;
+  --font-size-sidebar: 14px;
+  --font-size-body: 14px;
   --font-size-secondary: 13px;
-  --font-size-small:     12px;
-  --font-size-micro:     11px;
-
-  --sidebar-width:    200px;
+  --font-size-small: 12px;
+  --font-size-micro: 11px;
+  --sidebar-width: 208px;
   --statusbar-height: 36px;
-
-  --radius-sm: 4px;
-  --radius-md: 6px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-notice: 10px;
+  --motion-ease: cubic-bezier(.23,1,.32,1);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-
-  --color-bg-primary:     #fafafa;
-  --color-bg-sidebar:     #f0f0f2;
-  --color-bg-surface:     #ececee;
-  --color-bg-elevated:    #ffffff;
-  --color-bg-hover:       rgba(0, 0, 0, 0.05);
-  --color-surface-raised: #ffffff;
-  --color-overlay-rgb:    0, 0, 0;
-
-  --color-text-primary:   #1c1c1e;
-  --color-text-secondary: rgba(0, 0, 0, 0.62);
-  --color-text-tertiary:  rgba(0, 0, 0, 0.45);
-
-  --color-accent-text:    #0060df;
-
-  --color-status-green:   #1f7a37;
-  --color-status-yellow:  #8a5a00;
-  --color-status-red:     #c42b1c;
-
-  --color-border:         rgba(0, 0, 0, 0.12);
-  --color-border-strong:  rgba(0, 0, 0, 0.2);
+  --color-bg-primary: #faf8f5;
+  --color-bg-sidebar: #f2efea;
+  --color-bg-surface: #f3efe9;
+  --color-bg-elevated: #fffdfa;
+  --color-bg-hover: rgba(41,37,33,.055);
+  --color-surface-raised: #fffdfa;
+  --color-overlay-rgb: 0,0,0;
+  --color-text-primary: #292521;
+  --color-text-secondary: #6e675f;
+  --color-text-tertiary: #6e675f;
+  --color-text-on-accent: #fffdfa;
+  --color-accent-fill: #a94312;
+  --color-accent-text: #a94312;
+  --color-selected-bg: #f8e7d8;
+  --color-selected-text: #a94312;
+  --color-focus: #a94312;
+  --color-status-green: #287341;
+  --color-status-yellow: #805500;
+  --color-status-red: #b3261e;
+  --color-border: #e4ded6;
+  --color-border-strong: #8c8277;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-
-    --color-bg-primary:     #fafafa;
-    --color-bg-sidebar:     #f0f0f2;
-    --color-bg-surface:     #ececee;
-    --color-bg-elevated:    #ffffff;
-    --color-bg-hover:       rgba(0, 0, 0, 0.05);
-    --color-surface-raised: #ffffff;
-    --color-overlay-rgb:    0, 0, 0;
-  --color-overlay-rgb:    0, 0, 0;
-
-    --color-text-primary:   #1c1c1e;
-    --color-text-secondary: rgba(0, 0, 0, 0.62);
-    --color-text-tertiary:  rgba(0, 0, 0, 0.45);
-
-    --color-accent-text:    #0060df;
-
-    --color-status-green:   #1f7a37;
-    --color-status-yellow:  #8a5a00;
-    --color-status-red:     #c42b1c;
-
-    --color-border:         rgba(0, 0, 0, 0.12);
-    --color-border-strong:  rgba(0, 0, 0, 0.2);
+    --color-bg-primary: #faf8f5;
+    --color-bg-sidebar: #f2efea;
+    --color-bg-surface: #f3efe9;
+    --color-bg-elevated: #fffdfa;
+    --color-bg-hover: rgba(41,37,33,.055);
+    --color-surface-raised: #fffdfa;
+    --color-overlay-rgb: 0,0,0;
+    --color-text-primary: #292521;
+    --color-text-secondary: #6e675f;
+    --color-text-tertiary: #6e675f;
+    --color-text-on-accent: #fffdfa;
+    --color-accent-fill: #a94312;
+    --color-accent-text: #a94312;
+    --color-selected-bg: #f8e7d8;
+    --color-selected-text: #a94312;
+    --color-focus: #a94312;
+    --color-status-green: #287341;
+    --color-status-yellow: #805500;
+    --color-status-red: #b3261e;
+    --color-border: #e4ded6;
+    --color-border-strong: #8c8277;
   }
 }
