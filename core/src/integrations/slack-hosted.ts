@@ -1,4 +1,4 @@
-import manifestJson from "../../../background/integrations/slack/manifest.json";
+import manifestJson from "../../../integrations/slack-manifest.json";
 
 export interface SlackManifest {
   display_information: Record<string, unknown>;

@@ -30,30 +30,13 @@ mkdir -p \
     "$DRAFT_BACKGROUND/state"
 echo "[Draft Daemon] Created directory structure at $DRAFT_BACKGROUND"
 
-# Seed state files if not already present (preserve existing state across reinstalls)
-if [ ! -f "$DRAFT_BACKGROUND/state/granola.json" ]; then
-    printf '{"last_checked_at":null,"processed_meeting_ids":[]}\n' \
-        > "$DRAFT_BACKGROUND/state/granola.json"
-    echo "[Draft Daemon] Seeded state/granola.json"
-fi
-
-if [ ! -f "$DRAFT_BACKGROUND/state/fireflies.json" ]; then
-    printf '{"last_checked_at":null,"processed_meeting_ids":[]}\n' \
-        > "$DRAFT_BACKGROUND/state/fireflies.json"
-    echo "[Draft Daemon] Seeded state/fireflies.json"
-fi
-
 # ── 2. Copy scripts ────────────────────────────────────────────────────────────
 _SCRIPTS=(
-    "on-session-end.sh"
-    "config.sh"
     "status.sh"
     "start.sh"
     "stop.sh"
     "uninstall.sh"
     "install.sh"
-    "commit-to-team-context.sh"
-    "load-team.sh"
 )
 
 _MISSING=()
@@ -100,16 +83,11 @@ else
 fi
 
 # ── 2b. Copy synthesizers/ and intelligence/ recursively ───────────────────────
-# Mirror each subdir exactly (rsync --delete) rather than merge-copy. A plain
-# additive copy can leave a stale bundled .js in place forever once its source
-# layout changes (e.g. a module that used to ship compiled moves to raw .ts) —
-# resolveRuntimeEntrypoint() prefers .js over .ts, so an orphaned .js silently
-# wins over the up-to-date source on every future reinstall. Mirroring removes
-# anything the current source no longer provides.
+# Copy without deleting user files already under ~/.draft/background.
 for subdir in "synthesizers" "intelligence"; do
     if [ -d "$SCRIPT_DIR/$subdir" ]; then
         mkdir -p "$DRAFT_BACKGROUND/$subdir"
-        rsync -a --delete "$SCRIPT_DIR/$subdir/" "$DRAFT_BACKGROUND/$subdir/"
+        rsync -a "$SCRIPT_DIR/$subdir/" "$DRAFT_BACKGROUND/$subdir/"
         find "$DRAFT_BACKGROUND/$subdir" -name "*.sh" -exec chmod +x {} \;
         echo "[Draft Daemon] Installed $subdir/ to $DRAFT_BACKGROUND/$subdir"
     else
@@ -117,64 +95,27 @@ for subdir in "synthesizers" "intelligence"; do
     fi
 done
 
-# ── 2c. Copy integrations/ subdirectories ─────────────────────────────────────
-# Each integration (granola, slack, ...) has its own subdir with shell + TS/JS
-# code. Mirror exactly (see rationale above) — except integrations/slack/captures,
-# which is runtime user data (captured meeting transcripts), not shipped source,
-# and must survive reinstalls untouched.
+# ── 2c. Copy the Codex scanner runtime ─────────────────────────────────────────
 for integ_src in "$SCRIPT_DIR/integrations"/*/; do
     [ -d "$integ_src" ] || continue
     integ_name=$(basename "$integ_src")
     integ_dst="$DRAFT_BACKGROUND/integrations/$integ_name"
     mkdir -p "$integ_dst"
-    if [ "$integ_name" = "slack" ]; then
-        rsync -a --delete --exclude=captures "$integ_src" "$integ_dst/"
-    else
-        rsync -a --delete "$integ_src" "$integ_dst/"
-    fi
+    rsync -a "$integ_src" "$integ_dst/"
     find "$integ_dst" -maxdepth 1 -name "*.sh" -exec chmod +x {} \;
     echo "[Draft Daemon] Installed integrations/$integ_name/ to $integ_dst"
 done
-
-# Seed Slack captures dir + state file (inside integrations/slack/ — data persists across reinstalls)
-SLACK_CAPTURES_DIR="$DRAFT_BACKGROUND/integrations/slack/captures"
-if [ ! -f "$SLACK_CAPTURES_DIR/state.json" ]; then
-    mkdir -p "$SLACK_CAPTURES_DIR"
-    printf '{}\n' > "$SLACK_CAPTURES_DIR/state.json"
-    echo "[Draft Daemon] Seeded integrations/slack/captures/state.json"
-fi
 
 # ── 3. Dependency checks ───────────────────────────────────────────────────────
 echo ""
 echo "[Draft Daemon] Checking dependencies..."
 _DEPS_OK=true
 
-if command -v claude &>/dev/null; then
-    echo "[Draft Daemon]   claude ... ok"
-else
-    echo "[Draft Daemon]   claude ... NOT FOUND — synthesis will be disabled until installed" >&2
-    _DEPS_OK=false
-fi
-
-if command -v tmux &>/dev/null; then
-    echo "[Draft Daemon]   tmux   ... ok"
-else
-    echo "[Draft Daemon]   tmux   ... NOT FOUND — claude-code adapter unavailable" >&2
-    _DEPS_OK=false
-fi
-
-if command -v python3 &>/dev/null; then
-    echo "[Draft Daemon]   python3 .. ok"
-else
-    # Synthesis and pollers (bash scripts) will fail without python.
-    echo "[Draft Daemon]   python3 .. NOT FOUND — synthesis will fail until installed" >&2
-fi
-
 if command -v bun &>/dev/null; then
     echo "[Draft Daemon]   bun    ... ok ($(bun --version))"
 else
-    echo "[Draft Daemon]   bun    ... NOT FOUND — Slack capture unavailable (install: https://bun.sh)" >&2
-    # Non-blocking: daemon runs without bun; Slack is disabled until bun is installed
+    echo "[Draft Daemon]   bun    ... NOT FOUND — Codex session synthesis unavailable (install: https://bun.sh)" >&2
+    _DEPS_OK=false
 fi
 
 if [ "$_DEPS_OK" = true ]; then
@@ -183,14 +124,13 @@ fi
 
 # ── 3b. Build daemon PATH for LaunchAgent ─────────────────────────────────────
 # LaunchAgent runs with launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin).
-# Binaries installed via Homebrew, nvm, bun, or ~/.local/ are NOT in that PATH,
-# so direct calls to claude/tmux/python3/bun from daemon bash would silently fail.
-# Detect each required binary now (while running in the user's full shell env)
+# Binaries installed via Homebrew, nvm, bun, or ~/.local/ are NOT in that PATH.
+# Detect bun now (while running in the user's full shell env)
 # and build an explicit PATH string to embed in the plist.
 echo ""
 echo "[Draft Daemon] Building daemon PATH..."
 _BIN_DIRS=("$HOME/.draft/bin" "/usr/bin" "/bin" "/usr/sbin" "/sbin")
-for _cmd in claude tmux python3 bun; do
+for _cmd in bun; do
     _bin_path=$(command -v "$_cmd" 2>/dev/null || echo "")
     if [ -n "$_bin_path" ]; then
         _bin_dir=$(dirname "$_bin_path")

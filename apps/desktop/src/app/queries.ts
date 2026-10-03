@@ -28,9 +28,10 @@ export const synthesisScheduleQueryOptions = (workspaceKey: string) =>
     staleTime: STALE_MS.schedule,
   });
 
-// Profile-scoped local settings. The app-level invalidate on profileChanged refreshes them.
-export const localConfigQueryOptions = (profile: string) =>
-  queryOptions({ queryKey: ["profile", profile, "local-config"] as const, queryFn: () => rpc.request.getLocalConfig() });
+export const localConfigQueryOptions = queryOptions({
+  queryKey: ["app", "local-config"] as const,
+  queryFn: () => rpc.request.getLocalConfig(),
+});
 
 export const appVersionQueryOptions = queryOptions({
   queryKey: ["app", "version"] as const,

@@ -1,7 +1,7 @@
 // background/draft-background.ts — Draft background daemon (Bun)
 //
 // Replaces draft-daemon.sh. Runs as a LaunchAgent (always-on, auto-restart via KeepAlive).
-// Event loop: polls pending/ for session-end job files, processes them.
+// Event loop: polls pending/ for Codex scanner jobs and processes them.
 //
 // Logs: structured JSON to ~/.draft/background/logs/daemon.log
 // stdout/stderr are captured by LaunchAgent to logs/daemon.log / logs/daemon-error.log
@@ -9,10 +9,7 @@
 import { PostHog } from 'posthog-node';
 import { getActiveProfile, getWorkspacePath, BACKGROUND_DIR, readDraftConfig, readLocalConfig, ensureAnalyticsConfig } from 'draft-core/config';
 import { runMigrations } from 'draft-core/migrations/runner';
-import { reconcileSkillManifest, detectPending } from 'draft-core/scanner';
 import { isToday } from 'draft-core/time';
-import { withProfileSwitchLock } from 'draft-core/sync/team-assets';
-import { atomicPatch } from 'draft-core/sync/atomic-write';
 import { resolveRuntimeEntrypoint, runtimeCommand } from 'draft-core/runtime';
 import { mkdirSync, existsSync, appendFileSync, openSync, readdirSync, readFileSync, unlinkSync, renameSync, writeFileSync } from 'fs';
 import { synthesize } from './synthesize';
@@ -29,27 +26,19 @@ const DRAFT_DEFERRED   = `${DRAFT_BACKGROUND}/deferred`;
 const DRAFT_LOGS       = `${DRAFT_BACKGROUND}/logs`;
 const STATE_DIR        = `${DRAFT_BACKGROUND}/state`;
 
-// Session-synthesis jobs (Claude Code + Codex) are expensive — each spawns a
-// real `claude -p` call. If the daemon was off for a few days, don't drain the
+// Codex session synthesis jobs are expensive. If the daemon was off for a few days, don't drain the
 // whole backlog on restart: only synthesize sessions from today, and move
 // older ones to deferred/ instead of processing or deleting them.
-const SESSION_JOB_SOURCES = new Set(['claude-code-session', 'codex-session']);
+const SESSION_JOB_SOURCES = new Set(['codex-session']);
 
 // Per-profile local config — read once at startup
 const _localCfgResult = readLocalConfig(DRAFT_WORKSPACE);
 const _localCfg       = _localCfgResult.ok ? _localCfgResult.config : {};
 const CODEX_SCAN_ENABLED       = _localCfg.codexScanIntervalMinutes !== null;
 const CODEX_SCAN_INTERVAL_MS   = (_localCfg.codexScanIntervalMinutes ?? 360) * 60_000;
-const CLAUDE_CODE_SYNTHESIS_ON = _localCfg.claudeCodeSynthesis ?? true;
 
 // Polling intervals — env var overrides with same defaults as config.sh
 const PENDING_POLL_MS   = parseInt(process.env.DRAFT_PENDING_POLL   ?? '5')     * 1000;
-const FIREFLIES_POLL_MS = parseInt(process.env.DRAFT_FIREFLIES_POLL ?? '900')   * 1000;
-const SLACK_MANAGER_MS  = 60_000;
-const SLACK_RECONCILE_MS = parseInt(process.env.DRAFT_SLACK_CAPTURE ?? '1800') * 1000;
-const SLACK_ANALYSIS_MS = parseInt(process.env.DRAFT_SLACK_ANALYSIS ?? '14400') * 1000;
-const GITHUB_POLL_MS    = parseInt(process.env.DRAFT_GITHUB_POLL    ?? '3600')  * 1000;
-const SKILL_SYNC_MS      = 5 * 60 * 1000;
 
 // Ensure runtime directories exist (mkdirSync before openSync below)
 mkdirSync(DRAFT_PENDING,    { recursive: true });
@@ -85,92 +74,13 @@ const LOG_PATH      = `${DRAFT_LOGS}/daemon.log`;
 const MAX_LOG_LINES = 10_000;
 const KEEP_LINES    = 5_000;
 
-// Append-mode fd — reused by all Bun.spawn poller calls to route stdout/stderr
-// into daemon.log (mirrors bash daemon's `>> "$DRAFT_LOGS/daemon.log" 2>&1 &` pattern).
+// Append-mode fd — routes Codex scanner output into daemon.log.
 // Must be opened after mkdirSync(DRAFT_LOGS) above.
 const logFd = openSync(LOG_PATH, 'a');
 
 function log(level: 'info' | 'warn' | 'error', msg: string) {
   const line = JSON.stringify({ ts: new Date().toISOString(), level, msg }) + '\n';
   appendFileSync(LOG_PATH, line);
-}
-
-const MAX_GITHUB_PROCESSED_ITEMS = 1_000;
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
-}
-
-async function acknowledgeGitHubJob(job: Record<string, unknown>): Promise<void> {
-  const context = job.github_context && typeof job.github_context === 'object'
-    ? job.github_context as Record<string, unknown>
-    : {};
-  const newPrIds = stringArray(context.new_pr_ids);
-  const newReleaseTags = stringArray(context.new_release_tags);
-  const jobTimestamp = typeof job.timestamp === 'string'
-    ? job.timestamp
-    : typeof context.timestamp === 'string'
-      ? context.timestamp
-      : null;
-  const advanceWatermark = context.advance_watermark !== false;
-  const statePath = `${STATE_DIR}/github.json`;
-
-  await atomicPatch(statePath, (raw) => {
-    let state: Record<string, unknown> = {};
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') state = parsed as Record<string, unknown>;
-    } catch {}
-
-    const processedPrIds = [...new Set([
-      ...stringArray(state.processed_pr_ids),
-      ...newPrIds,
-    ])].slice(-MAX_GITHUB_PROCESSED_ITEMS);
-    const processedReleaseTags = [...new Set([
-      ...stringArray(state.processed_release_tags),
-      ...newReleaseTags,
-    ])].slice(-MAX_GITHUB_PROCESSED_ITEMS);
-    const currentWatermark = typeof state.last_polled_at === 'string'
-      ? state.last_polled_at
-      : null;
-    const lastPolledAt = advanceWatermark && jobTimestamp
-      ? (!currentWatermark || jobTimestamp > currentWatermark ? jobTimestamp : currentWatermark)
-      : currentWatermark;
-
-    return `${JSON.stringify({
-      ...state,
-      last_polled_at: lastPolledAt,
-      processed_pr_ids: processedPrIds,
-      processed_release_tags: processedReleaseTags,
-    }, null, 2)}\n`;
-  });
-}
-
-async function reconcileSkills() {
-  // A profile switch briefly leaves the active-profile file naming the
-  // outgoing profile while its personal skills are already deactivated (see
-  // core/src/sync/team-assets.ts's profile-switch lock). If reconcile ran in
-  // that window it would "repair" a symlink the switch just tore down.
-  // withProfileSwitchLock provides real mutual exclusion (not a racy
-  // check-then-act) — skip this tick entirely if a switch holds the lock and
-  // let the next one retry, since a switch completes in milliseconds.
-  await withProfileSwitchLock(() => {
-    try {
-      const reconciled = reconcileSkillManifest();
-      if (reconciled.repaired.length > 0) log('info', `skills: repaired ${reconciled.repaired.length} symlink(s)`);
-      if (reconciled.tombstoned.length > 0) log('info', `skills: tombstoned ${reconciled.tombstoned.length} removed skill(s)`);
-      if (reconciled.orphaned.length > 0) log('warn', `skills: ${reconciled.orphaned.length} symlink(s) with missing source — open Draft to review`);
-      if (reconciled.conflicts.length > 0) log('warn', `skills: ${reconciled.conflicts.length} symlink conflict(s) — open Draft to resolve`);
-
-      const { pending, conflicts } = detectPending();
-      if (pending.length > 0) log('info', `skills: ${pending.length} new skill(s) pending approval — open Draft to sync`);
-      if (conflicts.length > 0) log('warn', `skills: ${conflicts.length} same-name conflict(s) — open Draft to resolve`);
-    } catch {
-      log('warn', 'skills: reconciliation failed');
-    }
-  });
 }
 
 async function trimLog() {
@@ -235,14 +145,7 @@ async function processJob(jobPath: string) {
   log('info', `job ${jobName}: profile=${profile} session_id=${sessionId}`);
 
   // Route to the TypeScript synthesis module.
-  const jobSource = String(job.source ?? 'claude-code-session');
-
-  // Drop Claude Code session jobs if synthesis is disabled in settings
-  if (jobSource === 'claude-code-session' && !CLAUDE_CODE_SYNTHESIS_ON) {
-    log('info', `job ${jobName}: claude-code synthesis disabled — dropping`);
-    try { unlinkSync(processingPath); } catch {}
-    return;
-  }
+  const jobSource = String(job.source ?? 'codex-session');
 
   // Session-synthesis jobs are expensive (real LLM calls). If this job is from
   // a prior day — e.g. the daemon was off and the backlog piled up — defer it
@@ -260,17 +163,6 @@ async function processJob(jobPath: string) {
     return;
   }
   if (result.status === 'success' || result.status === 'skipped') {
-    if (jobSource === 'github' && result.status === 'success') {
-      try {
-        await acknowledgeGitHubJob(job);
-        log('info', `job ${jobName}: GitHub state acknowledged`);
-      } catch (error) {
-        log('error', `job ${jobName}: GitHub state acknowledgment failed: ${error}`);
-        try { renameSync(processingPath, `${DRAFT_FAILED}/${jobName}`); } catch {}
-        phTrack('daemon_synthesis_failed', { source: jobSource, status: 'ack_failed' });
-        return;
-      }
-    }
     try { unlinkSync(processingPath); } catch {}
     log('info', `job ${jobName} complete (${result.status})`);
     phTrack('daemon_synthesis_completed', { source: jobSource, status: result.status });
@@ -283,7 +175,7 @@ async function processJob(jobPath: string) {
 
 async function processPendingJobs() {
   let files: string[];
-  try { files = readdirSync(DRAFT_PENDING).filter(f => f.endsWith('.json')); }
+  try { files = readdirSync(DRAFT_PENDING).filter(f => f.startsWith('codex-') && f.endsWith('.json')); }
   catch { return; }
   for (const f of files) await processJob(`${DRAFT_PENDING}/${f}`);
 }
@@ -315,7 +207,7 @@ writeFileSync(PID_FILE, String(process.pid));
 // mid-synthesis. Move them to failed/ so they don't get stuck forever.
 
 try {
-  const staleFiles = readdirSync(DRAFT_PROCESSING).filter(f => f.endsWith('.json'));
+  const staleFiles = readdirSync(DRAFT_PROCESSING).filter(f => f.startsWith('codex-') && f.endsWith('.json'));
   for (const f of staleFiles) {
     const src = `${DRAFT_PROCESSING}/${f}`;
     let dst = `${DRAFT_FAILED}/${f}`;
@@ -336,11 +228,7 @@ async function main(): Promise<void> {
 
   log('info', `draft daemon starting (pid=${process.pid}, profile=${ACTIVE_PROFILE})`);
   phTrack('daemon_started');
-  reconcileSkills();
-
-  // ── Integration pollers (interval-based) ─────────────────────────────────────
-  // All pollers fire-and-forget via Bun.spawn, matching bash &-backgrounded pattern.
-  // stdout/stderr routed to logFd so poller log output lands in daemon.log.
+  // ── Codex session scanner ────────────────────────────────────────────────────
 
   function spawnRuntime(pathWithoutExtension: string, env?: Record<string, string>): boolean {
     const entrypoint = resolveRuntimeEntrypoint(pathWithoutExtension);
@@ -357,37 +245,6 @@ async function main(): Promise<void> {
     return true;
   }
 
-  // Fireflies poller
-  setInterval(() => {
-    log('info', `fireflies: starting poll (interval=${FIREFLIES_POLL_MS / 1000}s)`);
-    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/fireflies/fireflies-poller`);
-  }, FIREFLIES_POLL_MS);
-
-  // Slack manager (process health check — ensures slack-capture.ts is running if Slack is configured)
-  setInterval(() => {
-    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-manager`);
-  }, SLACK_MANAGER_MS);
-
-  // Slack reconcile (channel-membership diff/merge against slack_allowlist_channels)
-  setInterval(() => {
-    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-reconcile`);
-  }, SLACK_RECONCILE_MS);
-
-  // Slack analyzer (synthesis batch)
-  setInterval(() => {
-    log('info', `slack: starting analysis (interval=${SLACK_ANALYSIS_MS / 1000}s)`);
-    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/slack/slack-analyzer`);
-  }, SLACK_ANALYSIS_MS);
-
-  // GitHub poller
-  setInterval(() => {
-    const ghConfig = `${DRAFT_WORKSPACE}/config/github.json`;
-    if (!existsSync(ghConfig)) return;
-    log('info', `github: starting poll (interval=${GITHUB_POLL_MS / 1000}s)`);
-    spawnRuntime(`${DRAFT_BACKGROUND}/integrations/github/github-poller`);
-  }, GITHUB_POLL_MS);
-
-  // Codex session scanner
   function runCodexScan() {
     log('info', `codex: starting scan (interval=${CODEX_SCAN_INTERVAL_MS / 60_000}m)`);
     spawnRuntime(`${DRAFT_BACKGROUND}/integrations/codex/codex-scanner`, {
@@ -399,10 +256,6 @@ async function main(): Promise<void> {
     setInterval(runCodexScan, CODEX_SCAN_INTERVAL_MS);
     runCodexScan(); // immediate first scan on startup
   }
-
-  // Skills are user-owned files; reconcile separately from synthesis so they keep
-  // syncing while the desktop app is closed.
-  setInterval(reconcileSkills, SKILL_SYNC_MS);
 
   // ── Main poll loop ────────────────────────────────────────────────────────────
 

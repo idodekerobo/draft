@@ -9,9 +9,8 @@
 #
 # Profile resolution:
 #   Always reads ~/.draft/active-profile to determine which workspace to load.
-#   Any externally-set $DRAFT_WORKSPACE is intentionally unset so the profile
-#   system is always authoritative. session-init.sh keeps settings.json in sync
-#   so bash tool calls use the correct path after one restart.
+#   Any externally-set $DRAFT_WORKSPACE is intentionally unset so the active
+#   profile determines the workspace for this hook invocation.
 #
 # Personal layer: always at ~/.draft/personal/ (global — shared across all profiles)
 
@@ -64,7 +63,7 @@ fi
 
 # ── Profile resolution ─────────────────────────────────────────────────────────
 # Always compute DRAFT_WORKSPACE from active-profile. Never rely on an externally-
-# set value — session-init.sh keeps settings.json current for bash tool calls.
+# set value that may be stale.
 
 _active_profile_file="$DRAFT_GLOBAL/active-profile"
 _active_profile=""
@@ -274,31 +273,6 @@ if [ "${UPDATE_STATUS:-}" = "UPGRADE_AVAILABLE" ]; then
     echo ""
     echo "## Draft Update Available"
     echo "v${NEW_VER} is available (currently on v${OLD_VER}). Mention this to the user and offer to run \`/draft:update\` to upgrade."
-fi
-
-# ── Load-team notifications ────────────────────────────────────────────────────
-# load-team.sh writes one of two files depending on what happened at session start.
-# Both are cleared after reading — written fresh each session as needed.
-
-# Success: new team context was pulled from the shared repo.
-_LOAD_OK="$DRAFT_WORKSPACE/notifications/load-team-loaded.txt"
-if [ -f "$_LOAD_OK" ]; then
-    echo ""
-    echo "## Team Context Refreshed"
-    cat "$_LOAD_OK"
-    echo "Please mention to the user at the start of this conversation that their team context was just refreshed from the shared repo."
-    rm -f "$_LOAD_OK"
-fi
-
-# Warning: unpublished local changes detected — overwrite was skipped.
-_LOAD_WARN="$DRAFT_WORKSPACE/notifications/load-team-warning.txt"
-if [ -f "$_LOAD_WARN" ]; then
-    echo ""
-    echo "## ⚠️ Draft Warning — Unpublished Local Changes"
-    echo ""
-    cat "$_LOAD_WARN"
-    echo "Please alert the user to this at the start of this conversation."
-    rm -f "$_LOAD_WARN"
 fi
 
 # Fire background update check — never blocks session start.

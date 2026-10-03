@@ -269,4 +269,4 @@ If there were tensions detected, call them out:
 - **Signal/noise bar:** If in doubt about whether something belongs, omit it. One specific useful update is better than five vague ones.
 - **Specificity rule:** Name the actual thing decided. "Discussed the product" is not a synthesis output. "Confirmed separate-clone pattern for GitHub publishing" is.
 - **Already-captured rule:** If the transcript contains something already verbatim in the context files, do not re-append it.
-- **Proposal format is non-negotiable:** The YAML frontmatter must be parseable by `commit-to-team-context.sh`. Do not deviate from the format.
+- **Proposal format is non-negotiable:** The YAML frontmatter must follow the synthesis outcome contract. Do not deviate from the format.

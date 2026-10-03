@@ -2,7 +2,7 @@
 
 The desktop app is Draft's native workspace client. It is built with Electrobun, with a Bun main process and React views.
 
-The app signs in to a Draft deployment, reads the current workspace context, displays synthesis activity, manages source connections, handles team invites, and configures local agent/session connections. The canonical workspace is server-side; the desktop app is a client of that workspace.
+The app signs in to a Draft deployment, reads the current workspace context, displays synthesis activity, manages source connections, and handles team invites. The canonical workspace is server-side; the desktop app is a client of that workspace.
 
 ## Hosted Draft
 
@@ -32,7 +32,7 @@ DRAFT_SUPABASE_URL=
 DRAFT_SUPABASE_PUBLISHABLE_KEY=
 ~~~
 
-For local source imports and session capture, the desktop may also read files from the project machine. Those files are source material or local runtime state, not the authoritative shared workspace.
+For local source imports, the desktop may also read files from the project machine. Those files are source material, not the authoritative shared workspace. Manage Claude Code session capture with `draft sessions` in the CLI.
 
 ## Release builds
 

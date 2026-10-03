@@ -181,4 +181,4 @@ Then remind:
 - **Do not compact `tensions.md`.** Tensions are resolved manually by the curator, not synthesized away.
 - **Prefer lean over comprehensive.** When in doubt, cut. The `log/` archive preserves full history.
 - **Read log/ directory in full, content scoped to 7 days.** Always list all log/ files — filenames are descriptive and inform the synthesis. Only read full content for files timestamped within the past 7 days. Use a subagent to read them.
-- **This is a direct write.** Compact writes directly to `index.md` — it does not produce a `proposals/` file. This is intentional: compact is an explicit curator action, not automated synthesis. The daemon's overwrite guard (`commit-to-team-context.sh`) applies only to synthesis proposals, not to this skill.
+- **This is a direct write.** Compact writes directly to `index.md` — it does not produce a `proposals/` file. This is intentional: compact is an explicit curator action, not automated synthesis.

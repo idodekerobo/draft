@@ -46,7 +46,7 @@ The remote MCP server is an OAuth-protected, stateless HTTP connection to the wo
 
 ### Background daemon
 
-The `background/` module powers the local desktop runtime. It provides the installed daemon, local pollers, session jobs, and bundled source/intelligence adapters. `apps/desktop/scripts/prebuild.sh` copies and bundles it into desktop assets, and `make dev-refresh` installs the local runtime. Agent connections are opt-in through the CLI or tool-specific setup. Hosted production ingestion and synthesis run through the Bun backend and Fly Machine sandbox; the background module handles local capture and source processing.
+The `background/` module powers the local desktop runtime. It provides the installed daemon, Codex session scanner, pending job queue, and bundled Codex source/intelligence adapters. `apps/desktop/scripts/prebuild.sh` copies and bundles it into desktop assets, and `make dev-refresh` installs the local runtime. Agent connections are opt-in through the CLI or tool-specific setup. Hosted production ingestion and synthesis run through the Bun backend and Fly Machine sandbox; the background module handles local Codex discovery and processing.
 
 ## Backend
 
