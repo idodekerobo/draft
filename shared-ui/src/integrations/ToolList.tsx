@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { CopyButton } from "../onboarding/components";
+import { ProviderLogo } from "./ProviderLogo";
 import { mcpSetupSnippets } from "./mcp";
-import { groupTools, toolsForPlatform, type Platform, type ToolEntry, type ToolGroup, type ToolId, type ToolState, type ToolStatus } from "./registry";
+import { filterToolGroups, groupTools, toolsForPlatform, type Platform, type ToolEntry, type ToolGroup, type ToolId, type ToolState, type ToolStatus } from "./registry";
 
 const DEFAULT_STATUS_TEXT: Record<ToolState, string> = {
   connected: "Connected",
@@ -45,6 +46,7 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
     <li className="ui-tool-row">
       <div className="ui-tool-row__main">
         <StatusDot state={status.state} />
+        <ProviderLogo providerId={tool.id} />
         <span className="ui-tool-row__name">
           <span>{tool.name}{startHere && <span className="ui-tool-row__tag">Start here</span>}</span>
           {subline && <small>{subline}</small>}
@@ -56,7 +58,7 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
           )}
           {connected && connectedAction}
           {!connected && panel && (
-            <button type="button" className={open ? "ui-btn" : "ui-btn ui-btn--primary"} aria-expanded={open} onClick={() => setOpen(!open)}>
+            <button type="button" className="ui-btn" aria-expanded={open} onClick={() => setOpen(!open)}>
               {open ? "Cancel" : "Connect"}
             </button>
           )}
@@ -75,6 +77,7 @@ export function AgentConnectionRow({ name, prompt, mcpUrl, lastUsedAt }: { name:
     <li className="ui-tool-row">
       <div className="ui-tool-row__main">
         {lastUsedAt ? <StatusDot state="connected" /> : <span className="ui-dot ui-dot--none" aria-hidden="true" />}
+        <ProviderLogo providerId="claude-code" />
         <span className="ui-tool-row__name">
           {name}
           <small>Tell your agent to install the Draft CLI, then run <code>draft add &lt;agent&gt;</code>.</small>
@@ -106,7 +109,7 @@ export function AgentConnectionRow({ name, prompt, mcpUrl, lastUsedAt }: { name:
   );
 }
 
-export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUsedAt, mcpUrl, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere }: {
+export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUsedAt, mcpUrl, panels, connectedActions = {}, managePanels = {}, unavailableHint, startHere, searchable = false }: {
   platform: Platform;
   groups?: ToolGroup[];
   statuses: Partial<Record<ToolId, ToolStatus>>;
@@ -120,10 +123,19 @@ export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUse
   managePanels?: Partial<Record<ToolId, ManagePanel>>;
   unavailableHint?: string;
   startHere?: ToolId;
+  searchable?: boolean;
 }) {
-  const grouped = groupTools(toolsForPlatform(platform, groups), statuses);
+  const searchId = useId();
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const grouped = useMemo(() => filterToolGroups(groupTools(toolsForPlatform(platform, groups), statuses), normalizedQuery), [platform, groups, statuses, normalizedQuery]);
   return (
     <div className="ui-tool-list">
+      {searchable && <div className="ui-tool-list__search-label">
+        <label className="ui-tool-list__search-title" htmlFor={searchId}>Search connections</label>
+        <input id={searchId} className="ui-input ui-tool-list__search" type="search" aria-label="Search connections" placeholder="Search connections" value={query} onChange={(event) => setQuery(event.target.value)} />
+        {query && <button type="button" className="ui-link ui-tool-list__clear" onClick={() => setQuery("")}>Clear search</button>}
+      </div>}
       {grouped.map(({ section, label, tools }) => (
         <section key={section} className="ui-tool-list__group" aria-label={label}>
           <h3 className="ui-group-label">{label}</h3>
@@ -134,6 +146,10 @@ export function ToolList({ platform, groups, statuses, agentPrompt, agentLastUse
           </ul>
         </section>
       ))}
+      {searchable && normalizedQuery && grouped.length === 0 && <div className="ui-tool-list__empty" role="status">
+        <p>No connections match “{query.trim()}”.</p>
+        <button type="button" className="ui-link" onClick={() => setQuery("")}>Clear search</button>
+      </div>}
     </div>
   );
 }

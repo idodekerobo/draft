@@ -1,5 +1,6 @@
 "use client";
 
+import { Brand } from "../Brand";
 import { useEffect, useState, type ReactNode } from "react";
 import { contextExcerpt, type ContextFileEntry } from "../context/context-files";
 import type { FlowStep, TrackFn } from "../analytics/events";
@@ -9,7 +10,7 @@ export function FlowShell({ children }: { children: ReactNode }) {
   return (
     <div className="ui-flow">
       <header className="ui-flow__header">
-        <span className="ui-wordmark">Draft</span>
+        <span className="ui-wordmark"><Brand /></span>
       </header>
       <main className="ui-flow__column">{children}</main>
     </div>

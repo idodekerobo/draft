@@ -72,6 +72,7 @@ export default function SettingsPage() {
   return (
     <div className="ui-page">
       <h1 className="ui-page__title">Settings</h1>
+      <p className="ui-page__intro">Make Draft feel right for you.</p>
       {error && <p className="ui-error" role="alert">{error}</p>}
 
       <h2 className="ui-group-label">Account</h2>

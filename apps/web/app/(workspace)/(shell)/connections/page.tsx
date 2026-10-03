@@ -9,6 +9,7 @@ export default function ConnectionsPage() {
   return (
     <div className="ui-page">
       <h1 className="ui-page__title">Connections</h1>
+      <p className="ui-page__intro">Bring your sources together. Give your agents the context.</p>
       <WebToolList allowDisconnect />
       <p className="ui-page__footer">
         More ways to use Draft: <a href={DOWNLOAD_URL}>desktop app for Mac</a>, <a href={CLI_DOCS_URL} target="_blank" rel="noreferrer">CLI</a>

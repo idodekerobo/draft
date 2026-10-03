@@ -11,6 +11,7 @@ export * from "./SlackConnectPanel";
 export * from "./GithubConnectPanel";
 export * from "./registry";
 export * from "./ToolList";
+export * from "./ProviderLogo";
 export * from "./tool-status";
 export * from "./agent-prompt";
 export * from "./mcp";

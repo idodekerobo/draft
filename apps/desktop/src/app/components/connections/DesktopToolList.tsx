@@ -122,6 +122,7 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
       managePanels={managePanels}
       connectedActions={connectedActions}
       startHere={startHere}
+      searchable={allowManage}
     />
   );
 }

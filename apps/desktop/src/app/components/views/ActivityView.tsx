@@ -155,7 +155,8 @@ export function ActivityView() {
   return (
     <div className="activity">
       <div className="activity__header">
-        <span className="activity__title">Activity</span>
+        <h1 className="ui-page__title">Activity</h1>
+        <p className="ui-page__intro">How your workspace context changes over time.</p>
       </div>
 
       <div className="activity__body">

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useQuery } from "draft-shared-ui";
+import { Brand, useQuery } from "draft-shared-ui";
 import { apiFetch } from "@/lib/api";
 import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="ui-shell">
       <nav className="ui-shell__nav" aria-label="Main">
-        <Link className="ui-wordmark" href="/">Draft</Link>
+        <Link className="ui-wordmark" href="/"><Brand /></Link>
         <ul>
           {NAV_ITEMS.map((item) => {
             const active = pathname.startsWith(item.href);

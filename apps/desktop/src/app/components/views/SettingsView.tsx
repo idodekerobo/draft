@@ -357,7 +357,8 @@ export function SettingsView({ activeProfile, onOpenFeedback }: SettingsViewProp
 function SettingsHeader() {
   return (
     <div className="settings__header">
-      <span className="settings__title">Settings</span>
+      <h1 className="ui-page__title">Settings</h1>
+      <p className="ui-page__intro">Make Draft feel right for you.</p>
     </div>
   );
 }

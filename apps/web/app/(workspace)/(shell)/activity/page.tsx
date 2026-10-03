@@ -15,6 +15,7 @@ export default function ActivityPage() {
   return (
     <div className="ui-page">
       <h1 className="ui-page__title">Activity</h1>
+      <p className="ui-page__intro">How your workspace context changes over time.</p>
       <DataBoundary fallback={<p className="ui-muted" role="status">Loading activity…</p>}>
         <ActivityRuns />
       </DataBoundary>

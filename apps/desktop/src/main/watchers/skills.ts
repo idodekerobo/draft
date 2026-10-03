@@ -324,7 +324,7 @@ export function stopSkillWatch(): void {
 
 /**
  * Restart the skill watcher with a new active profile.
- * Called from the switchProfile RPC handler after profile switch completes.
+ * Called after the active profile changes.
  */
 export function restartSkillWatchWithProfile(newProfile: string): void {
   if (!currentHandlers) return;

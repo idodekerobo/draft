@@ -27,10 +27,12 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
+    "lucide-react": "^0.577.0",
     "marked": "^18.0.4"
   },
   "scripts": {
     "test": "bun test",
-    "check-tokens": "bun scripts/check-tokens.ts ../apps/desktop/src/app/index.css src/styles/shared-ui.css"
+    "check-tokens": "bun scripts/check-tokens.ts ../apps/desktop/src/app/index.css src/styles/shared-ui.css",
+    "generate-provider-logo-data": "bun scripts/generate-provider-logo-data.ts"
   }
 }

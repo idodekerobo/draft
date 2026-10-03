@@ -61,9 +61,8 @@ for (const [name, value] of Object.entries(block(tokensCss, ':root[data-theme="l
   if (lightMedia[name] !== value) failures.push(`light media block differs on ${name}`);
 }
 
-// Tertiary text is decorative only, so it is not checked.
-const textTokens = ["--color-text-primary", "--color-text-secondary", "--color-accent-text", "--color-status-green", "--color-status-yellow", "--color-status-red"];
-const backgrounds = ["--color-bg-primary", "--color-bg-sidebar"];
+const textTokens = ["--color-text-primary", "--color-text-secondary", "--color-text-tertiary", "--color-accent-text", "--color-status-green", "--color-status-yellow", "--color-status-red"];
+const backgrounds = ["--color-bg-primary", "--color-bg-sidebar", "--color-bg-elevated", "--color-selected-bg"];
 
 for (const [theme, vars] of [["dark", dark], ["light", light]] as const) {
   for (const bgName of backgrounds) {
@@ -78,6 +77,12 @@ for (const [theme, vars] of [["dark", dark], ["light", light]] as const) {
   const onAccent = contrast(parseColor(vars["--color-text-on-accent"]!, vars), parseColor(vars["--color-accent-fill"]!, vars));
   if (onAccent < 4.5) failures.push(`${theme} text-on-accent on accent-fill: ${onAccent.toFixed(2)}`);
   else console.log(`ok   ${theme.padEnd(5)} text-on-accent on accent-fill: ${onAccent.toFixed(2)}`);
+  const selected = contrast(parseColor(vars["--color-selected-text"]!, vars), parseColor(vars["--color-selected-bg"]!, vars));
+  if (selected < 4.5) failures.push(`${theme} selected text on selected background: ${selected.toFixed(2)}`);
+  const border = contrast(parseColor(vars["--color-border-strong"]!, vars), parseColor(vars["--color-bg-primary"]!, vars));
+  if (border < 3) failures.push(`${theme} strong control border on page background: ${border.toFixed(2)}`);
+  const focus = contrast(parseColor(vars["--color-focus"]!, vars), parseColor(vars["--color-bg-primary"]!, vars));
+  if (focus < 3) failures.push(`${theme} focus indicator on page background: ${focus.toFixed(2)}`);
 }
 
 const defined = new Set(Object.keys(dark));

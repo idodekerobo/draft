@@ -8,7 +8,7 @@ import {
   type PendingSkillEntry, type SameNameConflict,
 } from "draft-core/scanner";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getProfiles, getWorkspacePath, createProfile, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, readCollaboration, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getWorkspacePath, readIntegrations, writeIntegrations, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, readCollaboration, BACKGROUND_DIR, DRAFT_ROOT, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { documentsToEntries } from "draft-shared-ui/context-files";
 import type { TeamSessionRepo } from "draft-shared-ui";
@@ -390,65 +390,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         };
 
         return { appState, installedTools };
-      },
-
-      getProfiles: async () => getProfiles(),
-
-      switchProfile: async ({ profile }) => {
-        const oldProfile = getActiveProfile();
-        try {
-          const result = await switchProfileAssets(oldProfile, profile);
-          const newWorkspacePath = getWorkspacePath(profile);
-          const wsManifest = readWorkspaceMcpManifest(newWorkspacePath);
-          if (result.missingSecrets.length > 0) {
-            try {
-              rpc.send.mcpsPendingCredentials({
-                mcps: result.missingSecrets.map(({ name, requiredSecrets }) => {
-                  const entry = wsManifest.servers.find((server) => server.name === name);
-                  return { name, url: entry?.canonical.url ?? "", required_secrets: requiredSecrets };
-                }),
-              });
-            } catch {}
-          }
-
-          restartSkillWatchWithProfile(profile);
-          restartMcpWatchWithProfile(profile);
-
-          try { rpc.send.profileChanged({ profile }); } catch {}
-          return { ok: true, active: profile };
-        } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
-        }
-      },
-
-      createProfile: async ({ name }) => {
-        const created = createProfile(name);
-        if (!created.ok) {
-          return { ok: false, error: created.reason === "exists" ? `Workspace "${name}" already exists.` : `Invalid name. Use letters, numbers, hyphens, and underscores only.` };
-        }
-        const oldProfile = getActiveProfile();
-        // switchProfileAssets owns activation atomically, inside the
-        // profile-switch lock, with its own rollback-on-failure path — don't
-        // call setActiveProfile manually first, which would leave the
-        // active-profile file pointing at the new profile before the old
-        // profile's assets are torn down and before any lock is held. There
-        // is only ever one active profile, so creating (and implicitly
-        // activating) a new one also deactivates the outgoing profile's
-        // personal skill symlinks — the active profile's approved personal
-        // skills are the only ones currently mirrored to the sibling agent.
-        // A new workspace has no team assets, so this is a fast no-op for
-        // the install side, but it still uninstalls the old profile's
-        // team/personal assets and writes env.sh. A failure here means the
-        // new profile isn't safely usable yet — surface it, don't swallow it.
-        try {
-          await switchProfileAssets(oldProfile, created.name);
-        } catch (error) {
-          return { ok: false, error: `Created workspace but could not activate it: ${error instanceof Error ? error.message : String(error)}` };
-        }
-        restartSkillWatchWithProfile(created.name);
-        restartMcpWatchWithProfile(created.name);
-        try { rpc.send.profileChanged({ profile: created.name }); } catch {}
-        return { ok: true, active: created.name };
       },
 
       launchSession: async () => ({
@@ -1660,6 +1601,7 @@ function daemonPlistContent(binPath: string): string {
 }
 
 async function syncBundledAssets(): Promise<void> {
+  if (process.env.DRAFT_DESKTOP_DEV === "1") return;
   let appVersion: string;
   let appBuildId: string;
   let isDevChannel: boolean;
