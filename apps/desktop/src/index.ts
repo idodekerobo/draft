@@ -1660,6 +1660,7 @@ function daemonPlistContent(binPath: string): string {
 }
 
 async function syncBundledAssets(): Promise<void> {
+  if (process.env.DRAFT_DESKTOP_DEV === "1") return;
   let appVersion: string;
   let appBuildId: string;
   let isDevChannel: boolean;

@@ -42,6 +42,7 @@ export default {
     bun: {
       entrypoint: "src/index.ts",
       define: {
+        "process.env.DRAFT_DESKTOP_DEV": JSON.stringify(isDev ? "1" : "0"),
         "process.env.DRAFT_PH_KEY":           _phKey,
         "process.env.DRAFT_PH_HOST":          _phHost,
         "process.env.DRAFT_CRISP_WEBSITE_ID":       _crispId,
@@ -67,10 +68,10 @@ export default {
       "../../shared-ui/src/styles/tokens.css": "views/app/tokens.css",
       "../../shared-ui/src/styles/shared-ui.css": "views/app/shared-ui.css",
       // Bundled at build time by desktop/scripts/prebuild.sh
-      "assets/background/": "background/",
+      ...(!isDev ? { "assets/background/": "background/" } : {}),
     },
     mac: {
-      icons: "assets/icon.iconset",
+      icons: isDev ? "../../assets/AppIcon.iconset" : "assets/icon.iconset",
       codesign: true,
       notarize: true,
     },
