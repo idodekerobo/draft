@@ -1,4 +1,5 @@
 import { serviceClient } from "../db/client";
+import { recordRouteError } from "../errors/route-error";
 import { loadDisplayNames } from "../routes/session-display-names";
 import { computeNextDueAt } from "../scheduling/next-due-at";
 import {
@@ -135,16 +136,16 @@ async function loadLastSynthesisRun(workspaceId: string): Promise<RunInfo | null
     .order("completed_at", { ascending: false })
     .limit(1);
   if (error) {
-    console.error("schedules: synthesis run lookup failed", error);
+    recordRouteError({ workspaceId, errorCode: "schedules_last_run_failed", error });
     return null;
   }
   return ((data ?? []) as RunInfo[])[0] ?? null;
 }
 
-async function loadUserNames(userIds: string[]): Promise<Map<string, string>> {
+async function loadUserNames(workspaceId: string, userIds: string[]): Promise<Map<string, string>> {
   const lookup = await loadDisplayNames(serviceClient, userIds, []);
   if (!lookup.ok) {
-    console.error("schedules: user lookup failed", lookup.detail);
+    recordRouteError({ workspaceId, errorCode: "schedules_editor_names_failed", error: lookup.detail });
     return new Map();
   }
   return lookup.users;
@@ -158,7 +159,7 @@ async function buildRoutines(workspaceId: string, tasks: ScheduledTaskRow[]): Pr
   const [connections, lastRun, names] = await Promise.all([
     loadConnections(workspaceId, connectionIds),
     hasSynthesis ? loadLastSynthesisRun(workspaceId) : Promise.resolve(null),
-    loadUserNames(editorIds),
+    loadUserNames(workspaceId, editorIds),
   ]);
 
   return tasks.map((task) =>
@@ -187,10 +188,18 @@ export async function getRoutineTask(workspaceId: string, taskId: string): Promi
   return (data as ScheduledTaskRow | null) ?? null;
 }
 
+// A parse failure here means the stored schedule is bad (the patch itself was validated).
 function safeNextDueAt(task: ScheduledTaskRow, now: Date): string {
   try {
     return computeNextDueAt(task, now).toISOString();
-  } catch {
+  } catch (error) {
+    recordRouteError({
+      workspaceId: task.workspace_id,
+      scheduledTaskId: task.id,
+      operation: "scheduling",
+      errorCode: "schedules_invalid_stored_cron",
+      error,
+    });
     throw new ScheduleServiceError("invalid_schedule");
   }
 }

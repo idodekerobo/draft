@@ -4,6 +4,8 @@ const caller = { userId: "user-1", accessToken: "token-1" };
 let accessResult: Response | null = null;
 let runsError: { message: string } | null = null;
 let updateError: { message: string } | null = null;
+let errorRows: Row[] = [];
+let usersError: { message: string } | null = null;
 
 type Row = Record<string, unknown>;
 let tables: Record<string, Row[]> = {};
@@ -32,7 +34,10 @@ function queryBuilder(table: string) {
       ins.push([col, values]);
       return builder;
     },
-    insert: async () => ({ data: null, error: null }),
+    insert: async (payload: Row) => {
+      if (table === "errors") errorRows.push(payload);
+      return { data: null, error: null };
+    },
     order: () => builder,
     limit: () => builder,
     async maybeSingle() {
@@ -47,6 +52,7 @@ function queryBuilder(table: string) {
     },
     then(resolve: (value: unknown) => unknown) {
       if (table === "synthesis_runs" && runsError) return resolve({ data: null, error: runsError });
+      if (table === "users" && usersError) return resolve({ data: null, error: usersError });
       return resolve({ data: matches(), error: null });
     },
   };
@@ -105,6 +111,8 @@ describe("schedules routes", () => {
     accessResult = null;
     runsError = null;
     updateError = null;
+    errorRows = [];
+    usersError = null;
     tables = {
       scheduled_tasks: [
         task({}),
@@ -162,11 +170,24 @@ describe("schedules routes", () => {
       expect(body.routines.find((r) => r.id === "task-4")).toMatchObject({ needsReconnect: true });
     });
 
-    it("keeps the list when the run lookup fails", async () => {
+    it("keeps the list when the run lookup fails, and records it", async () => {
       runsError = { message: "boom" };
       const body = (await (await get()).json()) as { routines: Row[] };
       expect(body.routines).toHaveLength(3);
       expect(body.routines[0]).toMatchObject({ lastRun: null });
+      await Bun.sleep(10);
+      expect(errorRows).toHaveLength(1);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", operation: "read" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_last_run_failed" });
+    });
+
+    it("keeps the list when the editor name lookup fails, and records it", async () => {
+      tables.scheduled_tasks![1]!.updated_by_user_id = "user-1";
+      usersError = { message: "boom" };
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines[1]).toMatchObject({ updatedByName: null });
+      await Bun.sleep(10);
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_editor_names_failed" });
     });
 
     it("shows an unparseable or interval schedule as custom/managed", async () => {
@@ -238,6 +259,15 @@ describe("schedules routes", () => {
       expect((await patch("task-1", { preset: "daily", time: "99:99" })).status).toBe(400);
       expect((await patch("task-1", { preset: "daily", time: "09:00", timezone: "Nope/Nope" })).status).toBe(400);
       expect((await patch("task-1", { preset: "weekly", time: "09:00", weekday: "someday" })).status).toBe(400);
+    });
+
+    it("returns 400 and records the task when a stored schedule cannot be parsed on enable", async () => {
+      Object.assign(tables.scheduled_tasks![1]!, { enabled: false, cron_expression: "not a cron" });
+      const response = await patch("task-2", { enabled: true });
+      expect(response.status).toBe(400);
+      await Bun.sleep(10);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", scheduled_task_id: "task-2", operation: "scheduling" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_invalid_stored_cron" });
     });
 
     it("returns 404 for another workspace's task and for backfill rows", async () => {
