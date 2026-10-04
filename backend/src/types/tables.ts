@@ -195,6 +195,7 @@ export interface ScheduledTaskRow {
   last_enqueued_at: string | null;
   created_at: string;
   updated_at: string;
+  updated_by_user_id: string | null;
 }
 
 export interface SynthesisRunRow {

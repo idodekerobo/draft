@@ -45,6 +45,18 @@ Web supports 360px and wider, including zoom and larger text. At 720px and below
 
 Use `cubic-bezier(0.23, 1, 0.32, 1)`. Pointer press feedback is 120ms and scales to 0.98; toggle travel is 160ms. Inline panels and activity details use 200ms opacity and up to 3px movement; successful connection notices use 180ms opacity and up to 6px movement. Theme, navigation, context selection, and search remain immediate. Gate hover effects to hover-capable fine pointers and honor reduced motion. Keep visible keyboard focus, accessible labels, semantic current-view state, keyboard access to filtering and navigation, and at least 4.5:1 text contrast and 3:1 focus/control-boundary contrast. Real-device checks are required to confirm safe areas, browser chrome, keyboard resize, and touch feedback.
 
+## Craft and interaction guidance
+
+- Design product screens around the user's next decision. Put the routine and its next scheduled activity before secondary results and edit controls. Use plain language and distinguish an actual run from a scheduled check.
+- Preserve familiar placement and grouping: controls stay close to the row they affect, and editors expand beside their context. Show advanced choices only when needed. Every control has a visible label or an accessible name.
+- Use motion to acknowledge input, explain a state change, or maintain spatial context. Frequent navigation, search, and keyboard-initiated actions remain immediate. Avoid decorative entrance sequences, scroll effects, and perpetual motion in product screens.
+- Press feedback begins on pointer down; commit happens on activation. Use the existing 120ms / 0.98 press response, 160ms toggle travel, and 200ms inline-panel transition. Specify transition properties explicitly. Transitions can reverse when the user changes direction; gesture-driven interactions use interruptible springs only when needed.
+- Keep focus visible, preserve focus when content changes, and return focus to the trigger when an editor closes. Pending saves expose progress, errors stay near the relevant field, and successful saves show the updated next activity immediately.
+- Honor reduced motion and gate hover to fine pointers. Smooth opaque surfaces remain the material standard; Apple-inspired craft comes from responsive feedback, consistent spatial relationships, typography, and accessible behavior.
+- Align shared row controls in dedicated columns, even when some rows offer additional actions. Dense lists keep essential timing visible and keep explanations and editing in a focused details view when inline expansion disrupts alignment. Paused toggle thumbs must remain distinct from their tracks in both themes.
+- Use Sonner for transient schedule feedback, mounted once at the application root and themed with Draft semantic surface tokens. Keep errors relevant to a field beside that field.
+- Prototypes clearly identify sample data and simulated saves. Include loading, empty, error, paused, and partial-data states before turning a design into production UI.
+
 ## Platform distinctions
 
 Web retains its Slack and GitHub restrictions. Desktop retains channel management, repository selection, editing, session mode, history, profile switching, and native window controls. Both Connections pages support client-side trimmed case-insensitive search through provider names and agent aliases. Search does not affect connection state or leave the client. Onboarding lists remain unfiltered.

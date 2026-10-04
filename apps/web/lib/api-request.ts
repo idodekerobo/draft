@@ -19,7 +19,11 @@ export async function requestApi<T>(path: string, token: string, init: RequestIn
 
   const body = await response.json().catch(() => null) as ({ error?: unknown } & Record<string, unknown>) | null;
   if (!response.ok) {
-    throw new ApiError(response.status, typeof body?.error === "string" ? body.error : `http_${response.status}`);
+    throw new ApiError(
+      response.status,
+      typeof body?.error === "string" ? body.error : `http_${response.status}`,
+      typeof body?.field === "string" ? body.field : undefined,
+    );
   }
   return body as T;
 }

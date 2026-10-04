@@ -17,6 +17,7 @@ import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
 import { ConnectionsView } from "./components/views/ConnectionsView";
+import { RoutinesView } from "./components/views/RoutinesView";
 import { DesktopOnboarding } from "./components/views/onboarding/DesktopOnboarding";
 import { SupportPanel } from "./components/SupportPanel";
 import { useCrispChat } from "./support/useCrispChat";
@@ -166,6 +167,7 @@ export function App() {
               </div>
               {activeView === "connections" && <ConnectionsView />}
               {activeView === "activity" && <ActivityView />}
+              {activeView === "routines" && <RoutinesView onReconnect={() => handleNavigate("connections")} />}
             </>
           )}
         </main>

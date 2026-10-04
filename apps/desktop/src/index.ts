@@ -23,12 +23,12 @@ import {
 import { runInstall, syncExtractedBins } from "./main/installer";
 import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
+import type { Routine, RoutinesResponse } from "draft-shared-ui";
 import type {
   AppRPCType,
   IntegrationDetail,
   SlackChannelOption,
   SlackMembershipReconcileResult,
-  SynthesisSchedule,
   WorkspaceRun,
 } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
@@ -36,7 +36,7 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
-import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
+import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -394,28 +394,26 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getSynthesisSchedule: async () => {
+      listRoutines: async () => {
         const workspaceId = getCachedWorkspaceId();
-        if (!workspaceId) return null;
-        try {
-          return await fetchServerJSON<SynthesisSchedule>(`workspaces/${workspaceId}/synthesis-schedule`);
-        } catch {
-          return null;
-        }
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        return fetchServerJSON<RoutinesResponse>(`workspaces/${workspaceId}/schedules`);
       },
 
-      setSynthesisEnabled: async ({ enabled }) => {
+      updateRoutine: async ({ id, patch }) => {
         const workspaceId = getCachedWorkspaceId();
-        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        if (!workspaceId) return { ok: false, code: "signed_out" };
         try {
-          const schedule = await fetchServerJSON<SynthesisSchedule>(`workspaces/${workspaceId}/synthesis-schedule`, {
+          const routine = await fetchServerJSON<Routine>(`workspaces/${workspaceId}/schedules/${id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled }),
+            body: JSON.stringify(patch),
           });
-          return { ok: true, schedule };
+          return { ok: true, routine };
         } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : "Could not update the synthesis schedule." };
+          return err instanceof ServerError
+            ? { ok: false, code: err.code, field: err.field }
+            : { ok: false, code: err instanceof Error ? err.message : "unknown" };
         }
       },
 

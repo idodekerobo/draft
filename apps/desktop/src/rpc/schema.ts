@@ -229,16 +229,8 @@ export interface SlackMembershipReconcileResult {
   }>;
 }
 
-export interface SynthesisSchedule {
-  enabled: boolean;
-  scheduleKind: "cron" | "interval";
-  cronExpression: string | null;
-  intervalSeconds: number | null;
-  nextDueAt: string | null;
-  lastEnqueuedAt: string | null;
-}
-
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
+import type { Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -269,11 +261,11 @@ export type AppRPCType = {
       /** Rich connection status for all intelligence tools and input sources, plus firefliesConnections for the Settings list view. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
-      /** Read the workspace's synthesize_workspace schedule (cadence + enabled). Null if not signed in or no schedule exists yet. */
-      getSynthesisSchedule: { params: void; response: SynthesisSchedule | null };
+      /** List the workspace's recurring routines (schedules) and whether the caller may edit them. */
+      listRoutines: { params: void; response: RoutinesResponse };
 
-      /** Toggle the workspace's synthesis schedule on/off. Cadence editing isn't supported yet. */
-      setSynthesisEnabled: { params: { enabled: boolean }; response: ActionResult & { schedule?: SynthesisSchedule } };
+      /** Toggle or re-schedule one routine. Failures carry the API error code and offending field. */
+      updateRoutine: { params: { id: string; patch: RoutinePatch }; response: { ok: true; routine: Routine } | { ok: false; code: string; field?: string } };
 
       /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear"; accountKind?: "personal" | "workspace" }; response: ActionResult };

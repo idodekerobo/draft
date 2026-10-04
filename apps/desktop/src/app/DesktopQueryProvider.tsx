@@ -1,9 +1,17 @@
-import { DraftQueryProvider, type DraftApi } from "draft-shared-ui";
+import { DraftQueryProvider, toRoutineError, type DraftApi } from "draft-shared-ui";
 import { type ReactNode } from "react";
 import { useUserIdentity } from "./identity/UserIdentityContext";
 import { rpc } from "./rpc";
 
-const api: DraftApi = { getRuns: () => rpc.request.getWorkspaceRuns() };
+const api: DraftApi = {
+  getRuns: () => rpc.request.getWorkspaceRuns(),
+  getRoutines: () => rpc.request.listRoutines(),
+  updateRoutine: async (id, patch) => {
+    const result = await rpc.request.updateRoutine({ id, patch });
+    if (!result.ok) throw toRoutineError(result.code, result.field);
+    return result.routine;
+  },
+};
 
 /** Query keys use the cloud workspace id; signed-out state shares one bucket. */
 export function useWorkspaceKey(): string {

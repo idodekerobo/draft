@@ -18,6 +18,7 @@ create table scheduled_tasks (
   last_enqueued_at         timestamptz,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),
+  updated_by_user_id       uuid references users(id) on delete set null,
 
   unique (id, workspace_id),
   unique (workspace_id, task_type, task_key),

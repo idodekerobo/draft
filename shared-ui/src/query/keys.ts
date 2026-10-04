@@ -6,5 +6,5 @@ export const queryKeys = {
   context: (workspaceId: string) => ["ws", workspaceId, "context"] as const,
   connections: (workspaceId: string) => ["ws", workspaceId, "connections"] as const,
   sessionRepos: (workspaceId: string) => ["ws", workspaceId, "session-repos"] as const,
-  synthesisSchedule: (workspaceId: string) => ["ws", workspaceId, "synthesis-schedule"] as const,
+  routines: (workspaceId: string) => ["ws", workspaceId, "routines"] as const,
 };

@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/context", label: "Context" },
   { href: "/connections", label: "Connections" },
   { href: "/activity", label: "Activity" },
+  { href: "/routines", label: "Routines" },
   { href: "/settings", label: "Settings" },
 ];
 

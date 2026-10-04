@@ -21,13 +21,6 @@ export const contextFilesQueryOptions = (workspaceKey: string, enabled: boolean)
     refetchInterval: (query) => (query.state.data?.length === 0 ? EMPTY_CONTEXT_POLL_MS : false),
   });
 
-export const synthesisScheduleQueryOptions = (workspaceKey: string) =>
-  queryOptions({
-    queryKey: queryKeys.synthesisSchedule(workspaceKey),
-    queryFn: () => rpc.request.getSynthesisSchedule(),
-    staleTime: STALE_MS.schedule,
-  });
-
 export const localConfigQueryOptions = queryOptions({
   queryKey: ["app", "local-config"] as const,
   queryFn: () => rpc.request.getLocalConfig(),

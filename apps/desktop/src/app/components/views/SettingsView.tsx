@@ -1,7 +1,7 @@
 // SettingsView.tsx — user-configurable settings
 //
 // Sections (top → bottom):
-//   System     — Draft Cloud sign-in, notifications, synthesis schedule
+//   System     — Draft Cloud sign-in, notifications
 //   Privacy    — usage data and session replay, stored on the account
 //   Appearance — Light, Dark, System
 //   Updates    — current version, check for updates
@@ -10,27 +10,12 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { LocalConfig, SynthesisSchedule } from "../../../rpc/schema";
+import type { LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { AppearanceRow, DataBoundary, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, queryKeys, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
-import { useWorkspaceKey } from "../../DesktopQueryProvider";
+import { AppearanceRow, DataBoundary, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
-import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions, synthesisScheduleQueryOptions } from "../../queries";
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-// Only one cadence is offered today (see register-workspace-synthesis.ts); falls
-// back to the raw cron/interval if a workspace ever has something else.
-function describeSynthesisCadence(schedule: SynthesisSchedule): string {
-  if (schedule.scheduleKind === "cron" && schedule.cronExpression === "0 0,4,8,9-18,22 * * *") {
-    return "Hourly, 9am–6pm UTC; every ~4h overnight";
-  }
-  if (schedule.scheduleKind === "interval" && schedule.intervalSeconds) {
-    return `Every ${Math.round(schedule.intervalSeconds / 60)} minutes`;
-  }
-  return schedule.cronExpression ?? "Custom schedule";
-}
+import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
 
 // ── Rows that load their own data ─────────────────────────────────────────────
 // Each suspends on its own, so the rest of the page renders immediately.
@@ -58,37 +43,6 @@ function NotificationsRow({ onError }: { onError: (message: string) => void }) {
       <Toggle
         checked={settings.notificationsEnabled}
         onChange={(v) => patch.mutate({ notificationsEnabled: v })}
-      />
-    </div>
-  );
-}
-
-function SynthesisRow({ onError }: { onError: (message: string) => void }) {
-  const workspaceKey = useWorkspaceKey();
-  const { data: schedule } = useSuspenseQuery(synthesisScheduleQueryOptions(workspaceKey));
-  const toggle = useOptimisticMutation<SynthesisSchedule | null, boolean>({
-    queryKey: queryKeys.synthesisSchedule(workspaceKey),
-    mutationFn: async (enabled) => {
-      const result = await rpc.request.setSynthesisEnabled({ enabled });
-      if (!result.ok || !result.schedule) throw new Error(result.error ?? "Save failed.");
-      return result.schedule;
-    },
-    apply: (current, enabled) => current && { ...current, enabled },
-    onError: (error) => onError(error.message || "Save failed."),
-  });
-  if (!schedule) return null;
-  return (
-    <div className="settings__row">
-      <div className="settings__row-content">
-        <span className="settings__row-label">Synthesize workspace context</span>
-        <span className="settings__row-desc">
-          {describeSynthesisCadence(schedule)}
-        </span>
-      </div>
-      <Toggle
-        checked={schedule.enabled}
-        disabled={toggle.isPending}
-        onChange={(v) => toggle.mutate(v)}
       />
     </div>
   );
@@ -258,10 +212,6 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
             </div>
             <DataBoundary fallback={<RowSkeleton label="Enable notifications" />} errorFallback={null}>
               <NotificationsRow onError={setSaveError} />
-            </DataBoundary>
-            {/* Only shown when the schedule loads, as before. */}
-            <DataBoundary fallback={<RowSkeleton label="Synthesize workspace context" />} errorFallback={null}>
-              <SynthesisRow onError={setSaveError} />
             </DataBoundary>
           </div>
         </section>

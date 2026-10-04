@@ -15,10 +15,6 @@ export interface ConnectionsBody {
   agent?: { last_used_at: string | null };
 }
 
-export interface Schedule {
-  enabled: boolean;
-}
-
 /** null means the workspace has no context yet. */
 export const contextQueryOptions = (workspaceId: string, fetcher: Fetcher) =>
   queryOptions({
@@ -46,11 +42,4 @@ export const sessionReposQueryOptions = (workspaceId: string, fetcher: Fetcher) 
     queryKey: queryKeys.sessionRepos(workspaceId),
     queryFn: async () => (await fetcher<{ projects: TeamSessionRepo[] }>(`/workspaces/${workspaceId}/sessions/projects`)).projects,
     staleTime: STALE_MS.connections,
-  });
-
-export const scheduleQueryOptions = (workspaceId: string, fetcher: Fetcher) =>
-  queryOptions({
-    queryKey: queryKeys.synthesisSchedule(workspaceId),
-    queryFn: () => fetcher<Schedule>(`/workspaces/${workspaceId}/synthesis-schedule`),
-    staleTime: STALE_MS.schedule,
   });
