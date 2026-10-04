@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { countRoutines, filterRoutines, formatAbsolute, previewNextRun } from "./format";
+import { countRoutines, filterRoutines, formatAbsolute, formatRelative, formatWhen, previewNextRun } from "./format";
 import type { Routine } from "./types";
 
 function routine(overrides: Partial<Routine>): Routine {
@@ -74,8 +74,26 @@ describe("previewNextRun", () => {
   });
 });
 
-describe("formatAbsolute", () => {
-  it("includes the timezone abbreviation", () => {
-    expect(formatAbsolute("2026-10-04T14:00:00.000Z", "UTC")).toContain("UTC");
+describe("time formatting", () => {
+  const now = new Date("2026-10-04T12:00:00.000Z");
+
+  it("labels days and uses a 24-hour clock only for UTC", () => {
+    expect(formatWhen("2026-10-04T09:02:00.000Z", "UTC", now)).toBe("Today, 09:02 UTC");
+    expect(formatWhen("2026-10-03T18:45:00.000Z", "UTC", now)).toBe("Yesterday, 18:45 UTC");
+    expect(formatWhen("2026-10-05T07:00:00.000Z", "America/New_York", now)).toBe("Tomorrow, 3:00 AM ET");
+    expect(formatWhen("2026-10-07T01:00:00.000Z", "America/Los_Angeles", now)).toBe("Tuesday, 6:00 PM PT");
+    expect(formatWhen("2026-09-25T20:00:00.000Z", "America/New_York", now)).toBe("Sep 25, 4:00 PM ET");
+  });
+
+  it("formats relative times", () => {
+    expect(formatRelative("2026-10-04T12:42:00.000Z", now)).toBe("In 42 minutes");
+    expect(formatRelative("2026-10-04T12:01:00.000Z", now)).toBe("In 1 minute");
+    expect(formatRelative("2026-10-05T05:00:00.000Z", now)).toBe("In 17 hours");
+    expect(formatRelative("2026-10-06T12:00:00.000Z", now)).toBe("In 2 days");
+    expect(formatRelative("2026-10-04T11:00:00.000Z", now)).toBe("Due now");
+  });
+
+  it("formats the preview time with a zone label", () => {
+    expect(formatAbsolute("2026-10-04T08:00:00.000Z", "UTC")).toBe("Oct 4, 8:00 AM UTC");
   });
 });

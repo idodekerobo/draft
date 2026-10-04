@@ -22,26 +22,59 @@ export function countRoutines(routines: Routine[]): Record<RoutineFilter, number
   return { all: routines.length, active, paused: routines.length - active };
 }
 
-export function formatRelative(iso: string, now: Date = new Date()): string {
-  const diffMs = new Date(iso).getTime() - now.getTime();
-  const minutes = Math.round(Math.abs(diffMs) / 60_000);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  const sign = diffMs < 0 ? -1 : 1;
-  if (minutes < 1) return formatter.format(0, "minute");
-  if (minutes < 60) return formatter.format(sign * minutes, "minute");
-  if (minutes < 60 * 24) return formatter.format(sign * Math.round(minutes / 60), "hour");
-  return formatter.format(sign * Math.round(minutes / (60 * 24)), "day");
+const ZONE_LABELS: Record<string, string> = {
+  "America/New_York": "ET",
+  "America/Los_Angeles": "PT",
+  "Europe/London": "London",
+  UTC: "UTC",
+};
+
+export function zoneLabel(timeZone: string): string {
+  return ZONE_LABELS[timeZone] ?? timeZone;
 }
 
+/** "In 42 minutes", "In 17 hours", "In 2 days". */
+export function formatRelative(iso: string, now: Date = new Date()): string {
+  const minutes = Math.round((new Date(iso).getTime() - now.getTime()) / 60_000);
+  if (minutes < 1) return "Due now";
+  const plural = (count: number, unit: string) => `In ${count} ${unit}${count === 1 ? "" : "s"}`;
+  if (minutes < 60) return plural(minutes, "minute");
+  if (minutes < 60 * 24) return plural(Math.round(minutes / 60), "hour");
+  return plural(Math.round(minutes / (60 * 24)), "day");
+}
+
+function localDay(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  return Date.UTC(value("year"), value("month") - 1, value("day"));
+}
+
+// UTC routines read as a 24-hour clock; every other timezone as AM/PM.
+function clock(date: Date, timeZone: string): string {
+  return timeZone === "UTC"
+    ? new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date)
+    : new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date);
+}
+
+/** "Today, 09:02 UTC", "Yesterday, 6:00 PM PT", "Monday, 6:00 PM PT", "Sep 25, 4:00 PM ET". */
+export function formatWhen(iso: string, timeZone: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  const dayDiff = Math.round((localDay(date, timeZone) - localDay(now, timeZone)) / 86_400_000);
+  const day =
+    dayDiff === 0 ? "Today"
+    : dayDiff === -1 ? "Yesterday"
+    : dayDiff === 1 ? "Tomorrow"
+    : dayDiff > 1 && dayDiff < 7 ? new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(date)
+    : new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(date);
+  return `${day}, ${clock(date, timeZone)} ${zoneLabel(timeZone)}`;
+}
+
+/** "Oct 4, 8:00 AM UTC". */
 export function formatAbsolute(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-    timeZoneName: "short",
-  }).format(new Date(iso));
+  const date = new Date(iso);
+  const day = new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(date);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date);
+  return `${day}, ${time} ${zoneLabel(timeZone)}`;
 }
 
 /** Hourly runs are the one preset that can burn through quota quickly. */

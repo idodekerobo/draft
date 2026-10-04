@@ -3,6 +3,7 @@ import { recordRouteError } from "../errors/route-error";
 import { computeNextDueAt } from "../scheduling/next-due-at";
 import {
   buildSchedule,
+  describeInterval,
   describeSchedule,
   parseSchedule,
   type ParsedPreset,
@@ -79,7 +80,9 @@ function toRoutine(
     title: definition.title,
     routineDescription: definition.routineDescription,
     scheduleDescription:
-      task.schedule_kind === "interval" ? `Managed schedule (${task.timezone})` : describeSchedule(parsed),
+      task.schedule_kind === "interval" && task.interval_seconds
+        ? describeInterval(task.interval_seconds)
+        : describeSchedule(parsed),
     preset: parsed.preset,
     time: parsed.time,
     weekday: parsed.weekday,

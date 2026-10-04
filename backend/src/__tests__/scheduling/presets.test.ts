@@ -3,6 +3,7 @@ import { CronExpressionParser } from "cron-parser";
 import {
   DRAFT_DEFAULT_CRON,
   buildSchedule,
+  describeInterval,
   describeSchedule,
   parseSchedule,
   type ScheduleInput,
@@ -88,9 +89,17 @@ describe("buildSchedule / parseSchedule", () => {
 });
 
 describe("describeSchedule", () => {
-  it("includes the timezone and the preset detail", () => {
-    expect(describeSchedule(parseSchedule("0 9 * * 1", "UTC"))).toBe("Weekly on Monday at 09:00 (UTC)");
-    expect(describeSchedule(parseSchedule("*/5 * * * *", "UTC"))).toBe("Custom schedule (UTC)");
-    expect(describeSchedule(parseSchedule(DRAFT_DEFAULT_CRON, "UTC"))).toContain("Draft default");
+  it("describes the cadence without the timezone", () => {
+    expect(describeSchedule(parseSchedule("0 15 * * 1", "UTC"))).toBe("Mondays at 3:00 PM");
+    expect(describeSchedule(parseSchedule("0 3 * * *", "America/New_York"))).toBe("Daily at 3:00 AM");
+    expect(describeSchedule(parseSchedule("0 0 * * 1-5", "UTC"))).toBe("Weekdays at 12:00 AM");
+    expect(describeSchedule(parseSchedule("*/5 * * * *", "UTC"))).toBe("Custom schedule");
+    expect(describeSchedule(parseSchedule(DRAFT_DEFAULT_CRON, "UTC"))).toBe("Hourly, 9 AM–6 PM; every ~4h overnight");
+  });
+
+  it("describes intervals", () => {
+    expect(describeInterval(300)).toBe("Every 5 minutes");
+    expect(describeInterval(3600)).toBe("Every hour");
+    expect(describeInterval(7200)).toBe("Every 2 hours");
   });
 });

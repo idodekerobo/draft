@@ -12,20 +12,21 @@ export interface RoutineDefinition {
 // rebuilds) are not routines and never reach the Routines tab.
 export const ROUTINE_REGISTRY: Partial<Record<ScheduledTaskType, RoutineDefinition>> = {
   synthesize_workspace: {
-    title: "Company context synthesis",
+    title: "Update company context",
     routineDescription:
-      "Uses new source material to update your company context. A check without new material does not start a synthesis run.",
+      "Uses new source material to update the company brain. If there is no new material, the scheduled check does not start a synthesis run.",
     editable: "full",
   },
   summarize_sessions: {
-    title: "Coding session summaries",
-    routineDescription: "Summarizes newly captured coding sessions so they can feed your company context.",
+    title: "Summarize coding sessions",
+    routineDescription:
+      "Turns newly captured coding sessions into summaries that can inform the company brain. Sessions that have already been summarized are skipped.",
     editable: "full",
   },
   ingest_source: {
-    title: "Slack import",
+    title: "Sync Slack",
     routineDescription:
-      "Imports new messages from the selected connected channels as source material. Choose channels in Connections.",
+      "Imports new messages from the connected Slack channels as source material for company context. Choose which channels Draft reads in Connections.",
     editable: "toggle_only",
   },
 };

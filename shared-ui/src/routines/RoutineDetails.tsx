@@ -1,22 +1,21 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Dialog } from "./Dialog";
-import { formatAbsolute, isHeavyCadence, previewNextRun } from "./format";
+import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import type { Routine, RoutinePatch, RoutinePreset, RoutineWeekday } from "./types";
 
 type EditablePreset = Exclude<RoutinePreset, "custom">;
 
 const PRESET_LABELS: Record<RoutinePreset, string> = {
-  draft_default: "Draft default",
+  draft_default: "Draft default (daytime + overnight)",
   hourly: "Every hour",
-  daily: "Daily",
+  daily: "Every day",
   weekdays: "Weekdays",
-  weekly: "Weekly",
+  weekly: "Every week",
   custom: "Custom (current schedule)",
 };
-const SELECTABLE: EditablePreset[] = ["draft_default", "hourly", "daily", "weekdays", "weekly"];
+const SELECTABLE: EditablePreset[] = ["hourly", "daily", "weekdays", "weekly"];
 const WEEKDAYS: Array<[RoutineWeekday, string]> = [
   ["mon", "Monday"],
   ["tue", "Tuesday"],
@@ -43,7 +42,9 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
   onSave: (patch: RoutinePatch) => Promise<void>;
 }) {
   const ids = useId();
+  const titleId = `${ids}-title`;
   const editable = canEdit && routine.editable === "full";
+  const isSynthesis = routine.taskType === "synthesize_workspace";
   const [preset, setPreset] = useState<RoutinePreset>(routine.preset);
   const [time, setTime] = useState(routine.time ?? "09:00");
   const [weekday, setWeekday] = useState<RoutineWeekday>(routine.weekday ?? "mon");
@@ -54,19 +55,14 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
   const usesTime = preset === "daily" || preset === "weekdays" || preset === "weekly";
-  const usesTimezone = usesTime || preset === "hourly";
-  const effectiveTimezone = preset === "draft_default" ? "UTC" : timezone;
+  const isDefault = preset === "draft_default";
+  const effectiveTimezone = isDefault ? "UTC" : timezone;
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);
-
-  const dirty =
-    preset !== routine.preset ||
-    (usesTime && time !== routine.time) ||
-    (preset === "weekly" && weekday !== routine.weekday) ||
-    (usesTimezone && timezone !== routine.timezone);
-  const canSave = editable && preset !== "custom" && dirty && (!usesTime || time !== "") && !saving;
+  const canSave = editable && preset !== "custom" && (!usesTime || time !== "") && !saving;
+  const noun = isSynthesis ? "run" : "check";
 
   const nextRun =
-    preset === "custom"
+    preset === "custom" || !routine.enabled
       ? null
       : previewNextRun({ preset, time: time || "00:00", weekday, timezone: effectiveTimezone });
 
@@ -78,7 +74,7 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
       preset,
       ...(usesTime ? { time } : {}),
       ...(preset === "weekly" ? { weekday } : {}),
-      ...(usesTimezone ? { timezone } : {}),
+      ...(!isDefault ? { timezone } : {}),
     };
     try {
       await onSave(patch);
@@ -90,89 +86,69 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
   }
 
   const fieldError = (field: string) =>
-    error?.field === field ? (
-      <span className="ui-error" id={`${ids}-${field}-error`} role="alert">{error.message}</span>
-    ) : null;
+    error?.field === field ? <span className="ui-routines__error" role="alert">{error.message}</span> : null;
 
   return (
-    <Dialog title={routine.title} titleId={`${ids}-title`} onClose={onClose}>
-      <p className="ui-routines__explainer">{routine.routineDescription}</p>
-      {routine.connectionLabel && <p className="ui-muted">Connection: {routine.connectionLabel}</p>}
-      <p className="ui-muted">Current schedule: {routine.scheduleDescription}</p>
+    <Dialog titleId={titleId} onClose={onClose} busy={saving}>
+      <header className="ui-dialog__header">
+        <h2 id={titleId}>{routine.title}</h2>
+        <button type="button" className="ui-routines__btn" aria-label="Close routine details" disabled={saving} onClick={onClose}>
+          Close
+        </button>
+      </header>
+      <p className="ui-dialog__description">{routine.routineDescription}</p>
 
-      {routine.editable === "toggle_only" && (
-        <p className="ui-muted">
-          This schedule is managed for you. Use the switch in the list to pause or resume it.
-        </p>
-      )}
-      {!canEdit && <p className="ui-muted">You have view-only access to routines.</p>}
-
-      {routine.editable === "full" && (
+      {routine.editable === "toggle_only" ? (
+        <div className="ui-dialog__info">
+          {routine.connectionLabel && <p>{routine.connectionLabel}</p>}
+          <p>
+            Checks {routine.scheduleDescription.replace(/^Every/, "every")} ({zoneLabel(routine.timezone)}). Timing is
+            managed by Draft. Pause or resume this routine using its toggle in the list.
+          </p>
+        </div>
+      ) : (
         <form
-          className="ui-routines__form"
+          className="ui-routines__editor"
           onSubmit={(event) => {
             event.preventDefault();
             if (canSave) void save();
           }}
         >
-          <label className="ui-routines__field">
-            <span>Frequency</span>
-            <select
-              className="ui-input"
-              value={preset}
-              disabled={!editable || saving}
-              onChange={(event) => {
-                setPreset(event.target.value as RoutinePreset);
-                setError(null);
-              }}
-            >
-              {routine.preset === "custom" && <option value="custom">{PRESET_LABELS.custom}</option>}
-              {SELECTABLE.map((option) => (
-                <option key={option} value={option}>{PRESET_LABELS[option]}</option>
-              ))}
-            </select>
-            {fieldError("preset")}
-          </label>
-
-          {preset === "weekly" && (
+          <div className="ui-routines__fields">
             <label className="ui-routines__field">
-              <span>Day</span>
+              Frequency
               <select
-                className="ui-input"
-                value={weekday}
+                value={preset}
                 disabled={!editable || saving}
-                onChange={(event) => setWeekday(event.target.value as RoutineWeekday)}
+                onChange={(event) => {
+                  setPreset(event.target.value as RoutinePreset);
+                  setError(null);
+                }}
               >
-                {WEEKDAYS.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                {routine.preset === "custom" && <option value="custom">{PRESET_LABELS.custom}</option>}
+                {(isSynthesis || routine.preset === "draft_default") && (
+                  <option value="draft_default">{PRESET_LABELS.draft_default}</option>
+                )}
+                {SELECTABLE.map((option) => (
+                  <option key={option} value={option}>{PRESET_LABELS[option]}</option>
                 ))}
               </select>
-              {fieldError("weekday")}
+              {fieldError("preset")}
             </label>
-          )}
 
-          {usesTime && (
-            <label className="ui-routines__field">
-              <span>Time</span>
-              <input
-                className="ui-input"
-                type="time"
-                value={time}
-                required
-                disabled={!editable || saving}
-                onChange={(event) => setTime(event.target.value)}
-              />
-              {fieldError("time")}
-            </label>
-          )}
+            {usesTime && (
+              <label className="ui-routines__field">
+                Time
+                <input type="time" value={time} required disabled={!editable || saving} onChange={(event) => setTime(event.target.value)} />
+                {fieldError("time")}
+              </label>
+            )}
 
-          {usesTimezone && (
             <label className="ui-routines__field">
-              <span>Timezone</span>
+              Timezone
               <select
-                className="ui-input"
-                value={timezone}
-                disabled={!editable || saving}
+                value={effectiveTimezone}
+                disabled={!editable || saving || isDefault}
                 onChange={(event) => setTimezone(event.target.value)}
               >
                 {zones.map((zone) => (
@@ -181,42 +157,51 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
               </select>
               {fieldError("timezone")}
             </label>
-          )}
 
-          {preset === "draft_default" && (
-            <p className="ui-muted">
-              Runs at 00:00, 04:00, 08:00, hourly from 09:00 to 18:00, and 22:00. Timezone is fixed to UTC.
+            {preset === "weekly" && (
+              <label className="ui-routines__field ui-routines__field--wide">
+                Day
+                <select value={weekday} disabled={!editable || saving} onChange={(event) => setWeekday(event.target.value as RoutineWeekday)}>
+                  {WEEKDAYS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                {fieldError("weekday")}
+              </label>
+            )}
+          </div>
+
+          {(isDefault || isHeavyCadence(preset)) && (
+            <p className="ui-routines__notice" role="status">
+              {isDefault
+                ? "Default checks use UTC: 00:00, 04:00, 08:00, hourly 09:00–18:00, and 22:00."
+                : "Frequent checks may increase processing usage. Draft processes only new material."}
             </p>
           )}
+          <p className="ui-routines__note">
+            {routine.enabled
+              ? nextRun && `Next ${noun}: ${formatAbsolute(nextRun.toISOString(), effectiveTimezone)}`
+              : "This routine is paused. Your changes apply when it’s resumed."}
+          </p>
 
-          {isHeavyCadence(preset) && (
-            <p className="ui-routines__warning" role="note">
-              <TriangleAlert size={16} aria-hidden />
-              <span>Frequent checks can use more of your Claude quota. A run still starts only when there is new material.</span>
-            </p>
-          )}
-
-          {nextRun && (
-            <p className="ui-routines__preview">
-              {dirty ? "Next run after saving: " : "Next run: "}
-              <strong>{formatAbsolute(nextRun.toISOString(), effectiveTimezone)}</strong>
-            </p>
-          )}
-
-          {error && !error.field && <p className="ui-error" role="alert">{error.message}</p>}
-
-          {editable && (
-            <div className="ui-routines__actions">
-              <button type="button" className="ui-btn" onClick={onClose} disabled={saving}>Cancel</button>
-              <button type="submit" className="ui-btn ui-btn--primary" disabled={!canSave}>
-                {saving ? "Saving…" : "Save schedule"}
-              </button>
-            </div>
-          )}
+          <div className="ui-routines__actions">
+            <span className="ui-routines__secondary">
+              {editable ? "Applies to your whole workspace." : "You have view-only access to routines."}
+            </span>
+            {editable && (
+              <>
+                <button type="button" className="ui-routines__btn" onClick={onClose} disabled={saving}>Cancel</button>
+                <button type="submit" className="ui-routines__btn ui-routines__btn--primary" disabled={!canSave}>
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </>
+            )}
+          </div>
+          {error && !error.field && <p className="ui-routines__error" role="alert">{error.message}</p>}
         </form>
       )}
 
-      {routine.updatedByName && <p className="ui-muted ui-routines__changed">Last changed by {routine.updatedByName}</p>}
+      {routine.updatedByName && <p className="ui-routines__secondary ui-dialog__changed">Last changed by {routine.updatedByName}.</p>}
     </Dialog>
   );
 }

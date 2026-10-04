@@ -174,7 +174,7 @@ describe("schedules routes", () => {
       tables.scheduled_tasks![1]!.cron_expression = "every day";
       const body = (await (await get()).json()) as { routines: Row[] };
       expect(body.routines[1]).toMatchObject({ preset: "custom" });
-      expect(body.routines[2]).toMatchObject({ scheduleDescription: "Managed schedule (UTC)" });
+      expect(body.routines[2]).toMatchObject({ scheduleDescription: "Every hour" });
     });
 
     it("returns an empty list for a workspace with no rows", async () => {

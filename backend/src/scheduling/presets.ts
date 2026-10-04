@@ -121,20 +121,34 @@ const WEEKDAY_NAMES: Record<Weekday, string> = {
   sat: "Saturday",
 };
 
+function clock(time: string | null): string {
+  const [hour = 0, minute = 0] = (time ?? "00:00").split(":").map(Number);
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
+}
+
+/** Cadence only; the timezone is shown separately. */
 export function describeSchedule(parsed: ParsedSchedule): string {
-  const tz = parsed.timezone;
   switch (parsed.preset) {
     case "draft_default":
-      return "Draft default: 00:00, 04:00, 08:00, hourly 09:00 to 18:00, and 22:00 (UTC)";
+      return "Hourly, 9 AM–6 PM; every ~4h overnight";
     case "hourly":
-      return `Every hour (${tz})`;
+      return "Every hour";
     case "daily":
-      return `Daily at ${parsed.time} (${tz})`;
+      return `Daily at ${clock(parsed.time)}`;
     case "weekdays":
-      return `Weekdays at ${parsed.time} (${tz})`;
+      return `Weekdays at ${clock(parsed.time)}`;
     case "weekly":
-      return `Weekly on ${WEEKDAY_NAMES[parsed.weekday ?? "mon"]} at ${parsed.time} (${tz})`;
+      return `${WEEKDAY_NAMES[parsed.weekday ?? "mon"]}s at ${clock(parsed.time)}`;
     case "custom":
-      return `Custom schedule (${tz})`;
+      return "Custom schedule";
   }
+}
+
+export function describeInterval(seconds: number): string {
+  if (seconds % 3600 === 0) {
+    const hours = seconds / 3600;
+    return hours === 1 ? "Every hour" : `Every ${hours} hours`;
+  }
+  const minutes = Math.round(seconds / 60);
+  return minutes === 1 ? "Every minute" : `Every ${minutes} minutes`;
 }

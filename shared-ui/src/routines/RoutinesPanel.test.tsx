@@ -12,9 +12,9 @@ function routine(overrides: Partial<Routine>): Routine {
   return {
     id: "synth",
     taskType: "synthesize_workspace",
-    title: "Company context synthesis",
+    title: "Update company context",
     routineDescription: "Uses new source material to update your company context.",
-    scheduleDescription: "Draft default",
+    scheduleDescription: "Hourly, 9 AM–6 PM; every ~4h overnight",
     preset: "draft_default",
     time: null,
     weekday: null,
@@ -36,8 +36,8 @@ const baseRoutines = (): Routine[] => [
   routine({
     id: "sessions",
     taskType: "summarize_sessions",
-    title: "Coding session summaries",
-    scheduleDescription: "Daily at 03:00 (UTC)",
+    title: "Summarize coding sessions",
+    scheduleDescription: "Daily at 3:00 AM",
     preset: "daily",
     time: "03:00",
     enabled: false,
@@ -46,7 +46,7 @@ const baseRoutines = (): Routine[] => [
   routine({
     id: "slack",
     taskType: "ingest_source",
-    title: "Slack import",
+    title: "Sync Slack",
     editable: "toggle_only",
     connectionLabel: "Acme Slack",
     needsReconnect: true,
@@ -72,7 +72,7 @@ function setup(options: { canEdit?: boolean; routines?: Routine[]; updateRoutine
 }
 
 async function ready() {
-  return screen.findByRole("heading", { name: "Routines" });
+  return screen.findByRole("button", { name: /^All/ });
 }
 
 describe("RoutinesPanel", () => {
@@ -84,8 +84,8 @@ describe("RoutinesPanel", () => {
     expect(screen.getByRole("button", { name: /^Paused\s*1/ })).toBeTruthy();
     expect(screen.getByText("No result yet")).toBeTruthy();
     expect(screen.getByText("Needs reconnect")).toBeTruthy();
-    expect(within(screen.getByRole("table")).getByText("Paused")).toBeTruthy();
-    const slackSwitch = screen.getByRole("switch", { name: "Slack import" }) as HTMLButtonElement;
+    expect(screen.getAllByText("Paused").length).toBeGreaterThan(1);
+    const slackSwitch = screen.getByRole("switch", { name: "Sync Slack Acme Slack enabled" }) as HTMLButtonElement;
     expect(slackSwitch.disabled).toBe(true);
   });
 
@@ -93,15 +93,15 @@ describe("RoutinesPanel", () => {
     setup();
     await ready();
     fireEvent.click(screen.getByRole("button", { name: /^Paused/ }));
-    expect(screen.queryByText("Company context synthesis")).toBeNull();
-    expect(screen.getByText("Coding session summaries")).toBeTruthy();
+    expect(screen.queryByText("Update company context")).toBeNull();
+    expect(screen.getByText("Summarize coding sessions")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Search routines"), { target: { value: "  acme " } });
-    expect(screen.getByText("No routines match your filters.")).toBeTruthy();
+    expect(screen.getByText("No matching routines")).toBeTruthy();
     expect(screen.getByRole("button", { name: /^All\s*3/ })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /^All/ }));
-    expect(screen.getByText("Slack import")).toBeTruthy();
+    expect(screen.getByText("Sync Slack")).toBeTruthy();
   });
 
   it("toggles optimistically and rolls back when the save fails", async () => {
@@ -110,7 +110,7 @@ describe("RoutinesPanel", () => {
       updateRoutine: () => new Promise((_resolve, rej) => { reject = rej; }),
     });
     await ready();
-    const toggle = screen.getByRole("switch", { name: "Company context synthesis" });
+    const toggle = screen.getByRole("switch", { name: "Update company context enabled" });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
 
     fireEvent.click(toggle);
@@ -132,7 +132,7 @@ describe("RoutinesPanel", () => {
   it("opens details, closes with Escape and the Close button, and restores focus", async () => {
     setup();
     await ready();
-    const trigger = screen.getByRole("button", { name: "Company context synthesis" });
+    const trigger = screen.getByRole("button", { name: "Update company context" });
     trigger.focus();
     fireEvent.click(trigger);
 
@@ -144,16 +144,16 @@ describe("RoutinesPanel", () => {
     expect(document.activeElement).toBe(trigger);
 
     fireEvent.click(trigger);
-    fireEvent.click(await screen.findByRole("button", { name: "Close", hidden: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Close routine details", hidden: true }));
     await waitFor(() => expect(screen.queryByRole("dialog", { hidden: true })).toBeNull());
   });
 
   it("explains toggle-only routines without an editor", async () => {
     setup();
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Slack import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync Slack" }));
     const dialog = await screen.findByRole("dialog", { hidden: true });
-    expect(within(dialog).getByText(/managed for you/)).toBeTruthy();
+    expect(within(dialog).getByText(/Timing is managed by Draft/)).toBeTruthy();
     expect(within(dialog).queryByLabelText("Frequency")).toBeNull();
   });
 
@@ -162,13 +162,13 @@ describe("RoutinesPanel", () => {
       updateRoutine: async (id, patch) => ({ ...routine({ id: "sessions" }), ...("preset" in patch ? { preset: patch.preset } : {}) }) as Routine,
     });
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Coding session summaries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
     const dialog = await screen.findByRole("dialog", { hidden: true });
 
     fireEvent.change(within(dialog).getByLabelText("Frequency"), { target: { value: "hourly" } });
-    expect(within(dialog).getByRole("note").textContent).toMatch(/Claude quota/);
+    expect(within(dialog).getByRole("status").textContent).toMatch(/processing usage/);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save schedule" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(updateRoutine).toHaveBeenCalled());
     const [id, patch] = updateRoutine.mock.calls[0]!;
     expect(id).toBe("sessions");
@@ -183,11 +183,11 @@ describe("RoutinesPanel", () => {
       },
     });
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Coding session summaries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
     const dialog = await screen.findByRole("dialog", { hidden: true });
 
     fireEvent.change(within(dialog).getByLabelText("Time"), { target: { value: "04:15" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save schedule" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     expect((await within(dialog).findByRole("alert")).textContent).toBe("Time must be HH:MM");
     expect(screen.getByRole("dialog", { hidden: true })).toBeTruthy();
   });
@@ -195,6 +195,6 @@ describe("RoutinesPanel", () => {
   it("shows the empty state", async () => {
     setup({ routines: [] });
     await ready();
-    expect(screen.getByText("No routines yet. Contact Draft.")).toBeTruthy();
+    expect(screen.getByText("No routines yet")).toBeTruthy();
   });
 });
