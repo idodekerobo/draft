@@ -4,7 +4,6 @@ export type RoutineWeekday = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sa
 export interface RoutineLastRun {
   status: string;
   outcome: "changed" | "no_change" | "failure" | "stale" | null;
-  summary: string | null;
   completedAt: string | null;
 }
 

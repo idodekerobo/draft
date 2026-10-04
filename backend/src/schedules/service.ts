@@ -1,5 +1,5 @@
 import { serviceClient } from "../db/client";
-import { recordRouteError } from "../errors/route-error";
+import { loadDisplayNames } from "../routes/session-display-names";
 import { computeNextDueAt } from "../scheduling/next-due-at";
 import {
   buildSchedule,
@@ -10,7 +10,7 @@ import {
   type Weekday,
 } from "../scheduling/presets";
 import { ROUTINE_REGISTRY, ROUTINE_TASK_TYPES, type RoutineEditability } from "../scheduling/routine-registry";
-import type { ScheduledTaskRow, SourceConnectionRow, SynthesisRunRow, UserRow } from "../types/tables";
+import type { ScheduledTaskRow, SourceConnectionRow, SynthesisRunRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
 
 const LIVE_CONNECTION_STATUSES = new Set(["active", "degraded"]);
@@ -18,7 +18,6 @@ const LIVE_CONNECTION_STATUSES = new Set(["active", "degraded"]);
 export interface RoutineLastRun {
   status: SynthesisRunRow["status"];
   outcome: SynthesisRunRow["outcome"];
-  summary: string | null;
   completedAt: string | null;
 }
 
@@ -44,11 +43,11 @@ export interface Routine {
 }
 
 type ConnectionInfo = Pick<SourceConnectionRow, "id" | "provider" | "status" | "display_name">;
-type RunInfo = Pick<SynthesisRunRow, "status" | "outcome" | "result_summary" | "completed_at">;
+type RunInfo = Pick<SynthesisRunRow, "status" | "outcome" | "completed_at">;
 
 export class ScheduleServiceError extends Error {
   constructor(
-    readonly code: "not_found" | "invalid_schedule" | "update_failed",
+    readonly code: "not_found" | "invalid_schedule",
     readonly field?: string,
   ) {
     super(code);
@@ -97,7 +96,6 @@ function toRoutine(
       ? {
           status: lastRun.status,
           outcome: lastRun.outcome,
-          summary: lastRun.result_summary,
           completedAt: lastRun.completed_at,
         }
       : null,
@@ -131,7 +129,7 @@ async function loadConnections(workspaceId: string, ids: string[]): Promise<Map<
 async function loadLastSynthesisRun(workspaceId: string): Promise<RunInfo | null> {
   const { data, error } = await serviceClient
     .from("synthesis_runs")
-    .select("status, outcome, result_summary, completed_at")
+    .select("status, outcome, completed_at")
     .eq("workspace_id", workspaceId)
     .in("status", ["succeeded", "failed"])
     .order("completed_at", { ascending: false })
@@ -144,22 +142,15 @@ async function loadLastSynthesisRun(workspaceId: string): Promise<RunInfo | null
 }
 
 async function loadUserNames(userIds: string[]): Promise<Map<string, string>> {
-  if (userIds.length === 0) return new Map();
-  const { data, error } = await serviceClient.from("users").select("id, display_name, email").in("id", userIds);
-  if (error) {
-    console.error("schedules: user lookup failed", error);
+  const lookup = await loadDisplayNames(serviceClient, userIds, []);
+  if (!lookup.ok) {
+    console.error("schedules: user lookup failed", lookup.detail);
     return new Map();
   }
-  return new Map(
-    ((data ?? []) as Pick<UserRow, "id" | "display_name" | "email">[]).map((user) => [
-      user.id,
-      user.display_name ?? user.email,
-    ]),
-  );
+  return lookup.users;
 }
 
-export async function listRoutines(workspaceId: string): Promise<Routine[]> {
-  const tasks = await loadTasks(workspaceId);
+async function buildRoutines(workspaceId: string, tasks: ScheduledTaskRow[]): Promise<Routine[]> {
   const connectionIds = tasks.flatMap((task) => (task.source_connection_id ? [task.source_connection_id] : []));
   const editorIds = [...new Set(tasks.flatMap((task) => (task.updated_by_user_id ? [task.updated_by_user_id] : [])))];
   const hasSynthesis = tasks.some((task) => task.task_type === "synthesize_workspace");
@@ -180,7 +171,11 @@ export async function listRoutines(workspaceId: string): Promise<Routine[]> {
   );
 }
 
-export async function getEditableTask(workspaceId: string, taskId: string): Promise<ScheduledTaskRow | null> {
+export async function listRoutines(workspaceId: string): Promise<Routine[]> {
+  return buildRoutines(workspaceId, await loadTasks(workspaceId));
+}
+
+export async function getRoutineTask(workspaceId: string, taskId: string): Promise<ScheduledTaskRow | null> {
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
     .select("*")
@@ -229,17 +224,9 @@ export async function updateRoutine(
     .update({ ...changes, updated_by_user_id: userId })
     .eq("id", task.id)
     .eq("workspace_id", task.workspace_id)
-    .select("id")
+    .select("*")
     .maybeSingle();
-  if (error) {
-    recordRouteError({
-      workspaceId: task.workspace_id,
-      operation: "commit",
-      errorCode: "schedules_update_failed",
-      error,
-    });
-    throw new ScheduleServiceError("update_failed");
-  }
+  if (error) throw error;
   if (!data) throw new ScheduleServiceError("not_found");
 
   console.log(
@@ -253,9 +240,8 @@ export async function updateRoutine(
     }),
   );
 
-  const routine = (await listRoutines(task.workspace_id)).find((row) => row.id === task.id);
-  if (!routine) throw new ScheduleServiceError("not_found");
-  return routine;
+  const [routine] = await buildRoutines(task.workspace_id, [data as ScheduledTaskRow]);
+  return routine!;
 }
 
 function pickLogged(task: ScheduledTaskRow) {

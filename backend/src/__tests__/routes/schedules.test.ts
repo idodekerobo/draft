@@ -129,7 +129,6 @@ describe("schedules routes", () => {
           workspace_id: "ws-1",
           status: "succeeded",
           outcome: "changed",
-          result_summary: "Updated 2 files",
           completed_at: "2026-10-04T08:05:00.000Z",
         },
       ],
@@ -151,7 +150,7 @@ describe("schedules routes", () => {
       expect(synthesis).toMatchObject({
         preset: "draft_default",
         editable: "full",
-        lastRun: { status: "succeeded", outcome: "changed", summary: "Updated 2 files" },
+        lastRun: { status: "succeeded", outcome: "changed" },
       });
       expect(sessions).toMatchObject({ preset: "daily", time: "03:00", lastRun: null });
       expect(slack).toMatchObject({ editable: "toggle_only", connectionLabel: "Acme Slack", needsReconnect: false });

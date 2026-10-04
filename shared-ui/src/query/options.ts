@@ -15,7 +15,7 @@ export const runsQueryOptions = (api: DraftApi, workspaceId: string) =>
     refetchInterval: POLL_MS,
   });
 
-export const routinesQueryOptions = (api: DraftApi, workspaceId: string) =>
+export const routinesQueryOptions = (api: Pick<DraftApi, "getRoutines">, workspaceId: string) =>
   queryOptions({
     queryKey: queryKeys.routines(workspaceId),
     queryFn: () => api.getRoutines(),

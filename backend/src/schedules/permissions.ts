@@ -1,7 +1,5 @@
-import { assertWorkspaceAccess } from "../auth/workspace-access";
-
-// Single seam for who may edit schedules. Any workspace member can today;
-// role checks go here.
-export function assertCanEditSchedules(workspaceId: string, callerId: string): Promise<Response | null> {
-  return assertWorkspaceAccess(workspaceId, callerId);
+// Single seam for who may edit schedules. Callers have already verified
+// workspace access, and any member can edit today; role checks go here.
+export async function canEditSchedules(_workspaceId: string, _callerId: string): Promise<boolean> {
+  return true;
 }

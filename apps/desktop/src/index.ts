@@ -36,7 +36,7 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
-import { apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
+import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -411,8 +411,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           });
           return { ok: true, routine };
         } catch (err) {
-          const failure = err as Error & { field?: string };
-          return { ok: false, code: failure.message, field: failure.field };
+          return err instanceof ServerError
+            ? { ok: false, code: err.code, field: err.field }
+            : { ok: false, code: err instanceof Error ? err.message : "unknown" };
         }
       },
 

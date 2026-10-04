@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Suspense } from "react";
 import { DraftApiProvider, type DraftApi } from "../query/api";
+import { RoutineError } from "./errors";
 import { RoutinesPanel } from "./RoutinesPanel";
 import type { Routine, RoutinesResponse } from "./types";
 
@@ -193,7 +194,7 @@ describe("RoutinesPanel", () => {
   it("keeps the dialog open and shows the error beside the field when saving fails", async () => {
     setup({
       updateRoutine: async () => {
-        throw Object.assign(new Error("Time must be HH:MM"), { field: "time" });
+        throw new RoutineError("Time must be HH:MM", "time");
       },
     });
     await ready();

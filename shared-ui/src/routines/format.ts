@@ -22,6 +22,19 @@ export function countRoutines(routines: Routine[]): Record<RoutineFilter, number
   return { all: routines.length, active, paused: routines.length - active };
 }
 
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+// Intl.DateTimeFormat is slow to construct; rows and the editor preview format on every render.
+function dtf(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify(options);
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", options);
+    formatters.set(key, formatter);
+  }
+  return formatter;
+}
+
 const ZONE_LABELS: Record<string, string> = {
   "America/New_York": "ET",
   "America/Los_Angeles": "PT",
@@ -44,7 +57,7 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
 }
 
 function localDay(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(date);
+  const parts = dtf({ timeZone, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(date);
   const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
   return Date.UTC(value("year"), value("month") - 1, value("day"));
 }
@@ -52,8 +65,8 @@ function localDay(date: Date, timeZone: string): number {
 // UTC routines read as a 24-hour clock; every other timezone as AM/PM.
 function clock(date: Date, timeZone: string): string {
   return timeZone === "UTC"
-    ? new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date)
-    : new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date);
+    ? dtf({ timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date)
+    : dtf({ timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date);
 }
 
 /** "Today, 09:02 UTC", "Yesterday, 6:00 PM PT", "Monday, 6:00 PM PT", "Sep 25, 4:00 PM ET". */
@@ -64,16 +77,16 @@ export function formatWhen(iso: string, timeZone: string, now: Date = new Date()
     dayDiff === 0 ? "Today"
     : dayDiff === -1 ? "Yesterday"
     : dayDiff === 1 ? "Tomorrow"
-    : dayDiff > 1 && dayDiff < 7 ? new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(date)
-    : new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(date);
+    : dayDiff > 1 && dayDiff < 7 ? dtf({ timeZone, weekday: "long" }).format(date)
+    : dtf({ timeZone, month: "short", day: "numeric" }).format(date);
   return `${day}, ${clock(date, timeZone)} ${zoneLabel(timeZone)}`;
 }
 
 /** "Oct 4, 8:00 AM UTC". */
 export function formatAbsolute(iso: string, timeZone: string): string {
   const date = new Date(iso);
-  const day = new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(date);
-  const time = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date);
+  const day = dtf({ timeZone, month: "short", day: "numeric" }).format(date);
+  const time = dtf({ timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(date);
   return `${day}, ${time} ${zoneLabel(timeZone)}`;
 }
 
@@ -83,7 +96,7 @@ export function isHeavyCadence(preset: RoutinePreset): boolean {
 }
 
 function offsetMs(instant: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dtf({
     timeZone,
     hourCycle: "h23",
     year: "numeric",

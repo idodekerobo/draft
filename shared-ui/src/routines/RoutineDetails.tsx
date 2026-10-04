@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 import { Dialog } from "./Dialog";
+import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import type { Routine, RoutinePatch, RoutinePreset, RoutineWeekday } from "./types";
 
@@ -84,8 +85,11 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
     try {
       await onSave(patch);
     } catch (caught) {
-      const failure = caught as Error & { field?: string };
-      setError({ field: failure.field, message: failure.message || "Could not save this schedule." });
+      setError(
+        caught instanceof RoutineError
+          ? { field: caught.field, message: caught.message }
+          : { message: "Could not save this schedule. Try again." },
+      );
       setSaving(false);
     }
   }

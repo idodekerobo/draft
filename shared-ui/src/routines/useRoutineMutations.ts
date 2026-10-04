@@ -6,8 +6,12 @@ import { queryKeys } from "../query/keys";
 import { useOptimisticMutation } from "../query/mutations";
 import type { Routine, RoutinePatch, RoutinesResponse } from "./types";
 
-function replaceRoutine(current: RoutinesResponse | undefined, updated: Routine): RoutinesResponse | undefined {
-  return current && { ...current, routines: current.routines.map((row) => (row.id === updated.id ? updated : row)) };
+function mapRoutine(
+  current: RoutinesResponse | undefined,
+  id: string,
+  change: (row: Routine) => Routine,
+): RoutinesResponse | undefined {
+  return current && { ...current, routines: current.routines.map((row) => (row.id === id ? change(row) : row)) };
 }
 
 export function useRoutineMutations(workspaceId: string, onToggleError: (error: Error) => void) {
@@ -19,23 +23,18 @@ export function useRoutineMutations(workspaceId: string, onToggleError: (error: 
     queryKey,
     mutationFn: async ({ id, enabled }) => {
       const updated = await api.updateRoutine(id, { enabled });
-      const next = replaceRoutine(queryClient.getQueryData<RoutinesResponse>(queryKey), updated);
+      const next = mapRoutine(queryClient.getQueryData<RoutinesResponse>(queryKey), id, () => updated);
       if (!next) throw new Error("Routines are no longer loaded");
       return next;
     },
     apply: (current, { id, enabled }) =>
-      current && {
-        ...current,
-        routines: current.routines.map((row) =>
-          row.id === id ? { ...row, enabled, nextRunAt: enabled ? row.nextRunAt : null } : row,
-        ),
-      },
+      mapRoutine(current, id, (row) => ({ ...row, enabled, nextRunAt: enabled ? row.nextRunAt : null })),
     onError: onToggleError,
   });
 
   const save = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: RoutinePatch }) => api.updateRoutine(id, patch),
-    onSuccess: (updated) => queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => replaceRoutine(current, updated)),
+    onSuccess: (updated) => queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => mapRoutine(current, updated.id, () => updated)),
   });
 
   return { toggle, save };

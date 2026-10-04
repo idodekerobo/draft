@@ -88,7 +88,7 @@ function nextActivity(routine: Routine, onReconnect?: () => void) {
   );
 }
 
-export function RoutinesSkeleton() {
+function RoutinesSkeleton() {
   return (
     <div role="status" aria-label="Loading routines">
       {[0, 1, 2].map((row) => (
