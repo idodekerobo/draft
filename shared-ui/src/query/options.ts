@@ -5,7 +5,7 @@ import { queryKeys } from "./keys";
 export const POLL_MS = 30_000;
 
 // Freshness: polled data refreshes every 30s; context changes hourly at most.
-export const STALE_MS = { runs: POLL_MS, context: 60_000, connections: 30_000, schedule: 300_000, routines: 30_000 } as const;
+export const STALE_MS = { runs: POLL_MS, context: 60_000, connections: 30_000, routines: 30_000 } as const;
 
 export const runsQueryOptions = (api: DraftApi, workspaceId: string) =>
   queryOptions({

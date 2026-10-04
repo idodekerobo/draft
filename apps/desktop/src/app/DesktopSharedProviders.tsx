@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { IntegrationActionsProvider } from "draft-shared-ui/integrations";
-import type { IntegrationActions } from "draft-shared-ui";
+import { Toaster, type IntegrationActions } from "draft-shared-ui";
 import { useAnalytics } from "./analytics/AnalyticsContext";
 import { rpc } from "./rpc";
 
@@ -24,6 +24,7 @@ export function DesktopSharedProviders({ children }: { children: ReactNode }) {
   return (
     <IntegrationActionsProvider actions={integrationActions}>
       {children}
+      <Toaster />
     </IntegrationActionsProvider>
   );
 }

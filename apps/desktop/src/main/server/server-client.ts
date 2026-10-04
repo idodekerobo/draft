@@ -13,11 +13,13 @@ export async function fetchServer(path: string, init?: RequestInit): Promise<Res
   });
   if (!response.ok) {
     let message = `request_failed_${response.status}`;
+    let field: string | undefined;
     try {
-      const body = await response.json() as { error?: unknown };
+      const body = await response.json() as { error?: unknown; field?: unknown };
       if (typeof body.error === "string" && body.error.length > 0) message = body.error;
+      if (typeof body.field === "string") field = body.field;
     } catch { /* body wasn't JSON — keep the status-based fallback */ }
-    throw new Error(message);
+    throw Object.assign(new Error(message), { field });
   }
   return response;
 }

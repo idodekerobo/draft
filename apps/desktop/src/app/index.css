@@ -3083,3 +3083,9 @@ button {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+.routines-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 40px 48px;
+}

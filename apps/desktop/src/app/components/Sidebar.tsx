@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "context",     label: "Context"     },
   { id: "connections", label: "Connections" },
   { id: "activity",    label: "Activity"    },
+  { id: "routines",    label: "Routines"    },
   { id: "settings",  label: "Settings"  },
 ];
 
