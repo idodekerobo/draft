@@ -10,7 +10,7 @@ export interface RoutineDefinition {
 
 // Task types without an entry here (one-time backfills, unimplemented
 // rebuilds) are not routines and never reach the Routines tab.
-export const ROUTINE_REGISTRY: Partial<Record<ScheduledTaskType, RoutineDefinition>> = {
+const TASK_ROUTINES: Partial<Record<ScheduledTaskType, RoutineDefinition>> = {
   synthesize_workspace: {
     title: "Update company context",
     routineDescription:
@@ -23,7 +23,12 @@ export const ROUTINE_REGISTRY: Partial<Record<ScheduledTaskType, RoutineDefiniti
       "Turns newly captured coding sessions into summaries that can inform the company brain. Sessions that have already been summarized are skipped.",
     editable: "full",
   },
-  ingest_source: {
+};
+
+// ingest_source is shared by every polling provider, so its copy is per provider.
+// Webhook providers have no schedule and no entry here.
+const SOURCE_ROUTINES: Record<string, RoutineDefinition> = {
+  slack: {
     title: "Sync Slack",
     routineDescription:
       "Imports new messages from the connected Slack channels as source material for company context. Choose which channels Draft reads in Connections.",
@@ -31,4 +36,26 @@ export const ROUTINE_REGISTRY: Partial<Record<ScheduledTaskType, RoutineDefiniti
   },
 };
 
-export const ROUTINE_TASK_TYPES = Object.keys(ROUTINE_REGISTRY) as ScheduledTaskType[];
+const PROVIDER_NAMES: Record<string, string> = {
+  slack: "Slack",
+  fireflies: "Fireflies",
+  granola: "Granola",
+  github: "GitHub",
+};
+
+export const ROUTINE_TASK_TYPES: ScheduledTaskType[] = [
+  ...(Object.keys(TASK_ROUTINES) as ScheduledTaskType[]),
+  "ingest_source",
+];
+
+export function resolveRoutine(
+  taskType: ScheduledTaskType,
+  provider: string | null,
+): RoutineDefinition | undefined {
+  if (taskType === "ingest_source") return provider ? SOURCE_ROUTINES[provider] : undefined;
+  return TASK_ROUTINES[taskType];
+}
+
+export function providerName(provider: string): string {
+  return PROVIDER_NAMES[provider] ?? provider;
+}

@@ -10,7 +10,13 @@ import {
   type ParsedPreset,
   type Weekday,
 } from "../scheduling/presets";
-import { ROUTINE_REGISTRY, ROUTINE_TASK_TYPES, type RoutineEditability } from "../scheduling/routine-registry";
+import {
+  ROUTINE_TASK_TYPES,
+  providerName,
+  resolveRoutine,
+  type RoutineDefinition,
+  type RoutineEditability,
+} from "../scheduling/routine-registry";
 import type { ScheduledTaskRow, SourceConnectionRow, SynthesisRunRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
 
@@ -43,7 +49,7 @@ export interface Routine {
   updatedByName: string | null;
 }
 
-type ConnectionInfo = Pick<SourceConnectionRow, "id" | "provider" | "status" | "display_name">;
+type ConnectionInfo = Pick<SourceConnectionRow, "id" | "provider" | "status">;
 type RunInfo = Pick<SynthesisRunRow, "status" | "outcome" | "completed_at">;
 
 export class ScheduleServiceError extends Error {
@@ -64,12 +70,11 @@ function parseOrCustom(task: ScheduledTaskRow) {
 
 function toRoutine(
   task: ScheduledTaskRow,
+  definition: RoutineDefinition,
   connection: ConnectionInfo | undefined,
   lastRun: RunInfo | null,
   updatedByName: string | null,
 ): Routine {
-  const definition = ROUTINE_REGISTRY[task.task_type];
-  if (!definition) throw new Error(`No routine definition for ${task.task_type}`);
   const parsed = parseOrCustom(task);
   const needsReconnect =
     task.source_connection_id !== null && !LIVE_CONNECTION_STATUSES.has(connection?.status ?? "");
@@ -89,7 +94,7 @@ function toRoutine(
     timezone: task.timezone,
     enabled: task.enabled,
     editable: definition.editable,
-    connectionLabel: connection ? (connection.display_name ?? connection.provider) : null,
+    connectionLabel: connection ? providerName(connection.provider) : null,
     needsReconnect,
     nextRunAt: task.enabled ? task.next_due_at : null,
     lastCheckedAt: task.last_enqueued_at,
@@ -119,7 +124,7 @@ async function loadConnections(workspaceId: string, ids: string[]): Promise<Map<
   if (ids.length === 0) return new Map();
   const { data, error } = await serviceClient
     .from("source_connections")
-    .select("id, provider, status, display_name")
+    .select("id, provider, status")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
   if (error) throw error;
@@ -151,32 +156,53 @@ async function loadUserNames(workspaceId: string, userIds: string[]): Promise<Ma
   return lookup.users;
 }
 
-async function buildRoutines(workspaceId: string, tasks: ScheduledTaskRow[]): Promise<Routine[]> {
+async function buildRoutines(
+  workspaceId: string,
+  tasks: ScheduledTaskRow[],
+  knownConnections?: Map<string, ConnectionInfo>,
+): Promise<Routine[]> {
   const connectionIds = tasks.flatMap((task) => (task.source_connection_id ? [task.source_connection_id] : []));
   const editorIds = [...new Set(tasks.flatMap((task) => (task.updated_by_user_id ? [task.updated_by_user_id] : [])))];
   const hasSynthesis = tasks.some((task) => task.task_type === "synthesize_workspace");
 
   const [connections, lastRun, names] = await Promise.all([
-    loadConnections(workspaceId, connectionIds),
+    knownConnections ?? loadConnections(workspaceId, connectionIds),
     hasSynthesis ? loadLastSynthesisRun(workspaceId) : Promise.resolve(null),
     loadUserNames(workspaceId, editorIds),
   ]);
 
-  return tasks.map((task) =>
-    toRoutine(
-      task,
-      task.source_connection_id ? connections.get(task.source_connection_id) : undefined,
-      task.task_type === "synthesize_workspace" ? lastRun : null,
-      task.updated_by_user_id ? (names.get(task.updated_by_user_id) ?? null) : null,
-    ),
-  );
+  return tasks.flatMap((task) => {
+    const connection = task.source_connection_id ? connections.get(task.source_connection_id) : undefined;
+    const definition = resolveRoutine(task.task_type, connection?.provider ?? null);
+    if (!definition) {
+      console.warn(
+        `Skipping scheduled task ${task.id}: no routine for ${task.task_type} with provider ${connection?.provider ?? "none"}`,
+      );
+      return [];
+    }
+    return [
+      toRoutine(
+        task,
+        definition,
+        connection,
+        task.task_type === "synthesize_workspace" ? lastRun : null,
+        task.updated_by_user_id ? (names.get(task.updated_by_user_id) ?? null) : null,
+      ),
+    ];
+  });
 }
 
 export async function listRoutines(workspaceId: string): Promise<Routine[]> {
   return buildRoutines(workspaceId, await loadTasks(workspaceId));
 }
 
-export async function getRoutineTask(workspaceId: string, taskId: string): Promise<ScheduledTaskRow | null> {
+export interface RoutineTask {
+  task: ScheduledTaskRow;
+  definition: RoutineDefinition;
+  connection: ConnectionInfo | undefined;
+}
+
+export async function getRoutineTask(workspaceId: string, taskId: string): Promise<RoutineTask | null> {
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
     .select("*")
@@ -185,7 +211,14 @@ export async function getRoutineTask(workspaceId: string, taskId: string): Promi
     .in("task_type", ROUTINE_TASK_TYPES)
     .maybeSingle();
   if (error) throw error;
-  return (data as ScheduledTaskRow | null) ?? null;
+  if (!data) return null;
+  const task = data as ScheduledTaskRow;
+
+  const connection = task.source_connection_id
+    ? (await loadConnections(workspaceId, [task.source_connection_id])).get(task.source_connection_id)
+    : undefined;
+  const definition = resolveRoutine(task.task_type, connection?.provider ?? null);
+  return definition ? { task, definition, connection } : null;
 }
 
 // A parse failure here means the stored schedule is bad (the patch itself was validated).
@@ -205,7 +238,7 @@ function safeNextDueAt(task: ScheduledTaskRow, now: Date): string {
 }
 
 export async function updateRoutine(
-  task: ScheduledTaskRow,
+  { task, connection }: RoutineTask,
   patch: SchedulePatch,
   userId: string,
   now: Date = new Date(),
@@ -249,7 +282,8 @@ export async function updateRoutine(
     }),
   );
 
-  const [routine] = await buildRoutines(task.workspace_id, [data as ScheduledTaskRow]);
+  const known = new Map(connection ? [[connection.id, connection]] : []);
+  const [routine] = await buildRoutines(task.workspace_id, [data as ScheduledTaskRow], known);
   return routine!;
 }
 

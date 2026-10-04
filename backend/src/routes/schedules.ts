@@ -1,7 +1,6 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { recordRouteError } from "../errors/route-error";
-import { ROUTINE_REGISTRY } from "../scheduling/routine-registry";
 import { canEditSchedules } from "../schedules/permissions";
 import { ScheduleServiceError, getRoutineTask, listRoutines, updateRoutine } from "../schedules/service";
 import { validatePatch } from "../schedules/validate-patch";
@@ -41,15 +40,15 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
   }
 
   try {
-    const task = await getRoutineTask(workspaceId, taskId);
-    const definition = task && ROUTINE_REGISTRY[task.task_type];
-    if (!task || !definition) return Response.json({ error: "not_found" }, { status: 404 });
+    const routineTask = await getRoutineTask(workspaceId, taskId);
+    if (!routineTask) return Response.json({ error: "not_found" }, { status: 404 });
+    const { definition } = routineTask;
 
     const validation = validatePatch(body, definition.editable);
     if (!validation.ok) {
       return Response.json({ error: validation.error, field: validation.field }, { status: 400 });
     }
-    return Response.json(await updateRoutine(task, validation.patch, caller.userId));
+    return Response.json(await updateRoutine(routineTask, validation.patch, caller.userId));
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
       if (error.code === "not_found") return Response.json({ error: "not_found" }, { status: 404 });
