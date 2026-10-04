@@ -17,6 +17,7 @@ import * as sessionTokens from "./session-tokens";
 import * as sessionTokensRotate from "./session-tokens-rotate";
 import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
+import * as schedules from "./schedules";
 import * as skills from "./skills";
 import * as sourceItems from "./source-items";
 import * as sources from "./sources";
@@ -44,6 +45,8 @@ export const routes = {
   "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
   "/workspaces/:id/synthesis-schedule": { GET: withCors(synthesisSchedule.GET), PATCH: withCors(synthesisSchedule.PATCH), OPTIONS },
+  "/workspaces/:id/schedules": { GET: withCors(schedules.GET), OPTIONS },
+  "/workspaces/:id/schedules/:taskId": { PATCH: withCors(schedules.PATCH), OPTIONS },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/sources/search": { POST: sources.searchPOST },
   "/workspaces/:id/sources/:sourceItemId/read": { POST: sources.readPOST },
