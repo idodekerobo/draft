@@ -58,7 +58,9 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     }
 
     // Always advance, success or failure, so a failing task retries next
-    // occurrence instead of spinning every tick.
+    // occurrence instead of spinning every tick. Writes only timing columns:
+    // a schedule edit made mid-dispatch keeps its cron, and next_due_at
+    // self-heals after one stray occurrence.
     const nextDueAt = computeNextDueAt(dispatchedTask, now);
     const { error: advanceError } = await options.client
       .from("scheduled_tasks")

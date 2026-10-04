@@ -200,4 +200,29 @@ describe("runSchedulingTick", () => {
 
     expect(updates).toHaveLength(1);
   });
+
+  it("never writes the schedule or editor columns, so an edit made mid-dispatch survives", async () => {
+    const dueTask = task({ id: "task-a", schedule_kind: "cron", cron_expression: "0 * * * *", interval_seconds: null });
+    const { client, updates } = fakeClient([dueTask]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const dispatch = mock(async () => {
+      await gate;
+      return dueTask;
+    });
+
+    const tick = runSchedulingTick({
+      client,
+      config: fakeConfig,
+      now: new Date("2026-08-05T10:00:30.000Z"),
+      dispatch,
+    });
+    // A member edit lands here, between dispatch's read and the advance write.
+    release();
+    await tick;
+
+    expect(Object.keys(updates[0]!.payload).sort()).toEqual(["last_enqueued_at", "next_due_at"]);
+  });
 });
