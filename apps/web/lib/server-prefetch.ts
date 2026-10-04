@@ -1,5 +1,5 @@
 import { requestApi } from "@/lib/api-request";
-import { connectionsQueryOptions, contextQueryOptions, scheduleQueryOptions, sessionReposQueryOptions, type Fetcher } from "@/lib/queries";
+import { connectionsQueryOptions, contextQueryOptions, sessionReposQueryOptions, type Fetcher } from "@/lib/queries";
 import type { QueryClient } from "draft-shared-ui";
 
 const serverFetcher = (token: string): Fetcher => <T,>(path: string) => requestApi<T>(path, token, { cache: "no-store" });
@@ -11,6 +11,5 @@ export async function prefetchWorkspace(queryClient: QueryClient, workspaceId: s
     queryClient.prefetchQuery(contextQueryOptions(workspaceId, fetcher)),
     queryClient.prefetchQuery(connectionsQueryOptions(workspaceId, fetcher)),
     queryClient.prefetchQuery(sessionReposQueryOptions(workspaceId, fetcher)),
-    queryClient.prefetchQuery(scheduleQueryOptions(workspaceId, fetcher)),
   ]);
 }

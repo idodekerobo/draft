@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { AppearanceRow, DataBoundary, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, queryKeys, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
-import { apiFetch } from "@/lib/api";
-import { scheduleQueryOptions, type Schedule } from "@/lib/queries";
+import { useEffect, useState } from "react";
+import { AppearanceRow, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -21,33 +19,6 @@ function useThemePreference(): [ThemePreference, (next: ThemePreference) => void
     try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch {}
   }
   return [preference, update];
-}
-
-function SynthesisRow({ onError }: { onError: (message: string) => void }) {
-  const { workspaceId } = useWorkspace();
-  const synthesisId = useId();
-  const { data: schedule } = useSuspenseQuery(scheduleQueryOptions(workspaceId, apiFetch));
-  const toggle = useOptimisticMutation<Schedule, boolean>({
-    queryKey: queryKeys.synthesisSchedule(workspaceId),
-    mutationFn: (enabled) => apiFetch<Schedule>(`/workspaces/${workspaceId}/synthesis-schedule`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
-    apply: (_current, enabled) => ({ enabled }),
-    onError: () => onError("Could not save. Try again."),
-  });
-  return (
-    <>
-      <h2 className="ui-group-label">Synthesis</h2>
-      <ul className="ui-rows">
-        <li>
-          <SettingsRow
-            label="Update team context"
-            labelId={synthesisId}
-            helper="Draft reads new sources hourly during the day and every few hours overnight (UTC)."
-            control={<Toggle checked={schedule.enabled} onChange={(next) => toggle.mutate(next)} labelledBy={synthesisId} />}
-          />
-        </li>
-      </ul>
-    </>
-  );
 }
 
 export default function SettingsPage() {
@@ -85,11 +56,6 @@ export default function SettingsPage() {
           />
         </li>
       </ul>
-
-      {/* The schedule row is optional: hide it while loading or if it fails. */}
-      <DataBoundary fallback={null} errorFallback={null}>
-        <SynthesisRow onError={setError} />
-      </DataBoundary>
 
       <h2 className="ui-group-label">Privacy</h2>
       <ul className="ui-rows">

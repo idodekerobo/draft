@@ -3,6 +3,7 @@ import "draft-shared-ui/styles/shared-ui.css";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { THEME_BOOT_SCRIPT } from "draft-shared-ui/theme";
+import { Toaster } from "draft-shared-ui";
 import { AnalyticsProvider } from "@/lib/analytics/AnalyticsProvider";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <AnalyticsProvider>{children}</AnalyticsProvider>
+        <Toaster />
       </body>
     </html>
   );
