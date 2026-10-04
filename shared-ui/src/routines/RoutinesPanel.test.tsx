@@ -176,6 +176,20 @@ describe("RoutinesPanel", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { hidden: true })).toBeNull());
   });
 
+  it("keeps Save disabled until something changes", async () => {
+    setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
+    const dialog = await screen.findByRole("dialog", { hidden: true });
+    const save = within(dialog).getByRole("button", { name: "Save changes" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Time"), { target: { value: "04:15" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.change(within(dialog).getByLabelText("Time"), { target: { value: "03:00" } });
+    expect(save.disabled).toBe(true);
+  });
+
   it("keeps the dialog open and shows the error beside the field when saving fails", async () => {
     setup({
       updateRoutine: async () => {

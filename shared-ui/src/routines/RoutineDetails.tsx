@@ -58,7 +58,12 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
   const isDefault = preset === "draft_default";
   const effectiveTimezone = isDefault ? "UTC" : timezone;
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);
-  const canSave = editable && preset !== "custom" && (!usesTime || time !== "") && !saving;
+  const dirty =
+    preset !== routine.preset ||
+    (usesTime && time !== routine.time) ||
+    (preset === "weekly" && weekday !== routine.weekday) ||
+    (!isDefault && timezone !== routine.timezone);
+  const canSave = editable && preset !== "custom" && dirty && (!usesTime || time !== "") && !saving;
   const noun = isSynthesis ? "run" : "check";
 
   const nextRun =

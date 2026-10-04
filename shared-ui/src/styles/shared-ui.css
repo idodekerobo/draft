@@ -540,7 +540,7 @@
   border: 0;
   background: transparent;
   color: var(--color-text-primary);
-  font-weight: 550;
+  font-weight: 500;
   text-align: left;
 }
 .ui-routines__controls { display: flex; align-items: center; justify-content: center; gap: 12px; }
