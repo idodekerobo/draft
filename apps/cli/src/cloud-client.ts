@@ -797,6 +797,27 @@ export async function fetchSessions(filters: ListSessionsFilters = {}): Promise<
   return { ok: true, value: body.sessions };
 }
 
+export interface RoutineSummary {
+  id: string;
+  taskType: string;
+  title: string;
+  routineDescription: string;
+  scheduleDescription: string;
+  timezone: string;
+  cron: string | null;
+  intervalSeconds: number | null;
+  enabled: boolean;
+  nextRunAt: string | null;
+  lastCheckedAt: string | null;
+}
+
+export async function fetchRoutines(): Promise<FetchResult<RoutineSummary[]>> {
+  return requestValue("/schedules", undefined, (value) => {
+    const routines = recordValue(value)?.routines;
+    return Array.isArray(routines) ? routines as RoutineSummary[] : null;
+  });
+}
+
 export type SessionReadResult =
   | { kind: "summary"; summary: string | null; occurred_at?: string }
   | { kind: "transcript"; messages: { seq: number; role: string; content: string; created_at: string }[]; windows?: { start_seq: number; end_seq: number }[]; truncated_bytes?: number };
