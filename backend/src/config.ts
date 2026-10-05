@@ -35,10 +35,22 @@ function unescapePem(value: string): string {
   return value.replace(/\\n/g, "\n");
 }
 
+function resolveApiBaseUrl(port: number): string {
+  return process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`;
+}
+
+/** Read on demand so the export feature does not force every deployment to set the secret. */
+export function contextExportSettings(): { secret: string | undefined; apiBaseUrl: string } {
+  return {
+    secret: process.env.CONTEXT_EXPORT_SECRET,
+    apiBaseUrl: resolveApiBaseUrl(Number(process.env.PORT ?? 8787)),
+  };
+}
+
 export function loadConfig(): BackendConfig {
   const port = Number(process.env.PORT ?? 8787);
   const githubAppPrivateKeyPreviousRaw = process.env.GITHUB_APP_PRIVATE_KEY_PREVIOUS;
-  const apiBaseUrl = process.env.DRAFT_API_BASE_URL ?? `http://localhost:${port}`;
+  const apiBaseUrl = resolveApiBaseUrl(port);
   return {
     supabaseUrl: requireEnv("SUPABASE_URL"),
     supabasePublishableKey: requireEnv("SUPABASE_PUBLISHABLE_KEY"),

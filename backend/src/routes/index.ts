@@ -25,6 +25,7 @@ import * as synthesisRuns from "./synthesis-runs";
 import * as whoami from "./whoami";
 import * as waitlist from "./waitlist";
 import * as workspaceContext from "./workspace-context";
+import * as workspaceContextExport from "./workspace-context-export";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
 import { OPTIONS, withCors } from "../auth/with-cors";
@@ -39,6 +40,9 @@ export const routes = {
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
   "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
   "/workspaces/:id/context": { GET: withCors(workspaceContext.contextGET), OPTIONS },
+  "/workspaces/:id/context/export": { GET: withCors(workspaceContextExport.exportGET), OPTIONS },
+  "/workspaces/:id/context/export-links": { POST: withCors(workspaceContextExport.exportLinkPOST), OPTIONS },
+  "/context-exports/:token": { GET: workspaceContextExport.redeemGET },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
   "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
