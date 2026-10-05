@@ -13,6 +13,8 @@ function routine(overrides: Partial<Routine>): Routine {
     time: "09:00",
     weekday: null,
     timezone: "UTC",
+    cron: null,
+    intervalSeconds: null,
     enabled: true,
     editable: "full",
     connectionLabel: null,

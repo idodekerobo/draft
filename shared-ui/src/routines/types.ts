@@ -18,6 +18,8 @@ export interface Routine {
   time: string | null;
   weekday: RoutineWeekday | null;
   timezone: string;
+  cron: string | null;
+  intervalSeconds: number | null;
   enabled: boolean;
   editable: "full" | "toggle_only";
   connectionLabel: string | null;
