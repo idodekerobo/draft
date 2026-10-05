@@ -96,13 +96,7 @@ Draft also exposes the same company brain through an OAuth-protected remote MCP 
 https://api.draftai.us/mcp
 ~~~
 
-The first connection uses Draft's browser sign-in and consent flow. The server is read-only and currently exposes:
-
-- `context.list` — list available context dimensions.
-- `context.read` — read one or more dimensions, or all current workspace documents; pass `period` (with `dimensions: ["memory"]`) to read one chronological memory document instead.
-- `context.export` — get a short-lived download link to the full context as a zip of markdown files. The link expires after 5 minutes.
-- `skills.list` — list the workspace's shared skills.
-- `skills.read` — read one shared skill by name.
+The first connection uses Draft's browser sign-in and consent flow. The server is read-only except for `skills.add`, which needs the `write` OAuth scope. See [MCP and agent connections](./mcp.md) for the full tool list.
 
 Claude Code can register it with:
 
@@ -587,3 +581,4 @@ Every command accepts `--json`. Most `--json` invocations write exactly one JSON
 
 - [Architecture](./architecture.md)
 - [Agent plugins](./agent-plugins.md)
+- [Connect Draft to your agent](./connect-draft-to-your-agent.md)

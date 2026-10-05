@@ -73,6 +73,7 @@ The deployment stores and serves authenticated workspace context, source items, 
 - [Architecture](./architecture.md)
 - [Privacy](./privacy.md)
 - [Hosted team collaboration](./setting-up-collaboration.md)
+- [Connect Draft to your agent](./connect-draft-to-your-agent.md)
 - [Agent connections](./agent-plugins.md)
 - [MCP and agent connections](./mcp.md)
 - [CLI reference](./cli.md)
