@@ -1,6 +1,7 @@
-// commands/context.ts — draft context list|read
+// commands/context.ts — draft context list|read|export
 
-import { discoverDimensions, fetchWorkspaceContext, type WorkspaceContextSnapshot } from "../cloud-client.ts";
+import { discoverDimensions, fetchContextExport, fetchWorkspaceContext, type WorkspaceContextSnapshot } from "../cloud-client.ts";
+import type { ContextExportError } from "../utils/context-export.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { red } from "../utils/output.ts";
 
@@ -9,6 +10,7 @@ const SELECTOR_PATTERN = /^[a-z0-9-]+$/;
 function fetchErrorPayload(code: string) {
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
+  if (code === "no_context") return errorPayload(code, "No context yet — Draft has not built your company brain.");
   if (code === "period_not_found") return errorPayload(code, "No document exists for that period yet.");
   if (code === "invalid_period") return errorPayload(code, "Unrecognized --period value. See `draft context read --help`.");
   return errorPayload(code, "Could not fetch workspace context right now. Retry shortly.");
@@ -213,13 +215,99 @@ export async function runContextRead(args: string[]): Promise<number> {
   return EXIT_SUCCESS;
 }
 
+interface ParsedExportArgs {
+  out?: string;
+  zip?: string;
+  force: boolean;
+  json: boolean;
+  error?: string;
+}
+
+function parseExportArgs(args: string[]): ParsedExportArgs {
+  let json = false;
+  let force = false;
+  const values: Record<"out" | "zip", string | undefined> = { out: undefined, zip: undefined };
+  const fail = (error: string): ParsedExportArgs => ({ json, force, error });
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--json") { json = true; continue; }
+    if (arg === "--force") { force = true; continue; }
+    const flag = (["out", "zip"] as const).find((name) => arg === `--${name}` || arg.startsWith(`--${name}=`));
+    if (flag) {
+      const result = readValueFlag(args, i, flag);
+      if ("error" in result) return fail(result.error);
+      values[flag] = result.value;
+      i = result.nextIndex;
+      continue;
+    }
+    return fail(arg.startsWith("--") ? `unknown flag: ${arg}` : `unexpected positional argument: ${arg}`);
+  }
+  const { out, zip } = values;
+  if (out !== undefined && zip !== undefined) return fail("--out and --zip are mutually exclusive");
+  if (out === "" || zip === "") return fail("--out and --zip need a non-empty path");
+  return { out, zip, force, json };
+}
+
+function exportErrorPayload(error: ContextExportError) {
+  const action = error.code === "folder_not_empty" || error.code === "file_exists" ? "--force" : undefined;
+  return errorPayload(error.code, error.message, action);
+}
+
+export async function runContextExport(args: string[]): Promise<number> {
+  const parsed = parseExportArgs(args);
+  if (parsed.error) {
+    if (parsed.json) printJsonLine(errorPayload("invalid_usage", parsed.error));
+    else console.error(red(`draft context export: ${parsed.error}`));
+    return EXIT_USAGE_ERROR;
+  }
+
+  // Loaded on demand so other commands don't pay for the zip library.
+  const exporter = await import("../utils/context-export.ts");
+  const result = await fetchContextExport();
+  if (!result.ok) {
+    printFetchError("draft context export", result.code, parsed.json);
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  let path: string;
+  let fileCount: number;
+  let versionNumber: number | null;
+  try {
+    const entries = exporter.readExportEntries(result.bytes);
+    fileCount = entries.length;
+    versionNumber = exporter.exportVersionNumber(entries);
+    if (parsed.zip !== undefined) {
+      exporter.writeExportZip(result.bytes, parsed.zip, parsed.force);
+      path = parsed.zip;
+    } else {
+      path = parsed.out ?? "draft-context";
+      exporter.writeExportFolder(entries, path, parsed.force);
+    }
+  } catch (error) {
+    if (!(error instanceof exporter.ContextExportError)) throw error;
+    const payload = exportErrorPayload(error);
+    if (parsed.json) printJsonLine(payload);
+    else console.error(red(`draft context export: ${payload.message}`));
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  if (parsed.json) {
+    printJsonLine({ path, fileCount, versionNumber });
+    return EXIT_SUCCESS;
+  }
+  console.log(`Exported ${fileCount} files${versionNumber === null ? "" : ` (version ${versionNumber})`} to ${path}`);
+  if (parsed.zip === undefined) console.log(`Point an agent at it, e.g. cd ${path} && claude`);
+  return EXIT_SUCCESS;
+}
+
 export async function runContext(args: string[]): Promise<number> {
   const [sub, ...rest] = args;
   switch (sub) {
     case "list": return runContextList(rest);
     case "read": return runContextRead(rest);
+    case "export": return runContextExport(rest);
     default:
-      console.error(red(`draft context: unknown subcommand${sub ? ` "${sub}"` : ""}. Use list or read.`));
+      console.error(red(`draft context: unknown subcommand${sub ? ` "${sub}"` : ""}. Use list, read or export.`));
       return EXIT_USAGE_ERROR;
   }
 }

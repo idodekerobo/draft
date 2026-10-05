@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "draft-core": "workspace:*",
+    "fflate": "^0.8.3",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {

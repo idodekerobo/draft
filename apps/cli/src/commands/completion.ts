@@ -46,7 +46,7 @@ _draft_completion() {
       return 0
       ;;
     context)
-      COMPREPLY=( $(compgen -W "list read" -- "\$cur") )
+      COMPREPLY=( $(compgen -W "list read export" -- "\$cur") )
       return 0
       ;;
     sources)
@@ -130,7 +130,7 @@ _draft() {
           _describe 'subcommand' subcmds
           ;;
         context)
-          local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions')
+          local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions' 'export:Export the full context as markdown files')
           _describe 'subcommand' subcmds
           ;;
         sources)
