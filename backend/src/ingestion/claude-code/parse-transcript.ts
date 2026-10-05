@@ -49,9 +49,13 @@ export function parseClaudeCodeJsonl(raw: string): ParsedTranscript {
       continue;
     }
 
+    // Transcript lines are not guaranteed to be in time order.
     if (typeof parsed.timestamp === "string") {
-      startedAt ??= parsed.timestamp;
-      endedAt = parsed.timestamp;
+      const time = Date.parse(parsed.timestamp);
+      if (!Number.isNaN(time)) {
+        if (startedAt === null || time < Date.parse(startedAt)) startedAt = parsed.timestamp;
+        if (endedAt === null || time > Date.parse(endedAt)) endedAt = parsed.timestamp;
+      }
     }
 
     if (parsed.isSidechain) continue;
