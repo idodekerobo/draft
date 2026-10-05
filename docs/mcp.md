@@ -15,6 +15,7 @@ The MCP server is read-only except for `skills.add`, which needs the `write` OAu
 | `context.export` | Return a download link to the full context as a zip of markdown files, plus the commands to fetch and unzip it. The link expires after 5 minutes and stops working if the user loses workspace access. The file bytes skip the model's context window, so prefer this over `context.read` when the user wants files on disk. |
 | `sources.search` | Full-text search across stored source items (Slack, GitHub, meetings, coding sessions). Filter by provider, type and date. |
 | `sources.read` | Read one source item by ID, in the default or another captured representation. |
+| `routines.list` | List the workspace's routines (scheduled background tasks) with schedule, cron expression, enabled state, and next run. See [Routines](./routines.md). |
 | `skills.list` | List shared workspace skills. |
 | `skills.read` | Read one shared skill by name. |
 | `skills.add` | Create a new shared skill. Needs the `write` scope. Fails with `duplicate_name` if the name exists; it cannot overwrite or delete a skill. |

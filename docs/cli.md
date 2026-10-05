@@ -133,6 +133,16 @@ Content can come from a local file (`--file`), inline text (`--content`), or pip
 
 `list` shows every active skill's full description text (not truncated); `read <name>` returns the full content plus every optional field.
 
+## Routines
+
+Routines are scheduled background tasks. This command only reads them. See [Routines](./routines.md).
+
+~~~bash
+draft routines list [--json]
+~~~
+
+Text output shows each routine's title, schedule, cron expression, enabled state, and next run. `--json` prints `{ routines }`.
+
 ## Project agent setup
 
 Use draft add to write a managed Draft context block to a project's instruction file:
