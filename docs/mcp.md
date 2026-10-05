@@ -13,6 +13,8 @@ The MCP server is read-only except for `skills.add`, which needs the `write` OAu
 | `context.list` | List the workspace's available context dimensions. |
 | `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. |
 | `context.export` | Return a download link to the full context as a zip of markdown files, plus the commands to fetch and unzip it. The link expires after 5 minutes and stops working if the user loses workspace access. The file bytes skip the model's context window, so prefer this over `context.read` when the user wants files on disk. |
+| `sources.search` | Full-text search across stored source items (Slack, GitHub, meetings, coding sessions). Filter by provider, type and date. |
+| `sources.read` | Read one source item by ID, in the default or another captured representation. |
 | `skills.list` | List shared workspace skills. |
 | `skills.read` | Read one shared skill by name. |
 | `skills.add` | Create a new shared skill. Needs the `write` scope. Fails with `duplicate_name` if the name exists; it cannot overwrite or delete a skill. |
@@ -67,3 +69,8 @@ https://api.example.com/mcp
 ~~~
 
 The deployment must have its Better Auth MCP/OAuth configuration enabled, and the agent, CLI, web app, and desktop app should all point to the same Draft deployment. Configure the CLI with `DRAFT_API_BASE_URL`, `DRAFT_APP_URL`, `DRAFT_SUPABASE_URL`, and `DRAFT_SUPABASE_PUBLISHABLE_KEY` as described in the [CLI reference](./cli.md#configuration).
+
+## See also
+
+- [Connect Draft to your agent](./connect-draft-to-your-agent.md)
+- [CLI reference](./cli.md)
