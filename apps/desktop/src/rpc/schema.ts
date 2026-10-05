@@ -258,6 +258,9 @@ export type AppRPCType = {
       /** List all readable context files for the active workspace. */
       getContextFiles: { params: void; response: ContextFileEntry[] };
 
+      /** Ask for a folder, then save the full context there as a zip of markdown files. */
+      exportContext: { params: void; response: { ok: true; path: string } | { ok: false; canceled?: boolean; error?: string } };
+
       /** Rich connection status for all intelligence tools and input sources, plus firefliesConnections for the Settings list view. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
