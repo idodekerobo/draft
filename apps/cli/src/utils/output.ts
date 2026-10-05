@@ -31,6 +31,7 @@ export function printHelp(): void {
     ["context read --all",         "Print every context dimension"],
     ["context read --dimension memory --period <today|this-week|...>", "Print one memory period (day/week/month)"],
     ["context export [--out <dir>|--zip <file>]", "Export the full context as markdown files (--force to overwrite)"],
+    ["routines list",              "List the workspace's scheduled routines"],
     ["sources search \"<query>\"", "Search cross-provider source evidence"],
     ["sources read <source_item_id>", "Read a source or an available original representation"],
     ["integrations list",          "List hosted integration status"],

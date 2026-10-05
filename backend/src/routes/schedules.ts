@@ -1,6 +1,8 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
+import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
+import { recordAgentQueryLog } from "../observability/record-query-log";
 import { canEditSchedules } from "../schedules/permissions";
 import { ScheduleServiceError, getRoutineTask, listRoutines, updateRoutine } from "../schedules/service";
 import { validatePatch } from "../schedules/validate-patch";
@@ -17,7 +19,16 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
       listRoutines(req.params.id),
       canEditSchedules(req.params.id, caller.userId),
     ]);
-    return Response.json({ routines, canEdit });
+    const body = JSON.stringify({ routines, canEdit });
+    // Browser reads carry an Origin header; only agent reads (CLI) count as agent usage.
+    if (!req.headers.has("origin")) void recordAgentQueryLog(serviceClient, {
+      workspaceId: req.params.id,
+      userId: caller.userId,
+      command: "routines.list",
+      argsJson: {},
+      resultBytes: Buffer.byteLength(body, "utf8"),
+    });
+    return new Response(body, { headers: { "content-type": "application/json" } });
   } catch (error) {
     recordRouteError({ workspaceId: req.params.id, errorCode: "schedules_read_failed", error });
     return Response.json({ error: "schedules_read_failed" }, { status: 500 });

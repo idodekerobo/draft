@@ -9,6 +9,7 @@ export type AgentQueryLogCommand =
   | "skills.read"
   | "sources.search"
   | "sources.read"
+  | "routines.list"
   | "mcp.context.list"
   | "mcp.context.read"
   | "mcp.sessions.list"
@@ -21,7 +22,6 @@ export type AgentQueryLogCommand =
   | "mcp.sources.read"
   | "context.export"
   | "mcp.context.export"
-  | "routines.list"
   | "mcp.routines.list";
 
 export interface RecordAgentQueryLogInput {

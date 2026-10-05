@@ -77,3 +77,4 @@ The deployment stores and serves authenticated workspace context, source items, 
 - [Agent connections](./agent-plugins.md)
 - [MCP and agent connections](./mcp.md)
 - [CLI reference](./cli.md)
+- [Routines](./routines.md)

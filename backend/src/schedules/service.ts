@@ -38,6 +38,8 @@ export interface Routine {
   time: string | null;
   weekday: Weekday | null;
   timezone: string;
+  cron: string | null;
+  intervalSeconds: number | null;
   enabled: boolean;
   editable: RoutineEditability;
   connectionLabel: string | null;
@@ -92,6 +94,8 @@ function toRoutine(
     time: parsed.time,
     weekday: parsed.weekday,
     timezone: task.timezone,
+    cron: task.schedule_kind === "cron" ? task.cron_expression : null,
+    intervalSeconds: task.schedule_kind === "interval" ? task.interval_seconds : null,
     enabled: task.enabled,
     editable: definition.editable,
     connectionLabel: connection ? providerName(connection.provider) : null,

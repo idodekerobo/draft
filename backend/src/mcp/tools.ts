@@ -5,6 +5,7 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
 import { createContextExportLink, exportInstructions } from "../context-export/link";
 import { getWorkspaceContext } from "../services/workspace-context";
+import { listRoutines } from "../schedules/service";
 import { addSkill, listSkills, readSkill } from "../services/skills";
 import { readSource, searchSources } from "../services/sources";
 
@@ -63,7 +64,7 @@ export function buildMcpServer(userId: string, scopes: string[] = []): McpServer
     },
     {
       instructions:
-        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. To save the whole context as files on disk, use context.export and follow its instructions. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach. When the user asks you to save a workflow as a skill, use skills.add.",
+        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. To save the whole context as files on disk, use context.export and follow its instructions. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach. When the user asks you to save a workflow as a skill, use skills.add. Use routines.list to see what runs on a schedule (context updates, session summaries, Slack sync) and when each runs next.",
     },
   );
 
@@ -207,6 +208,22 @@ export function buildMcpServer(userId: string, scopes: string[] = []): McpServer
         if (!result.ok) return { error: result.error };
         return { skills: result.skills };
       });
+      if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
+      return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
+    },
+  );
+
+  server.registerTool(
+    "routines.list",
+    {
+      description:
+        "List the routines (scheduled background tasks) in the caller's workspace, with schedule, cron expression, enabled state, and next run.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      const outcome = await withWorkspace(userId, "mcp.routines.list", {}, async (workspaceId) => ({
+        routines: await listRoutines(workspaceId),
+      }));
       if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
       return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
     },

@@ -14,6 +14,7 @@ export interface MockBackendState {
   whoamiResponse: () => Response | Promise<Response>;
   contextResponse: (workspaceId: string, url: URL) => Response | Promise<Response>;
   contextExportResponse: (workspaceId: string) => Response | Promise<Response>;
+  routinesResponse: (workspaceId: string) => Response | Promise<Response>;
   refreshResponse: () => Response | Promise<Response>;
   logoutResponse: () => Response | Promise<Response>;
   sessionTokensResponse: (workspaceId: string) => Response | Promise<Response>;
@@ -50,6 +51,7 @@ export function createMockBackend() {
     linkCode: "code123",
     linkPollResponses: [],
     whoamiResponse: () => defaultWhoami(),
+    routinesResponse: () => Response.json({ routines: [], canEdit: true }),
     contextResponse: () => Response.json({ versionId: "v1", versionNumber: 1, contentHash: "hash1", creationReason: "synthesis", createdAt: "2026-01-01T00:00:00.000Z", documents: {} }),
     contextExportResponse: () => Response.json({ error: "no_context_yet" }, { status: 404 }),
     refreshResponse: () => Response.json({ access_token: "refreshed-at", refresh_token: "refreshed-rt", expires_in: 3600 }),
@@ -121,6 +123,8 @@ export function createMockBackend() {
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/context\/export$/.test(url.pathname)) {
         return state.contextExportResponse(url.pathname.split("/")[2]!);
+      if (req.method === "GET" && /^\/workspaces\/[^/]+\/schedules$/.test(url.pathname)) {
+        return state.routinesResponse(url.pathname.split("/")[2]!);
       }
       if (req.method === "POST" && url.pathname === "/auth/v1/token") return state.refreshResponse();
       if (req.method === "POST" && url.pathname === "/auth/v1/logout") return state.logoutResponse();

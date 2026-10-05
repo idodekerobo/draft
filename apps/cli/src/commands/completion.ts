@@ -30,7 +30,7 @@ _draft_completion() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context sources sessions skills integrations update completion"
+  commands="add auth context routines sources sessions skills integrations update completion"
 
   case "\$prev" in
     draft)
@@ -47,6 +47,10 @@ _draft_completion() {
       ;;
     context)
       COMPREPLY=( $(compgen -W "list read export" -- "\$cur") )
+      return 0
+      ;;
+    routines)
+      COMPREPLY=( $(compgen -W "list" -- "\$cur") )
       return 0
       ;;
     sources)
@@ -110,6 +114,7 @@ _draft() {
         'add:Add Draft to a CLI tool'
         'auth:Authenticate with the Draft control plane'
         'context:Read workspace context'
+        'routines:Read scheduled routines'
         'sources:Search and read cross-provider source evidence'
         'sessions:Manage coding session capture'
         'skills:Discover and manage the company skill marketplace'
@@ -131,6 +136,10 @@ _draft() {
           ;;
         context)
           local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions' 'export:Export the full context as markdown files')
+          _describe 'subcommand' subcmds
+          ;;
+        routines)
+          local subcmds=('list:List scheduled routines')
           _describe 'subcommand' subcmds
           ;;
         sources)
