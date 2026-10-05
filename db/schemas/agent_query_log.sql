@@ -7,11 +7,13 @@ create table agent_query_log (
                     'sessions.list', 'sessions.read', 'sessions.search',
                     'skills.list', 'skills.read',
                     'sources.search', 'sources.read',
-                    'context.read',
-                    'mcp.context.list', 'mcp.context.read',
+                    'context.read', 'context.export',
+                    'routines.list',
+                    'mcp.context.list', 'mcp.context.read', 'mcp.context.export',
                     'mcp.sessions.list', 'mcp.sessions.read', 'mcp.sessions.search',
                     'mcp.skills.list', 'mcp.skills.read', 'mcp.skills.add',
-                    'mcp.sources.search', 'mcp.sources.read'
+                    'mcp.sources.search', 'mcp.sources.read',
+                    'mcp.routines.list'
                   )),
   args_json     jsonb not null default '{}',
   result_bytes  int,

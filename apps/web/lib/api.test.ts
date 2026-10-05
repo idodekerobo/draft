@@ -5,7 +5,7 @@ mock.module("@/lib/supabase/client", () => ({
   createClient: () => ({ auth: { getSession: async () => ({ data: { session } }) } }),
 }));
 
-const { ApiError, apiFetch } = await import("./api");
+const { ApiError, apiFetch, apiFetchBlob } = await import("./api");
 const realFetch = globalThis.fetch;
 
 afterEach(() => {
@@ -42,5 +42,21 @@ describe("apiFetch", () => {
   test("reports a network failure as status 0", async () => {
     globalThis.fetch = mock(async () => { throw new TypeError("Failed to fetch"); }) as unknown as typeof fetch;
     expect(await apiFetch("/x").catch((caught) => caught)).toMatchObject({ status: 0, code: "network" });
+  });
+});
+
+describe("apiFetchBlob", () => {
+  test("returns the file and its name from Content-Disposition", async () => {
+    globalThis.fetch = mock(async () => new Response("zipbytes", {
+      headers: { "content-disposition": 'attachment; filename="draft-context-v3-2026-10-05.zip"' },
+    })) as unknown as typeof fetch;
+    const { blob, fileName } = await apiFetchBlob("/workspaces/ws-1/context/export");
+    expect(fileName).toBe("draft-context-v3-2026-10-05.zip");
+    expect(await blob.text()).toBe("zipbytes");
+  });
+
+  test("turns an {error} body into a typed error", async () => {
+    respond(404, { error: "no_context_yet" });
+    expect(await apiFetchBlob("/x").catch((caught) => caught)).toMatchObject({ status: 404, code: "no_context_yet" });
   });
 });

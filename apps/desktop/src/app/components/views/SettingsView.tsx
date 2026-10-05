@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import type { LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { AppearanceRow, DataBoundary, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, ContextExport, DataBoundary, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
 
@@ -46,6 +46,13 @@ function NotificationsRow({ onError }: { onError: (message: string) => void }) {
       />
     </div>
   );
+}
+
+async function exportContext(): Promise<void | false> {
+  const result = await rpc.request.exportContext();
+  if (result.ok) return;
+  if (result.canceled) return false;
+  throw new Error(result.error ?? "Export failed.");
 }
 
 function RowSkeleton({ label }: { label: string }) {
@@ -214,6 +221,14 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
               <NotificationsRow onError={setSaveError} />
             </DataBoundary>
           </div>
+        </section>
+
+        {/* ── Your data ───────────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Your data</h2>
+          <ul className="ui-rows">
+            <ContextExport onExport={exportContext} />
+          </ul>
         </section>
 
         {/* ── Privacy ─────────────────────────────────────────────────────── */}

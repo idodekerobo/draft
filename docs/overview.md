@@ -2,7 +2,7 @@
 
 Draft is the company brain for teams building with AI.
 
-It turns decisions, product context, priorities, and activity from the tools your team already uses into a shared workspace. Connected agents can use that workspace so sessions start with the same understanding of the company instead of a private, stale copy of context.
+It turns decisions, product context, priorities, and activity from the tools your team already uses into a shared workspace. Connected agents can use that workspace so sessions start with the same understanding of the company instead of a private, stale copy of context. Your context is never locked in: you can export all of it at any time as a zip or folder of markdown files, from the web app, the desktop app, the CLI (`draft context export`), or through an agent on MCP (`context.export`). See [the CLI](./cli.md#export-your-context) and [MCP](./mcp.md).
 
 You can use the hosted service at [draftai.us](https://draftai.us), or run the open-source stack in infrastructure you control.
 

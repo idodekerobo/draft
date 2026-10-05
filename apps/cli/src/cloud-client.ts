@@ -241,6 +241,30 @@ export async function fetchWorkspaceContext(
   };
 }
 
+export type ContextExportFetchResult =
+  | { ok: true; bytes: Uint8Array }
+  | { ok: false; code: Extract<ContextFetchResult, { ok: false }>["code"] | "no_context" };
+
+export async function fetchContextExport(): Promise<ContextExportFetchResult> {
+  const resolved = await resolveAuthedWorkspace();
+  if (!resolved.ok) return resolved;
+  if (!resolved.workspaceId) return { ok: false, code: "no_workspace" };
+
+  const config = getCliRuntimeConfig();
+  let response: Response;
+  try {
+    response = await fetch(
+      `${config.apiBaseUrl}/workspaces/${encodeURIComponent(resolved.workspaceId)}/context/export`,
+      { headers: { Authorization: `Bearer ${resolved.token}` } },
+    );
+  } catch {
+    return { ok: false, code: "session_refresh_transient" };
+  }
+  if (response.status === 404) return { ok: false, code: "no_context" };
+  if (!response.ok) return { ok: false, code: "context_fetch_failed" };
+  return { ok: true, bytes: new Uint8Array(await response.arrayBuffer()) };
+}
+
 export interface SessionListItem {
   id: string;
   provider: string;

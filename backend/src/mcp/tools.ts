@@ -3,6 +3,7 @@ import { z } from "zod";
 import { serviceClient } from "../db/client";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
+import { createContextExportLink, exportInstructions } from "../context-export/link";
 import { getWorkspaceContext } from "../services/workspace-context";
 import { addSkill, listSkills, readSkill } from "../services/skills";
 import { readSource, searchSources } from "../services/sources";
@@ -62,7 +63,7 @@ export function buildMcpServer(userId: string, scopes: string[] = []): McpServer
     },
     {
       instructions:
-        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach. When the user asks you to save a workflow as a skill, use skills.add.",
+        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. To save the whole context as files on disk, use context.export and follow its instructions. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach. When the user asks you to save a workflow as a skill, use skills.add.",
     },
   );
 
@@ -123,6 +124,23 @@ export function buildMcpServer(userId: string, scopes: string[] = []): McpServer
           createdAt: result.snapshot.createdAt,
           documents,
         };
+      });
+      if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
+      return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };
+    },
+  );
+
+  server.registerTool(
+    "context.export",
+    {
+      description: "Get a short-lived download link to the full context as a zip of markdown files (all dimensions, including memory). Prefer this over context.read when the user wants the files on disk; the bytes skip your context window. Follow the returned instructions to fetch and unzip.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      const outcome = await withWorkspace(userId, "mcp.context.export", {}, async (workspaceId) => {
+        const result = await createContextExportLink(workspaceId, userId);
+        if (!result.ok) return { error: result.error };
+        return { ...result.link, instructions: exportInstructions(result.link) };
       });
       if (outcome.isError) return { isError: true, content: [{ type: "text", text: outcome.text }] };
       return { content: [{ type: "text", text: JSON.stringify(outcome.result) }] };

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppearanceRow, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, ContextExport, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { apiFetchBlob } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -21,8 +22,20 @@ function useThemePreference(): [ThemePreference, (next: ThemePreference) => void
   return [preference, update];
 }
 
+async function downloadExport(workspaceId: string): Promise<void> {
+  const { blob, fileName } = await apiFetchBlob(`/workspaces/${workspaceId}/context/export`);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName ?? "draft-context.zip";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function SettingsPage() {
-  const { identity, updatePrivacy } = useWorkspace();
+  const { identity, updatePrivacy, workspaceId } = useWorkspace();
   const [theme, setTheme] = useThemePreference();
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +68,11 @@ export default function SettingsPage() {
             control={<button type="button" className="ui-btn" onClick={() => void signOut()}>Sign out</button>}
           />
         </li>
+      </ul>
+
+      <h2 className="ui-group-label">Your data</h2>
+      <ul className="ui-rows">
+        <ContextExport onExport={() => downloadExport(workspaceId)} />
       </ul>
 
       <h2 className="ui-group-label">Privacy</h2>

@@ -22,6 +22,7 @@
     "better-auth": "^1.7.3",
     "cron-parser": "^5.7.0",
     "draft-core": "workspace:*",
+    "fflate": "^0.8.3",
     "jose": "^6.2.9",
     "js-yaml": "^4.1.0",
     "kysely": "^0.29.5",

@@ -606,6 +606,30 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      exportContext: async () => {
+        try {
+          const workspaceId = readAuthState()?.workspace_id;
+          if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+
+          // Electrobun only wraps the macOS open panel, so the button says "Open".
+          const [folderPath] = await Utils.openFileDialog({
+            startingFolder: Utils.paths.downloads,
+            canChooseFiles: false,
+            canChooseDirectory: true,
+            allowsMultipleSelection: false,
+          });
+          if (!folderPath) return { ok: false, canceled: true };
+
+          const response = await fetchServer(`workspaces/${workspaceId}/context/export`);
+          const fileName = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "draft-context.zip";
+          const target = join(folderPath, basename(fileName));
+          writeFileSync(target, new Uint8Array(await response.arrayBuffer()));
+          return { ok: true, path: target };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : "Export failed." };
+        }
+      },
+
       selectSetupFolder: async () => {
         try {
           const [folderPath] = await Utils.openFileDialog({
