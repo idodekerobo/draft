@@ -34,6 +34,10 @@ The local machine is not the canonical home of hosted workspace context. Clients
 
 The remote MCP server provides authenticated, read-only access to workspace context and shared skills for connected agents. MCP calls are resolved against the caller's team workspace and checked against workspace access. The CLI uses authenticated API calls to read the same workspace and can also write project-local setup files or upload sessions when those features are enabled.
 
+## Context export
+
+You can export your workspace context as markdown files from the web app, desktop app, CLI, or an MCP agent. An export is a copy that lives outside Draft's access control: anyone who has the files can read them, and removing a member from the workspace does not delete files they already exported. Agent download links expire after 5 minutes and re-check the user's workspace access when opened, but they are not single-use.
+
 ## Hosted processing
 
 Hosted Draft processes workspace data on Draft infrastructure to provide authentication, integrations, context storage, and synthesis. Synthesis runs use disposable Fly Machines. Connected providers may also process data under their own terms when Draft calls their APIs or receives their webhooks.

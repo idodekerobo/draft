@@ -12,6 +12,7 @@ The MCP server is read-only except for `skills.add`, which needs the `write` OAu
 | --- | --- |
 | `context.list` | List the workspace's available context dimensions. |
 | `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. |
+| `context.export` | Return a download link to the full context as a zip of markdown files, plus the commands to fetch and unzip it. The link expires after 5 minutes and stops working if the user loses workspace access. The file bytes skip the model's context window, so prefer this over `context.read` when the user wants files on disk. |
 | `skills.list` | List shared workspace skills. |
 | `skills.read` | Read one shared skill by name. |
 | `skills.add` | Create a new shared skill. Needs the `write` scope. Fails with `duplicate_name` if the name exists; it cannot overwrite or delete a skill. |

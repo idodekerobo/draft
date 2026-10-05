@@ -50,6 +50,23 @@ draft context read --all
 
 Context reads go through the authenticated API and return the current workspace snapshot. A missing workspace is an account/onboarding state, not a local initialization step.
 
+### Export your context
+
+~~~bash
+draft context export                        # extract into ./draft-context
+draft context export --out ~/brain          # extract into another folder
+draft context export --zip draft-context.zip   # save the zip as is
+draft context export --json
+~~~
+
+Export writes every document in the current workspace snapshot, including `memory/`, as plain markdown. It adds a `README.md` that explains the layout and a `draft-export.json` with the version, content hash and export time. Open the folder in any agent (for example `cd draft-context && claude`).
+
+- The folder is refused if it is not empty. Pass `--force` to write into it anyway; existing files with the same name are overwritten.
+- `--zip` refuses to overwrite an existing file unless you pass `--force`.
+- The CLI checks every path in the zip before it writes anything. A zip with an absolute path, `..` or a backslash writes nothing.
+- `--json` prints `{ path, fileCount, versionNumber }`.
+- The export is a copy outside Draft's access control. Anyone with the files can read them.
+
 ### Memory (chronological log)
 
 Unlike the other dimensions, which hold a single current-state document per
@@ -83,6 +100,7 @@ The first connection uses Draft's browser sign-in and consent flow. The server i
 
 - `context.list` — list available context dimensions.
 - `context.read` — read one or more dimensions, or all current workspace documents; pass `period` (with `dimensions: ["memory"]`) to read one chronological memory document instead.
+- `context.export` — get a short-lived download link to the full context as a zip of markdown files. The link expires after 5 minutes.
 - `skills.list` — list the workspace's shared skills.
 - `skills.read` — read one shared skill by name.
 
