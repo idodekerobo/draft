@@ -15,7 +15,7 @@ This guide helps you pick a path, connect, understand what the agent can do, and
 | Search sources | `sources.search`, `sources.read` | `draft sources search`, `draft sources read` |
 | Skills: read | `skills.list`, `skills.read` | `draft skills list`, `draft skills read` |
 | Skills: add | `skills.add` (needs the `write` scope) | `draft skills add` |
-| Context export | Coming | Coming |
+| Export context as files | `context.export` | `draft context export` |
 | List routines | Coming | Coming |
 | Coding sessions | Not available | `draft sessions ...` |
 
@@ -48,6 +48,7 @@ Use `<your API base URL>/mcp`. See [Self-hosted deployments](./mcp.md#self-hoste
 - **You sign in with your Draft account.** The agent never sees your password.
 - **Access stays inside your workspace.** The server checks workspace access on every call.
 - **Read and write are separate scopes.** The server allows `read` and `write`. An agent needs the `write` scope to change anything. Today the only write tool is `skills.add`. It cannot overwrite or delete a skill. Without the scope, the call fails with `insufficient_scope`. The consent screen shows which scopes the agent asks for. Read it before you approve.
+- **Export links are short-lived.** A `context.export` link expires after 5 minutes and stops working if you lose workspace access. The export is a copy outside Draft's access control, so treat the files as private.
 - **Reads are logged.** Draft records each agent command in `agent_query_log`: who, which command, its arguments, and the response size. Today this log is for operators. You cannot view it in the app, and it does not record which agent made a call.
 
 ## Disconnect an agent today
