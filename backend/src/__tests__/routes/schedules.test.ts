@@ -6,6 +6,7 @@ let runsError: { message: string } | null = null;
 let updateError: { message: string } | null = null;
 let errorRows: Row[] = [];
 let usersError: { message: string } | null = null;
+const logged: Array<{ command: string }> = [];
 
 type Row = Record<string, unknown>;
 let tables: Record<string, Row[]> = {};
@@ -70,6 +71,12 @@ mock.module("../../db/client", () => ({
   serviceClient: { from: (table: string) => queryBuilder(table) },
 }));
 
+mock.module("../../observability/record-query-log", () => ({
+  recordAgentQueryLog: async (_client: unknown, input: { command: string }) => {
+    logged.push(input);
+  },
+}));
+
 const routeModule = await import("../../routes/schedules");
 
 function task(overrides: Row): Row {
@@ -94,8 +101,10 @@ function task(overrides: Row): Row {
   };
 }
 
-function get(workspaceId = "ws-1") {
-  return routeModule.GET(Object.assign(new Request("http://internal.test"), { params: { id: workspaceId } }) as never);
+function get(workspaceId = "ws-1", headers?: Record<string, string>) {
+  return routeModule.GET(
+    Object.assign(new Request("http://internal.test", { headers }), { params: { id: workspaceId } }) as never,
+  );
 }
 
 function patch(taskId: string, body: unknown, workspaceId = "ws-1") {
@@ -113,6 +122,7 @@ describe("schedules routes", () => {
     updateError = null;
     errorRows = [];
     usersError = null;
+    logged.length = 0;
     tables = {
       scheduled_tasks: [
         task({}),
@@ -161,7 +171,21 @@ describe("schedules routes", () => {
         lastRun: { status: "succeeded", outcome: "changed" },
       });
       expect(sessions).toMatchObject({ preset: "daily", time: "03:00", lastRun: null });
-      expect(slack).toMatchObject({ editable: "toggle_only", connectionLabel: "Acme Slack", needsReconnect: false });
+      expect(slack).toMatchObject({ editable: "toggle_only", connectionLabel: "Slack", needsReconnect: false });
+    });
+
+    it("exposes cron for cron rows and intervalSeconds for interval rows", async () => {
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines[1]).toMatchObject({ cron: "0 3 * * *", intervalSeconds: null });
+      expect(body.routines[2]).toMatchObject({ cron: null, intervalSeconds: 3600 });
+    });
+
+    it("logs agent reads but not browser reads", async () => {
+      await get();
+      expect(logged.map((l) => l.command)).toEqual(["routines.list"]);
+      logged.length = 0;
+      await get("ws-1", { origin: "https://app.example.com" });
+      expect(logged).toEqual([]);
     });
 
     it("flags a disconnected Slack connection", async () => {
