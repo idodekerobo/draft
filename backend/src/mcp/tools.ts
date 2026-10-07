@@ -64,7 +64,7 @@ export function buildMcpServer(userId: string, scopes: string[] = []): McpServer
     },
     {
       instructions:
-        "Draft is the company's self-updating documentation covering product, team, and priorities, kept current automatically. Start with context.list to see available dimensions, then context.read to pull them. To save the whole context as files on disk, use context.export and follow its instructions. The memory dimension is a chronological log rather than a current-state snapshot: pass period (e.g. dimensions: [\"memory\"], period: \"this-week\") to read one day/week/month of it instead of the whole log. For direct evidence beyond the documentation, use sources.search and sources.read. Check skills.list and skills.read for reusable team playbooks before improvising a new approach. When the user asks you to save a workflow as a skill, use skills.add. Use routines.list to see what runs on a schedule (context updates, session summaries, Slack sync) and when each runs next.",
+        "Draft is the company's self-updating documentation covering product, team, and priorities. To get the latest information, call context.read with dimensions: [\"memory\"] and a period. Memory is a chronological log of daily, weekly, and monthly summaries. A period is a day (YYYY-MM-DD), a week (week-YYYY-MM-DD, using that week's Monday), or a month (YYYY-MM); aliases like today, this-week, and last-month also work. For a longer span, read several periods. Use context.list and context.read with other dimensions for stable background. For direct evidence, use sources.search and sources.read. Use context.export only to save the full context as files on disk. Use skills.list and skills.read only when the user asks for a saved skill or workflow, and skills.add only when the user asks to save one. Use routines.list to see what runs on a schedule (context updates, session summaries, Slack sync) and when each runs next.",
     },
   );
 
@@ -92,10 +92,10 @@ export function buildMcpServer(userId: string, scopes: string[] = []): McpServer
   server.registerTool(
     "context.read",
     {
-      description: "Read Draft's maintained business map. For direct evidence, search sources and then read the selected source; the calling agent owns investigation and answer generation. For the memory dimension (a chronological log, not a current-state file), pass period to read one day/week/month document instead of the whole accumulated log -- e.g. dimensions: [\"memory\"], period: \"this-week\".",
+      description: "Read the latest memory or the stable business map. For the latest information, pass dimensions: [\"memory\"] and a period: memory is a chronological log of daily, weekly, and monthly summaries, and the freshest source. Without period, memory returns the whole accumulated log. Other dimensions are current-state background. For direct evidence, search sources and then read the selected source; the calling agent owns investigation and answer generation.",
       inputSchema: z.object({
         dimensions: z.array(z.string()).optional().describe("Dimension names to read; omit for all."),
-        period: z.string().optional().describe("today|yesterday|this-week|last-week|this-month|last-month, or an explicit id (YYYY-MM-DD, week-YYYY-MM-DD, YYYY-MM). Only valid with dimensions: [\"memory\"]."),
+        period: z.string().optional().describe("Day YYYY-MM-DD, week week-YYYY-MM-DD (the week's Monday), or month YYYY-MM; aliases today|yesterday|this-week|last-week|this-month|last-month also work. Only valid with dimensions: [\"memory\"]."),
       }),
     },
     async (args) => {
