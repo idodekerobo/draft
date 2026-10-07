@@ -22,7 +22,7 @@ const BOOT_TIMEOUT_MS = 60_000;
 const SANDBOX_GUEST = {
   cpu_kind: "shared" as const,
   cpus: 1,
-  memory_mb: 512,
+  memory_mb: 1024,
 };
 
 // Narrowed subset of ValidatedRunBundle so non-synthesis callers (e.g.
