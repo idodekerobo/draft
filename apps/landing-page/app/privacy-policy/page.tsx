@@ -284,6 +284,10 @@ export default function PrivacyPolicyPage() {
             </a>
             .
           </p>
+          <p style={pStyle}>
+            We honor the Global Privacy Control signal. If your browser sends it, we do not load the
+            Meta Pixel on our marketing website.
+          </p>
 
           <h2 style={h2Style}>8. Data Security</h2>
           <p style={pStyle}>
