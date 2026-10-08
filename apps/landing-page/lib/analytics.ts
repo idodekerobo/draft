@@ -17,6 +17,10 @@ export const EVENTS = {
   WAITLIST_SUBMITTED: 'waitlist_submitted',
   WAITLIST_PROFILE_SUBMITTED: 'waitlist_profile_submitted',
 
+  // Cal booking
+  CALL_EMBED_OPENED: 'call_embed_opened',
+  CALL_BOOKED: 'call_booked',
+
   // Nav
   NAV_LINK_CLICKED: 'nav_link_clicked',
   NAV_MENU_TOGGLED: 'nav_menu_toggled',

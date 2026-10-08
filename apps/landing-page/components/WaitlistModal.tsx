@@ -5,6 +5,7 @@ import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 import { submitWaitlist } from "@/lib/waitlist";
 import WaitlistProfileStep from "@/components/WaitlistProfileStep";
+import PostSignupCall from "@/components/PostSignupCall";
 
 const OPEN_WAITLIST_EVENT = "draft:open-waitlist";
 
@@ -63,7 +64,6 @@ export default function WaitlistModal() {
 
     try {
       await submitWaitlist(email, source);
-      ph?.capture(EVENTS.WAITLIST_SUBMITTED, { source });
       setSubmitState("success");
     } catch {
       setSubmitState("error");
@@ -96,6 +96,8 @@ export default function WaitlistModal() {
           position: "relative",
           width: "100%",
           maxWidth: "500px",
+          maxHeight: "calc(100vh - 2.5rem)",
+          overflowY: "auto",
           padding: "2.5rem",
           background: "var(--color-bg)",
           border: "1px solid var(--color-border-md)",
@@ -159,6 +161,7 @@ export default function WaitlistModal() {
             <p style={{ margin: 0, color: "var(--color-muted)", lineHeight: 1.6 }}>
               We&apos;ll be in touch ASAP.
             </p>
+            <PostSignupCall email={email} source={source} />
             <WaitlistProfileStep email={email} source={source} />
           </div>
         ) : (

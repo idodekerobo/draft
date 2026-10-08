@@ -7,11 +7,19 @@ import { EVENTS } from "@/lib/analytics";
 import { buildCalLink, CAL_BASE } from "@/lib/attribution";
 import { submitWaitlist } from "@/lib/waitlist";
 import WaitlistProfileStep from "@/components/WaitlistProfileStep";
+import PostSignupCall, { CalEmbed } from "@/components/PostSignupCall";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { OrbComposing } from "@/components/ui/thinking-orb";
 
+const DESKTOP_QUERY = "(min-width: 901px)";
 const subscribeNoop = () => () => {};
+const subscribeDesktop = (onChange: () => void) => {
+  const query = window.matchMedia(DESKTOP_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+};
+const getIsDesktop = () => window.matchMedia(DESKTOP_QUERY).matches;
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
@@ -30,6 +38,9 @@ export default function GetStartedPage() {
   const [email, setEmail] = useState("");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const calHref = useSyncExternalStore(subscribeNoop, buildCalLink, () => CAL_BASE);
+  const isDesktop = useSyncExternalStore(subscribeDesktop, getIsDesktop, () => false);
+  const [callOpen, setCallOpen] = useState(false);
+  const sideCal = callOpen && isDesktop;
 
   useEffect(() => {
     if (waitlistOpen) emailRef.current?.focus();
@@ -50,7 +61,6 @@ export default function GetStartedPage() {
 
     try {
       await submitWaitlist(email, "getstarted");
-      ph?.capture(EVENTS.WAITLIST_SUBMITTED, { source: "getstarted" });
       setSubmitState("success");
     } catch {
       setSubmitState("error");
@@ -58,7 +68,7 @@ export default function GetStartedPage() {
   };
 
   return (
-    <main className="getstarted-page">
+    <main className={`getstarted-page${sideCal ? " is-call-open" : ""}`}>
       <Nav showWaitlist={false} />
       <section className="getstarted-panel" aria-labelledby="getstarted-title">
 
@@ -103,6 +113,13 @@ export default function GetStartedPage() {
                   <p className="getstarted-success" role="status">
                     You&apos;re on the list. We&apos;ll be in touch ASAP.
                   </p>
+                  <PostSignupCall
+                    email={email}
+                    source="getstarted"
+                    open={callOpen}
+                    onOpenChange={setCallOpen}
+                    inlineEmbed={!isDesktop}
+                  />
                   <WaitlistProfileStep email={email} source="getstarted" />
                 </>
               ) : (
@@ -138,6 +155,12 @@ export default function GetStartedPage() {
 
 
       </section>
+
+      {sideCal && (
+        <aside className="getstarted-cal" aria-label="Book a call">
+          <CalEmbed email={email} source="getstarted" />
+        </aside>
+      )}
 
       <figure className="getstarted-media">
         <GetStartedOrb />
