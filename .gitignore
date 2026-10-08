@@ -40,7 +40,6 @@ apps/cli/node_modules
 
 # output
 draft-bin
-background/draft-background-bin
 apps/desktop/build/
 apps/desktop/artifacts/
 out

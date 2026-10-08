@@ -11,7 +11,6 @@ function config(mode: string) {
 describe("worktree desktop configuration", () => {
   test("development copies and watches only tracked assets", () => {
     const dev = config("dev");
-    expect(dev.build.copy["assets/background/"]).toBeUndefined();
     for (const source of Object.keys(dev.build.copy)) expect(existsSync(resolve(import.meta.dir, source))).toBe(true);
     expect(existsSync(resolve(import.meta.dir, dev.build.mac.icons))).toBe(true);
     expect(dev.build.bun.define["process.env.DRAFT_DESKTOP_DEV"]).toBe('"1"');
@@ -19,7 +18,7 @@ describe("worktree desktop configuration", () => {
   });
   test("release builds retain generated assets and packaging hooks", () => {
     const release = config("build");
-    expect(release.build.copy["assets/background/"]).toBe("background/");
+    expect(release.build.copy["assets/background/"]).toBeUndefined();
     expect(release.build.mac.icons).toBe("assets/icon.iconset");
     expect(release.build.bun.define["process.env.DRAFT_DESKTOP_DEV"]).toBe('"0"');
     expect(release.scripts.postBuild).toBe("scripts/postbuild.ts");
