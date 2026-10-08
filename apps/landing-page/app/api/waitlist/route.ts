@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null) as { email?: unknown; source?: unknown } | null;
+  const body = await request.json().catch(() => null) as { email?: unknown; source?: unknown; attribution?: unknown; posthog_distinct_id?: unknown } | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const source = typeof body?.source === "string" ? body.source.slice(0, 80) : "unknown";
 
@@ -24,7 +24,12 @@ export async function POST(request: NextRequest) {
     response = await fetch(`${backendUrl.replace(/\/$/, "")}/waitlist`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, source }),
+      body: JSON.stringify({
+        email,
+        source,
+        attribution: body?.attribution,
+        posthog_distinct_id: body?.posthog_distinct_id,
+      }),
       signal: AbortSignal.timeout(5000),
     });
   } catch (error) {

@@ -4,6 +4,7 @@ import posthog from 'posthog-js';
 import { PostHogProvider as PHProvider, usePostHog } from 'posthog-js/react';
 import { useEffect, Suspense } from 'react';
 import { usePathname } from 'next/navigation';
+import { captureAttribution } from '@/lib/attribution';
 
 // Init at module level so posthog is ready before the first render.
 // The typeof window guard prevents this from running during SSR.
@@ -25,6 +26,7 @@ function PostHogPageView() {
   const ph = usePostHog();
 
   useEffect(() => {
+    if (pathname) captureAttribution();
     if (pathname && ph) {
       ph.capture('$pageview', { $current_url: window.location.href });
     }

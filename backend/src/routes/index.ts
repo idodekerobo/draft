@@ -37,6 +37,7 @@ export const routes = {
   "/health": { GET: health.GET },
   "/whoami": { GET: withCors(whoami.GET), OPTIONS },
   "/waitlist": { POST: waitlist.POST },
+  "/waitlist/profile": { POST: waitlist.PROFILE_POST },
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
   "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
   "/workspaces/:id/context": { GET: withCors(workspaceContext.contextGET), OPTIONS },

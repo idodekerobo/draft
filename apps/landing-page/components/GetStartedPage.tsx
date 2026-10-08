@@ -1,14 +1,17 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
+import { buildCalLink, CAL_BASE } from "@/lib/attribution";
+import { submitWaitlist } from "@/lib/waitlist";
+import WaitlistProfileStep from "@/components/WaitlistProfileStep";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { OrbComposing } from "@/components/ui/thinking-orb";
 
-const CAL_LINK = "https://cal.com/idode/learn-about-draft";
+const subscribeNoop = () => () => {};
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
@@ -26,6 +29,7 @@ export default function GetStartedPage() {
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
+  const calHref = useSyncExternalStore(subscribeNoop, buildCalLink, () => CAL_BASE);
 
   useEffect(() => {
     if (waitlistOpen) emailRef.current?.focus();
@@ -45,14 +49,7 @@ export default function GetStartedPage() {
     setSubmitState("submitting");
 
     try {
-      const response = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, source: "getstarted" }),
-      });
-
-      if (!response.ok) throw new Error("Waitlist submission failed");
-
+      await submitWaitlist(email, "getstarted");
       ph?.capture(EVENTS.WAITLIST_SUBMITTED, { source: "getstarted" });
       setSubmitState("success");
     } catch {
@@ -90,7 +87,7 @@ export default function GetStartedPage() {
             </button>
             <a
               className="getstarted-call-link"
-              href={CAL_LINK}
+              href={calHref}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { source: "getstarted", cta_text: "Book a Call" })}
@@ -102,9 +99,12 @@ export default function GetStartedPage() {
           {waitlistOpen && (
             <div id="getstarted-waitlist" className="getstarted-waitlist is-open">
               {submitState === "success" ? (
-                <p className="getstarted-success" role="status">
-                  You&apos;re on the list. We&apos;ll be in touch when Draft is ready.
-                </p>
+                <>
+                  <p className="getstarted-success" role="status">
+                    You&apos;re on the list. We&apos;ll be in touch ASAP.
+                  </p>
+                  <WaitlistProfileStep email={email} source="getstarted" />
+                </>
               ) : (
                 <form onSubmit={handleSubmit}>
                   <label htmlFor="getstarted-email">Enter your email and we&apos;ll let you know when Draft is ready.</label>

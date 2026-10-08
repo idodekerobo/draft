@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
+import { submitWaitlist } from "@/lib/waitlist";
+import WaitlistProfileStep from "@/components/WaitlistProfileStep";
 
 const OPEN_WAITLIST_EVENT = "draft:open-waitlist";
 
@@ -60,14 +62,7 @@ export default function WaitlistModal() {
     setSubmitState("submitting");
 
     try {
-      const response = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, source }),
-      });
-
-      if (!response.ok) throw new Error("Waitlist submission failed");
-
+      await submitWaitlist(email, source);
       ph?.capture(EVENTS.WAITLIST_SUBMITTED, { source });
       setSubmitState("success");
     } catch {
@@ -162,8 +157,9 @@ export default function WaitlistModal() {
               You&apos;re on the list.
             </h2>
             <p style={{ margin: 0, color: "var(--color-muted)", lineHeight: 1.6 }}>
-              We&apos;ll be in touch when a beta spot opens up.
+              We&apos;ll be in touch ASAP.
             </p>
+            <WaitlistProfileStep email={email} source={source} />
           </div>
         ) : (
           <>

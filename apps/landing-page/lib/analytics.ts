@@ -15,6 +15,7 @@ export const EVENTS = {
   DOCS_CLICKED: 'docs_clicked',
   WAITLIST_OPENED: 'waitlist_opened',
   WAITLIST_SUBMITTED: 'waitlist_submitted',
+  WAITLIST_PROFILE_SUBMITTED: 'waitlist_profile_submitted',
 
   // Nav
   NAV_LINK_CLICKED: 'nav_link_clicked',
