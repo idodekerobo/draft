@@ -34,6 +34,7 @@ Optional public analytics and support configuration:
 NEXT_PUBLIC_CRISP_WEBSITE_ID=
 NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=
+NEXT_PUBLIC_META_PIXEL_ID=
 ~~~
 
 The Crisp history route also uses server-side CRISP_HISTORY_SECRET, CRISP_API_IDENTIFIER, and CRISP_API_KEY. Do not share those values with the web app or desktop app.
