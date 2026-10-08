@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
 import { PostHogProvider } from "@/lib/PostHogProvider";
 // import CrispChat from "@/components/CrispChat";
+import MetaPixel from "@/components/analytics/MetaPixel";
 import ThemeController from "@/components/ThemeController";
 import WaitlistModal from "@/components/WaitlistModal";
 import "./globals.css";
@@ -52,6 +53,7 @@ export default function RootLayout({
       >
         <PostHogProvider>
           <ThemeController />
+          <MetaPixel />
           {children}
           <WaitlistModal />
         </PostHogProvider>
