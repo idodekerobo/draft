@@ -383,6 +383,41 @@ body {
 .getstarted-media-frame img { display: block; width: 100%; height: auto; object-fit: contain; }
 .getstarted-media figcaption { color: var(--getstarted-muted); font-size: 12px; text-align: center; }
 
+@keyframes getstartedFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cal-embed { position: relative; min-height: 560px; width: 100%; }
+.cal-embed[data-ready="true"] { min-height: 0; }
+.cal-embed-frame { opacity: 0; transition: opacity 300ms ease-out; }
+.cal-embed[data-ready="true"] .cal-embed-frame { opacity: 1; }
+.cal-skeleton { position: absolute; inset: 0; padding: 4px 0; pointer-events: none; transition: opacity 300ms ease-out, visibility 0s 300ms; }
+.cal-embed[data-ready="true"] .cal-skeleton { opacity: 0; visibility: hidden; }
+.cal-skeleton-meta { display: flex; flex-direction: column; gap: 12px; }
+.cal-skeleton-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
+.cal-skeleton-block { display: block; background: var(--color-surface-2); border-radius: 6px; animation: calSkeletonPulse 1.4s ease-in-out infinite; }
+@keyframes calSkeletonPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+.getstarted-cal { min-width: 0; padding: 40px clamp(24px, 3vw, 48px); animation: getstartedFadeIn 350ms ease-out both; }
+.getstarted-page.is-call-open .getstarted-panel { min-height: 0; padding-block: 12px; }
+.getstarted-page.is-call-open .getstarted-copy { margin: 0; padding: 2vh 0 0; }
+.getstarted-page.is-call-open .getstarted-copy h1 { font-size: clamp(2.6rem, 4.4vw, 4.4rem); }
+.getstarted-page.is-call-open .getstarted-lede { margin-top: 1.25rem; }
+.getstarted-page.is-call-open .getstarted-body { margin-top: 0.6rem; line-height: 1.55; }
+.getstarted-page.is-call-open .getstarted-actions { margin-top: 1.25rem; }
+.getstarted-page.is-call-open :is(.getstarted-primary, .getstarted-call-link) { min-height: 46px; }
+.getstarted-page.is-call-open .getstarted-waitlist { margin-top: 1rem; }
+.getstarted-page.is-call-open .getstarted-cal { padding-block: 12px; }
+.getstarted-page.is-call-open .cal-embed { height: calc(100dvh - 130px); min-height: 460px; overflow-y: auto; }
+.getstarted-page.is-call-open .getstarted-media {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  padding: 56px clamp(24px, 3vw, 48px) 72px;
+  border-top: 1px solid var(--getstarted-line);
+  animation: getstartedFadeIn 450ms ease-out 150ms both;
+}
+.getstarted-page.is-call-open .getstarted-media .getstarted-orb { width: min(100%, 520px); }
+.getstarted-page.is-call-open .getstarted-media .getstarted-media-frame { width: 100%; }
+
 .getstarted-footer {
   align-items: end;
   display: flex;
@@ -438,7 +473,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .getstarted-form-row button,
   .getstarted-call-link { transition: none; }
-  .getstarted-waitlist { animation: none; }
+  .getstarted-waitlist,
+  .getstarted-cal,
+  .getstarted-page.is-call-open .getstarted-media,
+  .cal-skeleton-block { animation: none; }
+  .cal-embed-frame, .cal-skeleton { transition: none; }
 }
 
 :root {
