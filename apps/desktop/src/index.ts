@@ -1,9 +1,8 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
-import { PLIST_LABEL, PLIST_PATH } from "draft-core/status";
 import { getAppState } from "draft-core/appState";
-import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, BACKGROUND_DIR, type AnalyticsConfig } from "draft-core/config";
+import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { documentsToEntries } from "draft-shared-ui/context-files";
 import { capture } from "./exec";
@@ -13,14 +12,11 @@ import {
   normalizeHostedConnectionList,
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
-import { existsSync, readFileSync, readdirSync, statSync, copyFileSync, cpSync, mkdirSync, chmodSync, writeFileSync, unlinkSync, rmSync } from "fs";
+import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
-import {
-  getBundledBackgroundDir,
-  getBundledDaemonBinPath,
-} from "./main/bundlePath";
 import { runInstall, syncExtractedBins } from "./main/installer";
+import { removeLegacyDaemon } from "./main/legacyDaemon";
 import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
 import type { Routine, RoutinesResponse } from "draft-shared-ui";
@@ -161,7 +157,6 @@ function setAppMenu() {
         { label: "Check for Updates", action: "check-for-updates" },
         { type: "separator" },
         { label: "Quit Draft",       action: "quit-app",        accelerator: "q" },
-        { label: "Quit Completely",  action: "quit-completely"                   },
       ],
     },
     {
@@ -192,10 +187,6 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "quit-app") {
-    win.hide();
-  }
-
-  if (action === "quit-completely") {
     process.exit(0);
   }
 });
@@ -245,7 +236,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           launchOnLogin:             c.launchOnLogin             ?? false,
           notificationsEnabled: preference.enabled,
           disabledContextSections:   c.disabledContextSections   ?? [],
-          codexScanIntervalMinutes:  c.codexScanIntervalMinutes  ?? 360,
         };
       },
 
@@ -932,180 +922,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   },
 });
 
-// ── Daemon binary sync ─────────────────────────────────────────────────────────
-
-function daemonPlistContent(binPath: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${PLIST_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${binPath}</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>${process.env.HOME ?? ""}/.draft/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string>
-        <key>HOME</key>
-        <string>${process.env.HOME ?? ""}</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${BACKGROUND_DIR}/logs/daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>${BACKGROUND_DIR}/logs/daemon-error.log</string>
-    <key>ThrottleInterval</key>
-    <integer>10</integer>
-</dict>
-</plist>
-`;
-}
+// ── Bundled binary sync ────────────────────────────────────────────────────────
 
 async function syncBundledAssets(): Promise<void> {
   if (process.env.DRAFT_DESKTOP_DEV === "1") return;
-  let appVersion: string;
-  let appBuildId: string;
-  let isDevChannel: boolean;
   try {
     const info = await Electrobun.Updater.getLocalInfo();
-    appVersion = info.version;
-    // Two builds can share a version string (e.g. a same-version dev rebuild, or
-    // a hotfix cut without a version bump). `hash` is Electrobun's per-build
-    // content hash for canary/stable builds, so combining it with version
-    // closes that gap there — an earlier same-version build's stamp no longer
-    // permanently masks a later one's real fixes.
-    appBuildId = `${info.version}:${info.hash}`;
-    isDevChannel = info.channel === "dev";
-  } catch {
-    return;
-  }
-
-  // Keep ~/.draft/bin/{draft,bun,tmux} in lockstep with the running build on
-  // every launch — self-update replaces the .app bundle but never re-runs the
-  // onboarding extraction, so already-onboarded users would otherwise keep
-  // stale (possibly broken) binaries forever. Keyed on the same version:hash
-  // build id as the daemon runtime below, and likewise runs before every early
-  // return so it isn't skipped on no-op launches.
-  try {
-    await syncExtractedBins(appBuildId, isDevChannel);
+    // `hash` is Electrobun's per-build content hash; combined with version it
+    // tells apart two builds that share a version string.
+    await syncExtractedBins(`${info.version}:${info.hash}`, info.channel === "dev");
   } catch (err) {
     console.warn(`[draft-desktop] bin sync failed: ${err instanceof Error ? err.message : err}`);
   }
-
-  const sidecarPath = `${BACKGROUND_DIR}/.app-version`;
-  const installedBuildId = existsSync(sidecarPath)
-    ? readFileSync(sidecarPath, "utf8").trim()
-    : null;
-
-  // Plist migration: existing users have a plist pointing at the old bash daemon.
-  const plistContent = existsSync(PLIST_PATH) ? readFileSync(PLIST_PATH, "utf8") : "";
-  const plistNeedsMigration = plistContent.includes("draft-daemon.sh");
-
-  // Electrobun always reports hash="dev" for local dev-channel builds (never
-  // packaged into a hashed update artifact), so two different dev builds are
-  // otherwise indistinguishable under the version:hash key above — confirmed
-  // empirically, hash stayed "dev" across two separate `bun run build:dev`
-  // runs. Always resync on dev rather than risk masking a same-version,
-  // same-hash rebuild; the resync itself is just a few cheap file copies.
-  if (!isDevChannel && installedBuildId === appBuildId && !plistNeedsMigration) return;
-
-  // ── Daemon binary ───────────────────────────────────────────────────────────
-  const bundledBin = getBundledDaemonBinPath();
-  const installedBin = `${BACKGROUND_DIR}/draft-background-bin`;
-
-  if (bundledBin && existsSync(bundledBin)) {
-    try {
-      copyFileSync(bundledBin, installedBin);
-      chmodSync(installedBin, 0o755);
-      console.log(`[draft-desktop] daemon binary updated to ${appVersion}`);
-    } catch (err) {
-      console.warn(`[draft-desktop] daemon binary sync failed: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  // ── Daemon runtime scripts ─────────────────────────────────────────────────
-  // Keep the Codex scanner and synthesis runtime in lockstep with the daemon
-  // binary while preserving user-generated queues, state, and logs.
-  const backgroundDir = getBundledBackgroundDir();
-  const runtimeFiles = [
-    "install.sh",
-    "start.sh",
-    "status.sh",
-    "stop.sh",
-    "uninstall.sh",
-  ];
-  const runtimeDirectories = ["intelligence", "integrations", "synthesizers"];
-
-  if (existsSync(backgroundDir)) {
-    try {
-      for (const relativePath of runtimeFiles) {
-        const source = join(backgroundDir, relativePath);
-        if (!existsSync(source)) continue;
-        copyFileSync(source, join(BACKGROUND_DIR, relativePath));
-        if (relativePath.endsWith(".sh")) chmodSync(join(BACKGROUND_DIR, relativePath), 0o755);
-      }
-
-      for (const relativeDir of runtimeDirectories) {
-        const sourceDir = join(backgroundDir, relativeDir);
-        if (!existsSync(sourceDir)) continue;
-        mkdirSync(join(BACKGROUND_DIR, relativeDir), { recursive: true });
-        for (const entry of readdirSync(sourceDir)) {
-          cpSync(join(sourceDir, entry), join(BACKGROUND_DIR, relativeDir, entry), {
-            recursive: true,
-            force: true,
-          });
-        }
-      }
-
-      // The build manifest is an explicit allowlist of bundled JS entrypoints.
-      // Remove their raw-TS predecessors so Bun does not prefer stale source.
-      const runtimeManifest = join(backgroundDir, ".runtime-bundles");
-      if (existsSync(runtimeManifest)) {
-        for (const bundledPath of readFileSync(runtimeManifest, "utf8").split(/\r?\n/)) {
-          if (!bundledPath || bundledPath.startsWith("/") || bundledPath.includes("\\") || bundledPath.split("/").includes("..")) continue;
-          if (!/^(integrations|synthesizers|intelligence)\/[a-zA-Z0-9_./-]+\.js$/.test(bundledPath)) continue;
-          const staleTs = join(BACKGROUND_DIR, bundledPath.replace(/\.js$/, ".ts"));
-          if (existsSync(staleTs)) unlinkSync(staleTs);
-        }
-      }
-      // Older releases copied the monorepo dependency tree into the installed
-      // runtime. Bundles are self-contained now; this exact generated path is
-      // the only directory-level stale asset cleanup performed here.
-      rmSync(join(BACKGROUND_DIR, "node_modules"), { recursive: true, force: true });
-      console.log(`[draft-desktop] daemon runtime synced to ${appVersion}`);
-    } catch (err) {
-      console.warn(`[draft-desktop] daemon runtime sync failed: ${err instanceof Error ? err.message : err}`);
-      return;
-    }
-  }
-
-  // ── Plist migration ─────────────────────────────────────────────────────────
-  if (plistNeedsMigration) {
-    try {
-      writeFileSync(PLIST_PATH, daemonPlistContent(installedBin), "utf8");
-      await capture(["launchctl", "bootout", `gui/${process.getuid!()}/${PLIST_LABEL}`]).catch(() => {});
-      await capture(["launchctl", "bootstrap", `gui/${process.getuid!()}`, PLIST_PATH]);
-      await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/${PLIST_LABEL}`]);
-      console.log("[draft-desktop] daemon plist migrated to draft-background-bin");
-    } catch (err) {
-      console.warn(`[draft-desktop] daemon plist migration failed: ${err instanceof Error ? err.message : err}`);
-    }
-  } else if (bundledBin && existsSync(bundledBin)) {
-    try {
-      await capture(["launchctl", "kickstart", "-k", `gui/${process.getuid!()}/com.draft.daemon`]);
-    } catch {
-      // Non-fatal: daemon will use the new binary on next natural restart (keepalive).
-    }
-  }
-
-  // Write sidecar last — if any step above threw, we'll retry on next launch.
-  writeFileSync(sidecarPath, appBuildId, "utf8");
 }
 
 // ── Update helpers ─────────────────────────────────────────────────────────────
@@ -1156,6 +984,7 @@ let win = createMainWindow(false);
 // webview.messages once the dom-ready event is wired.
 
 setTimeout(async () => {
+  await removeLegacyDaemon();
   await syncBundledAssets();
 
   const profile = getActiveProfile();
