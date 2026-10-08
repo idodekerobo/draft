@@ -86,7 +86,7 @@ export default function PrivacyPolicyPage() {
               letterSpacing: "0.04em",
             }}
           >
-            Draft / Product Manager Agent | Effective Date: March 1, 2026
+            Draft / Product Manager Agent | Effective Date: October 8, 2026
           </p>
         </div>
 
@@ -127,6 +127,11 @@ export default function PrivacyPolicyPage() {
             <li>Billing and payment information for paid subscription tiers</li>
             <li>Communications you send to us (e.g., support requests)</li>
             <li>Preferences and settings you configure within the Service</li>
+            <li>
+              Waitlist and call-booking information, such as your email address, optional answers you
+              give us (what you use AI for in your business, your team size, and how you heard about
+              us), and details you enter when you schedule a call
+            </li>
           </ul>
 
           <h3 style={h3Style}>2.2 Information Collected Automatically</h3>
@@ -135,6 +140,10 @@ export default function PrivacyPolicyPage() {
             <li>Usage data such as features accessed, session duration, and interaction logs</li>
             <li>Device and browser information (type, operating system, IP address)</li>
             <li>Cookies and similar tracking technologies (see Section 7)</li>
+            <li>
+              Marketing and attribution data on our website, such as campaign (UTM) tags,
+              advertising click identifiers, the page you landed on, and the site that referred you
+            </li>
             <li>Performance and diagnostic data to improve the Service</li>
           </ul>
 
@@ -163,10 +172,16 @@ export default function PrivacyPolicyPage() {
             <li>Communicate with you about your account, updates, and support</li>
             <li>Improve and develop new features and capabilities</li>
             <li>Monitor and analyze usage patterns and performance</li>
+            <li>Follow up with people who join our waitlist or book a call</li>
+            <li>Understand which marketing channels bring visitors, and measure and improve our advertising</li>
             <li>Comply with legal obligations and enforce our agreements</li>
             <li>Detect and prevent fraud, abuse, or security incidents</li>
           </ul>
-          <p style={pStyle}>We do not sell your personal information to third parties.</p>
+          <p style={pStyle}>
+            We do not sell your personal information for money. We do use advertising partners as
+            described in Sections 5 and 7, and some laws treat that as &quot;sharing&quot; personal
+            information for targeted advertising. Section 10 explains how to opt out.
+          </p>
 
           <h2 style={h2Style}>4. AI and Large Language Model Processing</h2>
           <p style={pStyle}>
@@ -188,13 +203,22 @@ export default function PrivacyPolicyPage() {
             <li>
               <strong style={{ color: "var(--color-primary)" }}>Service Providers:</strong> We share
               data with trusted third-party vendors who help us operate the Service, including cloud
-              hosting providers, analytics platforms, payment processors, and AI/LLM providers. These
-              parties are contractually obligated to protect your data.
+              hosting providers, analytics platforms, scheduling tools such as Cal.com, payment
+              processors, and AI/LLM providers. These parties are contractually obligated to protect
+              your data.
             </li>
             <li>
               <strong style={{ color: "var(--color-primary)" }}>Third-Party Analytics:</strong> We use
               analytics tools to understand how the Service is used. These tools may collect anonymized
-              or pseudonymized usage data.
+              or pseudonymized usage data. On our marketing website we use PostHog for analytics and
+              session replay, with text and form inputs masked.
+            </li>
+            <li>
+              <strong style={{ color: "var(--color-primary)" }}>Advertising Partners:</strong> We use
+              the Meta Pixel on our marketing website. It sends Meta Platforms, Inc. information about
+              your visit, such as the pages you view, your browser and device identifiers, and actions
+              like joining our waitlist or booking a call. Meta uses this to measure our ads and to
+              show ads to you and to others, under its own privacy policy.
             </li>
             <li>
               <strong style={{ color: "var(--color-primary)" }}>Legal Requirements:</strong> We may
@@ -220,6 +244,10 @@ export default function PrivacyPolicyPage() {
             legitimate business purposes.
           </p>
           <p style={pStyle}>
+            Waitlist and call-booking information is kept until you ask us to delete it or we no
+            longer need it to follow up with you.
+          </p>
+          <p style={pStyle}>
             Data from third-party integrations is retained only as long as needed to fulfill your
             requests and is not stored indefinitely beyond what is operationally necessary.
           </p>
@@ -230,6 +258,31 @@ export default function PrivacyPolicyPage() {
             gather analytics. You may configure your browser to refuse cookies, though some features of
             the Service may not function properly without them. We do not currently respond to &apos;Do Not
             Track&apos; signals, but we respect applicable privacy laws regarding user tracking.
+          </p>
+          <p style={pStyle}>
+            On our marketing website, we and our partners use cookies and similar technologies for
+            analytics and advertising. These include PostHog analytics and the Meta Pixel, which sets
+            the &quot;_fbp&quot; and &quot;_fbc&quot; cookies to identify your browser and to link a visit to an ad click.
+            To limit this, you can block cookies or use an ad blocker in your browser. You can also
+            manage how Meta uses your information for ads in your{" "}
+            <a
+              href="https://www.facebook.com/adpreferences/ad_settings"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              Meta ad settings
+            </a>
+            , or opt out of interest-based advertising from participating companies at{" "}
+            <a
+              href="https://optout.aboutads.info"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--color-accent)", textDecoration: "none" }}
+            >
+              optout.aboutads.info
+            </a>
+            .
           </p>
 
           <h2 style={h2Style}>8. Data Security</h2>
@@ -276,6 +329,12 @@ export default function PrivacyPolicyPage() {
               <strong style={{ color: "var(--color-primary)" }}>Opt-out:</strong> Opt out of certain
               data processing activities, such as analytics
             </li>
+            <li>
+              <strong style={{ color: "var(--color-primary)" }}>Targeted advertising:</strong> If you
+              live in a US state with a privacy law, you may opt out of the sharing of your personal
+              information for targeted advertising. Email us at the address in Section 13 and we will
+              act on your request.
+            </li>
           </ul>
           <p style={pStyle}>
             To exercise any of these rights, please contact us through our website at{" "}
@@ -291,8 +350,8 @@ export default function PrivacyPolicyPage() {
           <h2 style={h2Style}>11. Third-Party Links and Integrations</h2>
           <p style={pStyle}>
             The Service integrates with and may contain links to third-party websites and services. This
-            Privacy Policy applies only to our Service. Third-party platforms such as Notion, Slack, and
-            GitHub have their own privacy policies, which we encourage you to review. We are not
+            Privacy Policy applies only to our Service. Third-party platforms such as Notion, Slack,
+            GitHub, Meta, Cal.com, and PostHog have their own privacy policies, which we encourage you to review. We are not
             responsible for the privacy practices of third-party services.
           </p>
 
@@ -333,7 +392,7 @@ export default function PrivacyPolicyPage() {
               letterSpacing: "0.04em",
             }}
           >
-            Last updated: March 1, 2026
+            Last updated: October 8, 2026
           </div>
         </div>
       </section>
