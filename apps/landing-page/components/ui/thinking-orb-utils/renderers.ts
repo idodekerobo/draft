@@ -452,14 +452,21 @@ export function renderRibbonOrRing(size: number, time: number, opts: BaseConfig)
   const cy = size / 2
   const radius = (size / 2) * 0.78
   const spin = opts.spin ?? 1
-  const project = create3DRotation(time * 0.1 * spin, 0.3, cx, cy, 1)
+  const isDirectional = opts.waveAngle !== undefined
+  const ringWaveAngle = -(opts.waveAngle ?? 0)
+  const project = create3DRotation(isDirectional ? 0 : time * 0.1 * spin, 0.3, cx, cy, 1)
   const scale = responsiveScale(size, opts.rsPow ?? 0.6)
   const dots: RenderDot[] = []
   const ghostCount = opts.ghostN ?? 150
 
   for (let i = 0; i < ghostCount; i++) {
     const p = fibonacciSphere(i, ghostCount)
-    const [px, py, pz] = project(p[0] * radius, p[1] * radius, p[2] * radius)
+    const [projectedX, projectedY, pz] = project(p[0] * radius, p[1] * radius, p[2] * radius)
+    const screenAngle = Math.atan2(projectedY - cy, projectedX - cx)
+    const facing = Math.max(0, Math.cos(screenAngle - (opts.waveAngle ?? 0)))
+    const bulge = (opts.waveAmount ?? 0) * 0.2 * facing ** 8
+    const px = cx + (projectedX - cx) * (1 + bulge)
+    const py = cy + (projectedY - cy) * (1 + bulge)
     const depth = (pz / radius + 1) / 2
     dots.push({
       x: px,
@@ -471,8 +478,8 @@ export function renderRibbonOrRing(size: number, time: number, opts: BaseConfig)
     })
   }
 
-  const rotAngle = time * 0.24 * spin
-  const tiltAngle = opts.faceOn ? -0.3 : 0.55 + 0.3 * Math.sin(time * 0.18) * spin
+  const rotAngle = isDirectional ? 0 : time * 0.24 * spin
+  const tiltAngle = opts.faceOn ? -0.3 : isDirectional ? 0.55 : 0.55 + 0.3 * Math.sin(time * 0.18) * spin
   const cosR = Math.cos(rotAngle)
   const sinR = Math.sin(rotAngle)
   const tx = -sinR * Math.sin(tiltAngle)
@@ -493,10 +500,14 @@ export function renderRibbonOrRing(size: number, time: number, opts: BaseConfig)
 
     for (let seg = 0; seg < segs; seg++) {
       const segAngle = (seg / segs) * 2 * Math.PI
-      const ripple =
-        (0.16 * Math.sin(segAngle * 3 - time * 1.7 + lane * 0.22) + 0.07 * Math.sin(segAngle * 5 + time * 1.1)) *
-        (opts.wobMul ?? 1)
-      const radialScale = opts.faceOn ? 1 + ripple : 1
+      const wavePosition = Math.cos(segAngle - ringWaveAngle)
+      const defaultRipple = 0.16 * Math.sin(segAngle * 3 - time * 1.7 + lane * 0.22) + 0.025 * Math.sin(segAngle * 5 + time * 1.1)
+      const directionalRipple = 0.16 * Math.sin(wavePosition * 3 - time * 1.7 + lane * 0.22) + 0.025 * Math.sin(wavePosition * 5 - time * 1.1)
+      const directionAmount = isDirectional ? opts.waveAmount ?? 0 : 0
+      const ripple = (defaultRipple + (directionalRipple - defaultRipple) * directionAmount) * (opts.wobMul ?? 1)
+      const facing = Math.max(0, Math.cos(segAngle - ringWaveAngle))
+      const bulge = directionAmount * 0.2 * facing ** 8
+      const radialScale = (opts.faceOn ? 1 + ripple : 1) + bulge
       const normalOffset = opts.faceOn ? laneOffset : laneOffset + ripple
 
       const vx = cosR * Math.cos(segAngle) + tx * Math.sin(segAngle) + nx * normalOffset

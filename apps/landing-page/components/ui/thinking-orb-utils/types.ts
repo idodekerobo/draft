@@ -56,4 +56,7 @@ export interface ThinkingOrbProps extends React.HTMLAttributes<HTMLDivElement> {
    * @default 'play'
    */
   playback?: 'play' | 'pause'
+
+  /** Steer the rendered animation toward the active pointer without moving the orb. */
+  pointerFollow?: boolean
 }

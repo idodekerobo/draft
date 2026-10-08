@@ -35,6 +35,8 @@ export interface BaseConfig {
   rDot?: number
   iconD?: number
   spin?: number
+  waveAngle?: number
+  waveAmount?: number
   bandMul?: number
   wobMul?: number
   spread?: number
