@@ -24,7 +24,7 @@ Builds without a PostHog key (for example self-hosted and open-source builds) se
 
 ## How events are linked to you
 
-After you turn usage data on, the web and desktop apps identify events with your Draft account id (a random UUID). This joins your web and desktop use. It is pseudonymous: it is not your name or email, but Draft can map it to your account. The desktop background process reports a few health events (`daemon_started`, `daemon_daily_alive`, `daemon_synthesis_completed`, `daemon_synthesis_failed`) with a random per-device id instead.
+After you turn usage data on, the web and desktop apps identify events with your Draft account id (a random UUID). This joins your web and desktop use. It is pseudonymous: it is not your name or email, but Draft can map it to your account.
 
 When you turn usage data off, the apps stop sending events and reset the PostHog identity in that app.
 

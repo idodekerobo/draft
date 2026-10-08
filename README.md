@@ -47,7 +47,6 @@ The local components connect your agents and computer to the Draft workspace:
 - The CLI authenticates against the configured Draft API, can read workspace context and coding-agent session data, and can connect/disconnect the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code) directly — see `draft integrations` in the [CLI reference](./docs/cli.md).
 - The remote MCP server lets supported agents query the authenticated workspace directly during a session. The current read-only tools expose context dimensions, full context documents, and shared skills.
 - The CLI is the scriptable connection path: it can read context and skills, configure project instruction files, install session capture, and manage hosted integrations. Use MCP for direct in-session access and the CLI for setup, scripts, and explicit reads.
-- The `background/` module is a local daemon/runtime path still used by desktop bundles. It discovers Codex sessions and runs local Codex synthesis; it is not the hosted workspace or hosted synthesis control plane.
 - The CLI can install a Claude Code project hook that reads a completed transcript from the project machine and sends it to the configured Draft API. The local machine keeps authentication state, project configuration, and temporary capture/runtime files.
 
 The canonical company brain is the workspace in the Draft deployment, not a Git repository on the user's machine. Local files are connection state, caches, runtime state, or source material waiting to be uploaded.
@@ -73,7 +72,7 @@ Self-hosting runs the same product architecture under your control:
 - **Electrobun desktop app** configured to point at your API and web app.
 - **Bun CLI** configured to point at your API and Supabase project.
 
-The Makefile provides one-command local workflows, but not a single-command production deployment. `make run-local` starts the local web app, landing page, backend, and desktop supervisor. `make dev-refresh` rebuilds and installs the local CLI, daemon binary, and bundled background runtimes after changes to `apps/cli/` or `background/`. A self-hosted production deployment still requires configuring and deploying each service, applying the Supabase migrations, creating the required GitHub App credentials, and providing the backend's Fly Machines configuration.
+The Makefile provides one-command local workflows, but not a single-command production deployment. `make run-local` starts the local web app, landing page, backend, and desktop supervisor. `make dev-refresh` rebuilds and installs the local CLI binary after changes to `apps/cli/`. A self-hosted production deployment still requires configuring and deploying each service, applying the Supabase migrations, creating the required GitHub App credentials, and providing the backend's Fly Machines configuration.
 
 ### Local development
 
@@ -88,7 +87,7 @@ cp .env.example .env.staging
 # Bare `bun run` scripts load staging through this symlink:
 ln -s .env.staging .env.development
 make run-local
-# After changing apps/cli/ or background/:
+# After changing apps/cli/:
 make dev-refresh
 ~~~
 
@@ -123,7 +122,6 @@ draft/
 │   └── cli/              # Bun CLI for hosted or self-hosted API access
 ├── shared-ui/            # Shared React onboarding and integration UI
 ├── core/                 # Shared auth, config, runtime, and sync primitives
-├── background/           # Local Codex session scanner and synthesis runtime
 ├── cli-agent-plugin/     # Current, evolving agent connection integrations
 ├── supabase/             # Database migrations and local Supabase configuration
 └── Makefile              # Local stack and release automation
