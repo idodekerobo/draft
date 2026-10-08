@@ -24,15 +24,6 @@ export function getBundleResourcesPath(): string | null {
   return join(appPath, "Contents", "Resources");
 }
 
-/** Path to bundled background/ daemon scripts. Falls back to repo sibling in dev mode. */
-export function getBundledBackgroundDir(): string {
-  const resources = getBundleResourcesPath();
-  // Electrobun places copy: assets under Resources/app/, not Resources/ directly
-  if (resources) return join(resources, "app", "background");
-  // Dev fallback: apps/desktop/ is two levels below repo root
-  return join(import.meta.dir, "../../../../background");
-}
-
 /** Path to bundled compiled draft binary. Returns null in dev mode (binary not compiled). */
 export function getBundledBinPath(): string | null {
   const execPath = process.execPath;
@@ -61,14 +52,4 @@ export function getBundledTmuxPath(): string | null {
   if (idx === -1) return null;
   const appPath = execPath.slice(0, idx + ".app".length);
   return join(appPath, "Contents", "MacOS", "tmux");
-}
-
-/** Path to bundled daemon binary (Contents/MacOS/draft-background-bin). Returns null in dev mode. */
-export function getBundledDaemonBinPath(): string | null {
-  const execPath = process.execPath;
-  const marker = ".app/Contents/MacOS/";
-  const idx = execPath.indexOf(marker);
-  if (idx === -1) return null;
-  const appPath = execPath.slice(0, idx + ".app".length);
-  return join(appPath, "Contents", "MacOS", "draft-background-bin");
 }

@@ -1,8 +1,8 @@
 .PHONY: run-local run-landing stop
 
 # Starts web (3000), landing (3001), API (8787), and desktop in one foreground
-# supervisor. Copy .env.example to the root .env.staging before starting. Core/
-# background are intentionally excluded. Stop all children with Ctrl-C.
+# supervisor. Copy .env.example to the root .env.staging before starting. Core is
+# intentionally excluded. Stop all children with Ctrl-C.
 #
 #   make run-local                  # loads .env.staging
 #   make run-local env=production   # loads .env.production (prod) instead
@@ -16,38 +16,22 @@ stop:
 	-lsof -ti:3001 | xargs kill -9 2>/dev/null || true
 	@echo "All services stopped."
 
-# ── Dev CLI/Daemon Refresh ───────────────────────────────────────────────────
+# ── Dev CLI Refresh ──────────────────────────────────────────────────────────
 #
 #   make dev-refresh
-#     Compiles fresh `draft` CLI + daemon binaries and bundled runtime (pollers,
-#     synthesizers, intelligence adapters) from current source via prebuild.sh,
-#     then installs straight from that freshly-built apps/desktop/assets/background/
-#     tree — the same tree a real app bundle ships — to where the real,
-#     globally-installed daemon/CLI run from (~/.draft/bin/draft,
-#     ~/.draft/background/). Use this after changing background/ or apps/cli/ code,
-#     so `draft status`/`draft poll` and the auto-polling daemon loop reflect
-#     your latest changes — `bun run dev` in apps/desktop/ alone does NOT rebuild
-#     either binary.
-#
-#     Deliberately does NOT install from the bare repo-root background/ dir:
-#     that tree only has raw .ts sources (no bundled .js), so a plain
-#     `bash background/install.sh` silently leaves any previously-installed
-#     bundle in place — including a stale, pre-fix one — since
-#     resolveRuntimeEntrypoint() prefers .js over .ts. Installing from
-#     apps/desktop/assets/background/ (always a full fresh rebuild — prebuild.sh
-#     wipes and recreates it every run) avoids that trap entirely.
+#     Compiles a fresh `draft` CLI binary from current source via prebuild.sh
+#     and installs it to ~/.draft/bin/draft. Use this after changing apps/cli/
+#     code — `bun run dev` in apps/desktop/ alone does NOT rebuild the binary.
 
 .PHONY: dev-refresh
 
 dev-refresh:
-	@echo "[dev-refresh] Compiling fresh CLI + daemon binaries + runtime bundles..."
+	@echo "[dev-refresh] Compiling fresh CLI binary..."
 	@bash apps/desktop/scripts/prebuild.sh
 	@echo "[dev-refresh] Deploying CLI binary..."
 	@cp apps/desktop/assets/bin/draft ~/.draft/bin/draft
-	@echo "[dev-refresh] Installing daemon (binary + runtime bundles) from freshly built assets..."
-	@bash apps/desktop/assets/background/install.sh
 	@echo ""
-	@echo "[dev-refresh] Done. Verify with: draft status"
+	@echo "[dev-refresh] Done. Verify with: draft --version"
 	@echo ""
 
 # ── CLI Plugin ────────────────────────────────────────────────────────────────

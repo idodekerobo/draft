@@ -24,7 +24,7 @@ Draft is a hosted or self-hosted company-brain system. The workspace and synthes
         +----------> workspace context <----------+
                               ^
                               |
-       Desktop · CLI · MCP · agent hooks · local daemon
+       Desktop · CLI · MCP · agent hooks
                     running on user machines
 ~~~
 
@@ -43,10 +43,6 @@ The Bun CLI is a thin authenticated client for the Draft API. It supports auth, 
 ### Agent connection
 
 The remote MCP server is an OAuth-protected, stateless HTTP connection to the workspace. It resolves the caller's team workspace server-side and exposes read-only context and skills tools. The CLI and tool-specific setup commands remain useful for project-local instructions, explicit reads, scripts, and session capture. A session hook can read a completed coding-agent transcript and post it to the backend using an ingest token scoped to one project and provider set — a token minted for one project cannot submit sessions for another, even within the same workspace.
-
-### Background daemon
-
-The `background/` module powers the local desktop runtime. It provides the installed daemon, Codex session scanner, pending job queue, and bundled Codex source/intelligence adapters. `apps/desktop/scripts/prebuild.sh` copies and bundles it into desktop assets, and `make dev-refresh` installs the local runtime. Agent connections are opt-in through the CLI or tool-specific setup. Hosted production ingestion and synthesis run through the Bun backend and Fly Machine sandbox; the background module handles local Codex discovery and processing.
 
 ## Backend
 

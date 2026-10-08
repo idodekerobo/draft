@@ -580,10 +580,10 @@ export function detectPending(opts?: ScanSkillOpts & { manifestPath?: string }):
  * expected state for an INACTIVE profile (its symlink was torn down by
  * uninstallPersonalSkills on profile switch, and is not a corruption to
  * repair) — reconcile would incorrectly "repair" it by recreating a symlink
- * that belongs to a profile that isn't active. Callers (background daemon
- * periodic reconcile, crash-recovery paths) must guarantee this, and must not
+ * that belongs to a profile that isn't active. Callers (crash-recovery
+ * paths) must guarantee this, and must not
  * run while a profile switch is in flight (see the profile-switch lock in
- * core/src/sync/team-assets.ts and background/draft-background.ts).
+ * core/src/sync/team-assets.ts).
  */
 export function reconcileSkillManifest(opts?: ScanSkillOpts & { manifestPath?: string }): ReconcileResult {
   const result: ReconcileResult = { repaired: [], tombstoned: [], orphaned: [], conflicts: [] };

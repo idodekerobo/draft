@@ -17,9 +17,6 @@ type DesktopAnalyticsEvent =
   | { event: "app_launched";               props: { user_state: string } }
   | { event: "view_navigated";             props: { view: View } }
   | { event: "proposal_actioned";          props: { action: "accepted" | "rejected"; source: string } }
-  | { event: "daemon_start_attempted";     props: Record<string, never> }
-  | { event: "daemon_start_succeeded";     props: { duration_ms: number } }
-  | { event: "daemon_start_failed";        props: { error_code: string } }
   | { event: "tool_installed";             props: { tool: string } }
   | { event: "install_failed";             props: { tool: string; step_label: string } }
   | { event: "context_section_toggled";    props: { section: string; enabled: boolean } }

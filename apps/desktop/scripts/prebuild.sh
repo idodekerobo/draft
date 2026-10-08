@@ -2,11 +2,9 @@
 # apps/desktop/scripts/prebuild.sh — prepare bundled assets before electrobun build
 #
 # What this does:
-#   1. Copies background/ daemon scripts → apps/desktop/assets/background/
-#   2. Builds tmux (and libevent) from source → apps/desktop/assets/bin/tmux
-#   3. Compiles the draft CLI as a standalone binary → apps/desktop/assets/bin/draft
-#   4. Compiles the daemon binary → apps/desktop/assets/background/draft-background-bin
-#   5. Stages the app icon set
+#   1. Builds tmux (and libevent) from source → apps/desktop/assets/bin/tmux
+#   2. Compiles the draft CLI as a standalone binary → apps/desktop/assets/bin/draft
+#   3. Stages the app icon set
 #
 # Run before every build. Idempotent — wipes and recreates assets/ each time.
 # assets/ is gitignored (build artifact, not committed). The tmux build is cached
@@ -26,97 +24,7 @@ log() { echo -e "${GREEN}[prebuild]${NC} $1"; }
 # ── Clean ──────────────────────────────────────────────────────────────────────
 
 rm -rf "$ASSETS_DIR"
-mkdir -p "$ASSETS_DIR/background" "$ASSETS_DIR/bin"
-
-# ── 1. Copy daemon scripts ─────────────────────────────────────────────────────
-
-log "Copying background/..."
-cp -r "$REPO_ROOT/background/." "$ASSETS_DIR/background/"
-# Runtime entrypoints are bundled below; never ship the monorepo dependency tree.
-rm -rf "$ASSETS_DIR/background/node_modules"
-log "  Done"
-
-# Bundle entrypoints that run after installation, outside the monorepo. Raw
-# TypeScript there cannot resolve workspace packages such as draft-core.
-log "Bundling installed TypeScript runtime entrypoints..."
-RUNTIME_MANIFEST="$ASSETS_DIR/background/.runtime-bundles"
-: > "$RUNTIME_MANIFEST"
-
-# Bundle the Codex scanner, Codex synthesizer, and Codex intelligence adapter.
-# Keep the source scan so newly added executable Codex runtimes are included.
-{
-  find "$REPO_ROOT/background/integrations" -type f \
-    \( -name '*-poller.ts' -o -name '*-analyzer.ts' -o -name '*-scanner.ts' \
-       \)
-  find "$REPO_ROOT/background/synthesizers" -maxdepth 1 -type f -name 'codex-session.ts'
-  find "$REPO_ROOT/background/intelligence" -maxdepth 1 -type f -name 'codex.ts'
-} | sort | while IFS= read -r runtime_source; do
-    relative_path="${runtime_source#"$REPO_ROOT/background/"}"
-    relative_output="${relative_path%.ts}.js"
-    runtime_output="$ASSETS_DIR/background/$relative_output"
-    mkdir -p "$(dirname "$runtime_output")"
-    bun build --target=bun --outfile "$runtime_output" "$runtime_source"
-    printf '%s\n' "$relative_output" >> "$RUNTIME_MANIFEST"
-  done
-
-for expected_bundle in \
-  "integrations/codex/codex-scanner.js" \
-  "synthesizers/codex-session.js" \
-  "intelligence/codex.js"; do
-  if ! grep -Fxq "$expected_bundle" "$RUNTIME_MANIFEST"; then
-    echo "[prebuild] ERROR: required Codex runtime missing from bundle manifest: $expected_bundle" >&2
-    exit 1
-  fi
-done
-
-# Do not ship tests or duplicate raw sources for manifest-listed entrypoints.
-rm -rf "$ASSETS_DIR/background/__tests__"
-while IFS= read -r relative_output; do
-  [ -n "$relative_output" ] || continue
-  rm -f "$ASSETS_DIR/background/${relative_output%.js}.ts"
-done < "$RUNTIME_MANIFEST"
-
-# Smoke-test the staged bundles from a HOME with no monorepo node_modules.
-SMOKE_ROOT=$(mktemp -d)
-SMOKE_HOME="$SMOKE_ROOT/home"
-SMOKE_INSTALL="$SMOKE_ROOT/install/background"
-mkdir -p "$SMOKE_HOME" "$SMOKE_INSTALL"
-cp -R "$ASSETS_DIR/background/." "$SMOKE_INSTALL/"
-trap 'rm -rf "$SMOKE_ROOT"' EXIT
-
-# Bounded per-entrypoint window, no `timeout`/`gtimeout` dependency (poll + kill —
-# portable across a clean macOS with no coreutils installed).
-SMOKE_TIMEOUT_S=8
-
-while IFS= read -r relative_output; do
-  [ -n "$relative_output" ] || continue
-  runtime_entry="$SMOKE_INSTALL/$relative_output"
-  smoke_log="$SMOKE_ROOT/smoke-output.log"
-  : > "$smoke_log"
-  HOME="$SMOKE_HOME" bun run "$runtime_entry" > "$smoke_log" 2>&1 &
-  smoke_pid=$!
-  elapsed_ticks=0
-  max_ticks=$((SMOKE_TIMEOUT_S * 2))
-  while kill -0 "$smoke_pid" 2>/dev/null && [ "$elapsed_ticks" -lt "$max_ticks" ]; do
-    sleep 0.5
-    elapsed_ticks=$((elapsed_ticks + 1))
-  done
-  if kill -0 "$smoke_pid" 2>/dev/null; then
-    kill -9 "$smoke_pid" 2>/dev/null || true
-  fi
-  wait "$smoke_pid" 2>/dev/null || true
-  smoke_output=$(cat "$smoke_log")
-  if [[ "$smoke_output" == *"Cannot find module"* ]] \
-     || [[ "$smoke_output" == *"Cannot find package"* ]] \
-     || [[ "$smoke_output" == *"ModuleNotFound"* ]]; then
-    echo "[prebuild] ERROR: runtime smoke test failed for $runtime_entry" >&2
-    echo "$smoke_output" >&2
-    exit 1
-  fi
-done < "$RUNTIME_MANIFEST"
-rm -rf "$SMOKE_ROOT"
-trap - EXIT
-log "  Done"
+mkdir -p "$ASSETS_DIR/bin"
 
 # ── 2. Build tmux from source ─────────────────────────────────────────────────
 #
@@ -124,7 +32,7 @@ log "  Done"
 # Homebrew binary to every user: it dynamically linked
 # /opt/homebrew/opt/{libevent,ncurses,utf8proc}/lib/*.dylib — paths that exist
 # only on the release builder's Mac — and carried a minos of 15.0. Since
-# installer.ts copies the bundled tmux to ~/.draft/bin/tmux and the daemon puts
+# installer.ts copies the bundled tmux to ~/.draft/bin/tmux and agent sessions put
 # ~/.draft/bin first on PATH, that binary also *shadowed* a user's own working
 # `brew install tmux`. It could not load for virtually anyone.
 #
@@ -317,8 +225,7 @@ fi
 
 log "  Target: $BUN_TARGET"
 
-# Bake in Supabase config, same as the daemon compile below and
-# apps/cli/scripts/build.ts's dedicated CLI release build.
+# Bake in Supabase config, same as apps/cli/scripts/build.ts's dedicated CLI release build.
 DRAFT_SUPABASE_URL=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('supabase_url',''))" 2>/dev/null || echo "")
 DRAFT_SUPABASE_PUBLISHABLE_KEY=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('supabase_publishable_key',''))" 2>/dev/null || echo "")
 
@@ -338,25 +245,6 @@ bun build \
 chmod +x "$ASSETS_DIR/bin/draft"
 log "  Binary: assets/bin/draft"
 
-# ── 5. Compile daemon binary ───────────────────────────────────────────────────
-
-log "Compiling daemon binary..."
-
-# Read PostHog key + host from build-config.json (absent for OSS builds → empty → no-op in daemon).
-DRAFT_PH_KEY=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('posthog_key',''))" 2>/dev/null || echo "")
-DRAFT_PH_HOST=$(python3 -c "import json; d=json.load(open('$DESKTOP_DIR/src/build-config.json')); print(d.get('api_host','https://us.i.posthog.com'))" 2>/dev/null || echo "https://us.i.posthog.com")
-
-bun build \
-  --compile \
-  --target="$BUN_TARGET" \
-  --bytecode \
-  --define "process.env.DRAFT_PH_KEY=\"${DRAFT_PH_KEY}\"" \
-  --define "process.env.DRAFT_PH_HOST=\"${DRAFT_PH_HOST}\"" \
-  --outfile "$ASSETS_DIR/background/draft-background-bin" \
-  "$REPO_ROOT/background/draft-background.ts"
-chmod +x "$ASSETS_DIR/background/draft-background-bin"
-log "  Binary: assets/background/draft-background-bin"
-
 # ── 6. Stage app icon set ──────────────────────────────────────────────────────
 
 log "Staging icon.iconset from assets/AppIcon.iconset..."
@@ -367,6 +255,5 @@ log "  Done ($(find "$ASSETS_DIR/icon.iconset" -type f | wc -l | tr -d ' ') file
 
 echo ""
 log "Assets ready in apps/desktop/assets/"
-echo "  background/  $(find "$ASSETS_DIR/background" -type f | wc -l | tr -d ' ') files"
 echo "  bin/draft    $(du -sh "$ASSETS_DIR/bin/draft" | cut -f1)"
 echo ""

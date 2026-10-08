@@ -8,11 +8,17 @@ You can use the hosted service at [draftai.us](https://draftai.us), or run the o
 
 ## The product model
 
-Draft has a server-side workspace and local clients:
+Draft has a server, a workspace on that server, and clients that talk to it.
 
-**The workspace** is the canonical company brain. It contains versioned context, source items, synthesis runs, connected-source state, and coding-agent session data. The Draft API authenticates access and enforces organization, team, and workspace boundaries.
+**The server** is the Draft backend. It authenticates access, enforces organization, team, and workspace boundaries, ingests data from connected sources, and runs synthesis. You can use the hosted service or self-host the backend yourself.
 
-**The local clients** are the Electrobun desktop app, the CLI, the local background daemon, and agent integrations. They sign in, display or query the workspace, connect the workspace's hosted data sources (Slack, GitHub, Linear, Fireflies, Granola, Claude Code — from either the desktop app or `draft integrations connect` in the CLI), connect local agents, and upload local coding-agent sessions when capture is enabled. The background daemon remains a local runtime used by desktop bundles for Codex session discovery and synthesis; it is not the canonical hosted workspace.
+**The workspace** lives on the server and is the canonical company brain. It contains versioned context, source items, synthesis runs, connected-source state, and coding-agent session data.
+
+**The clients** are three apps that read and manage the workspace through the server's API. None of them keeps its own copy of the company brain.
+
+- **Web app** (`apps/web`): sign-up, invites, and device pairing, plus browsing context, activity, connections, and routines in the browser.
+- **Desktop app** (`apps/desktop`): the same workspace views in a native app. It also connects the workspace's data sources (Slack, GitHub, Linear, Fireflies, Granola, Claude Code) and can read a local folder to seed a workspace.
+- **CLI** (`apps/cli`): scriptable access for reading context and skills, connecting sources (`draft integrations connect`), exporting context, and setting up agent integrations, including session capture that uploads local coding-agent sessions when enabled.
 
 Agents can attach through two supported paths: the remote MCP server for direct, in-session reads, or the CLI for setup, scripts, and explicit context/skill reads. Project-local hooks remain available for coding-session capture. These connection surfaces are intentionally evolving, but the authenticated workspace and API are the stable source of truth.
 
@@ -56,11 +62,11 @@ The open-source stack is self-hostable with:
 
 Self-hosting currently requires deploying and configuring these services separately. See the root README and the individual app READMEs for the current environment variables and local launcher.
 
-The Makefile does provide one-command local workflows: `make run-local` starts the local app stack, while `make dev-refresh` rebuilds and installs the local CLI, daemon binary, and bundled background runtimes. Those commands are development/runtime refresh commands, not a complete production deployment.
+The Makefile does provide one-command local workflows: `make run-local` starts the local app stack, while `make dev-refresh` rebuilds and installs the local CLI binary. Those commands are development/runtime refresh commands, not a complete production deployment.
 
 ## What is local?
 
-The local machine holds authentication state, project configuration, hook files, temporary capture data, desktop/CLI runtime files, and—when enabled—the local background daemon and its runtime state. When coding-session capture is enabled, a project hook reads the completed local transcript and sends it to the configured Draft API.
+The local machine holds authentication state, project configuration, hook files, temporary capture data, desktop/CLI runtime files. When coding-session capture is enabled, a project hook reads the completed local transcript and sends it to the configured Draft API.
 
 The local machine is not the authoritative home of the shared company brain. In hosted mode, the canonical workspace is stored by Draft's deployment. In self-hosted mode, it is stored by the operator's deployment.
 

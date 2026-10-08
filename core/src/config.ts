@@ -11,7 +11,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 
 export const DRAFT_ROOT          = `${process.env.HOME}/.draft`;
 export const WORKSPACES_DIR      = `${DRAFT_ROOT}/workspaces`;
-export const BACKGROUND_DIR      = `${DRAFT_ROOT}/background`;
 export const ACTIVE_PROFILE_FILE = `${DRAFT_ROOT}/active-profile`;
 export const DRAFT_CONFIG_FILE   = `${DRAFT_ROOT}/config.json`;
 
@@ -190,7 +189,6 @@ export interface LocalConfig {
   launchOnLogin?: boolean;
   notificationsEnabled?: boolean;
   disabledContextSections?: string[];
-  codexScanIntervalMinutes?: number | null;
 }
 
 export type LocalConfigResult =
