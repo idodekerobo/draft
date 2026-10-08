@@ -40,6 +40,7 @@ export function BaseThinkingOrb({
   speed = 1,
   size = 240,
   playback = 'play',
+  pointerFollow = false,
   caption = 'Thinking',
   summary = 'Interactive particle state',
   frame = DEFAULT_FRAME,
@@ -62,23 +63,50 @@ export function BaseThinkingOrb({
     let isDestroyed = false
     let isIntersecting = true
     let lastRenderTime = 0
-    let accumulatedTime = 0
+    let accumulatedTime = pointerFollow ? 0.6 : 0
     let lastStamp = performance.now()
+    let waveAngle = -Math.PI / 2
+    let targetWaveAngle = -Math.PI / 2
+    let waveAmount = 0
+    let targetWaveAmount = 0
+    let hasPointerTarget = false
+    let isWindowFocused = document.hasFocus()
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!pointerFollow || (event.pointerType === 'touch' && event.buttons === 0)) return
+      const rect = canvas.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      targetWaveAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX)
+      if (!hasPointerTarget) {
+        waveAngle = targetWaveAngle
+        hasPointerTarget = true
+      }
+      targetWaveAmount = 1
+    }
+
+    if (pointerFollow) {
+      window.addEventListener('pointermove', onPointerMove)
+    }
 
     const mediaReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')
 
     const shouldAnimate = () =>
-      !isDestroyed && isIntersecting && !document.hidden && playback === 'play' && mediaReducedMotion?.matches !== true
+      !isDestroyed && isIntersecting && !document.hidden && (!pointerFollow || isWindowFocused) && playback === 'play' && mediaReducedMotion?.matches !== true
 
     const render = (now: number) => {
       animationFrameId = 0
       if (isDestroyed) return
 
-      const delta = (now - lastStamp) * 0.001
+      const delta = Math.min((now - lastStamp) * 0.001, pointerFollow ? 1 / 30 : Number.POSITIVE_INFINITY)
       lastStamp = now
 
       if (shouldAnimate()) {
         accumulatedTime += delta * Math.max(Number(speed) || 1, 0.05)
+        const angleDifference = Math.atan2(Math.sin(targetWaveAngle - waveAngle), Math.cos(targetWaveAngle - waveAngle))
+        const maxAngleStep = delta * 0.45
+        waveAngle += Math.max(-maxAngleStep, Math.min(maxAngleStep, angleDifference))
+        waveAmount += (targetWaveAmount - waveAmount) * (1 - Math.exp(-delta * 4))
       }
 
       // Throttle render to ~45-60fps
@@ -92,8 +120,9 @@ export function BaseThinkingOrb({
 
         ctx.save()
         ctx.translate((w - innerSize) / 2, (h - innerSize) / 2)
-        const sceneTime = shouldAnimate() ? accumulatedTime * presetSpeed : 0.6 * presetSpeed
-        const scene = RENDERERS[mode](innerSize, sceneTime, opts)
+        const sceneTime = (pointerFollow || shouldAnimate() ? accumulatedTime : 0.6) * presetSpeed
+        const sceneOpts = pointerFollow && mode === 'ribbon' ? { ...opts, waveAngle, waveAmount } : opts
+        const scene = RENDERERS[mode](innerSize, sceneTime, sceneOpts)
         renderOrbScene(ctx, scene, isDark)
         ctx.restore()
 
@@ -130,6 +159,15 @@ export function BaseThinkingOrb({
     const onVisibilityChange = () => triggerRender()
     document.addEventListener('visibilitychange', onVisibilityChange)
 
+    const onWindowFocusChange = () => {
+      isWindowFocused = document.hasFocus()
+      triggerRender()
+    }
+    if (pointerFollow) {
+      window.addEventListener('blur', onWindowFocusChange)
+      window.addEventListener('focus', onWindowFocusChange)
+    }
+
     const onReducedMotionChange = () => triggerRender()
     mediaReducedMotion?.addEventListener?.('change', onReducedMotionChange)
 
@@ -141,9 +179,16 @@ export function BaseThinkingOrb({
       resizeObserver?.disconnect()
       intersectionObserver?.disconnect()
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      if (pointerFollow) {
+        window.removeEventListener('blur', onWindowFocusChange)
+        window.removeEventListener('focus', onWindowFocusChange)
+      }
       mediaReducedMotion?.removeEventListener?.('change', onReducedMotionChange)
+      if (pointerFollow) {
+        window.removeEventListener('pointermove', onPointerMove)
+      }
     }
-  }, [mode, scale, speed, playback, isDark, frame])
+  }, [mode, scale, speed, playback, isDark, frame, pointerFollow])
 
   const [frameW, frameH] = frame
 

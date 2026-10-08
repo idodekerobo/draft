@@ -18,7 +18,7 @@ type SubmitState = "idle" | "submitting" | "success" | "error";
 function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
   return (
     <div className={`getstarted-orb ${mobile ? "getstarted-orb-mobile" : "getstarted-orb-desktop"}`} aria-hidden="true">
-      <OrbComposing size={380} scale={0.94} speed={0.65} style={{ width: "100%", height: "auto", aspectRatio: "1" }} />
+      <OrbComposing size={380} scale={0.94} speed={0.65} pointerFollow style={{ width: "100%", height: "auto", aspectRatio: "1" }} />
     </div>
   );
 }

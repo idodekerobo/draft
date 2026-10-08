@@ -44,7 +44,7 @@ export default function LandingPage() {
           <WaitlistButton source="hero" />
         </div>
         <div className="minimal-hero-orb" aria-hidden="true">
-          <OrbComposing surface="auto" size={640} scale={0.94} speed={0.65} style={{ width: "100%", height: "auto", aspectRatio: "1" }} />
+          <OrbComposing surface="auto" size={640} scale={0.94} speed={0.65} pointerFollow style={{ width: "100%", height: "auto", aspectRatio: "1" }} />
         </div>
       </section>
       <section id="features" className="minimal-features minimal-shell" aria-labelledby="features-title">
