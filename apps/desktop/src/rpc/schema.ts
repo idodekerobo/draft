@@ -57,8 +57,7 @@ export interface AppStatus {
 export type AppUserState =
   | "no-profile"
   | "no-context"
-  | "ready-stopped"
-  | "ready-running";
+  | "ready";
 
 // ── Installer types ────────────────────────────────────────────────────────────
 
@@ -79,8 +78,6 @@ export interface AppState {
   userState: AppUserState;
   hasActiveProfile: boolean;
   hasContextFiles: boolean;
-  daemonState: "running" | "stopped" | "never-started";
-  heartbeatAgeMs: number | null;
   activeProfile: string;
 }
 
@@ -105,7 +102,6 @@ export interface LocalConfig {
   launchOnLogin: boolean;
   notificationsEnabled: boolean;
   disabledContextSections: string[];
-  codexScanIntervalMinutes: number | null;
 }
 
 export interface UpdateInfo {
