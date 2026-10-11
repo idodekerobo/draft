@@ -38,7 +38,7 @@ export default function LandingPage() {
         <div className="minimal-hero-copy">
           <h1 id="hero-title">Your company&apos;s context layer</h1>
           <p>
-            <strong className="minimal-hero-helper-title">A self updating company brain</strong>
+            <strong className="minimal-hero-helper-title">A company agent harness and self updating company brain</strong>
             Turn scattered decisions, customer insights, documents, and priorities into shared context and a retrieval surface for your team and every AI agent.
           </p>
           <WaitlistButton source="hero" />
