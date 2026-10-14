@@ -154,7 +154,7 @@ describe("capture-session.sh without the draft CLI", () => {
     expect(exitCode).toBe(0);
     expect(reportRequests).toHaveLength(1);
     const report = JSON.parse(reportRequests[0]!.body);
-    expect(report).toMatchObject({ code: "http-401", scriptVersion: "2", hookReason: "clear", workspaceId: "ws-1" });
+    expect(report).toMatchObject({ code: "http-401", scriptVersion: "3", hookReason: "clear", workspaceId: "ws-1", sessionId: "sess-1", transcriptState: "present", transcriptBytes: String(TRANSCRIPT.length) });
     expect(report.reason).toContain("invalid_ingest_token");
     expect(reportRequests[0]!.headers.get("authorization")).toBe("Bearer draft_sit_cred-1_secret");
     expect(readLog()[0]).toMatchObject({ status: "failure", detail: "status=401" });
@@ -173,10 +173,28 @@ describe("capture-session.sh without the draft CLI", () => {
     expect(readLog()[0]).toMatchObject({ status: "skipped", detail: "session_tracking_disabled" });
   });
 
-  test("reports a missing transcript", async () => {
-    await runHook(hookInput({ transcript_path: join(root, "gone.jsonl") }));
+  test("reports a transcript file that is gone as missing-transcript, whatever the hook reason", async () => {
+    for (const reason of ["clear", "other"]) {
+      reportRequests = [];
+      await runHook(hookInput({ transcript_path: join(root, "gone.jsonl"), reason, cwd: "C:\\Users\\dev\\Flooently\\.claude\\worktrees\\task-1" }));
+      expect(JSON.parse(reportRequests[0]!.body)).toMatchObject({ code: "missing-transcript", hookReason: reason, transcriptState: "path_missing", sessionId: "sess-1", cwdName: "task-1" });
+    }
     expect(ingestRequests).toHaveLength(0);
-    expect(JSON.parse(reportRequests[0]!.body).code).toBe("missing-transcript");
+    expect(readLog()[0]).toMatchObject({ status: "skipped", detail: "missing-transcript path_missing" });
+  });
+
+  test("reports a hook input with no transcript path as no-transcript, whatever the hook reason", async () => {
+    for (const reason of ["clear", "other"]) {
+      reportRequests = [];
+      await runHook(hookInput({ transcript_path: "", reason }));
+      expect(JSON.parse(reportRequests[0]!.body)).toMatchObject({ code: "no-transcript", hookReason: reason, transcriptState: "path_empty" });
+    }
+    expect(ingestRequests).toHaveLength(0);
+  });
+
+  test("reports a hook input with no session id as no-transcript", async () => {
+    await runHook(hookInput({ session_id: "" }));
+    expect(JSON.parse(reportRequests[0]!.body)).toMatchObject({ code: "no-transcript", transcriptState: "no_session_id" });
   });
 
   test("reports a missing git email", async () => {

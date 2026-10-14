@@ -245,6 +245,41 @@ describe("draft sessions ingest (hook-only)", () => {
     expect(backend.state.sessionsIngestErrorRequests[0]!.headers.authorization).toBe("Bearer draft_sit_cred-1_secret");
   });
 
+  test("reports a hook input with no transcript path as no-transcript, with diagnostics", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    const result = await runCli(["sessions", "ingest"], {
+      home,
+      apiUrl: backend.url,
+      cwd: project,
+      env: { CLAUDE_PROJECT_DIR: project },
+      stdin: JSON.stringify({ session_id: "sess-1", transcript_path: "", cwd: project, reason: "other" }),
+    });
+    expect(result.exitCode).toBe(0);
+    expect(backend.state.sessionsIngestRequests).toHaveLength(0);
+    expect(JSON.parse(backend.state.sessionsIngestErrorRequests[0]!.body)).toMatchObject({
+      code: "no-transcript",
+      hookReason: "other",
+      sessionId: "sess-1",
+      transcriptState: "path_empty",
+    });
+  });
+
+  test("reports a transcript file that is gone as missing-transcript", async () => {
+    await runCli(["sessions", "enable", "claude-code", "--dir", project], { home, apiUrl: backend.url });
+    await runCli(["sessions", "ingest"], {
+      home,
+      apiUrl: backend.url,
+      cwd: project,
+      env: { CLAUDE_PROJECT_DIR: project },
+      stdin: JSON.stringify({ session_id: "sess-1", transcript_path: join(project, "gone.jsonl"), cwd: project, reason: "other" }),
+    });
+    expect(JSON.parse(backend.state.sessionsIngestErrorRequests[0]!.body)).toMatchObject({
+      code: "missing-transcript",
+      hookReason: "other",
+      transcriptState: "path_missing",
+    });
+  });
+
   test("does not report session_tracking_disabled: that is policy, not a failure", async () => {
     backend.state.sessionsIngestResponse = () => Response.json({ ok: false, error: "session_tracking_disabled" }, { status: 403 });
     const result = await enableAndIngest();

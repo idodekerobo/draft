@@ -123,6 +123,7 @@ export function createMockBackend() {
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/context\/export$/.test(url.pathname)) {
         return state.contextExportResponse(url.pathname.split("/")[2]!);
+      }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/schedules$/.test(url.pathname)) {
         return state.routinesResponse(url.pathname.split("/")[2]!);
       }

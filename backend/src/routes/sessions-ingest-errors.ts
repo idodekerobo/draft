@@ -2,7 +2,7 @@ import { serviceClient } from "../db/client";
 import { resolveIngestCredentialScope } from "../credentials/session-ingest-token";
 import { recordError } from "../errors/record-error";
 
-const MAX_BODY_BYTES = 1024;
+const MAX_BODY_BYTES = 1536;
 const MAX_FIELD_CHARS = 200;
 const RATE_LIMIT_PER_MINUTE = 30;
 const RATE_WINDOW_MS = 60_000;
@@ -11,6 +11,7 @@ const KNOWN_CODES = new Set([
   "placeholder-config",
   "missing-config",
   "missing-transcript",
+  "no-transcript",
   "missing-git-email",
   "missing-token",
   "upload-failed",
@@ -76,6 +77,10 @@ export const POST = async (req: SessionsIngestErrorsRequest): Promise<Response> 
     script_version: field(body.scriptVersion),
     os: field(body.os),
     hook_reason: field(body.hookReason),
+    session_id: field(body.sessionId),
+    cwd_name: field(body.cwdName),
+    transcript_state: field(body.transcriptState),
+    transcript_bytes: field(body.transcriptBytes),
   };
   // A claimed workspace id is never trusted as the owner of the row.
   if (!scope) detail.claimed_workspace_id = field(body.workspaceId);
