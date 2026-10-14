@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, statSync } from "fs";
 import { randomUUID } from "crypto";
-import { dirname, isAbsolute, join, resolve } from "path";
+import { dirname, isAbsolute, join, resolve, win32 } from "path";
 import {
   adminRevokeSessionIngestToken,
   connectIntegration,
@@ -648,7 +648,15 @@ function hasPlaceholder(config: LegacyOrScopedConfig): boolean {
 }
 
 // Best-effort and time-capped: lands in the backend's errors table, never throws.
-async function reportCaptureFailure(config: LegacyOrScopedConfig, code: string, reason: string, hookReason?: string): Promise<void> {
+interface CaptureFailureContext {
+  hookReason?: string;
+  sessionId?: string;
+  cwd?: string;
+  transcriptState?: string;
+  transcriptBytes?: number;
+}
+
+async function reportCaptureFailure(config: LegacyOrScopedConfig, code: string, reason: string, context: CaptureFailureContext = {}): Promise<void> {
   try {
     const usable = !!config.backendUrl && /^https?:\/\//.test(config.backendUrl) && !config.backendUrl.includes("${");
     const base = usable ? config.backendUrl!.replace(/\/+$/, "") : DEFAULT_REPORT_BACKEND;
@@ -663,8 +671,12 @@ async function reportCaptureFailure(config: LegacyOrScopedConfig, code: string, 
         reason: reason.slice(0, 200),
         scriptVersion: "cli",
         os: process.platform,
-        hookReason,
+        hookReason: context.hookReason,
         workspaceId: config.workspaceId,
+        sessionId: context.sessionId,
+        cwdName: context.cwd ? win32.basename(context.cwd).slice(0, 80) : undefined,
+        transcriptState: context.transcriptState,
+        transcriptBytes: context.transcriptBytes === undefined ? undefined : String(context.transcriptBytes),
       }),
     });
   } catch {
@@ -693,20 +705,31 @@ export async function runSessionsIngest(): Promise<number> {
 
   if (hasPlaceholder(resolved.config)) {
     logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "placeholder-config" });
-    await reportCaptureFailure(resolved.config, "placeholder-config", "config.json holds a placeholder value", hookInput.reason);
+    await reportCaptureFailure(resolved.config, "placeholder-config", "config.json holds a placeholder value", { hookReason: hookInput.reason, sessionId: hookInput.session_id, cwd });
     return EXIT_SUCCESS;
   }
 
-  if (!hookInput.session_id || !hookInput.transcript_path || !existsSync(hookInput.transcript_path)) {
-    logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "missing-transcript" });
-    await reportCaptureFailure(resolved.config, "missing-transcript", "hook input had no readable transcript", hookInput.reason);
+  const context: CaptureFailureContext = { hookReason: hookInput.reason, sessionId: hookInput.session_id, cwd };
+  const transcriptState = !hookInput.session_id
+    ? "no_session_id"
+    : !hookInput.transcript_path
+      ? "path_empty"
+      : !existsSync(hookInput.transcript_path)
+        ? "path_missing"
+        : "present";
+  if (transcriptState !== "present") {
+    // no-transcript: the hook input named no file. missing-transcript: it named one that is gone.
+    const code = transcriptState === "path_missing" ? "missing-transcript" : "no-transcript";
+    logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: `${code} ${transcriptState}` });
+    await reportCaptureFailure(resolved.config, code, "hook input had no readable transcript", { ...context, transcriptState });
     return EXIT_SUCCESS;
   }
+  context.transcriptState = "present";
 
   const gitEmail = gitConfigValue(cwd, "user.email");
   if (!gitEmail) {
     logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "missing-git-email" });
-    await reportCaptureFailure(resolved.config, "missing-git-email", "git user.email is not set", hookInput.reason);
+    await reportCaptureFailure(resolved.config, "missing-git-email", "git user.email is not set", context);
     return EXIT_SUCCESS;
   }
   const displayName = gitConfigValue(cwd, "user.name");
@@ -718,6 +741,7 @@ export async function runSessionsIngest(): Promise<number> {
     logIngestEvent({ status: "skipped", dir: resolved.dir, sessionId: hookInput.session_id, detail: "unreadable-transcript" });
     return EXIT_SUCCESS;
   }
+  context.transcriptBytes = Buffer.byteLength(transcript);
 
   const query = new URLSearchParams({
     sessionId: hookInput.session_id,
@@ -755,12 +779,12 @@ export async function runSessionsIngest(): Promise<number> {
       return EXIT_SUCCESS;
     }
     logIngestEvent({ status: "failure", dir: resolved.dir, sessionId: hookInput.session_id, detail: `status=${response.status}` });
-    await reportCaptureFailure(resolved.config, `http-${response.status}`, body, hookInput.reason);
+    await reportCaptureFailure(resolved.config, `http-${response.status}`, body, context);
   } catch (err) {
     const timedOut = err instanceof Error && err.name === "TimeoutError";
     const message = err instanceof Error ? err.message : String(err);
     logIngestEvent({ status: "failure", dir: resolved.dir, sessionId: hookInput.session_id, detail: message });
-    await reportCaptureFailure(resolved.config, timedOut ? "upload-timeout" : "upload-failed", message, hookInput.reason);
+    await reportCaptureFailure(resolved.config, timedOut ? "upload-timeout" : "upload-failed", message, context);
   }
   return EXIT_SUCCESS;
 }

@@ -67,6 +67,23 @@ describe("POST /sessions/ingest-errors", () => {
     expect(detailOf(inserted[0]!)).toMatchObject({ code: "upload-timeout", source: "client", credential_id: "cred-1", os: "Darwin" });
   });
 
+  it("records the transcript diagnostics on a no-transcript report", async () => {
+    ingestScope = { credentialId: "cred-1", workspaceId: "ws-1", sessionProjectId: null, allowedProviders: null };
+    const response = await post(
+      report(
+        { code: "no-transcript", hookReason: "other", sessionId: "sess-1", cwdName: "Flooently-goals", transcriptState: "path_missing" },
+        { token: "draft_sit_x" },
+      ),
+    );
+    expect(response.status).toBe(202);
+    expect(detailOf(inserted[0]!)).toMatchObject({
+      code: "no-transcript",
+      session_id: "sess-1",
+      cwd_name: "Flooently-goals",
+      transcript_state: "path_missing",
+    });
+  });
+
   it("records a workspace-less row for an invalid token and never trusts a claimed workspace", async () => {
     const response = await post(report({ code: "http-401", workspaceId: "ws-claimed" }, { token: "bad" }));
     expect(response.status).toBe(202);

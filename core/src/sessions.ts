@@ -10,7 +10,7 @@ export const HOOK_SCRIPT_FILE = "capture-session.sh";
 export const HOOK_COMMAND = `"\${CLAUDE_PROJECT_DIR}/${DRAFT_DIR}/${HOOK_SCRIPT_FILE}"`;
 
 // Bump when buildCaptureScript changes, so `sessions status` can flag stale copies.
-export const CAPTURE_SCRIPT_VERSION = 2;
+export const CAPTURE_SCRIPT_VERSION = 3;
 
 // Must exceed the curl caps in the script (20s upload + 5s error report).
 export const HOOK_TIMEOUT_SECONDS = 30;
@@ -57,6 +57,7 @@ json_field() {
 config_value() {
   sed -nE 's/.*"'"$1"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$CONFIG" 2>/dev/null | head -n 1
 }
+leaf() { printf '%s' "$1" | sed -e 's#.*[/\\]##'; }
 is_placeholder() { case "$1" in *'$''{'*) return 0 ;; esac; return 1; }
 
 log_event() {
@@ -75,8 +76,9 @@ report_error() {
   base="$BACKEND"
   case "$base" in http://*|https://*) ;; *) base="$DEFAULT_BACKEND" ;; esac
   is_placeholder "$base" && base="$DEFAULT_BACKEND"
-  body="$(printf '{"code":"%s","reason":"%s","scriptVersion":"%s","os":"%s","hookReason":"%s","workspaceId":"%s"}' \
-    "$code" "$(json_escape "$reason" | cut -c1-200)" "$SCRIPT_VERSION" "$(uname -s 2>/dev/null)" "$(json_escape "$REASON")" "$(json_escape "$WORKSPACE_ID")")"
+  body="$(printf '{"code":"%s","reason":"%s","scriptVersion":"%s","os":"%s","hookReason":"%s","workspaceId":"%s","sessionId":"%s","cwdName":"%s","transcriptState":"%s","transcriptBytes":"%s"}' \
+    "$code" "$(json_escape "$reason" | cut -c1-200)" "$SCRIPT_VERSION" "$(uname -s 2>/dev/null)" "$(json_escape "$REASON")" "$(json_escape "$WORKSPACE_ID")" \
+    "$(json_escape "$SESSION_ID")" "$(json_escape "$(leaf "$CWD")" | cut -c1-80)" "$TRANSCRIPT_STATE" "$TRANSCRIPT_BYTES")"
   if [ -n "$TOKEN_OK" ]; then
     post_json "$base/sessions/ingest-errors" "$body" -H "Authorization: Bearer $TOKEN"
   else
@@ -92,6 +94,8 @@ BACKEND="$(config_value backendUrl | sed 's#/*$##')"
 TOKEN="$(config_value ingestToken)"
 WORKSPACE_ID="$(config_value workspaceId)"
 TOKEN_OK=""
+TRANSCRIPT_STATE=""
+TRANSCRIPT_BYTES=""
 
 if [ ! -f "$CONFIG" ]; then
   log_event skipped missing-config; report_error missing-config "no config.json next to the hook"; exit 0
@@ -107,8 +111,18 @@ if [ -z "$TOKEN_OK" ]; then
   log_event skipped missing-token; report_error missing-token "ingestToken does not look like an ingest token"; exit 0
 fi
 
-if [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-  log_event skipped missing-transcript; report_error missing-transcript "hook input had no readable transcript"; exit 0
+if [ -z "$SESSION_ID" ]; then TRANSCRIPT_STATE=no_session_id
+elif [ -z "$TRANSCRIPT" ]; then TRANSCRIPT_STATE=path_empty
+elif [ ! -f "$TRANSCRIPT" ]; then TRANSCRIPT_STATE=path_missing
+else
+  TRANSCRIPT_STATE=present
+  TRANSCRIPT_BYTES="$(wc -c < "$TRANSCRIPT" 2>/dev/null | tr -d ' ')"
+fi
+if [ "$TRANSCRIPT_STATE" != present ]; then
+  # no-transcript: the hook input named no file. missing-transcript: it named one that is gone.
+  CODE=no-transcript
+  [ "$TRANSCRIPT_STATE" = path_missing ] && CODE=missing-transcript
+  log_event skipped "$CODE $TRANSCRIPT_STATE"; report_error "$CODE" "hook input had no readable transcript"; exit 0
 fi
 
 GIT_DIR_ARG="$CWD"
