@@ -2,6 +2,7 @@
 // read/write helper for the CLI and desktop app.
 
 import { existsSync, readFileSync } from "fs";
+import { isDeepStrictEqual } from "util";
 import { atomicPatch, ParseError } from "./atomic-write";
 
 export interface ClaudeSettings {
@@ -78,5 +79,19 @@ export async function mutateClaudeSettingsAtomic(
 // permissions -- unlike writeFileSync's `mode` option, which only applies
 // on create.
 export async function writeCaptureConfigAtomic(path: string, config: object): Promise<void> {
-  await atomicPatch(path, () => `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  // No backups: the file lives in the user's repo, where git holds the old copy and a
+  // backup of the ingest token would sit untracked beside it.
+  await atomicPatch(
+    path,
+    (raw) => (hasSameJson(raw, config) ? raw : `${JSON.stringify(config, null, 2)}\n`),
+    { mode: 0o600, backup: false },
+  );
+}
+
+function hasSameJson(raw: string, config: object): boolean {
+  try {
+    return isDeepStrictEqual(JSON.parse(raw), config);
+  } catch {
+    return false;
+  }
 }

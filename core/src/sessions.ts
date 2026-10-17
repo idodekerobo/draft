@@ -10,7 +10,7 @@ export const HOOK_SCRIPT_FILE = "capture-session.sh";
 export const HOOK_COMMAND = `"\${CLAUDE_PROJECT_DIR}/${DRAFT_DIR}/${HOOK_SCRIPT_FILE}"`;
 
 // Bump when buildCaptureScript changes, so `sessions status` can flag stale copies.
-export const CAPTURE_SCRIPT_VERSION = 3;
+export const CAPTURE_SCRIPT_VERSION = 4;
 
 // Must exceed the curl caps in the script (20s upload + 5s error report).
 export const HOOK_TIMEOUT_SECONDS = 30;
@@ -76,9 +76,10 @@ report_error() {
   base="$BACKEND"
   case "$base" in http://*|https://*) ;; *) base="$DEFAULT_BACKEND" ;; esac
   is_placeholder "$base" && base="$DEFAULT_BACKEND"
-  body="$(printf '{"code":"%s","reason":"%s","scriptVersion":"%s","os":"%s","hookReason":"%s","workspaceId":"%s","sessionId":"%s","cwdName":"%s","transcriptState":"%s","transcriptBytes":"%s"}' \
+  body="$(printf '{"code":"%s","reason":"%s","scriptVersion":"%s","os":"%s","hookReason":"%s","workspaceId":"%s","sessionId":"%s","cwdName":"%s","transcriptState":"%s","transcriptBytes":"%s","transcriptDir":"%s","transcriptDirState":"%s","transcriptDirFiles":"%s"}' \
     "$code" "$(json_escape "$reason" | cut -c1-200)" "$SCRIPT_VERSION" "$(uname -s 2>/dev/null)" "$(json_escape "$REASON")" "$(json_escape "$WORKSPACE_ID")" \
-    "$(json_escape "$SESSION_ID")" "$(json_escape "$(leaf "$CWD")" | cut -c1-80)" "$TRANSCRIPT_STATE" "$TRANSCRIPT_BYTES")"
+    "$(json_escape "$SESSION_ID")" "$(json_escape "$(leaf "$CWD")" | cut -c1-80)" "$TRANSCRIPT_STATE" "$TRANSCRIPT_BYTES" \
+    "$(json_escape "$TRANSCRIPT_DIR" | cut -c1-120)" "$TRANSCRIPT_DIR_STATE" "$TRANSCRIPT_DIR_FILES")"
   if [ -n "$TOKEN_OK" ]; then
     post_json "$base/sessions/ingest-errors" "$body" -H "Authorization: Bearer $TOKEN"
   else
@@ -96,6 +97,9 @@ WORKSPACE_ID="$(config_value workspaceId)"
 TOKEN_OK=""
 TRANSCRIPT_STATE=""
 TRANSCRIPT_BYTES=""
+TRANSCRIPT_DIR=""
+TRANSCRIPT_DIR_STATE=""
+TRANSCRIPT_DIR_FILES=""
 
 if [ ! -f "$CONFIG" ]; then
   log_event skipped missing-config; report_error missing-config "no config.json next to the hook"; exit 0
@@ -117,6 +121,17 @@ elif [ ! -f "$TRANSCRIPT" ]; then TRANSCRIPT_STATE=path_missing
 else
   TRANSCRIPT_STATE=present
   TRANSCRIPT_BYTES="$(wc -c < "$TRANSCRIPT" 2>/dev/null | tr -d ' ')"
+fi
+if [ "$TRANSCRIPT_STATE" = path_missing ]; then
+  # Where the named transcript should have been: $HOME is shown as ~ to keep the user name out.
+  dir="$(dirname "$TRANSCRIPT")"
+  case "$dir" in "$HOME"*) TRANSCRIPT_DIR="~$(printf '%s' "$dir" | cut -c"$(($(printf '%s' "$HOME" | wc -c) + 1))"-)" ;; *) TRANSCRIPT_DIR="$dir" ;; esac
+  if [ -d "$dir" ]; then
+    TRANSCRIPT_DIR_STATE=exists
+    TRANSCRIPT_DIR_FILES="$(find "$dir" -maxdepth 1 -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')"
+  else
+    TRANSCRIPT_DIR_STATE=missing
+  fi
 fi
 if [ "$TRANSCRIPT_STATE" != present ]; then
   # no-transcript: the hook input named no file. missing-transcript: it named one that is gone.

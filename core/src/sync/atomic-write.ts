@@ -90,7 +90,7 @@ function writeBackup(filePath: string, content: Buffer): void {
 export async function atomicPatch(
   filePath: string,
   patchFn: (rawText: string) => string,
-  opts?: { mode?: number },
+  opts?: { mode?: number; backup?: boolean },
 ): Promise<void> {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
 
@@ -142,7 +142,7 @@ export async function atomicPatch(
         continue; // external write — retry
       }
 
-      writeBackup(filePath, rawContent);
+      if (opts?.backup !== false) writeBackup(filePath, rawContent);
 
       const tmp = `${filePath}.draft-tmp-${process.pid}`;
       const mode = opts?.mode ?? 0o600;
