@@ -257,28 +257,17 @@ body {
 }
 
 .getstarted-copy h1 {
-  font-size: clamp(3.3rem, 6.2vw, 6.4rem);
-  letter-spacing: -0.085em;
-  line-height: 0.93;
+  font-size: clamp(2.6rem, 4.6vw, 4.6rem);
+  letter-spacing: -0.06em;
+  line-height: 1;
   margin: 0;
   max-width: 620px;
-}
-.getstarted-copy h1 span {
-  color: inherit;
-  display: block;
 }
 .getstarted-lede {
   color: var(--getstarted-muted);
   font-size: clamp(1.05rem, 1.35vw, 1.28rem);
   line-height: 1.45;
-  margin: 2.5rem 0 0;
-  max-width: 430px;
-}
-.getstarted-body {
-  color: var(--getstarted-muted);
-  font-size: 0.9rem;
-  line-height: 1.7;
-  margin: 1rem 0 0;
+  margin: 2rem 0 0;
   max-width: 470px;
 }
 .getstarted-actions {
@@ -301,16 +290,14 @@ body {
 
 .getstarted-call-link {
   align-items: center;
-  border: 1px solid var(--getstarted-line);
-  border-radius: 999px;
-  color: var(--getstarted-ink);
+  color: var(--getstarted-muted);
   display: inline-flex;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   justify-content: center;
-  min-height: 56px;
-  gap: 0.6rem;
+  min-height: 44px;
+  gap: 0.5rem;
   text-decoration: none;
-  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+  transition: color 180ms ease;
 }
 .getstarted-call-link span { color: var(--getstarted-accent); }
 
@@ -400,11 +387,10 @@ body {
 .getstarted-cal { min-width: 0; padding: 40px clamp(24px, 3vw, 48px); animation: getstartedFadeIn 350ms ease-out both; }
 .getstarted-page.is-call-open .getstarted-panel { min-height: 0; padding-block: 12px; }
 .getstarted-page.is-call-open .getstarted-copy { margin: 0; padding: 2vh 0 0; }
-.getstarted-page.is-call-open .getstarted-copy h1 { font-size: clamp(2.6rem, 4.4vw, 4.4rem); }
+.getstarted-page.is-call-open .getstarted-copy h1 { font-size: clamp(2.2rem, 3.6vw, 3.4rem); }
 .getstarted-page.is-call-open .getstarted-lede { margin-top: 1.25rem; }
-.getstarted-page.is-call-open .getstarted-body { margin-top: 0.6rem; line-height: 1.55; }
 .getstarted-page.is-call-open .getstarted-actions { margin-top: 1.25rem; }
-.getstarted-page.is-call-open :is(.getstarted-primary, .getstarted-call-link) { min-height: 46px; }
+.getstarted-page.is-call-open .getstarted-primary { min-height: 46px; }
 .getstarted-page.is-call-open .getstarted-waitlist { margin-top: 1rem; }
 .getstarted-page.is-call-open .getstarted-cal { padding-block: 12px; }
 .getstarted-page.is-call-open .cal-embed { height: calc(100dvh - 130px); min-height: 460px; overflow-y: auto; }
@@ -415,8 +401,79 @@ body {
   border-top: 1px solid var(--getstarted-line);
   animation: getstartedFadeIn 450ms ease-out 150ms both;
 }
+.getstarted-page.is-call-open .getstarted-story { grid-row: 4; }
+.getstarted-page.is-call-open > .minimal-footer { grid-row: 5; }
 .getstarted-page.is-call-open .getstarted-media .getstarted-orb { width: min(100%, 520px); }
 .getstarted-page.is-call-open .getstarted-media .getstarted-media-frame { width: 100%; }
+
+.getstarted-story {
+  border-top: 1px solid var(--getstarted-line);
+  display: flex;
+  flex-direction: column;
+  grid-column: 1 / -1;
+  padding: 0 clamp(20px, 5vw, 84px);
+}
+.getstarted-story-block {
+  border-bottom: 1px solid var(--getstarted-line);
+  padding: clamp(48px, 8vw, 96px) 0;
+}
+.getstarted-story-block h2 {
+  font-size: clamp(1.6rem, 2.8vw, 2.5rem);
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  margin: 0;
+  max-width: 22ch;
+}
+.getstarted-story-block > p {
+  color: var(--getstarted-muted);
+  font-size: clamp(1rem, 1.2vw, 1.12rem);
+  line-height: 1.6;
+  margin: 1.25rem 0 0;
+  max-width: 560px;
+}
+.getstarted-rows { list-style: none; margin: 2rem 0 0; padding: 0; }
+.getstarted-rows li {
+  border-top: 1px solid var(--getstarted-line);
+  display: grid;
+  gap: 0.5rem 2rem;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  padding: 1.5rem 0;
+}
+.getstarted-rows h3 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.getstarted-rows p { color: var(--getstarted-muted); font-size: 0.95rem; line-height: 1.6; margin: 0; max-width: 520px; }
+.getstarted-soon {
+  border: 1px solid var(--getstarted-line);
+  border-radius: 999px;
+  color: var(--getstarted-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  margin-left: 0.6rem;
+  padding: 0.15rem 0.55rem;
+  vertical-align: middle;
+}
+.getstarted-agents {
+  border-bottom: 1px solid var(--getstarted-line);
+  color: var(--getstarted-muted);
+  font-size: 0.95rem;
+  margin: 0;
+  padding: 1.75rem 0;
+}
+.getstarted-closing { border-bottom: 0; }
+.getstarted-closing .getstarted-actions { margin-top: 2rem; }
+
+.getstarted-sticky {
+  animation: getstartedFadeIn 200ms ease-out both;
+  background: var(--getstarted-paper);
+  border-top: 1px solid var(--getstarted-line);
+  bottom: 0;
+  display: none;
+  left: 0;
+  padding: 10px 20px calc(10px + env(safe-area-inset-bottom));
+  position: fixed;
+  right: 0;
+  z-index: 40;
+}
+.getstarted-sticky .getstarted-primary { min-height: 48px; width: 100%; }
 
 .getstarted-footer {
   align-items: end;
@@ -445,7 +502,7 @@ body {
 
 @media (hover: hover) and (pointer: fine) {
   .getstarted-primary:hover { opacity: .82; }
-  .getstarted-call-link:hover { background: var(--color-surface); }
+  .getstarted-call-link:hover { color: var(--getstarted-ink); }
 }
 .getstarted-page :is(a,button):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 5px; }
 @media (max-width: 900px) {
@@ -453,14 +510,16 @@ body {
   .getstarted-panel { min-height: auto; padding: 28px 32px 24px; }
   .getstarted-copy { margin: 0; padding: 12px 0 48px; }
  .getstarted-media { border-left: 0; padding: 24px 32px 48px; gap: 20px; }
+  .getstarted-sticky { display: block; }
+  .getstarted-rows li { grid-template-columns: 1fr; }
   .getstarted-orb-desktop { display: none; }
   .getstarted-orb-mobile { display: block; width: 200px; max-width: 100%; margin: 16px auto 8px; }
 }
 @media (max-width: 560px) {
   .getstarted-panel { padding: 22px 20px 24px; }
   .getstarted-copy { padding: 12px 0 40px; }
-  .getstarted-copy h1 { font-size: clamp(3rem, 14vw, 5rem); }
-  .getstarted-lede { font-size: 1.05rem; margin-top: 2rem; }
+  .getstarted-copy h1 { font-size: clamp(2.4rem, 11vw, 3.4rem); }
+  .getstarted-lede { font-size: 1.05rem; margin-top: 1.5rem; }
   .getstarted-actions { width: 100%; }
   .getstarted-footer nav { gap: .8rem; flex-wrap: wrap; }
   .getstarted-footer a { font-size: .75rem; min-height: 44px; display: inline-flex; align-items: center; }
