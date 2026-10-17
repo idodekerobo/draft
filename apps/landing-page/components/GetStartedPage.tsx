@@ -22,6 +22,23 @@ const subscribeDesktop = (onChange: () => void) => {
 const getIsDesktop = () => window.matchMedia(DESKTOP_QUERY).matches;
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
+type CtaLocation = "hero" | "sticky_bar" | "closing";
+
+const WHAT_DRAFT_DOES = [
+  {
+    title: "A shared company brain",
+    body: "Pulls context from Slack, GitHub, Linear, GMail, meetings, and more. Keeps it current as your team works.",
+  },
+  {
+    title: "Routines on any agent",
+    body: "Schedule recurring jobs, like a daily summary of your team's action items, and run them with the agent you prefer.",
+  },
+  {
+    title: "Shared coding sessions",
+    body: "Work in the same session as a teammate, with any agent (Claude Code, Codex, and more) you like.",
+    soon: true,
+  },
+];
 
 function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
   return (
@@ -41,19 +58,68 @@ export default function GetStartedPage() {
   const isDesktop = useSyncExternalStore(subscribeDesktop, getIsDesktop, () => false);
   const [callOpen, setCallOpen] = useState(false);
   const sideCal = callOpen && isDesktop;
+  const copyRef = useRef<HTMLDivElement>(null);
+  const closingRef = useRef<HTMLElement>(null);
+  const [copyVisible, setCopyVisible] = useState(true);
+  const [closingVisible, setClosingVisible] = useState(false);
+  const showStickyBar = !copyVisible && !closingVisible && submitState !== "success";
 
   useEffect(() => {
     if (waitlistOpen) emailRef.current?.focus();
   }, [waitlistOpen]);
 
-  const handleOpenWaitlist = () => {
+  useEffect(() => {
+    const copy = copyRef.current;
+    const closing = closingRef.current;
+    if (!copy || !closing) return;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === copy) setCopyVisible(entry.isIntersecting);
+        else setClosingVisible(entry.isIntersecting);
+      }
+    });
+    observer.observe(copy);
+    observer.observe(closing);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleOpenWaitlist = (location: CtaLocation) => {
     setWaitlistOpen(true);
-    ph?.capture(EVENTS.WAITLIST_OPENED, { source: "getstarted" });
+    ph?.capture(EVENTS.WAITLIST_OPENED, { source: "getstarted", location });
     ph?.capture(EVENTS.CTA_CLICKED, {
       source: "getstarted",
       cta_text: "Join the waitlist",
+      location,
     });
+    if (location !== "hero") {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      copyRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    }
   };
+
+  const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => (
+    <div className="getstarted-actions">
+      <button
+        type="button"
+        className="minimal-button getstarted-primary"
+        onClick={() => handleOpenWaitlist(location)}
+        aria-expanded={waitlistOpen}
+        aria-controls="getstarted-waitlist"
+      >
+        Join the waitlist
+        <span aria-hidden="true">↗</span>
+      </button>
+      <a
+        className="getstarted-call-link"
+        href={calHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { source: "getstarted", cta_text: "Book a Call", location })}
+      >
+        Book a Call <span aria-hidden="true">↗</span>
+      </a>
+    </div>
+  );
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -75,36 +141,13 @@ export default function GetStartedPage() {
 
         <GetStartedOrb mobile />
 
-        <div className="getstarted-copy">
-          <h1 id="getstarted-title">
-            Get started with <span>Draft.</span>
-          </h1>
-          <p className="getstarted-lede">Your agents are moving fast. Give them a shared brain.</p>
-          <p className="getstarted-body">
-            Draft keeps your company&apos;s decisions, customer context, and priorities in one current place—so your team and every AI agent can work from the same source of truth.
+        <div className="getstarted-copy" ref={copyRef}>
+          <h1 id="getstarted-title">One brain for every agent your team uses.</h1>
+          <p className="getstarted-lede">
+            Draft keeps your company&apos;s decisions, customer context, and priorities current. Every AI agent can read them.
           </p>
 
-          <div className="getstarted-actions">
-            <button
-              type="button"
-              className="minimal-button getstarted-primary"
-              onClick={handleOpenWaitlist}
-              aria-expanded={waitlistOpen}
-              aria-controls="getstarted-waitlist"
-            >
-              Join the waitlist
-              <span aria-hidden="true">↗</span>
-            </button>
-            <a
-              className="getstarted-call-link"
-              href={calHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { source: "getstarted", cta_text: "Book a Call" })}
-            >
-              Book a Call <span aria-hidden="true">↗</span>
-            </a>
-          </div>
+          {renderActions("hero")}
 
           {waitlistOpen && (
             <div id="getstarted-waitlist" className="getstarted-waitlist is-open">
@@ -177,6 +220,51 @@ export default function GetStartedPage() {
         </div>
         <figcaption>One company brain. Every agent in sync.</figcaption>
       </figure>
+
+      <div className="getstarted-story">
+        <section className="getstarted-story-block" aria-labelledby="getstarted-problem">
+          <h2 id="getstarted-problem">Your agents start every session knowing nothing about your company.</h2>
+          <p>
+            Decisions live in Slack threads, call notes, and old tickets. Each agent has to be told again, and each teammate tells it something different.
+          </p>
+        </section>
+
+        <section className="getstarted-story-block" aria-labelledby="getstarted-what">
+          <h2 id="getstarted-what">What Draft does</h2>
+          <ul className="getstarted-rows">
+            {WHAT_DRAFT_DOES.map((item) => (
+              <li key={item.title}>
+                <h3>
+                  {item.title}
+                  {item.soon && <span className="getstarted-soon">Coming soon</span>}
+                </h3>
+                <p>{item.body}</p>
+                {/* TODO: add the Routines screen recording under the "Routines on any agent" row */}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <p className="getstarted-agents">Works with Claude Code, Codex, Cursor, and more, through MCP or CLI.</p>
+
+        <section className="getstarted-story-block getstarted-closing" ref={closingRef} aria-labelledby="getstarted-closing-title">
+          <h2 id="getstarted-closing-title">Give every agent the same brain.</h2>
+          {renderActions("closing")}
+        </section>
+      </div>
+
+      {showStickyBar && (
+        <div className="getstarted-sticky">
+          <button
+            type="button"
+            className="minimal-button getstarted-primary"
+            onClick={() => handleOpenWaitlist("sticky_bar")}
+          >
+            Join the waitlist
+            <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      )}
       <Footer />
     </main>
   );
