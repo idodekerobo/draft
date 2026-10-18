@@ -154,7 +154,7 @@ describe("capture-session.sh without the draft CLI", () => {
     expect(exitCode).toBe(0);
     expect(reportRequests).toHaveLength(1);
     const report = JSON.parse(reportRequests[0]!.body);
-    expect(report).toMatchObject({ code: "http-401", scriptVersion: "3", hookReason: "clear", workspaceId: "ws-1", sessionId: "sess-1", transcriptState: "present", transcriptBytes: String(TRANSCRIPT.length) });
+    expect(report).toMatchObject({ code: "http-401", scriptVersion: "4", hookReason: "clear", workspaceId: "ws-1", sessionId: "sess-1", transcriptState: "present", transcriptBytes: String(TRANSCRIPT.length) });
     expect(report.reason).toContain("invalid_ingest_token");
     expect(reportRequests[0]!.headers.get("authorization")).toBe("Bearer draft_sit_cred-1_secret");
     expect(readLog()[0]).toMatchObject({ status: "failure", detail: "status=401" });
@@ -181,6 +181,21 @@ describe("capture-session.sh without the draft CLI", () => {
     }
     expect(ingestRequests).toHaveLength(0);
     expect(readLog()[0]).toMatchObject({ status: "skipped", detail: "missing-transcript path_missing" });
+  });
+
+  test("reports where a missing transcript should have been", async () => {
+    mkdirSync(join(root, "projects"), { recursive: true });
+    writeFileSync(join(root, "projects", "other.jsonl"), "{}\n");
+    await runHook(hookInput({ transcript_path: join(root, "projects", "gone.jsonl") }));
+    expect(JSON.parse(reportRequests[0]!.body)).toMatchObject({ transcriptDir: join(root, "projects"), transcriptDirState: "exists", transcriptDirFiles: "1" });
+
+    reportRequests = [];
+    await runHook(hookInput({ transcript_path: join(home, ".claude", "projects", "gone.jsonl") }));
+    expect(JSON.parse(reportRequests[0]!.body)).toMatchObject({ transcriptDir: "~/.claude/projects", transcriptDirState: "missing" });
+
+    reportRequests = [];
+    await runHook(hookInput({ transcript_path: join(root, "nowhere", "gone.jsonl") }));
+    expect(JSON.parse(reportRequests[0]!.body)).toMatchObject({ transcriptDirState: "missing", transcriptDirFiles: "" });
   });
 
   test("reports a hook input with no transcript path as no-transcript, whatever the hook reason", async () => {

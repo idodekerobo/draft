@@ -71,7 +71,16 @@ describe("POST /sessions/ingest-errors", () => {
     ingestScope = { credentialId: "cred-1", workspaceId: "ws-1", sessionProjectId: null, allowedProviders: null };
     const response = await post(
       report(
-        { code: "no-transcript", hookReason: "other", sessionId: "sess-1", cwdName: "Flooently-goals", transcriptState: "path_missing" },
+        {
+          code: "no-transcript",
+          hookReason: "other",
+          sessionId: "sess-1",
+          cwdName: "Flooently-goals",
+          transcriptState: "path_missing",
+          transcriptDir: "~/.claude/projects/x",
+          transcriptDirState: "exists",
+          transcriptDirFiles: "4",
+        },
         { token: "draft_sit_x" },
       ),
     );
@@ -81,6 +90,9 @@ describe("POST /sessions/ingest-errors", () => {
       session_id: "sess-1",
       cwd_name: "Flooently-goals",
       transcript_state: "path_missing",
+      transcript_dir: "~/.claude/projects/x",
+      transcript_dir_state: "exists",
+      transcript_dir_files: "4",
     });
   });
 

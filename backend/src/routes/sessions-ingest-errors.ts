@@ -81,6 +81,9 @@ export const POST = async (req: SessionsIngestErrorsRequest): Promise<Response> 
     cwd_name: field(body.cwdName),
     transcript_state: field(body.transcriptState),
     transcript_bytes: field(body.transcriptBytes),
+    transcript_dir: field(body.transcriptDir),
+    transcript_dir_state: field(body.transcriptDirState),
+    transcript_dir_files: field(body.transcriptDirFiles),
   };
   // A claimed workspace id is never trusted as the owner of the row.
   if (!scope) detail.claimed_workspace_id = field(body.workspaceId);
