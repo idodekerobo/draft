@@ -25,7 +25,7 @@ const labelStyle = {
   lineHeight: 1.5,
 } as const;
 
-export default function WaitlistProfileStep({ email, source }: { email: string; source: string }) {
+export default function WaitlistProfileStep({ signupToken, source }: { signupToken: string; source: string }) {
   const ph = usePostHog();
   const [howHeard, setHowHeard] = useState("");
   const [useCase, setUseCase] = useState("");
@@ -37,12 +37,14 @@ export default function WaitlistProfileStep({ email, source }: { email: string; 
     event.preventDefault();
     setSubmitting(true);
     try {
-      await submitWaitlistProfile(email, { how_heard: howHeard, use_case: useCase, team_size: teamSize });
+      await submitWaitlistProfile(signupToken, { how_heard: howHeard, use_case: useCase, team_size: teamSize });
       ph?.capture(EVENTS.WAITLIST_PROFILE_SUBMITTED, { source });
     } catch {
-      // The signup is already saved; losing these answers is acceptable.
+      // Saving these optional answers never interrupts the signup confirmation.
+    } finally {
+      setSubmitting(false);
+      setDone(true);
     }
-    setDone(true);
   };
 
   if (done) {

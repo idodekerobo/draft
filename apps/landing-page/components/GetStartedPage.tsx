@@ -53,6 +53,7 @@ export default function GetStartedPage() {
   const emailRef = useRef<HTMLInputElement>(null);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [signupToken, setSignupToken] = useState("");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const calHref = useSyncExternalStore(subscribeNoop, buildCalLink, () => CAL_BASE);
   const isDesktop = useSyncExternalStore(subscribeDesktop, getIsDesktop, () => false);
@@ -126,7 +127,8 @@ export default function GetStartedPage() {
     setSubmitState("submitting");
 
     try {
-      await submitWaitlist(email, "getstarted");
+      const result = await submitWaitlist(email, "getstarted");
+      setSignupToken(result.signup_token);
       setSubmitState("success");
     } catch {
       setSubmitState("error");
@@ -163,7 +165,7 @@ export default function GetStartedPage() {
                     onOpenChange={setCallOpen}
                     inlineEmbed={!isDesktop}
                   />
-                  <WaitlistProfileStep email={email} source="getstarted" />
+                  <WaitlistProfileStep signupToken={signupToken} source="getstarted" />
                 </>
               ) : (
                 <form onSubmit={handleSubmit}>

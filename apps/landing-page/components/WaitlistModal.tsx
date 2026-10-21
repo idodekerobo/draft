@@ -22,6 +22,7 @@ export default function WaitlistModal() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [signupToken, setSignupToken] = useState("");
   const [source, setSource] = useState("unknown");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
 
@@ -63,7 +64,8 @@ export default function WaitlistModal() {
     setSubmitState("submitting");
 
     try {
-      await submitWaitlist(email, source);
+      const result = await submitWaitlist(email, source);
+      setSignupToken(result.signup_token);
       setSubmitState("success");
     } catch {
       setSubmitState("error");
@@ -162,7 +164,7 @@ export default function WaitlistModal() {
               We&apos;ll be in touch ASAP.
             </p>
             <PostSignupCall email={email} source={source} />
-            <WaitlistProfileStep email={email} source={source} />
+            <WaitlistProfileStep signupToken={signupToken} source={source} />
           </div>
         ) : (
           <>

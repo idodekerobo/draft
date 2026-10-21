@@ -8,22 +8,23 @@ async function post(path: string, body: unknown) {
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`Request to ${path} failed`);
+  return response.json();
 }
 
 export async function submitWaitlist(email: string, source: string) {
-  await post("/api/waitlist", {
+  const result = await post("/api/waitlist", {
     email,
     source,
     attribution: getAttribution(),
     posthog_distinct_id: getVisitorId(),
   });
   trackWaitlistSignup(source);
+  return result as { signup_token: string };
 }
 
-export function submitWaitlistProfile(email: string, profile: { how_heard: string; use_case: string; team_size: string }) {
+export function submitWaitlistProfile(signupToken: string, profile: { how_heard: string; use_case: string; team_size: string }) {
   return post("/api/waitlist/profile", {
-    email,
-    posthog_distinct_id: getVisitorId(),
+    signup_token: signupToken,
     profile,
   });
 }

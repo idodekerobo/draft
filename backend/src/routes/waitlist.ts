@@ -1,4 +1,6 @@
 import { serviceClient } from "../db/client";
+import { recordError } from "../errors/record-error";
+import { createWaitlistToken, verifyWaitlistToken } from "./waitlist-token";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_LENGTH = 320;
@@ -28,8 +30,7 @@ interface WaitlistRequest {
 }
 
 interface WaitlistProfileRequest {
-  email?: unknown;
-  posthog_distinct_id?: unknown;
+  signup_token?: unknown;
   profile?: unknown;
 }
 
@@ -95,34 +96,63 @@ export async function POST(request: Request): Promise<Response> {
     );
 
   if (error) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist signup save failed", error, detail: { email, source, attribution: cleanAttribution(body?.attribution) } });
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  return Response.json({ ok: true });
+  const { data: signup, error: lookupError } = await serviceClient
+    .from("waitlist_signups")
+    .select("id")
+    .eq("email", email)
+    .single();
+  if (lookupError || !signup) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist signup token lookup failed", error: lookupError, detail: { email, source } });
+    return Response.json({ error: "Could not prepare waitlist signup" }, { status: 500 });
+  }
+  try {
+    return Response.json({ ok: true, signup_token: createWaitlistToken(signup.id) });
+  } catch (error) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "auth", message: "Waitlist signup token creation failed", error, detail: { signup_id: signup.id, email, source } });
+    return Response.json({ error: "Could not prepare waitlist signup" }, { status: 500 });
+  }
 }
 
-// The row must match both email and distinct id, so a stranger who knows an email cannot edit it.
+// A signed signup token authorizes this update without relying on PostHog identity matching.
 export async function PROFILE_POST(request: Request): Promise<Response> {
   const body = await request.json().catch(() => null) as WaitlistProfileRequest | null;
-  const email = cleanEmail(body?.email);
-  const distinctId = cleanString(body?.posthog_distinct_id, MAX_ID_LENGTH);
   const profile = pickStrings(body?.profile, PROFILE_KEYS, MAX_PROFILE_VALUE_LENGTH);
-
-  if (!email || !distinctId) {
-    return Response.json({ error: "Invalid request" }, { status: 400 });
-  }
   if (Object.keys(profile).length === 0) {
     return Response.json({ ok: true });
   }
 
-  const { error } = await serviceClient
+  let signupId: string;
+  try {
+    signupId = verifyWaitlistToken(body?.signup_token).signupId;
+  } catch (error) {
+    await recordError({
+      workspaceId: null,
+      allowUnattributed: true,
+      operation: "auth",
+      message: "Waitlist profile token validation failed",
+      error,
+      detail: { profile },
+    });
+    return Response.json({ error: "Could not save answers" }, { status: 401 });
+  }
+
+  const { data, error } = await serviceClient
     .from("waitlist_signups")
     .update({ profile })
-    .eq("email", email)
-    .eq("posthog_distinct_id", distinctId);
+    .eq("id", signupId)
+    .select("id");
 
   if (error) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist profile save failed", error, detail: { signup_id: signupId, profile } });
     return Response.json({ error: error.message }, { status: 500 });
+  }
+  if (!data?.length) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist profile save matched no signup", detail: { signup_id: signupId, profile } });
+    return Response.json({ error: "Waitlist signup could not be matched" }, { status: 404 });
   }
 
   return Response.json({ ok: true });

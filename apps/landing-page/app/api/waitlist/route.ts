@@ -45,5 +45,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ ok: true });
+  const result = await response.json().catch(() => null) as { signup_token?: unknown } | null;
+  if (typeof result?.signup_token !== "string") {
+    console.error("[waitlist] Backend did not return a signup token");
+    return NextResponse.json({ error: "Could not save waitlist signup" }, { status: 502 });
+  }
+
+  return NextResponse.json({ ok: true, signup_token: result.signup_token });
 }

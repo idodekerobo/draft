@@ -15,7 +15,7 @@ if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
     capture_pageview: false,
     capture_pageleave: true,
     session_recording: {
-      maskAllInputs: true,
+      maskAllInputs: false,
     },
   });
   posthog.register({ platform: 'landing' });
