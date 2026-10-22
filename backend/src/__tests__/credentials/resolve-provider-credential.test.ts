@@ -14,6 +14,7 @@ const KEY_VERSION = "v1";
 
 beforeAll(() => {
   process.env.INFERENCE_CREDENTIAL_KEK_V1 = randomBytes(32).toString("base64");
+  process.env.INFERENCE_CREDENTIAL_KEK_V2 = randomBytes(32).toString("base64");
 });
 
 interface FakeClientOptions {

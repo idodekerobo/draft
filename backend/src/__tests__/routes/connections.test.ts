@@ -493,6 +493,7 @@ process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-key";
 process.env.SUPABASE_SECRET_KEY = "service-key";
 process.env.DRAFT_API_BASE_URL = "https://api.example.test";
 process.env.INFERENCE_CREDENTIAL_KEK_V1 = Buffer.alloc(32, 7).toString("base64");
+process.env.INFERENCE_CREDENTIAL_KEK_V2 = Buffer.alloc(32, 7).toString("base64");
 process.env.GITHUB_APP_ID = "123456";
 process.env.GITHUB_APP_SLUG = "draft-context-test";
 process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\\ntest\\n-----END RSA PRIVATE KEY-----";
@@ -826,7 +827,7 @@ describe("workspace connection routes", () => {
     expect(state.scheduledTasks).toHaveLength(2);
     expect(state.scheduledTasks.map((task) => task.task_type).sort()).toEqual(["ingest_source", "slack_backfill"]);
     const credential = state.credentials[0];
-    expect(credential?.encryption_key_version).toBe("v1");
+    expect(credential?.encryption_key_version).toBe("v2");
     expect(JSON.parse(decryptCredentialPayload(credential?.encrypted_payload, "v1"))).toEqual({
       bot_token: "xoxb-bot-token",
       app_token: "xapp-app-token",

@@ -22,6 +22,7 @@ const FIXED_NOW = 1_769_527_800_000; // 2026-01-27T15:30:00.000Z
 
 beforeAll(() => {
   process.env.INFERENCE_CREDENTIAL_KEK_V1 = randomBytes(32).toString("base64");
+  process.env.INFERENCE_CREDENTIAL_KEK_V2 = randomBytes(32).toString("base64");
 });
 
 interface FakeClientOptions {
