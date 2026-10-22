@@ -15,6 +15,7 @@ const sessionProjectId = "77777777-7777-4777-8777-777777777777";
 
 beforeAll(() => {
   process.env.INFERENCE_CREDENTIAL_KEK_V1 = randomBytes(32).toString("base64");
+  process.env.INFERENCE_CREDENTIAL_KEK_V2 = randomBytes(32).toString("base64");
 });
 
 interface FakeRow {

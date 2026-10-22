@@ -3,7 +3,7 @@ import { createDecipheriv, createCipheriv, randomBytes } from "node:crypto";
 // Bump only when rotating keys, and only once the new
 // INFERENCE_CREDENTIAL_KEK_<VERSION> env var is provisioned everywhere that
 // decrypts (loadKek reads it by this exact name).
-export const CURRENT_CREDENTIAL_KEY_VERSION = "v1";
+export const CURRENT_CREDENTIAL_KEY_VERSION = "v2";
 
 // Envelope encryption (pilot stage; Supabase Vault out of scope for now).
 // credentials.encrypted_payload (bytea, stored as \x<hex>) layout:
