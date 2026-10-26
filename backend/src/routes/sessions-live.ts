@@ -1,8 +1,9 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
+import { recordError } from "../errors/record-error";
 import { recordRouteError } from "../errors/route-error";
-import { parseLiveLine, type LiveLineInput } from "../ingestion/claude-code/parse-live-line";
+import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
 import type { SessionEventRow, SessionRow, WorkspaceRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 
@@ -11,6 +12,8 @@ type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">
 type EventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/events">;
 type LinesRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/lines">;
 type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">;
+type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
+type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const MAX_LINES_PER_POST = 2000;
@@ -18,9 +21,11 @@ const DEFAULT_EVENTS_PAGE = 500;
 const MAX_EVENTS_PAGE = 1000;
 const LIST_LIMIT = 50;
 const TITLE_MAX_CHARS = 120;
+const RAW_BUCKET = "session-raw";
+const RAW_FILE = /^(root|subagents\/agent-[A-Za-z0-9_-]+)\.jsonl$/;
 
 const SESSION_COLUMNS =
-  "id, workspace_id, owner_user_id, session_type, harness, model, native_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seq, host_machine_id, host_name";
+  "id, workspace_id, owner_user_id, session_type, harness, model, native_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seq, host_machine_id, host_name, raw_storage_path, raw_uploaded_at";
 
 function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string, sessionId?: string): Response {
   if (status >= 500) {
@@ -172,10 +177,24 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   return Response.json({ session: named[0], events: (events ?? []) as Partial<SessionEventRow>[] });
 });
 
-function isLiveLineInput(value: unknown): value is LiveLineInput {
+type IncomingLine = LiveLineInput | { file: string; offset: number; oversizeBytes: number };
+
+function isIncomingLine(value: unknown): value is IncomingLine {
   if (!value || typeof value !== "object") return false;
   const line = value as Record<string, unknown>;
-  return typeof line.file === "string" && Number.isInteger(line.offset) && typeof line.raw === "string";
+  if (typeof line.file !== "string" || !Number.isInteger(line.offset)) return false;
+  return typeof line.raw === "string" || Number.isInteger(line.oversizeBytes);
+}
+
+function eventsFor(line: IncomingLine): ParsedLiveEvent[] {
+  if ("raw" in line) return parseLiveLine(line);
+  return [
+    {
+      sourceId: `${line.file}:${line.offset}`,
+      kind: "session_note",
+      payload: { text: "A very large item was skipped", reason: "too_large", bytes: line.oversizeBytes },
+    },
+  ];
 }
 
 const APPEND_ERRORS: Record<string, { error: string; status: number }> = {
@@ -202,13 +221,25 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
 
   const hostMachineId = optionalString(body.hostMachineId, 200);
   if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
-  if (!Array.isArray(body.lines) || body.lines.length > MAX_LINES_PER_POST || !body.lines.every(isLiveLineInput)) {
+  if (!Array.isArray(body.lines) || body.lines.length > MAX_LINES_PER_POST || !body.lines.every(isIncomingLine)) {
     return errorResponse("invalid_lines", 400);
   }
 
-  const events = (body.lines as LiveLineInput[])
-    .map(parseLiveLine)
-    .filter((event) => event !== null)
+  const incoming = body.lines as IncomingLine[];
+  for (const line of incoming) {
+    if ("oversizeBytes" in line) {
+      void recordError({
+        workspaceId,
+        sessionId,
+        operation: "session",
+        message: "Session line too large to forward",
+        code: "line_too_large",
+        detail: { file: line.file, offset: line.offset, bytes: line.oversizeBytes },
+      });
+    }
+  }
+  const events = incoming
+    .flatMap(eventsFor)
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
 
   let lastSeq = owned.session.last_seq;
@@ -230,7 +261,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
     return errorResponse("foreign_host", 403);
   }
 
-  const firstPrompt = events.find((e) => e.kind === "user_message");
+  const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
   if (owned.session.title === null && firstPrompt) {
     const title = firstLine((firstPrompt.payload as { text: string }).text);
@@ -262,6 +293,59 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
     .eq("id", sessionId)
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
+
+  return Response.json({ ok: true });
+});
+
+export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  if (!owned.ok) return owned.response;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+
+  const files = parsed.body.files;
+  if (!Array.isArray(files) || files.length === 0 || files.length > 200 || !files.every((f) => typeof f === "string" && RAW_FILE.test(f))) {
+    return errorResponse("invalid_files", 400);
+  }
+
+  const uploads = [];
+  for (const file of files as string[]) {
+    const objectPath = `${workspaceId}/${sessionId}/${file}.gz`;
+    const { data, error } = await serviceClient.storage.from(RAW_BUCKET).createSignedUploadUrl(objectPath, { upsert: true });
+    if (error || !data) return errorResponse("upload_url_failed", 500, error, workspaceId, sessionId);
+    uploads.push({ file, signedUrl: data.signedUrl });
+  }
+  return Response.json({ ok: true, uploads });
+});
+
+export const RAW_UPLOAD_COMPLETE = withAuth<RawCompleteRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  if (!owned.ok) return owned.response;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+
+  const prefix = `${workspaceId}/${sessionId}`;
+  const { data: objects, error: listError } = await serviceClient.storage.from(RAW_BUCKET).list(prefix);
+  if (listError) return errorResponse("raw_list_failed", 500, listError, workspaceId, sessionId);
+  if (!objects?.some((o) => o.name === "root.jsonl.gz")) return errorResponse("raw_not_uploaded", 409);
+
+  const { error } = await serviceClient
+    .from("sessions")
+    .update({ raw_storage_path: `${prefix}/`, raw_uploaded_at: new Date().toISOString() })
+    .eq("id", sessionId);
+  if (error) return errorResponse("raw_record_failed", 500, error, workspaceId, sessionId);
 
   return Response.json({ ok: true });
 });

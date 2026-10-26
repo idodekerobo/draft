@@ -310,7 +310,13 @@ export interface ErrorRow {
 }
 
 export type SessionStatus = "starting" | "live" | "host_offline" | "ended";
-export type SessionEventKind = "user_message" | "assistant_text";
+export type SessionEventKind =
+  | "user_message"
+  | "assistant_text"
+  | "tool_use"
+  | "tool_result"
+  | "thinking"
+  | "session_note";
 
 export interface SessionRow {
   id: string;
@@ -331,6 +337,8 @@ export interface SessionRow {
   last_seq: number;
   host_machine_id: string;
   host_name: string | null;
+  raw_storage_path: string | null;
+  raw_uploaded_at: string | null;
 }
 
 export interface SessionEventRow {

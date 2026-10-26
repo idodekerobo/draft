@@ -67,6 +67,8 @@ export const routes = {
   "/workspaces/:id/live-sessions/:sessionId/events": { GET: withCors(sessionsLive.EVENTS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/lines": { POST: withCors(sessionsLive.LINES), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/end": { POST: withCors(sessionsLive.END), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/raw": { POST: withCors(sessionsLive.RAW_UPLOAD_URLS), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/raw/complete": { POST: withCors(sessionsLive.RAW_UPLOAD_COMPLETE), OPTIONS },
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
   "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
   "/sessions/ingest": { POST: sessionsIngest.POST },

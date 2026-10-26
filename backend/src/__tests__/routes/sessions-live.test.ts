@@ -5,6 +5,8 @@ let accessResult: Response | null = null;
 let liveSessionsEnabled = true;
 let rpcResult: { data: unknown; error: { message: string } | null } = { data: { last_seq: 2, inserted: 2 }, error: null };
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+let storageObjects: Array<{ name: string }> = [];
+const signedPaths: string[] = [];
 
 type Row = Record<string, unknown>;
 let tables: Record<string, Row[]> = {};
@@ -74,6 +76,15 @@ mock.module("../../db/client", () => ({
       rpcCalls.push({ fn, args });
       return rpcResult;
     },
+    storage: {
+      from: () => ({
+        createSignedUploadUrl: async (path: string) => {
+          signedPaths.push(path);
+          return { data: { signedUrl: `https://storage.test/${path}?token=t` }, error: null };
+        },
+        list: async () => ({ data: storageObjects, error: null }),
+      }),
+    },
   },
 }));
 
@@ -112,6 +123,8 @@ beforeEach(() => {
   liveSessionsEnabled = true;
   rpcResult = { data: { last_seq: 2, inserted: 2 }, error: null };
   rpcCalls.length = 0;
+  storageObjects = [];
+  signedPaths.length = 0;
   inserted = [];
   updates = [];
   errorRows = [];
@@ -222,5 +235,69 @@ describe("live session routes", () => {
     const ok = await routes.END(post("/x", { hostMachineId: "host-1", reason: "user_exit" }));
     expect(ok.status).toBe(200);
     expect(updates.at(-1)?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
+  });
+
+  it("turns an oversize item into a note and records an error without a body", async () => {
+    const res = await routes.LINES(
+      post("/x", { hostMachineId: "host-1", lines: [{ file: "root.jsonl", offset: 40, oversizeBytes: 9_000_000 }] }),
+    );
+    expect(res.status).toBe(200);
+    expect(rpcCalls[0].args.p_events).toEqual([
+      { source_id: "root.jsonl:40", kind: "session_note", payload: { text: "A very large item was skipped", reason: "too_large", bytes: 9_000_000 } },
+    ]);
+    await Bun.sleep(5);
+    expect(errorRows[0]).toMatchObject({ workspace_id: WS, session_id: SESSION, operation: "session" });
+  });
+
+  it("parses sub-agent lines with their agent id", async () => {
+    const raw = JSON.stringify({ type: "assistant", uuid: "a1", isSidechain: true, message: { role: "assistant", content: [{ type: "text", text: "listing" }] } });
+    await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [{ file: "subagents/agent-abc.jsonl", offset: 0, raw }] }));
+    expect(rpcCalls[0].args.p_events).toEqual([
+      { source_id: "a1", kind: "assistant_text", payload: { timestamp: null, agent_id: "abc", text: "listing" } },
+    ]);
+  });
+});
+
+describe("raw upload routes", () => {
+  it("returns a signed upload URL per file under the workspace and session folder", async () => {
+    const res = await routes.RAW_UPLOAD_URLS(post("/x", { hostMachineId: "host-1", files: ["root.jsonl", "subagents/agent-abc.jsonl"] }));
+    expect(res.status).toBe(200);
+    expect(signedPaths).toEqual([`${WS}/${SESSION}/root.jsonl.gz`, `${WS}/${SESSION}/subagents/agent-abc.jsonl.gz`]);
+    const body = (await res.json()) as { uploads: Array<{ file: string; signedUrl: string }> };
+    expect(body.uploads.map((u) => u.file)).toEqual(["root.jsonl", "subagents/agent-abc.jsonl"]);
+  });
+
+  it("rejects file names that could escape the session folder", async () => {
+    for (const files of [["../other/root.jsonl"], ["root.jsonl.gz"], ["subagents/../root.jsonl"], []]) {
+      const res = await routes.RAW_UPLOAD_URLS(post("/x", { hostMachineId: "host-1", files }));
+      expect(res.status).toBe(400);
+    }
+    expect(signedPaths).toEqual([]);
+  });
+
+  it("refuses a non-owner and a foreign host", async () => {
+    tables.sessions = [session({ owner_user_id: "someone-else" })];
+    expect((await routes.RAW_UPLOAD_URLS(post("/x", { hostMachineId: "host-1", files: ["root.jsonl"] }))).status).toBe(403);
+    tables.sessions = [session()];
+    expect((await routes.RAW_UPLOAD_URLS(post("/x", { hostMachineId: "host-2", files: ["root.jsonl"] }))).status).toBe(403);
+    expect(signedPaths).toEqual([]);
+  });
+
+  it("still accepts uploads after the session has ended", async () => {
+    tables.sessions = [session({ status: "ended" })];
+    const res = await routes.RAW_UPLOAD_URLS(post("/x", { hostMachineId: "host-1", files: ["root.jsonl"] }));
+    expect(res.status).toBe(200);
+  });
+
+  it("records the upload only when the root file is in storage", async () => {
+    const missing = await routes.RAW_UPLOAD_COMPLETE(post("/x", { hostMachineId: "host-1" }));
+    expect(missing.status).toBe(409);
+    expect(updates).toEqual([]);
+
+    storageObjects = [{ name: "root.jsonl.gz" }];
+    const ok = await routes.RAW_UPLOAD_COMPLETE(post("/x", { hostMachineId: "host-1" }));
+    expect(ok.status).toBe(200);
+    expect(updates.at(-1)?.payload).toMatchObject({ raw_storage_path: `${WS}/${SESSION}/` });
+    expect(updates.at(-1)?.payload.raw_uploaded_at).toBeString();
   });
 });
