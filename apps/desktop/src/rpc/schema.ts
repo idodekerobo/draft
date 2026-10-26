@@ -226,7 +226,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
+import type { LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -324,6 +324,15 @@ export type AppRPCType = {
 
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
+
+      /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
+      startLiveSession: { params: { folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
+
+      /** Live sessions of the workspace; `enabled` is false when the workspace has the feature off. */
+      listLiveSessions: { params: void; response: { enabled: boolean; sessions: LiveSession[] } };
+
+      /** Events of one live session above `after`. */
+      getLiveSessionEvents: { params: { sessionId: string; after: number }; response: LiveSessionEventsPage };
 
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };

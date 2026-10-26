@@ -32,6 +32,7 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
+import { getLiveSessionEvents, listLiveSessions, startLiveSession } from "./main/host/live-session";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
@@ -732,6 +733,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: err instanceof Error ? err.message : "Could not start the workspace synthesis run." };
         }
       },
+
+      startLiveSession: ({ folderPath, model }) => startLiveSession({ folderPath, model }, () => findRunnerBin("claude")),
+
+      listLiveSessions: () => listLiveSessions(),
+
+      getLiveSessionEvents: ({ sessionId, after }) => getLiveSessionEvents(sessionId, after),
 
       getAvailableRunners: async () => {
         const [claudePath, codexPath] = await Promise.all([

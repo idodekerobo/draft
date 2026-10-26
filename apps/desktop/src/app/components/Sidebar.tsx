@@ -11,6 +11,7 @@ interface SidebarProps {
   activeView: View;
   onNavigate: (view: View) => void;
   onOpenFeedback: () => void;
+  sessionsEnabled: boolean;
 }
 
 interface NavItem {
@@ -23,15 +24,16 @@ const NAV_ITEMS: NavItem[] = [
   { id: "connections", label: "Connections" },
   { id: "activity",    label: "Activity"    },
   { id: "routines",    label: "Routines"    },
+  { id: "sessions",    label: "Sessions"    },
   { id: "settings",  label: "Settings"  },
 ];
 
-export const Sidebar = memo(function Sidebar({ activeView, onNavigate, onOpenFeedback }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ activeView, onNavigate, onOpenFeedback, sessionsEnabled }: SidebarProps) {
   return (
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar__brand"><Brand /></div>
       <ul className="sidebar__nav">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => item.id !== "sessions" || sessionsEnabled).map((item) => {
           const isActive = item.id === activeView;
 
           return (

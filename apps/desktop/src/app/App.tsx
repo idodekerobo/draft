@@ -18,6 +18,9 @@ import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
 import { ConnectionsView } from "./components/views/ConnectionsView";
 import { RoutinesView } from "./components/views/RoutinesView";
+import { SessionsView } from "./components/views/SessionsView";
+import { useLiveSessions } from "draft-shared-ui";
+import { liveSessionsApi } from "./liveSessionsApi";
 import { DesktopOnboarding } from "./components/views/onboarding/DesktopOnboarding";
 import { SupportPanel } from "./components/SupportPanel";
 import { useCrispChat } from "./support/useCrispChat";
@@ -46,6 +49,7 @@ export function App() {
   const { messages: crispMessages, sendMessage: crispSend, isReady: crispReady } = useCrispChat();
   const { files: contextFiles, loading: contextLoading, settled: contextSettled, setFiles: setContextFiles, reloadFiles: reloadContextFiles } = useContextFiles();
   const updates = useAppUpdates();
+  const { enabled: sessionsEnabled } = useLiveSessions(liveSessionsApi, workspaceId ?? "signed-out");
 
   const { track } = useAnalytics();
   const hasLaunchedRef = useRef(false);
@@ -132,6 +136,7 @@ export function App() {
           activeView={activeView}
           onNavigate={handleNavigate}
           onOpenFeedback={openFeedback}
+          sessionsEnabled={sessionsEnabled}
         />
 
         <main className="content">
@@ -168,6 +173,7 @@ export function App() {
               {activeView === "connections" && <ConnectionsView />}
               {activeView === "activity" && <ActivityView />}
               {activeView === "routines" && <RoutinesView onReconnect={() => handleNavigate("connections")} />}
+              {activeView === "sessions" && sessionsEnabled && <SessionsView />}
             </>
           )}
         </main>
