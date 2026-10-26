@@ -32,7 +32,7 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
-import { getLiveSessionEvents, listLiveSessions, startLiveSession } from "./main/host/live-session";
+import { getLiveSessionEvents, listLiveSessions, resumeLiveSessions, startLiveSession } from "./main/host/live-session";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
@@ -1003,6 +1003,8 @@ setTimeout(async () => {
   const preference = resolveNotificationsEnabled(globalConfig.notificationsEnabled, localConfig.ok ? localConfig.config.notificationsEnabled : undefined);
   if (preference.migrated) writeDraftConfig({ ...globalConfig, notificationsEnabled: preference.enabled });
   setNotificationsEnabled(preference.enabled);
+
+  void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
 
   // Silent update check on launch — pushes updateAvailable if a new version is ready.
   void checkAndDownloadUpdate(true);

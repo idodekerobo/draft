@@ -5,22 +5,19 @@ import { getCachedWorkspaceId } from "draft-core/auth-state";
 import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
+import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
 import { TranscriptForwarder, type ForwardedLine } from "./forwarder";
 import { launchClaudeInTmux, paneIsAlive, tmuxSessionName } from "./launch";
 import { getHostMachineId } from "./machine-id";
 import { preTrustFolder } from "./pre-trust";
+import { putSigned, uploadRawFiles } from "./raw-upload";
 
 const PANE_WATCH_MS = 2_000;
 const FATAL_CODES = new Set(["session_ended", "foreign_host", "not_session_owner", "session_not_found", "live_sessions_disabled"]);
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
 
-interface ActiveSession {
-  forwarder: TranscriptForwarder;
-  watcher: ReturnType<typeof setInterval>;
-}
-
-const active = new Map<string, ActiveSession>();
+const running = new Map<string, SessionRunner>();
 
 const ERROR_MESSAGES: Record<string, string> = {
   live_sessions_disabled: "Live sessions are not turned on for this workspace.",
@@ -35,14 +32,112 @@ async function gitRemote(folderPath: string): Promise<string | null> {
   }
 }
 
-async function endSession(workspaceId: string, sessionId: string, hostMachineId: string, reason: string): Promise<void> {
-  try {
-    await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
-      method: "POST",
-      body: JSON.stringify({ hostMachineId, reason }),
+/** Forwards one session's transcript while its pane lives, then finishes it: last lines, raw upload, end. */
+class SessionRunner {
+  private readonly forwarder: TranscriptForwarder;
+  private watcher: ReturnType<typeof setInterval> | null = null;
+  private stepping = false;
+  private finished = false;
+  private readonly base: string;
+
+  constructor(private state: HostSessionState) {
+    this.base = `workspaces/${state.workspaceId}/live-sessions/${state.sessionId}`;
+    this.forwarder = new TranscriptForwarder({
+      nativeSessionId: state.nativeSessionId,
+      cursors: state.cursors,
+      onCursors: (cursors) => this.persist({ cursors }),
+      post: async (lines: ForwardedLine[]) => {
+        await fetchServer(`${this.base}/lines`, {
+          method: "POST",
+          body: JSON.stringify({ hostMachineId: state.hostMachineId, nativeSessionId: state.nativeSessionId, lines }),
+        });
+      },
+      isFatal: (error) => error instanceof ServerError && FATAL_CODES.has(error.code),
+      onFatal: () => this.abandon(),
     });
-  } catch (error) {
-    console.error("[live-session] end failed", sessionId, error);
+  }
+
+  start(): void {
+    if (!this.state.ended) this.forwarder.start();
+    this.watcher = setInterval(() => void this.step(), PANE_WATCH_MS);
+    running.set(this.state.sessionId, this);
+  }
+
+  private persist(patch: Partial<HostSessionState>): void {
+    this.state = { ...this.state, ...patch };
+    saveState(this.state);
+  }
+
+  private abandon(): void {
+    this.finished = true;
+    this.forwarder.halt();
+    if (this.watcher) clearInterval(this.watcher);
+    running.delete(this.state.sessionId);
+    deleteState(this.state.sessionId);
+  }
+
+  private async rawUpload(): Promise<boolean> {
+    try {
+      const rawUploads = await uploadRawFiles(this.forwarder.files(), this.state.rawUploads, {
+        requestUrls: async (files) =>
+          (await fetchServerJSON<{ uploads: Array<{ file: string; signedUrl: string }> }>(`${this.base}/raw`, {
+            method: "POST",
+            body: JSON.stringify({ hostMachineId: this.state.hostMachineId, files }),
+          })).uploads,
+        put: putSigned,
+        complete: async () => {
+          await fetchServer(`${this.base}/raw/complete`, {
+            method: "POST",
+            body: JSON.stringify({ hostMachineId: this.state.hostMachineId }),
+          });
+        },
+      });
+      if (rawUploads !== this.state.rawUploads) this.persist({ rawUploads });
+      return true;
+    } catch (error) {
+      console.error("[live-session] raw upload failed", this.state.sessionId, error);
+      return false;
+    }
+  }
+
+  private async endOnServer(): Promise<boolean> {
+    try {
+      await fetchServer(`${this.base}/end`, {
+        method: "POST",
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, reason: "exited" }),
+      });
+      return true;
+    } catch (error) {
+      // An already ended session is the outcome we wanted.
+      if (error instanceof ServerError && error.code === "session_ended") return true;
+      console.error("[live-session] end failed", this.state.sessionId, error);
+      return false;
+    }
+  }
+
+  /** One pass; runs every few seconds and does the next unfinished piece of work. */
+  async step(): Promise<void> {
+    if (this.stepping || this.finished) return;
+    this.stepping = true;
+    try {
+      if (!this.state.ended) {
+        if (await paneIsAlive(this.state.tmuxSession)) return;
+        this.forwarder.halt();
+        if (!(await this.forwarder.tick())) return;
+        if (!(await this.endOnServer())) return;
+        this.persist({ ended: true });
+      }
+      if (await this.rawUpload()) this.abandon();
+      // TODO: also upload on the Stop hook once the hooks server exists.
+    } finally {
+      this.stepping = false;
+    }
+  }
+
+  /** Uploads raw files newer than the last upload, for a pane that is still running. */
+  async uploadIfChanged(): Promise<void> {
+    await this.forwarder.tick();
+    await this.rawUpload();
   }
 }
 
@@ -82,44 +177,43 @@ export async function startLiveSession(
     return { ok: false, error: (code && ERROR_MESSAGES[code]) ?? "Could not create the session." };
   }
 
-  const tmuxSession = tmuxSessionName(sessionId);
+  const state: HostSessionState = {
+    sessionId,
+    workspaceId,
+    hostMachineId,
+    nativeSessionId,
+    folderPath,
+    tmuxSession: tmuxSessionName(sessionId),
+    cursors: {},
+    rawUploads: {},
+    ended: false,
+  };
+
   try {
     preTrustFolder(folderPath);
-    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin, nativeSessionId, model });
+    await launchClaudeInTmux({ tmuxSession: state.tmuxSession, folderPath, claudeBin, nativeSessionId, model });
   } catch (error) {
     console.error("[live-session] launch failed", error);
-    await endSession(workspaceId, sessionId, hostMachineId, "launch_failed");
+    await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
+      method: "POST",
+      body: JSON.stringify({ hostMachineId, reason: "launch_failed" }),
+    }).catch(() => {});
     return { ok: false, error: "Could not start Claude Code." };
   }
 
-  const stop = () => {
-    const entry = active.get(sessionId);
-    if (entry) clearInterval(entry.watcher);
-    active.delete(sessionId);
-  };
-
-  const forwarder = new TranscriptForwarder({
-    nativeSessionId,
-    post: async (lines: ForwardedLine[]) => {
-      await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/lines`, {
-        method: "POST",
-        body: JSON.stringify({ hostMachineId, nativeSessionId, lines }),
-      });
-    },
-    isFatal: (error) => error instanceof ServerError && FATAL_CODES.has(error.code),
-    onFatal: stop,
-  });
-  forwarder.start();
-
-  const watcher = setInterval(async () => {
-    if (await paneIsAlive(tmuxSession)) return;
-    stop();
-    await forwarder.stop();
-    await endSession(workspaceId, sessionId, hostMachineId, "exited");
-  }, PANE_WATCH_MS);
-
-  active.set(sessionId, { forwarder, watcher });
+  saveState(state);
+  new SessionRunner(state).start();
   return { ok: true, sessionId };
+}
+
+/** Picks up the sessions this machine was forwarding when the app last closed. */
+export async function resumeLiveSessions(): Promise<void> {
+  for (const state of loadStates()) {
+    if (running.has(state.sessionId)) continue;
+    const runner = new SessionRunner(state);
+    runner.start();
+    if (!state.ended && (await paneIsAlive(state.tmuxSession))) await runner.uploadIfChanged();
+  }
 }
 
 export async function listLiveSessions(): Promise<{ enabled: boolean; sessions: LiveSession[] }> {
