@@ -84,6 +84,7 @@ export interface WorkspaceRow {
   runs_enabled: boolean;
   max_runs_per_day: number | null;
   max_cost_usd_per_day: string | null;
+  live_sessions_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -300,9 +301,44 @@ export interface ErrorRow {
   source_connection_id: string | null;
   scheduled_task_id: string | null;
   synthesis_run_id: string | null;
+  session_id: string | null;
   operation: ErrorOperation;
   message: string;
   detail_json: Record<string, unknown>;
   stack_trace: string | null;
+  created_at: string;
+}
+
+export type SessionStatus = "starting" | "live" | "host_offline" | "ended";
+export type SessionEventKind = "user_message" | "assistant_text";
+
+export interface SessionRow {
+  id: string;
+  workspace_id: string;
+  owner_user_id: string;
+  session_type: "interactive" | "routine";
+  harness: "claude";
+  model: string | null;
+  native_session_id: string | null;
+  title: string | null;
+  folder_name: string | null;
+  git_remote: string | null;
+  status: SessionStatus;
+  started_at: string;
+  ended_at: string | null;
+  end_reason: string | null;
+  last_event_at: string | null;
+  last_seq: number;
+  host_machine_id: string;
+  host_name: string | null;
+}
+
+export interface SessionEventRow {
+  session_id: string;
+  workspace_id: string;
+  seq: number;
+  source_id: string;
+  kind: SessionEventKind;
+  payload: Record<string, unknown>;
   created_at: string;
 }
