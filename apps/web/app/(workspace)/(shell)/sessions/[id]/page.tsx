@@ -16,7 +16,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       {session && (
         <p className="ui-page__intro">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</p>
       )}
-      {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} />}
+      {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} ownerName={session?.owner_name ?? undefined} />}
     </div>
   );
 }

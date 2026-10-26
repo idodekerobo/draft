@@ -695,9 +695,19 @@
 .ui-context-export__panel p { margin: var(--space-1) 0 var(--space-2); }
 .ui-context-export__cmds { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 
-.ui-session-stream { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3, 12px); }
-.ui-session-stream__who { color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
-.ui-session-stream__text { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ui-stream { list-style: none; margin: 0; padding: 0; }
+.ui-stream__item { padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--thinking { padding: var(--space-2) 0; }
+.ui-stream__item--agent { margin-left: var(--space-4); padding-left: var(--space-3); border-left: 1px solid var(--color-border-strong); }
+.ui-stream__agent-label { margin: var(--space-3) 0 0 var(--space-4); color: var(--color-text-secondary); font-size: var(--font-size-small); }
+.ui-stream__who { color: var(--color-text-secondary); font-size: var(--font-size-small); }
+.ui-stream__text { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ui-stream__note { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); text-align: center; }
+.ui-stream__details > summary { cursor: pointer; color: var(--color-text-secondary); font-size: var(--font-size-secondary); list-style-position: inside; }
+.ui-stream__tool { font-family: var(--font-mono); color: var(--color-text-primary); margin-right: var(--space-2); }
+.ui-stream__summary { font-family: var(--font-mono); font-size: var(--font-size-small); overflow-wrap: anywhere; }
+.ui-stream__code { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 320px; overflow: auto; background: var(--color-bg-surface); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--font-size-small); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ui-stream__code--error { color: var(--color-status-red); }
 .ui-sessions-list { list-style: none; margin: 0; padding: 0; }
 .ui-sessions-list__row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 10px 0; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
 .ui-sessions-list__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

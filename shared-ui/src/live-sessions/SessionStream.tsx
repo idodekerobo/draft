@@ -1,15 +1,79 @@
+import { Fragment, useMemo } from "react";
+import { renderMarkdown } from "../context/markdown";
+import { buildStreamItems, type StreamItem } from "./stream-items";
 import type { LiveSessionEvent } from "./types";
 
-export function SessionStream({ events }: { events: LiveSessionEvent[] }) {
-  if (events.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
+function formatInput(input: unknown): string {
+  return typeof input === "string" ? input : JSON.stringify(input, null, 2);
+}
+
+function Item({ item, ownerName }: { item: StreamItem; ownerName: string }) {
+  switch (item.type) {
+    case "user":
+      return (
+        <>
+          <span className="ui-stream__who">{item.agentId ? "Prompt" : ownerName}</span>
+          <p className="ui-stream__text">{item.text}</p>
+        </>
+      );
+    case "assistant":
+      return (
+        <>
+          <span className="ui-stream__who">Claude</span>
+          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />
+        </>
+      );
+    case "thinking":
+      return (
+        <details className="ui-stream__details">
+          <summary>Thinking</summary>
+          <p className="ui-stream__text ui-muted">{item.text}</p>
+        </details>
+      );
+    case "note":
+      return <p className="ui-stream__note">{item.text}</p>;
+    case "tool":
+      return (
+        <details className="ui-stream__details">
+          <summary>
+            <span className="ui-stream__tool">{item.name}</span>
+            {item.summary && <span className="ui-stream__summary">{item.summary}</span>}
+            {item.result === null && <span className="ui-muted"> · running</span>}
+            {item.result?.isError && <span className="ui-error"> · failed</span>}
+          </summary>
+          <pre className="ui-stream__code">{formatInput(item.input)}</pre>
+          {item.result && (
+            <pre className={`ui-stream__code${item.result.isError ? " ui-stream__code--error" : ""}`}>
+              {item.result.text || "(no output)"}
+              {item.result.truncated ? "\n… output clipped" : ""}
+            </pre>
+          )}
+        </details>
+      );
+  }
+}
+
+const agentOf = (item: StreamItem) => ("agentId" in item ? item.agentId : null);
+
+export function SessionStream({ events, ownerName = "User" }: { events: LiveSessionEvent[]; ownerName?: string }) {
+  const items = useMemo(() => buildStreamItems(events), [events]);
+  if (items.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
+
   return (
-    <ol className="ui-session-stream">
-      {events.map((event) => (
-        <li key={event.seq} className={`ui-session-stream__item ui-session-stream__item--${event.kind}`}>
-          <span className="ui-session-stream__who">{event.kind === "user_message" ? "You" : "Claude"}</span>
-          <p className="ui-session-stream__text">{event.payload.text}</p>
-        </li>
-      ))}
+    <ol className="ui-stream">
+      {items.map((item, index) => {
+        const agentId = agentOf(item);
+        const previous = index > 0 ? agentOf(items[index - 1]!) : null;
+        const startsAgent = agentId !== null && previous !== agentId;
+        return (
+          <Fragment key={item.seq}>
+            {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
+            <li className={`ui-stream__item ui-stream__item--${item.type}${agentId ? " ui-stream__item--agent" : ""}`}>
+              <Item item={item} ownerName={ownerName} />
+            </li>
+          </Fragment>
+        );
+      })}
     </ol>
   );
 }

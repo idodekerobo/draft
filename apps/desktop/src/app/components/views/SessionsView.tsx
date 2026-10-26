@@ -13,7 +13,7 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
       <p><button type="button" className="ui-link" onClick={onBack}>Sessions</button></p>
       <h1 className="ui-page__title">{session ? sessionTitle(session) : "Session"}</h1>
       {session && <p className="ui-page__intro">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</p>}
-      {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} />}
+      {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} ownerName={session?.owner_name ?? undefined} />}
     </div>
   );
 }

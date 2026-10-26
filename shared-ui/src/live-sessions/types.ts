@@ -14,11 +14,27 @@ export interface LiveSession {
   last_seq: number;
 }
 
+export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note";
+
+export interface LiveSessionEventPayload {
+  text?: string;
+  timestamp?: string | null;
+  /** Set on events from a sub-agent transcript. */
+  agent_id?: string;
+  truncated?: boolean;
+  tool_use_id?: string | null;
+  name?: string;
+  input?: unknown;
+  input_truncated?: boolean;
+  content?: string;
+  is_error?: boolean;
+}
+
 export interface LiveSessionEvent {
   seq: number;
   source_id: string;
-  kind: "user_message" | "assistant_text";
-  payload: { text: string; timestamp: string | null };
+  kind: LiveSessionEventKind;
+  payload: LiveSessionEventPayload;
   created_at: string;
 }
 
