@@ -4,8 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Brand, useQuery } from "draft-shared-ui";
 import { apiFetch } from "@/lib/api";
+import { useWebLiveSessions } from "@/lib/live-sessions";
 import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
+
+const SESSIONS_ITEM = { href: "/sessions", label: "Sessions" };
 
 const NAV_ITEMS = [
   { href: "/context", label: "Context" },
@@ -19,13 +22,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { identity, workspaceId, seenContextVersion } = useWorkspace();
   const { data: snapshot } = useQuery(contextQueryOptions(workspaceId, apiFetch));
+  const { enabled: sessionsEnabled } = useWebLiveSessions();
+  const navItems = sessionsEnabled ? [NAV_ITEMS[0], SESSIONS_ITEM, ...NAV_ITEMS.slice(1)] : NAV_ITEMS;
   const hasUnseenContext = snapshot != null && seenContextVersion !== null && snapshot.versionNumber > seenContextVersion;
   return (
     <div className="ui-shell">
       <nav className="ui-shell__nav" aria-label="Main">
         <Link className="ui-wordmark" href="/"><Brand /></Link>
         <ul>
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = pathname.startsWith(item.href);
             return (
               <li key={item.href}>
