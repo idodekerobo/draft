@@ -19,6 +19,8 @@ create table sessions (
   last_seq           bigint not null default 0,
   host_machine_id    text not null,
   host_name          text,
+  raw_storage_path   text,
+  raw_uploaded_at    timestamptz,
 
   unique (id, workspace_id)
 );

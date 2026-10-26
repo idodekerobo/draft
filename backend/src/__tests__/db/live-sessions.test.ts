@@ -6,11 +6,20 @@ const { describeWithDatabase, db, createWorkspace } = setupDbIntegrationTest("li
 
 const userIds: string[] = [];
 
-afterEach(async () => {
+async function removeUsers() {
   const ids = userIds.splice(0);
   if (ids.length === 0) return;
   await db()`delete from auth.users where id = any(${db().array(ids, "uuid")})`;
-});
+}
+
+async function removeObjects(...names: string[]) {
+  await db().begin(async (tx) => {
+    await tx`select set_config('storage.allow_delete_query', 'true', true)`;
+    await tx`delete from storage.objects where bucket_id = 'session-raw' and name = any(${tx.array(names, "text")})`;
+  });
+}
+
+afterEach(removeUsers);
 
 async function createSession(workspaceId: string, hostMachineId = "host-1"): Promise<string> {
   const userId = randomUUID();
@@ -24,11 +33,31 @@ async function createSession(workspaceId: string, hostMachineId = "host-1"): Pro
   return session.id;
 }
 
-function events(...sourceIds: string[]) {
+interface TestEvent {
+  source_id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}
+
+function events(...sourceIds: string[]): TestEvent[] {
   return sourceIds.map((source_id) => ({ source_id, kind: "user_message", payload: { text: source_id } }));
 }
 
-async function append(sessionId: string, workspaceId: string, batch: ReturnType<typeof events>, host = "host-1") {
+async function createMember(workspaceId: string): Promise<string> {
+  const userId = randomUUID();
+  userIds.push(userId);
+  await db()`insert into auth.users (id, email) values (${userId}, ${`${userId}@example.test`})`;
+  const [workspace] = await db()<[{ organization_id: string; team_id: string }]>`
+    select organization_id, team_id from workspaces where id = ${workspaceId}
+  `;
+  await db()`
+    update users set organization_id = ${workspace.organization_id}, primary_team_id = ${workspace.team_id}, status = 'active'
+    where id = ${userId}
+  `;
+  return userId;
+}
+
+async function append(sessionId: string, workspaceId: string, batch: TestEvent[], host = "host-1") {
   const [row] = await db()<[{ result: { last_seq: number; inserted: number } }]>`
     select append_session_events(${sessionId}, ${workspaceId}, ${host}, ${JSON.stringify(batch)}::text::jsonb) as result
   `;
@@ -144,5 +173,67 @@ describeWithDatabase("errors with a session", () => {
         values (null, ${sessionId}, 'session', 'x')
       `;
     })()).rejects.toThrow();
+  });
+});
+
+describeWithDatabase("event kinds", () => {
+  test("accepts tool, thinking and note events and rejects an unknown kind", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const kinds = ["tool_use", "tool_result", "thinking", "session_note"];
+
+    const batch = kinds.map((kind) => ({ source_id: kind, kind, payload: {} }));
+    expect(await append(sessionId, workspaceId, batch)).toEqual({ last_seq: 4, inserted: 4 });
+
+    await expect(
+      append(sessionId, workspaceId, [{ source_id: "x", kind: "bogus", payload: {} }]),
+    ).rejects.toThrow();
+  });
+});
+
+describeWithDatabase("session-raw storage", () => {
+  async function readableObjects(userId: string): Promise<string[]> {
+    return db().begin(async (tx) => {
+      await tx`set local role authenticated`;
+      await tx`select set_config('request.jwt.claims', ${JSON.stringify({ sub: userId, role: "authenticated" })}, true)`;
+      const rows = await tx<{ name: string }[]>`select name from storage.objects where bucket_id = 'session-raw'`;
+      return rows.map((r) => r.name);
+    });
+  }
+
+  test("members read their own workspace's raw files and nothing from another workspace", async () => {
+    const mine = await createWorkspace();
+    const theirs = await createWorkspace();
+    const member = await createMember(mine.workspaceId);
+    const outsider = await createMember(theirs.workspaceId);
+
+    const myPath = `${mine.workspaceId}/${randomUUID()}/root.jsonl.gz`;
+    const theirPath = `${theirs.workspaceId}/${randomUUID()}/root.jsonl.gz`;
+    await db()`
+      insert into storage.objects (bucket_id, name) values ('session-raw', ${myPath}), ('session-raw', ${theirPath})
+    `;
+
+    try {
+      expect(await readableObjects(member)).toEqual([myPath]);
+      expect(await readableObjects(outsider)).toEqual([theirPath]);
+    } finally {
+      await removeObjects(myPath, theirPath);
+      await removeUsers();
+    }
+  });
+
+  test("a signed-in user outside every workspace reads nothing", async () => {
+    const { workspaceId } = await createWorkspace();
+    const stranger = randomUUID();
+    userIds.push(stranger);
+    await db()`insert into auth.users (id, email) values (${stranger}, ${`${stranger}@example.test`})`;
+
+    const path = `${workspaceId}/${randomUUID()}/root.jsonl.gz`;
+    await db()`insert into storage.objects (bucket_id, name) values ('session-raw', ${path})`;
+    try {
+      expect(await readableObjects(stranger)).toEqual([]);
+    } finally {
+      await removeObjects(path);
+    }
   });
 });
