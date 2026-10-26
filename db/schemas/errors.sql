@@ -9,9 +9,10 @@ create table errors (
   source_connection_id     uuid,
   scheduled_task_id        uuid,
   synthesis_run_id         uuid,
+  session_id               uuid,
   operation                text not null
                               check (operation in ('ingestion', 'scheduling', 'queue', 'execution',
-                                                    'validation', 'commit', 'projection', 'auth', 'read')),
+                                                    'validation', 'commit', 'projection', 'auth', 'read', 'session')),
   message                  text not null,
   detail_json              jsonb not null default '{}',
   stack_trace              text,
@@ -21,7 +22,7 @@ create table errors (
   -- workspace_id is null, so a workspace-less row must carry no links.
   constraint errors_unattributed_has_no_links check (
     workspace_id is not null
-    or (source_connection_id is null and scheduled_task_id is null and synthesis_run_id is null)
+    or (source_connection_id is null and scheduled_task_id is null and synthesis_run_id is null and session_id is null)
   ),
 
   foreign key (source_connection_id, workspace_id)
@@ -29,7 +30,9 @@ create table errors (
   foreign key (scheduled_task_id, workspace_id)
     references scheduled_tasks(id, workspace_id) on delete restrict,
   foreign key (synthesis_run_id, workspace_id)
-    references synthesis_runs(id, workspace_id) on delete restrict
+    references synthesis_runs(id, workspace_id) on delete restrict,
+  foreign key (session_id, workspace_id)
+    references sessions(id, workspace_id) on delete cascade
 );
 
 alter table errors enable row level security;
