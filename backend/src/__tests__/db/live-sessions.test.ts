@@ -237,3 +237,101 @@ describeWithDatabase("session-raw storage", () => {
     }
   });
 });
+
+async function createInput(sessionId: string, workspaceId: string, authorId: string, text = "hi"): Promise<{ id: string; state: string }> {
+  const [row] = await db()<[{ input: { id: string; state: string } }]>`
+    select create_session_input(${sessionId}, ${workspaceId}, ${authorId}, 'Priya', 'message', ${JSON.stringify({ text })}::text::jsonb) as input
+  `;
+  return row.input;
+}
+
+async function transition(inputId: string, sessionId: string, from: string[], to: string, reason: string | null = null, seq: number | null = null) {
+  const [row] = await db()<[{ ok: boolean }]>`
+    select transition_session_input(${inputId}, ${sessionId}, ${db().array(from, "text")}, ${to}, ${reason}, ${seq}) as ok
+  `;
+  return row.ok;
+}
+
+describeWithDatabase("session inputs", () => {
+  afterEach(removeUsers);
+
+  test("a new input is queued with its author", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+
+    const input = await createInput(sessionId, workspaceId, author, "fix it");
+    expect(input.state).toBe("queued");
+    const [row] = await db()<[{ author_name: string; payload: { text: string } }]>`
+      select author_name, payload from session_inputs where id = ${input.id}
+    `;
+    expect(row.author_name).toBe("Priya");
+    expect(row.payload.text).toBe("fix it");
+  });
+
+  test("rejects input for an ended session and for another workspace", async () => {
+    const { workspaceId } = await createWorkspace();
+    const other = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+
+    await expect(createInput(sessionId, other.workspaceId, author)).rejects.toThrow("session_not_found");
+    await db()`update sessions set status = 'ended', ended_at = now() where id = ${sessionId}`;
+    await expect(createInput(sessionId, workspaceId, author)).rejects.toThrow("session_ended");
+  });
+
+  test("a full queue rejects more input", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+
+    for (let i = 0; i < 20; i++) await createInput(sessionId, workspaceId, author, `m${i}`);
+    await expect(createInput(sessionId, workspaceId, author, "one more")).rejects.toThrow("queue_full");
+  });
+
+  test("moves through the delivery states and ignores a late writer", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    const { id } = await createInput(sessionId, workspaceId, author);
+
+    expect(await transition(id, sessionId, ["queued"], "queued", "composer_busy")).toBe(true);
+    expect(await transition(id, sessionId, ["queued"], "delivering")).toBe(true);
+    expect(await transition(id, sessionId, ["queued"], "delivering")).toBe(false);
+    expect(await transition(id, sessionId, ["delivering"], "uncertain")).toBe(true);
+    expect(await transition(id, sessionId, ["delivering", "uncertain"], "consumed", null, 7)).toBe(true);
+
+    const [row] = await db()<[{ state: string; consumed_seq: string }]>`select state, consumed_seq from session_inputs where id = ${id}`;
+    expect(row.state).toBe("consumed");
+    expect(Number(row.consumed_seq)).toBe(7);
+  });
+
+  test("rejects a move the state machine does not allow", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    const { id } = await createInput(sessionId, workspaceId, author);
+
+    await expect(transition(id, sessionId, ["queued"], "consumed")).rejects.toThrow("invalid_transition");
+  });
+
+  test("two hosts racing for one input: only one takes it", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    const { id } = await createInput(sessionId, workspaceId, author);
+
+    const results = await Promise.all([transition(id, sessionId, ["queued"], "delivering"), transition(id, sessionId, ["queued"], "delivering")]);
+    expect(results.filter(Boolean).length).toBe(1);
+  });
+
+  test("an input of another session cannot be moved", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const otherSession = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    const { id } = await createInput(sessionId, workspaceId, author);
+
+    expect(await transition(id, otherSession, ["queued"], "delivering")).toBe(false);
+  });
+});
