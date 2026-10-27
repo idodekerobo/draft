@@ -10,9 +10,9 @@
 //
 // Idempotent — safe to call if partially or fully installed.
 
-import { existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, unlinkSync, appendFileSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, copyFileSync, chmodSync, appendFileSync, readFileSync, writeFileSync } from "fs";
 import Electrobun from "electrobun/bun";
+import { linkOnPath } from "./pathLink";
 import { getBundledBinPath, getBundledBunPath, getBundledTmuxPath } from "./bundlePath";
 
 const LOG_FILE = `${process.env.HOME}/.draft/logs/desktop-installer.log`;
@@ -109,7 +109,7 @@ export async function runInstall(
 
   // ── Step 2: Symlink to /usr/local/bin ────────────────────────────────────────
   if (draftBin) {
-    await symlinkBinary(draftBin, steps);
+    symlinkBinary(draftBin, steps);
     log(`symlinkBinary done`);
   }
 
@@ -257,45 +257,24 @@ export async function syncExtractedBins(buildId: string, isDevChannel = false): 
   if (copied > 0 && failed === 0) writeBinVersionStamp(buildId);
 }
 
-async function symlinkBinary(draftBin: string, steps: InstallStep[]): Promise<void> {
-  try {
-    // Create /usr/local/bin if it doesn't exist (rare but possible)
-    mkdirSync("/usr/local/bin", { recursive: true });
+function symlinkBinary(draftBin: string, steps: InstallStep[]): void {
+  steps.push(linkOnPath({
+    binPath: draftBin,
+    link: SYSTEM_LINK,
+    home: process.env.HOME!,
+    shell: process.env.SHELL ?? "/bin/zsh",
+  }));
+}
 
-    // Remove stale symlink / old file if present
-    if (existsSync(SYSTEM_LINK)) {
-      unlinkSync(SYSTEM_LINK);
-    }
-
-    symlinkSync(draftBin, SYSTEM_LINK);
-    steps.push({ label: "Add draft to PATH (/usr/local/bin)", ok: true });
-  } catch (err) {
-    // /usr/local/bin requires elevated permissions on most user machines.
-    // Fall back to appending to the user's shell profile — the same pattern
-    // used by Cargo, nvm, and Homebrew. Takes effect in new terminal sessions.
-    const HOME = process.env.HOME!;
-    const shell = process.env.SHELL ?? "/bin/zsh";
-    const profile = shell.includes("zsh")  ? join(HOME, ".zprofile")
-                  : shell.includes("bash") ? join(HOME, ".bash_profile")
-                  :                          join(HOME, ".profile");
-    const exportLine = `\nexport PATH="$HOME/.draft/bin:$PATH"  # added by Draft\n`;
-    try {
-      const existing = existsSync(profile) ? readFileSync(profile, "utf8") : "";
-      if (!existing.includes(".draft/bin")) {
-        appendFileSync(profile, exportLine);
-      }
-      steps.push({
-        label: `Add draft to PATH (${profile.replace(HOME, "~")} — open a new terminal to activate)`,
-        ok: true,
-      });
-    } catch (profileErr) {
-      steps.push({
-        label: "Add draft to PATH",
-        ok: false,
-        error: `Could not write to ${profile}. Run manually: echo 'export PATH="$HOME/.draft/bin:$PATH"' >> ${profile}`,
-      });
-    }
-  }
+/**
+ * Make `draft` resolvable from a shell on every launch. Covers machines that
+ * skipped onboarding (e.g. ~/.draft already existed), where runInstall never ran.
+ */
+export function ensureOnPath(): void {
+  if (!existsSync(DRAFT_BIN_PATH)) return;
+  const steps: InstallStep[] = [];
+  symlinkBinary(DRAFT_BIN_PATH, steps);
+  for (const step of steps) log(`${step.ok ? "✓" : "✕"} ${step.label}${step.error ? `: ${step.error}` : ""}`);
 }
 
 /**
