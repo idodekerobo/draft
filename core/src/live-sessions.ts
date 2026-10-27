@@ -33,6 +33,7 @@ export type InputBlockReason = "composer_busy" | "permission_prompt" | "question
 /** Why a message or control input failed or may not have arrived. */
 export type InputFailReason =
   | "session_ended"
+  | "session_cleared"
   | "pane_unavailable"
   | "delivery_interrupted"
   | "not_submitted"

@@ -418,3 +418,73 @@ describeWithDatabase("permission approvals", () => {
     expect((await decide(sessionId, workspaceId, author, "Dev", "r1")).outcome).toBe("created");
   });
 });
+
+describeWithDatabase("heartbeat and offline sweep", () => {
+  const status = async (id: string) => (await db()<[{ status: string }]>`select status from sessions where id = ${id}`)[0].status;
+  const age = (id: string, seconds: number) => db()`update sessions set last_seen = now() - make_interval(secs => ${seconds}) where id = ${id}`;
+  const sweep = async () => (await db()<[{ n: number }]>`select sweep_stale_sessions() as n`)[0].n;
+  const beat = async (id: string, workspaceId: string, host = "host-1", version: string | null = null) =>
+    (await db()<[{ s: string }]>`select heartbeat_session(${id}, ${workspaceId}, ${host}, ${version}) as s`)[0].s;
+
+  test("a session without a heartbeat for 60 s becomes host_offline, and a fresh one does not", async () => {
+    const { workspaceId } = await createWorkspace();
+    const stale = await createSession(workspaceId);
+    const fresh = await createSession(workspaceId);
+    await append(stale, workspaceId, events("a"));
+    await age(stale, 61);
+
+    expect(await sweep()).toBeGreaterThanOrEqual(1);
+    expect(await status(stale)).toBe("host_offline");
+    expect(await status(fresh)).toBe("starting");
+  });
+
+  test("a starting session also goes offline, and an ended one is left alone", async () => {
+    const { workspaceId } = await createWorkspace();
+    const starting = await createSession(workspaceId);
+    const ended = await createSession(workspaceId);
+    await db()`update sessions set status = 'ended' where id = ${ended}`;
+    await age(starting, 120);
+    await age(ended, 120);
+
+    await sweep();
+    expect(await status(starting)).toBe("host_offline");
+    expect(await status(ended)).toBe("ended");
+  });
+
+  test("the same host's heartbeat revives the session and stores the version", async () => {
+    const { workspaceId } = await createWorkspace();
+    const id = await createSession(workspaceId);
+    await append(id, workspaceId, events("a"));
+    await age(id, 90);
+    await sweep();
+
+    expect(await beat(id, workspaceId, "host-1", "2.1.0")).toBe("live");
+    const [row] = await db()<[{ harness_version: string; fresh: boolean }]>`select harness_version, last_seen > now() - interval '5 seconds' as fresh from sessions where id = ${id}`;
+    expect(row).toEqual({ harness_version: "2.1.0", fresh: true });
+  });
+
+  test("an append from the same host also revives it", async () => {
+    const { workspaceId } = await createWorkspace();
+    const id = await createSession(workspaceId);
+    await age(id, 90);
+    await sweep();
+
+    await append(id, workspaceId, events("b"));
+    expect(await status(id)).toBe("live");
+  });
+
+  test("a starting session stays starting after a heartbeat", async () => {
+    const { workspaceId } = await createWorkspace();
+    const id = await createSession(workspaceId);
+    expect(await beat(id, workspaceId)).toBe("starting");
+  });
+
+  test("rejects a heartbeat for an ended session, from another host or for a missing session", async () => {
+    const { workspaceId } = await createWorkspace();
+    const id = await createSession(workspaceId);
+    await expect(beat(id, workspaceId, "host-2")).rejects.toThrow("foreign_host");
+    await expect(beat(randomUUID(), workspaceId)).rejects.toThrow("session_not_found");
+    await db()`update sessions set status = 'ended' where id = ${id}`;
+    await expect(beat(id, workspaceId)).rejects.toThrow("session_ended");
+  });
+});

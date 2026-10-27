@@ -12,6 +12,7 @@ type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
 type EventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/events">;
 type LinesRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/lines">;
+type HeartbeatRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/heartbeat">;
 type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
@@ -58,12 +59,21 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const hostMachineId = optionalString(body.hostMachineId, 200);
   if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
 
+  const previousSessionId = optionalString(body.previousSessionId, 100);
+  if (previousSessionId) {
+    const previous = await loadOwnedSession(req.params.id, previousSessionId, caller.userId);
+    if (!previous.ok) return previous.response;
+    if (previous.session.host_machine_id !== hostMachineId) return errorResponse("foreign_host", 403);
+  }
+
   const { data, error } = await serviceClient
     .from("sessions")
     .insert({
       workspace_id: req.params.id,
       owner_user_id: caller.userId,
       host_machine_id: hostMachineId,
+      harness_version: optionalString(body.harnessVersion, 100),
+      previous_session_id: previousSessionId,
       host_name: optionalString(body.hostName, 200),
       folder_name: optionalString(body.folderName, 200),
       git_remote: optionalString(body.gitRemote, 500),
@@ -198,6 +208,27 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   return Response.json({ ok: true, last_seq: lastSeq, inserted });
 });
 
+/** The host says it is alive. A session marked host_offline returns to live. */
+export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
+  if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
+
+  const { data, error } = await serviceClient.rpc("heartbeat_session", {
+    p_session_id: sessionId,
+    p_workspace_id: workspaceId,
+    p_host_machine_id: hostMachineId,
+    p_harness_version: optionalString(parsed.body.harnessVersion, 100),
+  });
+  if (error) return knownDbError(error.message) ?? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId);
+  return Response.json({ ok: true, status: data });
+});
+
 export const END = withAuth<EndRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
@@ -211,13 +242,14 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
   const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
   if (hostMachineId !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
 
+  const reason = optionalString(parsed.body.reason, 100) ?? "ended";
   const { error } = await serviceClient
     .from("sessions")
-    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: optionalString(parsed.body.reason, 100) ?? "ended", open_approval_count: 0 })
+    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: reason, open_approval_count: 0 })
     .eq("id", sessionId)
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
-  await failQueuedInputs(sessionId);
+  await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
 
   return Response.json({ ok: true });
 });

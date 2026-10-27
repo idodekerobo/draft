@@ -80,6 +80,12 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     await recordTickStepError(options.client, "Stale synthesis run sweep failed", sweepError);
   }
   try {
+    const { error } = await options.client.rpc("sweep_stale_sessions");
+    if (error) throw error;
+  } catch (sweepError) {
+    await recordTickStepError(options.client, "Stale live session sweep failed", sweepError);
+  }
+  try {
     await retryFailedSynthesisRuns({ client: options.client, config: options.config, now });
   } catch (retryError) {
     await recordTickStepError(options.client, "Failed synthesis run retry failed", retryError);

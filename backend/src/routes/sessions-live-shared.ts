@@ -8,7 +8,7 @@ import { loadDisplayNames } from "./session-display-names";
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export const SESSION_COLUMNS =
-  "id, workspace_id, owner_user_id, session_type, harness, model, native_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seq, open_approval_count, host_machine_id, host_name, raw_storage_path, raw_uploaded_at";
+  "id, workspace_id, owner_user_id, session_type, harness, model, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seen, last_seq, open_approval_count, host_machine_id, host_name, harness_version, raw_storage_path, raw_uploaded_at";
 
 export function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string, sessionId?: string): Response {
   if (status >= 500) {

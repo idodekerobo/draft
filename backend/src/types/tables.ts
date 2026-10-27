@@ -328,6 +328,7 @@ export interface SessionRow {
   harness: "claude";
   model: string | null;
   native_session_id: string | null;
+  previous_session_id: string | null;
   title: string | null;
   folder_name: string | null;
   git_remote: string | null;
@@ -336,10 +337,12 @@ export interface SessionRow {
   ended_at: string | null;
   end_reason: string | null;
   last_event_at: string | null;
+  last_seen: string;
   last_seq: number;
   open_approval_count: number;
   host_machine_id: string;
   host_name: string | null;
+  harness_version: string | null;
   raw_storage_path: string | null;
   raw_uploaded_at: string | null;
 }

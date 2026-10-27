@@ -26,12 +26,17 @@ function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   };
 }
 
-function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?: boolean } = {}) {
+function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?: boolean; failSweep?: boolean } = {}) {
+  const rpcCalls: string[] = [];
   const updates: { table: string; payload: Record<string, unknown>; id: string }[] = [];
   const errorInserts: Record<string, unknown>[] = [];
   const runsClient = createFakeRunsClient({ synthesis_runs: [] }).client;
 
   const client = {
+    rpc: async (name: string) => {
+      rpcCalls.push(name);
+      return { data: 0, error: options.failSweep ? new Error("sweep down") : null };
+    },
     from: (table: string) => {
       if (table === "scheduled_tasks") {
         return {
@@ -66,7 +71,7 @@ function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?:
     },
   } as unknown as SupabaseClient;
 
-  return { client, updates, errorInserts };
+  return { client, updates, errorInserts, rpcCalls };
 }
 
 const fakeConfig = {} as never;
@@ -179,6 +184,7 @@ describe("runSchedulingTick", () => {
     });
     const { client } = fakeClient([]);
     const wrapped = {
+      rpc: client.rpc,
       from: (table: string) => (table === "synthesis_runs" ? runsClient.from(table) : client.from(table)),
     } as unknown as SupabaseClient;
 
@@ -224,5 +230,17 @@ describe("runSchedulingTick", () => {
     await tick;
 
     expect(Object.keys(updates[0]!.payload).sort()).toEqual(["last_enqueued_at", "next_due_at"]);
+  });
+
+  it("marks stale live sessions offline on every tick", async () => {
+    const { client, rpcCalls } = fakeClient([]);
+    await runSchedulingTick({ client, config: fakeConfig, now: new Date("2026-08-05T10:00:30.000Z"), dispatch: mock(async () => null) });
+    expect(rpcCalls).toEqual(["sweep_stale_sessions"]);
+  });
+
+  it("still advances tasks when the session sweep fails", async () => {
+    const { client, updates } = fakeClient([task({ id: "task-a" })], { failSweep: true });
+    await runSchedulingTick({ client, config: fakeConfig, now: new Date("2026-08-05T10:00:30.000Z"), dispatch: mock(async () => null) });
+    expect(updates).toHaveLength(1);
   });
 });

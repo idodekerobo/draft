@@ -249,6 +249,33 @@ describe("live session routes", () => {
     expect(body.inputs.map((i) => [i.id, i.mine, i.text])).toEqual([["mine", true, "hi"], ["theirs", false, "hi"]]);
   });
 
+  it("fails the queued messages of a cleared session with their own reason", async () => {
+    await routes.END(post("/x", { hostMachineId: "host-1", reason: "cleared" }));
+    expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_cleared" });
+  });
+
+  it("links a new session to the one it replaces, only for the owner's own host", async () => {
+    const ok = await routes.CREATE(post("/x", { hostMachineId: "host-1", previousSessionId: SESSION, harnessVersion: "2.1.0" }, { id: WS }));
+    expect(ok.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ previous_session_id: SESSION, harness_version: "2.1.0" });
+
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-2", previousSessionId: SESSION }, { id: WS }))).status).toBe(403);
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", previousSessionId: "other" }, { id: WS }))).status).toBe(404);
+  });
+
+  it("passes a heartbeat to the database and maps its errors", async () => {
+    rpcResult = { data: "live", error: null };
+    const ok = await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", harnessVersion: "2.1.0" }));
+    expect(await ok.json()).toEqual({ ok: true, status: "live" });
+    expect(rpcCalls[0]).toEqual({ fn: "heartbeat_session", args: { p_session_id: SESSION, p_workspace_id: WS, p_host_machine_id: "host-1", p_harness_version: "2.1.0" } });
+
+    expect((await routes.HEARTBEAT(post("/x", {}))).status).toBe(400);
+    rpcResult = { data: null, error: { message: "session_ended" } };
+    expect((await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1" }))).status).toBe(409);
+    rpcResult = { data: null, error: { message: "foreign_host" } };
+    expect((await routes.HEARTBEAT(post("/x", { hostMachineId: "host-2" }))).status).toBe(403);
+  });
+
   it("ends a session only for its owner on its own host", async () => {
     expect((await routes.END(post("/x", { hostMachineId: "host-2" }))).status).toBe(403);
     const ok = await routes.END(post("/x", { hostMachineId: "host-1", reason: "user_exit" }));

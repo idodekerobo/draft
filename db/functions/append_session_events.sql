@@ -66,6 +66,7 @@ begin
     update sessions
     set last_seq = v_seq,
         last_event_at = now(),
+        last_seen = now(),
         status = 'live',
         open_approval_count = greatest(0, open_approval_count + v_approvals)
     where id = p_session_id;

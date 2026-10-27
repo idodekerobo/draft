@@ -269,10 +269,10 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
 }
 
 /** A queued input of an ended session can never be delivered. */
-export async function failQueuedInputs(sessionId: string): Promise<void> {
+export async function failQueuedInputs(sessionId: string, reason: "session_ended" | "session_cleared" = "session_ended"): Promise<void> {
   await serviceClient
     .from("session_inputs")
-    .update({ state: "failed", reason: "session_ended", updated_at: new Date().toISOString() })
+    .update({ state: "failed", reason, updated_at: new Date().toISOString() })
     .eq("session_id", sessionId)
     .eq("state", "queued");
 }
