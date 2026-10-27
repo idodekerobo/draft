@@ -5,11 +5,13 @@ import {
   completeSummarizationRunCallback,
   SUMMARIZATION_RUN_ID_PREFIX,
 } from "../summarization/complete-summarization-callback";
+import { completeRoutineRunCallback } from "../routines/complete-routine-callback";
+import { ROUTINE_RUN_ID_PREFIX } from "../routines/config";
 import { recordError } from "../errors/record-error";
 
 // Routes by the x-draft-run-id header's prefix instead of a second HTTP
 // route -- avoids adding another callback URL/secret to deployment config.
-// Synthesis run IDs are bare UUIDs, so this prefix can never collide.
+// Synthesis run IDs are bare UUIDs, so these prefixes can never collide.
 export async function POST(request: Request): Promise<Response> {
   let callbackSecret: string;
   try {
@@ -25,11 +27,12 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(null, { status: 500 });
   }
 
-  const isSummarization = (request.headers.get("x-draft-run-id") ?? "").startsWith(
-    SUMMARIZATION_RUN_ID_PREFIX,
-  );
+  const runIdHeader = request.headers.get("x-draft-run-id") ?? "";
+  const isSummarization = runIdHeader.startsWith(SUMMARIZATION_RUN_ID_PREFIX);
+  const isRoutine = runIdHeader.startsWith(ROUTINE_RUN_ID_PREFIX);
 
   try {
+    if (isRoutine) return await completeRoutineRunCallback(request, callbackSecret);
     return isSummarization
       ? await completeSummarizationRunCallback(request, callbackSecret)
       : await completeSynthesisRunCallback(request, callbackSecret);

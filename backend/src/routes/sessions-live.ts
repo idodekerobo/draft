@@ -2,7 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
-import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
+import { eventsFor, isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
@@ -141,26 +141,6 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   if (links instanceof Response) return links;
   return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
 });
-
-type IncomingLine = LiveLineInput | { file: string; offset: number; oversizeBytes: number };
-
-function isIncomingLine(value: unknown): value is IncomingLine {
-  if (!value || typeof value !== "object") return false;
-  const line = value as Record<string, unknown>;
-  if (typeof line.file !== "string" || !Number.isInteger(line.offset)) return false;
-  return typeof line.raw === "string" || Number.isInteger(line.oversizeBytes);
-}
-
-function eventsFor(line: IncomingLine): ParsedLiveEvent[] {
-  if ("raw" in line) return parseLiveLine(line);
-  return [
-    {
-      sourceId: `${line.file}:${line.offset}`,
-      kind: "session_note",
-      payload: { text: "A very large item was skipped", reason: "too_large", bytes: line.oversizeBytes },
-    },
-  ];
-}
 
 function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim())?.trim().slice(0, TITLE_MAX_CHARS) ?? "";
