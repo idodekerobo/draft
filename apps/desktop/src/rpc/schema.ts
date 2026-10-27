@@ -226,7 +226,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
+import type { CreateRoutineInput, LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -265,6 +265,12 @@ export type AppRPCType = {
 
       /** Toggle or re-schedule one routine. Failures carry the API error code and offending field. */
       updateRoutine: { params: { id: string; patch: RoutinePatch }; response: { ok: true; routine: Routine } | { ok: false; code: string; field?: string } };
+
+      /** Create an agent routine. Failures carry the API error code and offending field. */
+      createRoutine: { params: CreateRoutineInput; response: { ok: true; routine: Routine } | { ok: false; code: string; field?: string } };
+
+      /** The newest runs of one agent routine. */
+      listRoutineRuns: { params: { id: string }; response: RoutineRun[] };
 
       /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear"; accountKind?: "personal" | "workspace" }; response: ActionResult };

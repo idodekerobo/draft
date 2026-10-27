@@ -19,7 +19,7 @@ import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
 import { removeLegacyDaemon } from "./main/legacyDaemon";
 import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
-import type { Routine, RoutinesResponse } from "draft-shared-ui";
+import type { Routine, RoutineRun, RoutinesResponse } from "draft-shared-ui";
 import type {
   AppRPCType,
   IntegrationDetail,
@@ -417,6 +417,30 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             ? { ok: false, code: err.code, field: err.field }
             : { ok: false, code: err instanceof Error ? err.message : "unknown" };
         }
+      },
+
+      createRoutine: async (input) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, code: "signed_out" };
+        try {
+          const routine = await fetchServerJSON<Routine>(`workspaces/${workspaceId}/schedules`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(input),
+          });
+          return { ok: true, routine };
+        } catch (err) {
+          return err instanceof ServerError
+            ? { ok: false, code: err.code, field: err.field }
+            : { ok: false, code: err instanceof Error ? err.message : "unknown" };
+        }
+      },
+
+      listRoutineRuns: async ({ id }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        const { runs } = await fetchServerJSON<{ runs: RoutineRun[] }>(`workspaces/${workspaceId}/schedules/${id}/runs`);
+        return runs;
       },
 
       startGithubInstall: async () => {
