@@ -27,6 +27,18 @@ export const HOST_FATAL_CODES: ReadonlySet<string> = new Set<LiveSessionErrorCod
   "live_sessions_disabled",
 ]);
 
+/**
+ * Answers that mean this login can never reach the session: it belongs to another environment or account.
+ * The host stops for that session and keeps its saved state, so the right login can pick it up again.
+ */
+export const HOST_SUSPEND_CODES: ReadonlySet<string> = new Set(["not_found", "forbidden", "no_team"]);
+
+/** What a host does after a server error: stop for good, pause until the right login, or try again later. */
+export function hostErrorAction(code: string): "stop" | "pause" | "retry" {
+  if (HOST_FATAL_CODES.has(code)) return "stop";
+  return HOST_SUSPEND_CODES.has(code) ? "pause" : "retry";
+}
+
 /** Why a queued message waits. */
 export type InputBlockReason = "composer_busy" | "permission_prompt" | "question_prompt" | "dialog";
 

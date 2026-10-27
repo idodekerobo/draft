@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, normalizeInputText, parseClaudeVersion, presenceNames, splitAuthor } from "../live-sessions";
+import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, hostErrorAction, normalizeInputText, parseClaudeVersion, presenceNames, splitAuthor } from "../live-sessions";
 
 describe("author tag", () => {
   it("round-trips through deliveredText and splitAuthor", () => {
@@ -73,5 +73,16 @@ describe("presenceNames", () => {
   it("skips someone without a name", () => {
     expect(presenceNames({ u1: [{}], u2: [{ name: "  " }], u3: [{ name: "Sam" }] }, "me")).toEqual(["Sam"]);
     expect(presenceNames({}, "me")).toEqual([]);
+  });
+});
+
+describe("hostErrorAction", () => {
+  it("stops for an ended or foreign session, pauses for another environment or account, and retries the rest", () => {
+    expect(hostErrorAction("session_ended")).toBe("stop");
+    expect(hostErrorAction("foreign_host")).toBe("stop");
+    expect(hostErrorAction("not_found")).toBe("pause");
+    expect(hostErrorAction("forbidden")).toBe("pause");
+    expect(hostErrorAction("request_failed_500")).toBe("retry");
+    expect(hostErrorAction("heartbeat_failed")).toBe("retry");
   });
 });

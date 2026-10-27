@@ -2,7 +2,7 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import { HOST_FATAL_CODES, isKnownModelAlias } from "draft-core/live-sessions";
+import { hostErrorAction, isKnownModelAlias } from "draft-core/live-sessions";
 import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
@@ -68,8 +68,8 @@ class SessionRunner {
           body: JSON.stringify({ hostMachineId: state.hostMachineId, nativeSessionId: state.nativeSessionId, lines }),
         });
       },
-      isFatal: (error) => error instanceof ServerError && HOST_FATAL_CODES.has(error.code),
-      onFatal: () => this.abandon(),
+      isFatal: (error) => error instanceof ServerError && hostErrorAction(error.code) !== "retry",
+      onFatal: (error) => (error instanceof ServerError && hostErrorAction(error.code) === "pause" ? this.suspend() : this.abandon()),
     });
     this.delivery = new InputDelivery({
       setState: this.setInputState,
@@ -164,6 +164,18 @@ class SessionRunner {
     saveState(this.state);
   }
 
+  /** This login cannot reach the session (another environment or account). Stop work and keep the saved state. */
+  private suspend(): void {
+    if (this.finished) return;
+    console.warn("[live-session] paused: this login cannot reach session", this.state.sessionId);
+    this.finished = true;
+    this.forwarder.halt();
+    this.stopHeartbeat?.();
+    this.unregisterHooks?.();
+    if (this.watcher) clearInterval(this.watcher);
+    running.delete(this.state.sessionId);
+  }
+
   private abandon(): void {
     this.finished = true;
     this.forwarder.halt();
@@ -193,7 +205,7 @@ class SessionRunner {
       if (rawUploads !== this.state.rawUploads) this.persist({ rawUploads });
       return true;
     } catch (error) {
-      console.error("[live-session] raw upload failed", this.state.sessionId, error);
+      this.reportInputError("raw upload", error);
       return false;
     }
   }
@@ -237,7 +249,9 @@ class SessionRunner {
   }
 
   private reportInputError(what: string, error: unknown): void {
-    if (!(error instanceof ServerError && HOST_FATAL_CODES.has(error.code))) console.error(`[live-session] ${what} failed`, error);
+    const action = error instanceof ServerError ? hostErrorAction(error.code) : "retry";
+    if (action === "pause") this.suspend();
+    else if (action === "retry") console.error(`[live-session] ${what} failed`, error);
   }
 
   /** One pass; runs every few seconds and does the next unfinished piece of work. */
