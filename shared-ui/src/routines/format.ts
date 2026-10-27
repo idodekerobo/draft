@@ -142,3 +142,13 @@ export function previewNextRun(
   }
   return new Date(nowMs);
 }
+
+/** "45 sec", "3 min", "1 hr 5 min". */
+export function formatDuration(startedAt: string, endedAt: string): string {
+  const seconds = Math.max(0, Math.round((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000));
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  const rest = minutes % 60;
+  return rest === 0 ? `${Math.floor(minutes / 60)} hr` : `${Math.floor(minutes / 60)} hr ${rest} min`;
+}

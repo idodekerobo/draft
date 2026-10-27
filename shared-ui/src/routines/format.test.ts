@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { countRoutines, filterRoutines, formatAbsolute, formatRelative, formatWhen, previewNextRun } from "./format";
+import { countRoutines, filterRoutines, formatAbsolute, formatDuration, formatRelative, formatWhen, previewNextRun } from "./format";
 import type { Routine } from "./types";
 
 function routine(overrides: Partial<Routine>): Routine {
@@ -98,5 +98,15 @@ describe("time formatting", () => {
 
   it("formats the preview time with a zone label", () => {
     expect(formatAbsolute("2026-10-04T08:00:00.000Z", "UTC")).toBe("Oct 4, 8:00 AM UTC");
+  });
+});
+
+describe("formatDuration", () => {
+  const at = (seconds: number) => new Date(Date.UTC(2026, 9, 27, 9, 0, seconds)).toISOString();
+  it("reads seconds, minutes and hours", () => {
+    expect(formatDuration(at(0), at(45))).toBe("45 sec");
+    expect(formatDuration(at(0), at(180))).toBe("3 min");
+    expect(formatDuration(at(0), at(3900))).toBe("1 hr 5 min");
+    expect(formatDuration(at(0), at(7200))).toBe("2 hr");
   });
 });

@@ -476,7 +476,7 @@
 .ui-routines button, .ui-dialog button { touch-action: manipulation; }
 .ui-routines button:disabled, .ui-dialog button:disabled { cursor: default; opacity: 0.5; }
 .ui-routines button:focus-visible, .ui-routines input:focus-visible, .ui-routines select:focus-visible,
-.ui-dialog button:focus-visible, .ui-dialog input:focus-visible, .ui-dialog select:focus-visible {
+.ui-dialog button:focus-visible, .ui-dialog input:focus-visible, .ui-dialog select:focus-visible, .ui-dialog textarea:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 3px;
 }
@@ -488,6 +488,7 @@
   .ui-routines button:hover:not(:disabled), .ui-dialog button:hover:not(:disabled) { filter: brightness(0.94); }
   .ui-routines__link:hover { text-decoration: underline; }
   .ui-routines__text-button:hover { text-decoration: underline; }
+  button.ui-routines__run:hover:not(:disabled) { background: var(--color-bg-surface); filter: none; }
 }
 
 .ui-routines__title { margin: 0 0 12px; font-size: 30px; font-weight: 650; letter-spacing: -1px; line-height: 1.2; }
@@ -577,6 +578,9 @@
 .ui-routines__status--success { color: var(--color-status-green); }
 .ui-routines__status--error { color: var(--color-status-red); }
 .ui-routines__status--none { color: var(--color-text-secondary); }
+.ui-routines__status--completed { color: var(--color-status-green); }
+.ui-routines__status--failed { color: var(--color-status-red); }
+.ui-routines__status--running { color: var(--color-accent-text); }
 .ui-routines__text-button { padding: 4px 0; border: 0; background: transparent; color: var(--color-accent-text); font-size: 13px; }
 
 .ui-routines__helper {
@@ -633,7 +637,7 @@
 .ui-routines__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .ui-routines__field { display: grid; gap: 6px; font-size: 13px; }
 .ui-routines__field--wide { grid-column: 1 / -1; }
-.ui-routines__field input, .ui-routines__field select {
+.ui-routines__field input, .ui-routines__field select, .ui-routines__field textarea {
   width: 100%;
   min-width: 0;
   padding: 8px 10px;
@@ -642,6 +646,43 @@
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
 }
+.ui-routines__field textarea { resize: vertical; font: inherit; line-height: 1.5; }
+.ui-routines__agent { margin: 0 0 24px; }
+.ui-routines__subheading { margin: 20px 0 8px; font-size: 13px; font-weight: 600; }
+.ui-routines__subheading:first-child { margin-top: 0; }
+.ui-routines__prompt {
+  max-height: 160px;
+  margin: 0 0 8px;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg-surface);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ui-routines__runs { max-height: 240px; margin: 0; padding: 0; overflow: auto; border-top: 1px solid var(--color-border); list-style: none; }
+.ui-routines__run {
+  display: grid;
+  grid-template-columns: 104px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  text-align: left;
+}
+.ui-routines__run-when { font-variant-numeric: tabular-nums; }
+.ui-routines__runs-skeleton { height: 81px; border-top: 1px solid var(--color-border); padding-top: 14px; }
+.ui-routines__runs-skeleton div { width: 55%; height: 10px; margin-bottom: 14px; border-radius: 4px; background: var(--color-bg-surface); }
+.ui-routines__runs-skeleton div + div { width: 35%; }
 .ui-routines__notice { margin: 16px 0 0; color: var(--color-status-yellow); font-size: 13px; }
 .ui-routines__note { margin: 20px 0 0; color: var(--color-text-secondary); font-size: 13px; }
 .ui-routines__actions { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
@@ -679,7 +720,9 @@
   .ui-routines__text-button { min-height: 44px; }
   .ui-dialog { padding: 20px; }
   .ui-routines__fields { grid-template-columns: 1fr; }
-  .ui-routines__field input, .ui-routines__field select { font-size: 16px; }
+  .ui-routines__field input, .ui-routines__field select, .ui-routines__field textarea { font-size: 16px; }
+  .ui-routines__run { grid-template-columns: auto 1fr; min-height: 44px; }
+  .ui-routines__run .ui-routines__secondary { grid-column: 2; }
   .ui-routines__actions { flex-wrap: wrap; }
   .ui-routines__actions .ui-routines__secondary { width: 100%; }
   .ui-routines__btn { min-height: 44px; }

@@ -1,10 +1,10 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useId, useState, type ReactNode } from "react";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
-import { routinesQueryOptions } from "../query/options";
+import { routineRunsQueryOptions, routinesQueryOptions } from "../query/options";
 import { toast } from "../toast";
 import {
   countRoutines,
@@ -14,8 +14,11 @@ import {
   zoneLabel,
   type RoutineFilter,
 } from "./format";
+import { CreateRoutineDialog } from "./CreateRoutineDialog";
 import { RoutineDetails } from "./RoutineDetails";
-import type { Routine, RoutinePatch } from "./types";
+import { RunStatus } from "./RoutineRuns";
+import { agentLabel } from "./agent-label";
+import type { CreateRoutineInput, Routine, RoutinePatch } from "./types";
 import { useRoutineMutations } from "./useRoutineMutations";
 
 const FILTERS: Array<[RoutineFilter, string]> = [
@@ -27,6 +30,24 @@ const FILTERS: Array<[RoutineFilter, string]> = [
 const OUTCOME_LABEL = { changed: "Updated", no_change: "No changes", failure: "Failed", stale: "Stale" } as const;
 
 function recentActivity(routine: Routine) {
+  if (routine.agent) {
+    const run = routine.agent.lastRun;
+    return (
+      <div className="ui-routines__when" data-label="Last run">
+        {run ? (
+          <>
+            <RunStatus status={run.status} />
+            <div className="ui-routines__secondary">{formatWhen(run.startedAt, routine.timezone)}</div>
+          </>
+        ) : (
+          <>
+            <div className="ui-routines__status ui-routines__status--none">No runs yet</div>
+            <div className="ui-routines__secondary">Waiting for its first run</div>
+          </>
+        )}
+      </div>
+    );
+  }
   const label = routine.taskType === "synthesize_workspace" ? "Last run" : "Last check";
   if (routine.taskType === "synthesize_workspace") {
     const run = routine.lastRun;
@@ -62,7 +83,7 @@ function recentActivity(routine: Routine) {
 }
 
 function nextActivity(routine: Routine, onReconnect?: () => void) {
-  const label = routine.taskType === "synthesize_workspace" ? "Next run" : "Next check";
+  const label = routine.taskType === "synthesize_workspace" || routine.agent ? "Next run" : "Next check";
   let heading: string;
   let detail: ReactNode;
   if (routine.needsReconnect) {
@@ -101,17 +122,19 @@ function RoutinesSkeleton() {
   );
 }
 
-function RoutinesList({ workspaceId, onReconnect }: { workspaceId: string; onReconnect?: () => void }) {
+function RoutinesList({ workspaceId, onReconnect, onOpenRun }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void }) {
   const api = useDraftApi();
+  const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
   const { routines, canEdit } = data;
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const labelPrefix = useId();
 
-  const { toggle, save } = useRoutineMutations(workspaceId, (error) =>
+  const { toggle, save, create } = useRoutineMutations(workspaceId, (error) =>
     toast.error("Could not update the routine", { description: error.message }),
   );
 
@@ -137,6 +160,17 @@ function RoutinesList({ workspaceId, onReconnect }: { workspaceId: string; onRec
         onSettled: () => setPendingFor(routine.id, false),
       },
     );
+  }
+
+  async function onCreate(input: CreateRoutineInput) {
+    const created = await create.mutateAsync(input);
+    toast.success(`${created.title} created.`);
+    setCreating(false);
+  }
+
+  // Runs load while the person is still reaching for the routine, so its dialog opens filled in.
+  function warmRuns(routine: Routine) {
+    if (routine.agent) void queryClient.prefetchQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
   }
 
   async function onSave(routine: Routine, patch: RoutinePatch) {
@@ -169,6 +203,11 @@ function RoutinesList({ workspaceId, onReconnect }: { workspaceId: string; onRec
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
+        {canEdit && (
+          <button type="button" className="ui-routines__btn ui-routines__btn--primary" onClick={() => setCreating(true)}>
+            New routine
+          </button>
+        )}
       </div>
 
       {visible.length === 0 ? (
@@ -209,10 +248,18 @@ function RoutinesList({ workspaceId, onReconnect }: { workspaceId: string; onRec
               <section key={routine.id} className="ui-routines__routine" aria-labelledby={nameId}>
                 <div className="ui-routines__row">
                   <div className="ui-routines__identity">
-                    <button type="button" id={nameId} className="ui-routines__link" onClick={() => setOpenId(routine.id)}>
+                    <button
+                      type="button"
+                      id={nameId}
+                      className="ui-routines__link"
+                      onClick={() => setOpenId(routine.id)}
+                      onPointerEnter={() => warmRuns(routine)}
+                      onFocus={() => warmRuns(routine)}
+                    >
                       {routine.title}
                     </button>
                     {routine.connectionLabel && <div className="ui-routines__secondary">{routine.connectionLabel}</div>}
+                    {routine.agent && <div className="ui-routines__secondary">{agentLabel(routine.agent)}</div>}
                   </div>
                   <div className="ui-routines__schedule">
                     <div className="ui-routines__secondary">{routine.scheduleDescription}</div>
@@ -249,22 +296,26 @@ function RoutinesList({ workspaceId, onReconnect }: { workspaceId: string; onRec
       {open && (
         <RoutineDetails
           key={open.id}
+          workspaceId={workspaceId}
           routine={open}
           canEdit={canEdit}
           onClose={() => setOpenId(null)}
           onSave={(patch) => onSave(open, patch)}
+          onOpenRun={onOpenRun}
         />
       )}
+
+      {creating && <CreateRoutineDialog onClose={() => setCreating(false)} onCreate={onCreate} />}
     </>
   );
 }
 
 /** Loading and error states match the Routines page; the title stays on screen throughout. */
-export function RoutinesPanel({ workspaceId, onReconnect }: { workspaceId: string; onReconnect?: () => void }) {
+export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void }) {
   return (
     <div className="ui-routines">
       <h1 className="ui-routines__title">Routines</h1>
-      <p className="ui-routines__intro">The routines that keep your company context up to date.</p>
+      <p className="ui-routines__intro">The routines that keep your company context up to date, and the agents you schedule.</p>
       <DataBoundary
         fallback={<RoutinesSkeleton />}
         errorFallback={(retry) => (
@@ -274,7 +325,7 @@ export function RoutinesPanel({ workspaceId, onReconnect }: { workspaceId: strin
           </div>
         )}
       >
-        <RoutinesList workspaceId={workspaceId} onReconnect={onReconnect} />
+        <RoutinesList workspaceId={workspaceId} onReconnect={onReconnect} onOpenRun={onOpenRun} />
       </DataBoundary>
     </div>
   );
