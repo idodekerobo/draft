@@ -755,7 +755,9 @@
 
 .ui-composer { margin: 0; padding: 0; border-top: 0; }
 .ui-composer__box { border: 1px solid var(--color-border-strong); border-radius: var(--radius-notice); background: var(--color-bg-elevated); overflow: hidden; }
-.ui-composer__box:focus-within { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.ui-composer__box { transition: border-color 120ms var(--motion-ease); }
+.ui-composer__box:focus-within { border-color: var(--color-focus); }
+.ui-composer__box .ui-composer__input:focus-visible { outline: none; }
 .ui-composer__folder { display: flex; align-items: center; gap: var(--space-2); padding: 6px 12px; background: var(--color-bg-surface); color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-composer__row { display: flex; gap: var(--space-2); align-items: flex-end; padding: var(--space-2); }
 .ui-composer__input { flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 8px; border: 0; background: none; color: var(--color-text-primary); font: var(--font-size-body) var(--font-ui); line-height: 1.4; resize: none; outline: none; }
