@@ -9,7 +9,7 @@ export default function RoutinesPage() {
   const { workspaceId } = useWorkspace();
   return (
     <div className="ui-routines-page">
-      <RoutinesPanel workspaceId={workspaceId} onReconnect={() => router.push("/connections")} />
+      <RoutinesPanel workspaceId={workspaceId} onReconnect={() => router.push("/connections")} onOpenRun={(sessionId) => router.push(`/routines/runs/${sessionId}`)} />
     </div>
   );
 }

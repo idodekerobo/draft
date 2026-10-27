@@ -3088,3 +3088,7 @@ button {
   flex: 1;
   overflow-y: auto;
 }
+.routines-view--run {
+  display: flex;
+  overflow: hidden;
+}
