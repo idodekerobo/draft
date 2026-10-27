@@ -29,7 +29,9 @@ const AnalyticsContext = createContext<AnalyticsContextValue>({
 });
 
 export function AnalyticsProvider({ children }: { children: ReactNode }) {
-  const { signedIn, hydrated } = useUserIdentity();
+  const { signedIn, hydrated, workspaceId } = useUserIdentity();
+  const workspaceRef = useRef<string | null>(null);
+  workspaceRef.current = workspaceId ?? null;
   const [initialized, setInitialized] = useState(false);
   const [privacy, setPrivacyState] = useState<PrivacyState | null>(null);
   const posthogRef = useRef<PostHog | null>(null);
@@ -61,6 +63,8 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     const posthog = posthogRef.current;
     if (!initialized || !posthog) return;
     if (next.analyticsConsent) {
+      // Set before queued events are sent, so they carry it too.
+      if (workspaceRef.current) posthog.register({ workspace_id: workspaceRef.current });
       if (!optedIn.current) {
         posthog.opt_in_capturing();
         optedIn.current = true;
@@ -80,6 +84,10 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       optedIn.current = false;
     }
   }, [initialized]);
+
+  useEffect(() => {
+    if (optedIn.current && workspaceId) posthogRef.current?.register({ workspace_id: workspaceId });
+  }, [workspaceId, privacy]);
 
   useEffect(() => {
     if (!hydrated) return;
