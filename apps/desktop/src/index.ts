@@ -15,7 +15,7 @@ import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
-import { runInstall, syncExtractedBins } from "./main/installer";
+import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
 import { removeLegacyDaemon } from "./main/legacyDaemon";
 import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
@@ -959,6 +959,7 @@ async function syncBundledAssets(): Promise<void> {
     // `hash` is Electrobun's per-build content hash; combined with version it
     // tells apart two builds that share a version string.
     await syncExtractedBins(`${info.version}:${info.hash}`, info.channel === "dev");
+    ensureOnPath();
   } catch (err) {
     console.warn(`[draft-desktop] bin sync failed: ${err instanceof Error ? err.message : err}`);
   }
