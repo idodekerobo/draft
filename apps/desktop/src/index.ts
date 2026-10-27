@@ -29,7 +29,7 @@ import type {
 } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
-import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
+import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
@@ -43,7 +43,7 @@ import {
   sendLiveSessionMessage,
   startLiveSession,
 } from "./main/host/live-session";
-import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
+import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -208,6 +208,9 @@ Electrobun.events.on("reopen", () => {
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
 
+const SESSION_CHECK_THROTTLE_MS = 60_000;
+let lastSessionCheck = 0;
+
 const rpc = BrowserView.defineRPC<AppRPCType>({
   // Team staging can spend up to 60s cloning; promotion can then wait up to
   // 30s for the profile lock before applying assets. Keep the RPC alive for
@@ -291,14 +294,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           }>(`workspaces/${workspaceId}/context`);
 
           return documentsToEntries(context.documents);
-        } catch (error) {
-          const authFailure =
-            (error instanceof AuthRefreshError && error.kind === "terminal") ||
-            (error instanceof Error && /request_failed_(401|403)/.test(error.message));
-          if (authFailure) {
-            try { clearAuthState(); } catch {}
-            try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
-          }
+        } catch {
           return [];
         }
       },
@@ -916,6 +912,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getUserIdentity: async () => {
         return getUserIdentity();
       },
+      verifySession: async () => {
+        const now = Date.now();
+        if (now - lastSessionCheck < SESSION_CHECK_THROTTLE_MS) return { ok: true };
+        lastSessionCheck = now;
+        const hadSession = readAuthState() !== null;
+        const identity = await getUserIdentity().catch(() => null);
+        if (hadSession && identity && !identity.signedIn) {
+          try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
+        }
+        return { ok: true };
+      },
       completeOnboarding: async () => {
         try {
           const result = await fetchServerJSON<{ onboarding_completed_at: string | null }>(
@@ -948,6 +955,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
     },
   },
+});
+
+setSessionExpiredHandler(() => {
+  try { clearAuthState(); } catch {}
+  try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
 });
 
 // ── Bundled binary sync ────────────────────────────────────────────────────────

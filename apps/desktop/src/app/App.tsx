@@ -140,12 +140,11 @@ export function App() {
         />
 
         <main className="content">
-          {/* Settings is always reachable regardless of daemon state. */}
-          {settingsOpen && (
+          {settingsOpen && !showOnboarding && (
             <SettingsView onOpenFeedback={openFeedback} />
           )}
-          {!settingsOpen && !identityHydrated && <div className="empty-state">Loading…</div>}
-          {!settingsOpen && showOnboarding && (
+          {!identityHydrated && <div className="empty-state">Loading…</div>}
+          {showOnboarding && (
             <DesktopOnboarding
               files={contextFiles}
               loading={contextLoading}

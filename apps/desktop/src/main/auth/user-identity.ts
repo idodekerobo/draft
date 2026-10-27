@@ -28,10 +28,29 @@ export function defaultIdentityDeps(): IdentityDeps {
 
 const signedOut = (): UserIdentity => ({ signedIn: false, hydrated: true, organizationId: null, teamId: null, workspaceId: null, onboardingCompletedAt: null });
 
+// A transient failure (offline, provider outage) keeps the cached login; only a terminal one clears it.
+async function tokenStillValid(deps: IdentityDeps, cached: AuthState): Promise<boolean> {
+  try {
+    await deps.token(false);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message !== "not_signed_in" && !(error instanceof AuthRefreshError && error.kind === "terminal")) return true;
+    if (deps.read()?.refresh_token === cached.refresh_token) deps.clear();
+    return false;
+  }
+}
+
 export async function hydrateUserIdentity(deps: IdentityDeps = defaultIdentityDeps()): Promise<UserIdentity> {
   const cached = deps.read();
   if (!cached) return signedOut();
-  if (cached.identity_resolved) return { signedIn: true, hydrated: true, organizationId: cached.organization_id, teamId: cached.team_id, workspaceId: cached.workspace_id, onboardingCompletedAt: cached.onboarding_completed_at };
+  if (cached.identity_resolved) {
+    if (!(await tokenStillValid(deps, cached))) {
+      const current = deps.read();
+      return current && current.refresh_token !== cached.refresh_token ? hydrateUserIdentity(deps) : signedOut();
+    }
+    return { signedIn: true, hydrated: true, organizationId: cached.organization_id, teamId: cached.team_id, workspaceId: cached.workspace_id, onboardingCompletedAt: cached.onboarding_completed_at };
+  }
 
   let response: Response;
   try {
