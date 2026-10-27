@@ -96,3 +96,20 @@ export const LIVE_SESSION_MODELS: ReadonlyArray<{ alias: string | null; label: s
 
 export const isKnownModelAlias = (alias: string | null | undefined): boolean =>
   LIVE_SESSION_MODELS.some((model) => model.alias === (alias ?? null));
+
+/** What a person tracks on the presence channel `session:<id>`. The presence key is their user id. */
+export interface PresenceMeta {
+  name?: string;
+}
+
+export const presenceChannel = (sessionId: string) => `session:${sessionId}`;
+
+/** Names of the other people watching, from a channel's presence state. One name per person, in a steady order. */
+export function presenceNames(state: Record<string, PresenceMeta[]>, selfId: string): string[] {
+  const names: string[] = [];
+  for (const [userId, metas] of Object.entries(state)) {
+    const name = metas.find((meta) => meta.name?.trim())?.name?.trim();
+    if (userId !== selfId && name) names.push(name);
+  }
+  return names.sort((a, b) => a.localeCompare(b));
+}

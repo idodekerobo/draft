@@ -328,6 +328,9 @@ export type AppRPCType = {
       /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
       startLiveSession: { params: { folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
 
+      /** The other people watching a live session. Ask every few seconds while the session is open. */
+      pollLiveSessionPresence: { params: { sessionId: string; viewerId: string; viewerName: string }; response: { names: string[] } };
+
       /** Live sessions of the workspace; `enabled` is false when the workspace has the feature off. */
       listLiveSessions: { params: void; response: { enabled: boolean; sessions: LiveSession[] } };
 

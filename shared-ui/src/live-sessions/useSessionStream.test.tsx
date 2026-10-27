@@ -19,7 +19,7 @@ function setup(pages: (after: number) => LiveSessionEvent[]) {
   const afters: number[] = [];
   const fetchEvents = mock(async (_id: string, after: number) => {
     afters.push(after);
-    return { session, events: pages(after), inputs: [] };
+    return { session, viewer: { id: "u9", name: "Dev" }, events: pages(after), inputs: [] };
   });
   const api = { fetchEvents } as unknown as LiveSessionsApi;
   let renders = 0;

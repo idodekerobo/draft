@@ -1,5 +1,7 @@
 import { LiveSessionsDisabledError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
+import { presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
 import { ApiError, apiFetch } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 
 async function fetchLive<T>(path: string): Promise<T> {
   try {
@@ -39,5 +41,15 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
     decideApproval: (sessionId, requestId, decision) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, decision),
     stop: (sessionId) => post(`${base}/${sessionId}/stop`, {}),
+    watchPresence: (sessionId, viewer, onChange) => {
+      const client = createClient();
+      const channel = client.channel(presenceChannel(sessionId), { config: { private: true, presence: { key: viewer.id } } });
+      channel
+        .on("presence", { event: "sync" }, () => onChange(presenceNames(channel.presenceState<PresenceMeta>(), viewer.id)))
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") void channel.track({ name: viewer.name });
+        });
+      return () => void client.removeChannel(channel);
+    },
   };
 }

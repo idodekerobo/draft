@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, normalizeInputText, parseClaudeVersion, splitAuthor } from "../live-sessions";
+import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, normalizeInputText, parseClaudeVersion, presenceNames, splitAuthor } from "../live-sessions";
 
 describe("author tag", () => {
   it("round-trips through deliveredText and splitAuthor", () => {
@@ -61,5 +61,17 @@ describe("models", () => {
     expect(isKnownModelAlias(undefined)).toBe(true);
     expect(isKnownModelAlias("haiku")).toBe(true);
     expect(isKnownModelAlias("gpt-5; rm -rf /")).toBe(false);
+  });
+});
+
+describe("presenceNames", () => {
+  it("lists the other people once each, sorted, and never the viewer", () => {
+    const state = { u1: [{ name: "Priya" }, { name: "Priya" }], u2: [{ name: "Dev" }], me: [{ name: "Maya" }] };
+    expect(presenceNames(state, "me")).toEqual(["Dev", "Priya"]);
+  });
+
+  it("skips someone without a name", () => {
+    expect(presenceNames({ u1: [{}], u2: [{ name: "  " }], u3: [{ name: "Sam" }] }, "me")).toEqual(["Sam"]);
+    expect(presenceNames({}, "me")).toEqual([]);
   });
 });

@@ -12,7 +12,9 @@ import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
 import { buildStreamItems, openApprovals } from "./stream-items";
 import { usePopover } from "./usePopover";
+import { presenceLine } from "./presence-line";
 import { useSessionInputs } from "./useSessionInputs";
+import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
 import type { LiveSession, LiveSessionLink, LiveSessionsApi } from "./types";
 
@@ -143,7 +145,8 @@ function LoadedSession({
   onOpenSession,
   autoFocusComposer,
 }: SessionViewProps) {
-  const { session, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
+  const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
+  const watchers = presenceLine(useSessionPresence(api, sessionId, viewer));
   const inputs = useSessionInputs(api, sessionId, waiting, refresh);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -196,6 +199,7 @@ function LoadedSession({
         <Crumbs back={back}>
           <h1 className="ui-session__title">{sessionTitle(session)}</h1>
           <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · <StatusText session={session} /></span>
+          {watchers && <span className="ui-muted ui-session__presence" aria-live="polite">{watchers}</span>}
         </Crumbs>
         <div className="ui-session__actions">
           {running && (

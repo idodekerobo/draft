@@ -60,8 +60,15 @@ export interface LiveSessionEvent {
   created_at: string;
 }
 
+export interface LiveSessionViewer {
+  id: string;
+  name: string;
+}
+
 export interface LiveSessionEventsPage {
   session: LiveSession;
+  /** The person asking. */
+  viewer: LiveSessionViewer;
   events: LiveSessionEvent[];
   /** Messages that Claude has not yet taken. */
   inputs: LiveSessionInput[];
@@ -97,6 +104,8 @@ export interface LiveSessionsApi {
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
   stop(sessionId: string): Promise<void>;
+  /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
+  watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
 }
 
 /** The workspace has the feature switched off. */
