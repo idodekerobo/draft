@@ -20,10 +20,12 @@ import {
   parseTimeoutSeconds,
   recomputeBundleHash,
   reportRunnerFailure,
+  routineCommandArgs,
   runBatch,
   sanitizeReason,
   sanitizedClaudeEnv,
   shouldRetryCallback,
+  StreamLineReader,
 } from "../../../sandbox/claude-code/runner";
 
 test("Claude command is read-only, noninteractive, ephemeral, streamed, and schema-constrained", () => {
@@ -525,5 +527,38 @@ describe("runBatch", () => {
         { sessionId: "b", ok: true, payload: { who: "ido" } },
       ],
     });
+  });
+});
+
+test("routine command streams stream-json, stays read-only, and sets no JSON schema", () => {
+  const args = routineCommandArgs("Summarize", "haiku");
+  expect(args).toEqual([
+    "-p", "Summarize", "--model", "haiku", "--tools", "Read,Glob", "--permission-mode", "dontAsk",
+    "--no-session-persistence", "--output-format", "stream-json", "--verbose",
+  ]);
+  expect(args).not.toContain("--json-schema");
+  expect(routineCommandArgs("Summarize", null)).not.toContain("--model");
+  expect(() => routineCommandArgs("Summarize", "bad model; rm")).toThrow("DRAFT_ROUTINE_MODEL");
+});
+
+describe("StreamLineReader", () => {
+  test("gives a line the same byte offset however the chunks fall", () => {
+    const whole = new StreamLineReader().push('{"a":1}\n{"b":"é"}\n');
+    const reader = new StreamLineReader();
+    const split = [...reader.push('{"a":1}\n{"b"'), ...reader.push(':"é"}\n')];
+    expect(split).toEqual(whole);
+    expect(whole.map((line) => line.offset)).toEqual([0, 8]);
+  });
+
+  test("holds a partial line until it ends, then returns it from finish", () => {
+    const reader = new StreamLineReader();
+    expect(reader.push('{"a":1}')).toEqual([]);
+    expect(reader.finish()).toEqual([{ file: "root.jsonl", offset: 0, raw: '{"a":1}' }]);
+  });
+
+  test("skips blank lines and reports an oversize line by size only", () => {
+    const reader = new StreamLineReader();
+    const huge = "x".repeat(4 * 1024 * 1024 + 1);
+    expect(reader.push(`\n${huge}\n`)).toEqual([{ file: "root.jsonl", offset: 1, oversizeBytes: huge.length }]);
   });
 });

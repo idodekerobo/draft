@@ -305,3 +305,41 @@ describe("launchFlySandboxRun", () => {
     }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow('manifestPath is required when mode is "batch"');
   });
 });
+
+describe("launchFlySandboxRun routine mode", () => {
+  it("runs without an output schema and tells the runner the mode, model and timeout", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader, calls } = fakeBundleUploader();
+    let launched: CreateFlyMachineInput | undefined;
+
+    await launchFlySandboxRun({
+      bundle: bundle(),
+      prompt: "Summarize the week.\n",
+      mode: "routine",
+      model: "haiku",
+      timeoutSeconds: 900,
+      claudeCodeOAuthToken: "token",
+      config,
+    }, {
+      flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } },
+      bundleUploader: uploader,
+    });
+
+    expect(Object.keys(calls[0]!.files)).not.toContain("input/output-schema.json");
+    expect(calls[0]!.files["input/prompt.md"]).toBe("Summarize the week.\n");
+    expect(launched!.env).toMatchObject({
+      DRAFT_RUN_MODE: "routine",
+      DRAFT_ROUTINE_MODEL: "haiku",
+      DRAFT_TIMEOUT_SECONDS: "900",
+    });
+    expect(launched!.env).not.toHaveProperty("DRAFT_OUTPUT_SCHEMA_PATH");
+  });
+
+  it("still requires a schema outside routine mode", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    await expect(launchFlySandboxRun({
+      bundle: bundle(), prompt: "prompt", claudeCodeOAuthToken: "token", config,
+    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("jsonSchema is required");
+  });
+});

@@ -610,6 +610,195 @@ export async function runClaudeOnce(
   };
 }
 
+// Routine runs stream every stream-json line to the backend as it appears, so
+// the session view fills in while the run is going.
+const ROUTINE_FLUSH_INTERVAL_MS = 1_500;
+const ROUTINE_FLUSH_BYTES = 512 * 1024;
+const ROUTINE_MAX_LINE_BYTES = 4 * 1024 * 1024;
+const ROUTINE_FILE = "root.jsonl";
+const MODEL_PATTERN = /^[A-Za-z0-9._:\-\[\]]{1,100}$/;
+
+export type RoutineLine =
+  | { file: string; offset: number; raw: string }
+  | { file: string; offset: number; oversizeBytes: number };
+
+export function routineCommandArgs(prompt: string, model: string | null): string[] {
+  if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
+  return [
+    "-p",
+    prompt,
+    ...(model ? ["--model", model] : []),
+    "--tools",
+    "Read,Glob",
+    "--permission-mode",
+    "dontAsk",
+    "--no-session-persistence",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+  ];
+}
+
+// Cuts decoded stdout into whole lines. Offsets count bytes, so a line keeps the
+// same id (file + offset) however the chunks fall.
+export class StreamLineReader {
+  private pending = "";
+  private offset = 0;
+
+  push(text: string): RoutineLine[] {
+    this.pending += text;
+    const lines: RoutineLine[] = [];
+    let newline = this.pending.indexOf("\n");
+    while (newline !== -1) {
+      lines.push(...this.take(this.pending.slice(0, newline)));
+      this.pending = this.pending.slice(newline + 1);
+      newline = this.pending.indexOf("\n");
+    }
+    return lines;
+  }
+
+  finish(): RoutineLine[] {
+    const rest = this.pending;
+    this.pending = "";
+    return rest ? this.take(rest) : [];
+  }
+
+  private take(raw: string): RoutineLine[] {
+    const offset = this.offset;
+    const bytes = Buffer.byteLength(raw);
+    this.offset += bytes + 1;
+    if (!raw.trim()) return [];
+    if (bytes > ROUTINE_MAX_LINE_BYTES) return [{ file: ROUTINE_FILE, offset, oversizeBytes: bytes }];
+    return [{ file: ROUTINE_FILE, offset, raw }];
+  }
+}
+
+export interface RoutineEnd {
+  kind: "end";
+  ok: boolean;
+  error?: RunnerFailureCode;
+  diagnostics?: Record<string, unknown>;
+}
+
+export type RoutinePost = (result: unknown) => Promise<void>;
+
+export async function runRoutine(
+  prompt: string,
+  model: string | null,
+  timeoutMs: number,
+  runId: string,
+  post: RoutinePost,
+): Promise<RoutineEnd> {
+  const { spawn } = await import("node:child_process");
+  const { StringDecoder } = await import("node:string_decoder");
+  const childEnv = sanitizedClaudeEnv(process.env);
+  const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
+  const child = spawn(
+    "gosu",
+    ["agent", "env", "-i", ...envArgs, "claude", ...routineCommandArgs(prompt, model)],
+    { cwd: "/run", detached: true, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  runnerLog("claude_started", { run_id: runId, tools: "Read,Glob", permission_mode: "dontAsk", timeout_ms: timeoutMs, mode: "routine" });
+
+  const reader = new StreamLineReader();
+  const decoder = new StringDecoder("utf8");
+  let queue: RoutineLine[] = [];
+  let queuedBytes = 0;
+  let sending: Promise<void> = Promise.resolve();
+  let resultLine: { is_error?: boolean; subtype?: string } | null = null;
+  let failureCategory: ClaudeFailureCategory = "none";
+  let stderr = "";
+
+  // Sends are chained so batches reach the backend in order. A batch that cannot
+  // be delivered is dropped: events are keyed by line id, and the run goes on.
+  const flush = (): void => {
+    if (queue.length === 0) return;
+    const lines = queue;
+    queue = [];
+    queuedBytes = 0;
+    sending = sending.then(() =>
+      post({ kind: "lines", lines }).catch((error) =>
+        runnerLog("routine_lines_dropped", { run_id: runId, count: lines.length, reason: sanitizeReason(error) }),
+      ),
+    );
+  };
+  const enqueue = (lines: RoutineLine[]): void => {
+    for (const line of lines) {
+      if ("raw" in line) {
+        queuedBytes += Buffer.byteLength(line.raw);
+        if (line.raw.includes('"type":"result"')) {
+          try {
+            const parsed: unknown = JSON.parse(line.raw);
+            if (isObject(parsed) && parsed.type === "result") resultLine = parsed as { is_error?: boolean; subtype?: string };
+          } catch { /* a partial line is not the result */ }
+        }
+      }
+      queue.push(line);
+    }
+    if (queuedBytes >= ROUTINE_FLUSH_BYTES) flush();
+  };
+
+  child.stdout?.on("data", (chunk: Buffer) => enqueue(reader.push(decoder.write(chunk))));
+  child.stderr?.on("data", (chunk: Buffer) => {
+    const text = chunk.toString("utf8");
+    if (stderr.length < 2_000) stderr += text;
+    failureCategory = classifyClaudeFailureChunk(text, failureCategory);
+  });
+  const ticker = setInterval(flush, ROUTINE_FLUSH_INTERVAL_MS);
+
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    void stopChild(child);
+  }, timeoutMs);
+  const childExit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, rejectExit) => {
+    child.once("error", rejectExit);
+    child.once("exit", (code, signal) => resolveExit({ code, signal }));
+  });
+  clearTimeout(timeout);
+  clearInterval(ticker);
+  await stopChild(child);
+  enqueue(reader.push(decoder.end()));
+  enqueue(reader.finish());
+  flush();
+  await sending;
+
+  const finished = resultLine as { is_error?: boolean; subtype?: string } | null;
+  const ok = !timedOut && finished !== null && finished.is_error !== true && childExit.code === 0;
+  const error: RunnerFailureCode | undefined = ok
+    ? undefined
+    : timedOut
+      ? "timeout"
+      : finished?.is_error === true
+        ? "claude_error"
+        : childExit.code !== 0 || childExit.signal !== null
+          ? "claude_exit"
+          : "incomplete_result";
+  runnerLog("claude_finished", {
+    run_id: runId,
+    exit_code: childExit.code,
+    signal: childExit.signal,
+    timed_out: timedOut,
+    result_found: finished !== null,
+    failure_category: failureCategory,
+    failure_code: error ?? "none",
+  });
+  return ok
+    ? { kind: "end", ok: true }
+    : {
+        kind: "end",
+        ok: false,
+        error,
+        diagnostics: {
+          failure_category: failureCategory,
+          exit_code: childExit.code,
+          signal: childExit.signal,
+          result_subtype: finished?.subtype ?? null,
+          stderr: sanitizeReason(stderr),
+        },
+      };
+}
+
 const MAX_BATCH_ENTRIES = 25;
 const BATCH_WALL_CLOCK_BUDGET_MS = 18 * 60 * 1_000;
 
@@ -757,7 +946,7 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
   const outputSchemaPath = process.env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH;
   const timeoutMs = parseTimeoutSeconds(process.env.DRAFT_TIMEOUT_SECONDS) * 1_000;
-  const runMode = process.env.DRAFT_RUN_MODE === "batch" ? "batch" : "single";
+  const runMode = process.env.DRAFT_RUN_MODE === "batch" ? "batch" : process.env.DRAFT_RUN_MODE === "routine" ? "routine" : "single";
   const inputRoot = "/run/input";
   // Bundle file keys (e.g. "input/prompt.md", "input/sources/x.md") already
   // carry the "input/" segment, so they're relative to /run, one level above
@@ -791,7 +980,6 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
     return;
   }
   const inputStats = secureInputTree(inputRoot);
-  const serializedSchema = readOutputSchema(outputSchemaPath, inputRoot);
 
   // Batch mode carries a per-session prompt file per manifest entry instead
   // of one shared prompt at promptPath -- see runBatch.
@@ -814,6 +1002,18 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   chmodSync("/run/output", 0o750);
   chownSync("/run/scratch", AGENT_UID, AGENT_GID);
   chmodSync("/run/scratch", 0o700);
+
+  if (runMode === "routine") {
+    const end = await runRoutine(prompt, process.env.DRAFT_ROUTINE_MODEL || null, timeoutMs, runId, (result) =>
+      callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
+    );
+    await callback(callbackUrl, callbackToken, runId, bundleHash, end, undefined);
+    runnerLog("final", { run_id: runId, status: end.ok ? "completed" : "failed", failure_code: end.error ?? "none" });
+    if (!end.ok) process.exitCode = 1;
+    return;
+  }
+
+  const serializedSchema = readOutputSchema(outputSchemaPath, inputRoot);
 
   if (runMode === "batch") {
     const manifestPath = required("DRAFT_MANIFEST_PATH");
