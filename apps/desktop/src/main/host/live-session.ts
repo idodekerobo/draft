@@ -4,7 +4,6 @@ import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { HOST_FATAL_CODES, isKnownModelAlias } from "draft-core/live-sessions";
 import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
-import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
 import { ApprovalBroker, type HostEvent } from "./approvals";
@@ -21,6 +20,7 @@ import { openPaneInTerminal } from "./open-in-terminal";
 import { putSigned, uploadRawFiles } from "./raw-upload";
 import { startHeartbeat } from "./heartbeat";
 import { rotationTarget } from "./rotation";
+import { gitRemote } from "./git-remote";
 import { readClaudeVersion } from "./version-check";
 import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
 
@@ -36,15 +36,6 @@ const running = new Map<string, SessionRunner>();
 const ERROR_MESSAGES: Record<string, string> = {
   live_sessions_disabled: "Live sessions are not turned on for this workspace.",
 };
-
-async function gitRemote(folderPath: string): Promise<string | null> {
-  try {
-    const result = await capture(["git", "-C", folderPath, "remote", "get-url", "origin"], { timeoutMs: 3000 });
-    return result.exitCode === 0 ? result.stdout.trim() || null : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Forwards one session's transcript while its pane lives, then finishes it: last lines, raw upload, end. */
 class SessionRunner {
