@@ -65,3 +65,19 @@ export function splitAuthor(text: string): { text: string; author: string | null
   const match = AUTHOR_PREFIX.exec(text);
   return match ? { text: text.slice(match[0].length), author: match[1]! } : { text, author: null };
 }
+
+/** Claude Code releases the live-session host was tested with: this major and minor. */
+export const TESTED_CLAUDE_VERSION = { major: 2, minor: 1 } as const;
+
+/** The version number in the output of `claude --version`. */
+export function parseClaudeVersion(output: string): string | null {
+  return /\b(\d+\.\d+\.\d+)\b/.exec(output)?.[1] ?? null;
+}
+
+/** True or false for a known version, null when it is not known. */
+export function isTestedClaudeVersion(version: string | null | undefined): boolean | null {
+  const parsed = version ? parseClaudeVersion(version) : null;
+  if (!parsed) return null;
+  const [major, minor] = parsed.split(".").map(Number);
+  return major === TESTED_CLAUDE_VERSION.major && minor === TESTED_CLAUDE_VERSION.minor;
+}

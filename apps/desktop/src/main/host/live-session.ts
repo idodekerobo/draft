@@ -19,6 +19,9 @@ import { getHostMachineId } from "./machine-id";
 import { preTrustFolder } from "./pre-trust";
 import { openPaneInTerminal } from "./open-in-terminal";
 import { putSigned, uploadRawFiles } from "./raw-upload";
+import { startHeartbeat } from "./heartbeat";
+import { rotationTarget } from "./rotation";
+import { readClaudeVersion } from "./version-check";
 
 const PANE_WATCH_MS = 2_000;
 const CATCH_UP_RETRY_MS = 2_000;
@@ -49,6 +52,9 @@ class SessionRunner {
   private readonly broker: ApprovalBroker;
   private readonly controls: ControlActions;
   private unregisterHooks: (() => void) | null = null;
+  private stopHeartbeat: (() => void) | null = null;
+  private rotateTo: string | null = null;
+  private successor: HostSessionState | null = null;
   private endReason = "exited";
   private uploading = false;
   private uploadWanted = false;
@@ -122,12 +128,16 @@ class SessionRunner {
   start(): void {
     if (!this.state.ended) {
       ensureHooksServer();
-      this.unregisterHooks = registerSessionHooks(this.state.sessionId, {
+      this.unregisterHooks = registerSessionHooks(this.state.hookId ?? this.state.sessionId, {
         permission: (payload, signal) => this.broker.hold(payload, signal),
         stopped: () => {
           this.uploadWanted = true;
         },
+        sessionStarted: (payload) => {
+          this.rotateTo ??= rotationTarget(this.state.nativeSessionId, payload);
+        },
       });
+      this.stopHeartbeat = startHeartbeat(() => this.sendHeartbeat());
       for (const requestId of this.state.openRequests ?? []) {
         void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
       }
@@ -136,6 +146,17 @@ class SessionRunner {
     }
     this.watcher = setInterval(() => void this.step(), PANE_WATCH_MS);
     running.set(this.state.sessionId, this);
+  }
+
+  private async sendHeartbeat(): Promise<void> {
+    try {
+      await fetchServer(`${this.base}/heartbeat`, {
+        method: "POST",
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null }),
+      });
+    } catch (error) {
+      this.reportInputError("heartbeat", error);
+    }
   }
 
   /** Input delivery waits until the transcript is up to date, so a sent message is not called uncertain too soon. */
@@ -154,6 +175,7 @@ class SessionRunner {
   private abandon(): void {
     this.finished = true;
     this.forwarder.halt();
+    this.stopHeartbeat?.();
     this.unregisterHooks?.();
     if (this.watcher) clearInterval(this.watcher);
     running.delete(this.state.sessionId);
@@ -232,6 +254,7 @@ class SessionRunner {
     this.stepping = true;
     try {
       if (!this.state.ended) {
+        if (this.rotateTo && (await this.rotate(this.rotateTo))) return;
         if (await paneIsAlive(this.state.tmuxSession)) {
           await this.whileAlive();
           return;
@@ -239,6 +262,7 @@ class SessionRunner {
         this.forwarder.halt();
         if (!(await this.forwarder.tick())) return;
         if (!(await this.endOnServer())) return;
+        this.stopHeartbeat?.();
         this.persist({ ended: true });
       }
       if (await this.rawUpload()) this.abandon();
@@ -250,6 +274,60 @@ class SessionRunner {
         void this.uploadIfChanged();
       }
     }
+  }
+
+  /**
+   * After `/clear` or `/fork` the pane holds a new conversation. This ends the session and starts a linked one on the
+   * same pane. Returns true while the old session still has to finish, and false when there is nothing more to do here.
+   */
+  private async rotate(nativeSessionId: string): Promise<boolean> {
+    this.forwarder.halt();
+    if (!(await this.forwarder.tick())) return true;
+    try {
+      this.successor ??= await this.createSuccessor(nativeSessionId);
+    } catch (error) {
+      this.reportInputError("starting the linked session", error);
+      return true;
+    }
+    this.endReason = "cleared";
+    if (!(await this.endOnServer())) return true;
+    this.stopHeartbeat?.();
+    this.persist({ ended: true });
+    saveState(this.successor);
+    new SessionRunner(this.successor).start();
+    this.rotateTo = null;
+    return true;
+  }
+
+  private async createSuccessor(nativeSessionId: string): Promise<HostSessionState> {
+    const { folderPath, hostMachineId, workspaceId, model = null, harnessVersion = null } = this.state;
+    const created = await fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        hostMachineId,
+        hostName: hostname(),
+        folderName: basename(folderPath),
+        gitRemote: await gitRemote(folderPath),
+        model,
+        nativeSessionId,
+        harnessVersion,
+        previousSessionId: this.state.sessionId,
+      }),
+    });
+    return {
+      sessionId: created.session.id,
+      workspaceId,
+      hostMachineId,
+      nativeSessionId,
+      folderPath,
+      tmuxSession: this.state.tmuxSession,
+      cursors: {},
+      rawUploads: {},
+      ended: false,
+      hookId: this.state.hookId ?? this.state.sessionId,
+      model,
+      harnessVersion,
+    };
   }
 
   hasEnded(): boolean {
@@ -307,6 +385,7 @@ export async function startLiveSession(
   const hostMachineId = getHostMachineId();
   const nativeSessionId = crypto.randomUUID();
   const model = input.model ?? null;
+  const harnessVersion = await readClaudeVersion(claudeBin);
 
   let sessionId: string;
   try {
@@ -319,6 +398,7 @@ export async function startLiveSession(
         gitRemote: await gitRemote(folderPath),
         model,
         nativeSessionId,
+        harnessVersion,
       }),
     });
     sessionId = created.session.id;
@@ -337,6 +417,8 @@ export async function startLiveSession(
     cursors: {},
     rawUploads: {},
     ended: false,
+    model,
+    harnessVersion,
   };
 
   try {

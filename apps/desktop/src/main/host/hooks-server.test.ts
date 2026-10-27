@@ -15,14 +15,14 @@ const call = (path: string, init: RequestInit = {}) =>
 
 describe("hooks server", () => {
   it("answers a permission hook with Claude's hook output format", async () => {
-    registerSessionHooks("s1", { permission: async () => ({ behavior: "allow" }), stopped: () => {} });
+    registerSessionHooks("s1", { permission: async () => ({ behavior: "allow" }), stopped: () => {}, sessionStarted: () => {} });
     const res = await call("/hook/s1/permission");
     expect(await res.json()).toEqual({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } });
     expect(hookOutput({ behavior: "deny", message: "no" })).toContain('"message":"no"');
   });
 
   it("gives no output when the host wants Claude's own dialog", async () => {
-    registerSessionHooks("s2", { permission: async () => null, stopped: () => {} });
+    registerSessionHooks("s2", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
     const res = await call("/hook/s2/permission");
     expect(res.status).toBe(204);
   });
@@ -33,6 +33,7 @@ describe("hooks server", () => {
     registerSessionHooks("s3", {
       permission: (_payload, signal) => new Promise((resolve) => signal.addEventListener("abort", () => (aborted(), resolve(null)))),
       stopped: () => {},
+      sessionStarted: () => {},
     });
     const controller = new AbortController();
     void call("/hook/s3/permission", { signal: controller.signal }).catch(() => {});
@@ -43,7 +44,7 @@ describe("hooks server", () => {
 
   it("runs the Stop handler and refuses a wrong token, an unknown route and a GET", async () => {
     let stopped = 0;
-    registerSessionHooks("s4", { permission: async () => null, stopped: () => void stopped++ });
+    registerSessionHooks("s4", { permission: async () => null, stopped: () => void stopped++, sessionStarted: () => {} });
     expect((await call("/hook/s4/stop")).status).toBe(204);
     expect(stopped).toBe(1);
     expect((await call("/hook/s4/stop", { headers: { "x-draft-token": "wrong" } })).status).toBe(404);
@@ -53,5 +54,13 @@ describe("hooks server", () => {
 
   it("an unregistered session gets no output instead of an error", async () => {
     expect((await call("/hook/nobody/permission")).status).toBe(204);
+  });
+
+  it("passes the SessionStart payload to the session", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    registerSessionHooks("s5", { permission: async () => null, stopped: () => {}, sessionStarted: (payload) => void seen.push(payload) });
+    const res = await call("/hook/s5/session-start", { body: JSON.stringify({ source: "clear", session_id: "n2" }) });
+    expect(res.status).toBe(204);
+    expect(seen).toEqual([{ source: "clear", session_id: "n2" }]);
   });
 });

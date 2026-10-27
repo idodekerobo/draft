@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HOST_FATAL_CODES, deliveredText, normalizeInputText, splitAuthor } from "../live-sessions";
+import { HOST_FATAL_CODES, deliveredText, isTestedClaudeVersion, normalizeInputText, parseClaudeVersion, splitAuthor } from "../live-sessions";
 
 describe("author tag", () => {
   it("round-trips through deliveredText and splitAuthor", () => {
@@ -31,5 +31,25 @@ describe("HOST_FATAL_CODES", () => {
   it("stops a host for an ended or foreign session and not for a full queue", () => {
     expect(HOST_FATAL_CODES.has("session_ended")).toBe(true);
     expect(HOST_FATAL_CODES.has("queue_full")).toBe(false);
+  });
+});
+
+describe("Claude version check", () => {
+  it("reads the version from `claude --version` output", () => {
+    expect(parseClaudeVersion("2.1.311 (Claude Code)\n")).toBe("2.1.311");
+    expect(parseClaudeVersion("no version")).toBeNull();
+  });
+
+  it("accepts the tested minor and warns for another one", () => {
+    expect(isTestedClaudeVersion("2.1.311")).toBe(true);
+    expect(isTestedClaudeVersion("2.1.0")).toBe(true);
+    expect(isTestedClaudeVersion("2.2.0")).toBe(false);
+    expect(isTestedClaudeVersion("1.9.4")).toBe(false);
+    expect(isTestedClaudeVersion("3.1.0")).toBe(false);
+  });
+
+  it("says nothing when the version is not known", () => {
+    expect(isTestedClaudeVersion(null)).toBeNull();
+    expect(isTestedClaudeVersion("garbage")).toBeNull();
   });
 });

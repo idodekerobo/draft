@@ -25,6 +25,10 @@ export interface HostSessionState {
   rawUploads: Record<string, RawUploadRecord>;
   /** The pane is gone and the session was ended; only a raw upload may remain. */
   ended: boolean;
+  /** Hook calls from the pane carry this id; it stays the first session's id after a /clear. */
+  hookId?: string;
+  model?: string | null;
+  harnessVersion?: string | null;
   /** Permission requests posted and not yet closed, so a restart can close them. */
   openRequests?: string[];
 }

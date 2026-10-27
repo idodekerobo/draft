@@ -4,6 +4,7 @@ import { shellQuote } from "./launch";
 export const HOST_DIR = `${process.env.HOME}/.draft/host`;
 const PERMISSION_TIMEOUT_SECONDS = 3600;
 const STOP_TIMEOUT_SECONDS = 30;
+const SESSION_START_TIMEOUT_SECONDS = 30;
 
 /**
  * Calls the host's local server, which writes its port and token next to this script when it starts.
@@ -26,6 +27,7 @@ export function hookSettings(scriptPath: string, sessionId: string) {
     hooks: {
       PermissionRequest: [command("permission", PERMISSION_TIMEOUT_SECONDS)],
       Stop: [command("stop", STOP_TIMEOUT_SECONDS)],
+      SessionStart: [command("session-start", SESSION_START_TIMEOUT_SECONDS)],
     },
   };
 }
