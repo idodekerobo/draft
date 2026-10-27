@@ -1,4 +1,4 @@
-import { LiveSessionsDisabledError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
+import { LiveSessionsDisabledError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 
 async function fetchLive<T>(path: string): Promise<T> {
@@ -36,7 +36,6 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     listSessions: async () => (await fetchLive<{ sessions: Awaited<ReturnType<LiveSessionsApi["listSessions"]>> }>(base)).sessions,
     fetchEvents: (sessionId, after) => fetchLive<LiveSessionEventsPage>(`${base}/${sessionId}/events?after=${after}`),
     sendMessage: (sessionId, text) => post(`${base}/${sessionId}/inputs`, { text }),
-    listInputs: async (sessionId) => (await fetchLive<{ inputs: LiveSessionInput[] }>(`${base}/${sessionId}/inputs`)).inputs,
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
     decideApproval: (sessionId, requestId, decision) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, decision),
     stop: (sessionId) => post(`${base}/${sessionId}/stop`, {}),

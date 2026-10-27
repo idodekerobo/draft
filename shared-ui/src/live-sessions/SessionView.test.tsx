@@ -18,9 +18,9 @@ const api: LiveSessionsApi = {
       { seq: 1, source_id: "a", kind: "user_message", payload: { text: "[Priya via Draft] hello" }, created_at: "" },
       { seq: 2, source_id: "b", kind: "assistant_text", payload: { text: "Hi there" }, created_at: "" },
     ],
+    inputs: [],
   }),
   sendMessage: async () => {},
-  listInputs: async () => [],
   actOnInput: async () => {},
   decideApproval: async () => ({ ok: true }),
   stop: async () => {},
@@ -66,7 +66,7 @@ describe("SessionView", () => {
 
   it("shows no Stop for an ended session", async () => {
     const ended = { ...session, status: "ended" as const };
-    render(<SessionView api={{ ...api, fetchEvents: async () => ({ session: ended, events: [] }) }} sessionId="s1" />);
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ session: ended, events: [], inputs: [] }) }} sessionId="s1" />);
     await screen.findByRole("heading", { name: "fix login" });
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
@@ -78,7 +78,7 @@ describe("SessionView", () => {
       { seq: 3, source_id: "c", kind: "permission_request" as const, payload: { requestId: "r2", name: "Bash", input: { command: "ls" } }, created_at: "2026-10-27T10:02:00Z" },
     ];
     const decideApproval = mock(async () => ({ ok: true as const }));
-    render(<SessionView api={{ ...api, decideApproval, fetchEvents: async () => ({ session, events }) }} sessionId="s1" />);
+    render(<SessionView api={{ ...api, decideApproval, fetchEvents: async () => ({ session, events, inputs: [] }) }} sessionId="s1" />);
     expect(await screen.findByRole("group", { name: "Permission request: Bash" })).toBeTruthy();
     expect(screen.queryByRole("group", { name: "Permission request: Write" })).toBeNull();
     expect(screen.getByText(/Allowed by Dev/)).toBeTruthy();
@@ -99,5 +99,19 @@ describe("SessionView", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "End session" }));
     fireEvent.click(screen.getByRole("button", { name: "End session" }));
     expect(ended).toBe(1);
+  });
+
+  it("shows waiting messages from the same poll as the events, and fetches again right after a send", async () => {
+    const waiting = { id: "i1", author_user_id: "u2", author_name: "Priya", text: "run tests", state: "queued" as const, reason: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), mine: true };
+    let fetches = 0;
+    const sendMessage = mock(async () => {});
+    render(<SessionView api={{ ...api, sendMessage, fetchEvents: async () => (fetches++, { session, events: [], inputs: [waiting] }) }} sessionId="s1" />);
+    await screen.findByText(/Queued/);
+    const before = fetches;
+    const box = screen.getByRole("textbox");
+    fireEvent.change(box, { target: { value: "next" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("s1", "next"));
+    await waitFor(() => expect(fetches).toBeGreaterThan(before));
   });
 });

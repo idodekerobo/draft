@@ -2,19 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mergeEvents } from "./merge-events";
-import { LiveSessionsDisabledError, type LiveSession, type LiveSessionEvent, type LiveSessionsApi } from "./types";
+import { LiveSessionsDisabledError, type LiveSession, type LiveSessionEvent, type LiveSessionInput, type LiveSessionsApi } from "./types";
 
 export const SESSION_POLL_MS = 2_000;
+
+const EMPTY = { session: null, events: [], inputs: [], error: null };
 
 export interface SessionStreamState {
   session: LiveSession | null;
   events: LiveSessionEvent[];
+  inputs: LiveSessionInput[];
   error: Error | null;
+  /** Fetches now, for after the user's own action. */
+  refresh(): Promise<void>;
 }
 
-/** Polls for events above the last seq while the page is visible, and at once on focus. */
+/** Polls for events above the last seq, and for waiting messages, while the page is visible, and at once on focus. */
 export function useSessionStream(api: LiveSessionsApi, sessionId: string): SessionStreamState {
-  const [state, setState] = useState<SessionStreamState>({ session: null, events: [], error: null });
+  const [state, setState] = useState<Omit<SessionStreamState, "refresh">>(EMPTY);
   const lastSeq = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef(false);
@@ -28,8 +33,12 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
       if (cancelled.current) return;
       lastSeq.current = Math.max(lastSeq.current, page.events.at(-1)?.seq ?? 0);
       setState((prev) => {
-        const unchanged = page.events.length === 0 && prev.error === null && JSON.stringify(prev.session) === JSON.stringify(page.session);
-        return unchanged ? prev : { session: page.session, events: mergeEvents(prev.events, page.events), error: null };
+        const unchanged =
+          page.events.length === 0 &&
+          prev.error === null &&
+          JSON.stringify(prev.session) === JSON.stringify(page.session) &&
+          JSON.stringify(prev.inputs) === JSON.stringify(page.inputs);
+        return unchanged ? prev : { session: page.session, events: mergeEvents(prev.events, page.events), inputs: page.inputs, error: null };
       });
     } catch (error) {
       if (!cancelled.current) setState((prev) => ({ ...prev, error: error instanceof Error ? error : new Error(String(error)) }));
@@ -42,7 +51,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
   useEffect(() => {
     cancelled.current = false;
     lastSeq.current = 0;
-    setState({ session: null, events: [], error: null });
+    setState(EMPTY);
 
     const schedule = () => {
       timer.current = setTimeout(async () => {
@@ -66,5 +75,5 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
     };
   }, [poll]);
 
-  return state;
+  return { ...state, refresh: poll };
 }

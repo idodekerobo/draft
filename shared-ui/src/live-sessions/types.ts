@@ -49,6 +49,8 @@ export interface LiveSessionEvent {
 export interface LiveSessionEventsPage {
   session: LiveSession;
   events: LiveSessionEvent[];
+  /** Messages that Claude has not yet taken. */
+  inputs: LiveSessionInput[];
 }
 
 export type LiveSessionInputState = "queued" | "delivering" | "failed" | "uncertain";
@@ -78,7 +80,6 @@ export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
   sendMessage(sessionId: string, text: string): Promise<void>;
-  listInputs(sessionId: string): Promise<LiveSessionInput[]>;
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
   stop(sessionId: string): Promise<void>;

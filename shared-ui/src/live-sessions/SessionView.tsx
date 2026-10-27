@@ -69,8 +69,8 @@ export function SessionView({
   menuItems?: (session: LiveSession) => SessionMenuItem[];
   notice?: string | null;
 }) {
-  const { session, events, error } = useSessionStream(api, sessionId);
-  const inputs = useSessionInputs(api, sessionId);
+  const { session, events, inputs: waiting, error, refresh } = useSessionStream(api, sessionId);
+  const inputs = useSessionInputs(api, sessionId, waiting, refresh);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
