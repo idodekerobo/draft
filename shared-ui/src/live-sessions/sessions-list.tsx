@@ -1,5 +1,6 @@
 "use client";
 
+import { splitAuthor } from "draft-core/live-sessions";
 import { useQuery } from "../query";
 import { POLL_MS } from "../query/options";
 import { LiveSessionsDisabledError, type LiveSession, type LiveSessionsApi } from "./types";
@@ -24,9 +25,7 @@ export function useLiveSessions(api: LiveSessionsApi, workspaceId: string) {
   return { ...query, enabled: query.data?.enabled ?? false, sessions: query.data?.sessions ?? [] };
 }
 
-const AUTHOR_PREFIX = /^\[[^\]\n]{1,60} via Draft\]\s*/;
-
 export function sessionTitle(session: Pick<LiveSession, "title" | "folder_name">): string {
-  const title = session.title?.replace(AUTHOR_PREFIX, "").trim();
+  const title = session.title ? splitAuthor(session.title).text.trim() : null;
   return title || `New session in ${session.folder_name ?? "a folder"}`;
 }

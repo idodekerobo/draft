@@ -1,4 +1,4 @@
-import type { LiveSession, LiveSessionStatus } from "./types";
+import type { LiveSession } from "./types";
 
 export interface SessionGroup {
   label: "Today" | "Yesterday" | "Earlier";
@@ -23,23 +23,3 @@ export function groupSessionsByDay(sessions: LiveSession[], now = new Date()): S
   }
   return groups.filter((group) => group.sessions.length > 0);
 }
-
-/** "now", "5m", "3h", "2d", then a date. */
-export function relativeTime(iso: string, now = Date.now()): string {
-  const minutes = Math.floor((now - Date.parse(iso)) / 60_000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return days < 7 ? `${days}d` : new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-const STATUS_WORDS: Record<LiveSessionStatus, string> = {
-  starting: "Starting",
-  live: "Live",
-  host_offline: "Host offline",
-  ended: "Ended",
-};
-
-export const sessionStatusLabel = (status: LiveSessionStatus) => STATUS_WORDS[status];

@@ -226,7 +226,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
+import type { LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -328,6 +328,9 @@ export type AppRPCType = {
       /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
       startLiveSession: { params: { folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
 
+      /** The other people watching a live session. Ask every few seconds while the session is open. */
+      pollLiveSessionPresence: { params: { sessionId: string; viewerId: string; viewerName: string }; response: { names: string[] } };
+
       /** Live sessions of the workspace; `enabled` is false when the workspace has the feature off. */
       listLiveSessions: { params: void; response: { enabled: boolean; sessions: LiveSession[] } };
 
@@ -337,11 +340,20 @@ export type AppRPCType = {
       /** Queue a message for a live session; the error is the server's error code. */
       sendLiveSessionMessage: { params: { sessionId: string; text: string }; response: { ok: true } | { ok: false; error: string } };
 
-      /** Messages of a live session that Claude has not yet taken. */
-      listLiveSessionInputs: { params: { sessionId: string }; response: LiveSessionInput[] };
-
       /** Resend or dismiss a message that may not have arrived. */
       actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" }; response: void };
+
+      /** Allow or deny an open permission request of a live session. */
+      decideLiveSessionApproval: {
+        params: { sessionId: string; requestId: string; decision: "allow" | "deny" };
+        response: { ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null };
+      };
+
+      /** Ask the host to interrupt the running turn of a live session. */
+      stopLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+
+      /** End a live session that runs on this computer. */
+      endLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Ids of the live sessions that run on this computer. */
       getHostedLiveSessionIds: { params: void; response: string[] };

@@ -2,8 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { COLUMN_DEFAULT_PX, clampColumnWidth, readColumnState, writeColumnState } from "./column-state";
-import { groupSessionsByDay, relativeTime, sessionStatusLabel } from "./session-groups";
+import { relativeTime } from "../relative-time";
+import { displayStatus } from "./display-status";
+import { groupSessionsByDay } from "./session-groups";
 import { sessionTitle } from "./sessions-list";
+import { useMinuteClock } from "./useMinuteClock";
 import type { LiveSession } from "./types";
 
 interface ColumnContext {
@@ -38,25 +41,30 @@ export function ColumnToggleButton({ where }: { where: "column" | "main" }) {
 }
 
 function SessionRow({ session, selected, now, onSelect }: { session: LiveSession; selected: boolean; now: number; onSelect: (id: string) => void }) {
+  const status = displayStatus(session, now);
   return (
     <li>
       <button type="button" className="ui-sessions__row" aria-current={selected ? "true" : undefined} onClick={() => onSelect(session.id)}>
         <span className="ui-sessions__row-top">
           <span className="ui-sessions__row-title">{sessionTitle(session)}</span>
-          <span className="ui-muted ui-sessions__row-time">{relativeTime(session.started_at, now)}</span>
+          <span className="ui-muted ui-sessions__row-time">{relativeTime(session.started_at, { now, compact: true })}</span>
         </span>
         <span className="ui-muted ui-sessions__row-sub">
-          <span>{session.owner_name ?? "Someone"}</span>
-          <span aria-hidden="true">·</span>
-          <span className={`ui-sessions__dot ui-sessions__dot--${session.status}`} aria-hidden="true" />
-          <span>{sessionStatusLabel(session.status)}</span>
+          <span className="ui-sessions__row-owner">{session.owner_name ?? "Someone"}</span>
+          <span aria-hidden="true" className="ui-sessions__row-fixed">·</span>
+          <span className={`ui-sessions__dot ui-sessions__dot--${status.key}`} aria-hidden="true" />
+          <span className="ui-sessions__row-fixed">{status.label}</span>
         </span>
       </button>
     </li>
   );
 }
 
-const MINUTE_MS = 60_000;
+type Tab = "all" | "mine";
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "mine", label: "Mine" },
+];
 
 /** Sessions list column beside the session area. Web and desktop both use it. */
 export function SessionsLayout({
@@ -83,7 +91,8 @@ export function SessionsLayout({
   const [width, setWidth] = useState(COLUMN_DEFAULT_PX);
   const [containerWidth, setContainerWidth] = useState(Infinity);
   const [dragging, setDragging] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  const [tab, setTab] = useState<Tab>("all");
+  const now = useMinuteClock();
   const root = useRef<HTMLDivElement>(null);
   const columnButton = useRef<HTMLButtonElement>(null);
   const mainButton = useRef<HTMLButtonElement>(null);
@@ -100,11 +109,6 @@ export function SessionsLayout({
   useEffect(() => {
     if (loaded.current) writeColumnState(window.localStorage, { open, width });
   }, [open, width]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), MINUTE_MS);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const el = root.current;
@@ -149,7 +153,10 @@ export function SessionsLayout({
   };
 
   const context = useMemo(() => ({ open, toggle, columnButton, mainButton }), [open, toggle]);
-  const groups = useMemo(() => groupSessionsByDay(sessions, new Date(now)), [sessions, now]);
+  const visible = useMemo(() => (tab === "mine" ? sessions.filter((session) => session.mine) : sessions), [sessions, tab]);
+  const groups = useMemo(() => groupSessionsByDay(visible, new Date(now)), [visible, now]);
+  const emptyText =
+    tab === "mine" ? "You haven't started a session." : onNew ? "No sessions yet." : "Sessions start in the Draft desktop app. Your team's sessions show here.";
 
   return (
     <SessionsColumnContext.Provider value={context}>
@@ -169,13 +176,26 @@ export function SessionsLayout({
                 New session
               </button>
             )}
+            <div className="ui-segmented ui-sessions__tabs" role="group" aria-label="Show sessions">
+              {TABS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`ui-segmented__option${tab === id ? " ui-segmented__option--selected" : ""}`}
+                  aria-pressed={tab === id}
+                  onClick={() => setTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="ui-sessions__scroll">
               {failed && sessions.length === 0 ? (
                 <p className="ui-error ui-sessions__note" role="alert">Could not load sessions. They will load again soon.</p>
               ) : loading && sessions.length === 0 ? (
                 <p className="ui-muted ui-sessions__note" role="status">Loading sessions…</p>
               ) : groups.length === 0 ? (
-                <p className="ui-muted ui-sessions__note" role="status">No sessions yet.</p>
+                <p className="ui-muted ui-sessions__note" role="status">{emptyText}</p>
               ) : (
                 groups.map((group) => (
                   <section key={group.label} aria-label={group.label}>

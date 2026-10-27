@@ -7,6 +7,7 @@ create table sessions (
   harness            text not null default 'claude' check (harness in ('claude')),
   model              text,
   native_session_id  text,
+  previous_session_id uuid references sessions(id) on delete set null,
   title              text,
   folder_name        text,
   git_remote         text,
@@ -16,9 +17,12 @@ create table sessions (
   ended_at           timestamptz,
   end_reason         text,
   last_event_at      timestamptz,
+  last_seen          timestamptz not null default now(),
   last_seq           bigint not null default 0,
+  open_approval_count integer not null default 0,
   host_machine_id    text not null,
   host_name          text,
+  harness_version    text,
   raw_storage_path   text,
   raw_uploaded_at    timestamptz,
 
@@ -26,6 +30,8 @@ create table sessions (
 );
 
 create index sessions_workspace_started_idx on sessions (workspace_id, started_at desc);
+create index sessions_unfinished_last_seen_idx on sessions (last_seen)
+  where status in ('starting', 'live');
 
 alter table sessions enable row level security;
 

@@ -6,10 +6,10 @@ const PANE_ROWS = 50;
 
 export const tmuxPath = () => `${process.env.HOME}/.draft/bin/tmux`;
 
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
-export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null): string {
-  const args = ["--session-id", nativeSessionId, ...(model ? ["--model", model] : [])];
+export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null, settingsPath: string | null = null): string {
+  const args = ["--session-id", nativeSessionId, ...(model ? ["--model", model] : []), ...(settingsPath ? ["--settings", settingsPath] : [])];
   return [shellQuote(claudeBin), ...args.map(shellQuote)].join(" ");
 }
 
@@ -29,6 +29,7 @@ export interface LaunchOptions {
   claudeBin: string;
   nativeSessionId: string;
   model: string | null;
+  settingsPath?: string | null;
 }
 
 /** Starts Claude in a detached tmux pane in the folder. */
@@ -39,7 +40,7 @@ export async function launchClaudeInTmux(options: LaunchOptions): Promise<void> 
     "-x", String(PANE_COLUMNS), "-y", String(PANE_ROWS),
     "-c", options.folderPath,
     "-e", `PATH=${GUI_PATH}:${process.env.HOME}/.local/bin`,
-    buildClaudeCommand(options.claudeBin, options.nativeSessionId, options.model),
+    buildClaudeCommand(options.claudeBin, options.nativeSessionId, options.model, options.settingsPath ?? null),
   ]);
   if (!result.ok) throw new Error(`tmux_launch_failed: ${result.stderr.trim()}`);
 }
@@ -68,6 +69,15 @@ export async function pasteIntoPane(tmuxSession: string, text: string): Promise<
 export async function pressEnter(tmuxSession: string): Promise<void> {
   const result = await runTmux(["send-keys", "-t", tmuxSession, "Enter"]);
   if (!result.ok) throw new Error(`tmux_keys_failed: ${result.stderr.trim()}`);
+}
+
+export async function pressEscape(tmuxSession: string): Promise<void> {
+  const result = await runTmux(["send-keys", "-t", tmuxSession, "Escape"]);
+  if (!result.ok) throw new Error(`tmux_keys_failed: ${result.stderr.trim()}`);
+}
+
+export async function killPane(tmuxSession: string): Promise<void> {
+  await runTmux(["kill-session", "-t", tmuxSession]);
 }
 
 /** Attaching a smaller terminal shrinks the window and it stays small. With no client attached, restore the size. */

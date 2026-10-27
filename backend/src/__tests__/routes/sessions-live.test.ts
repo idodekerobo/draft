@@ -230,9 +230,66 @@ describe("live session routes", () => {
       { session_id: SESSION, workspace_id: WS, seq: 2, kind: "assistant_text" },
     ];
     const req = Object.assign(new Request("http://localhost/x?after=1"), { params: { id: WS, sessionId: SESSION } }) as never;
-    const body = (await (await routes.EVENTS(req)).json()) as { session: Row; events: Row[] };
+    const body = (await (await routes.EVENTS(req)).json()) as { session: Row; events: Row[]; inputs: Row[] };
     expect(body.events.map((e) => e.seq)).toEqual([2]);
     expect(body.session.owner_name).toBe("Maya");
+    expect(body.session.mine).toBe(true);
+    expect((body as unknown as { viewer: unknown }).viewer).toEqual({ id: "user-1", name: "Maya" });
+    expect(body.inputs).toEqual([]);
+  });
+
+  it("links a session to the one it continues and to the one that replaced it", async () => {
+    tables.sessions = [
+      session({ id: "old", status: "ended", end_reason: "cleared", title: "Old chat", folder_name: "app" }),
+      session({ id: SESSION, previous_session_id: "old" }),
+    ];
+    const get = async (sessionId: string) => {
+      const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId } }) as never;
+      return ((await (await routes.EVENTS(req)).json()) as { session: Row }).session;
+    };
+    expect((await get(SESSION)).previous_session).toMatchObject({ id: "old", title: "Old chat" });
+    expect((await get("old")).next_session).toMatchObject({ id: SESSION });
+    expect((await get(SESSION)).next_session).toBeNull();
+  });
+
+  it("returns the unfinished messages with the events, marking the caller's own", async () => {
+    const waiting = { session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", payload: { text: "hi" }, created_at: "t", updated_at: "t", author_name: "Priya" };
+    tables.session_inputs = [
+      { ...waiting, id: "mine", author_user_id: caller.userId },
+      { ...waiting, id: "theirs", author_user_id: "user-9" },
+      { ...waiting, id: "done", author_user_id: caller.userId, state: "consumed" },
+      { ...waiting, id: "control", author_user_id: caller.userId, kind: "stop" },
+    ];
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const body = (await (await routes.EVENTS(req)).json()) as { inputs: Array<{ id: string; mine: boolean; text: string }> };
+    expect(body.inputs.map((i) => [i.id, i.mine, i.text])).toEqual([["mine", true, "hi"], ["theirs", false, "hi"]]);
+  });
+
+  it("fails the queued messages of a cleared session with their own reason", async () => {
+    await routes.END(post("/x", { hostMachineId: "host-1", reason: "cleared" }));
+    expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_cleared" });
+  });
+
+  it("links a new session to the one it replaces, only for the owner's own host", async () => {
+    const ok = await routes.CREATE(post("/x", { hostMachineId: "host-1", previousSessionId: SESSION, harnessVersion: "2.1.0" }, { id: WS }));
+    expect(ok.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ previous_session_id: SESSION, harness_version: "2.1.0" });
+
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-2", previousSessionId: SESSION }, { id: WS }))).status).toBe(403);
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", previousSessionId: "other" }, { id: WS }))).status).toBe(404);
+  });
+
+  it("passes a heartbeat to the database and maps its errors", async () => {
+    rpcResult = { data: "live", error: null };
+    const ok = await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", harnessVersion: "2.1.0" }));
+    expect(await ok.json()).toEqual({ ok: true, status: "live" });
+    expect(rpcCalls[0]).toEqual({ fn: "heartbeat_session", args: { p_session_id: SESSION, p_workspace_id: WS, p_host_machine_id: "host-1", p_harness_version: "2.1.0" } });
+
+    expect((await routes.HEARTBEAT(post("/x", {}))).status).toBe(400);
+    rpcResult = { data: null, error: { message: "session_ended" } };
+    expect((await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1" }))).status).toBe(409);
+    rpcResult = { data: null, error: { message: "foreign_host" } };
+    expect((await routes.HEARTBEAT(post("/x", { hostMachineId: "host-2" }))).status).toBe(403);
   });
 
   it("ends a session only for its owner on its own host", async () => {

@@ -65,3 +65,8 @@ export function classifyPane(screen: string): PaneState {
   if (/Do you want to|Esc to cancel · Tab to amend/.test(bottom)) return "permission";
   return "dialog";
 }
+
+/** A turn is running while Claude shows its interrupt hint. */
+export function isTurnRunning(screen: string): boolean {
+  return /esc to interrupt/i.test(screen.split("\n").map(stripAnsi).join("\n"));
+}

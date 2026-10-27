@@ -120,12 +120,6 @@ export class TranscriptForwarder {
     if (this.timer) clearTimeout(this.timer);
   }
 
-  /** Stops polling and posts whatever is left. True when everything readable was posted. */
-  async stop(): Promise<boolean> {
-    this.halt();
-    return this.tick();
-  }
-
   /** The transcript files seen so far, for the raw upload. */
   files(): Array<{ label: string; path: string }> {
     this.rootPath ??= (this.options.locate ?? findTranscript)(this.options.nativeSessionId);

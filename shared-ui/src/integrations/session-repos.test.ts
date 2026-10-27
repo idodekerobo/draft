@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TeamSessionRepo } from "../types";
-import { codingSessionsStatus, formatRelativeTime, repoMeta, summarizeContributors } from "./session-repos";
+import { codingSessionsStatus, repoMeta, summarizeContributors } from "./session-repos";
 
 const NOW = new Date("2026-09-30T12:00:00.000Z").getTime();
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -9,14 +9,6 @@ function repo(overrides: Partial<TeamSessionRepo> = {}): TeamSessionRepo {
   return { id: "p1", label: "api", created_at: ago(1e9), created_by: null, last_upload_at: null, session_count: 0, contributors: [], ...overrides };
 }
 
-describe("formatRelativeTime", () => {
-  test("picks the largest fitting unit", () => {
-    expect(formatRelativeTime(ago(10_000), NOW)).toBe("just now");
-    expect(formatRelativeTime(ago(5 * 60_000), NOW)).toBe("5m ago");
-    expect(formatRelativeTime(ago(2 * 3_600_000), NOW)).toBe("2h ago");
-    expect(formatRelativeTime(ago(3 * 86_400_000), NOW)).toBe("3d ago");
-  });
-});
 
 describe("summarizeContributors", () => {
   test("puts the caller first and counts the rest", () => {

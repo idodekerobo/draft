@@ -21,6 +21,7 @@ function toApiError(response: Response, body: ({ error?: unknown } & Record<stri
     response.status,
     typeof body?.error === "string" ? body.error : `http_${response.status}`,
     typeof body?.field === "string" ? body.field : undefined,
+    body ?? undefined,
   );
 }
 

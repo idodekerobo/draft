@@ -1,33 +1,37 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
-import { withoutAuthorPrefix } from "../ingestion/claude-code/live-input-text";
+import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
-import { failQueuedInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, errorResponse, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
+import { SESSION_COLUMNS, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
 type EventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/events">;
 type LinesRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/lines">;
+type HeartbeatRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/heartbeat">;
 type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
 
 const MAX_LINES_PER_POST = 2000;
-const DEFAULT_EVENTS_PAGE = 500;
 const MAX_EVENTS_PAGE = 1000;
 const LIST_LIMIT = 50;
 const TITLE_MAX_CHARS = 120;
 const RAW_BUCKET = "session-raw";
 const RAW_FILE = /^(root|subagents\/agent-[A-Za-z0-9_-]+)\.jsonl$/;
 
-async function withOwnerNames(workspaceId: string, sessions: SessionRow[]) {
-  const names = await loadDisplayNames(serviceClient, [...new Set(sessions.map((s) => s.owner_user_id))], []);
+/** The sessions with their owners' names, and the caller's own name, from one lookup. */
+async function withOwnerNames(workspaceId: string, sessions: SessionRow[], callerId: string) {
+  const names = await loadDisplayNames(serviceClient, [...new Set([callerId, ...sessions.map((s) => s.owner_user_id)])], []);
   if (!names.ok) return errorResponse(names.code, 500, names.detail, workspaceId);
-  return sessions.map((s) => ({ ...s, owner_name: names.users.get(s.owner_user_id) ?? null }));
+  return {
+    sessions: sessions.map((s) => ({ ...s, owner_name: names.users.get(s.owner_user_id) ?? null, mine: s.owner_user_id === callerId })),
+    viewer: { id: callerId, name: names.users.get(callerId) ?? "A teammate" },
+  };
 }
 
 export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
@@ -43,9 +47,9 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
     .limit(LIST_LIMIT);
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
 
-  const sessions = await withOwnerNames(req.params.id, (data ?? []) as SessionRow[]);
-  if (sessions instanceof Response) return sessions;
-  return Response.json({ sessions });
+  const named = await withOwnerNames(req.params.id, (data ?? []) as SessionRow[], caller.userId);
+  if (named instanceof Response) return named;
+  return Response.json({ sessions: named.sessions });
 });
 
 export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
@@ -59,12 +63,21 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const hostMachineId = optionalString(body.hostMachineId, 200);
   if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
 
+  const previousSessionId = optionalString(body.previousSessionId, 100);
+  if (previousSessionId) {
+    const previous = await loadOwnedSession(req.params.id, previousSessionId, caller.userId);
+    if (!previous.ok) return previous.response;
+    if (previous.session.host_machine_id !== hostMachineId) return errorResponse("foreign_host", 403);
+  }
+
   const { data, error } = await serviceClient
     .from("sessions")
     .insert({
       workspace_id: req.params.id,
       owner_user_id: caller.userId,
       host_machine_id: hostMachineId,
+      harness_version: optionalString(body.harnessVersion, 100),
+      previous_session_id: previousSessionId,
       host_name: optionalString(body.hostName, 200),
       folder_name: optionalString(body.folderName, 200),
       git_remote: optionalString(body.gitRemote, 500),
@@ -78,6 +91,24 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   return Response.json({ ok: true, session: data }, { status: 201 });
 });
 
+const LINK_COLUMNS = "id, title, folder_name";
+type SessionLink = Pick<SessionRow, "id" | "title" | "folder_name">;
+
+/** The session this one continues, and the one that continues it after a /clear. */
+async function loadSessionLinks(workspaceId: string, session: SessionRow) {
+  const previous = session.previous_session_id
+    ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("id", session.previous_session_id).eq("workspace_id", workspaceId).maybeSingle<SessionLink>()
+    : null;
+  const next =
+    session.status === "ended" && session.end_reason === "cleared"
+      ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("previous_session_id", session.id).eq("workspace_id", workspaceId).order("started_at", { ascending: false }).limit(1).maybeSingle<SessionLink>()
+      : null;
+  const [previousResult, nextResult] = await Promise.all([previous, next]);
+  const failed = previousResult?.error ?? nextResult?.error;
+  if (failed) return errorResponse("session_lookup_failed", 500, failed, workspaceId, session.id);
+  return { previous_session: previousResult?.data ?? null, next_session: nextResult?.data ?? null };
+}
+
 export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
@@ -85,30 +116,30 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
 
   const params = new URL(req.url).searchParams;
   const after = Math.max(0, Number(params.get("after")) || 0);
-  const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || DEFAULT_EVENTS_PAGE));
+  const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || EVENTS_PAGE_SIZE));
 
-  const { data: session, error: sessionError } = await serviceClient
-    .from("sessions")
-    .select(SESSION_COLUMNS)
-    .eq("id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle<SessionRow>();
+  const [{ data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
+    serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle<SessionRow>(),
+    serviceClient
+      .from("session_events")
+      .select("seq, source_id, kind, payload, created_at")
+      .eq("session_id", sessionId)
+      .eq("workspace_id", workspaceId)
+      .gt("seq", after)
+      .order("seq", { ascending: true })
+      .limit(limit),
+    loadViewerInputs(workspaceId, sessionId, caller.userId),
+  ]);
   if (sessionError) return errorResponse("session_lookup_failed", 500, sessionError, workspaceId, sessionId);
   if (!session) return errorResponse("session_not_found", 404);
-
-  const { data: events, error: eventsError } = await serviceClient
-    .from("session_events")
-    .select("seq, source_id, kind, payload, created_at")
-    .eq("session_id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .gt("seq", after)
-    .order("seq", { ascending: true })
-    .limit(limit);
   if (eventsError) return errorResponse("events_lookup_failed", 500, eventsError, workspaceId, sessionId);
+  if (!viewerInputs.ok) return errorResponse("inputs_lookup_failed", 500, viewerInputs.error, workspaceId, sessionId);
 
-  const named = await withOwnerNames(workspaceId, [session]);
+  const named = await withOwnerNames(workspaceId, [session], caller.userId);
   if (named instanceof Response) return named;
-  return Response.json({ session: named[0], events: (events ?? []) as Partial<SessionEventRow>[] });
+  const links = await loadSessionLinks(workspaceId, session);
+  if (links instanceof Response) return links;
+  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
 });
 
 type IncomingLine = LiveLineInput | { file: string; offset: number; oversizeBytes: number };
@@ -130,12 +161,6 @@ function eventsFor(line: IncomingLine): ParsedLiveEvent[] {
     },
   ];
 }
-
-const APPEND_ERRORS: Record<string, { error: string; status: number }> = {
-  session_not_found: { error: "session_not_found", status: 404 },
-  session_ended: { error: "session_ended", status: 409 },
-  foreign_host: { error: "foreign_host", status: 403 },
-};
 
 function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim())?.trim().slice(0, TITLE_MAX_CHARS) ?? "";
@@ -186,9 +211,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
       p_events: events,
     });
     if (error) {
-      const known = Object.entries(APPEND_ERRORS).find(([token]) => error.message.includes(token))?.[1];
-      if (known) return errorResponse(known.error, known.status);
-      return errorResponse("append_failed", 500, error, workspaceId, sessionId);
+      return knownDbError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);
     }
     ({ last_seq: lastSeq, inserted } = data as { last_seq: number; inserted: number });
     if (inserted > 0) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
@@ -199,7 +222,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
   if (owned.session.title === null && firstPrompt) {
-    const title = firstLine(withoutAuthorPrefix((firstPrompt.payload as { text: string }).text));
+    const title = firstLine(splitAuthor((firstPrompt.payload as { text: string }).text).text);
     if (title) await serviceClient.from("sessions").update({ title }).eq("id", sessionId).is("title", null);
   }
   if (owned.session.native_session_id === null && nativeSessionId) {
@@ -207,6 +230,27 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   }
 
   return Response.json({ ok: true, last_seq: lastSeq, inserted });
+});
+
+/** The host says it is alive. A session marked host_offline returns to live. */
+export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
+  if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
+
+  const { data, error } = await serviceClient.rpc("heartbeat_session", {
+    p_session_id: sessionId,
+    p_workspace_id: workspaceId,
+    p_host_machine_id: hostMachineId,
+    p_harness_version: optionalString(parsed.body.harnessVersion, 100),
+  });
+  if (error) return knownDbError(error.message) ?? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId);
+  return Response.json({ ok: true, status: data });
 });
 
 export const END = withAuth<EndRequest>(async (req, caller) => {
@@ -222,13 +266,14 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
   const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
   if (hostMachineId !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
 
+  const reason = optionalString(parsed.body.reason, 100) ?? "ended";
   const { error } = await serviceClient
     .from("sessions")
-    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: optionalString(parsed.body.reason, 100) ?? "ended" })
+    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: reason, open_approval_count: 0 })
     .eq("id", sessionId)
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
-  await failQueuedInputs(sessionId);
+  await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
 
   return Response.json({ ok: true });
 });

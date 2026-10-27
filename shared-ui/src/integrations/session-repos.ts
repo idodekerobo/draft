@@ -1,19 +1,6 @@
 import type { TeamSessionRepo, TeamSessionReposState } from "../types";
+import { relativeTime } from "../relative-time";
 import type { ToolStatus } from "./registry";
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** "just now", "5m ago", "2h ago", "3d ago", then a short date. */
-export function formatRelativeTime(iso: string, now: number = Date.now()): string {
-  const elapsed = Math.max(0, now - new Date(iso).getTime());
-  if (elapsed < MINUTE) return "just now";
-  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m ago`;
-  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h ago`;
-  if (elapsed < 30 * DAY) return `${Math.floor(elapsed / DAY)}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 /** "You, Kai +1": the caller first, then up to `max` names, then a count of the rest. */
 export function summarizeContributors(contributors: TeamSessionRepo["contributors"], max = 2): string {
@@ -27,7 +14,7 @@ export function summarizeContributors(contributors: TeamSessionRepo["contributor
 export function repoMeta(repo: TeamSessionRepo, now: number = Date.now()): string {
   if (repo.last_upload_at) {
     const people = summarizeContributors(repo.contributors);
-    const last = `last session ${formatRelativeTime(repo.last_upload_at, now)}`;
+    const last = `last session ${relativeTime(repo.last_upload_at, { now })}`;
     return people ? `${people} · ${last}` : last;
   }
   const enabler = repo.created_by ? ` · enabled by ${repo.created_by.is_me ? "you" : repo.created_by.display}` : "";

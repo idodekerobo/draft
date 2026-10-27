@@ -1,5 +1,8 @@
-import { LiveSessionsDisabledError, type LiveSessionsApi } from "draft-shared-ui";
+import { LiveSessionsDisabledError, toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
 import { rpc } from "./rpc";
+
+const PRESENCE_POLL_MS = 5_000;
+const PRESENCE_FIRST_FOLLOW_UP_MS = 1_500;
 
 export const liveSessionsApi: LiveSessionsApi = {
   listSessions: async () => {
@@ -12,6 +15,34 @@ export const liveSessionsApi: LiveSessionsApi = {
     const result = await rpc.request.sendLiveSessionMessage({ sessionId, text });
     if (!result.ok) throw new Error(result.error);
   },
-  listInputs: (sessionId) => rpc.request.listLiveSessionInputs({ sessionId }),
   actOnInput: (sessionId, inputId, action) => rpc.request.actOnLiveSessionInput({ sessionId, inputId, action }),
+  decideApproval: async (sessionId, requestId, decision) => {
+    const result = await rpc.request.decideLiveSessionApproval({ sessionId, requestId, decision });
+    return result.ok ? { ok: true } : toApprovalResult(result.error, result.byName);
+  },
+  stop: async (sessionId) => {
+    const result = await rpc.request.stopLiveSession({ sessionId });
+    if (!result.ok) throw new Error(result.error);
+  },
+  watchPresence: (sessionId, viewer, onChange) => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    // The first answer is empty while the channel joins, so the second ask comes sooner.
+    const ask = (delay: number, next: number) => {
+      timer = setTimeout(async () => {
+        try {
+          const { names } = await rpc.request.pollLiveSessionPresence({ sessionId, viewerId: viewer.id, viewerName: viewer.name });
+          if (!stopped) onChange(names);
+        } catch {
+          // The next ask tries again.
+        }
+        if (!stopped) ask(next, PRESENCE_POLL_MS);
+      }, delay);
+    };
+    ask(0, PRESENCE_FIRST_FOLLOW_UP_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  },
 };

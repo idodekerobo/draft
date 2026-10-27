@@ -17,3 +17,4 @@ export * from "./toast";
 export * from "./Brand";
 export * from "./shell/nav-items";
 export * from "./settings/InviteLinkRow";
+export * from "./controls/SectionedPicker";

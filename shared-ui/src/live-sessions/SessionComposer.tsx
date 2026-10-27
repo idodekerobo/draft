@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
+import { useEffect, useState, type FormEvent } from "react";
 import { inputStatusLine } from "./input-status";
+import { FolderIcon, submitOnEnter } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 
-const MAX_CHARS = 10_000;
 const STATUS_TICK_MS = 30_000;
 
-const SEND_ERRORS: Record<string, string> = {
+const SEND_ERRORS: Partial<Record<LiveSessionErrorCode, string>> = {
   session_ended: "This session has ended.",
   queue_full: "Too many messages are waiting. Try again soon.",
   message_too_long: "This message is too long.",
@@ -19,8 +20,11 @@ export function SessionComposer({
   act,
   ownerName,
   ended,
+  hostOffline = false,
   folderName,
-}: SessionInputsState & { ownerName: string; ended: boolean; folderName?: string | null }) {
+  autoFocus = false,
+  onEmptyEscape,
+}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,16 +46,9 @@ export function SessionComposer({
       setText("");
     } catch (failure) {
       const code = failure instanceof Error ? failure.message : "";
-      setError(SEND_ERRORS[code] ?? "Could not send. Try again.");
+      setError(SEND_ERRORS[code as LiveSessionErrorCode] ?? "Could not send. Try again.");
     } finally {
       setSending(false);
-    }
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void submit();
     }
   }
 
@@ -63,7 +60,7 @@ export function SessionComposer({
             <li key={input.id} className="ui-composer__pending-item">
               <span className="ui-composer__author">{input.mine ? "You" : input.author_name}</span>
               <span className="ui-composer__text">{input.text}</span>
-              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now)}</span>
+              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now, hostOffline)}</span>
               {input.mine && (input.state === "uncertain" || input.state === "failed") && (
                 <span className="ui-composer__actions">
                   <button type="button" className="ui-link" onClick={() => void act(input.id, "resend")}>Resend</button>
@@ -80,9 +77,7 @@ export function SessionComposer({
         <form className="ui-composer__box" onSubmit={submit}>
           {folderName && (
             <div className="ui-composer__folder">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5Z" />
-              </svg>
+              <FolderIcon />
               <span>{folderName}</span>
             </div>
           )}
@@ -92,11 +87,15 @@ export function SessionComposer({
             id="session-message"
             className="ui-composer__input"
             rows={2}
-            maxLength={MAX_CHARS}
+            autoFocus={autoFocus}
+            maxLength={MAX_INPUT_CHARS}
             placeholder={`Message ${ownerName}'s session`}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !text && onEmptyEscape) onEmptyEscape();
+              else submitOnEnter(() => void submit())(event);
+            }}
           />
           <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
             {sending ? "Sending…" : "Send"}

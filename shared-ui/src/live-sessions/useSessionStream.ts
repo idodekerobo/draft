@@ -1,67 +1,55 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { EVENTS_PAGE_SIZE } from "draft-core/live-sessions";
+import { useSuspenseQuery } from "../query";
 import { mergeEvents } from "./merge-events";
-import { LiveSessionsDisabledError, type LiveSession, type LiveSessionEvent, type LiveSessionsApi } from "./types";
+import type { LiveSession, LiveSessionEvent, LiveSessionEventsPage, LiveSessionInput, LiveSessionViewer, LiveSessionsApi } from "./types";
 
 export const SESSION_POLL_MS = 2_000;
 
-export interface SessionStreamState {
-  session: LiveSession | null;
+export interface SessionStreamData {
+  session: LiveSession;
+  viewer: LiveSessionViewer;
   events: LiveSessionEvent[];
-  error: Error | null;
+  inputs: LiveSessionInput[];
 }
 
-/** Polls for events above the last seq while the page is visible, and at once on focus. */
+export interface SessionStreamState extends SessionStreamData {
+  /** Fetches now, for after the user's own action. */
+  refresh(): Promise<void>;
+}
+
+export const sessionStreamKey = (sessionId: string) => ["live-session", sessionId] as const;
+
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Reads a session and keeps it fresh. Each poll asks for events above the last seq in the cache and
+ * appends them, and a full page is followed at once by the next one. A poll that finds nothing new
+ * returns the cached object, so nothing re-renders. Suspends only until the first page arrives.
+ */
 export function useSessionStream(api: LiveSessionsApi, sessionId: string): SessionStreamState {
-  const [state, setState] = useState<SessionStreamState>({ session: null, events: [], error: null });
-  const lastSeq = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inFlight = useRef(false);
-  const cancelled = useRef(false);
+  const key = sessionStreamKey(sessionId);
+  const { data, refetch } = useSuspenseQuery({
+    queryKey: key,
+    queryFn: async ({ client }): Promise<SessionStreamData> => {
+      const previous = client.getQueryData<SessionStreamData>(key);
+      let events = previous?.events ?? [];
+      let page: LiveSessionEventsPage;
+      let grew = false;
+      do {
+        page = await api.fetchEvents(sessionId, events.at(-1)?.seq ?? 0);
+        const merged = mergeEvents(events, page.events);
+        grew ||= merged !== events;
+        events = merged;
+      } while (page.events.length >= EVENTS_PAGE_SIZE);
 
-  const poll = useCallback(async () => {
-    if (inFlight.current || cancelled.current) return;
-    inFlight.current = true;
-    try {
-      const page = await api.fetchEvents(sessionId, lastSeq.current);
-      if (cancelled.current) return;
-      lastSeq.current = Math.max(lastSeq.current, page.events.at(-1)?.seq ?? 0);
-      setState((prev) => ({ session: page.session, events: mergeEvents(prev.events, page.events), error: null }));
-    } catch (error) {
-      if (!cancelled.current) setState((prev) => ({ ...prev, error: error instanceof Error ? error : new Error(String(error)) }));
-      if (error instanceof LiveSessionsDisabledError) cancelled.current = true;
-    } finally {
-      inFlight.current = false;
-    }
-  }, [api, sessionId]);
-
-  useEffect(() => {
-    cancelled.current = false;
-    lastSeq.current = 0;
-    setState({ session: null, events: [], error: null });
-
-    const schedule = () => {
-      timer.current = setTimeout(async () => {
-        if (!document.hidden) await poll();
-        if (!cancelled.current) schedule();
-      }, SESSION_POLL_MS);
-    };
-    const refetchNow = () => {
-      if (!document.hidden) void poll();
-    };
-
-    void poll();
-    schedule();
-    window.addEventListener("focus", refetchNow);
-    document.addEventListener("visibilitychange", refetchNow);
-    return () => {
-      cancelled.current = true;
-      if (timer.current) clearTimeout(timer.current);
-      window.removeEventListener("focus", refetchNow);
-      document.removeEventListener("visibilitychange", refetchNow);
-    };
-  }, [poll]);
-
-  return state;
+      if (previous && !grew && sameJson(previous.session, page.session) && sameJson(previous.inputs, page.inputs) && sameJson(previous.viewer, page.viewer)) return previous;
+      return { session: page.session, viewer: page.viewer, events, inputs: page.inputs };
+    },
+    structuralSharing: false,
+    staleTime: 0,
+    refetchInterval: SESSION_POLL_MS,
+  });
+  return { ...data, refresh: async () => void (await refetch()) };
 }

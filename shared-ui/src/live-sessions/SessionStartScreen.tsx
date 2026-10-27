@@ -1,12 +1,22 @@
 "use client";
 
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { LIVE_SESSION_HARNESSES, LIVE_SESSION_MODELS } from "draft-core/live-sessions";
+import { useState, type FormEvent } from "react";
+import { SectionedPicker } from "../controls/SectionedPicker";
+import { FolderIcon, submitOnEnter } from "./message-box";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { usePopover } from "./usePopover";
 
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 export type StartResult = { ok: true } | { ok: false; error: string };
+
+export interface StartRequest {
+  folderPath: string;
+  text: string;
+  /** Alias for `claude --model`; null for Claude's own default. */
+  model: string | null;
+}
 
 /** Empty state of the Sessions area: pick a folder, type a first message, start. */
 export function SessionStartScreen({
@@ -16,10 +26,11 @@ export function SessionStartScreen({
 }: {
   recentFolders: string[];
   onBrowse: () => Promise<string | null>;
-  onStart: (folderPath: string, text: string) => Promise<StartResult>;
+  onStart: (request: StartRequest) => Promise<StartResult>;
 }) {
   const [chosen, setChosen] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [model, setModel] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
@@ -38,17 +49,10 @@ export function SessionStartScreen({
     setStarting(true);
     setError(null);
     try {
-      const result = await onStart(folder, message);
+      const result = await onStart({ folderPath: folder, text: message, model });
       if (!result.ok) setError(result.error);
     } finally {
       setStarting(false);
-    }
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void submit();
     }
   }
 
@@ -65,9 +69,7 @@ export function SessionStartScreen({
         <form className="ui-composer__box ui-start__box" onSubmit={submit}>
           <div className="ui-composer__folder ui-start__folder" ref={rootRef}>
             <button ref={triggerRef} type="button" className="ui-start__folder-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5Z" />
-              </svg>
+              <FolderIcon />
               <span>{folder ? folderName(folder) : "Choose a folder"}</span>
               <span aria-hidden="true">▾</span>
             </button>
@@ -97,11 +99,22 @@ export function SessionStartScreen({
               placeholder="Describe a task to start a new session…"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              onKeyDown={onKeyDown}
+              onKeyDown={submitOnEnter(() => void submit())}
             />
-            <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
-              {starting ? "Starting…" : "Start"}
-            </button>
+            <div className="ui-start__actions">
+              <SectionedPicker
+                label="Agent and model"
+                sections={[
+                  { id: "harness", title: "Harnesses", value: LIVE_SESSION_HARNESSES[0].id, onChange: () => {}, options: LIVE_SESSION_HARNESSES.map((harness) => ({ value: harness.id, label: harness.label })) },
+                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: LIVE_SESSION_MODELS.map((option) => ({ value: option.alias ?? "", label: option.label })) },
+                ]}
+              >
+                {LIVE_SESSION_HARNESSES[0].label} · {LIVE_SESSION_MODELS.find((option) => option.alias === model)?.label}
+              </SectionedPicker>
+              <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
+                {starting ? "Starting…" : "Start"}
+              </button>
+            </div>
           </div>
         </form>
         {!folder && <p className="ui-muted">Choose a folder to start in.</p>}

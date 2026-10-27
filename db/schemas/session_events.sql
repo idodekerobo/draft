@@ -3,7 +3,8 @@ create table session_events (
   workspace_id  uuid not null,
   seq           bigint not null,
   source_id     text not null,
-  kind          text not null check (kind in ('user_message', 'assistant_text', 'tool_use', 'tool_result', 'thinking', 'session_note')),
+  kind          text not null check (kind in ('user_message', 'assistant_text', 'tool_use', 'tool_result', 'thinking', 'session_note',
+                                    'permission_request', 'permission_resolved')),
   payload       jsonb not null default '{}',
   created_at    timestamptz not null default now(),
 

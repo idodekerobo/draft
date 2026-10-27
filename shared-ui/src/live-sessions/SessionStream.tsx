@@ -1,13 +1,12 @@
-import { Fragment, useMemo } from "react";
+import { Fragment } from "react";
 import { renderMarkdown } from "../context/markdown";
-import { buildStreamItems, type StreamItem } from "./stream-items";
-import type { LiveSessionEvent } from "./types";
+import { approvalOutcome, type StreamItem } from "./stream-items";
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
 }
 
-function Item({ item, ownerName }: { item: StreamItem; ownerName: string }) {
+function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: string; hostName: string | null }) {
   switch (item.type) {
     case "user":
       if (item.agentId) {
@@ -35,6 +34,15 @@ function Item({ item, ownerName }: { item: StreamItem; ownerName: string }) {
       );
     case "note":
       return <p className="ui-stream__note">{item.text}</p>;
+    case "approval":
+      return (
+        <p className="ui-stream__note">
+          {item.tool}
+          {item.summary && <> {item.summary}</>}
+          {" · "}
+          {approvalOutcome(item, hostName)}
+        </p>
+      );
     case "tool":
       return (
         <details className="ui-stream__details">
@@ -58,8 +66,9 @@ function Item({ item, ownerName }: { item: StreamItem; ownerName: string }) {
 
 const agentOf = (item: StreamItem) => ("agentId" in item ? item.agentId : null);
 
-export function SessionStream({ events, ownerName = "User" }: { events: LiveSessionEvent[]; ownerName?: string }) {
-  const items = useMemo(() => buildStreamItems(events), [events]);
+/** Open requests are shown in the approval panel, not in the stream. */
+export function SessionStream({ items: all, ownerName = "User", hostName = null }: { items: StreamItem[]; ownerName?: string; hostName?: string | null }) {
+  const items = all.filter((item) => item.type !== "approval" || item.resolved !== null);
   if (items.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
 
   return (
@@ -72,7 +81,7 @@ export function SessionStream({ events, ownerName = "User" }: { events: LiveSess
           <Fragment key={item.seq}>
             {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
             <li className={`ui-stream__item ui-stream__item--${item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" ? " ui-stream__item--human" : ""}`}>
-              <Item item={item} ownerName={ownerName} />
+              <Item item={item} ownerName={ownerName} hostName={hostName} />
             </li>
           </Fragment>
         );

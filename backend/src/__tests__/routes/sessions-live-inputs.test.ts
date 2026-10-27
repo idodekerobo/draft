@@ -170,10 +170,32 @@ describe("host routes", () => {
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i1", p_from: ["queued"], p_to: "delivering" });
   });
 
-  it("the host cannot mark an input consumed", async () => {
-    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
-    expect(res.status).toBe(400);
+  it("the host cannot mark a message consumed, but can mark a stop or a decision", async () => {
+    tables.session_inputs = [input, { ...input, id: "i2", kind: "stop" }];
+    const message = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
+    expect(message.status).toBe(400);
     expect(rpcCalls).toEqual([]);
+    const stop = await routes.INPUT_STATE(request("POST", "/x", { hostMachineId: "host-1", from: ["delivering"], to: "consumed" }, { id: WS, sessionId: SESSION, inputId: "i2" }));
+    expect(stop.status).toBe(200);
+    expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i2", p_to: "consumed" });
+  });
+
+  it("gives the host messages, stops and decisions in one list when it asks for all, and only messages by default", async () => {
+    tables.session_inputs = [
+      input,
+      { ...input, id: "i2", kind: "stop" },
+      { ...input, id: "i3", kind: "permission_decision", payload: { requestId: "r1", decision: "allow" } },
+      { ...input, id: "i4", kind: "stop", state: "consumed" },
+    ];
+    type Pending = { inputs: Array<{ id: string; kind: string; delivered_text?: string; payload: unknown }> };
+    const all = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1&kinds=all"))).json()) as Pending;
+    expect(all.inputs.map((i) => [i.id, i.kind])).toEqual([["i1", "message"], ["i2", "stop"], ["i3", "permission_decision"]]);
+    expect(all.inputs[0]!.delivered_text).toBe("[Dev via Draft] run tests");
+    expect(all.inputs[1]!.delivered_text).toBeUndefined();
+    expect(all.inputs[2]!.payload).toEqual({ requestId: "r1", decision: "allow" });
+
+    const messagesOnly = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as Pending;
+    expect(messagesOnly.inputs.map((i) => i.id)).toEqual(["i1"]);
   });
 
   it("refuses a state change from another host", async () => {

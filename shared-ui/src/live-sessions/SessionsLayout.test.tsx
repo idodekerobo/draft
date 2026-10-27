@@ -103,4 +103,32 @@ describe("SessionsLayout", () => {
     setup({ resizable: false });
     expect(screen.queryByRole("separator")).toBeNull();
   });
+
+  it("filters to the caller's sessions on the Mine tab, without changing the list on All", () => {
+    setup({ sessions: [{ ...sessions[0]!, mine: true }, { ...sessions[1]!, mine: false }] });
+    expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("write docs")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mine" }));
+    expect(screen.getByRole("button", { name: "Mine" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText("write docs")).toBeNull();
+    expect(screen.getByText("fix login")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getByText("write docs")).toBeTruthy();
+  });
+
+  it("says what to do in an empty list, by platform and tab", () => {
+    setup({ sessions: [] });
+    expect(screen.getByRole("status").textContent).toBe("No sessions yet.");
+    fireEvent.click(screen.getByRole("button", { name: "Mine" }));
+    expect(screen.getByRole("status").textContent).toBe("You haven't started a session.");
+    cleanup();
+    setup({ sessions: [], onNew: undefined });
+    expect(screen.getByRole("status").textContent).toBe("Sessions start in the Draft desktop app. Your team's sessions show here.");
+  });
+
+  it("shows the display status, with Waiting for approval and Host offline in words", () => {
+    setup({ sessions: [{ ...sessions[0]!, open_approval_count: 1 }, { ...sessions[1]!, status: "host_offline" }] });
+    expect(screen.getByText("Waiting for approval")).toBeTruthy();
+    expect(screen.getByText("Host offline")).toBeTruthy();
+  });
 });

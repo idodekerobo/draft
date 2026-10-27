@@ -12,9 +12,25 @@ export interface LiveSession {
   ended_at: string | null;
   last_event_at: string | null;
   last_seq: number;
+  /** Permission requests waiting for an answer. */
+  open_approval_count?: number;
+  /** True when the caller owns the session. */
+  mine?: boolean;
+  /** The Claude Code version the host runs. */
+  harness_version?: string | null;
+  /** The session this one continues after a /clear. */
+  previous_session?: LiveSessionLink | null;
+  /** The session that continued this one after a /clear. */
+  next_session?: LiveSessionLink | null;
 }
 
-export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note";
+export interface LiveSessionLink {
+  id: string;
+  title: string | null;
+  folder_name: string | null;
+}
+
+export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note" | "permission_request" | "permission_resolved";
 
 export interface LiveSessionEventPayload {
   text?: string;
@@ -28,6 +44,12 @@ export interface LiveSessionEventPayload {
   input_truncated?: boolean;
   content?: string;
   is_error?: boolean;
+  /** permission_request and permission_resolved */
+  requestId?: string;
+  /** permission_resolved: decided, answered_locally, hook_gone or expired. */
+  reason?: string;
+  decision?: "allow" | "deny";
+  by_name?: string;
 }
 
 export interface LiveSessionEvent {
@@ -38,9 +60,18 @@ export interface LiveSessionEvent {
   created_at: string;
 }
 
+export interface LiveSessionViewer {
+  id: string;
+  name: string;
+}
+
 export interface LiveSessionEventsPage {
   session: LiveSession;
+  /** The person asking. */
+  viewer: LiveSessionViewer;
   events: LiveSessionEvent[];
+  /** Messages that Claude has not yet taken. */
+  inputs: LiveSessionInput[];
 }
 
 export type LiveSessionInputState = "queued" | "delivering" | "failed" | "uncertain";
@@ -60,13 +91,21 @@ export interface LiveSessionInput {
   mine: boolean;
 }
 
+export type ApprovalResult =
+  | { ok: true }
+  | { ok: false; error: "already_decided"; byName: string | null }
+  | { ok: false; error: "request_closed" | "session_ended" | "failed" };
+
 /** Each app implements this over its own transport. */
 export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
   sendMessage(sessionId: string, text: string): Promise<void>;
-  listInputs(sessionId: string): Promise<LiveSessionInput[]>;
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
+  decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
+  stop(sessionId: string): Promise<void>;
+  /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
+  watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
 }
 
 /** The workspace has the feature switched off. */

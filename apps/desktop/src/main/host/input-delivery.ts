@@ -1,3 +1,4 @@
+import { normalizeInputText, type InputBlockReason, type InputFailReason } from "draft-core/live-sessions";
 import { classifyPane, type PaneState } from "./pane-state";
 
 /*
@@ -15,21 +16,21 @@ import { classifyPane, type PaneState } from "./pane-state";
 
 export interface PendingInput {
   id: string;
+  kind: "message";
   state: "queued" | "delivering";
   delivered_text: string;
 }
 
 export interface DeliveryDeps {
-  fetchPending(): Promise<PendingInput[]>;
   /** Returns false when the input was no longer in one of the `from` states. */
-  setState(id: string, from: Array<"queued" | "delivering">, to: "queued" | "delivering" | "failed" | "uncertain", reason?: string): Promise<boolean>;
+  setState(id: string, from: Array<"queued" | "delivering">, to: "queued" | "delivering" | "failed" | "uncertain", reason?: InputBlockReason | InputFailReason): Promise<boolean>;
   capture(): Promise<string>;
   paste(text: string): Promise<void>;
   pressEnter(): Promise<void>;
   sleep(ms: number): Promise<void>;
 }
 
-const BLOCK_REASONS: Record<Exclude<PaneState, "ready">, string> = {
+const BLOCK_REASONS: Record<Exclude<PaneState, "ready">, InputBlockReason> = {
   composer_busy: "composer_busy",
   permission: "permission_prompt",
   question: "question_prompt",
@@ -40,12 +41,9 @@ const SUBMIT_POLL_MS = 400;
 const SUBMIT_POLLS = 6;
 const MAX_PASTE_CHARS = 12_000;
 
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
-
 /** The backend already cleans text; this keeps the pane safe if it ever does not. */
 export function safePasteText(text: string): string {
-  return text.replace(/\r\n?/g, "\n").replace(CONTROL_CHARS, "").slice(0, MAX_PASTE_CHARS);
+  return normalizeInputText(text).slice(0, MAX_PASTE_CHARS);
 }
 
 export class InputDelivery {
@@ -56,21 +54,20 @@ export class InputDelivery {
   constructor(private readonly deps: DeliveryDeps) {}
 
   /** Inputs left `delivering` by an earlier run have no known outcome. Call after the transcript has caught up. */
-  private async recover(): Promise<void> {
-    const pending = await this.deps.fetchPending();
+  private async recover(pending: PendingInput[]): Promise<void> {
     for (const input of pending.filter((i) => i.state === "delivering")) {
       await this.deps.setState(input.id, ["delivering"], "uncertain", "host_restarted");
     }
     this.recovered = true;
   }
 
-  /** One pass: delivers the oldest queued input if the pane is ready. */
-  async tick(): Promise<void> {
+  /** One pass over the pending messages: delivers the oldest queued input if the pane is ready. */
+  async tick(pending: PendingInput[]): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      if (!this.recovered) await this.recover();
-      const next = (await this.deps.fetchPending()).find((i) => i.state === "queued");
+      if (!this.recovered) await this.recover(pending);
+      const next = pending.find((i) => i.state === "queued");
       if (!next) return;
 
       const state = classifyPane(await this.deps.capture());
@@ -85,7 +82,7 @@ export class InputDelivery {
     }
   }
 
-  private async report(id: string, reason: string): Promise<void> {
+  private async report(id: string, reason: InputBlockReason): Promise<void> {
     if (this.reported.get(id) === reason) return;
     this.reported.set(id, reason);
     await this.deps.setState(id, ["queued"], "queued", reason);

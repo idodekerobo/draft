@@ -34,16 +34,21 @@ import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
   actOnLiveSessionInput,
+  decideLiveSessionApproval,
+  endLiveSession,
   getLiveSessionEvents,
   hostedLiveSessionIds,
-  listLiveSessionInputs,
   listLiveSessions,
   openLiveSessionInTerminal,
   resumeLiveSessions,
   sendLiveSessionMessage,
   startLiveSession,
+  stopLiveSession,
 } from "./main/host/live-session";
+import { connectPresence } from "./main/presence/connect-presence";
+import { PresenceHub } from "./main/presence/presence-hub";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
+const presenceHub = new PresenceHub(connectPresence);
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -743,15 +748,21 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       startLiveSession: ({ folderPath, model }) => startLiveSession({ folderPath, model }, () => findRunnerBin("claude")),
 
+      pollLiveSessionPresence: ({ sessionId, viewerId, viewerName }) => ({ names: presenceHub.poll(sessionId, { id: viewerId, name: viewerName }) }),
+
       listLiveSessions: () => listLiveSessions(),
 
       getLiveSessionEvents: ({ sessionId, after }) => getLiveSessionEvents(sessionId, after),
 
       sendLiveSessionMessage: ({ sessionId, text }) => sendLiveSessionMessage(sessionId, text),
 
-      listLiveSessionInputs: ({ sessionId }) => listLiveSessionInputs(sessionId),
-
       actOnLiveSessionInput: ({ sessionId, inputId, action }) => actOnLiveSessionInput(sessionId, inputId, action),
+
+      decideLiveSessionApproval: ({ sessionId, requestId, decision }) => decideLiveSessionApproval(sessionId, requestId, decision),
+
+      stopLiveSession: ({ sessionId }) => stopLiveSession(sessionId),
+
+      endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
 
       getHostedLiveSessionIds: () => hostedLiveSessionIds(),
 

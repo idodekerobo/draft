@@ -2,21 +2,32 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import type { LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-shared-ui";
-import { capture } from "../../exec";
+import { hostErrorAction, isKnownModelAlias } from "draft-core/live-sessions";
+import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
+import { ApprovalBroker, type HostEvent } from "./approvals";
+import { ControlActions, type ControlInput } from "./controls";
 import { TranscriptForwarder, type ForwardedLine } from "./forwarder";
+import { ensureHooksServer, registerSessionHooks } from "./hooks-server";
+import { writeSessionSettings } from "./hook-settings";
 import { InputDelivery, type PendingInput } from "./input-delivery";
-import { capturePane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, restorePaneSize, tmuxSessionName } from "./launch";
+import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
+import { classifyPane, isTurnRunning } from "./pane-state";
 import { getHostMachineId } from "./machine-id";
 import { preTrustFolder } from "./pre-trust";
 import { openPaneInTerminal } from "./open-in-terminal";
 import { putSigned, uploadRawFiles } from "./raw-upload";
+import { startHeartbeat } from "./heartbeat";
+import { rotationTarget } from "./rotation";
+import { gitRemote } from "./git-remote";
+import { readClaudeVersion } from "./version-check";
+import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
 
 const PANE_WATCH_MS = 2_000;
 const CATCH_UP_RETRY_MS = 2_000;
-const FATAL_CODES = new Set(["session_ended", "foreign_host", "not_session_owner", "session_not_found", "live_sessions_disabled"]);
+const END_POLLS = 10;
+const END_POLL_MS = 1_000;
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
 
@@ -26,19 +37,19 @@ const ERROR_MESSAGES: Record<string, string> = {
   live_sessions_disabled: "Live sessions are not turned on for this workspace.",
 };
 
-async function gitRemote(folderPath: string): Promise<string | null> {
-  try {
-    const result = await capture(["git", "-C", folderPath, "remote", "get-url", "origin"], { timeoutMs: 3000 });
-    return result.exitCode === 0 ? result.stdout.trim() || null : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Forwards one session's transcript while its pane lives, then finishes it: last lines, raw upload, end. */
 class SessionRunner {
   private readonly forwarder: TranscriptForwarder;
   private readonly delivery: InputDelivery;
+  private readonly broker: ApprovalBroker;
+  private readonly controls: ControlActions;
+  private unregisterHooks: (() => void) | null = null;
+  private stopHeartbeat: (() => void) | null = null;
+  private rotateTo: string | null = null;
+  private successor: HostSessionState | null = null;
+  private endReason = "exited";
+  private uploading = false;
+  private uploadWanted = false;
   private caughtUp = false;
   private watcher: ReturnType<typeof setInterval> | null = null;
   private stepping = false;
@@ -57,31 +68,87 @@ class SessionRunner {
           body: JSON.stringify({ hostMachineId: state.hostMachineId, nativeSessionId: state.nativeSessionId, lines }),
         });
       },
-      isFatal: (error) => error instanceof ServerError && FATAL_CODES.has(error.code),
-      onFatal: () => this.abandon(),
+      isFatal: (error) => error instanceof ServerError && hostErrorAction(error.code) !== "retry",
+      onFatal: (error) => (error instanceof ServerError && hostErrorAction(error.code) === "pause" ? this.suspend() : this.abandon()),
     });
     this.delivery = new InputDelivery({
-      fetchPending: async () =>
-        (await fetchServerJSON<{ inputs: PendingInput[] }>(`${this.base}/inputs/pending?hostMachineId=${encodeURIComponent(state.hostMachineId)}`)).inputs,
-      setState: async (id, from, to, reason) =>
-        (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
-          method: "POST",
-          body: JSON.stringify({ hostMachineId: state.hostMachineId, from, to, reason }),
-        })).changed,
+      setState: this.setInputState,
       capture: () => capturePane(state.tmuxSession),
       paste: (text) => pasteIntoPane(state.tmuxSession, text),
       pressEnter: () => pressEnter(state.tmuxSession),
       sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
     });
+    this.broker = new ApprovalBroker({
+      postEvents: (events) => this.postHostEvents(events),
+      paneBlocked: async () => {
+        const pane = classifyPane(await capturePane(state.tmuxSession));
+        return pane !== "ready" && pane !== "composer_busy";
+      },
+      newId: () => `r${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+      onOpen: (id) => this.persist({ openRequests: [...(this.state.openRequests ?? []), id] }),
+      onClose: (id) => this.persist({ openRequests: (this.state.openRequests ?? []).filter((open) => open !== id) }),
+    });
+    this.controls = new ControlActions({
+      setState: this.setInputState,
+      decide: (requestId, decision, by) => this.broker.decide(requestId, decision, by),
+      capture: () => capturePane(state.tmuxSession),
+      sendEscape: () => pressEscape(state.tmuxSession),
+      postEvents: (events) => this.postHostEvents(events),
+    });
+  }
+
+  /** Teammate messages, Stops and permission decisions that wait for this host, in one call. */
+  private async fetchInputs(): Promise<Array<PendingInput | ControlInput>> {
+    const query = `hostMachineId=${encodeURIComponent(this.state.hostMachineId)}&kinds=all`;
+    return (await fetchServerJSON<{ inputs: Array<PendingInput | ControlInput> }>(`${this.base}/inputs/pending?${query}`)).inputs;
+  }
+
+  /** Returns false when the input was no longer in one of the `from` states. */
+  private readonly setInputState = async (id: string, from: Array<"queued" | "delivering">, to: string, reason?: string): Promise<boolean> =>
+    (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
+      method: "POST",
+      body: JSON.stringify({ hostMachineId: this.state.hostMachineId, from, to, reason }),
+    })).changed;
+
+  private async postHostEvents(events: HostEvent[]): Promise<void> {
+    await fetchServer(`${this.base}/host-events`, {
+      method: "POST",
+      body: JSON.stringify({ hostMachineId: this.state.hostMachineId, events }),
+    });
   }
 
   start(): void {
     if (!this.state.ended) {
+      ensureHooksServer();
+      this.unregisterHooks = registerSessionHooks(this.state.hookId ?? this.state.sessionId, {
+        permission: (payload, signal) => this.broker.hold(payload, signal),
+        stopped: () => {
+          this.uploadWanted = true;
+        },
+        sessionStarted: (payload) => {
+          this.rotateTo ??= rotationTarget(this.state.nativeSessionId, payload);
+        },
+      });
+      this.stopHeartbeat = startHeartbeat(() => this.sendHeartbeat());
+      for (const requestId of this.state.openRequests ?? []) {
+        void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
+      }
       this.forwarder.start();
       void this.catchUp();
     }
     this.watcher = setInterval(() => void this.step(), PANE_WATCH_MS);
     running.set(this.state.sessionId, this);
+  }
+
+  private async sendHeartbeat(): Promise<void> {
+    try {
+      await fetchServer(`${this.base}/heartbeat`, {
+        method: "POST",
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null }),
+      });
+    } catch (error) {
+      this.reportInputError("heartbeat", error);
+    }
   }
 
   /** Input delivery waits until the transcript is up to date, so a sent message is not called uncertain too soon. */
@@ -97,9 +164,23 @@ class SessionRunner {
     saveState(this.state);
   }
 
+  /** This login cannot reach the session (another environment or account). Stop work and keep the saved state. */
+  private suspend(): void {
+    if (this.finished) return;
+    console.warn("[live-session] paused: this login cannot reach session", this.state.sessionId);
+    this.finished = true;
+    this.forwarder.halt();
+    this.stopHeartbeat?.();
+    this.unregisterHooks?.();
+    if (this.watcher) clearInterval(this.watcher);
+    running.delete(this.state.sessionId);
+  }
+
   private abandon(): void {
     this.finished = true;
     this.forwarder.halt();
+    this.stopHeartbeat?.();
+    this.unregisterHooks?.();
     if (this.watcher) clearInterval(this.watcher);
     running.delete(this.state.sessionId);
     deleteState(this.state.sessionId);
@@ -124,7 +205,7 @@ class SessionRunner {
       if (rawUploads !== this.state.rawUploads) this.persist({ rawUploads });
       return true;
     } catch (error) {
-      console.error("[live-session] raw upload failed", this.state.sessionId, error);
+      this.reportInputError("raw upload", error);
       return false;
     }
   }
@@ -133,7 +214,7 @@ class SessionRunner {
     try {
       await fetchServer(`${this.base}/end`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, reason: "exited" }),
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, reason: this.endReason }),
       });
       return true;
     } catch (error) {
@@ -146,12 +227,31 @@ class SessionRunner {
 
   private async whileAlive(): Promise<void> {
     await restorePaneSize(this.state.tmuxSession).catch(() => {});
-    if (!this.caughtUp) return;
+    await this.broker.watchPane();
+    let pending: Array<PendingInput | ControlInput>;
     try {
-      await this.delivery.tick();
+      pending = await this.fetchInputs();
     } catch (error) {
-      if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error("[live-session] input delivery failed", error);
+      this.reportInputError("fetching inputs", error);
+      return;
     }
+    await this.guarded("control actions", () => this.controls.tick(pending.filter((i): i is ControlInput => i.kind !== "message")));
+    if (!this.caughtUp) return;
+    await this.guarded("input delivery", () => this.delivery.tick(pending.filter((i): i is PendingInput => i.kind === "message")));
+  }
+
+  private async guarded(what: string, work: () => Promise<void>): Promise<void> {
+    try {
+      await work();
+    } catch (error) {
+      this.reportInputError(what, error);
+    }
+  }
+
+  private reportInputError(what: string, error: unknown): void {
+    const action = error instanceof ServerError ? hostErrorAction(error.code) : "retry";
+    if (action === "pause") this.suspend();
+    else if (action === "retry") console.error(`[live-session] ${what} failed`, error);
   }
 
   /** One pass; runs every few seconds and does the next unfinished piece of work. */
@@ -160,6 +260,7 @@ class SessionRunner {
     this.stepping = true;
     try {
       if (!this.state.ended) {
+        if (this.rotateTo && (await this.rotate(this.rotateTo))) return;
         if (await paneIsAlive(this.state.tmuxSession)) {
           await this.whileAlive();
           return;
@@ -167,13 +268,72 @@ class SessionRunner {
         this.forwarder.halt();
         if (!(await this.forwarder.tick())) return;
         if (!(await this.endOnServer())) return;
+        this.stopHeartbeat?.();
         this.persist({ ended: true });
       }
       if (await this.rawUpload()) this.abandon();
-      // TODO: also upload on the Stop hook once the hooks server exists.
     } finally {
       this.stepping = false;
+      // A Stop hook that came in during a step is served now.
+      if (this.uploadWanted && !this.finished) {
+        this.uploadWanted = false;
+        void this.uploadIfChanged();
+      }
     }
+  }
+
+  /**
+   * After `/clear` or `/fork` the pane holds a new conversation. This ends the session and starts a linked one on the
+   * same pane. Returns true while the old session still has to finish, and false when there is nothing more to do here.
+   */
+  private async rotate(nativeSessionId: string): Promise<boolean> {
+    this.forwarder.halt();
+    if (!(await this.forwarder.tick())) return true;
+    try {
+      this.successor ??= await this.createSuccessor(nativeSessionId);
+    } catch (error) {
+      this.reportInputError("starting the linked session", error);
+      return true;
+    }
+    this.endReason = "cleared";
+    if (!(await this.endOnServer())) return true;
+    this.stopHeartbeat?.();
+    this.persist({ ended: true });
+    saveState(this.successor);
+    new SessionRunner(this.successor).start();
+    this.rotateTo = null;
+    return true;
+  }
+
+  private async createSuccessor(nativeSessionId: string): Promise<HostSessionState> {
+    const { folderPath, hostMachineId, workspaceId, model = null, harnessVersion = null } = this.state;
+    const created = await fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        hostMachineId,
+        hostName: hostname(),
+        folderName: basename(folderPath),
+        gitRemote: await gitRemote(folderPath),
+        model,
+        nativeSessionId,
+        harnessVersion,
+        previousSessionId: this.state.sessionId,
+      }),
+    });
+    return {
+      sessionId: created.session.id,
+      workspaceId,
+      hostMachineId,
+      nativeSessionId,
+      folderPath,
+      tmuxSession: this.state.tmuxSession,
+      cursors: {},
+      rawUploads: {},
+      ended: false,
+      hookId: this.state.hookId ?? this.state.sessionId,
+      model,
+      harnessVersion,
+    };
   }
 
   hasEnded(): boolean {
@@ -186,8 +346,32 @@ class SessionRunner {
 
   /** Uploads raw files newer than the last upload, for a pane that is still running. */
   async uploadIfChanged(): Promise<void> {
-    await this.forwarder.tick();
-    await this.rawUpload();
+    if (this.uploading || this.stepping || this.finished) return;
+    this.uploading = true;
+    try {
+      await this.forwarder.tick();
+      await this.rawUpload();
+    } finally {
+      this.uploading = false;
+    }
+  }
+
+  /** Exits Claude with `/exit` so its own end-of-session hook runs. A pane that will not take it is killed. */
+  async endByOwner(): Promise<void> {
+    this.endReason = "ended_by_owner";
+    const tmux = this.state.tmuxSession;
+    let screen = await capturePane(tmux);
+    if (isTurnRunning(screen) || classifyPane(screen) !== "ready") {
+      await pressEscape(tmux).catch(() => {});
+      await new Promise((done) => setTimeout(done, 1000));
+      screen = await capturePane(tmux).catch(() => "");
+    }
+    if (classifyPane(screen) === "ready" && !isTurnRunning(screen)) {
+      await pasteIntoPane(tmux, "/exit");
+      await pressEnter(tmux);
+      for (let i = 0; i < END_POLLS && (await paneIsAlive(tmux)); i++) await new Promise((done) => setTimeout(done, END_POLL_MS));
+    }
+    if (await paneIsAlive(tmux)) await killPane(tmux);
   }
 }
 
@@ -202,11 +386,14 @@ export async function startLiveSession(
   if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) return { ok: false, error: "Choose a valid folder." };
 
   const claudeBin = await findClaude();
-  if (!claudeBin) return { ok: false, error: "Claude Code is not installed on this computer." };
+  if (!claudeBin) return { ok: false, error: CLAUDE_MISSING_MESSAGE };
+  if ((await readClaudeAuth(claudeBin)) === "signed_out") return { ok: false, error: CLAUDE_SIGNED_OUT_MESSAGE };
+  if (!isKnownModelAlias(input.model)) return { ok: false, error: "Choose a model from the list." };
 
   const hostMachineId = getHostMachineId();
   const nativeSessionId = crypto.randomUUID();
   const model = input.model ?? null;
+  const harnessVersion = await readClaudeVersion(claudeBin);
 
   let sessionId: string;
   try {
@@ -219,6 +406,7 @@ export async function startLiveSession(
         gitRemote: await gitRemote(folderPath),
         model,
         nativeSessionId,
+        harnessVersion,
       }),
     });
     sessionId = created.session.id;
@@ -237,11 +425,14 @@ export async function startLiveSession(
     cursors: {},
     rawUploads: {},
     ended: false,
+    model,
+    harnessVersion,
   };
 
   try {
     preTrustFolder(folderPath);
-    await launchClaudeInTmux({ tmuxSession: state.tmuxSession, folderPath, claudeBin, nativeSessionId, model });
+    const settingsPath = writeSessionSettings(sessionId);
+    await launchClaudeInTmux({ tmuxSession: state.tmuxSession, folderPath, claudeBin, nativeSessionId, model, settingsPath });
   } catch (error) {
     console.error("[live-session] launch failed", error);
     await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
@@ -297,10 +488,6 @@ export async function sendLiveSessionMessage(sessionId: string, text: string): P
   }
 }
 
-export async function listLiveSessionInputs(sessionId: string): Promise<LiveSessionInput[]> {
-  return (await fetchServerJSON<{ inputs: LiveSessionInput[] }>(`${sessionBase(sessionId)}/inputs`)).inputs;
-}
-
 export async function actOnLiveSessionInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void> {
   await fetchServer(`${sessionBase(sessionId)}/inputs/${inputId}`, { method: "POST", body: JSON.stringify({ action }) });
 }
@@ -315,4 +502,42 @@ export async function openLiveSessionInTerminal(sessionId: string): Promise<{ ok
   const runner = running.get(sessionId);
   if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
   return openPaneInTerminal(runner.tmuxSession());
+}
+
+/** Sends a teammate's decision on an open permission request. */
+export async function decideLiveSessionApproval(
+  sessionId: string,
+  requestId: string,
+  decision: "allow" | "deny",
+): Promise<{ ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null }> {
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/approvals/${encodeURIComponent(requestId)}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
+    return { ok: true };
+  } catch (error) {
+    if (!(error instanceof ServerError)) return { ok: false, error: "decision_failed" };
+    const detail = (error.detail ?? {}) as { by_name?: string | null; reason?: string | null };
+    return { ok: false, error: error.code, byName: detail.by_name ?? null, reason: detail.reason ?? null };
+  }
+}
+
+export async function stopLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: "{}" });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "stop_failed" };
+  }
+}
+
+/** Ends a session that runs on this computer. */
+export async function endLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const runner = running.get(sessionId);
+  if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
+  try {
+    await runner.endByOwner();
+    return { ok: true };
+  } catch (error) {
+    console.error("[live-session] end failed", sessionId, error);
+    return { ok: false, error: "Could not end the session." };
+  }
 }
