@@ -234,6 +234,7 @@ describe("live session routes", () => {
     expect(body.events.map((e) => e.seq)).toEqual([2]);
     expect(body.session.owner_name).toBe("Maya");
     expect(body.session.mine).toBe(true);
+    expect((body as unknown as { viewer: unknown }).viewer).toEqual({ id: "user-1", name: "Maya" });
     expect(body.inputs).toEqual([]);
   });
 

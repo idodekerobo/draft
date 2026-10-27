@@ -24,10 +24,14 @@ const TITLE_MAX_CHARS = 120;
 const RAW_BUCKET = "session-raw";
 const RAW_FILE = /^(root|subagents\/agent-[A-Za-z0-9_-]+)\.jsonl$/;
 
+/** The sessions with their owners' names, and the caller's own name, from one lookup. */
 async function withOwnerNames(workspaceId: string, sessions: SessionRow[], callerId: string) {
-  const names = await loadDisplayNames(serviceClient, [...new Set(sessions.map((s) => s.owner_user_id))], []);
+  const names = await loadDisplayNames(serviceClient, [...new Set([callerId, ...sessions.map((s) => s.owner_user_id)])], []);
   if (!names.ok) return errorResponse(names.code, 500, names.detail, workspaceId);
-  return sessions.map((s) => ({ ...s, owner_name: names.users.get(s.owner_user_id) ?? null, mine: s.owner_user_id === callerId }));
+  return {
+    sessions: sessions.map((s) => ({ ...s, owner_name: names.users.get(s.owner_user_id) ?? null, mine: s.owner_user_id === callerId })),
+    viewer: { id: callerId, name: names.users.get(callerId) ?? "A teammate" },
+  };
 }
 
 export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
@@ -43,9 +47,9 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
     .limit(LIST_LIMIT);
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
 
-  const sessions = await withOwnerNames(req.params.id, (data ?? []) as SessionRow[], caller.userId);
-  if (sessions instanceof Response) return sessions;
-  return Response.json({ sessions });
+  const named = await withOwnerNames(req.params.id, (data ?? []) as SessionRow[], caller.userId);
+  if (named instanceof Response) return named;
+  return Response.json({ sessions: named.sessions });
 });
 
 export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
@@ -135,7 +139,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   if (named instanceof Response) return named;
   const links = await loadSessionLinks(workspaceId, session);
   if (links instanceof Response) return links;
-  return Response.json({ session: { ...named[0], ...links }, events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
+  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
 });
 
 type IncomingLine = LiveLineInput | { file: string; offset: number; oversizeBytes: number };
