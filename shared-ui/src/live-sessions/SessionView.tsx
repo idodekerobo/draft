@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApprovalPanel } from "./ApprovalPanel";
+import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
@@ -71,6 +72,10 @@ interface SessionViewProps {
   onOpenSession?: (sessionId: string) => void;
   /** Put the cursor in the message box when the session opens, for a session the person just started. */
   autoFocusComposer?: boolean;
+  /** Records that the session was opened. Without it, nothing is recorded. */
+  track?: TrackFn;
+  /** How the person got here. Defaults to inside the app. */
+  entry?: SessionEntry;
 }
 
 function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
@@ -144,9 +149,19 @@ function LoadedSession({
   notice,
   onOpenSession,
   autoFocusComposer,
+  track,
+  entry = "list",
 }: SessionViewProps) {
   const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const watchers = presenceLine(useSessionPresence(api, sessionId, viewer));
+  const viewReported = useRef(false);
+  useEffect(() => {
+    if (viewReported.current) return;
+    viewReported.current = true;
+    track?.("session_viewed", { is_owner: session.mine === true, entry });
+    // Once per open: the view remounts for another session, and a poll never gets here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const inputs = useSessionInputs(api, sessionId, waiting, refresh);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
