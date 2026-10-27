@@ -23,6 +23,7 @@ function routine(overrides: Partial<Routine>): Routine {
     lastCheckedAt: null,
     lastRun: null,
     updatedByName: null,
+    agent: null,
     ...overrides,
   };
 }
