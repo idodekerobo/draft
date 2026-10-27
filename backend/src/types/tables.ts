@@ -316,7 +316,9 @@ export type SessionEventKind =
   | "tool_use"
   | "tool_result"
   | "thinking"
-  | "session_note";
+  | "session_note"
+  | "permission_request"
+  | "permission_resolved";
 
 export interface SessionRow {
   id: string;
@@ -335,6 +337,7 @@ export interface SessionRow {
   end_reason: string | null;
   last_event_at: string | null;
   last_seq: number;
+  open_approval_count: number;
   host_machine_id: string;
   host_name: string | null;
   raw_storage_path: string | null;

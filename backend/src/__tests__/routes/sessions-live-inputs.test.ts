@@ -170,10 +170,26 @@ describe("host routes", () => {
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i1", p_from: ["queued"], p_to: "delivering" });
   });
 
-  it("the host cannot mark an input consumed", async () => {
-    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
-    expect(res.status).toBe(400);
+  it("the host cannot mark a message consumed, but can mark a stop or a decision", async () => {
+    tables.session_inputs = [input, { ...input, id: "i2", kind: "stop" }];
+    const message = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
+    expect(message.status).toBe(400);
     expect(rpcCalls).toEqual([]);
+    const stop = await routes.INPUT_STATE(request("POST", "/x", { hostMachineId: "host-1", from: ["delivering"], to: "consumed" }, { id: WS, sessionId: SESSION, inputId: "i2" }));
+    expect(stop.status).toBe(200);
+    expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i2", p_to: "consumed" });
+  });
+
+  it("gives the host the waiting stops and decisions on request, and no messages", async () => {
+    tables.session_inputs = [
+      input,
+      { ...input, id: "i2", kind: "stop" },
+      { ...input, id: "i3", kind: "permission_decision", payload: { requestId: "r1", decision: "allow" } },
+      { ...input, id: "i4", kind: "stop", state: "consumed" },
+    ];
+    const res = await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1&kinds=control"));
+    const body = (await res.json()) as { inputs: Array<{ id: string }> };
+    expect(body.inputs.map((i) => i.id)).toEqual(["i2", "i3"]);
   });
 
   it("refuses a state change from another host", async () => {

@@ -12,6 +12,7 @@ import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
 import * as sessionsLive from "./sessions-live";
+import * as sessionsLiveApprovals from "./sessions-live-approvals";
 import * as sessionsLiveInputs from "./sessions-live-inputs";
 import * as sessionsIngestErrors from "./sessions-ingest-errors";
 import * as sessionsSearch from "./sessions-search";
@@ -74,6 +75,9 @@ export const routes = {
   "/workspaces/:id/live-sessions/:sessionId/inputs/pending": { GET: withCors(sessionsLiveInputs.INPUTS_PENDING), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId": { POST: withCors(sessionsLiveInputs.INPUT_ACTION), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId/state": { POST: withCors(sessionsLiveInputs.INPUT_STATE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision": { POST: withCors(sessionsLiveApprovals.DECISION), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/stop": { POST: withCors(sessionsLiveApprovals.STOP), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/host-events": { POST: withCors(sessionsLiveApprovals.HOST_EVENTS), OPTIONS },
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
   "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
   "/sessions/ingest": { POST: sessionsIngest.POST },

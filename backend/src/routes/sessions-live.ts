@@ -224,7 +224,7 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
 
   const { error } = await serviceClient
     .from("sessions")
-    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: optionalString(parsed.body.reason, 100) ?? "ended" })
+    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: optionalString(parsed.body.reason, 100) ?? "ended", open_approval_count: 0 })
     .eq("id", sessionId)
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);

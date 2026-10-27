@@ -14,7 +14,8 @@ type InputStateRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionI
 const INPUT_COLUMNS = "id, author_user_id, author_name, kind, payload, state, reason, consumed_seq, created_at, updated_at";
 const VIEWER_LIMIT = 20;
 const REASON_MAX_CHARS = 100;
-const HOST_TARGET_STATES = new Set<SessionInputState>(["queued", "delivering", "failed", "uncertain"]);
+const HOST_TARGET_STATES = new Set<SessionInputState>(["queued", "delivering", "failed", "uncertain", "consumed"]);
+const CONTROL_KINDS = ["permission_decision", "stop"];
 const HOST_SOURCE_STATES = new Set<SessionInputState>(["queued", "delivering"]);
 
 const CREATE_ERRORS: Record<string, { error: string; status: number }> = {
@@ -150,19 +151,23 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
 
   const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
-  const hostMachineId = new URL(req.url).searchParams.get("hostMachineId");
-  if (hostMachineId !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+  const params = new URL(req.url).searchParams;
+  if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
 
-  const { data, error } = await serviceClient
+  const control = params.get("kinds") === "control";
+  let query = serviceClient
     .from("session_inputs")
     .select(INPUT_COLUMNS)
     .eq("session_id", sessionId)
     .eq("workspace_id", workspaceId)
-    .eq("kind", "message")
     .in("state", ["queued", "delivering"])
     .order("created_at", { ascending: true })
     .limit(VIEWER_LIMIT);
+  query = control ? query.in("kind", CONTROL_KINDS) : query.eq("kind", "message");
+  const { data, error } = await query;
   if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
+
+  if (control) return Response.json({ inputs: (data ?? []) as SessionInputRow[] });
 
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
     ...publicInput(row),
@@ -189,6 +194,16 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
   if (!HOST_TARGET_STATES.has(to)) return errorResponse("invalid_state", 400);
   if (!Array.isArray(from) || from.length === 0 || !from.every((s) => HOST_SOURCE_STATES.has(s))) {
     return errorResponse("invalid_state", 400);
+  }
+
+  if (to === "consumed") {
+    const { data: input } = await serviceClient
+      .from("session_inputs")
+      .select("kind")
+      .eq("id", inputId)
+      .eq("session_id", sessionId)
+      .maybeSingle<Pick<SessionInputRow, "kind">>();
+    if (!input || input.kind === "message") return errorResponse("invalid_state", 400);
   }
 
   const { data, error } = await serviceClient.rpc("transition_session_input", {
