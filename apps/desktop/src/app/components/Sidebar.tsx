@@ -3,7 +3,7 @@
 // Active state uses the shared selection and focus tokens.
 // No icons in colored circles — hairline separator list rows only.
 
-import { Brand } from "draft-shared-ui";
+import { Brand, mainNavItems } from "draft-shared-ui";
 import { memo } from "react";
 import type { View } from "../types";
 
@@ -11,27 +11,15 @@ interface SidebarProps {
   activeView: View;
   onNavigate: (view: View) => void;
   onOpenFeedback: () => void;
+  sessionsEnabled: boolean;
 }
 
-interface NavItem {
-  id: View;
-  label: string;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { id: "context",     label: "Context"     },
-  { id: "connections", label: "Connections" },
-  { id: "activity",    label: "Activity"    },
-  { id: "routines",    label: "Routines"    },
-  { id: "settings",  label: "Settings"  },
-];
-
-export const Sidebar = memo(function Sidebar({ activeView, onNavigate, onOpenFeedback }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ activeView, onNavigate, onOpenFeedback, sessionsEnabled }: SidebarProps) {
   return (
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar__brand"><Brand /></div>
       <ul className="sidebar__nav">
-        {NAV_ITEMS.map((item) => {
+        {mainNavItems(sessionsEnabled).map((item) => {
           const isActive = item.id === activeView;
 
           return (

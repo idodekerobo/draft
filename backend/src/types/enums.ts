@@ -137,4 +137,5 @@ export type ErrorOperation =
   | "commit"
   | "projection"
   | "auth"
-  | "read";
+  | "read"
+  | "session";

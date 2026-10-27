@@ -32,6 +32,17 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
+import {
+  actOnLiveSessionInput,
+  getLiveSessionEvents,
+  hostedLiveSessionIds,
+  listLiveSessionInputs,
+  listLiveSessions,
+  openLiveSessionInTerminal,
+  resumeLiveSessions,
+  sendLiveSessionMessage,
+  startLiveSession,
+} from "./main/host/live-session";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
@@ -733,6 +744,22 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      startLiveSession: ({ folderPath, model }) => startLiveSession({ folderPath, model }, () => findRunnerBin("claude")),
+
+      listLiveSessions: () => listLiveSessions(),
+
+      getLiveSessionEvents: ({ sessionId, after }) => getLiveSessionEvents(sessionId, after),
+
+      sendLiveSessionMessage: ({ sessionId, text }) => sendLiveSessionMessage(sessionId, text),
+
+      listLiveSessionInputs: ({ sessionId }) => listLiveSessionInputs(sessionId),
+
+      actOnLiveSessionInput: ({ sessionId, inputId, action }) => actOnLiveSessionInput(sessionId, inputId, action),
+
+      getHostedLiveSessionIds: () => hostedLiveSessionIds(),
+
+      openLiveSessionInTerminal: ({ sessionId }) => openLiveSessionInTerminal(sessionId),
+
       getAvailableRunners: async () => {
         const [claudePath, codexPath] = await Promise.all([
           findRunnerBin("claude"),
@@ -996,6 +1023,8 @@ setTimeout(async () => {
   const preference = resolveNotificationsEnabled(globalConfig.notificationsEnabled, localConfig.ok ? localConfig.config.notificationsEnabled : undefined);
   if (preference.migrated) writeDraftConfig({ ...globalConfig, notificationsEnabled: preference.enabled });
   setNotificationsEnabled(preference.enabled);
+
+  void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
 
   // Silent update check on launch — pushes updateAvailable if a new version is ready.
   void checkAndDownloadUpdate(true);

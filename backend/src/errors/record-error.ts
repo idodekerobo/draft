@@ -20,6 +20,7 @@ export interface RecordErrorInput {
   sourceConnectionId?: string | null;
   scheduledTaskId?: string | null;
   synthesisRunId?: string | null;
+  sessionId?: string | null;
   // Insert a workspace-less row instead of falling back to stderr.
   allowUnattributed?: boolean;
   client?: SupabaseClient;
@@ -98,6 +99,7 @@ function fallback(input: RecordErrorInput, reason: unknown): void {
     source_connection_id: input.sourceConnectionId ?? null,
     scheduled_task_id: input.scheduledTaskId ?? null,
     synthesis_run_id: input.synthesisRunId ?? null,
+    session_id: input.sessionId ?? null,
     message: redactString(input.message),
     detail: sanitize(input.detail ?? {}),
     error: original.metadata ?? null,
@@ -123,6 +125,7 @@ export async function recordError(input: RecordErrorInput): Promise<void> {
       source_connection_id: input.workspaceId ? input.sourceConnectionId ?? null : null,
       scheduled_task_id: input.workspaceId ? input.scheduledTaskId ?? null : null,
       synthesis_run_id: input.workspaceId ? input.synthesisRunId ?? null : null,
+      session_id: input.workspaceId ? input.sessionId ?? null : null,
       operation: input.operation,
       message: redactString(input.message),
       detail_json: detail,

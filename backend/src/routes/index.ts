@@ -11,6 +11,8 @@ import * as onboarding from "./onboarding";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
+import * as sessionsLive from "./sessions-live";
+import * as sessionsLiveInputs from "./sessions-live-inputs";
 import * as sessionsIngestErrors from "./sessions-ingest-errors";
 import * as sessionsSearch from "./sessions-search";
 import * as sessionTokens from "./session-tokens";
@@ -62,6 +64,16 @@ export const routes = {
   "/workspaces/:id/sessions/projects": { GET: withCors(sessionProjects.GET), OPTIONS },
   "/workspaces/:id/sessions/search": { GET: sessionsSearch.GET },
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
+  "/workspaces/:id/live-sessions": { GET: withCors(sessionsLive.LIST), POST: withCors(sessionsLive.CREATE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/events": { GET: withCors(sessionsLive.EVENTS), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/lines": { POST: withCors(sessionsLive.LINES), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/end": { POST: withCors(sessionsLive.END), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/raw": { POST: withCors(sessionsLive.RAW_UPLOAD_URLS), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/raw/complete": { POST: withCors(sessionsLive.RAW_UPLOAD_COMPLETE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/inputs": { GET: withCors(sessionsLiveInputs.INPUTS_LIST), POST: withCors(sessionsLiveInputs.INPUTS_CREATE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/inputs/pending": { GET: withCors(sessionsLiveInputs.INPUTS_PENDING), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId": { POST: withCors(sessionsLiveInputs.INPUT_ACTION), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId/state": { POST: withCors(sessionsLiveInputs.INPUT_STATE), OPTIONS },
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
   "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
   "/sessions/ingest": { POST: sessionsIngest.POST },
