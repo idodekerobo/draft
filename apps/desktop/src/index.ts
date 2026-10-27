@@ -29,7 +29,7 @@ import type {
 } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
-import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
+import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
@@ -43,7 +43,7 @@ import {
   sendLiveSessionMessage,
   startLiveSession,
 } from "./main/host/live-session";
-import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
+import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -291,14 +291,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           }>(`workspaces/${workspaceId}/context`);
 
           return documentsToEntries(context.documents);
-        } catch (error) {
-          const authFailure =
-            (error instanceof AuthRefreshError && error.kind === "terminal") ||
-            (error instanceof Error && /request_failed_(401|403)/.test(error.message));
-          if (authFailure) {
-            try { clearAuthState(); } catch {}
-            try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
-          }
+        } catch {
           return [];
         }
       },
@@ -948,6 +941,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
     },
   },
+});
+
+setSessionExpiredHandler(() => {
+  try { clearAuthState(); } catch {}
+  try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
 });
 
 // ── Bundled binary sync ────────────────────────────────────────────────────────
