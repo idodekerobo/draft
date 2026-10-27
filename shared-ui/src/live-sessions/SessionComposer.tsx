@@ -1,8 +1,9 @@
 "use client";
 
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { inputStatusLine } from "./input-status";
+import { FolderIcon, submitOnEnter } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 
 const STATUS_TICK_MS = 30_000;
@@ -48,13 +49,6 @@ export function SessionComposer({
     }
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void submit();
-    }
-  }
-
   return (
     <div className="ui-composer">
       {inputs.length > 0 && (
@@ -80,9 +74,7 @@ export function SessionComposer({
         <form className="ui-composer__box" onSubmit={submit}>
           {folderName && (
             <div className="ui-composer__folder">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5Z" />
-              </svg>
+              <FolderIcon />
               <span>{folderName}</span>
             </div>
           )}
@@ -96,7 +88,7 @@ export function SessionComposer({
             placeholder={`Message ${ownerName}'s session`}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            onKeyDown={onKeyDown}
+            onKeyDown={submitOnEnter(() => void submit())}
           />
           <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
             {sending ? "Sending…" : "Send"}

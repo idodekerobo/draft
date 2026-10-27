@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { FolderIcon, submitOnEnter } from "./message-box";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { usePopover } from "./usePopover";
 
@@ -45,13 +46,6 @@ export function SessionStartScreen({
     }
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      void submit();
-    }
-  }
-
   return (
     <div className="ui-session ui-start">
       <header className="ui-session__header">
@@ -65,9 +59,7 @@ export function SessionStartScreen({
         <form className="ui-composer__box ui-start__box" onSubmit={submit}>
           <div className="ui-composer__folder ui-start__folder" ref={rootRef}>
             <button ref={triggerRef} type="button" className="ui-start__folder-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5Z" />
-              </svg>
+              <FolderIcon />
               <span>{folder ? folderName(folder) : "Choose a folder"}</span>
               <span aria-hidden="true">▾</span>
             </button>
@@ -97,7 +89,7 @@ export function SessionStartScreen({
               placeholder="Describe a task to start a new session…"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              onKeyDown={onKeyDown}
+              onKeyDown={submitOnEnter(() => void submit())}
             />
             <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
               {starting ? "Starting…" : "Start"}

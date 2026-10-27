@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { COLUMN_DEFAULT_PX, clampColumnWidth, readColumnState, writeColumnState } from "./column-state";
-import { groupSessionsByDay, relativeTime, sessionStatusLabel } from "./session-groups";
+import { relativeTime } from "../relative-time";
+import { groupSessionsByDay, sessionStatusLabel } from "./session-groups";
 import { sessionTitle } from "./sessions-list";
 import type { LiveSession } from "./types";
 
@@ -43,7 +44,7 @@ function SessionRow({ session, selected, now, onSelect }: { session: LiveSession
       <button type="button" className="ui-sessions__row" aria-current={selected ? "true" : undefined} onClick={() => onSelect(session.id)}>
         <span className="ui-sessions__row-top">
           <span className="ui-sessions__row-title">{sessionTitle(session)}</span>
-          <span className="ui-muted ui-sessions__row-time">{relativeTime(session.started_at, now)}</span>
+          <span className="ui-muted ui-sessions__row-time">{relativeTime(session.started_at, { now, compact: true })}</span>
         </span>
         <span className="ui-muted ui-sessions__row-sub">
           <span>{session.owner_name ?? "Someone"}</span>
