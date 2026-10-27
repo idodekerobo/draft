@@ -180,16 +180,22 @@ describe("host routes", () => {
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i2", p_to: "consumed" });
   });
 
-  it("gives the host the waiting stops and decisions on request, and no messages", async () => {
+  it("gives the host messages, stops and decisions in one list when it asks for all, and only messages by default", async () => {
     tables.session_inputs = [
       input,
       { ...input, id: "i2", kind: "stop" },
       { ...input, id: "i3", kind: "permission_decision", payload: { requestId: "r1", decision: "allow" } },
       { ...input, id: "i4", kind: "stop", state: "consumed" },
     ];
-    const res = await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1&kinds=control"));
-    const body = (await res.json()) as { inputs: Array<{ id: string }> };
-    expect(body.inputs.map((i) => i.id)).toEqual(["i2", "i3"]);
+    type Pending = { inputs: Array<{ id: string; kind: string; delivered_text?: string; payload: unknown }> };
+    const all = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1&kinds=all"))).json()) as Pending;
+    expect(all.inputs.map((i) => [i.id, i.kind])).toEqual([["i1", "message"], ["i2", "stop"], ["i3", "permission_decision"]]);
+    expect(all.inputs[0]!.delivered_text).toBe("[Dev via Draft] run tests");
+    expect(all.inputs[1]!.delivered_text).toBeUndefined();
+    expect(all.inputs[2]!.payload).toEqual({ requestId: "r1", decision: "allow" });
+
+    const messagesOnly = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as Pending;
+    expect(messagesOnly.inputs.map((i) => i.id)).toEqual(["i1"]);
   });
 
   it("refuses a state change from another host", async () => {

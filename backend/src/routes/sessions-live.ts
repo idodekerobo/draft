@@ -5,7 +5,7 @@ import { withoutAuthorPrefix } from "../ingestion/claude-code/live-input-text";
 import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
-import { failQueuedInputs, matchConsumedInputs } from "./sessions-live-inputs";
+import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
 import { SESSION_COLUMNS, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
@@ -87,28 +87,26 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const after = Math.max(0, Number(params.get("after")) || 0);
   const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || DEFAULT_EVENTS_PAGE));
 
-  const { data: session, error: sessionError } = await serviceClient
-    .from("sessions")
-    .select(SESSION_COLUMNS)
-    .eq("id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle<SessionRow>();
+  const [{ data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
+    serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle<SessionRow>(),
+    serviceClient
+      .from("session_events")
+      .select("seq, source_id, kind, payload, created_at")
+      .eq("session_id", sessionId)
+      .eq("workspace_id", workspaceId)
+      .gt("seq", after)
+      .order("seq", { ascending: true })
+      .limit(limit),
+    loadViewerInputs(workspaceId, sessionId, caller.userId),
+  ]);
   if (sessionError) return errorResponse("session_lookup_failed", 500, sessionError, workspaceId, sessionId);
   if (!session) return errorResponse("session_not_found", 404);
-
-  const { data: events, error: eventsError } = await serviceClient
-    .from("session_events")
-    .select("seq, source_id, kind, payload, created_at")
-    .eq("session_id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .gt("seq", after)
-    .order("seq", { ascending: true })
-    .limit(limit);
   if (eventsError) return errorResponse("events_lookup_failed", 500, eventsError, workspaceId, sessionId);
+  if (!viewerInputs.ok) return errorResponse("inputs_lookup_failed", 500, viewerInputs.error, workspaceId, sessionId);
 
   const named = await withOwnerNames(workspaceId, [session]);
   if (named instanceof Response) return named;
-  return Response.json({ session: named[0], events: (events ?? []) as Partial<SessionEventRow>[] });
+  return Response.json({ session: named[0], events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
 });
 
 type IncomingLine = LiveLineInput | { file: string; offset: number; oversizeBytes: number };

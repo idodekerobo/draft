@@ -230,9 +230,23 @@ describe("live session routes", () => {
       { session_id: SESSION, workspace_id: WS, seq: 2, kind: "assistant_text" },
     ];
     const req = Object.assign(new Request("http://localhost/x?after=1"), { params: { id: WS, sessionId: SESSION } }) as never;
-    const body = (await (await routes.EVENTS(req)).json()) as { session: Row; events: Row[] };
+    const body = (await (await routes.EVENTS(req)).json()) as { session: Row; events: Row[]; inputs: Row[] };
     expect(body.events.map((e) => e.seq)).toEqual([2]);
     expect(body.session.owner_name).toBe("Maya");
+    expect(body.inputs).toEqual([]);
+  });
+
+  it("returns the unfinished messages with the events, marking the caller's own", async () => {
+    const waiting = { session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", payload: { text: "hi" }, created_at: "t", updated_at: "t", author_name: "Priya" };
+    tables.session_inputs = [
+      { ...waiting, id: "mine", author_user_id: caller.userId },
+      { ...waiting, id: "theirs", author_user_id: "user-9" },
+      { ...waiting, id: "done", author_user_id: caller.userId, state: "consumed" },
+      { ...waiting, id: "control", author_user_id: caller.userId, kind: "stop" },
+    ];
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const body = (await (await routes.EVENTS(req)).json()) as { inputs: Array<{ id: string; mine: boolean; text: string }> };
+    expect(body.inputs.map((i) => [i.id, i.mine, i.text])).toEqual([["mine", true, "hi"], ["theirs", false, "hi"]]);
   });
 
   it("ends a session only for its owner on its own host", async () => {

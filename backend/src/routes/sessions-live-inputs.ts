@@ -14,7 +14,6 @@ const INPUT_COLUMNS = "id, author_user_id, author_name, kind, payload, state, re
 const VIEWER_LIMIT = 20;
 const REASON_MAX_CHARS = 100;
 const HOST_TARGET_STATES = new Set<SessionInputState>(["queued", "delivering", "failed", "uncertain", "consumed"]);
-const CONTROL_KINDS = ["permission_decision", "stop"];
 const HOST_SOURCE_STATES = new Set<SessionInputState>(["queued", "delivering"]);
 
 type PublicInput = {
@@ -60,11 +59,10 @@ async function createInput(workspaceId: string, sessionId: string, userId: strin
   return Response.json({ ok: true, input: publicInput(data as SessionInputRow) }, { status: 201 });
 }
 
-export const INPUTS_LIST = withAuth<InputsRequest>(async (req, caller) => {
-  const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
+export type ViewerInputs = { ok: true; inputs: Array<ReturnType<typeof publicInput> & { mine: boolean }> } | { ok: false; error: unknown };
 
+/** The caller's messages that Claude has not yet taken, plus those of teammates. */
+export async function loadViewerInputs(workspaceId: string, sessionId: string, userId: string): Promise<ViewerInputs> {
   const { data, error } = await serviceClient
     .from("session_inputs")
     .select(INPUT_COLUMNS)
@@ -75,11 +73,18 @@ export const INPUTS_LIST = withAuth<InputsRequest>(async (req, caller) => {
     .is("dismissed_at", null)
     .order("created_at", { ascending: true })
     .limit(VIEWER_LIMIT);
-  if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
+  if (error) return { ok: false, error };
+  return { ok: true, inputs: ((data ?? []) as SessionInputRow[]).map((row) => ({ ...publicInput(row), mine: row.author_user_id === userId })) };
+}
 
-  return Response.json({
-    inputs: ((data ?? []) as SessionInputRow[]).map((row) => ({ ...publicInput(row), mine: row.author_user_id === caller.userId })),
-  });
+export const INPUTS_LIST = withAuth<InputsRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const loaded = await loadViewerInputs(workspaceId, sessionId, caller.userId);
+  if (!loaded.ok) return errorResponse("inputs_lookup_failed", 500, loaded.error, workspaceId, sessionId);
+  return Response.json({ inputs: loaded.inputs });
 });
 
 export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
@@ -140,7 +145,7 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   const params = new URL(req.url).searchParams;
   if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
 
-  const control = params.get("kinds") === "control";
+  const everything = params.get("kinds") === "all";
   let query = serviceClient
     .from("session_inputs")
     .select(INPUT_COLUMNS)
@@ -149,15 +154,14 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
     .in("state", ["queued", "delivering"])
     .order("created_at", { ascending: true })
     .limit(VIEWER_LIMIT);
-  query = control ? query.in("kind", CONTROL_KINDS) : query.eq("kind", "message");
+  if (!everything) query = query.eq("kind", "message");
   const { data, error } = await query;
   if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
 
-  if (control) return Response.json({ inputs: (data ?? []) as SessionInputRow[] });
-
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
     ...publicInput(row),
-    delivered_text: deliveredText(row.author_name, textOf(row)),
+    payload: row.payload,
+    ...(row.kind === "message" ? { delivered_text: deliveredText(row.author_name, textOf(row)) } : {}),
   }));
   return Response.json({ inputs });
 });
