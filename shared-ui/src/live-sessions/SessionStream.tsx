@@ -12,7 +12,7 @@ function Item({ item, ownerName }: { item: StreamItem; ownerName: string }) {
     case "user":
       return (
         <>
-          <span className="ui-stream__who">{item.agentId ? "Prompt" : ownerName}</span>
+          <span className="ui-stream__who">{item.author ?? (item.agentId ? "Prompt" : ownerName)}</span>
           <p className="ui-stream__text">{item.text}</p>
         </>
       );

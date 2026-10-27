@@ -711,3 +711,29 @@
 .ui-sessions-list { list-style: none; margin: 0; padding: 0; }
 .ui-sessions-list__row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 10px 0; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
 .ui-sessions-list__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ui-composer { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.ui-composer__pending { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: grid; gap: var(--space-2); }
+.ui-composer__pending-item { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); align-items: baseline; font-size: var(--font-size-secondary); }
+.ui-composer__author { color: var(--color-text-secondary); }
+.ui-composer__text { flex: 1 1 12rem; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ui-composer__actions { display: flex; gap: var(--space-3); }
+.ui-composer__form { display: flex; gap: var(--space-2); align-items: flex-end; }
+.ui-composer__input { min-height: 56px; padding: 8px 10px; resize: vertical; line-height: 1.4; }
+.ui-composer__pending-item { animation: ui-panel-enter 200ms var(--motion-ease); }
+.ui-composer .ui-btn, .ui-composer .ui-link { touch-action: manipulation; }
+@media (pointer: coarse) { .ui-composer__input { font-size: 16px; } }
+@media (prefers-reduced-motion: reduce) { .ui-composer__pending-item { animation: ui-fade-in 200ms linear; } }
+
+.ui-stream__who, .ui-stream__note, .ui-stream__summary, .ui-stream__code, .ui-stream__agent-label { font-size: var(--font-size-secondary); }
+.ui-stream__code { border-radius: var(--radius-md); }
+.ui-stream__details[open] > :not(summary) { animation: ui-panel-enter 200ms var(--motion-ease) both; }
+.ui-sessions-list__row { transition: transform 120ms var(--motion-ease), background-color 120ms var(--motion-ease); touch-action: manipulation; }
+.ui-sessions-list__row:active { transform: scale(.98); }
+.ui-sessions-list__row:focus-visible, .ui-stream__details > summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: var(--radius-md); }
+@media (hover: hover) and (pointer: fine) { .ui-sessions-list__row:hover { background: var(--color-bg-hover); } }
+@media (prefers-reduced-motion: reduce) {
+  .ui-stream__details[open] > :not(summary) { animation: ui-fade-in 200ms linear both; }
+  .ui-sessions-list__row { transition: none; }
+  .ui-sessions-list__row:active { transform: none; }
+}

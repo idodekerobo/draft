@@ -74,3 +74,14 @@ describe("toolSummary", () => {
     expect(toolSummary({ command: "x".repeat(300) })).toHaveLength(101);
   });
 });
+
+describe("messages sent through Draft", () => {
+  it("shows the author and removes the prefix from the text", () => {
+    const items = buildStreamItems([
+      { seq: 1, source_id: "a", kind: "user_message", payload: { text: "[Priya via Draft] please add tests\nthanks" }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "user_message", payload: { text: "[not a prefix] hi" }, created_at: "" },
+    ]);
+    expect(items[0]).toMatchObject({ type: "user", author: "Priya", text: "please add tests\nthanks" });
+    expect(items[1]).toMatchObject({ type: "user", author: null, text: "[not a prefix] hi" });
+  });
+});

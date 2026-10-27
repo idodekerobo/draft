@@ -43,10 +43,30 @@ export interface LiveSessionEventsPage {
   events: LiveSessionEvent[];
 }
 
+export type LiveSessionInputState = "queued" | "delivering" | "failed" | "uncertain";
+
+/** A message someone sent that Claude has not yet taken. */
+export interface LiveSessionInput {
+  id: string;
+  author_user_id: string;
+  author_name: string;
+  text: string;
+  state: LiveSessionInputState;
+  /** Why it waits (queued) or why it failed. */
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+  /** The caller wrote it. */
+  mine: boolean;
+}
+
 /** Each app implements this over its own transport. */
 export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
+  sendMessage(sessionId: string, text: string): Promise<void>;
+  listInputs(sessionId: string): Promise<LiveSessionInput[]>;
+  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
 }
 
 /** The workspace has the feature switched off. */

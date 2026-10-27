@@ -31,10 +31,16 @@ export function sessionTitle(session: Pick<LiveSession, "title" | "folder_name">
 export function SessionsList({
   sessions,
   onOpen,
+  loading = false,
+  failed = false,
 }: {
   sessions: LiveSession[];
   onOpen: (sessionId: string) => void;
+  loading?: boolean;
+  failed?: boolean;
 }) {
+  if (failed && sessions.length === 0) return <p className="ui-error" role="alert">Could not load sessions. They will load again soon.</p>;
+  if (loading && sessions.length === 0) return <p className="ui-muted" role="status">Loading sessions…</p>;
   if (sessions.length === 0) return <p className="ui-muted" role="status">No sessions yet.</p>;
   return (
     <ul className="ui-sessions-list">

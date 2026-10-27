@@ -1,7 +1,7 @@
 import type { LiveSessionEvent } from "./types";
 
 export type StreamItem =
-  | { type: "user"; seq: number; text: string; agentId: string | null }
+  | { type: "user"; seq: number; text: string; agentId: string | null; /** Set when a teammate sent it through Draft. */ author: string | null }
   | { type: "assistant"; seq: number; text: string; agentId: string | null }
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string }
@@ -35,6 +35,14 @@ export function toolSummary(input: unknown): string {
   return typeof first === "string" ? oneLine(first) : "";
 }
 
+const AUTHOR_PREFIX = /^\[([^\]\n]{1,60}) via Draft\] /;
+
+/** A message sent through Draft reaches Claude as "[Name via Draft] text". */
+function splitAuthor(text: string): { text: string; author: string | null } {
+  const match = AUTHOR_PREFIX.exec(text);
+  return match ? { text: text.slice(match[0].length), author: match[1]! } : { text, author: null };
+}
+
 /** Turns the event log into display items. A tool result joins its tool call by id. */
 export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
   const items: StreamItem[] = [];
@@ -46,7 +54,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
 
     switch (event.kind) {
       case "user_message":
-        items.push({ type: "user", seq: event.seq, text: payload.text ?? "", agentId });
+        items.push({ type: "user", seq: event.seq, ...splitAuthor(payload.text ?? ""), agentId });
         break;
       case "assistant_text":
         items.push({ type: "assistant", seq: event.seq, text: payload.text ?? "", agentId });
