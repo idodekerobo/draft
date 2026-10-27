@@ -198,4 +198,16 @@ describe("SessionView", () => {
     unmount();
     expect(stop).toHaveBeenCalled();
   });
+
+  it("stops the turn when Esc is pressed in an empty message box, and not when it holds text", async () => {
+    const stop = mock(async () => {});
+    render(<SessionView api={{ ...api, stop }} sessionId="s1" />);
+    const box = await screen.findByRole("textbox");
+    fireEvent.change(box, { target: { value: "draft" } });
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(stop).not.toHaveBeenCalled();
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.keyDown(box, { key: "Escape" });
+    await waitFor(() => expect(stop).toHaveBeenCalledWith("s1"));
+  });
 });

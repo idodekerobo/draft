@@ -203,7 +203,7 @@ function LoadedSession({
         </Crumbs>
         <div className="ui-session__actions">
           {running && (
-            <button type="button" className="ui-btn" disabled={stopping} onClick={() => void stop()}>
+            <button type="button" className="ui-btn" disabled={stopping} title="Stop (Esc in the message box)" onClick={() => void stop()}>
               {stopping ? "Stopping…" : "Stop"}
             </button>
           )}
@@ -239,7 +239,7 @@ function LoadedSession({
             approvals.map((approval) => (
               <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
             ))}
-          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} autoFocus={autoFocusComposer} folderName={session.folder_name} />
+          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} />
         </div>
       </div>
     </div>

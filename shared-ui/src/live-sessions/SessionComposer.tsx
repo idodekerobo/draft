@@ -23,7 +23,8 @@ export function SessionComposer({
   hostOffline = false,
   folderName,
   autoFocus = false,
-}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean }) {
+  onEmptyEscape,
+}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +92,10 @@ export function SessionComposer({
             placeholder={`Message ${ownerName}'s session`}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            onKeyDown={submitOnEnter(() => void submit())}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !text && onEmptyEscape) onEmptyEscape();
+              else submitOnEnter(() => void submit())(event);
+            }}
           />
           <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
             {sending ? "Sending…" : "Send"}
