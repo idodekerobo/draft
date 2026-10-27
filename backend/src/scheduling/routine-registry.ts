@@ -46,7 +46,18 @@ const PROVIDER_NAMES: Record<string, string> = {
 export const ROUTINE_TASK_TYPES: ScheduledTaskType[] = [
   ...(Object.keys(TASK_ROUTINES) as ScheduledTaskType[]),
   "ingest_source",
+  "agent_routine",
 ];
+
+/** An agent routine is named by the person who made it, so its title comes from its config. */
+export function agentRoutineDefinition(title: string): RoutineDefinition {
+  return {
+    title,
+    routineDescription:
+      "Runs an agent on this schedule. It reads the company brain to answer your request and cannot change anything.",
+    editable: "full",
+  };
+}
 
 export function resolveRoutine(
   taskType: ScheduledTaskType,
