@@ -2,6 +2,7 @@
 
 import { LIVE_SESSION_HARNESSES, LIVE_SESSION_MODELS } from "draft-core/live-sessions";
 import { useState, type FormEvent } from "react";
+import { SectionedPicker } from "../controls/SectionedPicker";
 import { FolderIcon, submitOnEnter } from "./message-box";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { usePopover } from "./usePopover";
@@ -66,7 +67,6 @@ export function SessionStartScreen({
       <div className="ui-start__body">
         <p className="ui-start__heading">What should we work on?</p>
         <form className="ui-composer__box ui-start__box" onSubmit={submit}>
-          <div className="ui-start__options">
           <div className="ui-composer__folder ui-start__folder" ref={rootRef}>
             <button ref={triggerRef} type="button" className="ui-start__folder-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
               <FolderIcon />
@@ -89,21 +89,6 @@ export function SessionStartScreen({
               </ul>
             )}
           </div>
-            <div className="ui-start__pickers">
-              <label className="ui-visually-hidden" htmlFor="start-harness">Agent</label>
-              <select id="start-harness" className="ui-start__select" defaultValue={LIVE_SESSION_HARNESSES[0].id}>
-                {LIVE_SESSION_HARNESSES.map((harness) => (
-                  <option key={harness.id} value={harness.id}>{harness.label}</option>
-                ))}
-              </select>
-              <label className="ui-visually-hidden" htmlFor="start-model">Model</label>
-              <select id="start-model" className="ui-start__select" value={model ?? ""} onChange={(event) => setModel(event.target.value || null)}>
-                {LIVE_SESSION_MODELS.map((option) => (
-                  <option key={option.alias ?? "default"} value={option.alias ?? ""}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
           <div className="ui-composer__row">
             <label className="ui-visually-hidden" htmlFor="start-message">First message</label>
             <textarea
@@ -116,9 +101,20 @@ export function SessionStartScreen({
               onChange={(event) => setText(event.target.value)}
               onKeyDown={submitOnEnter(() => void submit())}
             />
-            <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
-              {starting ? "Starting…" : "Start"}
-            </button>
+            <div className="ui-start__actions">
+              <SectionedPicker
+                label="Agent and model"
+                sections={[
+                  { id: "harness", title: "Harnesses", value: LIVE_SESSION_HARNESSES[0].id, onChange: () => {}, options: LIVE_SESSION_HARNESSES.map((harness) => ({ value: harness.id, label: harness.label })) },
+                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: LIVE_SESSION_MODELS.map((option) => ({ value: option.alias ?? "", label: option.label })) },
+                ]}
+              >
+                {LIVE_SESSION_HARNESSES[0].label} · {LIVE_SESSION_MODELS.find((option) => option.alias === model)?.label}
+              </SectionedPicker>
+              <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
+                {starting ? "Starting…" : "Start"}
+              </button>
+            </div>
           </div>
         </form>
         {!folder && <p className="ui-muted">Choose a folder to start in.</p>}

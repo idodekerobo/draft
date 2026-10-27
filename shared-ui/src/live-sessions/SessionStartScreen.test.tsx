@@ -61,18 +61,18 @@ describe("SessionStartScreen", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("hello");
   });
 
-  it("offers Claude Code as the only agent and Default first in the model list", () => {
+  it("keeps the folder bar and puts one picker next to Start, with Claude Code the only harness", () => {
     setup();
-    const agent = screen.getByLabelText("Agent") as HTMLSelectElement;
-    expect(Array.from(agent.options).map((o) => o.text)).toEqual(["Claude Code"]);
-    const model = screen.getByLabelText("Model") as HTMLSelectElement;
-    expect(Array.from(model.options).map((o) => o.text)).toEqual(["Default", "Fable", "Opus", "Sonnet", "Haiku"]);
-    expect(model.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    expect(screen.getAllByRole("menuitemradio", { name: /Claude Code/ }).length).toBe(1);
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent?.replace("✓", ""))).toEqual(["Claude Code", "Default", "Fable", "Opus", "Sonnet", "Haiku"]);
+    expect(screen.queryByRole("combobox")).toBeNull();
   });
 
   it("starts with the chosen model alias", async () => {
     const { onStart } = setup();
-    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "sonnet" } });
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Sonnet" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
     await waitFor(() => expect(onStart).toHaveBeenCalledWith({ folderPath: "/work/marigold", text: "go", model: "sonnet" }));
