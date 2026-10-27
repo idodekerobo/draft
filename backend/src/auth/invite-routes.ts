@@ -12,7 +12,8 @@ const INVITE_TTL_MS = 30 * 86_400_000;
 async function expire(id: string): Promise<void> { await serviceClient.from("invites").update({ status: "expired" }).eq("id", id).eq("status", "active"); }
 
 // for now, one invite link per (org, team) is reused across requests
-export const mineGET = withAuth<MineRequest>(async (_req, caller) => {
+// `?create=false` only looks: it returns `url: null` when no active link exists, so opening a page creates nothing.
+export const mineGET = withAuth<MineRequest>(async (req, caller) => {
   const { data: user, error: userError } = await serviceClient
     .from("users").select("organization_id, primary_team_id").eq("id", caller.userId).maybeSingle();
   if (userError) return Response.json({ error: "lookup_failed" }, { status: 500 });
@@ -37,6 +38,10 @@ export const mineGET = withAuth<MineRequest>(async (_req, caller) => {
       url: `${loadConfig().appUrl}/invite/${existing.token}`,
       expiresAt: existing.expires_at,
     });
+  }
+
+  if (new URL(req.url).searchParams.get("create") === "false") {
+    return Response.json({ url: null, expiresAt: null });
   }
 
   const token = generateInviteToken();
