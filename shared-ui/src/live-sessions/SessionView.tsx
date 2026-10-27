@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ApprovalPanel } from "./ApprovalPanel";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { sessionTitle } from "./sessions-list";
+import { buildStreamItems, openApprovals } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionStream } from "./useSessionStream";
@@ -13,11 +15,14 @@ import type { LiveSession, LiveSessionsApi } from "./types";
 export interface SessionMenuItem {
   label: string;
   onSelect: () => void;
+  /** Ask before running: a question, with the label as the confirm button. */
+  confirm?: string;
 }
 
 const NEAR_BOTTOM_PX = 96;
+const STOPPING_MS = 3_000;
 
-function SessionMenu({ items }: { items: SessionMenuItem[] }) {
+function SessionMenu({ items, onSelect }: { items: SessionMenuItem[]; onSelect: (item: SessionMenuItem) => void }) {
   const { open, setOpen, rootRef, triggerRef } = usePopover();
   if (items.length === 0) return null;
   return (
@@ -36,7 +41,7 @@ function SessionMenu({ items }: { items: SessionMenuItem[] }) {
                 onClick={() => {
                   setOpen(false);
                   triggerRef.current?.focus();
-                  item.onSelect();
+                  onSelect(item);
                 }}
               >
                 {item.label}
@@ -69,6 +74,10 @@ export function SessionView({
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  const [stopping, setStopping] = useState(false);
+  const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const approvals = useMemo(() => openApprovals(buildStreamItems(events)), [events]);
 
   const jumpToLatest = useCallback(() => {
     const el = scroller.current;
@@ -87,7 +96,24 @@ export function SessionView({
     if (following.current) jumpToLatest();
   }, [events.length, inputs.inputs.length, jumpToLatest]);
 
+  const stop = useCallback(async () => {
+    setStopping(true);
+    setActionError(null);
+    try {
+      await api.stop(sessionId);
+    } catch {
+      setActionError("Could not send Stop. Try again.");
+    }
+    setTimeout(() => setStopping(false), STOPPING_MS);
+  }, [api, sessionId]);
+
+  const chooseMenuItem = useCallback((item: SessionMenuItem) => {
+    if (item.confirm) setConfirming(item);
+    else item.onSelect();
+  }, []);
+
   const ownerName = session?.owner_name ?? "the owner";
+  const running = session !== null && (session.status === "live" || session.status === "starting");
   return (
     <div className="ui-session">
       <header className="ui-session__header">
@@ -102,12 +128,31 @@ export function SessionView({
           <h1 className="ui-session__title">{session ? sessionTitle(session) : "Session"}</h1>
           {session && <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</span>}
         </nav>
-        {session && menuItems && <SessionMenu items={menuItems(session)} />}
+        <div className="ui-session__actions">
+          {running && (
+            <button type="button" className="ui-btn" disabled={stopping} onClick={() => void stop()}>
+              {stopping ? "Stopping…" : "Stop"}
+            </button>
+          )}
+          {session && menuItems && <SessionMenu items={menuItems(session)} onSelect={chooseMenuItem} />}
+        </div>
       </header>
+      {confirming && (
+        <div className="ui-session__confirm" role="group" aria-label="Confirm">
+          <p className="ui-session__confirm-text">{confirming.confirm}</p>
+          <div className="ui-session__confirm-actions">
+            <button type="button" className="ui-btn ui-btn--primary" onClick={() => { const item = confirming; setConfirming(null); item.onSelect(); }}>
+              {confirming.label}
+            </button>
+            <button type="button" className="ui-btn" onClick={() => setConfirming(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scroller} onScroll={onScroll}>
         <div className="ui-session__column">
-          {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} ownerName={session?.owner_name ?? undefined} />}
+          {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} ownerName={session?.owner_name ?? undefined} hostName={session?.host_name ?? null} />}
         </div>
       </div>
       {!atBottom && (
@@ -116,6 +161,10 @@ export function SessionView({
       {session && (
         <div className="ui-session__footer">
           <div className="ui-session__column">
+            {session.status !== "ended" &&
+              approvals.map((approval) => (
+                <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
+              ))}
             <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} folderName={session.folder_name} />
           </div>
         </div>

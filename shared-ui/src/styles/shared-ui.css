@@ -826,3 +826,26 @@
 .ui-sessions__row-top { min-width: 0; width: 100%; }
 
 .ui-invite__link { padding: 0 0 var(--space-4); }
+
+/* ── Approvals and Stop ────────────────────────────────────────────────────── */
+
+.ui-session__actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.ui-session__actions .ui-btn { touch-action: manipulation; }
+.ui-session__confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--color-border); background: var(--color-bg-elevated); animation: ui-panel-enter 200ms var(--motion-ease) both; }
+.ui-session__confirm-text { margin: 0; font-size: var(--font-size-body); }
+.ui-session__confirm-actions { display: flex; gap: var(--space-2); }
+.ui-session__confirm .ui-btn { touch-action: manipulation; }
+
+.ui-approval { display: grid; gap: var(--space-3); margin-bottom: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-notice); background: var(--color-bg-elevated); animation: ui-panel-enter 200ms var(--motion-ease) both; }
+.ui-approval__head { display: grid; gap: var(--space-1); }
+.ui-approval__title { margin: 0; font-size: var(--font-size-body); font-weight: 600; }
+.ui-approval__tool { font-family: var(--font-mono); }
+.ui-approval__where { margin: 0; font-size: var(--font-size-secondary); }
+.ui-approval__input { margin: 0; padding: var(--space-2) var(--space-3); max-height: 240px; overflow: auto; background: var(--color-bg-surface); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--font-size-small); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ui-approval__more { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-size: var(--font-size-secondary); cursor: pointer; touch-action: manipulation; }
+.ui-approval__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ui-approval__status { margin: 0; font-size: var(--font-size-secondary); }
+.ui-approval .ui-btn { touch-action: manipulation; }
+@media (prefers-reduced-motion: reduce) {
+  .ui-approval, .ui-session__confirm { animation: ui-fade-in 200ms linear both; }
+}

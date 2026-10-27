@@ -12,9 +12,11 @@ export interface LiveSession {
   ended_at: string | null;
   last_event_at: string | null;
   last_seq: number;
+  /** Permission requests waiting for an answer. */
+  open_approval_count?: number;
 }
 
-export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note";
+export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note" | "permission_request" | "permission_resolved";
 
 export interface LiveSessionEventPayload {
   text?: string;
@@ -28,6 +30,12 @@ export interface LiveSessionEventPayload {
   input_truncated?: boolean;
   content?: string;
   is_error?: boolean;
+  /** permission_request and permission_resolved */
+  requestId?: string;
+  /** permission_resolved: decided, answered_locally, hook_gone or expired. */
+  reason?: string;
+  decision?: "allow" | "deny";
+  by_name?: string;
 }
 
 export interface LiveSessionEvent {
@@ -60,6 +68,11 @@ export interface LiveSessionInput {
   mine: boolean;
 }
 
+export type ApprovalResult =
+  | { ok: true }
+  | { ok: false; error: "already_decided"; byName: string | null }
+  | { ok: false; error: "request_closed" | "session_ended" | "failed" };
+
 /** Each app implements this over its own transport. */
 export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
@@ -67,6 +80,8 @@ export interface LiveSessionsApi {
   sendMessage(sessionId: string, text: string): Promise<void>;
   listInputs(sessionId: string): Promise<LiveSessionInput[]>;
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
+  decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
+  stop(sessionId: string): Promise<void>;
 }
 
 /** The workspace has the feature switched off. */

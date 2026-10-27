@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildStreamItems, toolSummary } from "./stream-items";
+import { approvalOutcome, buildStreamItems, openApprovals, toolSummary } from "./stream-items";
 import type { LiveSessionEvent, LiveSessionEventKind, LiveSessionEventPayload } from "./types";
 
 let seq = 0;
@@ -83,5 +83,33 @@ describe("messages sent through Draft", () => {
     ]);
     expect(items[0]).toMatchObject({ type: "user", author: "Priya", text: "please add tests\nthanks" });
     expect(items[1]).toMatchObject({ type: "user", author: null, text: "[not a prefix] hi" });
+  });
+});
+
+describe("approvals", () => {
+  const request = (id: string) => event("permission_request", { requestId: id, name: "Write", input: { file_path: "/a/hello.txt" } });
+
+  it("a request is open until a result with its id arrives", () => {
+    const items = buildStreamItems([request("r1"), request("r2"), event("permission_resolved", { requestId: "r1", reason: "decided", decision: "allow", by_name: "Dev" })]);
+    expect(items.map((i) => i.type)).toEqual(["approval", "approval"]);
+    expect(openApprovals(items).map((a) => a.requestId)).toEqual(["r2"]);
+    expect(items[0]).toMatchObject({ tool: "Write", summary: "/a/hello.txt", resolved: { reason: "decided", decision: "allow", byName: "Dev" } });
+  });
+
+  it("ignores a result for an unknown request", () => {
+    expect(buildStreamItems([event("permission_resolved", { requestId: "zzz", reason: "expired" })])).toEqual([]);
+  });
+
+  it("words each way a request can end", () => {
+    const outcome = (payload: LiveSessionEventPayload, host: string | null = "Maya's MacBook") => {
+      const [item] = buildStreamItems([request("r"), event("permission_resolved", { requestId: "r", ...payload })]);
+      return approvalOutcome(item as never, host).replace(/, \d{1,2}:\d{2}.*$/, "");
+    };
+    expect(outcome({ reason: "decided", decision: "allow", by_name: "Dev" })).toBe("Allowed by Dev");
+    expect(outcome({ reason: "decided", decision: "deny", by_name: "Priya" })).toBe("Denied by Priya");
+    expect(outcome({ reason: "answered_locally" })).toBe("Answered on Maya's MacBook");
+    expect(outcome({ reason: "answered_locally" }, null)).toBe("Answered in the terminal");
+    expect(outcome({ reason: "expired" })).toBe("Expired");
+    expect(outcome({ reason: "hook_gone" })).toBe("Moved to the terminal");
   });
 });

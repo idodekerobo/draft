@@ -7,6 +7,8 @@ export * from "./input-status";
 export * from "./useSessionInputs";
 export * from "./SessionComposer";
 export * from "./SessionView";
+export * from "./ApprovalPanel";
+export * from "./stream-items";
 export * from "./session-groups";
 export * from "./column-state";
 export * from "./SessionsLayout";

@@ -6,6 +6,16 @@ export type StreamItem =
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string }
   | {
+      type: "approval";
+      seq: number;
+      requestId: string;
+      tool: string;
+      summary: string;
+      input: unknown;
+      /** Null while the request waits for an answer. */
+      resolved: { reason: string; decision: "allow" | "deny" | null; byName: string | null; at: string } | null;
+    }
+  | {
       type: "tool";
       seq: number;
       name: string;
@@ -47,6 +57,7 @@ function splitAuthor(text: string): { text: string; author: string | null } {
 export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
   const items: StreamItem[] = [];
   const toolsById = new Map<string, Extract<StreamItem, { type: "tool" }>>();
+  const approvalsById = new Map<string, Extract<StreamItem, { type: "approval" }>>();
 
   for (const event of events) {
     const { payload } = event;
@@ -65,6 +76,26 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
       case "session_note":
         items.push({ type: "note", seq: event.seq, text: payload.text ?? "" });
         break;
+      case "permission_request": {
+        if (!payload.requestId) break;
+        const approval: Extract<StreamItem, { type: "approval" }> = {
+          type: "approval",
+          seq: event.seq,
+          requestId: payload.requestId,
+          tool: payload.name ?? "Tool",
+          summary: toolSummary(payload.input),
+          input: payload.input,
+          resolved: null,
+        };
+        items.push(approval);
+        approvalsById.set(payload.requestId, approval);
+        break;
+      }
+      case "permission_resolved": {
+        const approval = payload.requestId ? approvalsById.get(payload.requestId) : undefined;
+        if (approval) approval.resolved = { reason: payload.reason ?? "decided", decision: payload.decision ?? null, byName: payload.by_name ?? null, at: event.created_at };
+        break;
+      }
       case "tool_use": {
         const tool: Extract<StreamItem, { type: "tool" }> = {
           type: "tool",
@@ -87,4 +118,30 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
     }
   }
   return items;
+}
+
+export type OpenApproval = Extract<StreamItem, { type: "approval" }>;
+
+/** Requests that still wait for an answer. */
+export function openApprovals(items: StreamItem[]): OpenApproval[] {
+  return items.filter((item): item is OpenApproval => item.type === "approval" && item.resolved === null);
+}
+
+const timeOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/** The one line that replaces a request once it ends. */
+export function approvalOutcome(approval: OpenApproval, hostName: string | null): string {
+  const resolved = approval.resolved;
+  if (!resolved) return "";
+  const where = hostName ? `on ${hostName}` : "in the terminal";
+  switch (resolved.reason) {
+    case "decided":
+      return `${resolved.decision === "deny" ? "Denied" : "Allowed"} by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
+    case "answered_locally":
+      return `Answered ${where}, ${timeOf(resolved.at)}`;
+    case "expired":
+      return `Expired, ${timeOf(resolved.at)}`;
+    default:
+      return `Moved to the terminal, ${timeOf(resolved.at)}`;
+  }
 }
