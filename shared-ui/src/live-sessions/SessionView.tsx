@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { sessionTitle } from "./sessions-list";
+import { usePopover } from "./usePopover";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionStream } from "./useSessionStream";
 import type { LiveSession, LiveSessionsApi } from "./types";
@@ -16,32 +18,11 @@ export interface SessionMenuItem {
 const NEAR_BOTTOM_PX = 96;
 
 function SessionMenu({ items }: { items: SessionMenuItem[] }) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      trigger.current?.focus();
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
+  const { open, setOpen, rootRef, triggerRef } = usePopover();
   if (items.length === 0) return null;
   return (
-    <div className="ui-session__menu" ref={root}>
-      <button ref={trigger} type="button" className="ui-btn ui-session__menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-label="Session options" onClick={() => setOpen((v) => !v)}>
+    <div className="ui-session__menu" ref={rootRef}>
+      <button ref={triggerRef} type="button" className="ui-btn ui-session__menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-label="Session options" onClick={() => setOpen((v) => !v)}>
         <span aria-hidden="true">…</span>
       </button>
       {open && (
@@ -54,7 +35,7 @@ function SessionMenu({ items }: { items: SessionMenuItem[] }) {
                 className="ui-session__menu-item"
                 onClick={() => {
                   setOpen(false);
-                  trigger.current?.focus();
+                  triggerRef.current?.focus();
                   item.onSelect();
                 }}
               >
@@ -78,8 +59,8 @@ export function SessionView({
 }: {
   api: LiveSessionsApi;
   sessionId: string;
-  /** The "Sessions" crumb; the app decides how it navigates. */
-  back: ReactNode;
+  /** The "Sessions" crumb, for apps where the list is not always beside the session. */
+  back?: ReactNode;
   menuItems?: (session: LiveSession) => SessionMenuItem[];
   notice?: string | null;
 }) {
@@ -111,8 +92,13 @@ export function SessionView({
     <div className="ui-session">
       <header className="ui-session__header">
         <nav className="ui-session__crumbs" aria-label="Breadcrumb">
-          {back}
-          <span aria-hidden="true" className="ui-muted">/</span>
+          <ColumnToggleButton where="main" />
+          {back && (
+            <>
+              {back}
+              <span aria-hidden="true" className="ui-muted">/</span>
+            </>
+          )}
           <h1 className="ui-session__title">{session ? sessionTitle(session) : "Session"}</h1>
           {session && <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</span>}
         </nav>

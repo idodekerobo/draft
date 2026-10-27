@@ -30,31 +30,3 @@ export function sessionTitle(session: Pick<LiveSession, "title" | "folder_name">
   const title = session.title?.replace(AUTHOR_PREFIX, "").trim();
   return title || `New session in ${session.folder_name ?? "a folder"}`;
 }
-
-export function SessionsList({
-  sessions,
-  onOpen,
-  loading = false,
-  failed = false,
-}: {
-  sessions: LiveSession[];
-  onOpen: (sessionId: string) => void;
-  loading?: boolean;
-  failed?: boolean;
-}) {
-  if (failed && sessions.length === 0) return <p className="ui-error" role="alert">Could not load sessions. They will load again soon.</p>;
-  if (loading && sessions.length === 0) return <p className="ui-muted" role="status">Loading sessions…</p>;
-  if (sessions.length === 0) return <p className="ui-muted" role="status">No sessions yet.</p>;
-  return (
-    <ul className="ui-sessions-list">
-      {sessions.map((session) => (
-        <li key={session.id}>
-          <button type="button" className="ui-sessions-list__row" onClick={() => onOpen(session.id)}>
-            <span className="ui-sessions-list__title">{sessionTitle(session)}</span>
-            <span className="ui-muted">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
