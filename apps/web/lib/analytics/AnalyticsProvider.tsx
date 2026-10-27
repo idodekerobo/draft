@@ -43,7 +43,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         opt_out_capturing_by_default: true,
         persistence: "localStorage",
         disable_session_recording: true,
-        session_recording: { maskAllInputs: true, maskTextSelector: "*" },
+        session_recording: { maskAllInputs: false, maskTextSelector: "*" },
       });
       posthog.register({ [PLATFORM_PROPERTY]: "web" });
       posthogRef.current = posthog;

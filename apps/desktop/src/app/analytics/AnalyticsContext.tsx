@@ -46,7 +46,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         autocapture: false,
         capture_pageview: false,
         disable_session_recording: true,
-        session_recording: { maskTextSelector: "*", maskAllInputs: true },
+        session_recording: { maskTextSelector: "*", maskAllInputs: false },
         persistence: "localStorage",
         opt_out_capturing_by_default: true,
       });
