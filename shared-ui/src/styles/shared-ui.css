@@ -818,6 +818,11 @@
 .ui-start__body { flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); padding: var(--space-6) clamp(16px, 4vw, 40px); }
 .ui-start__heading { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -.02em; text-align: center; }
 .ui-start__box { width: 100%; max-width: 680px; }
+.ui-start__options { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.ui-start__pickers { display: flex; align-items: center; gap: var(--space-2); }
+.ui-start__select { min-height: 28px; padding: 0 var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-bg-surface); color: var(--color-text-secondary); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; touch-action: manipulation; }
+.ui-start__select:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+@media (pointer: coarse) { .ui-start__select { font-size: 16px; } }
 .ui-start__folder { position: relative; }
 .ui-start__folder-button { display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px 4px; background: none; border: 0; border-radius: var(--radius-sm); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
 .ui-start__menu { left: 0; right: auto; top: calc(100% + 4px); min-width: 260px; max-width: 420px; }

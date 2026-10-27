@@ -1,12 +1,12 @@
 // SessionsView.tsx — live Claude Code sessions of the workspace
 
 import { useEffect, useState } from "react";
-import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type StartResult } from "draft-shared-ui";
+import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type StartRequest, type StartResult } from "draft-shared-ui";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
-function SessionDetail({ sessionId, onOpenSession }: { sessionId: string; onOpenSession: (id: string) => void }) {
+function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: string; onOpenSession: (id: string) => void; justStarted: boolean }) {
   const [hostedHere, setHostedHere] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -50,6 +50,7 @@ function SessionDetail({ sessionId, onOpenSession }: { sessionId: string; onOpen
       }
       notice={notice}
       onOpenSession={onOpenSession}
+      autoFocusComposer={justStarted}
     />
   );
 }
@@ -58,19 +59,21 @@ export function SessionsView() {
   const workspaceKey = useWorkspaceKey();
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [startedId, setStartedId] = useState<string | null>(null);
   const [recentFolders, setRecentFolders] = useState(() => readRecentFolders(window.localStorage));
 
   async function browse(): Promise<string | null> {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
-  async function start(folderPath: string, text: string): Promise<StartResult> {
-    const result = await rpc.request.startLiveSession({ folderPath });
+  async function start({ folderPath, text, model }: StartRequest): Promise<StartResult> {
+    const result = await rpc.request.startLiveSession({ folderPath, model });
     if (!result.ok) return result;
     setRecentFolders(rememberFolder(window.localStorage, folderPath));
     // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
     await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
     await refetch();
+    setStartedId(result.sessionId);
     setSelectedId(result.sessionId);
     return { ok: true };
   }
@@ -85,7 +88,7 @@ export function SessionsView() {
       onNew={() => setSelectedId(null)}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} /> : <SessionStartScreen recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

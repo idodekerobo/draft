@@ -171,4 +171,10 @@ describe("SessionView", () => {
     fireEvent.click(await screen.findByRole("button", { name: "old chat" }));
     expect(onOpenSession).toHaveBeenCalledWith("s0");
   });
+
+  it("puts the cursor in the message box for a session the person just started", async () => {
+    render(<SessionView api={api} sessionId="s1" autoFocusComposer />);
+    const box = await screen.findByLabelText(/Message to Maya's session/);
+    expect(document.activeElement).toBe(box);
+  });
 });

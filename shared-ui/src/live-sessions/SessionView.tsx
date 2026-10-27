@@ -67,6 +67,8 @@ interface SessionViewProps {
   notice?: string | null;
   /** Opens a linked session, from the line under the header of a cleared session. */
   onOpenSession?: (sessionId: string) => void;
+  /** Put the cursor in the message box when the session opens, for a session the person just started. */
+  autoFocusComposer?: boolean;
 }
 
 function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
@@ -139,6 +141,7 @@ function LoadedSession({
   menuItems,
   notice,
   onOpenSession,
+  autoFocusComposer,
 }: SessionViewProps) {
   const { session, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const inputs = useSessionInputs(api, sessionId, waiting, refresh);
@@ -232,7 +235,7 @@ function LoadedSession({
             approvals.map((approval) => (
               <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
             ))}
-          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} folderName={session.folder_name} />
+          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} autoFocus={autoFocusComposer} folderName={session.folder_name} />
         </div>
       </div>
     </div>

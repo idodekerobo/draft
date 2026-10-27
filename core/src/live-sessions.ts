@@ -81,3 +81,18 @@ export function isTestedClaudeVersion(version: string | null | undefined): boole
   const [major, minor] = parsed.split(".").map(Number);
   return major === TESTED_CLAUDE_VERSION.major && minor === TESTED_CLAUDE_VERSION.minor;
 }
+
+/** Harnesses a session can run. Claude Code only for now. */
+export const LIVE_SESSION_HARNESSES = [{ id: "claude", label: "Claude Code" }] as const;
+
+/** Models a person can pick. `alias` goes to `claude --model`; null leaves the choice to Claude's own setting. */
+export const LIVE_SESSION_MODELS: ReadonlyArray<{ alias: string | null; label: string }> = [
+  { alias: null, label: "Default" },
+  { alias: "fable", label: "Fable" },
+  { alias: "opus", label: "Opus" },
+  { alias: "sonnet", label: "Sonnet" },
+  { alias: "haiku", label: "Haiku" },
+];
+
+export const isKnownModelAlias = (alias: string | null | undefined): boolean =>
+  LIVE_SESSION_MODELS.some((model) => model.alias === (alias ?? null));

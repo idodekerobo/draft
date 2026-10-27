@@ -22,7 +22,8 @@ export function SessionComposer({
   ended,
   hostOffline = false,
   folderName,
-}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null }) {
+  autoFocus = false,
+}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export function SessionComposer({
             id="session-message"
             className="ui-composer__input"
             rows={2}
+            autoFocus={autoFocus}
             maxLength={MAX_INPUT_CHARS}
             placeholder={`Message ${ownerName}'s session`}
             value={text}

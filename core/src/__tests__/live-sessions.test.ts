@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HOST_FATAL_CODES, deliveredText, isTestedClaudeVersion, normalizeInputText, parseClaudeVersion, splitAuthor } from "../live-sessions";
+import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, normalizeInputText, parseClaudeVersion, splitAuthor } from "../live-sessions";
 
 describe("author tag", () => {
   it("round-trips through deliveredText and splitAuthor", () => {
@@ -51,5 +51,15 @@ describe("Claude version check", () => {
   it("says nothing when the version is not known", () => {
     expect(isTestedClaudeVersion(null)).toBeNull();
     expect(isTestedClaudeVersion("garbage")).toBeNull();
+  });
+});
+
+describe("models", () => {
+  it("lists Default first and accepts only listed aliases", () => {
+    expect(LIVE_SESSION_MODELS[0]).toEqual({ alias: null, label: "Default" });
+    expect(isKnownModelAlias(null)).toBe(true);
+    expect(isKnownModelAlias(undefined)).toBe(true);
+    expect(isKnownModelAlias("haiku")).toBe(true);
+    expect(isKnownModelAlias("gpt-5; rm -rf /")).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import { HOST_FATAL_CODES } from "draft-core/live-sessions";
+import { HOST_FATAL_CODES, isKnownModelAlias } from "draft-core/live-sessions";
 import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
@@ -22,6 +22,7 @@ import { putSigned, uploadRawFiles } from "./raw-upload";
 import { startHeartbeat } from "./heartbeat";
 import { rotationTarget } from "./rotation";
 import { readClaudeVersion } from "./version-check";
+import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
 
 const PANE_WATCH_MS = 2_000;
 const CATCH_UP_RETRY_MS = 2_000;
@@ -380,7 +381,9 @@ export async function startLiveSession(
   if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) return { ok: false, error: "Choose a valid folder." };
 
   const claudeBin = await findClaude();
-  if (!claudeBin) return { ok: false, error: "Claude Code is not installed on this computer." };
+  if (!claudeBin) return { ok: false, error: CLAUDE_MISSING_MESSAGE };
+  if ((await readClaudeAuth(claudeBin)) === "signed_out") return { ok: false, error: CLAUDE_SIGNED_OUT_MESSAGE };
+  if (!isKnownModelAlias(input.model)) return { ok: false, error: "Choose a model from the list." };
 
   const hostMachineId = getHostMachineId();
   const nativeSessionId = crypto.randomUUID();
