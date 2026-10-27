@@ -175,6 +175,11 @@ describe("live session routes", () => {
     expect(rpcCalls).toEqual([]);
   });
 
+  it("leaves the author tag of a Draft message out of the title", async () => {
+    await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [userLine("u1", "[Maya via Draft] hello there")] }));
+    expect(updates.map((u) => u.payload)).toEqual([{ title: "hello there" }]);
+  });
+
   it("parses lines, appends the events and sets the title from the first prompt", async () => {
     const res = await routes.LINES(
       post("/x", { hostMachineId: "host-1", nativeSessionId: "native-1", lines: [userLine("u1", "Fix the login bug\nsecond line"), { file: "root.jsonl", offset: 5, raw: '{"type":"attachment"}' }] }),

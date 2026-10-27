@@ -23,3 +23,10 @@ export function sameText(a: string, b: string): boolean {
   const normal = (value: string) => value.replace(/\s+/g, " ").trim();
   return normal(a) === normal(b);
 }
+
+const AUTHOR_PREFIX = /^\[[^\]\n]{1,60} via Draft\]\s*/;
+
+/** A prompt sent through Draft starts with its author tag, which is not part of a title. */
+export function withoutAuthorPrefix(text: string): string {
+  return text.replace(AUTHOR_PREFIX, "");
+}

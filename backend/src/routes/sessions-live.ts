@@ -1,6 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { withoutAuthorPrefix } from "../ingestion/claude-code/live-input-text";
 import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
@@ -198,7 +199,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
   if (owned.session.title === null && firstPrompt) {
-    const title = firstLine((firstPrompt.payload as { text: string }).text);
+    const title = firstLine(withoutAuthorPrefix((firstPrompt.payload as { text: string }).text));
     if (title) await serviceClient.from("sessions").update({ title }).eq("id", sessionId).is("title", null);
   }
   if (owned.session.native_session_id === null && nativeSessionId) {
