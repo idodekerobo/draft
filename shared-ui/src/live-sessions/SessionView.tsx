@@ -206,14 +206,15 @@ function LoadedSession({
   }, []);
 
   const ownerName = session.owner_name ?? "the owner";
-  const running = session.status === "live" || session.status === "starting";
+  const readOnly = session.session_type === "routine";
+  const running = !readOnly && (session.status === "live" || session.status === "starting");
   const banner = sessionBanner(session);
   return (
     <div className="ui-session">
       <header className="ui-session__header">
         <Crumbs back={back}>
           <h1 className="ui-session__title">{sessionTitle(session)}</h1>
-          <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · <StatusText session={session} /></span>
+          <span className="ui-muted ui-session__meta">{readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} /></span>
           {watchers && <span className="ui-muted ui-session__presence" aria-live="polite">{watchers}</span>}
         </Crumbs>
         <div className="ui-session__actions">
@@ -250,11 +251,17 @@ function LoadedSession({
       )}
       <div className="ui-session__footer">
         <div className="ui-session__column">
-          {session.status !== "ended" &&
-            approvals.map((approval) => (
-              <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
-            ))}
-          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} />
+          {readOnly ? (
+            <p className="ui-muted ui-session__notice">This run follows its routine on its own. It cannot take messages.</p>
+          ) : (
+            <>
+            {session.status !== "ended" &&
+              approvals.map((approval) => (
+                <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
+              ))}
+            <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} />
+            </>
+          )}
         </div>
       </div>
     </div>

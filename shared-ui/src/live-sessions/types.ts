@@ -4,6 +4,8 @@ export interface LiveSession {
   id: string;
   owner_user_id: string;
   owner_name: string | null;
+  /** A routine run is read-only: nobody can message it. */
+  session_type?: "interactive" | "routine";
   title: string | null;
   folder_name: string | null;
   host_name: string | null;
