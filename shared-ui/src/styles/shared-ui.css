@@ -785,7 +785,7 @@
 .ui-sessions__note { margin: var(--space-3); }
 .ui-sessions__group { margin: var(--space-3) var(--space-2) var(--space-1); color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 500; }
 .ui-sessions__list { list-style: none; margin: 0; padding: 0; }
-.ui-sessions__row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px var(--space-2); text-align: left; background: none; border: 0; border-radius: var(--radius-md); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; transition: transform 120ms var(--motion-ease), background-color 120ms var(--motion-ease); }
+.ui-sessions__row { display: block; width: 100%; padding: 8px var(--space-2); text-align: left; background: none; border: 0; border-radius: var(--radius-md); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; transition: transform 120ms var(--motion-ease), background-color 120ms var(--motion-ease); }
 .ui-sessions__row:active { transform: scale(.98); }
 .ui-sessions__row:focus-visible, .ui-sessions__toggle:focus-visible, .ui-start__folder-button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .ui-sessions__row[aria-current="true"] { background: var(--color-selected-bg); color: var(--color-selected-text); }
@@ -794,7 +794,7 @@
 .ui-sessions__row-owner { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ui-sessions__row-fixed { flex: none; }
 .ui-sessions__row-time { flex: none; font-size: var(--font-size-small); }
-.ui-sessions__row-sub { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--font-size-secondary); }
+.ui-sessions__row-sub { display: flex; align-items: center; gap: 6px; margin-top: 2px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--font-size-secondary); }
 .ui-sessions__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-tertiary); flex: none; }
 .ui-sessions__dot--live { background: var(--color-status-green); }
 .ui-sessions__dot--waiting { background: var(--color-status-yellow); }
