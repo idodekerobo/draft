@@ -32,7 +32,17 @@ import { startGithubInstall } from "./main/auth/github-install";
 import { AuthRefreshError, clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
 import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
-import { getLiveSessionEvents, listLiveSessions, resumeLiveSessions, startLiveSession } from "./main/host/live-session";
+import {
+  actOnLiveSessionInput,
+  getLiveSessionEvents,
+  hostedLiveSessionIds,
+  listLiveSessionInputs,
+  listLiveSessions,
+  openLiveSessionInTerminal,
+  resumeLiveSessions,
+  sendLiveSessionMessage,
+  startLiveSession,
+} from "./main/host/live-session";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
@@ -739,6 +749,16 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       listLiveSessions: () => listLiveSessions(),
 
       getLiveSessionEvents: ({ sessionId, after }) => getLiveSessionEvents(sessionId, after),
+
+      sendLiveSessionMessage: ({ sessionId, text }) => sendLiveSessionMessage(sessionId, text),
+
+      listLiveSessionInputs: ({ sessionId }) => listLiveSessionInputs(sessionId),
+
+      actOnLiveSessionInput: ({ sessionId, inputId, action }) => actOnLiveSessionInput(sessionId, inputId, action),
+
+      getHostedLiveSessionIds: () => hostedLiveSessionIds(),
+
+      openLiveSessionInTerminal: ({ sessionId }) => openLiveSessionInTerminal(sessionId),
 
       getAvailableRunners: async () => {
         const [claudePath, codexPath] = await Promise.all([

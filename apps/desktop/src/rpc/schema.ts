@@ -226,7 +226,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
+import type { LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -333,6 +333,21 @@ export type AppRPCType = {
 
       /** Events of one live session above `after`. */
       getLiveSessionEvents: { params: { sessionId: string; after: number }; response: LiveSessionEventsPage };
+
+      /** Queue a message for a live session; the error is the server's error code. */
+      sendLiveSessionMessage: { params: { sessionId: string; text: string }; response: { ok: true } | { ok: false; error: string } };
+
+      /** Messages of a live session that Claude has not yet taken. */
+      listLiveSessionInputs: { params: { sessionId: string }; response: LiveSessionInput[] };
+
+      /** Resend or dismiss a message that may not have arrived. */
+      actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" }; response: void };
+
+      /** Ids of the live sessions that run on this computer. */
+      getHostedLiveSessionIds: { params: void; response: string[] };
+
+      /** Open the user's terminal app on a live session's pane. */
+      openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Detect which CLI runners are installed. */
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };

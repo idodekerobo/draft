@@ -2,17 +2,20 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
+import type { LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-shared-ui";
 import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
 import { TranscriptForwarder, type ForwardedLine } from "./forwarder";
-import { launchClaudeInTmux, paneIsAlive, tmuxSessionName } from "./launch";
+import { InputDelivery, type PendingInput } from "./input-delivery";
+import { capturePane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, restorePaneSize, tmuxSessionName } from "./launch";
 import { getHostMachineId } from "./machine-id";
 import { preTrustFolder } from "./pre-trust";
+import { openPaneInTerminal } from "./open-in-terminal";
 import { putSigned, uploadRawFiles } from "./raw-upload";
 
 const PANE_WATCH_MS = 2_000;
+const CATCH_UP_RETRY_MS = 2_000;
 const FATAL_CODES = new Set(["session_ended", "foreign_host", "not_session_owner", "session_not_found", "live_sessions_disabled"]);
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
@@ -35,6 +38,8 @@ async function gitRemote(folderPath: string): Promise<string | null> {
 /** Forwards one session's transcript while its pane lives, then finishes it: last lines, raw upload, end. */
 class SessionRunner {
   private readonly forwarder: TranscriptForwarder;
+  private readonly delivery: InputDelivery;
+  private caughtUp = false;
   private watcher: ReturnType<typeof setInterval> | null = null;
   private stepping = false;
   private finished = false;
@@ -55,12 +60,36 @@ class SessionRunner {
       isFatal: (error) => error instanceof ServerError && FATAL_CODES.has(error.code),
       onFatal: () => this.abandon(),
     });
+    this.delivery = new InputDelivery({
+      fetchPending: async () =>
+        (await fetchServerJSON<{ inputs: PendingInput[] }>(`${this.base}/inputs/pending?hostMachineId=${encodeURIComponent(state.hostMachineId)}`)).inputs,
+      setState: async (id, from, to, reason) =>
+        (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
+          method: "POST",
+          body: JSON.stringify({ hostMachineId: state.hostMachineId, from, to, reason }),
+        })).changed,
+      capture: () => capturePane(state.tmuxSession),
+      paste: (text) => pasteIntoPane(state.tmuxSession, text),
+      pressEnter: () => pressEnter(state.tmuxSession),
+      sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+    });
   }
 
   start(): void {
-    if (!this.state.ended) this.forwarder.start();
+    if (!this.state.ended) {
+      this.forwarder.start();
+      void this.catchUp();
+    }
     this.watcher = setInterval(() => void this.step(), PANE_WATCH_MS);
     running.set(this.state.sessionId, this);
+  }
+
+  /** Input delivery waits until the transcript is up to date, so a sent message is not called uncertain too soon. */
+  private async catchUp(): Promise<void> {
+    while (!this.finished && !(await this.forwarder.tick())) {
+      await new Promise((done) => setTimeout(done, CATCH_UP_RETRY_MS));
+    }
+    this.caughtUp = true;
   }
 
   private persist(patch: Partial<HostSessionState>): void {
@@ -115,13 +144,26 @@ class SessionRunner {
     }
   }
 
+  private async whileAlive(): Promise<void> {
+    await restorePaneSize(this.state.tmuxSession).catch(() => {});
+    if (!this.caughtUp) return;
+    try {
+      await this.delivery.tick();
+    } catch (error) {
+      if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error("[live-session] input delivery failed", error);
+    }
+  }
+
   /** One pass; runs every few seconds and does the next unfinished piece of work. */
   async step(): Promise<void> {
     if (this.stepping || this.finished) return;
     this.stepping = true;
     try {
       if (!this.state.ended) {
-        if (await paneIsAlive(this.state.tmuxSession)) return;
+        if (await paneIsAlive(this.state.tmuxSession)) {
+          await this.whileAlive();
+          return;
+        }
         this.forwarder.halt();
         if (!(await this.forwarder.tick())) return;
         if (!(await this.endOnServer())) return;
@@ -132,6 +174,14 @@ class SessionRunner {
     } finally {
       this.stepping = false;
     }
+  }
+
+  hasEnded(): boolean {
+    return this.state.ended || this.finished;
+  }
+
+  tmuxSession(): string {
+    return this.state.tmuxSession;
   }
 
   /** Uploads raw files newer than the last upload, for a pane that is still running. */
@@ -228,8 +278,41 @@ export async function listLiveSessions(): Promise<{ enabled: boolean; sessions: 
   }
 }
 
-export async function getLiveSessionEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage> {
+function sessionBase(sessionId: string): string {
   const workspaceId = getCachedWorkspaceId();
   if (!workspaceId) throw new ServerError("signed_out");
-  return fetchServerJSON<LiveSessionEventsPage>(`workspaces/${workspaceId}/live-sessions/${sessionId}/events?after=${after}`);
+  return `workspaces/${workspaceId}/live-sessions/${sessionId}`;
+}
+
+export async function getLiveSessionEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage> {
+  return fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=${after}`);
+}
+
+export async function sendLiveSessionMessage(sessionId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/inputs`, { method: "POST", body: JSON.stringify({ text }) });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "send_failed" };
+  }
+}
+
+export async function listLiveSessionInputs(sessionId: string): Promise<LiveSessionInput[]> {
+  return (await fetchServerJSON<{ inputs: LiveSessionInput[] }>(`${sessionBase(sessionId)}/inputs`)).inputs;
+}
+
+export async function actOnLiveSessionInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void> {
+  await fetchServer(`${sessionBase(sessionId)}/inputs/${inputId}`, { method: "POST", body: JSON.stringify({ action }) });
+}
+
+/** Ids of the live sessions whose pane runs on this computer. */
+export function hostedLiveSessionIds(): string[] {
+  return [...running.keys()].filter((id) => !running.get(id)!.hasEnded());
+}
+
+/** Opens the owner's terminal app on the session's pane. */
+export async function openLiveSessionInTerminal(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const runner = running.get(sessionId);
+  if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
+  return openPaneInTerminal(runner.tmuxSession());
 }
