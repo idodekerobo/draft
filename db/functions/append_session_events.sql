@@ -5,6 +5,7 @@
 --
 -- Appends a batch of events in order. Seq comes from the session's counter, so
 -- it has no gaps. A duplicate source_id is skipped and does not use a seq.
+-- open_approval_count goes up for a new permission_request and down for a new permission_resolved.
 create or replace function append_session_events(
   p_session_id uuid,
   p_workspace_id uuid,
@@ -22,6 +23,7 @@ declare
   v_seq bigint;
   v_inserted integer := 0;
   v_count integer;
+  v_approvals integer := 0;
 begin
   select * into v_session
   from sessions
@@ -52,6 +54,11 @@ begin
     if v_count > 0 then
       v_seq := v_seq + 1;
       v_inserted := v_inserted + 1;
+      if v_event->>'kind' = 'permission_request' then
+        v_approvals := v_approvals + 1;
+      elsif v_event->>'kind' = 'permission_resolved' then
+        v_approvals := v_approvals - 1;
+      end if;
     end if;
   end loop;
 
@@ -59,7 +66,8 @@ begin
     update sessions
     set last_seq = v_seq,
         last_event_at = now(),
-        status = 'live'
+        status = 'live',
+        open_approval_count = greatest(0, open_approval_count + v_approvals)
     where id = p_session_id;
   end if;
 

@@ -335,3 +335,86 @@ describeWithDatabase("session inputs", () => {
     expect(await transition(id, otherSession, ["queued"], "delivering")).toBe(false);
   });
 });
+
+describeWithDatabase("permission approvals", () => {
+  afterEach(removeUsers);
+
+  const request = (id: string): TestEvent => ({ source_id: `perm:${id}`, kind: "permission_request", payload: { requestId: id, tool_name: "Bash" } });
+  const resolved = (id: string, payload: Record<string, unknown>): TestEvent => ({
+    source_id: `permres:${id}`,
+    kind: "permission_resolved",
+    payload: { requestId: id, ...payload },
+  });
+
+  async function decide(sessionId: string, workspaceId: string, author: string, name: string, requestId: string, decision = "allow") {
+    const [row] = await db()<[{ result: { outcome: string; by_name?: string; reason?: string; input?: { id: string } } }]>`
+      select create_permission_decision(${sessionId}, ${workspaceId}, ${author}, ${name}, ${requestId}, ${decision}) as result
+    `;
+    return row.result;
+  }
+
+  const openCount = async (sessionId: string) =>
+    (await db()<[{ open_approval_count: number }]>`select open_approval_count from sessions where id = ${sessionId}`)[0].open_approval_count;
+
+  test("counts open requests up and down, never below zero", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+
+    await append(sessionId, workspaceId, [request("a"), request("b")]);
+    expect(await openCount(sessionId)).toBe(2);
+    await append(sessionId, workspaceId, [resolved("a", { reason: "decided" })]);
+    expect(await openCount(sessionId)).toBe(1);
+    await append(sessionId, workspaceId, [resolved("a", { reason: "decided" })]);
+    expect(await openCount(sessionId)).toBe(1);
+    await append(sessionId, workspaceId, [resolved("b", { reason: "expired" }), resolved("c", { reason: "expired" })]);
+    expect(await openCount(sessionId)).toBe(0);
+  });
+
+  test("the first decision wins and the second sees who decided", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const first = await createMember(workspaceId);
+    const second = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1")]);
+
+    const won = await decide(sessionId, workspaceId, first, "Dev", "r1");
+    expect(won.outcome).toBe("created");
+    const lost = await decide(sessionId, workspaceId, second, "Priya", "r1", "deny");
+    expect(lost).toMatchObject({ outcome: "already_decided", by_name: "Dev" });
+  });
+
+  test("two deciders racing: exactly one input is created", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const a = await createMember(workspaceId);
+    const b = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1")]);
+
+    const results = await Promise.all([decide(sessionId, workspaceId, a, "A", "r1"), decide(sessionId, workspaceId, b, "B", "r1")]);
+    expect(results.filter((r) => r.outcome === "created").length).toBe(1);
+  });
+
+  test("a request closed another way, an unknown request and an ended session are refused", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1"), resolved("r1", { reason: "answered_locally" })]);
+
+    expect(await decide(sessionId, workspaceId, author, "Dev", "r1")).toEqual({ outcome: "request_closed", reason: "answered_locally" });
+    await expect(decide(sessionId, workspaceId, author, "Dev", "nope")).rejects.toThrow("request_not_found");
+
+    await db()`update sessions set status = 'ended' where id = ${sessionId}`;
+    await expect(decide(sessionId, workspaceId, author, "Dev", "r1")).rejects.toThrow("session_ended");
+  });
+
+  test("a failed decision lets the request be decided again", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1")]);
+
+    const first = await decide(sessionId, workspaceId, author, "Dev", "r1");
+    await db()`update session_inputs set state = 'failed' where id = ${first.input!.id}`;
+    expect((await decide(sessionId, workspaceId, author, "Dev", "r1")).outcome).toBe("created");
+  });
+});

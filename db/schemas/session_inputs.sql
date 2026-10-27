@@ -22,6 +22,11 @@ create table session_inputs (
 
 create index session_inputs_session_created_idx on session_inputs (session_id, created_at);
 
+-- One winning decision per request. A failed decision does not count.
+create unique index session_inputs_one_decision_idx
+  on session_inputs (session_id, (payload->>'requestId'))
+  where kind = 'permission_decision' and state <> 'failed';
+
 alter table session_inputs enable row level security;
 
 create policy session_inputs_select on session_inputs

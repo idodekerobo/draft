@@ -17,6 +17,7 @@ create table sessions (
   end_reason         text,
   last_event_at      timestamptz,
   last_seq           bigint not null default 0,
+  open_approval_count integer not null default 0,
   host_machine_id    text not null,
   host_name          text,
   raw_storage_path   text,
