@@ -6,9 +6,14 @@ import type { LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft
 import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
+import { ApprovalBroker, type HostEvent } from "./approvals";
+import { ControlActions, type ControlInput } from "./controls";
 import { TranscriptForwarder, type ForwardedLine } from "./forwarder";
+import { ensureHooksServer, registerSessionHooks } from "./hooks-server";
+import { writeSessionSettings } from "./hook-settings";
 import { InputDelivery, type PendingInput } from "./input-delivery";
-import { capturePane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, restorePaneSize, tmuxSessionName } from "./launch";
+import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
+import { classifyPane, isTurnRunning } from "./pane-state";
 import { getHostMachineId } from "./machine-id";
 import { preTrustFolder } from "./pre-trust";
 import { openPaneInTerminal } from "./open-in-terminal";
@@ -16,6 +21,8 @@ import { putSigned, uploadRawFiles } from "./raw-upload";
 
 const PANE_WATCH_MS = 2_000;
 const CATCH_UP_RETRY_MS = 2_000;
+const END_POLLS = 10;
+const END_POLL_MS = 1_000;
 const FATAL_CODES = new Set(["session_ended", "foreign_host", "not_session_owner", "session_not_found", "live_sessions_disabled"]);
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
@@ -39,6 +46,12 @@ async function gitRemote(folderPath: string): Promise<string | null> {
 class SessionRunner {
   private readonly forwarder: TranscriptForwarder;
   private readonly delivery: InputDelivery;
+  private readonly broker: ApprovalBroker;
+  private readonly controls: ControlActions;
+  private unregisterHooks: (() => void) | null = null;
+  private endReason = "exited";
+  private uploading = false;
+  private uploadWanted = false;
   private caughtUp = false;
   private watcher: ReturnType<typeof setInterval> | null = null;
   private stepping = false;
@@ -73,10 +86,50 @@ class SessionRunner {
       pressEnter: () => pressEnter(state.tmuxSession),
       sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
     });
+    this.broker = new ApprovalBroker({
+      postEvents: (events) => this.postHostEvents(events),
+      paneBlocked: async () => {
+        const pane = classifyPane(await capturePane(state.tmuxSession));
+        return pane !== "ready" && pane !== "composer_busy";
+      },
+      newId: () => `r${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+      onOpen: (id) => this.persist({ openRequests: [...(this.state.openRequests ?? []), id] }),
+      onClose: (id) => this.persist({ openRequests: (this.state.openRequests ?? []).filter((open) => open !== id) }),
+    });
+    this.controls = new ControlActions({
+      fetchPending: async () =>
+        (await fetchServerJSON<{ inputs: ControlInput[] }>(`${this.base}/inputs/pending?kinds=control&hostMachineId=${encodeURIComponent(state.hostMachineId)}`)).inputs,
+      setState: async (id, from, to, reason) =>
+        (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
+          method: "POST",
+          body: JSON.stringify({ hostMachineId: state.hostMachineId, from, to, reason }),
+        })).changed,
+      decide: (requestId, decision, by) => this.broker.decide(requestId, decision, by),
+      capture: () => capturePane(state.tmuxSession),
+      sendEscape: () => pressEscape(state.tmuxSession),
+      postEvents: (events) => this.postHostEvents(events),
+    });
+  }
+
+  private async postHostEvents(events: HostEvent[]): Promise<void> {
+    await fetchServer(`${this.base}/host-events`, {
+      method: "POST",
+      body: JSON.stringify({ hostMachineId: this.state.hostMachineId, events }),
+    });
   }
 
   start(): void {
     if (!this.state.ended) {
+      ensureHooksServer();
+      this.unregisterHooks = registerSessionHooks(this.state.sessionId, {
+        permission: (payload, signal) => this.broker.hold(payload, signal),
+        stopped: () => {
+          this.uploadWanted = true;
+        },
+      });
+      for (const requestId of this.state.openRequests ?? []) {
+        void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
+      }
       this.forwarder.start();
       void this.catchUp();
     }
@@ -100,6 +153,7 @@ class SessionRunner {
   private abandon(): void {
     this.finished = true;
     this.forwarder.halt();
+    this.unregisterHooks?.();
     if (this.watcher) clearInterval(this.watcher);
     running.delete(this.state.sessionId);
     deleteState(this.state.sessionId);
@@ -133,7 +187,7 @@ class SessionRunner {
     try {
       await fetchServer(`${this.base}/end`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, reason: "exited" }),
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, reason: this.endReason }),
       });
       return true;
     } catch (error) {
@@ -146,6 +200,12 @@ class SessionRunner {
 
   private async whileAlive(): Promise<void> {
     await restorePaneSize(this.state.tmuxSession).catch(() => {});
+    await this.broker.watchPane();
+    try {
+      await this.controls.tick();
+    } catch (error) {
+      if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error("[live-session] control actions failed", error);
+    }
     if (!this.caughtUp) return;
     try {
       await this.delivery.tick();
@@ -170,9 +230,13 @@ class SessionRunner {
         this.persist({ ended: true });
       }
       if (await this.rawUpload()) this.abandon();
-      // TODO: also upload on the Stop hook once the hooks server exists.
     } finally {
       this.stepping = false;
+      // A Stop hook that came in during a step is served now.
+      if (this.uploadWanted && !this.finished) {
+        this.uploadWanted = false;
+        void this.uploadIfChanged();
+      }
     }
   }
 
@@ -186,8 +250,32 @@ class SessionRunner {
 
   /** Uploads raw files newer than the last upload, for a pane that is still running. */
   async uploadIfChanged(): Promise<void> {
-    await this.forwarder.tick();
-    await this.rawUpload();
+    if (this.uploading || this.stepping || this.finished) return;
+    this.uploading = true;
+    try {
+      await this.forwarder.tick();
+      await this.rawUpload();
+    } finally {
+      this.uploading = false;
+    }
+  }
+
+  /** Exits Claude with `/exit` so its own end-of-session hook runs. A pane that will not take it is killed. */
+  async endByOwner(): Promise<void> {
+    this.endReason = "ended_by_owner";
+    const tmux = this.state.tmuxSession;
+    let screen = await capturePane(tmux);
+    if (isTurnRunning(screen) || classifyPane(screen) !== "ready") {
+      await pressEscape(tmux).catch(() => {});
+      await new Promise((done) => setTimeout(done, 1000));
+      screen = await capturePane(tmux).catch(() => "");
+    }
+    if (classifyPane(screen) === "ready" && !isTurnRunning(screen)) {
+      await pasteIntoPane(tmux, "/exit");
+      await pressEnter(tmux);
+      for (let i = 0; i < END_POLLS && (await paneIsAlive(tmux)); i++) await new Promise((done) => setTimeout(done, END_POLL_MS));
+    }
+    if (await paneIsAlive(tmux)) await killPane(tmux);
   }
 }
 
@@ -241,7 +329,8 @@ export async function startLiveSession(
 
   try {
     preTrustFolder(folderPath);
-    await launchClaudeInTmux({ tmuxSession: state.tmuxSession, folderPath, claudeBin, nativeSessionId, model });
+    const settingsPath = writeSessionSettings(sessionId);
+    await launchClaudeInTmux({ tmuxSession: state.tmuxSession, folderPath, claudeBin, nativeSessionId, model, settingsPath });
   } catch (error) {
     console.error("[live-session] launch failed", error);
     await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
@@ -315,4 +404,42 @@ export async function openLiveSessionInTerminal(sessionId: string): Promise<{ ok
   const runner = running.get(sessionId);
   if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
   return openPaneInTerminal(runner.tmuxSession());
+}
+
+/** Sends a teammate's decision on an open permission request. */
+export async function decideLiveSessionApproval(
+  sessionId: string,
+  requestId: string,
+  decision: "allow" | "deny",
+): Promise<{ ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null }> {
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/approvals/${encodeURIComponent(requestId)}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
+    return { ok: true };
+  } catch (error) {
+    if (!(error instanceof ServerError)) return { ok: false, error: "decision_failed" };
+    const detail = (error.detail ?? {}) as { by_name?: string | null; reason?: string | null };
+    return { ok: false, error: error.code, byName: detail.by_name ?? null, reason: detail.reason ?? null };
+  }
+}
+
+export async function stopLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: "{}" });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "stop_failed" };
+  }
+}
+
+/** Ends a session that runs on this computer. */
+export async function endLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const runner = running.get(sessionId);
+  if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
+  try {
+    await runner.endByOwner();
+    return { ok: true };
+  } catch (error) {
+    console.error("[live-session] end failed", sessionId, error);
+    return { ok: false, error: "Could not end the session." };
+  }
 }

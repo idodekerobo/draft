@@ -343,6 +343,18 @@ export type AppRPCType = {
       /** Resend or dismiss a message that may not have arrived. */
       actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" }; response: void };
 
+      /** Allow or deny an open permission request of a live session. */
+      decideLiveSessionApproval: {
+        params: { sessionId: string; requestId: string; decision: "allow" | "deny" };
+        response: { ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null };
+      };
+
+      /** Ask the host to interrupt the running turn of a live session. */
+      stopLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+
+      /** End a live session that runs on this computer. */
+      endLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+
       /** Ids of the live sessions that run on this computer. */
       getHostedLiveSessionIds: { params: void; response: string[] };
 

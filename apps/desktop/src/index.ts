@@ -34,6 +34,8 @@ import { getUserIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
   actOnLiveSessionInput,
+  decideLiveSessionApproval,
+  endLiveSession,
   getLiveSessionEvents,
   hostedLiveSessionIds,
   listLiveSessionInputs,
@@ -42,6 +44,7 @@ import {
   resumeLiveSessions,
   sendLiveSessionMessage,
   startLiveSession,
+  stopLiveSession,
 } from "./main/host/live-session";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 let browserSignInController: AbortController | null = null;
@@ -752,6 +755,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       listLiveSessionInputs: ({ sessionId }) => listLiveSessionInputs(sessionId),
 
       actOnLiveSessionInput: ({ sessionId, inputId, action }) => actOnLiveSessionInput(sessionId, inputId, action),
+
+      decideLiveSessionApproval: ({ sessionId, requestId, decision }) => decideLiveSessionApproval(sessionId, requestId, decision),
+
+      stopLiveSession: ({ sessionId }) => stopLiveSession(sessionId),
+
+      endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
 
       getHostedLiveSessionIds: () => hostedLiveSessionIds(),
 

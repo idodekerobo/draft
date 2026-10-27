@@ -25,6 +25,8 @@ export interface HostSessionState {
   rawUploads: Record<string, RawUploadRecord>;
   /** The pane is gone and the session was ended; only a raw upload may remain. */
   ended: boolean;
+  /** Permission requests posted and not yet closed, so a restart can close them. */
+  openRequests?: string[];
 }
 
 const SESSIONS_DIR = `${process.env.HOME}/.draft/host/sessions`;

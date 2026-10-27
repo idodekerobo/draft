@@ -4,7 +4,7 @@ export const apiUrl = process.env.DRAFT_API_BASE_URL ?? "https://api.draftai.us"
 
 /** API failure with the server's error code and, for validation errors, the offending field. */
 export class ServerError extends Error {
-  constructor(readonly code: string, readonly field?: string) {
+  constructor(readonly code: string, readonly field?: string, readonly detail?: Record<string, unknown>) {
     super(code);
   }
 }
@@ -69,12 +69,14 @@ export function createServerFetch(deps: ServerFetchDeps = defaultDeps()) {
     if (!response.ok) {
       let message = `request_failed_${response.status}`;
       let field: string | undefined;
+      let detail: Record<string, unknown> | undefined;
       try {
         const body = await response.json() as { error?: unknown; field?: unknown };
+        detail = body as Record<string, unknown>;
         if (typeof body.error === "string" && body.error.length > 0) message = body.error;
         if (typeof body.field === "string") field = body.field;
       } catch { /* body wasn't JSON — keep the status-based fallback */ }
-      throw new ServerError(message, field);
+      throw new ServerError(message, field, detail);
     }
     return response;
   };
