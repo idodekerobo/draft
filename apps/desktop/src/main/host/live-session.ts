@@ -2,7 +2,7 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import type { LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-shared-ui";
+import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
@@ -74,7 +74,6 @@ class SessionRunner {
       onFatal: () => this.abandon(),
     });
     this.delivery = new InputDelivery({
-      fetchPending: () => this.fetchInputs<PendingInput>(),
       setState: this.setInputState,
       capture: () => capturePane(state.tmuxSession),
       paste: (text) => pasteIntoPane(state.tmuxSession, text),
@@ -92,7 +91,6 @@ class SessionRunner {
       onClose: (id) => this.persist({ openRequests: (this.state.openRequests ?? []).filter((open) => open !== id) }),
     });
     this.controls = new ControlActions({
-      fetchPending: () => this.fetchInputs<ControlInput>("control"),
       setState: this.setInputState,
       decide: (requestId, decision, by) => this.broker.decide(requestId, decision, by),
       capture: () => capturePane(state.tmuxSession),
@@ -101,9 +99,10 @@ class SessionRunner {
     });
   }
 
-  private async fetchInputs<T>(kinds?: "control"): Promise<T[]> {
-    const query = `hostMachineId=${encodeURIComponent(this.state.hostMachineId)}${kinds ? `&kinds=${kinds}` : ""}`;
-    return (await fetchServerJSON<{ inputs: T[] }>(`${this.base}/inputs/pending?${query}`)).inputs;
+  /** Teammate messages, Stops and permission decisions that wait for this host, in one call. */
+  private async fetchInputs(): Promise<Array<PendingInput | ControlInput>> {
+    const query = `hostMachineId=${encodeURIComponent(this.state.hostMachineId)}&kinds=all`;
+    return (await fetchServerJSON<{ inputs: Array<PendingInput | ControlInput> }>(`${this.base}/inputs/pending?${query}`)).inputs;
   }
 
   /** Returns false when the input was no longer in one of the `from` states. */
@@ -203,17 +202,28 @@ class SessionRunner {
   private async whileAlive(): Promise<void> {
     await restorePaneSize(this.state.tmuxSession).catch(() => {});
     await this.broker.watchPane();
+    let pending: Array<PendingInput | ControlInput>;
     try {
-      await this.controls.tick();
+      pending = await this.fetchInputs();
     } catch (error) {
-      if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error("[live-session] control actions failed", error);
+      this.reportInputError("fetching inputs", error);
+      return;
     }
+    await this.guarded("control actions", () => this.controls.tick(pending.filter((i): i is ControlInput => i.kind !== "message")));
     if (!this.caughtUp) return;
+    await this.guarded("input delivery", () => this.delivery.tick(pending.filter((i): i is PendingInput => i.kind === "message")));
+  }
+
+  private async guarded(what: string, work: () => Promise<void>): Promise<void> {
     try {
-      await this.delivery.tick();
+      await work();
     } catch (error) {
-      if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error("[live-session] input delivery failed", error);
+      this.reportInputError(what, error);
     }
+  }
+
+  private reportInputError(what: string, error: unknown): void {
+    if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error(`[live-session] ${what} failed`, error);
   }
 
   /** One pass; runs every few seconds and does the next unfinished piece of work. */
@@ -386,10 +396,6 @@ export async function sendLiveSessionMessage(sessionId: string, text: string): P
   } catch (error) {
     return { ok: false, error: error instanceof ServerError ? error.code : "send_failed" };
   }
-}
-
-export async function listLiveSessionInputs(sessionId: string): Promise<LiveSessionInput[]> {
-  return (await fetchServerJSON<{ inputs: LiveSessionInput[] }>(`${sessionBase(sessionId)}/inputs`)).inputs;
 }
 
 export async function actOnLiveSessionInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void> {

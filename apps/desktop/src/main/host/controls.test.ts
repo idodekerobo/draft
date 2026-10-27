@@ -13,7 +13,6 @@ function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>
   const log: string[] = [];
   const states = new Map(pending.map((p) => [p.id, p.state as string]));
   const deps: ControlDeps = {
-    fetchPending: async () => pending.filter((p) => ["queued", "delivering"].includes(states.get(p.id)!)).map((p) => ({ ...p, state: states.get(p.id) as "queued" | "delivering" })),
     setState: async (id, from, to, reason) => {
       if (!from.includes(states.get(id) as never)) return false;
       states.set(id, to);
@@ -29,7 +28,9 @@ function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>
     sendEscape: async () => void log.push("escape"),
     postEvents: async (events) => void log.push(`note:${(events[0]!.payload as { text: string }).text}`),
   };
-  return { actions: new ControlActions(deps), log };
+  const actions = new ControlActions(deps);
+  const current = () => pending.filter((p) => ["queued", "delivering"].includes(states.get(p.id)!)).map((p) => ({ ...p, state: states.get(p.id) as "queued" | "delivering" }));
+  return { actions: { tick: () => actions.tick(current()) }, log };
 }
 
 describe("ControlActions", () => {

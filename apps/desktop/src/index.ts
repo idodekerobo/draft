@@ -38,7 +38,6 @@ import {
   endLiveSession,
   getLiveSessionEvents,
   hostedLiveSessionIds,
-  listLiveSessionInputs,
   listLiveSessions,
   openLiveSessionInTerminal,
   resumeLiveSessions,
@@ -751,8 +750,6 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getLiveSessionEvents: ({ sessionId, after }) => getLiveSessionEvents(sessionId, after),
 
       sendLiveSessionMessage: ({ sessionId, text }) => sendLiveSessionMessage(sessionId, text),
-
-      listLiveSessionInputs: ({ sessionId }) => listLiveSessionInputs(sessionId),
 
       actOnLiveSessionInput: ({ sessionId, inputId, action }) => actOnLiveSessionInput(sessionId, inputId, action),
 

@@ -11,7 +11,6 @@ export interface ControlInput {
 }
 
 export interface ControlDeps {
-  fetchPending(): Promise<ControlInput[]>;
   setState(id: string, from: Array<"queued" | "delivering">, to: "delivering" | "failed" | "consumed", reason?: string): Promise<boolean>;
   decide(requestId: string, decision: "allow" | "deny", by: Decider): boolean;
   capture(): Promise<string>;
@@ -26,11 +25,10 @@ export class ControlActions {
 
   constructor(private readonly deps: ControlDeps) {}
 
-  async tick(): Promise<void> {
+  async tick(pending: ControlInput[]): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      const pending = await this.deps.fetchPending();
       if (!this.recovered) {
         // An input left `delivering` by an earlier run cannot be finished: its hook is gone.
         for (const input of pending.filter((i) => i.state === "delivering")) {

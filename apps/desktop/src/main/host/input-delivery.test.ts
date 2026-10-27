@@ -14,7 +14,6 @@ function setup(options: { pane?: string[]; pending?: PendingInput[] } = {}) {
   const failAt: { paste?: boolean; enter?: boolean } = {};
 
   const deps: DeliveryDeps = {
-    fetchPending: async () => pending.filter((p) => ["queued", "delivering"].includes(states.get(p.id)!)).map((p) => ({ ...p, state: states.get(p.id) as "queued" | "delivering" })),
     setState: async (id, from, to, reason) => {
       if (!from.includes(states.get(id) as never)) return false;
       states.set(id, to);
@@ -32,66 +31,68 @@ function setup(options: { pane?: string[]; pending?: PendingInput[] } = {}) {
     },
     sleep: async () => {},
   };
-  return { delivery: new InputDelivery(deps), log, states, failAt, setPane: (...s: string[]) => screens.splice(0, screens.length, ...s) };
+  const delivery = new InputDelivery(deps);
+  const current = () => pending.filter((p) => ["queued", "delivering"].includes(states.get(p.id)!)).map((p) => ({ ...p, state: states.get(p.id) as "queued" | "delivering" }));
+  return { tick: () => delivery.tick(current()), log, states, failAt, setPane: (...s: string[]) => screens.splice(0, screens.length, ...s) };
 }
 
-const input = (id: string, text = id, state: "queued" | "delivering" = "queued"): PendingInput => ({ id, state, delivered_text: `[Dev via Draft] ${text}` });
+const input = (id: string, text = id, state: "queued" | "delivering" = "queued"): PendingInput => ({ id, kind: "message", state, delivered_text: `[Dev via Draft] ${text}` });
 
 describe("InputDelivery", () => {
   it("pastes into a ready pane, presses Enter and leaves the input delivering", async () => {
     const t = setup({ pane: [READY, TYPING, READY], pending: [input("a", "run tests")] });
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log).toEqual(["a:delivering", 'paste:"[Dev via Draft] run tests"', "enter"]);
     expect(t.states.get("a")).toBe("delivering");
   });
 
   it("delivers the oldest input first and one per pass", async () => {
     const t = setup({ pane: [READY, READY], pending: [input("a"), input("b")] });
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log.filter((l) => l.endsWith(":delivering"))).toEqual(["a:delivering"]);
   });
 
   it("keeps the input queued while a permission prompt is open and says why once", async () => {
     const t = setup({ pane: [PERMISSION], pending: [input("a")] });
-    await t.delivery.tick();
-    await t.delivery.tick();
+    await t.tick();
+    await t.tick();
     expect(t.log).toEqual(["a:queued(permission_prompt)"]);
     expect(t.states.get("a")).toBe("queued");
   });
 
   it("waits while the owner has text in the composer and never clears it", async () => {
     const t = setup({ pane: [TYPING], pending: [input("a")] });
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log).toEqual(["a:queued(composer_busy)"]);
     t.setPane(READY);
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log.slice(1)).toEqual(["a:delivering", 'paste:"[Dev via Draft] a"', "enter"]);
   });
 
   it("a crash before the paste fails the input", async () => {
     const t = setup({ pending: [input("a")] });
     t.failAt.paste = true;
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log).toEqual(["a:delivering", "a:failed(pane_unavailable)"]);
   });
 
   it("a crash after the paste leaves the outcome uncertain", async () => {
     const t = setup({ pending: [input("a")] });
     t.failAt.enter = true;
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log).toEqual(["a:delivering", 'paste:"[Dev via Draft] a"', "a:uncertain(delivery_interrupted)"]);
   });
 
   it("text that never leaves the composer is uncertain after one more Enter", async () => {
     const t = setup({ pane: [READY, TYPING], pending: [input("a")] });
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log.filter((l) => l === "enter").length).toBe(2);
     expect(t.states.get("a")).toBe("uncertain");
   });
 
   it("after a restart a delivering input becomes uncertain and is not typed again", async () => {
     const t = setup({ pending: [input("a", "old", "delivering"), input("b", "new")] });
-    await t.delivery.tick();
+    await t.tick();
     expect(t.states.get("a")).toBe("uncertain");
     expect(t.log.some((l) => l.includes("old"))).toBe(false);
     expect(t.log).toContain('paste:"[Dev via Draft] new"');
@@ -99,21 +100,21 @@ describe("InputDelivery", () => {
 
   it("recovers once, so a delivering input from this run is left alone", async () => {
     const t = setup({ pane: [READY, READY], pending: [input("a")] });
-    await t.delivery.tick();
+    await t.tick();
     t.setPane(TYPING);
-    await t.delivery.tick();
+    await t.tick();
     expect(t.states.get("a")).toBe("delivering");
   });
 
   it("sends multi-line text as it is", async () => {
     const t = setup({ pending: [input("a", "line one\n\nline two")] });
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log[1]).toBe('paste:"[Dev via Draft] line one\\n\\nline two"');
   });
 
   it("does nothing when nothing is queued", async () => {
     const t = setup();
-    await t.delivery.tick();
+    await t.tick();
     expect(t.log).toEqual([]);
   });
 });
