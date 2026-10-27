@@ -55,7 +55,7 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
     try { localStorage.setItem(seenKey, String(versionNumber)); } catch {}
   }, [seenKey]);
 
-  useEffect(() => { syncUser(identity); }, [identity, syncUser]);
+  useEffect(() => { syncUser({ ...identity, workspace_id: workspaceId }); }, [identity, workspaceId, syncUser]);
 
   const updatePrivacy = useCallback(async (patch: { analytics_consent: boolean }) => {
     const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at">>("/me/privacy", {
