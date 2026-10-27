@@ -1,13 +1,13 @@
 "use client";
 
+import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { inputStatusLine } from "./input-status";
 import type { SessionInputsState } from "./useSessionInputs";
 
-const MAX_CHARS = 10_000;
 const STATUS_TICK_MS = 30_000;
 
-const SEND_ERRORS: Record<string, string> = {
+const SEND_ERRORS: Partial<Record<LiveSessionErrorCode, string>> = {
   session_ended: "This session has ended.",
   queue_full: "Too many messages are waiting. Try again soon.",
   message_too_long: "This message is too long.",
@@ -42,7 +42,7 @@ export function SessionComposer({
       setText("");
     } catch (failure) {
       const code = failure instanceof Error ? failure.message : "";
-      setError(SEND_ERRORS[code] ?? "Could not send. Try again.");
+      setError(SEND_ERRORS[code as LiveSessionErrorCode] ?? "Could not send. Try again.");
     } finally {
       setSending(false);
     }
@@ -92,7 +92,7 @@ export function SessionComposer({
             id="session-message"
             className="ui-composer__input"
             rows={2}
-            maxLength={MAX_CHARS}
+            maxLength={MAX_INPUT_CHARS}
             placeholder={`Message ${ownerName}'s session`}
             value={text}
             onChange={(event) => setText(event.target.value)}

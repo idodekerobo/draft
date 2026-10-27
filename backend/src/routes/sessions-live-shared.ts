@@ -1,4 +1,5 @@
 import { assertWorkspaceAccess } from "../auth/workspace-access";
+import type { LiveSessionErrorCode } from "draft-core/live-sessions";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import type { SessionRow, WorkspaceRow } from "../types/tables";
@@ -28,7 +29,7 @@ export async function authorize(workspaceId: string, userId: string): Promise<Re
 }
 
 /** Postgres errors the live-session functions raise on purpose, and the status each one gets. */
-const DB_ERROR_STATUS: Record<string, number> = {
+const DB_ERROR_STATUS: Partial<Record<LiveSessionErrorCode, number>> = {
   session_not_found: 404,
   session_ended: 409,
   request_not_found: 404,
@@ -37,7 +38,7 @@ const DB_ERROR_STATUS: Record<string, number> = {
 };
 
 export function knownDbError(message: string): Response | null {
-  const token = Object.keys(DB_ERROR_STATUS).find((t) => message.includes(t));
+  const token = (Object.keys(DB_ERROR_STATUS) as LiveSessionErrorCode[]).find((t) => message.includes(t));
   return token ? errorResponse(token, DB_ERROR_STATUS[token]!) : null;
 }
 

@@ -1,3 +1,4 @@
+import { splitAuthor } from "draft-core/live-sessions";
 import type { LiveSessionEvent } from "./types";
 
 export type StreamItem =
@@ -43,14 +44,6 @@ export function toolSummary(input: unknown): string {
   }
   const first = Object.values(record).find((v) => typeof v === "string" && v);
   return typeof first === "string" ? oneLine(first) : "";
-}
-
-const AUTHOR_PREFIX = /^\[([^\]\n]{1,60}) via Draft\] /;
-
-/** A message sent through Draft reaches Claude as "[Name via Draft] text". */
-function splitAuthor(text: string): { text: string; author: string | null } {
-  const match = AUTHOR_PREFIX.exec(text);
-  return match ? { text: text.slice(match[0].length), author: match[1]! } : { text, author: null };
 }
 
 /** Turns the event log into display items. A tool result joins its tool call by id. */

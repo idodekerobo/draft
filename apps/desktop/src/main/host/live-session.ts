@@ -2,6 +2,7 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
+import { HOST_FATAL_CODES } from "draft-core/live-sessions";
 import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { capture } from "../../exec";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
@@ -23,7 +24,6 @@ const PANE_WATCH_MS = 2_000;
 const CATCH_UP_RETRY_MS = 2_000;
 const END_POLLS = 10;
 const END_POLL_MS = 1_000;
-const FATAL_CODES = new Set(["session_ended", "foreign_host", "not_session_owner", "session_not_found", "live_sessions_disabled"]);
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
 
@@ -70,7 +70,7 @@ class SessionRunner {
           body: JSON.stringify({ hostMachineId: state.hostMachineId, nativeSessionId: state.nativeSessionId, lines }),
         });
       },
-      isFatal: (error) => error instanceof ServerError && FATAL_CODES.has(error.code),
+      isFatal: (error) => error instanceof ServerError && HOST_FATAL_CODES.has(error.code),
       onFatal: () => this.abandon(),
     });
     this.delivery = new InputDelivery({
@@ -223,7 +223,7 @@ class SessionRunner {
   }
 
   private reportInputError(what: string, error: unknown): void {
-    if (!(error instanceof ServerError && FATAL_CODES.has(error.code))) console.error(`[live-session] ${what} failed`, error);
+    if (!(error instanceof ServerError && HOST_FATAL_CODES.has(error.code))) console.error(`[live-session] ${what} failed`, error);
   }
 
   /** One pass; runs every few seconds and does the next unfinished piece of work. */

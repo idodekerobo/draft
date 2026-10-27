@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
+    "draft-core": "workspace:*",
     "lucide-react": "^0.577.0",
     "marked": "^18.0.4",
     "sonner": "^2.0.8"

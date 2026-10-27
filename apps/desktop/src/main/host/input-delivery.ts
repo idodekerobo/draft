@@ -1,3 +1,4 @@
+import { normalizeInputText, type InputBlockReason, type InputFailReason } from "draft-core/live-sessions";
 import { classifyPane, type PaneState } from "./pane-state";
 
 /*
@@ -22,14 +23,14 @@ export interface PendingInput {
 
 export interface DeliveryDeps {
   /** Returns false when the input was no longer in one of the `from` states. */
-  setState(id: string, from: Array<"queued" | "delivering">, to: "queued" | "delivering" | "failed" | "uncertain", reason?: string): Promise<boolean>;
+  setState(id: string, from: Array<"queued" | "delivering">, to: "queued" | "delivering" | "failed" | "uncertain", reason?: InputBlockReason | InputFailReason): Promise<boolean>;
   capture(): Promise<string>;
   paste(text: string): Promise<void>;
   pressEnter(): Promise<void>;
   sleep(ms: number): Promise<void>;
 }
 
-const BLOCK_REASONS: Record<Exclude<PaneState, "ready">, string> = {
+const BLOCK_REASONS: Record<Exclude<PaneState, "ready">, InputBlockReason> = {
   composer_busy: "composer_busy",
   permission: "permission_prompt",
   question: "question_prompt",
@@ -40,12 +41,9 @@ const SUBMIT_POLL_MS = 400;
 const SUBMIT_POLLS = 6;
 const MAX_PASTE_CHARS = 12_000;
 
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
-
 /** The backend already cleans text; this keeps the pane safe if it ever does not. */
 export function safePasteText(text: string): string {
-  return text.replace(/\r\n?/g, "\n").replace(CONTROL_CHARS, "").slice(0, MAX_PASTE_CHARS);
+  return normalizeInputText(text).slice(0, MAX_PASTE_CHARS);
 }
 
 export class InputDelivery {
@@ -84,7 +82,7 @@ export class InputDelivery {
     }
   }
 
-  private async report(id: string, reason: string): Promise<void> {
+  private async report(id: string, reason: InputBlockReason): Promise<void> {
     if (this.reported.get(id) === reason) return;
     this.reported.set(id, reason);
     await this.deps.setState(id, ["queued"], "queued", reason);

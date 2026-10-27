@@ -1,3 +1,4 @@
+import type { InputFailReason } from "draft-core/live-sessions";
 import { classifyPane, isTurnRunning } from "./pane-state";
 import type { Decider, HostEvent } from "./approvals";
 
@@ -11,7 +12,7 @@ export interface ControlInput {
 }
 
 export interface ControlDeps {
-  setState(id: string, from: Array<"queued" | "delivering">, to: "delivering" | "failed" | "consumed", reason?: string): Promise<boolean>;
+  setState(id: string, from: Array<"queued" | "delivering">, to: "delivering" | "failed" | "consumed", reason?: InputFailReason): Promise<boolean>;
   decide(requestId: string, decision: "allow" | "deny", by: Decider): boolean;
   capture(): Promise<string>;
   sendEscape(): Promise<void>;
