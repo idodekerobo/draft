@@ -1,23 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { SessionsList } from "draft-shared-ui";
-import { useWebLiveSessions } from "@/lib/live-sessions";
+import { ColumnToggleButton } from "draft-shared-ui";
 
 export default function SessionsPage() {
-  const router = useRouter();
-  const { sessions, enabled, isPending, isError } = useWebLiveSessions();
   return (
-    <div className="ui-page">
-      <h1 className="ui-page__title">Sessions</h1>
-      <p className="ui-page__intro">Live Claude Code sessions from your team.</p>
-      {isPending ? (
-        <p className="ui-muted" role="status">Loading sessions…</p>
-      ) : enabled ? (
-        <SessionsList sessions={sessions} failed={isError} onOpen={(id) => router.push(`/sessions/${id}`)} />
-      ) : (
-        <p className="ui-muted">Live sessions are not turned on for this workspace.</p>
-      )}
+    <div className="ui-session">
+      <header className="ui-session__header">
+        <nav className="ui-session__crumbs" aria-label="Breadcrumb">
+          <ColumnToggleButton where="main" />
+          <h1 className="ui-session__title">Sessions</h1>
+        </nav>
+      </header>
+      <div className="ui-start__body">
+        <p className="ui-start__heading">Pick a session</p>
+        <p className="ui-muted">Choose one from the list to watch it and send a message. Start a new session in the Draft desktop app.</p>
+      </div>
     </div>
   );
 }

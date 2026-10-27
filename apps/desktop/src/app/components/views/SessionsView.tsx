@@ -1,12 +1,12 @@
 // SessionsView.tsx — live Claude Code sessions of the workspace
 
 import { useEffect, useState } from "react";
-import { SessionView, SessionsList, useLiveSessions } from "draft-shared-ui";
+import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type StartResult } from "draft-shared-ui";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
-function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
+function SessionDetail({ sessionId }: { sessionId: string }) {
   const [hostedHere, setHostedHere] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -34,7 +34,6 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
     <SessionView
       api={liveSessionsApi}
       sessionId={sessionId}
-      back={<button type="button" className="ui-link" onClick={onBack}>Sessions</button>}
       menuItems={(session) => (hostedHere && session.status !== "ended" ? [{ label: "Open in Terminal", onSelect: openInTerminal }] : [])}
       notice={notice}
     />
@@ -44,40 +43,35 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
 export function SessionsView() {
   const workspaceKey = useWorkspaceKey();
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [recentFolders, setRecentFolders] = useState(() => readRecentFolders(window.localStorage));
 
-  async function startSession() {
-    setError(null);
-    const { folderPath } = await rpc.request.selectSetupFolder();
-    if (!folderPath) return;
-    setStarting(true);
-    try {
-      const result = await rpc.request.startLiveSession({ folderPath });
-      if (!result.ok) setError(result.error);
-      else {
-        await refetch();
-        setOpenId(result.sessionId);
-      }
-    } finally {
-      setStarting(false);
-    }
+  async function browse(): Promise<string | null> {
+    return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
-  if (openId) return <SessionDetail sessionId={openId} onBack={() => setOpenId(null)} />;
+  async function start(folderPath: string, text: string): Promise<StartResult> {
+    const result = await rpc.request.startLiveSession({ folderPath });
+    if (!result.ok) return result;
+    setRecentFolders(rememberFolder(window.localStorage, folderPath));
+    // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
+    await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
+    await refetch();
+    setSelectedId(result.sessionId);
+    return { ok: true };
+  }
 
   return (
-    <div className="ui-page">
-      <h1 className="ui-page__title">Sessions</h1>
-      <p className="ui-page__intro">Live Claude Code sessions from your team.</p>
-      <p>
-        <button type="button" className="ui-btn ui-btn--primary" onClick={startSession} disabled={starting}>
-          {starting ? "Starting…" : "New session"}
-        </button>
-      </p>
-      {error && <p className="ui-error" role="alert">{error}</p>}
-      <SessionsList sessions={sessions} loading={isPending} failed={isError} onOpen={setOpenId} />
-    </div>
+    <SessionsLayout
+      sessions={sessions}
+      loading={isPending}
+      failed={isError}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+      onNew={() => setSelectedId(null)}
+      resizable
+    >
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} /> : <SessionStartScreen recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+    </SessionsLayout>
   );
 }
