@@ -14,6 +14,20 @@ export interface LiveSession {
   last_seq: number;
   /** Permission requests waiting for an answer. */
   open_approval_count?: number;
+  /** True when the caller owns the session. */
+  mine?: boolean;
+  /** The Claude Code version the host runs. */
+  harness_version?: string | null;
+  /** The session this one continues after a /clear. */
+  previous_session?: LiveSessionLink | null;
+  /** The session that continued this one after a /clear. */
+  next_session?: LiveSessionLink | null;
+}
+
+export interface LiveSessionLink {
+  id: string;
+  title: string | null;
+  folder_name: string | null;
 }
 
 export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note" | "permission_request" | "permission_resolved";

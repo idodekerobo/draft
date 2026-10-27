@@ -17,6 +17,11 @@ describe("inputStatusLine", () => {
     expect(inputStatusLine(input({ created_at: "2026-10-27T11:48:00Z" }), "Maya", NOW)).toBe("Queued 12 min");
   });
 
+  it("says the laptop is offline while the host is away, and why a cleared message failed", () => {
+    expect(inputStatusLine(input({}), "Maya", NOW, true)).toBe("Queued, Maya's laptop is offline");
+    expect(inputStatusLine(input({ state: "failed", reason: "session_cleared" }), "Maya", NOW)).toBe("Not delivered: the conversation was cleared");
+  });
+
   it("says the owner is typing in the terminal", () => {
     expect(inputStatusLine(input({ reason: "composer_busy" }), "Maya", NOW)).toBe("Queued, Maya is typing in the terminal");
   });

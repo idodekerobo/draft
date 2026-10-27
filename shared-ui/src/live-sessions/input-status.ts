@@ -9,13 +9,15 @@ const BLOCKED: Partial<Record<InputBlockReason, string>> = {
 
 const FAILED: Partial<Record<InputFailReason, string>> = {
   session_ended: "the session ended",
+  session_cleared: "the conversation was cleared",
   pane_unavailable: "the session was not reachable",
 };
 
 /** Text to show the sender of an unfinished message. */
-export function inputStatusLine(input: LiveSessionInput, ownerName: string, now = Date.now()): string {
+export function inputStatusLine(input: LiveSessionInput, ownerName: string, now = Date.now(), hostOffline = false): string {
   switch (input.state) {
     case "queued": {
+      if (hostOffline) return `Queued, ${ownerName}'s laptop is offline`;
       if (input.reason === "composer_busy") return `Queued, ${ownerName} is typing in the terminal`;
       const blocked = BLOCKED[input.reason as InputBlockReason];
       if (blocked) return `Queued, ${blocked}`;

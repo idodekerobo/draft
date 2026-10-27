@@ -20,8 +20,9 @@ export function SessionComposer({
   act,
   ownerName,
   ended,
+  hostOffline = false,
   folderName,
-}: SessionInputsState & { ownerName: string; ended: boolean; folderName?: string | null }) {
+}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +58,7 @@ export function SessionComposer({
             <li key={input.id} className="ui-composer__pending-item">
               <span className="ui-composer__author">{input.mine ? "You" : input.author_name}</span>
               <span className="ui-composer__text">{input.text}</span>
-              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now)}</span>
+              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now, hostOffline)}</span>
               {input.mine && (input.state === "uncertain" || input.state === "failed") && (
                 <span className="ui-composer__actions">
                   <button type="button" className="ui-link" onClick={() => void act(input.id, "resend")}>Resend</button>

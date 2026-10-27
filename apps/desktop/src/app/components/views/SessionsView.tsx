@@ -6,7 +6,7 @@ import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
-function SessionDetail({ sessionId }: { sessionId: string }) {
+function SessionDetail({ sessionId, onOpenSession }: { sessionId: string; onOpenSession: (id: string) => void }) {
   const [hostedHere, setHostedHere] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -49,6 +49,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
           : []
       }
       notice={notice}
+      onOpenSession={onOpenSession}
     />
   );
 }
@@ -84,7 +85,7 @@ export function SessionsView() {
       onNew={() => setSelectedId(null)}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} /> : <SessionStartScreen recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} /> : <SessionStartScreen recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

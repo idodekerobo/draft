@@ -6,12 +6,15 @@ import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
+import { displayStatus } from "./display-status";
+import { sessionBanner } from "./session-banner";
+import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
 import { buildStreamItems, openApprovals } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionStream } from "./useSessionStream";
-import type { LiveSession, LiveSessionsApi } from "./types";
+import type { LiveSession, LiveSessionLink, LiveSessionsApi } from "./types";
 
 export interface SessionMenuItem {
   label: string;
@@ -62,6 +65,8 @@ interface SessionViewProps {
   back?: ReactNode;
   menuItems?: (session: LiveSession) => SessionMenuItem[];
   notice?: string | null;
+  /** Opens a linked session, from the line under the header of a cleared session. */
+  onOpenSession?: (sessionId: string) => void;
 }
 
 function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
@@ -76,6 +81,31 @@ function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
       )}
       {children}
     </nav>
+  );
+}
+
+/** Its own component, so the minute tick re-renders one word and not the stream. */
+function StatusText({ session }: { session: LiveSession }) {
+  return <>{displayStatus(session, useMinuteClock()).label}</>;
+}
+
+function LinkedSession({ link, onOpenSession, lead }: { link: LiveSessionLink; onOpenSession?: (id: string) => void; lead: string }) {
+  const title = sessionTitle(link);
+  return (
+    <p className="ui-muted ui-session__notice">
+      {lead}{" "}
+      {onOpenSession ? <button type="button" className="ui-link" onClick={() => onOpenSession(link.id)}>{title}</button> : title}
+    </p>
+  );
+}
+
+/** A session that was cleared points to the one that took over, and the new one points back. */
+function SessionLinks({ session, onOpenSession }: { session: LiveSession; onOpenSession?: (id: string) => void }) {
+  return (
+    <>
+      {session.previous_session && <LinkedSession lead="Continues from" link={session.previous_session} onOpenSession={onOpenSession} />}
+      {session.next_session && <LinkedSession lead="This conversation was cleared. Continued in" link={session.next_session} onOpenSession={onOpenSession} />}
+    </>
   );
 }
 
@@ -108,6 +138,7 @@ function LoadedSession({
   back,
   menuItems,
   notice,
+  onOpenSession,
 }: SessionViewProps) {
   const { session, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const inputs = useSessionInputs(api, sessionId, waiting, refresh);
@@ -155,12 +186,13 @@ function LoadedSession({
 
   const ownerName = session.owner_name ?? "the owner";
   const running = session.status === "live" || session.status === "starting";
+  const banner = sessionBanner(session);
   return (
     <div className="ui-session">
       <header className="ui-session__header">
         <Crumbs back={back}>
           <h1 className="ui-session__title">{sessionTitle(session)}</h1>
-          <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</span>
+          <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · <StatusText session={session} /></span>
         </Crumbs>
         <div className="ui-session__actions">
           {running && (
@@ -182,6 +214,8 @@ function LoadedSession({
           </div>
         </div>
       )}
+      {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
+      <SessionLinks session={session} onOpenSession={onOpenSession} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scroller} onScroll={onScroll}>
@@ -198,7 +232,7 @@ function LoadedSession({
             approvals.map((approval) => (
               <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
             ))}
-          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} folderName={session.folder_name} />
+          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} folderName={session.folder_name} />
         </div>
       </div>
     </div>

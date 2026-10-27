@@ -1,4 +1,4 @@
-import type { LiveSession, LiveSessionStatus } from "./types";
+import type { LiveSession } from "./types";
 
 export interface SessionGroup {
   label: "Today" | "Yesterday" | "Earlier";
@@ -23,12 +23,3 @@ export function groupSessionsByDay(sessions: LiveSession[], now = new Date()): S
   }
   return groups.filter((group) => group.sessions.length > 0);
 }
-
-const STATUS_WORDS: Record<LiveSessionStatus, string> = {
-  starting: "Starting",
-  live: "Live",
-  host_offline: "Host offline",
-  ended: "Ended",
-};
-
-export const sessionStatusLabel = (status: LiveSessionStatus) => STATUS_WORDS[status];

@@ -142,4 +142,33 @@ describe("SessionView", () => {
     expect(await screen.findByText(/Could not load this session/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
+
+  it("shows one banner line when the host is offline, and says the message waits", async () => {
+    const offline: LiveSession = { ...session, status: "host_offline" };
+    const queued = { id: "i1", author_user_id: "u2", author_name: "Dev", text: "hi", state: "queued" as const, reason: null, created_at: new Date().toISOString(), updated_at: "", mine: false };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ session: offline, events: [], inputs: [queued] }) }} sessionId="s1" />);
+    expect((await screen.findByText(/computer is offline/)).textContent).toBe("Maya's computer is offline. Messages wait until it is back.");
+    expect(screen.getByText("Queued, Maya's laptop is offline")).toBeTruthy();
+    expect(screen.getByText(/· Host offline/)).toBeTruthy();
+  });
+
+  it("warns about a Claude version outside the tested range", async () => {
+    const old: LiveSession = { ...session, harness_version: "2.2.0" };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ session: old, events: [], inputs: [] }) }} sessionId="s1" />);
+    expect((await screen.findByText(/Claude Code 2\.2\.0/)).textContent).toContain("tested with 2.1.x");
+  });
+
+  it("links a cleared session to the one that continued it, and back", async () => {
+    const cleared: LiveSession = { ...session, status: "ended", next_session: { id: "s2", title: "new chat", folder_name: "marigold" } };
+    const onOpenSession = mock((_id: string) => {});
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ session: cleared, events: [], inputs: [] }) }} sessionId="s1" onOpenSession={onOpenSession} />);
+    fireEvent.click(await screen.findByRole("button", { name: "new chat" }));
+    expect(onOpenSession).toHaveBeenCalledWith("s2");
+    cleanup();
+
+    const next: LiveSession = { ...session, previous_session: { id: "s0", title: "old chat", folder_name: null } };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ session: next, events: [], inputs: [] }) }} sessionId="s1" onOpenSession={onOpenSession} />);
+    fireEvent.click(await screen.findByRole("button", { name: "old chat" }));
+    expect(onOpenSession).toHaveBeenCalledWith("s0");
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { groupSessionsByDay, sessionStatusLabel } from "./session-groups";
+import { groupSessionsByDay } from "./session-groups";
 import type { LiveSession } from "./types";
 
 const NOW = new Date(2026, 9, 27, 15, 0, 0);
@@ -26,11 +26,5 @@ describe("groupSessionsByDay", () => {
     ]);
     expect(groupSessionsByDay([session("a", new Date(2026, 9, 27, 1))], NOW).map((g) => g.label)).toEqual(["Today"]);
     expect(groupSessionsByDay([], NOW)).toEqual([]);
-  });
-});
-
-describe("sessionStatusLabel", () => {
-  it("spells out the status in words", () => {
-    expect(sessionStatusLabel("host_offline")).toBe("Host offline");
   });
 });
