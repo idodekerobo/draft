@@ -48,6 +48,8 @@ export function UserIdentityProvider({ children }: { children: ReactNode }) {
       }
       else void refresh();
     });
+    const verifyOnFocus = () => void rpc.request.verifySession().catch(() => {});
+    window.addEventListener("focus", verifyOnFocus);
     const unsubscribeIdentityRefresh = events.on("identityRefreshNeeded", () => void refresh());
     return () => {
       live = false;
@@ -56,6 +58,7 @@ export function UserIdentityProvider({ children }: { children: ReactNode }) {
       unsubscribeSignIn();
       unsubscribeAuth();
       unsubscribeIdentityRefresh();
+      window.removeEventListener("focus", verifyOnFocus);
     };
   }, []);
 

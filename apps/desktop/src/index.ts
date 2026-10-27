@@ -208,6 +208,9 @@ Electrobun.events.on("reopen", () => {
 
 // ── RPC ────────────────────────────────────────────────────────────────────────
 
+const SESSION_CHECK_THROTTLE_MS = 60_000;
+let lastSessionCheck = 0;
+
 const rpc = BrowserView.defineRPC<AppRPCType>({
   // Team staging can spend up to 60s cloning; promotion can then wait up to
   // 30s for the profile lock before applying assets. Keep the RPC alive for
@@ -908,6 +911,17 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
       getUserIdentity: async () => {
         return getUserIdentity();
+      },
+      verifySession: async () => {
+        const now = Date.now();
+        if (now - lastSessionCheck < SESSION_CHECK_THROTTLE_MS) return { ok: true };
+        lastSessionCheck = now;
+        const hadSession = readAuthState() !== null;
+        const identity = await getUserIdentity().catch(() => null);
+        if (hadSession && identity && !identity.signedIn) {
+          try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
+        }
+        return { ok: true };
       },
       completeOnboarding: async () => {
         try {

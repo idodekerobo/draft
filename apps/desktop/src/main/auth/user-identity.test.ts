@@ -11,7 +11,15 @@ function deps(initial: AuthState | null, responses: Response[] = []) {
 
 describe("hydrateUserIdentity", () => {
   test("missing auth is hydrated signed-out", async () => { expect(await hydrateUserIdentity(deps(null))).toMatchObject({ signedIn: false, hydrated: true }); });
-  test("uses complete cache without network", async () => { const d = deps(state(true)); expect((await hydrateUserIdentity(d)).workspaceId).toBe("w"); expect(d.calls).toEqual([]); });
+  test("uses complete cache without a whoami request", async () => { let whoami = 0; const d = deps(state(true)); d.fetchWhoami = async () => { whoami++; return new Response(null, { status: 500 }); }; expect((await hydrateUserIdentity(d)).workspaceId).toBe("w"); expect(d.calls).toEqual([false]); expect(whoami).toBe(0); });
+  test("complete cache with a terminal token error is signed out and cleared", async () => { const d = deps(state(true)); d.token = async () => { throw new AuthRefreshError("terminal"); }; expect((await hydrateUserIdentity(d)).signedIn).toBe(false); expect(d.read()).toBeNull(); });
+  test("complete cache with a transient token error stays signed in", async () => { const d = deps(state(true)); d.token = async () => { throw new AuthRefreshError("transient"); }; expect(await hydrateUserIdentity(d)).toMatchObject({ signedIn: true, workspaceId: "w" }); expect(d.read()).not.toBeNull(); });
+  test("complete cache does not clear a newer session after a terminal token error", async () => {
+    let value: AuthState | null = state(true);
+    const d: IdentityDeps = { read: () => value, write: (v) => { value = v; }, clear: () => { value = null; }, token: async () => { if (value?.refresh_token === "r") { value = { ...state(true), refresh_token: "new", workspace_id: "new" }; throw new AuthRefreshError("terminal"); } return "a"; }, fetchWhoami: async () => new Response(null, { status: 500 }) };
+    expect(await hydrateUserIdentity(d)).toMatchObject({ signedIn: true, workspaceId: "new" });
+    expect(value).not.toBeNull();
+  });
   test("authoritative null workspace is cached as resolved", async () => { const d = deps(state(), [Response.json({ organization_id: "x", primary_team_id: null, workspace_id: null })]); expect(await hydrateUserIdentity(d)).toMatchObject({ signedIn: true, hydrated: true, workspaceId: null }); expect(d.read()?.identity_resolved).toBe(true); });
   test("recovers unresolved identity", async () => { const d = deps(state(), [Response.json({ organization_id: "x", primary_team_id: "y", workspace_id: "z" })]); expect((await hydrateUserIdentity(d)).workspaceId).toBe("z"); expect(d.calls).toEqual([false]); });
   test("forces one refresh and retry on unauthorized", async () => { const d = deps(state(), [new Response(null, { status: 401 }), Response.json({ workspace_id: "z" })]); await hydrateUserIdentity(d); expect(d.calls).toEqual([false, true]); });

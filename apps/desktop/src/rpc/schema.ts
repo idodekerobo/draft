@@ -410,6 +410,8 @@ export type AppRPCType = {
       cancelBrowserSignIn: { params: void; response: ActionResult };
       signOut: { params: void; response: ActionResult };
       getUserIdentity: { params: void; response: UserIdentity };
+      /** Re-checks that the saved login still works; signs the user out if it does not. Throttled. */
+      verifySession: { params: void; response: ActionResult };
 
       /**
        * Mark the signed-in user's onboarding wizard as complete, server-side
