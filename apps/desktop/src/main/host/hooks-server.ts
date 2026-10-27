@@ -1,7 +1,6 @@
 import { chmodSync, mkdirSync, writeFileSync } from "fs";
 import type { HookAnswer } from "./approvals";
-
-const HOST_DIR = `${process.env.HOME}/.draft/host`;
+import { HOST_DIR } from "./hook-settings";
 
 export interface SessionHooks {
   permission(payload: Record<string, unknown>, signal: AbortSignal): Promise<HookAnswer | null>;

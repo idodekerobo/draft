@@ -6,7 +6,7 @@ import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../inge
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, errorResponse, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { SESSION_COLUMNS, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -131,12 +131,6 @@ function eventsFor(line: IncomingLine): ParsedLiveEvent[] {
   ];
 }
 
-const APPEND_ERRORS: Record<string, { error: string; status: number }> = {
-  session_not_found: { error: "session_not_found", status: 404 },
-  session_ended: { error: "session_ended", status: 409 },
-  foreign_host: { error: "foreign_host", status: 403 },
-};
-
 function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim())?.trim().slice(0, TITLE_MAX_CHARS) ?? "";
 }
@@ -186,9 +180,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
       p_events: events,
     });
     if (error) {
-      const known = Object.entries(APPEND_ERRORS).find(([token]) => error.message.includes(token))?.[1];
-      if (known) return errorResponse(known.error, known.status);
-      return errorResponse("append_failed", 500, error, workspaceId, sessionId);
+      return knownDbError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);
     }
     ({ last_seq: lastSeq, inserted } = data as { last_seq: number; inserted: number });
     if (inserted > 0) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);

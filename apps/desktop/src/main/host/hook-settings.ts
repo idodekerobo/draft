@@ -1,10 +1,9 @@
 import { chmodSync, mkdirSync, writeFileSync } from "fs";
+import { shellQuote } from "./launch";
 
-const HOST_DIR = `${process.env.HOME}/.draft/host`;
+export const HOST_DIR = `${process.env.HOME}/.draft/host`;
 const PERMISSION_TIMEOUT_SECONDS = 3600;
 const STOP_TIMEOUT_SECONDS = 30;
-
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 /**
  * Calls the host's local server, which writes its port and token next to this script when it starts.

@@ -44,7 +44,6 @@ const LOCAL_COMMAND_OUTPUT = /^<local-command-(stdout|stderr)>([\s\S]*?)<\/local
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
-export const ROOT_FILE = "root.jsonl";
 const SUBAGENT_FILE = /^subagents\/agent-(.+)\.jsonl$/;
 
 /** The agent id for a sub-agent transcript file, or null for the root file. */

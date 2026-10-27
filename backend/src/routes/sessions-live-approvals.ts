@@ -1,8 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { SessionInputRow } from "../types/tables";
-import { loadDisplayNames } from "./session-display-names";
-import { authorize, errorResponse, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type DecisionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision">;
 type StopRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/stop">;
@@ -11,24 +10,6 @@ type HostEventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionI
 const MAX_HOST_EVENTS = 20;
 const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "session_note"]);
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,100}$/;
-
-const DB_ERRORS: Record<string, { error: string; status: number }> = {
-  session_not_found: { error: "session_not_found", status: 404 },
-  session_ended: { error: "session_ended", status: 409 },
-  request_not_found: { error: "request_not_found", status: 404 },
-  queue_full: { error: "queue_full", status: 429 },
-  foreign_host: { error: "foreign_host", status: 403 },
-};
-
-function knownError(message: string): Response | null {
-  const known = Object.entries(DB_ERRORS).find(([token]) => message.includes(token))?.[1];
-  return known ? errorResponse(known.error, known.status) : null;
-}
-
-async function authorName(userId: string): Promise<string> {
-  const names = await loadDisplayNames(serviceClient, [userId], []);
-  return names.ok ? (names.users.get(userId) ?? "A teammate") : "A teammate";
-}
 
 /** Any member can decide an open permission request. The first decision wins. */
 export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
@@ -50,7 +31,7 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
     p_request_id: requestId,
     p_decision: decision,
   });
-  if (error) return knownError(error.message) ?? errorResponse("decision_failed", 500, error, workspaceId, sessionId);
+  if (error) return knownDbError(error.message) ?? errorResponse("decision_failed", 500, error, workspaceId, sessionId);
 
   const result = data as { outcome: string; by_name?: string; decision?: string; reason?: string };
   if (result.outcome === "created") return Response.json({ ok: true }, { status: 201 });
@@ -84,7 +65,7 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
     p_kind: "stop",
     p_payload: {},
   });
-  if (error) return knownError(error.message) ?? errorResponse("stop_failed", 500, error, workspaceId, sessionId);
+  if (error) return knownDbError(error.message) ?? errorResponse("stop_failed", 500, error, workspaceId, sessionId);
   return Response.json({ ok: true }, { status: 201 });
 });
 
@@ -129,6 +110,6 @@ export const HOST_EVENTS = withAuth<HostEventsRequest>(async (req, caller) => {
     p_host_machine_id: hostMachineId,
     p_events: (events as HostEvent[]).map((e) => ({ source_id: e.sourceId, kind: e.kind, payload: e.payload })),
   });
-  if (error) return knownError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);
+  if (error) return knownDbError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);
   return Response.json({ ok: true, ...(data as { last_seq: number; inserted: number }) });
 });

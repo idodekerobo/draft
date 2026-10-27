@@ -74,13 +74,8 @@ class SessionRunner {
       onFatal: () => this.abandon(),
     });
     this.delivery = new InputDelivery({
-      fetchPending: async () =>
-        (await fetchServerJSON<{ inputs: PendingInput[] }>(`${this.base}/inputs/pending?hostMachineId=${encodeURIComponent(state.hostMachineId)}`)).inputs,
-      setState: async (id, from, to, reason) =>
-        (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
-          method: "POST",
-          body: JSON.stringify({ hostMachineId: state.hostMachineId, from, to, reason }),
-        })).changed,
+      fetchPending: () => this.fetchInputs<PendingInput>(),
+      setState: this.setInputState,
       capture: () => capturePane(state.tmuxSession),
       paste: (text) => pasteIntoPane(state.tmuxSession, text),
       pressEnter: () => pressEnter(state.tmuxSession),
@@ -97,19 +92,26 @@ class SessionRunner {
       onClose: (id) => this.persist({ openRequests: (this.state.openRequests ?? []).filter((open) => open !== id) }),
     });
     this.controls = new ControlActions({
-      fetchPending: async () =>
-        (await fetchServerJSON<{ inputs: ControlInput[] }>(`${this.base}/inputs/pending?kinds=control&hostMachineId=${encodeURIComponent(state.hostMachineId)}`)).inputs,
-      setState: async (id, from, to, reason) =>
-        (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
-          method: "POST",
-          body: JSON.stringify({ hostMachineId: state.hostMachineId, from, to, reason }),
-        })).changed,
+      fetchPending: () => this.fetchInputs<ControlInput>("control"),
+      setState: this.setInputState,
       decide: (requestId, decision, by) => this.broker.decide(requestId, decision, by),
       capture: () => capturePane(state.tmuxSession),
       sendEscape: () => pressEscape(state.tmuxSession),
       postEvents: (events) => this.postHostEvents(events),
     });
   }
+
+  private async fetchInputs<T>(kinds?: "control"): Promise<T[]> {
+    const query = `hostMachineId=${encodeURIComponent(this.state.hostMachineId)}${kinds ? `&kinds=${kinds}` : ""}`;
+    return (await fetchServerJSON<{ inputs: T[] }>(`${this.base}/inputs/pending?${query}`)).inputs;
+  }
+
+  /** Returns false when the input was no longer in one of the `from` states. */
+  private readonly setInputState = async (id: string, from: Array<"queued" | "delivering">, to: string, reason?: string): Promise<boolean> =>
+    (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
+      method: "POST",
+      body: JSON.stringify({ hostMachineId: this.state.hostMachineId, from, to, reason }),
+    })).changed;
 
   private async postHostEvents(events: HostEvent[]): Promise<void> {
     await fetchServer(`${this.base}/host-events`, {

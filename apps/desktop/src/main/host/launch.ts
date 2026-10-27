@@ -6,7 +6,7 @@ const PANE_ROWS = 50;
 
 export const tmuxPath = () => `${process.env.HOME}/.draft/bin/tmux`;
 
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null, settingsPath: string | null = null): string {
   const args = ["--session-id", nativeSessionId, ...(model ? ["--model", model] : []), ...(settingsPath ? ["--settings", settingsPath] : [])];

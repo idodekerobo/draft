@@ -2,6 +2,7 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import type { SessionRow, WorkspaceRow } from "../types/tables";
+import { loadDisplayNames } from "./session-display-names";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
@@ -16,17 +17,33 @@ export function errorResponse(error: string, status = 500, detail?: unknown, wor
 }
 
 export async function authorize(workspaceId: string, userId: string): Promise<Response | null> {
-  const denied = await assertWorkspaceAccess(workspaceId, userId);
+  const [denied, flag] = await Promise.all([
+    assertWorkspaceAccess(workspaceId, userId),
+    serviceClient.from("workspaces").select("live_sessions_enabled").eq("id", workspaceId).maybeSingle<Pick<WorkspaceRow, "live_sessions_enabled">>(),
+  ]);
   if (denied) return denied;
-
-  const { data, error } = await serviceClient
-    .from("workspaces")
-    .select("live_sessions_enabled")
-    .eq("id", workspaceId)
-    .maybeSingle<Pick<WorkspaceRow, "live_sessions_enabled">>();
-  if (error) return errorResponse("workspace_lookup_failed", 500, error, workspaceId);
-  if (!data?.live_sessions_enabled) return errorResponse("live_sessions_disabled", 403);
+  if (flag.error) return errorResponse("workspace_lookup_failed", 500, flag.error, workspaceId);
+  if (!flag.data?.live_sessions_enabled) return errorResponse("live_sessions_disabled", 403);
   return null;
+}
+
+/** Postgres errors the live-session functions raise on purpose, and the status each one gets. */
+const DB_ERROR_STATUS: Record<string, number> = {
+  session_not_found: 404,
+  session_ended: 409,
+  request_not_found: 404,
+  queue_full: 429,
+  foreign_host: 403,
+};
+
+export function knownDbError(message: string): Response | null {
+  const token = Object.keys(DB_ERROR_STATUS).find((t) => message.includes(t));
+  return token ? errorResponse(token, DB_ERROR_STATUS[token]!) : null;
+}
+
+export async function authorName(userId: string): Promise<string> {
+  const names = await loadDisplayNames(serviceClient, [userId], []);
+  return names.ok ? (names.users.get(userId) ?? "A teammate") : "A teammate";
 }
 
 export type BodyResult = { ok: true; body: Record<string, unknown> } | { ok: false; response: Response };

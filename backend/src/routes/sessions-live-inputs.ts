@@ -3,8 +3,7 @@ import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { MAX_INPUT_CHARS, cleanInputText, deliveredText, sameText } from "../ingestion/claude-code/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
-import { loadDisplayNames } from "./session-display-names";
-import { authorize, errorResponse, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type InputsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs">;
 type PendingRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs/pending">;
@@ -17,12 +16,6 @@ const REASON_MAX_CHARS = 100;
 const HOST_TARGET_STATES = new Set<SessionInputState>(["queued", "delivering", "failed", "uncertain", "consumed"]);
 const CONTROL_KINDS = ["permission_decision", "stop"];
 const HOST_SOURCE_STATES = new Set<SessionInputState>(["queued", "delivering"]);
-
-const CREATE_ERRORS: Record<string, { error: string; status: number }> = {
-  session_not_found: { error: "session_not_found", status: 404 },
-  session_ended: { error: "session_ended", status: 409 },
-  queue_full: { error: "queue_full", status: 429 },
-};
 
 type PublicInput = {
   id: string;
@@ -52,24 +45,17 @@ function publicInput(row: SessionInputRow): PublicInput {
   };
 }
 
-async function authorName(workspaceId: string, userId: string): Promise<string> {
-  const names = await loadDisplayNames(serviceClient, [userId], []);
-  return names.ok ? (names.users.get(userId) ?? "A teammate") : "A teammate";
-}
-
 async function createInput(workspaceId: string, sessionId: string, userId: string, text: string): Promise<Response> {
   const { data, error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: userId,
-    p_author_name: await authorName(workspaceId, userId),
+    p_author_name: await authorName(userId),
     p_kind: "message",
     p_payload: { text },
   });
   if (error) {
-    const known = Object.entries(CREATE_ERRORS).find(([token]) => error.message.includes(token))?.[1];
-    if (known) return errorResponse(known.error, known.status);
-    return errorResponse("input_create_failed", 500, error, workspaceId, sessionId);
+    return knownDbError(error.message) ?? errorResponse("input_create_failed", 500, error, workspaceId, sessionId);
   }
   return Response.json({ ok: true, input: publicInput(data as SessionInputRow) }, { status: 201 });
 }
@@ -225,6 +211,18 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
 export async function matchConsumedInputs(workspaceId: string, sessionId: string, afterSeq: number, uptoSeq: number): Promise<void> {
   if (uptoSeq <= afterSeq) return;
   try {
+    const { data: waiting, error: waitingError } = await serviceClient
+      .from("session_inputs")
+      .select("id, author_name, payload, state, created_at")
+      .eq("session_id", sessionId)
+      .eq("workspace_id", workspaceId)
+      .eq("kind", "message")
+      .in("state", ["delivering", "uncertain"])
+      .is("dismissed_at", null)
+      .order("created_at", { ascending: true });
+    if (waitingError) throw waitingError;
+    if (!waiting || waiting.length === 0) return;
+
     const { data: events, error } = await serviceClient
       .from("session_events")
       .select("seq, payload")
@@ -238,18 +236,7 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
     const turns = ((events ?? []) as Pick<SessionEventRow, "seq" | "payload">[]).filter((e) => !e.payload.agent_id && typeof e.payload.text === "string");
     if (turns.length === 0) return;
 
-    const { data: waiting, error: waitingError } = await serviceClient
-      .from("session_inputs")
-      .select("id, author_name, payload, state, created_at")
-      .eq("session_id", sessionId)
-      .eq("workspace_id", workspaceId)
-      .eq("kind", "message")
-      .in("state", ["delivering", "uncertain"])
-      .is("dismissed_at", null)
-      .order("created_at", { ascending: true });
-    if (waitingError) throw waitingError;
-
-    const candidates = [...((waiting ?? []) as Pick<SessionInputRow, "id" | "author_name" | "payload" | "state">[])];
+    const candidates = [...(waiting as Pick<SessionInputRow, "id" | "author_name" | "payload" | "state">[])];
     for (const turn of turns) {
       const index = candidates.findIndex((c) => sameText(deliveredText(c.author_name, textOf(c)), turn.payload.text as string));
       if (index === -1) continue;
