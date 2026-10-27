@@ -197,6 +197,7 @@ export interface ScheduledTaskRow {
   created_at: string;
   updated_at: string;
   updated_by_user_id: string | null;
+  created_by_user_id: string | null;
 }
 
 export interface SynthesisRunRow {
@@ -345,6 +346,8 @@ export interface SessionRow {
   harness_version: string | null;
   raw_storage_path: string | null;
   raw_uploaded_at: string | null;
+  scheduled_task_id: string | null;
+  idempotency_key: string | null;
 }
 
 export interface SessionEventRow {

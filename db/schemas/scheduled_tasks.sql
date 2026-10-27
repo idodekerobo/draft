@@ -6,19 +6,21 @@ create table scheduled_tasks (
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   source_connection_id     uuid,
   task_type                text not null
-                              check (task_type in ('ingest_source', 'synthesize_workspace', 'rebuild_projection', 'summarize_sessions', 'slack_backfill')),
+                              check (task_type in ('ingest_source', 'synthesize_workspace', 'rebuild_projection', 'summarize_sessions', 'slack_backfill', 'agent_routine')),
   task_key                 text not null,
   schedule_kind            text not null check (schedule_kind in ('cron', 'interval')),
   cron_expression          text,
   interval_seconds         integer check (interval_seconds > 0),
   timezone                 text not null,
   enabled                  boolean not null default true,
+  -- agent_routine: prompt, harness, model and title.
   config_json              jsonb not null default '{}',
   next_due_at              timestamptz,
   last_enqueued_at         timestamptz,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),
   updated_by_user_id       uuid references users(id) on delete set null,
+  created_by_user_id       uuid references users(id) on delete set null,
 
   unique (id, workspace_id),
   unique (workspace_id, task_type, task_key),
