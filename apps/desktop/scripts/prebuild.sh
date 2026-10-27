@@ -236,6 +236,8 @@ bun build \
   --compile \
   --target="$BUN_TARGET" \
   --bytecode \
+  --no-compile-autoload-dotenv \
+  --no-compile-autoload-bunfig \
   --define "process.env.DRAFT_SUPABASE_URL=\"${DRAFT_SUPABASE_URL}\"" \
   --define "process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY=\"${DRAFT_SUPABASE_PUBLISHABLE_KEY}\"" \
   --define "process.env.DRAFT_CLI_VERSION=\"${DRAFT_CLI_VERSION}\"" \

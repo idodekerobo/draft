@@ -39,10 +39,19 @@ export interface DevicePairingDeps {
 }
 
 export class DevicePairingError extends Error {
-  constructor(public readonly kind: "expired" | "timed_out" | "pairing_failed" | "malformed_response" | "aborted") {
-    super(kind);
+  constructor(
+    public readonly kind: "expired" | "timed_out" | "pairing_failed" | "malformed_response" | "aborted",
+    public readonly detail?: string,
+  ) {
+    super(detail ? `${kind}: ${detail}` : kind);
     this.name = "DevicePairingError";
   }
+}
+
+function describeFetchError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? `${code} ${error.message}` : error.message;
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -68,9 +77,9 @@ export async function pairDevice(deps: DevicePairingDeps): Promise<PairedTokens>
     created = await deps.fetch(`${deps.apiUrl}/link`, { method: "POST", signal: deps.signal });
   } catch (error) {
     if (deps.signal.aborted) throw new DevicePairingError("aborted");
-    throw new DevicePairingError("pairing_failed");
+    throw new DevicePairingError("pairing_failed", `POST ${deps.apiUrl}/link could not connect (${describeFetchError(error)})`);
   }
-  if (!created.ok) throw new DevicePairingError("pairing_failed");
+  if (!created.ok) throw new DevicePairingError("pairing_failed", `POST ${deps.apiUrl}/link returned HTTP ${created.status}`);
 
   let code: string;
   try {
@@ -97,14 +106,14 @@ export async function pairDevice(deps: DevicePairingDeps): Promise<PairedTokens>
     let response: Response;
     try {
       response = await deps.fetch(`${deps.apiUrl}/link/${encodeURIComponent(code)}`, { signal: deps.signal });
-    } catch {
+    } catch (error) {
       if (deps.signal.aborted) { deps.onProgress({ phase: "interrupted" }); throw new DevicePairingError("aborted"); }
-      throw new DevicePairingError("pairing_failed");
+      throw new DevicePairingError("pairing_failed", `GET ${deps.apiUrl}/link/:code could not connect (${describeFetchError(error)})`);
     }
 
     if (response.status === 204) continue;
     if (response.status === 404) { deps.onProgress({ phase: "expired" }); throw new DevicePairingError("expired"); }
-    if (!response.ok) throw new DevicePairingError("pairing_failed");
+    if (!response.ok) throw new DevicePairingError("pairing_failed", `GET ${deps.apiUrl}/link/:code returned HTTP ${response.status}`);
 
     const tokens = await response.json() as { access_token?: unknown; refresh_token?: unknown; expires_at?: unknown; expires_in?: unknown };
     if (typeof tokens.access_token !== "string" || typeof tokens.refresh_token !== "string") {

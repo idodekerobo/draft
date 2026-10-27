@@ -6,6 +6,9 @@
 // at compile time via --define. Fails loudly and refuses to produce a
 // binary if either is missing, rather than shipping one that can never
 // authenticate.
+//
+// Dotenv/bunfig autoload is off: the CLI runs inside users' projects, and
+// their .env*/bunfig.toml must never change which API it talks to.
 
 const required = ["DRAFT_SUPABASE_URL", "DRAFT_SUPABASE_PUBLISHABLE_KEY"] as const;
 const missing = required.filter((key) => !process.env[key]);
@@ -25,6 +28,7 @@ const cliVersion = process.env.DRAFT_CLI_VERSION
 const proc = Bun.spawn({
   cmd: [
     "bun", "build", "--compile",
+    "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig",
     "--define", `process.env.DRAFT_SUPABASE_URL=${JSON.stringify(supabaseUrl)}`,
     "--define", `process.env.DRAFT_SUPABASE_PUBLISHABLE_KEY=${JSON.stringify(supabasePublishableKey)}`,
     "--define", `process.env.DRAFT_CLI_VERSION=${JSON.stringify(cliVersion)}`,

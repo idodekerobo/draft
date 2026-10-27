@@ -72,8 +72,13 @@ describe("pairDevice", () => {
 
   test("create pairing failure", async () => {
     const h = harness({ responses: () => new Response(null, { status: 500 }) });
-    await expect(h.run()).rejects.toMatchObject({ kind: "pairing_failed" });
+    await expect(h.run()).rejects.toMatchObject({ kind: "pairing_failed", detail: expect.stringContaining("HTTP 500") });
     expect(h.urls).toEqual([]);
+  });
+
+  test("create pairing failure: network error carries the cause", async () => {
+    const h = harness({ responses: () => { throw Object.assign(new Error("Unable to connect"), { code: "ConnectionRefused" }); } });
+    await expect(h.run()).rejects.toMatchObject({ kind: "pairing_failed", detail: expect.stringContaining("ConnectionRefused") });
   });
 
   test("timeout: deadline reached without approval", async () => {

@@ -126,8 +126,9 @@ export async function runAuthLogin(args: string[]): Promise<number> {
       return EXIT_INTERRUPTED;
     }
     const kind = e instanceof DevicePairingError ? e.kind : "pairing_failed";
-    if (json) printJsonLine(errorPayload(kind, `Sign-in failed: ${kind}`));
-    else console.error(red(`draft auth login: ${kind}`));
+    const detail = e instanceof DevicePairingError ? e.detail : e instanceof Error ? e.message : undefined;
+    if (json) printJsonLine(errorPayload(kind, detail ? `Sign-in failed: ${kind} (${detail})` : `Sign-in failed: ${kind}`));
+    else console.error(red(`draft auth login: ${kind}${detail ? ` (${detail})` : ""}`));
     return EXIT_OPERATIONAL_ERROR;
   } finally {
     process.off("SIGINT", onSignal);
