@@ -6,6 +6,7 @@ import type { ScheduledTaskRow } from "../types/tables";
 import { recordError } from "../errors/record-error";
 import { sweepStaleSynthesisRuns } from "../synthesis/reconcile-stale-runs";
 import { retryFailedSynthesisRuns } from "../synthesis/retry-failed-runs";
+import { failStaleRoutineSessions } from "../routines/fail-stale-routine-sessions";
 
 export interface RunSchedulingTickOptions {
   client: SupabaseClient;
@@ -84,6 +85,11 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     if (error) throw error;
   } catch (sweepError) {
     await recordTickStepError(options.client, "Stale live session sweep failed", sweepError);
+  }
+  try {
+    await failStaleRoutineSessions(options.client, now);
+  } catch (sweepError) {
+    await recordTickStepError(options.client, "Stale routine session sweep failed", sweepError);
   }
   try {
     await retryFailedSynthesisRuns({ client: options.client, config: options.config, now });
