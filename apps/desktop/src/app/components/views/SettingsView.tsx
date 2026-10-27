@@ -13,9 +13,15 @@ import type { ReactNode } from "react";
 import type { LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { AppearanceRow, ContextExport, DataBoundary, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
+
+async function loadInvite(createIfMissing: boolean) {
+  const result = await rpc.request.getInviteLink({ createIfMissing });
+  if (!result.ok) throw new Error(result.error);
+  return { url: result.url ?? null, expiresAt: result.expiresAt ?? null };
+}
 
 // ── Rows that load their own data ─────────────────────────────────────────────
 // Each suspends on its own, so the rest of the page renders immediately.
@@ -221,6 +227,14 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
               <NotificationsRow onError={setSaveError} />
             </DataBoundary>
           </div>
+        </section>
+
+        {/* ── Team ────────────────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Team</h2>
+          <ul className="ui-rows">
+            <InviteLinkRow loadInvite={loadInvite} />
+          </ul>
         </section>
 
         {/* ── Your data ───────────────────────────────────────────────────── */}

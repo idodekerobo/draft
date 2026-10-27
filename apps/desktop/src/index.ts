@@ -511,9 +511,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getInviteLink: async () => {
+      getInviteLink: async (params) => {
         try {
-          const response = await fetchServerJSON<{ url: string; expiresAt: string }>("invites/mine");
+          const lookOnly = params?.createIfMissing === false;
+          const response = await fetchServerJSON<{ url: string | null; expiresAt: string | null }>(lookOnly ? "invites/mine?create=false" : "invites/mine");
           return { ok: true as const, ...response };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not load the invite link." };

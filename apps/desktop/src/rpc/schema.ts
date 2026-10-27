@@ -301,7 +301,7 @@ export type AppRPCType = {
       connectClaudeCode: { params: { token: string }; response: ActionResult };
 
       /** Fetch (or lazily create) a reusable, multi-use invite link for the caller's own org/team. */
-      getInviteLink: { params: void; response: ActionResult & { url?: string; expiresAt?: string } };
+      getInviteLink: { params: { createIfMissing?: boolean } | void; response: ActionResult & { url?: string | null; expiresAt?: string | null } };
 
       /** Build and return the Slack app creation URL with the manifest pre-filled. */
       getSlackManifestUrl: { params: void; response: { ok: boolean; url?: string; error?: string } };

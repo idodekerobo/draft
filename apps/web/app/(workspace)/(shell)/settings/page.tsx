@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppearanceRow, ContextExport, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
-import { apiFetchBlob } from "@/lib/api";
+import { AppearanceRow, ContextExport, InviteLinkRow, type InviteLink, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { apiFetch, apiFetchBlob } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -33,6 +33,8 @@ async function downloadExport(workspaceId: string): Promise<void> {
   link.remove();
   URL.revokeObjectURL(url);
 }
+
+const loadInvite = (createIfMissing: boolean) => apiFetch<InviteLink>(`/invites/mine${createIfMissing ? "" : "?create=false"}`);
 
 export default function SettingsPage() {
   const { identity, updatePrivacy, workspaceId } = useWorkspace();
@@ -68,6 +70,11 @@ export default function SettingsPage() {
             control={<button type="button" className="ui-btn" onClick={() => void signOut()}>Sign out</button>}
           />
         </li>
+      </ul>
+
+      <h2 className="ui-group-label">Team</h2>
+      <ul className="ui-rows">
+        <InviteLinkRow loadInvite={loadInvite} />
       </ul>
 
       <h2 className="ui-group-label">Your data</h2>

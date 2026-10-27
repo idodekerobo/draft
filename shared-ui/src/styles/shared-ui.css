@@ -824,3 +824,5 @@
 .ui-sessions__list > li { min-width: 0; }
 .ui-sessions__row { box-sizing: border-box; min-width: 0; max-width: 100%; }
 .ui-sessions__row-top { min-width: 0; width: 100%; }
+
+.ui-invite__link { padding: 0 0 var(--space-4); }

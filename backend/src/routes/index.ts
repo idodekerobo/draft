@@ -80,7 +80,7 @@ export const routes = {
   "/sessions/ingest-errors": { POST: sessionsIngestErrors.POST },
   "/sessions/tokens/rotate": { POST: sessionTokensRotate.POST },
   "/sessions/tokens/revoke": { POST: sessionTokensRevoke.POST },
-  "/invites/mine": { GET: invites.mineGET },
+  "/invites/mine": { GET: withCors(invites.mineGET), OPTIONS },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },
   "/link": { POST: links.createPOST },
