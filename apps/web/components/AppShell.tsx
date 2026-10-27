@@ -2,28 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brand, useQuery } from "draft-shared-ui";
+import { Brand, mainNavItems, useQuery } from "draft-shared-ui";
 import { apiFetch } from "@/lib/api";
 import { useWebLiveSessions } from "@/lib/live-sessions";
 import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
-
-const SESSIONS_ITEM = { href: "/sessions", label: "Sessions" };
-
-const NAV_ITEMS = [
-  { href: "/context", label: "Context" },
-  { href: "/connections", label: "Connections" },
-  { href: "/activity", label: "Activity" },
-  { href: "/routines", label: "Routines" },
-  { href: "/settings", label: "Settings" },
-];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { identity, workspaceId, seenContextVersion } = useWorkspace();
   const { data: snapshot } = useQuery(contextQueryOptions(workspaceId, apiFetch));
   const { enabled: sessionsEnabled } = useWebLiveSessions();
-  const navItems = sessionsEnabled ? [NAV_ITEMS[0], SESSIONS_ITEM, ...NAV_ITEMS.slice(1)] : NAV_ITEMS;
+  const navItems = mainNavItems(sessionsEnabled).map((item) => ({ ...item, href: `/${item.id}` }));
   const hasUnseenContext = snapshot != null && seenContextVersion !== null && snapshot.versionNumber > seenContextVersion;
   return (
     <div className="ui-shell">

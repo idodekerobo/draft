@@ -817,3 +817,8 @@
 .ui-start__folder-button { display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px 4px; background: none; border: 0; border-radius: var(--radius-sm); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
 .ui-start__menu { left: 0; right: auto; top: calc(100% + 4px); min-width: 260px; max-width: 420px; }
 .ui-start__path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-small); }
+
+.ui-sessions__scroll { overflow-x: hidden; }
+.ui-sessions__list > li { min-width: 0; }
+.ui-sessions__row { box-sizing: border-box; min-width: 0; max-width: 100%; }
+.ui-sessions__row-top { min-width: 0; width: 100%; }
