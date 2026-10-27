@@ -71,6 +71,18 @@ if [ -z "$INSTALL_DIR" ]; then
     warn "  echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
 fi
 
+# Writing through a symlink would overwrite the release binary it points at.
+# Only replace a missing file or a wrapper this script wrote earlier.
+TARGET="$INSTALL_DIR/draft"
+if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
+    if [ -L "$TARGET" ] || ! grep -q "apps/cli/src/index.ts" "$TARGET" 2>/dev/null; then
+        err "$TARGET already exists and is not a dev wrapper from this script."
+        echo "  If it is the release CLI, remove it first: draft uninstall"
+        echo "  Then re-run: bash install.sh"
+        exit 1
+    fi
+fi
+
 cat > "$INSTALL_DIR/draft" << EOF
 #!/usr/bin/env bash
 exec bun run "$REPO_ROOT/apps/cli/src/index.ts" "\$@"

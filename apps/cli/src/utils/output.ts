@@ -51,6 +51,7 @@ export function printHelp(): void {
     ["skills remove <name>",       "Soft-delete a skill"],
     ["update",                     "Update the draft CLI to the latest release"],
     ["update --check",             "Check for an update without installing it"],
+    ["uninstall",                  "Remove the draft CLI (keeps ~/.draft data)"],
     ["completion",                 "Generate shell tab completion script"],
   ];
   for (const [cmd, desc] of cmds) {
