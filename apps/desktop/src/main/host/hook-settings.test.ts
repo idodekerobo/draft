@@ -24,6 +24,7 @@ describe("hook settings", () => {
     const script = hookScript();
     expect(script).toContain("|| exit 1");
     expect(script).toContain("--fail");
+    expect(script).toContain('"$dir/$1.port"');
   });
 
   it("writes an executable script and a settings file for the session", () => {

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { ensureHooksServer, hookOutput, registerSessionHooks } from "./hooks-server";
@@ -7,8 +7,10 @@ import { ensureHooksServer, hookOutput, registerSessionHooks } from "./hooks-ser
 const dir = mkdtempSync(join(tmpdir(), "hooks-server-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 ensureHooksServer(dir);
-const port = readFileSync(`${dir}/hooks.port`, "utf8");
-const token = readFileSync(`${dir}/hooks.token`, "utf8");
+registerSessionHooks("boot", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+const endpoint = (id: string, name: "port" | "token") => readFileSync(`${dir}/hooks/${id}.${name}`, "utf8");
+const port = endpoint("boot", "port");
+const token = endpoint("boot", "token");
 
 const call = (path: string, init: RequestInit = {}) =>
   fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", headers: { "x-draft-token": token }, body: "{}", ...init });
@@ -62,5 +64,21 @@ describe("hooks server", () => {
     const res = await call("/hook/s5/session-start", { body: JSON.stringify({ source: "clear", session_id: "n2" }) });
     expect(res.status).toBe(204);
     expect(seen).toEqual([{ source: "clear", session_id: "n2" }]);
+  });
+
+  it("writes endpoint files per session and removes them when the session stops", () => {
+    const stop = registerSessionHooks("s6", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+    expect(endpoint("s6", "port")).toBe(port);
+    expect(endpoint("s6", "token")).toBe(token);
+    stop();
+    expect(existsSync(`${dir}/hooks/s6.port`)).toBe(false);
+    expect(existsSync(`${dir}/hooks/s6.token`)).toBe(false);
+  });
+
+  it("keeps the files when a newer registration for the same session replaced the old one", () => {
+    const first = registerSessionHooks("s7", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+    registerSessionHooks("s7", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+    first();
+    expect(existsSync(`${dir}/hooks/s7.port`)).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import type { HookAnswer } from "./approvals";
 import { HOST_DIR } from "./hook-settings";
 
@@ -11,11 +11,31 @@ export interface SessionHooks {
 
 const sessions = new Map<string, SessionHooks>();
 let server: ReturnType<typeof Bun.serve> | null = null;
+let serverToken = "";
+let endpointDir = HOST_DIR;
+
+const endpointPath = (sessionId: string, name: "port" | "token") => `${endpointDir}/hooks/${sessionId}.${name}`;
+
+/**
+ * Each session has its own endpoint files, so another Draft process on the same computer (a dev build next to an
+ * installed one) cannot take over this session's hooks. A restart writes them again when it takes the session back.
+ */
+function writeEndpoint(sessionId: string): void {
+  mkdirSync(`${endpointDir}/hooks`, { recursive: true });
+  for (const [name, value] of [["port", String(server!.port)], ["token", serverToken]] as const) {
+    writeFileSync(endpointPath(sessionId, name), value);
+    chmodSync(endpointPath(sessionId, name), 0o600);
+  }
+}
 
 export function registerSessionHooks(sessionId: string, hooks: SessionHooks): () => void {
   sessions.set(sessionId, hooks);
+  writeEndpoint(sessionId);
   return () => {
-    if (sessions.get(sessionId) === hooks) sessions.delete(sessionId);
+    if (sessions.get(sessionId) !== hooks) return;
+    sessions.delete(sessionId);
+    rmSync(endpointPath(sessionId, "port"), { force: true });
+    rmSync(endpointPath(sessionId, "token"), { force: true });
   };
 }
 
@@ -32,10 +52,11 @@ async function readPayload(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-/** Starts the local hook server once. The hook script finds it through the port and token files. */
+/** Starts the local hook server once. The hook script finds it through a session's endpoint files. */
 export function ensureHooksServer(dir = HOST_DIR): void {
   if (server) return;
-  const token = crypto.randomUUID();
+  endpointDir = dir;
+  const token = (serverToken = crypto.randomUUID());
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -59,9 +80,4 @@ export function ensureHooksServer(dir = HOST_DIR): void {
       return answer ? new Response(hookOutput(answer), { headers: { "content-type": "application/json" } }) : new Response(null, { status: 204 });
     },
   });
-  mkdirSync(dir, { recursive: true });
-  for (const [name, value] of [["hooks.port", String(server.port)], ["hooks.token", token]] as const) {
-    writeFileSync(`${dir}/${name}`, value);
-    chmodSync(`${dir}/${name}`, 0o600);
-  }
 }

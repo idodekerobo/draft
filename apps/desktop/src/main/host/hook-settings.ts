@@ -7,14 +7,14 @@ const STOP_TIMEOUT_SECONDS = 30;
 const SESSION_START_TIMEOUT_SECONDS = 30;
 
 /**
- * Calls the host's local server, which writes its port and token next to this script when it starts.
+ * Calls the host's local server. The server writes its port and token for each session it serves, named by the session id.
  * Any failure exits non-zero, so Claude falls back to its own dialog.
  */
 export function hookScript(): string {
   return `#!/bin/sh
-dir="$HOME/.draft/host"
-port=$(cat "$dir/hooks.port" 2>/dev/null) || exit 1
-token=$(cat "$dir/hooks.token" 2>/dev/null) || exit 1
+dir="$HOME/.draft/host/hooks"
+port=$(cat "$dir/$1.port" 2>/dev/null) || exit 1
+token=$(cat "$dir/$1.token" 2>/dev/null) || exit 1
 exec curl -sS --fail --max-time 3700 -X POST -H "x-draft-token: $token" --data-binary @- "http://127.0.0.1:$port/hook/$1/$2"
 `;
 }
