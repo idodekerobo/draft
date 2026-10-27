@@ -8,3 +8,6 @@ export const queryKeys = {
   sessionRepos: (workspaceId: string) => ["ws", workspaceId, "session-repos"] as const,
   routines: (workspaceId: string) => ["ws", workspaceId, "routines"] as const,
 };
+
+/** Starts with the workspace key like the rest, so one invalidation still clears a workspace. */
+export const routineRunsKey = (workspaceId: string, routineId: string) => ["ws", workspaceId, "routines", routineId, "runs"] as const;

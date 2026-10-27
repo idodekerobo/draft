@@ -2,13 +2,15 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { SynthesisRunSummary } from "../activity/ActivityList";
-import type { Routine, RoutinePatch, RoutinesResponse } from "../routines/types";
+import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "../routines/types";
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
   getRuns(): Promise<SynthesisRunSummary[]>;
   getRoutines(): Promise<RoutinesResponse>;
   updateRoutine(id: string, patch: RoutinePatch): Promise<Routine>;
+  createRoutine(input: CreateRoutineInput): Promise<Routine>;
+  getRoutineRuns(id: string): Promise<RoutineRun[]>;
 }
 
 const DraftApiContext = createContext<DraftApi | null>(null);

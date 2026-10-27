@@ -3,6 +3,11 @@ const FIELD_MESSAGES: Record<string, string> = {
   time: "Enter a valid time.",
   weekday: "Choose a day.",
   timezone: "Choose a valid timezone.",
+  title: "Enter a name for this routine.",
+  prompt: "Describe what the routine should do.",
+  harness: "Choose an agent.",
+  model: "Choose a model.",
+  limit: "This workspace has reached its limit of routines. Delete one or ask Draft for more.",
 };
 
 /** Carries the offending field so the editor can show the message beside it. */

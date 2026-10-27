@@ -11,6 +11,12 @@ const api: DraftApi = {
     if (!result.ok) throw toRoutineError(result.code, result.field);
     return result.routine;
   },
+  createRoutine: async (input) => {
+    const result = await rpc.request.createRoutine(input);
+    if (!result.ok) throw toRoutineError(result.code, result.field);
+    return result.routine;
+  },
+  getRoutineRuns: (id) => rpc.request.listRoutineRuns({ id }),
 };
 
 /** Query keys use the cloud workspace id; signed-out state shares one bucket. */
