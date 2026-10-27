@@ -30,7 +30,7 @@ _draft_completion() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context routines sources sessions skills integrations update completion"
+  commands="add auth context routines sources sessions skills integrations update uninstall completion"
 
   case "\$prev" in
     draft)
@@ -120,6 +120,7 @@ _draft() {
         'skills:Discover and manage the company skill marketplace'
         'integrations:Manage hosted integrations'
         'update:Update the Draft CLI'
+        'uninstall:Remove the Draft CLI'
         'completion:Generate shell completion script'
       )
       _describe 'command' commands
@@ -168,6 +169,9 @@ _draft() {
           ;;
         update)
           _arguments '--check[Check without installing]'
+          ;;
+        uninstall)
+          _arguments '--yes[Skip the confirmation prompt]'
           ;;
         completion)
           _arguments '--bash[Generate bash completion]' '--zsh[Generate zsh completion]'

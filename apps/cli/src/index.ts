@@ -13,6 +13,7 @@ import { runSessions } from "./commands/sessions.ts";
 import { runSkills } from "./commands/skills.ts";
 import { runSources } from "./commands/sources.ts";
 import { runCompletion } from "./commands/completion.ts";
+import { runUninstall } from "./commands/uninstall.ts";
 import { runUpdate, getCachedUpdateNotice, checkForUpdateBackground } from "./commands/update.ts";
 import { CLI_VERSION } from "./version.ts";
 
@@ -59,6 +60,9 @@ if (command === "--version" || command === "-v") {
     case "update":
       process.exitCode = await runUpdate(rest);
       break;
+    case "uninstall":
+      process.exitCode = await runUninstall(rest);
+      break;
     case "completion":
       await runCompletion(rest);
       break;
@@ -69,7 +73,7 @@ if (command === "--version" || command === "-v") {
   }
 
   // Integrations reserves stdout/stderr for stable provider lifecycle output.
-  if (command !== "update" && command !== "completion" && command !== "integrations" && !rest.includes("--json")) {
+  if (command !== "update" && command !== "uninstall" && command !== "completion" && command !== "integrations" && !rest.includes("--json")) {
     const notice = getCachedUpdateNotice();
     if (notice) console.error(notice);
     checkForUpdateBackground();

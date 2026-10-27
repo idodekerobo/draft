@@ -562,6 +562,18 @@ draft update --json
 
 Every other command also does a cheap, cached, non-blocking staleness check in the background and prints a one-line notice to stderr (`Update available: vX → vY — run draft update`) when a newer release is cached as available — nothing waits on the network to run your actual command. `draft --version` prints the installed version. Not available when running from source (`bun run src/index.ts`) — only applies to a compiled release binary.
 
+### `draft uninstall`
+
+Removes the `draft` binary (`~/.draft/bin/draft`), the `/usr/local/bin/draft` link if it points at that binary, and the `# added by Draft` PATH line from `~/.zprofile`, `~/.bash_profile` and `~/.profile`.
+
+```bash
+draft uninstall         # asks for confirmation on the terminal
+draft uninstall --yes   # skip the prompt (required with --json or without a terminal)
+draft uninstall --json
+```
+
+The rest of `~/.draft` stays: your data, `config.json`, and the `bun` and `tmux` copies the desktop app uses. To reinstall, run the install script above or open the desktop app.
+
 ---
 
 ## Other commands
