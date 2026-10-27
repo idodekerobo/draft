@@ -11,6 +11,7 @@ export type LiveSessionErrorCode =
   | "session_ended"
   | "not_session_owner"
   | "foreign_host"
+  | "routine_read_only"
   | "request_not_found"
   | "request_closed"
   | "already_decided"

@@ -1,5 +1,6 @@
 -- Adds an input to a session's queue. The author is the caller's user id and
--- display name, taken by the backend from the JWT. An ended session takes no input.
+-- display name, taken by the backend from the JWT. An ended session takes no input,
+-- and a routine session never does: nothing is listening for it.
 create or replace function create_session_input(
   p_session_id uuid,
   p_workspace_id uuid,
@@ -15,15 +16,19 @@ set search_path = public
 as $$
 declare
   v_status text;
+  v_type text;
   v_row session_inputs%rowtype;
 begin
-  select status into v_status
+  select status, session_type into v_status, v_type
   from sessions
   where id = p_session_id and workspace_id = p_workspace_id
   for share;
 
   if not found then
     raise exception 'session_not_found';
+  end if;
+  if v_type = 'routine' then
+    raise exception 'routine_read_only';
   end if;
   if v_status = 'ended' then
     raise exception 'session_ended';
