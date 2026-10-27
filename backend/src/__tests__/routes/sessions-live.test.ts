@@ -233,7 +233,22 @@ describe("live session routes", () => {
     const body = (await (await routes.EVENTS(req)).json()) as { session: Row; events: Row[]; inputs: Row[] };
     expect(body.events.map((e) => e.seq)).toEqual([2]);
     expect(body.session.owner_name).toBe("Maya");
+    expect(body.session.mine).toBe(true);
     expect(body.inputs).toEqual([]);
+  });
+
+  it("links a session to the one it continues and to the one that replaced it", async () => {
+    tables.sessions = [
+      session({ id: "old", status: "ended", end_reason: "cleared", title: "Old chat", folder_name: "app" }),
+      session({ id: SESSION, previous_session_id: "old" }),
+    ];
+    const get = async (sessionId: string) => {
+      const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId } }) as never;
+      return ((await (await routes.EVENTS(req)).json()) as { session: Row }).session;
+    };
+    expect((await get(SESSION)).previous_session).toMatchObject({ id: "old", title: "Old chat" });
+    expect((await get("old")).next_session).toMatchObject({ id: SESSION });
+    expect((await get(SESSION)).next_session).toBeNull();
   });
 
   it("returns the unfinished messages with the events, marking the caller's own", async () => {

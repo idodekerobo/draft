@@ -24,10 +24,10 @@ const TITLE_MAX_CHARS = 120;
 const RAW_BUCKET = "session-raw";
 const RAW_FILE = /^(root|subagents\/agent-[A-Za-z0-9_-]+)\.jsonl$/;
 
-async function withOwnerNames(workspaceId: string, sessions: SessionRow[]) {
+async function withOwnerNames(workspaceId: string, sessions: SessionRow[], callerId: string) {
   const names = await loadDisplayNames(serviceClient, [...new Set(sessions.map((s) => s.owner_user_id))], []);
   if (!names.ok) return errorResponse(names.code, 500, names.detail, workspaceId);
-  return sessions.map((s) => ({ ...s, owner_name: names.users.get(s.owner_user_id) ?? null }));
+  return sessions.map((s) => ({ ...s, owner_name: names.users.get(s.owner_user_id) ?? null, mine: s.owner_user_id === callerId }));
 }
 
 export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
@@ -43,7 +43,7 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
     .limit(LIST_LIMIT);
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
 
-  const sessions = await withOwnerNames(req.params.id, (data ?? []) as SessionRow[]);
+  const sessions = await withOwnerNames(req.params.id, (data ?? []) as SessionRow[], caller.userId);
   if (sessions instanceof Response) return sessions;
   return Response.json({ sessions });
 });
@@ -87,6 +87,24 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   return Response.json({ ok: true, session: data }, { status: 201 });
 });
 
+const LINK_COLUMNS = "id, title, folder_name";
+type SessionLink = Pick<SessionRow, "id" | "title" | "folder_name">;
+
+/** The session this one continues, and the one that continues it after a /clear. */
+async function loadSessionLinks(workspaceId: string, session: SessionRow) {
+  const previous = session.previous_session_id
+    ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("id", session.previous_session_id).eq("workspace_id", workspaceId).maybeSingle<SessionLink>()
+    : null;
+  const next =
+    session.status === "ended" && session.end_reason === "cleared"
+      ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("previous_session_id", session.id).eq("workspace_id", workspaceId).order("started_at", { ascending: false }).limit(1).maybeSingle<SessionLink>()
+      : null;
+  const [previousResult, nextResult] = await Promise.all([previous, next]);
+  const failed = previousResult?.error ?? nextResult?.error;
+  if (failed) return errorResponse("session_lookup_failed", 500, failed, workspaceId, session.id);
+  return { previous_session: previousResult?.data ?? null, next_session: nextResult?.data ?? null };
+}
+
 export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
@@ -113,9 +131,11 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   if (eventsError) return errorResponse("events_lookup_failed", 500, eventsError, workspaceId, sessionId);
   if (!viewerInputs.ok) return errorResponse("inputs_lookup_failed", 500, viewerInputs.error, workspaceId, sessionId);
 
-  const named = await withOwnerNames(workspaceId, [session]);
+  const named = await withOwnerNames(workspaceId, [session], caller.userId);
   if (named instanceof Response) return named;
-  return Response.json({ session: named[0], events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
+  const links = await loadSessionLinks(workspaceId, session);
+  if (links instanceof Response) return links;
+  return Response.json({ session: { ...named[0], ...links }, events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
 });
 
 type IncomingLine = LiveLineInput | { file: string; offset: number; oversizeBytes: number };
