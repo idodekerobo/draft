@@ -6,3 +6,4 @@ export * from "./sessions-list";
 export * from "./input-status";
 export * from "./useSessionInputs";
 export * from "./SessionComposer";
+export * from "./SessionView";

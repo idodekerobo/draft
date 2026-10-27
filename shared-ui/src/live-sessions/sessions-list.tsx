@@ -24,8 +24,11 @@ export function useLiveSessions(api: LiveSessionsApi, workspaceId: string) {
   return { ...query, enabled: query.data?.enabled ?? false, sessions: query.data?.sessions ?? [] };
 }
 
+const AUTHOR_PREFIX = /^\[[^\]\n]{1,60} via Draft\]\s*/;
+
 export function sessionTitle(session: Pick<LiveSession, "title" | "folder_name">): string {
-  return session.title ?? `New session in ${session.folder_name ?? "a folder"}`;
+  const title = session.title?.replace(AUTHOR_PREFIX, "").trim();
+  return title || `New session in ${session.folder_name ?? "a folder"}`;
 }
 
 export function SessionsList({

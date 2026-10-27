@@ -1,47 +1,43 @@
 // SessionsView.tsx — live Claude Code sessions of the workspace
 
 import { useEffect, useState } from "react";
-import { SessionComposer, SessionStream, SessionsList, sessionTitle, useLiveSessions, useSessionInputs, useSessionStream } from "draft-shared-ui";
+import { SessionView, SessionsList, useLiveSessions } from "draft-shared-ui";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
 function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
-  const { session, events, error } = useSessionStream(liveSessionsApi, sessionId);
-  const inputs = useSessionInputs(liveSessionsApi, sessionId);
   const [hostedHere, setHostedHere] = useState(false);
-  const [terminalError, setTerminalError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void rpc.request.getHostedLiveSessionIds().then((ids) => {
-      if (!cancelled) setHostedHere(ids.includes(sessionId));
-    });
+    const check = () =>
+      void rpc.request.getHostedLiveSessionIds().then((ids) => {
+        if (!cancelled) setHostedHere(ids.includes(sessionId));
+      });
+    check();
+    const timer = setInterval(check, 5_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
-  }, [sessionId, session?.status]);
+  }, [sessionId]);
 
   async function openInTerminal() {
-    setTerminalError(null);
+    setNotice(null);
     const result = await rpc.request.openLiveSessionInTerminal({ sessionId });
-    if (!result.ok) setTerminalError(result.error);
+    if (!result.ok) setNotice(result.error);
   }
 
   return (
-    <div className="ui-page">
-      <p><button type="button" className="ui-link" onClick={onBack}>Sessions</button></p>
-      <h1 className="ui-page__title">{session ? sessionTitle(session) : "Session"}</h1>
-      {session && <p className="ui-page__intro">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</p>}
-      {hostedHere && session?.status !== "ended" && (
-        <p>
-          <button type="button" className="ui-btn" onClick={openInTerminal}>Open in Terminal</button>
-        </p>
-      )}
-      {terminalError && <p className="ui-error" role="alert">{terminalError}</p>}
-      {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} ownerName={session?.owner_name ?? undefined} />}
-      {session && <SessionComposer {...inputs} ownerName={session.owner_name ?? "the owner"} ended={session.status === "ended"} />}
-    </div>
+    <SessionView
+      api={liveSessionsApi}
+      sessionId={sessionId}
+      back={<button type="button" className="ui-link" onClick={onBack}>Sessions</button>}
+      menuItems={(session) => (hostedHere && session.status !== "ended" ? [{ label: "Open in Terminal", onSelect: openInTerminal }] : [])}
+      notice={notice}
+    />
   );
 }
 

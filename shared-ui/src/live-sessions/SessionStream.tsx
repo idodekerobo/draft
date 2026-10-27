@@ -10,19 +10,22 @@ function formatInput(input: unknown): string {
 function Item({ item, ownerName }: { item: StreamItem; ownerName: string }) {
   switch (item.type) {
     case "user":
+      if (item.agentId) {
+        return (
+          <>
+            <span className="ui-stream__who">Prompt</span>
+            <p className="ui-stream__text">{item.text}</p>
+          </>
+        );
+      }
       return (
         <>
-          <span className="ui-stream__who">{item.author ?? (item.agentId ? "Prompt" : ownerName)}</span>
-          <p className="ui-stream__text">{item.text}</p>
+          <span className="ui-stream__who">{item.author ?? ownerName}</span>
+          <p className="ui-stream__bubble">{item.text}</p>
         </>
       );
     case "assistant":
-      return (
-        <>
-          <span className="ui-stream__who">Claude</span>
-          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />
-        </>
-      );
+      return <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />;
     case "thinking":
       return (
         <details className="ui-stream__details">
@@ -68,7 +71,7 @@ export function SessionStream({ events, ownerName = "User" }: { events: LiveSess
         return (
           <Fragment key={item.seq}>
             {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
-            <li className={`ui-stream__item ui-stream__item--${item.type}${agentId ? " ui-stream__item--agent" : ""}`}>
+            <li className={`ui-stream__item ui-stream__item--${item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" ? " ui-stream__item--human" : ""}`}>
               <Item item={item} ownerName={ownerName} />
             </li>
           </Fragment>

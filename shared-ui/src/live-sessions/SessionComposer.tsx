@@ -19,7 +19,8 @@ export function SessionComposer({
   act,
   ownerName,
   ended,
-}: SessionInputsState & { ownerName: string; ended: boolean }) {
+  folderName,
+}: SessionInputsState & { ownerName: string; ended: boolean; folderName?: string | null }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,11 +77,20 @@ export function SessionComposer({
       {ended ? (
         <p className="ui-muted">This session has ended.</p>
       ) : (
-        <form className="ui-composer__form" onSubmit={submit}>
+        <form className="ui-composer__box" onSubmit={submit}>
+          {folderName && (
+            <div className="ui-composer__folder">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5Z" />
+              </svg>
+              <span>{folderName}</span>
+            </div>
+          )}
+          <div className="ui-composer__row">
           <label className="ui-visually-hidden" htmlFor="session-message">Message to {ownerName}'s session</label>
           <textarea
             id="session-message"
-            className="ui-input ui-composer__input"
+            className="ui-composer__input"
             rows={2}
             maxLength={MAX_CHARS}
             placeholder={`Message ${ownerName}'s session`}
@@ -91,6 +101,7 @@ export function SessionComposer({
           <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
             {sending ? "Sending…" : "Send"}
           </button>
+          </div>
         </form>
       )}
       {error && <p className="ui-error" role="alert">{error}</p>}
