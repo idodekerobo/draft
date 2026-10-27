@@ -50,10 +50,10 @@ function SessionRow({ session, selected, now, onSelect }: { session: LiveSession
           <span className="ui-muted ui-sessions__row-time">{relativeTime(session.started_at, { now, compact: true })}</span>
         </span>
         <span className="ui-muted ui-sessions__row-sub">
-          <span>{session.owner_name ?? "Someone"}</span>
-          <span aria-hidden="true">·</span>
+          <span className="ui-sessions__row-owner">{session.owner_name ?? "Someone"}</span>
+          <span aria-hidden="true" className="ui-sessions__row-fixed">·</span>
           <span className={`ui-sessions__dot ui-sessions__dot--${status.key}`} aria-hidden="true" />
-          <span>{status.label}</span>
+          <span className="ui-sessions__row-fixed">{status.label}</span>
         </span>
       </button>
     </li>

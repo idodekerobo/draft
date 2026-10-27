@@ -791,6 +791,8 @@
 .ui-sessions__row[aria-current="true"] { background: var(--color-selected-bg); color: var(--color-selected-text); }
 .ui-sessions__row-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
 .ui-sessions__row-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-body); font-weight: 500; }
+.ui-sessions__row-owner { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ui-sessions__row-fixed { flex: none; }
 .ui-sessions__row-time { flex: none; font-size: var(--font-size-small); }
 .ui-sessions__row-sub { display: flex; align-items: center; gap: var(--space-1); min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--font-size-secondary); }
 .ui-sessions__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-tertiary); flex: none; }
