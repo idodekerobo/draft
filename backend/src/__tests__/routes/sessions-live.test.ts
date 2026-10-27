@@ -234,7 +234,8 @@ describe("live session routes", () => {
     expect((await routes.END(post("/x", { hostMachineId: "host-2" }))).status).toBe(403);
     const ok = await routes.END(post("/x", { hostMachineId: "host-1", reason: "user_exit" }));
     expect(ok.status).toBe(200);
-    expect(updates.at(-1)?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
+    expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
+    expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_ended" });
   });
 
   it("turns an oversize item into a note and records an error without a body", async () => {

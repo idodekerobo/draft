@@ -1,11 +1,11 @@
 import { withAuth } from "../auth/withAuth";
-import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
-import { recordRouteError } from "../errors/route-error";
 import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
-import type { SessionEventRow, SessionRow, WorkspaceRow } from "../types/tables";
+import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
+import { failQueuedInputs, matchConsumedInputs } from "./sessions-live-inputs";
+import { SESSION_COLUMNS, authorize, errorResponse, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -15,7 +15,6 @@ type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
 
-const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const MAX_LINES_PER_POST = 2000;
 const DEFAULT_EVENTS_PAGE = 500;
 const MAX_EVENTS_PAGE = 1000;
@@ -23,72 +22,6 @@ const LIST_LIMIT = 50;
 const TITLE_MAX_CHARS = 120;
 const RAW_BUCKET = "session-raw";
 const RAW_FILE = /^(root|subagents\/agent-[A-Za-z0-9_-]+)\.jsonl$/;
-
-const SESSION_COLUMNS =
-  "id, workspace_id, owner_user_id, session_type, harness, model, native_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seq, host_machine_id, host_name, raw_storage_path, raw_uploaded_at";
-
-function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string, sessionId?: string): Response {
-  if (status >= 500) {
-    recordRouteError({ workspaceId: workspaceId ?? null, sessionId, operation: "session", errorCode: error, error: detail });
-  }
-  return Response.json({ ok: false, error }, { status });
-}
-
-async function authorize(workspaceId: string, userId: string): Promise<Response | null> {
-  const denied = await assertWorkspaceAccess(workspaceId, userId);
-  if (denied) return denied;
-
-  const { data, error } = await serviceClient
-    .from("workspaces")
-    .select("live_sessions_enabled")
-    .eq("id", workspaceId)
-    .maybeSingle<Pick<WorkspaceRow, "live_sessions_enabled">>();
-  if (error) return errorResponse("workspace_lookup_failed", 500, error, workspaceId);
-  if (!data?.live_sessions_enabled) return errorResponse("live_sessions_disabled", 403);
-  return null;
-}
-
-type BodyResult = { ok: true; body: Record<string, unknown> } | { ok: false; response: Response };
-
-async function readBody(req: Request): Promise<BodyResult> {
-  const declared = Number(req.headers.get("content-length") ?? 0);
-  if (declared > MAX_BODY_BYTES) return { ok: false, response: errorResponse("body_too_large", 413) };
-
-  let text: string;
-  try {
-    text = await req.text();
-  } catch {
-    return { ok: false, response: errorResponse("invalid_body", 400) };
-  }
-  if (Buffer.byteLength(text) > MAX_BODY_BYTES) return { ok: false, response: errorResponse("body_too_large", 413) };
-
-  try {
-    const body = JSON.parse(text);
-    if (body && typeof body === "object" && !Array.isArray(body)) return { ok: true, body };
-  } catch {
-    // falls through to invalid_body
-  }
-  return { ok: false, response: errorResponse("invalid_body", 400) };
-}
-
-function optionalString(value: unknown, max = 500): string | null {
-  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
-}
-
-type OwnedSession = { ok: true; session: SessionRow } | { ok: false; response: Response };
-
-async function loadOwnedSession(workspaceId: string, sessionId: string, userId: string): Promise<OwnedSession> {
-  const { data, error } = await serviceClient
-    .from("sessions")
-    .select(SESSION_COLUMNS)
-    .eq("id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle<SessionRow>();
-  if (error) return { ok: false, response: errorResponse("session_lookup_failed", 500, error, workspaceId, sessionId) };
-  if (!data) return { ok: false, response: errorResponse("session_not_found", 404) };
-  if (data.owner_user_id !== userId) return { ok: false, response: errorResponse("not_session_owner", 403) };
-  return { ok: true, session: data };
-}
 
 async function withOwnerNames(workspaceId: string, sessions: SessionRow[]) {
   const names = await loadDisplayNames(serviceClient, [...new Set(sessions.map((s) => s.owner_user_id))], []);
@@ -257,6 +190,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
       return errorResponse("append_failed", 500, error, workspaceId, sessionId);
     }
     ({ last_seq: lastSeq, inserted } = data as { last_seq: number; inserted: number });
+    if (inserted > 0) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
   } else if (owned.session.host_machine_id !== hostMachineId) {
     return errorResponse("foreign_host", 403);
   }
@@ -293,6 +227,7 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
     .eq("id", sessionId)
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
+  await failQueuedInputs(sessionId);
 
   return Response.json({ ok: true });
 });

@@ -350,3 +350,22 @@ export interface SessionEventRow {
   payload: Record<string, unknown>;
   created_at: string;
 }
+
+export type SessionInputKind = "message" | "permission_decision" | "stop" | "end";
+export type SessionInputState = "queued" | "delivering" | "consumed" | "failed" | "uncertain";
+
+export interface SessionInputRow {
+  id: string;
+  session_id: string;
+  workspace_id: string;
+  author_user_id: string;
+  author_name: string;
+  kind: SessionInputKind;
+  payload: Record<string, unknown>;
+  state: SessionInputState;
+  reason: string | null;
+  consumed_seq: number | null;
+  dismissed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
