@@ -637,6 +637,7 @@
 .ui-routines__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .ui-routines__field { display: grid; gap: 6px; font-size: 13px; }
 .ui-routines__field--wide { grid-column: 1 / -1; }
+.ui-routines__fields + .ui-routines__fields { margin-top: 16px; }
 .ui-routines__field input, .ui-routines__field select, .ui-routines__field textarea {
   width: 100%;
   min-width: 0;
