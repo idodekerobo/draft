@@ -30,11 +30,24 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
     if (!result.ok) setNotice(result.error);
   }
 
+  async function endSession() {
+    setNotice(null);
+    const result = await rpc.request.endLiveSession({ sessionId });
+    if (!result.ok) setNotice(result.error);
+  }
+
   return (
     <SessionView
       api={liveSessionsApi}
       sessionId={sessionId}
-      menuItems={(session) => (hostedHere && session.status !== "ended" ? [{ label: "Open in Terminal", onSelect: openInTerminal }] : [])}
+      menuItems={(session) =>
+        hostedHere && session.status !== "ended"
+          ? [
+              { label: "Open in Terminal", onSelect: openInTerminal },
+              { label: "End session", onSelect: endSession, confirm: "End this session? Claude exits and nobody can send to it again." },
+            ]
+          : []
+      }
       notice={notice}
     />
   );

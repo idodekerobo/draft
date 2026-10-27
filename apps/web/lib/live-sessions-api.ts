@@ -1,4 +1,4 @@
-import { LiveSessionsDisabledError, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
+import { LiveSessionsDisabledError, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 
 async function fetchLive<T>(path: string): Promise<T> {
@@ -20,6 +20,18 @@ async function post(path: string, body: unknown): Promise<void> {
   }
 }
 
+async function decide(path: string, decision: "allow" | "deny"): Promise<ApprovalResult> {
+  try {
+    await apiFetch(path, { method: "POST", body: JSON.stringify({ decision }) });
+    return { ok: true };
+  } catch (error) {
+    if (!(error instanceof ApiError)) return { ok: false, error: "failed" };
+    if (error.code === "already_decided") return { ok: false, error: "already_decided", byName: typeof error.detail?.by_name === "string" ? error.detail.by_name : null };
+    if (error.code === "request_closed" || error.code === "session_ended") return { ok: false, error: error.code };
+    return { ok: false, error: "failed" };
+  }
+}
+
 export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
   const base = `/workspaces/${workspaceId}/live-sessions`;
   return {
@@ -28,5 +40,7 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     sendMessage: (sessionId, text) => post(`${base}/${sessionId}/inputs`, { text }),
     listInputs: async (sessionId) => (await fetchLive<{ inputs: LiveSessionInput[] }>(`${base}/${sessionId}/inputs`)).inputs,
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
+    decideApproval: (sessionId, requestId, decision) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, decision),
+    stop: (sessionId) => post(`${base}/${sessionId}/stop`, {}),
   };
 }
