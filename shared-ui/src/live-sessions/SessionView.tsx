@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
@@ -54,22 +55,61 @@ function SessionMenu({ items, onSelect }: { items: SessionMenuItem[]; onSelect: 
   );
 }
 
-/** One session: breadcrumb header, a stream that follows new messages, and a message box pinned below. */
-export function SessionView({
-  api,
-  sessionId,
-  back,
-  menuItems,
-  notice,
-}: {
+interface SessionViewProps {
   api: LiveSessionsApi;
   sessionId: string;
   /** The "Sessions" crumb, for apps where the list is not always beside the session. */
   back?: ReactNode;
   menuItems?: (session: LiveSession) => SessionMenuItem[];
   notice?: string | null;
-}) {
-  const { session, events, inputs: waiting, error, refresh } = useSessionStream(api, sessionId);
+}
+
+function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
+  return (
+    <nav className="ui-session__crumbs" aria-label="Breadcrumb">
+      <ColumnToggleButton where="main" />
+      {back && (
+        <>
+          {back}
+          <span aria-hidden="true" className="ui-muted">/</span>
+        </>
+      )}
+      {children}
+    </nav>
+  );
+}
+
+/** Same frame as the loaded session, so nothing moves when the first page arrives. */
+function SessionPlaceholder({ back }: { back?: ReactNode }) {
+  return (
+    <div className="ui-session" aria-busy="true">
+      <header className="ui-session__header">
+        <Crumbs back={back}>
+          <h1 className="ui-session__title">&nbsp;</h1>
+        </Crumbs>
+      </header>
+      <div className="ui-session__scroll" />
+    </div>
+  );
+}
+
+/** One session: breadcrumb header, a stream that follows new messages, and a message box pinned below. */
+export function SessionView(props: SessionViewProps) {
+  return (
+    <DataBoundary key={props.sessionId} fallback={<SessionPlaceholder back={props.back} />} errorMessage="Could not load this session.">
+      <LoadedSession {...props} />
+    </DataBoundary>
+  );
+}
+
+function LoadedSession({
+  api,
+  sessionId,
+  back,
+  menuItems,
+  notice,
+}: SessionViewProps) {
+  const { session, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const inputs = useSessionInputs(api, sessionId, waiting, refresh);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -113,29 +153,22 @@ export function SessionView({
     else item.onSelect();
   }, []);
 
-  const ownerName = session?.owner_name ?? "the owner";
-  const running = session !== null && (session.status === "live" || session.status === "starting");
+  const ownerName = session.owner_name ?? "the owner";
+  const running = session.status === "live" || session.status === "starting";
   return (
     <div className="ui-session">
       <header className="ui-session__header">
-        <nav className="ui-session__crumbs" aria-label="Breadcrumb">
-          <ColumnToggleButton where="main" />
-          {back && (
-            <>
-              {back}
-              <span aria-hidden="true" className="ui-muted">/</span>
-            </>
-          )}
-          <h1 className="ui-session__title">{session ? sessionTitle(session) : "Session"}</h1>
-          {session && <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</span>}
-        </nav>
+        <Crumbs back={back}>
+          <h1 className="ui-session__title">{sessionTitle(session)}</h1>
+          <span className="ui-muted ui-session__meta">{session.owner_name ?? "Someone"} · {session.status.replace("_", " ")}</span>
+        </Crumbs>
         <div className="ui-session__actions">
           {running && (
             <button type="button" className="ui-btn" disabled={stopping} onClick={() => void stop()}>
               {stopping ? "Stopping…" : "Stop"}
             </button>
           )}
-          {session && menuItems && <SessionMenu items={menuItems(session)} onSelect={chooseMenuItem} />}
+          {menuItems && <SessionMenu items={menuItems(session)} onSelect={chooseMenuItem} />}
         </div>
       </header>
       {confirming && (
@@ -153,23 +186,21 @@ export function SessionView({
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scroller} onScroll={onScroll}>
         <div className="ui-session__column">
-          {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream items={items} ownerName={session?.owner_name ?? undefined} hostName={session?.host_name ?? null} />}
+          <SessionStream items={items} ownerName={session.owner_name ?? undefined} hostName={session.host_name} />
         </div>
       </div>
       {!atBottom && (
         <button type="button" className="ui-btn ui-session__jump" onClick={jumpToLatest} aria-label="Jump to latest message">↓</button>
       )}
-      {session && (
-        <div className="ui-session__footer">
-          <div className="ui-session__column">
-            {session.status !== "ended" &&
-              approvals.map((approval) => (
-                <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
-              ))}
-            <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} folderName={session.folder_name} />
-          </div>
+      <div className="ui-session__footer">
+        <div className="ui-session__column">
+          {session.status !== "ended" &&
+            approvals.map((approval) => (
+              <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
+            ))}
+          <SessionComposer {...inputs} ownerName={ownerName} ended={session.status === "ended"} folderName={session.folder_name} />
         </div>
-      )}
+      </div>
     </div>
   );
 }

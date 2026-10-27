@@ -2,6 +2,9 @@
 
 export const MAX_INPUT_CHARS = 10_000;
 
+/** Events in one page of `/events`. A full page means more may follow. */
+export const EVENTS_PAGE_SIZE = 500;
+
 export type LiveSessionErrorCode =
   | "live_sessions_disabled"
   | "session_not_found"

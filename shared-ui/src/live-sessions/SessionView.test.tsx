@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render as renderUi, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
 import type { LiveSession, LiveSessionsApi } from "./types";
 
 afterEach(cleanup);
+
+const render = (ui: ReactElement) =>
+  renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
 
 const session: LiveSession = {
   id: "s1", owner_user_id: "u1", owner_name: "Maya", title: "[Maya via Draft] fix login", folder_name: "marigold",
@@ -113,5 +118,28 @@ describe("SessionView", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("s1", "next"));
     await waitFor(() => expect(fetches).toBeGreaterThan(before));
+  });
+
+  it("shows the page frame while the first page loads, with no text that later changes", async () => {
+    let release: () => void = () => {};
+    const slow = new Promise<void>((done) => (release = done));
+    const { container } = render(
+      <SessionView api={{ ...api, fetchEvents: async () => (await slow, { session, events: [], inputs: [] }) }} sessionId="s1" back={<a href="/sessions">Sessions</a>} />,
+    );
+    expect(container.querySelector(".ui-session[aria-busy='true'] .ui-session__header")).toBeTruthy();
+    expect(screen.getByText("Sessions")).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    release();
+    expect((await screen.findByRole("heading", { name: "fix login" })).textContent).toBe("fix login");
+    expect(container.querySelector("[aria-busy='true']")).toBeNull();
+  });
+
+  it("says when the session cannot be loaded and offers a retry", async () => {
+    const failing = mock(async () => {
+      throw new Error("boom");
+    });
+    render(<SessionView api={{ ...api, fetchEvents: failing }} sessionId="s1" />);
+    expect(await screen.findByText(/Could not load this session/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 });

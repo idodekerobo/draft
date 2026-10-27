@@ -1,7 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
-import { splitAuthor } from "draft-core/live-sessions";
+import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { parseLiveLine, type LiveLineInput, type ParsedLiveEvent } from "../ingestion/claude-code/parse-live-line";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
@@ -17,7 +17,6 @@ type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
 
 const MAX_LINES_PER_POST = 2000;
-const DEFAULT_EVENTS_PAGE = 500;
 const MAX_EVENTS_PAGE = 1000;
 const LIST_LIMIT = 50;
 const TITLE_MAX_CHARS = 120;
@@ -85,7 +84,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
 
   const params = new URL(req.url).searchParams;
   const after = Math.max(0, Number(params.get("after")) || 0);
-  const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || DEFAULT_EVENTS_PAGE));
+  const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || EVENTS_PAGE_SIZE));
 
   const [{ data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
     serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle<SessionRow>(),
