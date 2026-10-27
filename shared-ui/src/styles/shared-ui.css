@@ -794,7 +794,7 @@
 .ui-sessions__row-owner { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ui-sessions__row-fixed { flex: none; }
 .ui-sessions__row-time { flex: none; font-size: var(--font-size-small); }
-.ui-sessions__row-sub { display: flex; align-items: center; gap: var(--space-1); min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--font-size-secondary); }
+.ui-sessions__row-sub { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--font-size-secondary); }
 .ui-sessions__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-tertiary); flex: none; }
 .ui-sessions__dot--live { background: var(--color-status-green); }
 .ui-sessions__dot--waiting { background: var(--color-status-yellow); }
