@@ -1,4 +1,4 @@
-import { LiveSessionsDisabledError, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
+import { LiveSessionsDisabledError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 
 async function fetchLive<T>(path: string): Promise<T> {
@@ -26,9 +26,7 @@ async function decide(path: string, decision: "allow" | "deny"): Promise<Approva
     return { ok: true };
   } catch (error) {
     if (!(error instanceof ApiError)) return { ok: false, error: "failed" };
-    if (error.code === "already_decided") return { ok: false, error: "already_decided", byName: typeof error.detail?.by_name === "string" ? error.detail.by_name : null };
-    if (error.code === "request_closed" || error.code === "session_ended") return { ok: false, error: error.code };
-    return { ok: false, error: "failed" };
+    return toApprovalResult(error.code, typeof error.detail?.by_name === "string" ? error.detail.by_name : null);
   }
 }
 

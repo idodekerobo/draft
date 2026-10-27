@@ -1,7 +1,6 @@
-import { Fragment, useMemo } from "react";
+import { Fragment } from "react";
 import { renderMarkdown } from "../context/markdown";
-import { approvalOutcome, buildStreamItems, type StreamItem } from "./stream-items";
-import type { LiveSessionEvent } from "./types";
+import { approvalOutcome, type StreamItem } from "./stream-items";
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
@@ -68,8 +67,8 @@ function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: stri
 const agentOf = (item: StreamItem) => ("agentId" in item ? item.agentId : null);
 
 /** Open requests are shown in the approval panel, not in the stream. */
-export function SessionStream({ events, ownerName = "User", hostName = null }: { events: LiveSessionEvent[]; ownerName?: string; hostName?: string | null }) {
-  const items = useMemo(() => buildStreamItems(events).filter((item) => item.type !== "approval" || item.resolved !== null), [events]);
+export function SessionStream({ items: all, ownerName = "User", hostName = null }: { items: StreamItem[]; ownerName?: string; hostName?: string | null }) {
+  const items = all.filter((item) => item.type !== "approval" || item.resolved !== null);
   if (items.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
 
   return (

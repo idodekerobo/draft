@@ -715,7 +715,6 @@
 .ui-composer__author { color: var(--color-text-secondary); }
 .ui-composer__text { flex: 1 1 12rem; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ui-composer__actions { display: flex; gap: var(--space-3); }
-.ui-composer__form { display: flex; gap: var(--space-2); align-items: flex-end; }
 .ui-composer__input { min-height: 56px; padding: 8px 10px; resize: vertical; line-height: 1.4; }
 .ui-composer__pending-item { animation: ui-panel-enter 200ms var(--motion-ease); }
 .ui-composer .ui-btn, .ui-composer .ui-link { touch-action: manipulation; }
@@ -762,7 +761,6 @@
 .ui-composer__row { display: flex; gap: var(--space-2); align-items: flex-end; padding: var(--space-2); }
 .ui-composer__input { flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 8px; border: 0; background: none; color: var(--color-text-primary); font: var(--font-size-body) var(--font-ui); line-height: 1.4; resize: none; outline: none; }
 .ui-composer__pending { margin-bottom: var(--space-3); }
-@media (pointer: coarse) { .ui-composer__input { font-size: 16px; } }
 @media (prefers-reduced-motion: reduce) { .ui-session__menu-list { animation: ui-fade-in 200ms linear both; } }
 
 /* ── Sessions column ───────────────────────────────────────────────────────── */

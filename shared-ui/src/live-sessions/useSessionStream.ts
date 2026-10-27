@@ -27,7 +27,10 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
       const page = await api.fetchEvents(sessionId, lastSeq.current);
       if (cancelled.current) return;
       lastSeq.current = Math.max(lastSeq.current, page.events.at(-1)?.seq ?? 0);
-      setState((prev) => ({ session: page.session, events: mergeEvents(prev.events, page.events), error: null }));
+      setState((prev) => {
+        const unchanged = page.events.length === 0 && prev.error === null && JSON.stringify(prev.session) === JSON.stringify(page.session);
+        return unchanged ? prev : { session: page.session, events: mergeEvents(prev.events, page.events), error: null };
+      });
     } catch (error) {
       if (!cancelled.current) setState((prev) => ({ ...prev, error: error instanceof Error ? error : new Error(String(error)) }));
       if (error instanceof LiveSessionsDisabledError) cancelled.current = true;

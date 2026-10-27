@@ -1,4 +1,4 @@
-import { LiveSessionsDisabledError, type LiveSessionsApi } from "draft-shared-ui";
+import { LiveSessionsDisabledError, toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
 import { rpc } from "./rpc";
 
 export const liveSessionsApi: LiveSessionsApi = {
@@ -16,10 +16,7 @@ export const liveSessionsApi: LiveSessionsApi = {
   actOnInput: (sessionId, inputId, action) => rpc.request.actOnLiveSessionInput({ sessionId, inputId, action }),
   decideApproval: async (sessionId, requestId, decision) => {
     const result = await rpc.request.decideLiveSessionApproval({ sessionId, requestId, decision });
-    if (result.ok) return { ok: true };
-    if (result.error === "already_decided") return { ok: false, error: "already_decided", byName: result.byName ?? null };
-    if (result.error === "request_closed" || result.error === "session_ended") return { ok: false, error: result.error };
-    return { ok: false, error: "failed" };
+    return result.ok ? { ok: true } : toApprovalResult(result.error, result.byName);
   },
   stop: async (sessionId) => {
     const result = await rpc.request.stopLiveSession({ sessionId });

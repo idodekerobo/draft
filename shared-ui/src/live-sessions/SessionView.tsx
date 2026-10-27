@@ -77,7 +77,8 @@ export function SessionView({
   const [stopping, setStopping] = useState(false);
   const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const approvals = useMemo(() => openApprovals(buildStreamItems(events)), [events]);
+  const items = useMemo(() => buildStreamItems(events), [events]);
+  const approvals = useMemo(() => openApprovals(items), [items]);
 
   const jumpToLatest = useCallback(() => {
     const el = scroller.current;
@@ -152,7 +153,7 @@ export function SessionView({
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scroller} onScroll={onScroll}>
         <div className="ui-session__column">
-          {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream events={events} ownerName={session?.owner_name ?? undefined} hostName={session?.host_name ?? null} />}
+          {error && !session ? <p className="ui-error" role="alert">Could not load this session.</p> : <SessionStream items={items} ownerName={session?.owner_name ?? undefined} hostName={session?.host_name ?? null} />}
         </div>
       </div>
       {!atBottom && (
