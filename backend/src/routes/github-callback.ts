@@ -61,10 +61,10 @@ export async function GET(request: Request): Promise<Response> {
     });
   }
 
-  if (setupAction !== "install") {
-    // No durable installation_id to bind for a pending owner-approval request
-    // (setup_action: "request") -- v1 does not support auto-completing this
-    // path. See plans/draftv2/0047's Decision 3 (P0-1).
+  if (setupAction !== "install" && setupAction !== "update") {
+    // "update" is GitHub's redirect when the App is already installed.
+    // "request" (pending owner approval) has no durable installation_id to
+    // bind, so v1 does not support auto-completing it.
     resolveInstallSession(code, { status: "error", errorMessage: OWNER_APPROVAL_MESSAGE });
     return new Response(RETURN_TO_DRAFT_HTML(OWNER_APPROVAL_MESSAGE), {
       status: 200,

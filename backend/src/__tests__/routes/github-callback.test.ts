@@ -105,6 +105,33 @@ describe("GET /workspaces/github/callback", () => {
     expect(getInstallSession(code)).toEqual({ status: "connected", workspaceId: "ws-1" });
   });
 
+  it("connects when setup_action is 'update' (App already installed)", async () => {
+    const code = createInstallSession("ws-1");
+    let upsertedInput: Record<string, unknown> | undefined;
+    mockPreflight();
+
+    mock.module("../../ingestion/github/client-instance", () => ({
+      githubClient: {
+        verifyInstallation: async () => ({ accountLogin: "acme", accountId: 42, suspendedAt: null }),
+      },
+    }));
+    mock.module("../../ingestion/upsert-source-item", () => ({
+      upsertSourceConnection: async (_client: unknown, input: Record<string, unknown>) => {
+        upsertedInput = input;
+        return { id: "conn-1" };
+      },
+    }));
+
+    const { GET } = await import("../../routes/github-callback");
+    const response = await GET(
+      new Request(callbackUrl({ installation_id: "555", setup_action: "update", state: code })),
+    );
+
+    expect(response.status).toBe(200);
+    expect(upsertedInput).toMatchObject({ workspace_id: "ws-1", connection_key: "555", status: "active" });
+    expect(getInstallSession(code)).toEqual({ status: "connected", workspaceId: "ws-1" });
+  });
+
   it("resolves with an error and does not upsert when setup_action is 'request' (pending owner approval)", async () => {
     const code = createInstallSession("ws-1");
     let upsertCalled = false;
