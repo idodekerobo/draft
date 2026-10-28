@@ -85,7 +85,7 @@ export function SessionComposer({
           <label className="ui-visually-hidden" htmlFor="session-message">Message to {ownerName}'s session</label>
           <textarea
             id="session-message"
-            className="ui-composer__input"
+            className="ui-composer__input ph-no-capture"
             rows={2}
             autoFocus={autoFocus}
             maxLength={MAX_INPUT_CHARS}

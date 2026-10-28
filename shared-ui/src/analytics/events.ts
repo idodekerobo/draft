@@ -4,6 +4,9 @@
 export const PLATFORM_PROPERTY = "platform";
 export type AnalyticsPlatform = "web" | "desktop" | "landing";
 
+/** How a person reached a session: inside the app, or from a URL such as a shared link. */
+export type SessionEntry = "list" | "direct";
+
 export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "give_source" | "reading" | "first_context";
 
 export type SharedAnalyticsEvent =
@@ -17,7 +20,9 @@ export type SharedAnalyticsEvent =
   | { event: "first_tool_connected";       props: { source: string } }
   | { event: "integration_connected";      props: { source: string } }
   | { event: "integration_disconnected";   props: { source: string } }
-  | { event: "integration_channels_updated"; props: { source: string } };
+  | { event: "integration_channels_updated"; props: { source: string } }
+  | { event: "session_viewed";             props: { is_owner: boolean; entry: SessionEntry } }
+  | { event: "session_started";            props: { harness: "claude"; model: string } };
 
 export type SharedEventName = SharedAnalyticsEvent["event"];
 

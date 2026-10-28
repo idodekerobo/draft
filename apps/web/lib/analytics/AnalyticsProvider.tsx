@@ -12,6 +12,7 @@ const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posth
 interface AnalyticsUser {
   id: string;
   analytics_consent: boolean | null;
+  workspace_id?: string | null;
 }
 
 interface AnalyticsValue {
@@ -62,6 +63,8 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     const posthog = posthogRef.current;
     if (!POSTHOG_KEY || !posthog) return;
     if (user?.analytics_consent === true) {
+      // Set before queued events are sent, so they carry it too.
+      if (user.workspace_id) posthog.register({ workspace_id: user.workspace_id });
       if (!optedIn.current) {
         posthog.opt_in_capturing();
         posthog.identify(user.id);

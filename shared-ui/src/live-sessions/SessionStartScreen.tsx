@@ -93,7 +93,7 @@ export function SessionStartScreen({
             <label className="ui-visually-hidden" htmlFor="start-message">First message</label>
             <textarea
               id="start-message"
-              className="ui-composer__input"
+              className="ui-composer__input ph-no-capture"
               rows={3}
               autoFocus
               placeholder="Describe a task to start a new session…"

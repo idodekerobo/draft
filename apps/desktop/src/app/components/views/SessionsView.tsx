@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type StartRequest, type StartResult } from "draft-shared-ui";
+import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
 function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: string; onOpenSession: (id: string) => void; justStarted: boolean }) {
+  const { track } = useAnalytics();
   const [hostedHere, setHostedHere] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -51,12 +53,14 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
       notice={notice}
       onOpenSession={onOpenSession}
       autoFocusComposer={justStarted}
+      track={track}
     />
   );
 }
 
 export function SessionsView() {
   const workspaceKey = useWorkspaceKey();
+  const { track } = useAnalytics();
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [startedId, setStartedId] = useState<string | null>(null);
@@ -69,6 +73,7 @@ export function SessionsView() {
   async function start({ folderPath, text, model }: StartRequest): Promise<StartResult> {
     const result = await rpc.request.startLiveSession({ folderPath, model });
     if (!result.ok) return result;
+    track("session_started", { harness: "claude", model: model ?? "default" });
     setRecentFolders(rememberFolder(window.localStorage, folderPath));
     // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
     await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
