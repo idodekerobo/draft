@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApprovalPanel } from "./ApprovalPanel";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
@@ -27,6 +27,9 @@ export interface SessionMenuItem {
 }
 
 const NEAR_BOTTOM_PX = 96;
+
+/** Scroll offset per session, kept while the app runs; null means the user was following the latest message. */
+const scrollMemory = new Map<string, number | null>();
 const STOPPING_MS = 3_000;
 
 function SessionMenu({ items, onSelect }: { items: SessionMenuItem[]; onSelect: (item: SessionMenuItem) => void }) {
@@ -185,7 +188,15 @@ function LoadedSession({
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
     following.current = near;
     setAtBottom(near);
-  }, []);
+    scrollMemory.set(sessionId, near ? null : el.scrollTop);
+  }, [sessionId]);
+
+  useLayoutEffect(() => {
+    const saved = scrollMemory.get(sessionId);
+    if (saved == null || !scroller.current) return;
+    following.current = false;
+    scroller.current.scrollTop = saved;
+  }, [sessionId]);
 
   useEffect(() => {
     if (following.current) jumpToLatest();
