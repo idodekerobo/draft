@@ -193,6 +193,18 @@ describe("live session routes", () => {
     expect(updates.map((u) => u.payload)).toEqual([{ title: "Fix the login bug" }, { native_session_id: "native-1" }]);
   });
 
+  it("replaces the first-prompt title with Claude Code's ai-title, and a rename beats it", async () => {
+    tables.sessions = [session({ title: "Fix the login bug" })];
+    const aiLine = { file: "root.jsonl", offset: 9, raw: '{"type":"ai-title","aiTitle":"Login bug fix"}' };
+    await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [aiLine] }));
+    expect(updates.map((u) => u.payload)).toEqual([{ title: "Login bug fix" }]);
+
+    updates = [];
+    const renamed = { file: "root.jsonl", offset: 10, raw: '{"type":"custom-title","customTitle":"login-work"}' };
+    await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [aiLine, renamed] }));
+    expect(updates.map((u) => u.payload)).toEqual([{ title: "login-work" }]);
+  });
+
   it("does not call the database when no line has anything to show", async () => {
     const res = await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [{ file: "root.jsonl", offset: 0, raw: '{"type":"attachment"}' }] }));
     expect(res.status).toBe(200);

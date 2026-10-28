@@ -3,6 +3,7 @@ import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { eventsFor, isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
+import { latestNativeTitle } from "../ingestion/claude-code/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
@@ -201,7 +202,10 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
 
   const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
-  if (owned.session.title === null && firstPrompt) {
+  const nativeTitle = latestNativeTitle(incoming, TITLE_MAX_CHARS);
+  if (nativeTitle) {
+    if (nativeTitle !== owned.session.title) await serviceClient.from("sessions").update({ title: nativeTitle }).eq("id", sessionId);
+  } else if (owned.session.title === null && firstPrompt) {
     const title = firstLine(splitAuthor((firstPrompt.payload as { text: string }).text).text);
     if (title) await serviceClient.from("sessions").update({ title }).eq("id", sessionId).is("title", null);
   }
