@@ -1,5 +1,7 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { FlowShell, HydrationBoundary, dehydrate, makeQueryClient } from "draft-shared-ui";
+import { safeNext } from "@/lib/safe-redirect";
 import { WebQueryProvider } from "@/lib/query-provider";
 import { getServerAccessToken, getServerIdentity } from "@/lib/server-identity";
 import { prefetchWorkspace } from "@/lib/server-prefetch";
@@ -7,7 +9,10 @@ import { WorkspaceProvider } from "@/lib/workspace";
 
 export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const result = await getServerIdentity();
-  if (result.state === "signed_out") redirect("/login?next=/");
+  if (result.state === "signed_out") {
+    const next = safeNext((await headers()).get("x-draft-path"));
+    redirect(`/login?next=${encodeURIComponent(next)}`);
+  }
   if (result.state === "api_down") {
     return (
       <FlowShell>

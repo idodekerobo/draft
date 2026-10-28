@@ -3,6 +3,8 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 export async function proxy(request: NextRequest) {
+  // Server layouts cannot see the URL, and a signed-out visitor must come back to it after login.
+  request.headers.set("x-draft-path", `${request.nextUrl.pathname}${request.nextUrl.search}`);
   let response = NextResponse.next({ request });
   const { url, publishableKey } = getSupabaseEnv();
   const supabase = createServerClient(url, publishableKey, {
