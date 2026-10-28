@@ -27,6 +27,17 @@ describe("SessionComposer", () => {
     await waitFor(() => expect(box.value).toBe(""));
   });
 
+  it("clears the box before the send finishes", async () => {
+    const { send } = renderComposer();
+    let finish = () => {};
+    send.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const box = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "hello" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(box.value).toBe("");
+    finish();
+  });
+
   it("Shift+Enter does not send", () => {
     const { send } = renderComposer();
     const box = screen.getByRole("textbox");

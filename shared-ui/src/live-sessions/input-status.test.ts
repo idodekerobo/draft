@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { inputStatusLine } from "./input-status";
-import type { LiveSessionInput } from "./types";
+import type { ComposerInput } from "./types";
 
 const NOW = Date.parse("2026-10-27T12:00:00Z");
-const input = (patch: Partial<LiveSessionInput>): LiveSessionInput => ({
+const input = (patch: Partial<ComposerInput>): ComposerInput => ({
   id: "i", author_user_id: "u", author_name: "Priya", text: "hi", state: "queued", reason: null,
   created_at: "2026-10-27T11:59:30Z", updated_at: "2026-10-27T11:59:30Z", mine: true, ...patch,
 });
@@ -33,6 +33,7 @@ describe("inputStatusLine", () => {
 
   it("covers sending, uncertain and failed", () => {
     expect(inputStatusLine(input({ state: "delivering" }), "Maya", NOW)).toBe("Sending…");
+    expect(inputStatusLine(input({ state: "sending" }), "Maya", NOW)).toBe("Sending…");
     expect(inputStatusLine(input({ state: "uncertain" }), "Maya", NOW)).toBe("May not have been delivered.");
     expect(inputStatusLine(input({ state: "failed", reason: "session_ended" }), "Maya", NOW)).toBe("Not delivered: the session ended");
     expect(inputStatusLine(input({ state: "failed", reason: "odd" }), "Maya", NOW)).toBe("Not delivered: something went wrong");

@@ -5,6 +5,8 @@ export const NEW_SESSION_DRAFT_KEY = "new-session";
 // Module-level so drafts outlive the composer, which unmounts on every session switch.
 const drafts = new Map<string, string>();
 
+export const hasDraft = (key: string) => drafts.has(key);
+
 export function clearDraft(key: string) {
   drafts.delete(key);
 }
