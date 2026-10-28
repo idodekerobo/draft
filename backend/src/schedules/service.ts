@@ -41,10 +41,7 @@ export interface RoutineRun {
   endedAt: string | null;
 }
 
-export interface AgentRoutineInfo {
-  prompt: string;
-  harness: AgentRoutineConfig["harness"];
-  model: string | null;
+export interface AgentRoutineInfo extends Omit<AgentRoutineConfig, "title"> {
   createdByName: string | null;
   lastRun: RoutineRun | null;
 }
@@ -138,6 +135,8 @@ function toRoutine(
   };
 }
 
+const RUN_COLUMNS = "id, status, end_reason, started_at, ended_at, scheduled_task_id";
+
 type RunRow = Pick<SessionRow, "id" | "status" | "end_reason" | "started_at" | "ended_at"> & { scheduled_task_id: string };
 
 function toRoutineRun(row: RunRow): RoutineRun {
@@ -195,23 +194,24 @@ async function loadUserNames(workspaceId: string, userIds: string[]): Promise<Ma
 
 // A failed lookup only hides the last run; the rest of the list still loads.
 async function loadLastAgentRuns(workspaceId: string, taskIds: string[]): Promise<Map<string, RoutineRun>> {
-  if (taskIds.length === 0) return new Map();
-  const { data, error } = await serviceClient
-    .from("sessions")
-    .select("id, status, end_reason, started_at, ended_at, scheduled_task_id")
-    .eq("workspace_id", workspaceId)
-    .in("scheduled_task_id", taskIds)
-    .order("started_at", { ascending: false })
-    .limit(taskIds.length * 5);
-  if (error) {
-    recordRouteError({ workspaceId, errorCode: "schedules_last_agent_run_failed", error });
-    return new Map();
-  }
-  const latest = new Map<string, RoutineRun>();
-  for (const row of (data ?? []) as RunRow[]) {
-    if (!latest.has(row.scheduled_task_id)) latest.set(row.scheduled_task_id, toRoutineRun(row));
-  }
-  return latest;
+  // One small query per routine: a busy routine cannot crowd another out of a shared page.
+  const rows = await Promise.all(
+    taskIds.map(async (taskId) => {
+      const { data, error } = await serviceClient
+        .from("sessions")
+        .select(RUN_COLUMNS)
+        .eq("workspace_id", workspaceId)
+        .eq("scheduled_task_id", taskId)
+        .order("started_at", { ascending: false })
+        .limit(1);
+      if (error) {
+        recordRouteError({ workspaceId, errorCode: "schedules_last_agent_run_failed", error });
+        return null;
+      }
+      return ((data ?? []) as RunRow[])[0] ?? null;
+    }),
+  );
+  return new Map(rows.flatMap((row) => (row ? [[row.scheduled_task_id, toRoutineRun(row)] as const] : [])));
 }
 
 async function buildRoutines(
@@ -240,10 +240,9 @@ async function buildRoutines(
         console.warn(`Skipping scheduled task ${task.id}: invalid agent routine config`);
         return [];
       }
+      const { title: _title, ...agentConfig } = config;
       const agent: AgentRoutineInfo = {
-        prompt: config.prompt,
-        harness: config.harness,
-        model: config.model,
+        ...agentConfig,
         createdByName: task.created_by_user_id ? (names.get(task.created_by_user_id) ?? null) : null,
         lastRun: lastAgentRuns.get(task.id) ?? null,
       };
@@ -402,7 +401,7 @@ export async function listRoutineRuns(workspaceId: string, taskId: string): Prom
 
   const { data, error } = await serviceClient
     .from("sessions")
-    .select("id, status, end_reason, started_at, ended_at, scheduled_task_id")
+    .select(RUN_COLUMNS)
     .eq("workspace_id", workspaceId)
     .eq("scheduled_task_id", taskId)
     .order("started_at", { ascending: false })

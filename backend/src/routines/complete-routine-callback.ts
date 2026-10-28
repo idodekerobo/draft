@@ -5,12 +5,12 @@ import { parseLiveLine } from "../ingestion/claude-code/parse-live-line";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";
 import { parseAgentRoutineConfig, parseRoutineSessionId } from "./config";
-import { failRoutineSession } from "./fail-routine-session";
+import { endRoutineSession, failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 
 const MAX_LINES_PER_POST = 2000;
 const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_machine_id, scheduled_task_id";
 
-type RoutineSession = Pick<SessionRow, "id" | "workspace_id" | "session_type" | "status" | "last_seq" | "host_machine_id" | "scheduled_task_id">;
+type RoutineSession = RoutineSessionRef & Pick<SessionRow, "session_type" | "status" | "last_seq">;
 
 const FAILURE_NOTES: Record<string, string> = {
   timeout: "The run took too long and was stopped.",
@@ -39,11 +39,11 @@ async function promptEvent(client: SupabaseClient, session: RoutineSession) {
   return parseLiveLine(line);
 }
 
-async function appendLines(client: SupabaseClient, session: RoutineSession, lines: IncomingLine[]): Promise<Response> {
+async function appendLines(client: SupabaseClient, session: RoutineSession, lines: IncomingLine[]): Promise<void> {
   const parsed = lines.flatMap(eventsFor);
   const events = [...(session.last_seq === 0 ? await promptEvent(client, session) : []), ...parsed]
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
-  if (events.length === 0) return new Response(null, { status: 204 });
+  if (events.length === 0) return;
 
   const { error } = await client.rpc("append_session_events", {
     p_session_id: session.id,
@@ -52,20 +52,13 @@ async function appendLines(client: SupabaseClient, session: RoutineSession, line
     p_events: events,
   });
   // A late batch for a session the tick already failed is not an error.
-  if (error?.message.includes("session_ended")) return new Response(null, { status: 204 });
-  if (error) throw error;
-  return new Response(null, { status: 204 });
+  if (error && !error.message.includes("session_ended")) throw error;
 }
 
-async function finishRun(client: SupabaseClient, session: RoutineSession, result: Record<string, unknown>): Promise<Response> {
+async function finishRun(client: SupabaseClient, session: RoutineSession, result: Record<string, unknown>): Promise<void> {
   if (result.ok === true) {
-    await client
-      .from("sessions")
-      .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: "completed", open_approval_count: 0 })
-      .eq("id", session.id)
-      .eq("workspace_id", session.workspace_id)
-      .neq("status", "ended");
-    return new Response(null, { status: 204 });
+    await endRoutineSession(client, session, "completed");
+    return;
   }
   const code = typeof result.error === "string" && result.error in FAILURE_NOTES ? result.error : "runner_error";
   await failRoutineSession(client, session, {
@@ -74,7 +67,6 @@ async function finishRun(client: SupabaseClient, session: RoutineSession, result
     message: `Routine run failed: ${code}`,
     detail: { failure_code: code, diagnostics: isObject(result.diagnostics) ? result.diagnostics : null },
   });
-  return new Response(null, { status: 204 });
 }
 
 /**
@@ -101,9 +93,13 @@ export async function completeRoutineRunCallback(
   try {
     if (isObject(result) && result.kind === "lines" && Array.isArray(result.lines)) {
       if (result.lines.length > MAX_LINES_PER_POST || !result.lines.every(isIncomingLine)) return new Response(null, { status: 400 });
-      return await appendLines(db, session, result.lines as IncomingLine[]);
+      await appendLines(db, session, result.lines as IncomingLine[]);
+      return new Response(null, { status: 204 });
     }
-    if (isObject(result) && result.kind === "end") return await finishRun(db, session, result);
+    if (isObject(result) && result.kind === "end") {
+      await finishRun(db, session, result);
+      return new Response(null, { status: 204 });
+    }
     return new Response(null, { status: 400 });
   } catch (callbackError) {
     await recordError({

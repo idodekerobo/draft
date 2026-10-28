@@ -12,7 +12,7 @@ export interface LaunchRoutineRunInput {
   client: SupabaseClient;
 }
 
-export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<{ machineId: string }>;
+export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<void>;
 
 export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceId, routine, config, client }) => {
   const { data, error } = await client.from("workspaces").select("organization_id").eq("id", workspaceId).single();
@@ -24,7 +24,7 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceI
   // A workspace with no brain yet still runs; the prompt may not need it.
   const documents = context.ok ? context.snapshot.documents : {};
 
-  const receipt = await launchFlySandboxRun({
+  await launchFlySandboxRun({
     bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, documents }),
     prompt: renderRoutinePrompt(routine.prompt),
     mode: "routine",
@@ -33,5 +33,4 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceI
     claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client),
     config,
   });
-  return { machineId: receipt.machineId };
 };

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SandboxDeploymentConfig } from "../sandbox";
-import type { ScheduledTaskRow, SessionRow } from "../types/tables";
+import type { ScheduledTaskRow } from "../types/tables";
 import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId } from "./config";
-import { failRoutineSession } from "./fail-routine-session";
+import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 import { launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
 
 const UNIQUE_VIOLATION = "23505";
@@ -41,7 +41,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
   // TODO: routine sessions never pass the capture hook, so the brain does not learn from them.
   // Revisit once routines take real actions (write code, send email).
   const sessionId = randomUUID();
-  const { data: inserted, error: insertError } = await client
+  const { error: insertError } = await client
     .from("sessions")
     .insert({
       id: sessionId,
@@ -56,13 +56,12 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       host_name: ROUTINE_HOST_NAME,
       scheduled_task_id: task.id,
       idempotency_key: `${task.id}:${occurrenceAt}`,
-    })
-    .select("id, workspace_id, scheduled_task_id, host_machine_id");
+    });
   if (insertError) {
-    if ((insertError as { code?: string }).code === UNIQUE_VIOLATION) return;
+    if (insertError.code === UNIQUE_VIOLATION) return;
     throw insertError;
   }
-  const session = (inserted as Array<Pick<SessionRow, "id" | "workspace_id" | "scheduled_task_id" | "host_machine_id">>)[0]!;
+  const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
 
   try {
     await (options.launch ?? launchRoutineRun)({ sessionId, workspaceId: task.workspace_id, routine, config, client });

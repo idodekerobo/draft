@@ -15,7 +15,7 @@ const task = {
 
 const newDb = () => fakeDb({ sessions: [], errors: [] }, { unique: { sessions: [["workspace_id", "idempotency_key"]] } });
 const sandboxConfig = {} as never;
-const okLaunch = () => mock<LaunchRoutineRun>(async () => ({ machineId: "machine-1" }));
+const okLaunch = () => mock<LaunchRoutineRun>(async () => {});
 
 function dispatch(db: ReturnType<typeof newDb>, launch: LaunchRoutineRun, occurrenceAt = "2026-10-27T09:00:00.000Z", overrides: Partial<ScheduledTaskRow> = {}) {
   return dispatchAgentRoutine({ task: { ...task, ...overrides }, occurrenceAt, config: sandboxConfig, client: fakeClient(db), launch });

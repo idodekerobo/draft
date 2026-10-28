@@ -682,6 +682,13 @@ export interface RoutineEnd {
 
 export type RoutinePost = (result: unknown) => Promise<void>;
 
+export function routineFailureCode(input: { timedOut: boolean; resultIsError: boolean; exitCode: number | null; signal: NodeJS.Signals | null }): RunnerFailureCode {
+  if (input.timedOut) return "timeout";
+  if (input.resultIsError) return "claude_error";
+  if (input.exitCode !== 0 || input.signal !== null) return "claude_exit";
+  return "incomplete_result";
+}
+
 export async function runRoutine(
   prompt: string,
   model: string | null,
@@ -765,15 +772,7 @@ export async function runRoutine(
 
   const finished = resultLine as { is_error?: boolean; subtype?: string } | null;
   const ok = !timedOut && finished !== null && finished.is_error !== true && childExit.code === 0;
-  const error: RunnerFailureCode | undefined = ok
-    ? undefined
-    : timedOut
-      ? "timeout"
-      : finished?.is_error === true
-        ? "claude_error"
-        : childExit.code !== 0 || childExit.signal !== null
-          ? "claude_exit"
-          : "incomplete_result";
+  const error = ok ? undefined : routineFailureCode({ timedOut, resultIsError: finished?.is_error === true, exitCode: childExit.code, signal: childExit.signal });
   runnerLog("claude_finished", {
     run_id: runId,
     exit_code: childExit.code,
@@ -946,7 +945,8 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
   const outputSchemaPath = process.env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH;
   const timeoutMs = parseTimeoutSeconds(process.env.DRAFT_TIMEOUT_SECONDS) * 1_000;
-  const runMode = process.env.DRAFT_RUN_MODE === "batch" ? "batch" : process.env.DRAFT_RUN_MODE === "routine" ? "routine" : "single";
+  const requestedMode = process.env.DRAFT_RUN_MODE;
+  const runMode = requestedMode === "batch" || requestedMode === "routine" ? requestedMode : "single";
   const inputRoot = "/run/input";
   // Bundle file keys (e.g. "input/prompt.md", "input/sources/x.md") already
   // carry the "input/" segment, so they're relative to /run, one level above

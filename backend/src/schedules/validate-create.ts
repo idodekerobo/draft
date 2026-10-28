@@ -1,5 +1,5 @@
 import { PRESETS, WEEKDAYS, type Preset, type ScheduleInput, type Weekday } from "../scheduling/presets";
-import { parseAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
+import { validateAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
 
 const MAX_STRING_LENGTH = 64;
 
@@ -12,18 +12,14 @@ export function validateCreate(body: unknown): CreateValidation {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, field: "body" };
   const record = body as Record<string, unknown>;
 
-  const config = parseAgentRoutineConfig({
+  const checked = validateAgentRoutineConfig({
     title: record.title,
     prompt: record.prompt,
     harness: record.harness,
     model: record.model ?? null,
   });
-  if (!config) {
-    const field = (["title", "prompt", "harness", "model"] as const).find(
-      (name) => parseAgentRoutineConfig({ title: "t", prompt: "p", harness: "claude", model: null, [name]: record[name] ?? null }) === null,
-    );
-    return { ok: false, field: field ?? "body" };
-  }
+  if (!checked.ok) return checked;
+  const { config } = checked;
 
   for (const field of ["time", "weekday", "timezone"] as const) {
     const value = record[field];

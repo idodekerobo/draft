@@ -117,11 +117,12 @@ export async function launchFlySandboxRun(
   if (Object.hasOwn(input.bundle.files, PROMPT_PATH)) {
     throw new Error(`Run bundle already contains reserved prompt path: ${PROMPT_PATH}`);
   }
-  if (input.mode !== "routine" && Object.hasOwn(input.bundle.files, OUTPUT_SCHEMA_PATH)) {
+  const hasSchema = input.mode !== "routine";
+  if (hasSchema && Object.hasOwn(input.bundle.files, OUTPUT_SCHEMA_PATH)) {
     throw new Error(`Run bundle already contains reserved output schema path: ${OUTPUT_SCHEMA_PATH}`);
   }
-  if (input.mode !== "routine" && !input.jsonSchema) throw new Error("jsonSchema is required unless mode is \"routine\"");
-  const serializedSchema = input.jsonSchema ? serializeJsonSchema(input.jsonSchema) : null;
+  if (hasSchema && !input.jsonSchema) throw new Error("jsonSchema is required unless mode is \"routine\"");
+  const serializedSchema = hasSchema ? serializeJsonSchema(input.jsonSchema!) : null;
 
   const now = dependencies.now ?? Date.now;
   const nonce = dependencies.nonce ?? randomUUID;

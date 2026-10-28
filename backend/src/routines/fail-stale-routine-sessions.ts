@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ROUTINE_STALE_AFTER_MS } from "./config";
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 
+const STALE_BATCH = 50;
+
 /** A machine that never reports back leaves its session starting or live. The tick ends it as failed. */
 export async function failStaleRoutineSessions(client: SupabaseClient, now: Date): Promise<number> {
   const cutoff = new Date(now.getTime() - ROUTINE_STALE_AFTER_MS).toISOString();
@@ -10,7 +12,8 @@ export async function failStaleRoutineSessions(client: SupabaseClient, now: Date
     .select("id, workspace_id, scheduled_task_id, host_machine_id")
     .eq("session_type", "routine")
     .in("status", ["starting", "live"])
-    .lt("started_at", cutoff);
+    .lt("started_at", cutoff)
+    .limit(STALE_BATCH);
   if (error) throw error;
 
   let failed = 0;

@@ -13,6 +13,23 @@ export interface RoutineFailure {
   error?: unknown;
 }
 
+/** Moves a running session to ended. Returns false when it had already ended, so only one caller records the outcome. */
+export async function endRoutineSession(
+  client: SupabaseClient,
+  session: Pick<RoutineSessionRef, "id" | "workspace_id">,
+  endReason: "completed" | "failed",
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("sessions")
+    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: endReason, open_approval_count: 0 })
+    .eq("id", session.id)
+    .eq("workspace_id", session.workspace_id)
+    .neq("status", "ended")
+    .select("id");
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 /**
  * Ends a routine session as failed and writes one errors row. There is no retry:
  * the next scheduled run is the retry. Only the call that moves the session out of
@@ -34,15 +51,7 @@ export async function failRoutineSession(
     })
     .then(() => undefined, () => undefined);
 
-  const { data, error } = await client
-    .from("sessions")
-    .update({ status: "ended", ended_at: new Date().toISOString(), end_reason: "failed", open_approval_count: 0 })
-    .eq("id", session.id)
-    .eq("workspace_id", session.workspace_id)
-    .neq("status", "ended")
-    .select("id");
-  if (error) throw error;
-  if (!data?.length) return false;
+  if (!(await endRoutineSession(client, session, "failed"))) return false;
 
   await recordError({
     client,

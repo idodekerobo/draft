@@ -21,6 +21,7 @@ import {
   recomputeBundleHash,
   reportRunnerFailure,
   routineCommandArgs,
+  routineFailureCode,
   runBatch,
   sanitizeReason,
   sanitizedClaudeEnv,
@@ -561,4 +562,13 @@ describe("StreamLineReader", () => {
     const huge = "x".repeat(4 * 1024 * 1024 + 1);
     expect(reader.push(`\n${huge}\n`)).toEqual([{ file: "root.jsonl", offset: 1, oversizeBytes: huge.length }]);
   });
+});
+
+test("a routine failure is named by the first cause that applies", () => {
+  const base = { timedOut: false, resultIsError: false, exitCode: 0, signal: null };
+  expect(routineFailureCode({ ...base, timedOut: true, resultIsError: true })).toBe("timeout");
+  expect(routineFailureCode({ ...base, resultIsError: true, exitCode: 1 })).toBe("claude_error");
+  expect(routineFailureCode({ ...base, exitCode: 1 })).toBe("claude_exit");
+  expect(routineFailureCode({ ...base, signal: "SIGKILL" })).toBe("claude_exit");
+  expect(routineFailureCode(base)).toBe("incomplete_result");
 });

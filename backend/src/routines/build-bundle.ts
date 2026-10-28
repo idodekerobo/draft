@@ -1,8 +1,7 @@
 import { computeBundleHash } from "../sandbox/bundle-hash";
+import { assertSafeDocumentPath } from "../synthesis/context-version-files";
 import type { SandboxRunBundle } from "../sandbox";
 import { routineRunId } from "./config";
-
-const SAFE_DOCUMENT_PATH = /^[A-Za-z0-9._\-/]+\.md$/;
 
 const PREAMBLE = [
   "You are running as a scheduled routine for a company. Its shared knowledge is in Markdown files under /run/input/context.",
@@ -23,7 +22,11 @@ export function buildRoutineBundle(input: {
 }): SandboxRunBundle {
   const files: Record<string, { content: string }> = {};
   for (const [path, document] of Object.entries(input.documents)) {
-    if (!SAFE_DOCUMENT_PATH.test(path) || path.startsWith("/") || path.split("/").includes("..")) continue;
+    try {
+      assertSafeDocumentPath(path);
+    } catch {
+      continue;
+    }
     files[`input/context/${path}`] = { content: document.content };
   }
   if (Object.keys(files).length === 0) files["input/context/README.md"] = { content: "The company brain has no documents yet.\n" };
