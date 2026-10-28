@@ -1,10 +1,16 @@
 import { useLayoutEffect, type KeyboardEvent, type RefObject } from "react";
 
-/** Enter sends; Shift+Enter adds a line, and Enter while an input method composes text is left alone. */
+/** Enter sends; Shift+Enter and Option+Enter add a line, and Enter while an input method composes text is left alone. */
 export function submitOnEnter(submit: () => void) {
   return (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (event.altKey) {
+      // Browsers add no newline for Alt+Enter, so insert one and let React see an input event.
+      const el = event.currentTarget;
+      el.setRangeText("\n", el.selectionStart, el.selectionEnd, "end");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
       submit();
     }
   };
