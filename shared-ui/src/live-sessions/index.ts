@@ -5,3 +5,4 @@ export { readRecentFolders, rememberFolder } from "./column-state";
 export { SessionsLayout, ColumnToggleButton } from "./SessionsLayout";
 export { SessionStartScreen, type StartRequest, type StartResult } from "./SessionStartScreen";
 export { SessionView, type SessionMenuItem } from "./SessionView";
+export { MESSAGE_PARAM, parseMessageParam } from "./share-links";
