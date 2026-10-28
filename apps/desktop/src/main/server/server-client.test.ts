@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { AuthRefreshError } from "draft-core/auth-state";
-import { createServerFetch, ServerError, SessionExpiredError, setSessionExpiredHandler, type ServerFetchDeps } from "./server-client";
+import { createServerFetch, ServerError, SessionExpiredError, setSessionExpiredHandler, type ServerFetchDeps, type SessionExpiredCause } from "./server-client";
 
 function setup(statuses: number[], token: ServerFetchDeps["token"] = async (force) => (force ? "fresh" : "old")) {
   const requests: string[] = [];
@@ -13,8 +13,9 @@ function setup(statuses: number[], token: ServerFetchDeps["token"] = async (forc
     },
   };
   let expired = 0;
-  setSessionExpiredHandler(() => { expired++; });
-  return { fetchServer: createServerFetch(deps), requests, forced, expired: () => expired };
+  const causes: SessionExpiredCause[] = [];
+  setSessionExpiredHandler((cause) => { expired++; causes.push(cause); });
+  return { fetchServer: createServerFetch(deps), requests, forced, expired: () => expired, causes };
 }
 
 afterEach(() => setSessionExpiredHandler(null));
@@ -42,6 +43,13 @@ describe("fetchServer session expiry", () => {
     const t = setup([401, 401]);
     await expect(t.fetchServer("x")).rejects.toBeInstanceOf(SessionExpiredError);
     expect(t.expired()).toBe(1);
+    expect(t.causes[0]).toEqual({ apiStatus: 401 });
+  });
+  test("passes the refresh error to the handler so the sign-out can be explained", async () => {
+    const error = new AuthRefreshError("terminal", 400, "refresh_token_already_used");
+    const t = setup([], async () => { throw error; });
+    await expect(t.fetchServer("x")).rejects.toBeInstanceOf(SessionExpiredError);
+    expect(t.causes[0]?.error).toBe(error);
   });
   test("terminal refresh error on the retry calls the handler", async () => {
     const t = setup([401], async (force) => { if (force) throw new AuthRefreshError("terminal"); return "old"; });

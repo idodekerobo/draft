@@ -21,6 +21,17 @@ describe("auth state", () => {
   });
   test.each([400, 401, 403])("classifies %s as terminal", async (status) => { const h = harness(auth(), async () => new Response(null, { status })); expect(h.token(options)).rejects.toThrow("session_refresh_terminal"); });
   test.each([429, 500, 503])("classifies %s as transient", async (status) => { const h = harness(auth(), async () => new Response(null, { status })); expect(h.token(options)).rejects.toThrow("session_refresh_transient"); });
+  test("keeps the provider's status and error code on a failed refresh", async () => {
+    const h = harness(auth(), async () => Response.json({ error_code: "refresh_token_already_used" }, { status: 400 }));
+    const error = await h.token(options).catch((e) => e);
+    expect(error).toMatchObject({ kind: "terminal", status: 400, code: "refresh_token_already_used" });
+  });
+  test("falls back to the OAuth error field, and tolerates a body that is not JSON", async () => {
+    const oauth = await harness(auth(), async () => Response.json({ error: "invalid_grant" }, { status: 400 })).token(options).catch((e) => e);
+    expect(oauth.code).toBe("invalid_grant");
+    const plain = await harness(auth(), async () => new Response("<html>", { status: 502 })).token(options).catch((e) => e);
+    expect(plain).toMatchObject({ kind: "transient", status: 502, code: undefined });
+  });
   test("classifies network failure as transient", async () => { const h = harness(auth(), async () => { throw new Error("offline"); }); expect(h.token(options)).rejects.toThrow("session_refresh_transient"); });
   test("shares one in-flight refresh", async () => {
     let release!: (response: Response) => void; const pending = new Promise<Response>((resolve) => { release = resolve; });
