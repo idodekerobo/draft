@@ -1,6 +1,8 @@
 // Analytics events emitted by shared screens or by both apps. Props hold coded
 // values only: never message or file content, paths, names, emails or typed text.
 
+import type { LiveSessionHarnessId } from "draft-core/live-sessions";
+
 export const PLATFORM_PROPERTY = "platform";
 export type AnalyticsPlatform = "web" | "desktop" | "landing";
 
@@ -21,8 +23,9 @@ export type SharedAnalyticsEvent =
   | { event: "integration_connected";      props: { source: string } }
   | { event: "integration_disconnected";   props: { source: string } }
   | { event: "integration_channels_updated"; props: { source: string } }
-  | { event: "session_viewed";             props: { is_owner: boolean; entry: SessionEntry } }
-  | { event: "session_started";            props: { harness: "claude"; model: string } };
+  | { event: "session_viewed";             props: { live_session_id: string; is_owner: boolean; entry: SessionEntry } }
+  | { event: "session_started";            props: { live_session_id: string; harness: LiveSessionHarnessId; model: string } }
+  | { event: "session_message_sent";       props: { live_session_id: string; is_owner: boolean } };
 
 export type SharedEventName = SharedAnalyticsEvent["event"];
 
