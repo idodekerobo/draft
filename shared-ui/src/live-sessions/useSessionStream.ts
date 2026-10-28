@@ -3,6 +3,7 @@
 import { EVENTS_PAGE_SIZE } from "draft-core/live-sessions";
 import { useSuspenseQuery } from "../query";
 import { mergeEvents } from "./merge-events";
+import { syncSessionIntoLists } from "./sessions-list";
 import type { LiveSession, LiveSessionEvent, LiveSessionEventsPage, LiveSessionInput, LiveSessionViewer, LiveSessionsApi } from "./types";
 
 export const SESSION_POLL_MS = 2_000;
@@ -44,6 +45,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
         events = merged;
       } while (page.events.length >= EVENTS_PAGE_SIZE);
 
+      syncSessionIntoLists(client, page.session);
       if (previous && !grew && sameJson(previous.session, page.session) && sameJson(previous.inputs, page.inputs) && sameJson(previous.viewer, page.viewer)) return previous;
       return { session: page.session, viewer: page.viewer, events, inputs: page.inputs };
     },
