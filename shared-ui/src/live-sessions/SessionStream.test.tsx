@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import { SessionStream } from "./SessionStream";
 import { buildStreamItems } from "./stream-items";
-import type { LiveSessionEvent, LiveSessionEventKind, LiveSessionEventPayload } from "./types";
+import type { ComposerInput, LiveSessionEvent, LiveSessionEventKind, LiveSessionEventPayload } from "./types";
 
 afterEach(cleanup);
 
@@ -73,5 +73,18 @@ describe("SessionStream", () => {
       />,
     );
     expect(screen.getAllByText("Sub-agent")).toHaveLength(1);
+  });
+
+  it("shows a pending message as a bubble with no note, then a note when it is blocked", () => {
+    const base: ComposerInput = { id: "i1", author_user_id: "u1", author_name: "Priya", text: "run tests", state: "queued", reason: null, created_at: new Date().toISOString(), updated_at: "", mine: true };
+    const pending = (input: ComposerInput, hostOffline = false) =>
+      ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostOffline }) as const;
+    const view = render(<SessionStream items={[pending(base)]} />);
+    expect(screen.getByText("run tests")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    view.rerender(<SessionStream items={[pending({ ...base, reason: "composer_busy" })]} />);
+    expect(screen.getByRole("status").textContent).toBe("Queued, Maya is typing in the terminal");
+    view.rerender(<SessionStream items={[pending(base, true)]} />);
+    expect(screen.getByRole("status").textContent).toBe("Queued, Maya's laptop is offline");
   });
 });

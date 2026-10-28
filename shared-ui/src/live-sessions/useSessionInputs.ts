@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useMutationState } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "../query";
 import { syncSessionIntoLists } from "./sessions-list";
 import { sessionStreamKey, type SessionStreamData } from "./useSessionStream";
@@ -24,15 +24,8 @@ const sendKey = (sessionId: string) => ["live-session-send", sessionId] as const
 const CLOCK_SLACK_MS = 60_000;
 let localSeq = 0;
 
-/** Local sends that the server list does not hold yet. A send matches one server input with the same text. */
-function unmatchedSends(sends: SendVariables[], server: LiveSessionInput[]): SendVariables[] {
-  const taken = new Set<string>();
-  return sends.filter((send) => {
-    const match = server.find((input) => input.mine && !taken.has(input.id) && input.text === send.text && Date.parse(input.created_at) >= send.sentAt - CLOCK_SLACK_MS);
-    if (match) taken.add(match.id);
-    return !match;
-  });
-}
+const isCopyOf = (input: LiveSessionInput, send: SendVariables) =>
+  input.mine && input.text === send.text && Date.parse(input.created_at) >= send.sentAt - CLOCK_SLACK_MS;
 
 /**
  * Sends and resends messages. The list of waiting messages comes with the stream poll.
@@ -63,19 +56,32 @@ export function useSessionInputs(api: LiveSessionsApi, sessionId: string, inputs
     select: (mutation) => mutation.state.variables as SendVariables,
   });
 
+  // Server input id -> the local id it replaced, so the bubble keeps one key for its whole life.
+  const keys = useRef(new Map<string, string>());
   const all = useMemo<ComposerInput[]>(() => {
-    const local = unmatchedSends(sending, inputs).map<ComposerInput>((send) => ({
-      id: send.localId,
-      author_user_id: "",
-      author_name: "You",
-      text: send.text,
-      state: "sending",
-      reason: null,
-      created_at: new Date(send.sentAt).toISOString(),
-      updated_at: new Date(send.sentAt).toISOString(),
-      mine: true,
-    }));
-    return [...inputs, ...local];
+    const taken = new Set<string>();
+    const local: ComposerInput[] = [];
+    for (const send of sending) {
+      const copy = inputs.find((input) => !taken.has(input.id) && isCopyOf(input, send));
+      if (copy) {
+        taken.add(copy.id);
+        keys.current.set(copy.id, send.localId);
+        continue;
+      }
+      local.push({
+        id: send.localId,
+        key: send.localId,
+        author_user_id: "",
+        author_name: "You",
+        text: send.text,
+        state: "sending",
+        reason: null,
+        created_at: new Date(send.sentAt).toISOString(),
+        updated_at: new Date(send.sentAt).toISOString(),
+        mine: true,
+      });
+    }
+    return [...inputs.map((input) => ({ ...input, key: keys.current.get(input.id) ?? input.id })), ...local];
   }, [inputs, sending]);
 
   const { mutateAsync } = mutation;

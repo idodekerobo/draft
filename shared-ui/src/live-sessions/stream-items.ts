@@ -1,11 +1,12 @@
 import { splitAuthor } from "draft-core/live-sessions";
-import type { LiveSessionEvent } from "./types";
+import type { ComposerInput, LiveSessionEvent } from "./types";
 
 export type StreamItem =
   | { type: "user"; seq: number; text: string; agentId: string | null; /** Set when a teammate sent it through Draft. */ author: string | null }
   | { type: "assistant"; seq: number; text: string; agentId: string | null }
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string }
+  | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostOffline: boolean }
   | {
       type: "approval";
       seq: number;

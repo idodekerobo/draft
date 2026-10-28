@@ -13,6 +13,12 @@ const FAILED: Partial<Record<InputFailReason, string>> = {
   pane_unavailable: "the session was not reachable",
 };
 
+/** True when a queued message waits for a reason a person can act on, not just for the host to pick it up. */
+export function isBlocked(input: ComposerInput, hostOffline = false): boolean {
+  if (input.state !== "queued") return false;
+  return hostOffline || input.reason === "composer_busy" || BLOCKED[input.reason as InputBlockReason] !== undefined;
+}
+
 /** Text to show the sender of an unfinished message. */
 export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostOffline = false): string {
   switch (input.state) {
