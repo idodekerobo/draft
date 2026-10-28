@@ -211,3 +211,37 @@ describe("SessionView", () => {
     await waitFor(() => expect(stop).toHaveBeenCalledWith("s1"));
   });
 });
+
+describe("SessionView for a routine run", () => {
+  const routineSession: LiveSession = { ...session, session_type: "routine", title: "Weekly digest", folder_name: null };
+  const routineApi: LiveSessionsApi = { ...api, fetchEvents: async () => ({ viewer, session: routineSession, events: [], inputs: [] }) };
+
+  it("shows the stream with no message box, no Stop, and says the run takes no messages", async () => {
+    render(<SessionView api={routineApi} sessionId="s1" />);
+    expect(await screen.findByRole("heading", { name: "Weekly digest" })).toBeTruthy();
+    expect(screen.getByText(/Routine run/)).toBeTruthy();
+    expect(screen.getByText("This run follows its routine on its own. It cannot take messages.")).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+});
+
+describe("SessionView view event", () => {
+  const routineSession: LiveSession = { ...session, session_type: "routine", title: "Weekly digest" };
+  const routineApi: LiveSessionsApi = { ...api, fetchEvents: async () => ({ viewer, session: routineSession, events: [], inputs: [] }) };
+
+  it("reports a shared session once per open", async () => {
+    const track = mock((_event: string, _props: unknown) => {});
+    render(<SessionView api={api} sessionId="s1" track={track as never} />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track.mock.calls[0]![0]).toBe("session_viewed");
+  });
+
+  it("does not report a routine run, even when the page passes a tracker", async () => {
+    const track = mock((_event: string, _props: unknown) => {});
+    render(<SessionView api={routineApi} sessionId="s1" track={track as never} />);
+    await screen.findByRole("heading", { name: "Weekly digest" });
+    expect(track).not.toHaveBeenCalled();
+  });
+});

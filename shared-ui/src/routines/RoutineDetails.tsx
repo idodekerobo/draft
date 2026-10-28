@@ -2,45 +2,21 @@
 
 import { useId, useMemo, useState } from "react";
 import { Dialog } from "./Dialog";
+import { agentLabel } from "./agent-label";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
+import { RoutineRuns } from "./RoutineRuns";
+import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, timezoneOptions } from "./schedule-fields";
 import type { Routine, RoutinePatch, RoutinePreset, RoutineWeekday } from "./types";
 
-type EditablePreset = Exclude<RoutinePreset, "custom">;
-
-const PRESET_LABELS: Record<RoutinePreset, string> = {
-  draft_default: "Draft default (daytime + overnight)",
-  hourly: "Every hour",
-  daily: "Every day",
-  weekdays: "Weekdays",
-  weekly: "Every week",
-  custom: "Custom (current schedule)",
-};
-const SELECTABLE: EditablePreset[] = ["hourly", "daily", "weekdays", "weekly"];
-const WEEKDAYS: Array<[RoutineWeekday, string]> = [
-  ["mon", "Monday"],
-  ["tue", "Tuesday"],
-  ["wed", "Wednesday"],
-  ["thu", "Thursday"],
-  ["fri", "Friday"],
-  ["sat", "Saturday"],
-  ["sun", "Sunday"],
-];
-
-function timezoneOptions(current: string): string[] {
-  const supported = (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
-  return [...new Set(["UTC", current, ...supported])];
-}
-
-function browserTimezone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
-
-export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
+export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onOpenRun }: {
+  workspaceId: string;
   routine: Routine;
   canEdit: boolean;
   onClose: () => void;
   onSave: (patch: RoutinePatch) => Promise<void>;
+  /** Opens a run of an agent routine. Without it the runs are listed but not linked. */
+  onOpenRun?: (sessionId: string) => void;
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
@@ -55,7 +31,7 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
-  const usesTime = preset === "daily" || preset === "weekdays" || preset === "weekly";
+  const usesTime = presetUsesTime(preset);
   const isDefault = preset === "draft_default";
   const effectiveTimezone = isDefault ? "UTC" : timezone;
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);
@@ -65,7 +41,7 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
     (preset === "weekly" && weekday !== routine.weekday) ||
     (!isDefault && timezone !== routine.timezone);
   const canSave = editable && preset !== "custom" && dirty && (!usesTime || time !== "") && !saving;
-  const noun = isSynthesis ? "run" : "check";
+  const noun = isSynthesis || routine.agent ? "run" : "check";
 
   const nextRun =
     preset === "custom" || !routine.enabled
@@ -106,6 +82,19 @@ export function RoutineDetails({ routine, canEdit, onClose, onSave }: {
         </button>
       </header>
       <p className="ui-dialog__description">{routine.routineDescription}</p>
+
+      {routine.agent && (
+        <section className="ui-routines__agent">
+          <h3 className="ui-routines__subheading">Request</h3>
+          <p className="ui-routines__prompt">{routine.agent.prompt}</p>
+          <p className="ui-routines__secondary">
+            {agentLabel(routine.agent)}
+            {routine.agent.createdByName ? ` · Created by ${routine.agent.createdByName}` : ""}
+          </p>
+          <h3 className="ui-routines__subheading">Runs</h3>
+          <RoutineRuns workspaceId={workspaceId} routine={routine} onOpenRun={onOpenRun} />
+        </section>
+      )}
 
       {routine.editable === "toggle_only" ? (
         <div className="ui-dialog__info">

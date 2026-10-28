@@ -22,6 +22,7 @@ function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     updated_by_user_id: null,
+    created_by_user_id: null,
     ...overrides,
   };
 }
@@ -66,6 +67,14 @@ function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?:
             return { data: null, error: null };
           },
         };
+      }
+      if (table === "sessions") {
+        const chain = {
+          eq: () => chain,
+          in: () => chain,
+          lt: async () => ({ data: [], error: null }),
+        };
+        return { select: () => chain };
       }
       throw new Error(`Unexpected table ${table}`);
     },

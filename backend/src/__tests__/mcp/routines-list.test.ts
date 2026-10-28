@@ -8,7 +8,7 @@ const tasks = [
     id: "task-1", workspace_id: "ws-1", source_connection_id: null, task_type: "summarize_sessions",
     schedule_kind: "cron", cron_expression: "0 3 * * *", interval_seconds: null, timezone: "UTC",
     enabled: true, next_due_at: "2026-10-06T03:00:00.000Z", last_enqueued_at: null,
-    created_at: "2026-01-01T00:00:00.000Z", updated_by_user_id: null,
+    created_at: "2026-01-01T00:00:00.000Z", updated_by_user_id: null, created_by_user_id: null,
   },
 ];
 

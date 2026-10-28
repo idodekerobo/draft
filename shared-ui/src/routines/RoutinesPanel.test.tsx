@@ -30,6 +30,7 @@ function routine(overrides: Partial<Routine>): Routine {
     lastCheckedAt: null,
     lastRun: null,
     updatedByName: null,
+    agent: null,
     ...overrides,
   };
 }
@@ -60,7 +61,7 @@ const baseRoutines = (): Routine[] => [
 function setup(options: { canEdit?: boolean; routines?: Routine[]; updateRoutine?: DraftApi["updateRoutine"] } = {}) {
   const response: RoutinesResponse = { routines: options.routines ?? baseRoutines(), canEdit: options.canEdit ?? true };
   const updateRoutine = mock(options.updateRoutine ?? (async (id: string) => ({ ...response.routines.find((r) => r.id === id)! })));
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => response, updateRoutine };
+  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => response, updateRoutine, createRoutine: async () => response.routines[0]!, getRoutineRuns: async () => [] };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>

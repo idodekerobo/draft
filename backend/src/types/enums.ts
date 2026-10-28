@@ -86,7 +86,8 @@ export type ScheduledTaskType =
   | "synthesize_workspace"
   | "rebuild_projection"
   | "summarize_sessions"
-  | "slack_backfill";
+  | "slack_backfill"
+  | "agent_routine";
 
 export type ScheduleKind = "cron" | "interval";
 

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDraftApi } from "../query/api";
 import { queryKeys } from "../query/keys";
 import { useOptimisticMutation } from "../query/mutations";
-import type { Routine, RoutinePatch, RoutinesResponse } from "./types";
+import type { CreateRoutineInput, Routine, RoutinePatch, RoutinesResponse } from "./types";
 
 function mapRoutine(
   current: RoutinesResponse | undefined,
@@ -37,5 +37,11 @@ export function useRoutineMutations(workspaceId: string, onToggleError: (error: 
     onSuccess: (updated) => queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => mapRoutine(current, updated.id, () => updated)),
   });
 
-  return { toggle, save };
+  const create = useMutation({
+    mutationFn: (input: CreateRoutineInput) => api.createRoutine(input),
+    onSuccess: (created) =>
+      queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => current && { ...current, routines: [...current.routines, created] }),
+  });
+
+  return { toggle, save, create };
 }

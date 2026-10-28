@@ -39,11 +39,16 @@ export interface LaunchFlySandboxRunInput {
   bundle: SandboxRunBundle;
   /** Required unless mode is "batch" -- batch runs carry per-session prompts in the bundle instead. */
   prompt?: string;
-  jsonSchema: Record<string, unknown>;
+  /** Required unless mode is "routine" -- a routine streams free text instead of a structured result. */
+  jsonSchema?: Record<string, unknown>;
   claudeCodeOAuthToken: string;
   config: SandboxDeploymentConfig;
   /** Additive: omitted preserves today's single-prompt runner behavior. */
-  mode?: "single" | "batch";
+  mode?: "single" | "batch" | "routine";
+  /** Routine mode only: the model the harness runs with. Omitted means the harness default. */
+  model?: string;
+  /** Runner wall-clock limit. Defaults to the shared sandbox timeout. */
+  timeoutSeconds?: number;
   /** Bundle-relative manifest path, required when mode is "batch". */
   manifestPath?: string;
 }
@@ -112,10 +117,12 @@ export async function launchFlySandboxRun(
   if (Object.hasOwn(input.bundle.files, PROMPT_PATH)) {
     throw new Error(`Run bundle already contains reserved prompt path: ${PROMPT_PATH}`);
   }
-  if (Object.hasOwn(input.bundle.files, OUTPUT_SCHEMA_PATH)) {
+  const hasSchema = input.mode !== "routine";
+  if (hasSchema && Object.hasOwn(input.bundle.files, OUTPUT_SCHEMA_PATH)) {
     throw new Error(`Run bundle already contains reserved output schema path: ${OUTPUT_SCHEMA_PATH}`);
   }
-  const serializedSchema = serializeJsonSchema(input.jsonSchema);
+  if (hasSchema && !input.jsonSchema) throw new Error("jsonSchema is required unless mode is \"routine\"");
+  const serializedSchema = hasSchema ? serializeJsonSchema(input.jsonSchema!) : null;
 
   const now = dependencies.now ?? Date.now;
   const nonce = dependencies.nonce ?? randomUUID;
@@ -134,7 +141,7 @@ export async function launchFlySandboxRun(
     Object.entries(input.bundle.files).map(([path, file]) => [path, file.content]),
   );
   if (input.prompt !== undefined) filesForUpload[PROMPT_PATH] = input.prompt;
-  filesForUpload[OUTPUT_SCHEMA_PATH] = `${serializedSchema}\n`;
+  if (serializedSchema !== null) filesForUpload[OUTPUT_SCHEMA_PATH] = `${serializedSchema}\n`;
 
   const bundleUploader = dependencies.bundleUploader ?? uploadRunBundle;
   const uploaded = await bundleUploader({
@@ -160,9 +167,13 @@ export async function launchFlySandboxRun(
     DRAFT_CALLBACK_TOKEN: callbackToken,
     CLAUDE_CODE_OAUTH_TOKEN: input.claudeCodeOAuthToken,
     DRAFT_PROMPT_PATH: `/run/${PROMPT_PATH}`,
-    DRAFT_OUTPUT_SCHEMA_PATH: `/run/${OUTPUT_SCHEMA_PATH}`,
-    DRAFT_TIMEOUT_SECONDS: String(SANDBOX_TIMEOUT_SECONDS),
+    DRAFT_TIMEOUT_SECONDS: String(input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS),
   };
+  if (serializedSchema !== null) env.DRAFT_OUTPUT_SCHEMA_PATH = `/run/${OUTPUT_SCHEMA_PATH}`;
+  if (input.mode === "routine") {
+    env.DRAFT_RUN_MODE = "routine";
+    if (input.model) env.DRAFT_ROUTINE_MODEL = input.model;
+  }
   if (input.mode === "batch") {
     if (!input.manifestPath) {
       throw new Error("manifestPath is required when mode is \"batch\"");

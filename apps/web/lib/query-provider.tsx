@@ -5,6 +5,7 @@ import {
   toRoutineError,
   type DraftApi,
   type Routine,
+  type RoutineRun,
   type RoutinesResponse,
   type SynthesisRunSummary,
 } from "draft-shared-ui";
@@ -23,6 +24,15 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
         throw error;
       }
     },
+    createRoutine: async (input) => {
+      try {
+        return await apiFetch<Routine>(`/workspaces/${workspaceId}/schedules`, { method: "POST", body: JSON.stringify(input) });
+      } catch (error) {
+        if (error instanceof ApiError) throw toRoutineError(error.code, error.field);
+        throw error;
+      }
+    },
+    getRoutineRuns: async (id) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs`)).runs,
   };
   return <DraftQueryProvider api={api}>{children}</DraftQueryProvider>;
 }

@@ -35,6 +35,7 @@ const DB_ERROR_STATUS: Partial<Record<LiveSessionErrorCode, number>> = {
   request_not_found: 404,
   queue_full: 429,
   foreign_host: 403,
+  routine_read_only: 409,
 };
 
 export function knownDbError(message: string): Response | null {

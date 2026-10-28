@@ -4,11 +4,13 @@ import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { canEditSchedules } from "../schedules/permissions";
-import { ScheduleServiceError, getRoutineTask, listRoutines, updateRoutine } from "../schedules/service";
+import { ScheduleServiceError, createAgentRoutine, getRoutineTask, listRoutineRuns, listRoutines, updateRoutine } from "../schedules/service";
+import { validateCreate } from "../schedules/validate-create";
 import { validatePatch } from "../schedules/validate-patch";
 
 type SchedulesRequest = Bun.BunRequest<"/workspaces/:id/schedules">;
 type ScheduleRequest = Bun.BunRequest<"/workspaces/:id/schedules/:taskId">;
+type RunsRequest = Bun.BunRequest<"/workspaces/:id/schedules/:taskId/runs">;
 
 export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
@@ -67,5 +69,48 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
     }
     recordRouteError({ workspaceId, operation: "commit", errorCode: "schedules_update_failed", error });
     return Response.json({ error: "schedules_update_failed" }, { status: 500 });
+  }
+});
+
+export const POST = withAuth<SchedulesRequest>(async (req, caller) => {
+  const workspaceId = req.params.id;
+  const denied = await assertWorkspaceAccess(workspaceId, caller.userId);
+  if (denied) return denied;
+  if (!(await canEditSchedules(workspaceId, caller.userId))) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "invalid_json" }, { status: 400 });
+  }
+  const validation = validateCreate(body);
+  if (!validation.ok) return Response.json({ error: "invalid_body", field: validation.field }, { status: 400 });
+
+  try {
+    return Response.json(await createAgentRoutine(workspaceId, caller.userId, validation), { status: 201 });
+  } catch (error) {
+    if (error instanceof ScheduleServiceError) {
+      return Response.json({ error: "invalid_schedule", field: error.field }, { status: 400 });
+    }
+    recordRouteError({ workspaceId, operation: "commit", errorCode: "schedules_create_failed", error });
+    return Response.json({ error: "schedules_create_failed" }, { status: 500 });
+  }
+});
+
+export const RUNS = withAuth<RunsRequest>(async (req, caller) => {
+  const { id: workspaceId, taskId } = req.params;
+  const denied = await assertWorkspaceAccess(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  try {
+    const runs = await listRoutineRuns(workspaceId, taskId);
+    if (!runs) return Response.json({ error: "not_found" }, { status: 404 });
+    return Response.json({ runs });
+  } catch (error) {
+    recordRouteError({ workspaceId, errorCode: "schedules_runs_failed", error });
+    return Response.json({ error: "schedules_runs_failed" }, { status: 500 });
   }
 });

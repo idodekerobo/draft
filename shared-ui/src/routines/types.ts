@@ -7,6 +7,26 @@ export interface RoutineLastRun {
   completedAt: string | null;
 }
 
+export type RoutineRunStatus = "running" | "completed" | "failed";
+
+/** One run of an agent routine. The id opens the run in the session view. */
+export interface RoutineRun {
+  id: string;
+  status: RoutineRunStatus;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+/** Set only on agent routines. */
+export interface AgentRoutine {
+  prompt: string;
+  harness: "claude";
+  /** Alias for `claude --model`; null for the harness default. */
+  model: string | null;
+  createdByName: string | null;
+  lastRun: RoutineRun | null;
+}
+
 /** One row from GET /workspaces/:id/schedules. */
 export interface Routine {
   id: string;
@@ -28,6 +48,7 @@ export interface Routine {
   lastCheckedAt: string | null;
   lastRun: RoutineLastRun | null;
   updatedByName: string | null;
+  agent: AgentRoutine | null;
 }
 
 export interface RoutinesResponse {
@@ -39,3 +60,15 @@ export interface RoutinesResponse {
 export type RoutinePatch =
   | { enabled: boolean }
   | { preset: Exclude<RoutinePreset, "custom">; time?: string; weekday?: RoutineWeekday; timezone?: string };
+
+/** Body for POST /workspaces/:id/schedules: an agent routine and when it runs. */
+export interface CreateRoutineInput {
+  title: string;
+  prompt: string;
+  harness: "claude";
+  model: string | null;
+  preset: Exclude<RoutinePreset, "custom" | "draft_default">;
+  time?: string;
+  weekday?: RoutineWeekday;
+  timezone?: string;
+}
