@@ -803,7 +803,8 @@
 .ui-composer__box:focus-within { border-color: var(--color-focus); }
 .ui-composer__box .ui-composer__input:focus-visible { outline: none; }
 .ui-composer__folder { display: flex; align-items: center; gap: var(--space-2); padding: 6px 12px; background: var(--color-bg-surface); color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
-.ui-composer__row { display: flex; gap: var(--space-2); align-items: flex-end; padding: var(--space-2); }
+.ui-composer__row { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
+.ui-composer__footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .ui-composer__input { flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 8px; border: 0; background: none; color: var(--color-text-primary); font: var(--font-size-body) var(--font-ui); line-height: 1.4; resize: none; outline: none; }
 .ui-composer__pending { margin-bottom: var(--space-3); }
 @media (prefers-reduced-motion: reduce) { .ui-session__menu-list { animation: ui-fade-in 200ms linear both; } }
@@ -866,7 +867,6 @@
 .ui-start__heading { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -.02em; text-align: center; }
 .ui-start__box { width: 100%; max-width: 680px; overflow: visible; }
 .ui-start__box .ui-composer__folder { border-radius: var(--radius-notice) var(--radius-notice) 0 0; }
-.ui-start__actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
 .ui-start__folder { position: relative; }
 .ui-start__folder-button { display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px 4px; background: none; border: 0; border-radius: var(--radius-sm); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
 .ui-start__menu { left: 0; right: auto; top: calc(100% + 4px); min-width: 260px; max-width: 420px; }

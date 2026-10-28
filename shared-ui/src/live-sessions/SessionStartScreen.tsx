@@ -1,9 +1,9 @@
 "use client";
 
 import { LIVE_SESSION_HARNESSES, LIVE_SESSION_MODELS } from "draft-core/live-sessions";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
-import { FolderIcon, submitOnEnter } from "./message-box";
+import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { usePopover } from "./usePopover";
 
@@ -34,6 +34,8 @@ export function SessionStartScreen({
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(inputRef, text);
   const folder = chosen ?? recentFolders[0] ?? null;
 
   async function browse() {
@@ -92,16 +94,17 @@ export function SessionStartScreen({
           <div className="ui-composer__row">
             <label className="ui-visually-hidden" htmlFor="start-message">First message</label>
             <textarea
+              ref={inputRef}
               id="start-message"
               className="ui-composer__input ph-no-capture"
-              rows={3}
+              rows={2}
               autoFocus
               placeholder="Describe a task to start a new session…"
               value={text}
               onChange={(event) => setText(event.target.value)}
               onKeyDown={submitOnEnter(() => void submit())}
             />
-            <div className="ui-start__actions">
+            <div className="ui-composer__footer">
               <SectionedPicker
                 label="Agent and model"
                 sections={[

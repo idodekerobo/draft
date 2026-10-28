@@ -1,9 +1,9 @@
 "use client";
 
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { inputStatusLine } from "./input-status";
-import { FolderIcon, submitOnEnter } from "./message-box";
+import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 
 const STATUS_TICK_MS = 30_000;
@@ -29,6 +29,8 @@ export function SessionComposer({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(inputRef, text);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), STATUS_TICK_MS);
@@ -84,6 +86,7 @@ export function SessionComposer({
           <div className="ui-composer__row">
           <label className="ui-visually-hidden" htmlFor="session-message">Message to {ownerName}'s session</label>
           <textarea
+            ref={inputRef}
             id="session-message"
             className="ui-composer__input ph-no-capture"
             rows={2}
@@ -97,9 +100,11 @@ export function SessionComposer({
               else submitOnEnter(() => void submit())(event);
             }}
           />
-          <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
-            {sending ? "Sending…" : "Send"}
-          </button>
+          <div className="ui-composer__footer">
+            <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
+              {sending ? "Sending…" : "Send"}
+            </button>
+          </div>
           </div>
         </form>
       )}

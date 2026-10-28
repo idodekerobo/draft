@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import { useLayoutEffect, type KeyboardEvent, type RefObject } from "react";
 
 /** Enter sends; Shift+Enter adds a line, and Enter while an input method composes text is left alone. */
 export function submitOnEnter(submit: () => void) {
@@ -8,6 +8,16 @@ export function submitOnEnter(submit: () => void) {
       submit();
     }
   };
+}
+
+/** Grows the textarea to fit its text; the CSS max-height caps it and scrolls past that. */
+export function useAutoGrow(ref: RefObject<HTMLTextAreaElement | null>, value: string) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [ref, value]);
 }
 
 export function FolderIcon() {
