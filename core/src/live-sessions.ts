@@ -104,6 +104,7 @@ export function isTestedClaudeVersion(version: string | null | undefined): boole
 
 /** Harnesses a session can run. Claude Code only for now. */
 export const LIVE_SESSION_HARNESSES = [{ id: "claude", label: "Claude Code" }] as const;
+export type LiveSessionHarnessId = (typeof LIVE_SESSION_HARNESSES)[number]["id"];
 
 /** Models a person can pick. `alias` goes to `claude --model`; null leaves the choice to Claude's own setting. */
 export const LIVE_SESSION_MODELS: ReadonlyArray<{ alias: string | null; label: string }> = [
