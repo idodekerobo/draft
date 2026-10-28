@@ -180,6 +180,30 @@ describe("SessionView", () => {
     expect(document.activeElement).toBe(box);
   });
 
+  it("sends typing anywhere in the session to the message box", async () => {
+    render(<SessionView api={api} sessionId="s1" />);
+    const box = await screen.findByLabelText(/Message to Maya's session/);
+    expect(document.activeElement).not.toBe(box);
+    fireEvent.keyDown(document.body, { key: "c", metaKey: true });
+    expect(document.activeElement).not.toBe(box);
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(document.activeElement).not.toBe(box);
+    fireEvent.keyDown(document.body, { key: "h" });
+    expect(document.activeElement).toBe(box);
+  });
+
+  it("leaves typing alone when another field has focus or the session has ended", async () => {
+    const ended: LiveSession = { ...session, status: "ended" };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: ended, events: [], inputs: [] }) }} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    const other = document.createElement("input");
+    document.body.appendChild(other);
+    other.focus();
+    fireEvent.keyDown(other, { key: "h" });
+    expect(document.activeElement).toBe(other);
+    other.remove();
+  });
+
   it("shows who else is watching, and stops watching when the view closes", async () => {
     let push: (names: string[]) => void = () => {};
     const stop = mock(() => {});
