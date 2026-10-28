@@ -2000,8 +2000,6 @@ button {
   min-height: 56px;
 }
 
-/* Stripe-style status pill badge — mirrors activity-run__badge */
-
 /* Copyable CLI command chip */
 
 /* Disconnect button + note (shown for connected input sources) */
@@ -2550,188 +2548,9 @@ button {
 
 .activity {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.activity__header {
-  height: 40px;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.activity__title {
-  font-size: var(--font-size-micro);
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.activity__body {
-  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.activity__error {
-  padding: 10px 20px;
-  font-size: var(--font-size-micro);
-  color: var(--color-status-red);
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.activity__loading {
-  padding: 20px;
-  font-size: var(--font-size-secondary);
-  color: var(--color-text-tertiary);
-}
-
-.activity__list {
-  flex: 1;
-}
-
-/* ── Activity run row ─────────────────────────────────────────────────────────── */
-
-.activity-run {
-  border-bottom: 1px solid var(--color-border);
-}
-
-.activity-run__row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background 80ms;
-}
-
-.activity-run__row:hover {
-  background: rgba(var(--color-overlay-rgb), 0.04);
-}
-
-.activity-run--expanded .activity-run__row {
-  background: rgba(var(--color-overlay-rgb), 0.03);
-}
-
-.activity-run__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.activity-run__content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.activity-run__primary {
-  font-size: var(--font-size-secondary);
-  font-weight: 500;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.activity-run__meta {
-  font-size: var(--font-size-micro);
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.activity-run__chevron {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-  line-height: 1;
-  display: inline-block;
-  transition: transform 200ms ease, color 80ms;
-}
-
-.activity-run__chevron--expanded {
-  transform: rotate(90deg);
-}
-
-.activity-run__row:hover .activity-run__chevron {
-  color: var(--color-text-secondary);
-}
-
-/* ── Accordion detail ─────────────────────────────────────────────────────────── */
-
-.activity-run__detail {
-  border-top: 1px solid var(--color-border);
-  padding: 8px 14px 10px 31px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.activity-run__detail-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.activity-run__badge {
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-  letter-spacing: 0.01em;
-}
-
-.activity-run__badge--success {
-  color: var(--color-status-green);
-  background: color-mix(in srgb, var(--color-status-green) 12%, transparent);
-}
-
-.activity-run__badge--skipped {
-  color: var(--color-status-yellow);
-  background: color-mix(in srgb, var(--color-status-yellow) 10%, transparent);
-}
-
-.activity-run__badge--failed,
-.activity-run__badge--timeout {
-  color: var(--color-status-red);
-  background: color-mix(in srgb, var(--color-status-red) 12%, transparent);
-}
-
-.activity-run__detail-desc {
-  font-size: var(--font-size-micro);
-  color: var(--color-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-run__project-path {
-  font-size: var(--font-size-micro);
-  color: var(--color-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── Feedback section (Settings bottom) ──────────────────────────────────────── */
@@ -3027,7 +2846,7 @@ button {
 }
 
 .layout, .content, .content__view, .context-viewer, .context-viewer__body,
-.context-content, .context-content__scroll, .settings, .settings__body, .activity, .activity__body,
+.context-content, .context-content__scroll, .settings, .settings__body,
 .history-panel, .history-panel__list { min-height: 0; min-width: 0; }
 .app { position: fixed; inset: 0; height: 100%; }
 .sidebar { padding: 20px 12px 16px; }
@@ -3038,13 +2857,12 @@ button {
 .sidebar__footer { padding: 8px 10px 0; }
 .connections { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; }
 .content > .ui-flow { flex: 1; min-height: 0; overflow-y: auto; }
-.settings__header, .activity__header { height: auto; display: block; padding: 44px 40px 0; border: 0; }
-.settings__body, .activity__body { padding: 0 40px 48px; }
-.settings__header, .activity__header, .settings__body, .activity__body { width: 100%; max-width: 1044px; margin-inline: auto; }
+.settings__header { height: auto; display: block; padding: 44px 40px 0; border: 0; }
+.settings__body { padding: 0 40px 48px; }
+.settings__header, .settings__body { width: 100%; max-width: 1044px; margin-inline: auto; }
 .settings__section { margin-inline: 0; }
 .settings__section-label { padding-inline: 0; }
 .settings__row, .settings__section .ui-settings-row { padding-inline: 0; }
-.activity-run__row { padding-inline: 0; }
 .context-viewer__tree { width: 210px; padding: 26px 12px; }
 .context-tree__item { height: auto; min-height: 36px; border-left: 0; border-radius: var(--radius-md); padding: 8px 12px; }
 .context-tree__item--active, .context-dim-row__main--active { background: var(--color-selected-bg); color: var(--color-selected-text); border-radius: var(--radius-md); }
@@ -3054,8 +2872,7 @@ button {
 .context-dim-row__logs--expanded, .context-group-section__children--expanded { max-height: none; }
 .context-tree__item:focus-visible, .context-dim-row__label:focus-visible,
 .context-dim-row__expand-btn:focus-visible, .context-group-section__header:focus-visible,
-.context-content__history-toggle:focus-visible, .context-content__toolbar-menu-trigger:focus-visible,
-.activity-run__row:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.context-content__history-toggle:focus-visible, .context-content__toolbar-menu-trigger:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 .context-content__scroll { padding: 24px 40px 48px; overflow-x: hidden; }
 .context-content__markdown { max-width: 650px; font-size: 16px; line-height: 1.75; overflow-wrap: anywhere; }
 .context-content__markdown h1 { font-size: 34px; margin: 0 0 24px; letter-spacing: -.025em; }
@@ -3069,7 +2886,6 @@ button {
 .context-content__toolbar-right { flex-wrap: wrap; }
 .context-content__raw-editor { font-size: 13px; }
 .history-panel { width: clamp(180px, 22vw, 280px); }
-.activity-run__primary, .activity-run__project-path { overflow-wrap: anywhere; }
 
 .context-content__markdown pre { max-width: 100%; white-space: pre; overflow-wrap: normal; }
 .context-content__markdown pre code { white-space: pre; overflow-wrap: normal; word-break: normal; }
