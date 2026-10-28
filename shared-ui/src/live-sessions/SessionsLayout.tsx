@@ -1,10 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode, type RefObject } from "react";
 import { COLUMN_DEFAULT_PX, clampColumnWidth, readColumnState, writeColumnState } from "./column-state";
 import { relativeTime } from "../relative-time";
 import { displayStatus } from "./display-status";
-import { groupSessionsByDay } from "./session-groups";
+import { groupSessionsByDay, lastActivityAt } from "./session-groups";
 import { sessionTitle } from "./sessions-list";
 import { useMinuteClock } from "./useMinuteClock";
 import type { LiveSession } from "./types";
@@ -43,11 +43,11 @@ export function ColumnToggleButton({ where }: { where: "column" | "main" }) {
 function SessionRow({ session, selected, now, onSelect }: { session: LiveSession; selected: boolean; now: number; onSelect: (id: string) => void }) {
   const status = displayStatus(session, now);
   return (
-    <li>
+    <li data-session-id={session.id}>
       <button type="button" className="ui-sessions__row" aria-current={selected ? "true" : undefined} onClick={() => onSelect(session.id)}>
         <span className="ui-sessions__row-top">
           <span className="ui-sessions__row-title">{sessionTitle(session)}</span>
-          <span className="ui-muted ui-sessions__row-time">{relativeTime(session.started_at, { now, compact: true })}</span>
+          <span className="ui-muted ui-sessions__row-time">{relativeTime(lastActivityAt(session), { now, compact: true })}</span>
         </span>
         <span className="ui-muted ui-sessions__row-sub">
           <span className="ui-sessions__row-owner">{session.owner_name ?? "Someone"}</span>
@@ -58,6 +58,34 @@ function SessionRow({ session, selected, now, onSelect }: { session: LiveSession
       </button>
     </li>
   );
+}
+
+const REORDER_MS = 200;
+
+/** Slides rows from their old position to their new one when the list reorders. A reset key change (such as a tab switch) skips the motion. */
+function useReorderMotion(scroll: RefObject<HTMLDivElement | null>, order: string, resetKey: string) {
+  const previous = useRef<{ resetKey: string; tops: Map<string, number> } | null>(null);
+  useLayoutEffect(() => {
+    const container = scroll.current;
+    if (!container) return;
+    const base = container.getBoundingClientRect().top - container.scrollTop;
+    const tops = new Map<string, number>();
+    const rows = container.querySelectorAll<HTMLElement>("[data-session-id]");
+    rows.forEach((row) => tops.set(row.dataset.sessionId!, row.getBoundingClientRect().top - base));
+    const before = previous.current;
+    previous.current = { resetKey, tops };
+    if (!before || before.resetKey !== resetKey) return;
+    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    rows.forEach((row) => {
+      const from = before.tops.get(row.dataset.sessionId!);
+      const delta = from === undefined ? 0 : from - tops.get(row.dataset.sessionId!)!;
+      if (delta === 0 || typeof row.animate !== "function") return;
+      row.animate([{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }], {
+        duration: REORDER_MS,
+        easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+      });
+    });
+  }, [scroll, order, resetKey]);
 }
 
 type Tab = "all" | "mine";
@@ -98,6 +126,7 @@ export function SessionsLayout({
   const mainButton = useRef<HTMLButtonElement>(null);
   const focusAfterToggle = useRef(false);
   const loaded = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const stored = readColumnState(typeof window === "undefined" ? null : window.localStorage);
@@ -155,6 +184,8 @@ export function SessionsLayout({
   const context = useMemo(() => ({ open, toggle, columnButton, mainButton }), [open, toggle]);
   const visible = useMemo(() => (tab === "mine" ? sessions.filter((session) => session.mine) : sessions), [sessions, tab]);
   const groups = useMemo(() => groupSessionsByDay(visible, new Date(now)), [visible, now]);
+  const order = useMemo(() => groups.flatMap((group) => group.sessions.map((session) => session.id)).join(","), [groups]);
+  useReorderMotion(scrollRef, order, tab);
   const emptyText =
     tab === "mine" ? "You haven't started a session." : onNew ? "No sessions yet." : "Sessions start in the Draft desktop app. Your team's sessions show here.";
 
@@ -189,7 +220,7 @@ export function SessionsLayout({
                 </button>
               ))}
             </div>
-            <div className="ui-sessions__scroll">
+            <div ref={scrollRef} className="ui-sessions__scroll">
               {failed && sessions.length === 0 ? (
                 <p className="ui-error ui-sessions__note" role="alert">Could not load sessions. They will load again soon.</p>
               ) : loading && sessions.length === 0 ? (

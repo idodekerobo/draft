@@ -27,4 +27,10 @@ describe("groupSessionsByDay", () => {
     expect(groupSessionsByDay([session("a", new Date(2026, 9, 27, 1))], NOW).map((g) => g.label)).toEqual(["Today"]);
     expect(groupSessionsByDay([], NOW)).toEqual([]);
   });
+
+  it("orders and groups by last activity, falling back to the start time", () => {
+    const active = { ...session("started-yesterday", new Date(2026, 9, 26, 9)), last_event_at: new Date(2026, 9, 27, 14).toISOString() };
+    const groups = groupSessionsByDay([session("noon", new Date(2026, 9, 27, 12)), active, session("quiet", new Date(2026, 9, 27, 8))], NOW);
+    expect(groups.map((g) => [g.label, g.sessions.map((s) => s.id)])).toEqual([["Today", ["started-yesterday", "noon", "quiet"]]]);
+  });
 });
