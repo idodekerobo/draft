@@ -54,6 +54,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
       onOpenSession={onOpenSession}
       autoFocusComposer={justStarted}
       track={track}
+      shareBaseUrl={process.env.DRAFT_APP_URL ?? "https://app.draftai.us"}
     />
   );
 }
@@ -70,10 +71,10 @@ export function SessionsView() {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
-  async function start({ folderPath, text, model }: StartRequest): Promise<StartResult> {
+  async function start({ harness, folderPath, text, model }: StartRequest): Promise<StartResult> {
     const result = await rpc.request.startLiveSession({ folderPath, model });
     if (!result.ok) return result;
-    track("session_started", { harness: "claude", model: model ?? "default" });
+    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default" });
     setRecentFolders(rememberFolder(window.localStorage, folderPath));
     // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
     await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));

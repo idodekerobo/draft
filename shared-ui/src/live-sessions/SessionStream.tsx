@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { renderMarkdown } from "../context/markdown";
+import { MessageActions } from "./MessageActions";
+import { messageDomId } from "./share-links";
 import { inputStatusLine, isBlocked } from "./input-status";
 import { approvalOutcome, type StreamItem } from "./stream-items";
 
@@ -28,7 +30,7 @@ function PendingBubble({ item }: { item: Extract<StreamItem, { type: "pending" }
   );
 }
 
-function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: string; hostName: string | null }) {
+function Item({ item, ownerName, hostName, linkFor }: { item: StreamItem; ownerName: string; hostName: string | null; linkFor?: (seq: number) => string }) {
   switch (item.type) {
     case "user":
       if (item.agentId) {
@@ -43,12 +45,18 @@ function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: stri
         <>
           <span className="ui-stream__who">{item.author ?? ownerName}</span>
           <p className="ui-stream__bubble">{item.text}</p>
+          <MessageActions text={item.text} at={item.at} linkUrl={linkFor?.(item.seq)} />
         </>
       );
     case "pending":
       return <PendingBubble item={item} />;
     case "assistant":
-      return <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />;
+      return (
+        <>
+          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />
+          <MessageActions text={item.text} at={item.at} linkUrl={linkFor?.(item.seq)} />
+        </>
+      );
     case "thinking":
       return (
         <details className="ui-stream__details">
@@ -92,7 +100,20 @@ const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.k
 const agentOf = (item: StreamItem) => ("agentId" in item ? item.agentId : null);
 
 /** Open requests are shown in the approval panel, not in the stream. */
-export function SessionStream({ items: all, ownerName = "User", hostName = null }: { items: StreamItem[]; ownerName?: string; hostName?: string | null }) {
+export function SessionStream({
+  items: all,
+  ownerName = "User",
+  hostName = null,
+  linkFor,
+  highlightSeq = null,
+}: {
+  items: StreamItem[];
+  ownerName?: string;
+  hostName?: string | null;
+  /** Builds the link to one message. Without it, the link action is hidden. */
+  linkFor?: (seq: number) => string;
+  highlightSeq?: number | null;
+}) {
   const items = all.filter((item) => item.type !== "approval" || item.resolved !== null);
   if (items.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
 
@@ -105,8 +126,11 @@ export function SessionStream({ items: all, ownerName = "User", hostName = null 
         return (
           <Fragment key={keyOf(item)}>
             {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
-            <li className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? " ui-stream__item--human" : ""}`}>
-              <Item item={item} ownerName={ownerName} hostName={hostName} />
+            <li
+              id={item.type === "pending" ? undefined : messageDomId(item.seq)}
+              className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? " ui-stream__item--human" : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+            >
+              <Item item={item} ownerName={ownerName} hostName={hostName} linkFor={linkFor} />
             </li>
           </Fragment>
         );

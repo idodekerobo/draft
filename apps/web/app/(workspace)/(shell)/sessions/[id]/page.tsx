@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use } from "react";
-import { SessionView } from "draft-shared-ui";
+import { MESSAGE_PARAM, SessionView, parseMessageParam } from "draft-shared-ui";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { useWebLiveSessions } from "@/lib/live-sessions";
 import { useSessionEntry } from "@/lib/session-entry";
@@ -12,8 +12,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const { id } = use(params);
   const { api } = useWebLiveSessions();
   const router = useRouter();
+  const search = useSearchParams();
   const { track } = useAnalytics();
   const { entryFor, markInAppNavigation } = useSessionEntry();
+
   return (
     <SessionView
       api={api}
@@ -25,6 +27,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       }}
       track={track}
       entry={entryFor(id)}
+      shareBaseUrl={typeof window === "undefined" ? undefined : window.location.origin}
+      focusSeq={parseMessageParam(search.get(MESSAGE_PARAM))}
     />
   );
 }

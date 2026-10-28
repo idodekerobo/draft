@@ -18,6 +18,7 @@ import { presenceLine } from "./presence-line";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
+import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import type { LiveSession, LiveSessionLink, LiveSessionsApi } from "./types";
 
 export interface SessionMenuItem {
@@ -32,6 +33,8 @@ const NEAR_BOTTOM_PX = 96;
 /** Scroll offset per session, kept while the app runs; null means the user was following the latest message. */
 const scrollMemory = new Map<string, number | null>();
 const STOPPING_MS = 3_000;
+const HIGHLIGHT_MS = 2_000;
+const COPIED_MS = 1_500;
 
 function SessionMenu({ items, onSelect }: { items: SessionMenuItem[]; onSelect: (item: SessionMenuItem) => void }) {
   const { open, setOpen, rootRef, triggerRef } = usePopover();
@@ -80,6 +83,26 @@ interface SessionViewProps {
   track?: TrackFn;
   /** How the person got here. Defaults to inside the app. */
   entry?: SessionEntry;
+  /** The web app origin that shared links point to. Without it, links cannot be copied. */
+  shareBaseUrl?: string;
+  /** The message a link points at. The view scrolls to it and highlights it. */
+  focusSeq?: number | null;
+}
+
+function CopyLinkButton({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    // If the clipboard is blocked, the button stays as it was.
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), COPIED_MS);
+    }).catch(() => {});
+  }
+  return (
+    <button type="button" className="ui-btn" onClick={copy}>
+      {copied ? "Link copied" : "Copy link"}
+    </button>
+  );
 }
 
 function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
@@ -155,6 +178,8 @@ function LoadedSession({
   autoFocusComposer,
   track,
   entry = "list",
+  shareBaseUrl,
+  focusSeq = null,
 }: SessionViewProps) {
   const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const watchers = presenceLine(useSessionPresence(api, sessionId, viewer));
@@ -164,11 +189,11 @@ function LoadedSession({
     viewReported.current = true;
     // Routine runs are not shared sessions: counting them would inflate the view signal.
     if (session.session_type === "routine") return;
-    track?.("session_viewed", { is_owner: session.mine === true, entry });
+    track?.("session_viewed", { live_session_id: sessionId, is_owner: session.mine === true, entry });
     // Once per open: the view remounts for another session, and a poll never gets here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const inputs = useSessionInputs(api, sessionId, waiting, refresh);
+  const inputs = useSessionInputs(api, sessionId, waiting, refresh, track);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -211,6 +236,30 @@ function LoadedSession({
     if (following.current) jumpToLatest();
   }, [events.length, inputs.inputs.length, jumpToLatest]);
 
+  const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
+  const wantedSeq = useRef<number | null>(null);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // A long session arrives in pages, so the linked message can show up after the first render.
+  const scrollToWanted = useCallback(() => {
+    const seq = wantedSeq.current;
+    const target = seq === null ? null : scroller.current?.querySelector(`#${messageDomId(seq)}`);
+    if (seq === null || !target) return;
+    wantedSeq.current = null;
+    following.current = false;
+    target.scrollIntoView({ block: "center" });
+    setHighlightSeq(seq);
+    clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightSeq(null), HIGHLIGHT_MS);
+  }, []);
+  useLayoutEffect(() => {
+    wantedSeq.current = focusSeq;
+    scrollToWanted();
+    return () => clearTimeout(highlightTimer.current);
+  }, [focusSeq, scrollToWanted]);
+  useLayoutEffect(() => {
+    scrollToWanted();
+  }, [events.length, scrollToWanted]);
+
   const stop = useCallback(async () => {
     setStopping(true);
     setActionError(null);
@@ -244,6 +293,7 @@ function LoadedSession({
               {stopping ? "Stopping…" : "Stop"}
             </button>
           )}
+          {shareBaseUrl && <CopyLinkButton url={sessionUrl(shareBaseUrl, sessionId)} />}
           {menuItems && <SessionMenu items={menuItems(session)} onSelect={chooseMenuItem} />}
         </div>
       </header>
@@ -264,7 +314,13 @@ function LoadedSession({
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scroller} onScroll={onScroll}>
         <div className="ui-session__column">
-          <SessionStream items={items} ownerName={session.owner_name ?? undefined} hostName={session.host_name} />
+          <SessionStream
+            items={items}
+            ownerName={session.owner_name ?? undefined}
+            hostName={session.host_name}
+            linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
+            highlightSeq={highlightSeq}
+          />
         </div>
       </div>
       {!atBottom && (

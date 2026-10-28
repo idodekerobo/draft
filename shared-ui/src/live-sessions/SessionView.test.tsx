@@ -146,6 +146,45 @@ describe("SessionView", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("copies a message, copies a link to it, and shows when it was sent", async () => {
+    const writeText = mock(async (_text: string) => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const timed = { ...api, fetchEvents: async () => ({ viewer, session, inputs: [], events: [{ seq: 2, source_id: "b", kind: "assistant_text" as const, payload: { text: "Hi **there**" }, created_at: "2026-10-28T17:27:00.000Z" }] }) };
+    const { container } = render(<SessionView api={timed} sessionId="s1" shareBaseUrl="https://app.example.com" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Copy message" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Hi **there**"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy link to message" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://app.example.com/sessions/s1?m=2"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://app.example.com/sessions/s1"));
+    expect(container.querySelector("time")?.getAttribute("datetime")).toBe("2026-10-28T17:27:00.000Z");
+  });
+
+  it("hides the link actions when no share base url is given", async () => {
+    render(<SessionView api={api} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy link to message" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Copy message" }).length).toBe(2);
+  });
+
+  it("scrolls to the focused message and highlights it", async () => {
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id);
+    };
+    try {
+      const { container } = render(<SessionView api={api} sessionId="s1" focusSeq={1} />);
+      await screen.findByRole("heading", { name: "fix login" });
+      await waitFor(() => expect(scrolled).toEqual(["m-1"]));
+      expect(container.querySelector("#m-1")?.className).toContain("ui-stream__item--highlight");
+      expect(container.querySelector("#m-2")?.className).not.toContain("ui-stream__item--highlight");
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("shows a failed message with Resend in the message box area, not in the log", async () => {
     const failed = { id: "i1", author_user_id: "u2", author_name: "Dev", text: "hi", state: "failed" as const, reason: "session_ended", created_at: new Date().toISOString(), updated_at: "", mine: true };
     render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session, events: [], inputs: [failed] }) }} sessionId="s1" />);

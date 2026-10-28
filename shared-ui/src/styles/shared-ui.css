@@ -923,3 +923,13 @@
 @media (hover: hover) and (pointer: fine) { .ui-picker__option:hover { background: var(--color-bg-hover); } }
 @media (max-width: 560px) { .ui-picker__section + .ui-picker__section { border-left: 0; padding-left: var(--space-1); } .ui-picker__panel { left: 0; right: auto; } }
 @media (prefers-reduced-motion: reduce) { .ui-picker__panel { animation: ui-fade-in 200ms linear both; } .ui-picker__trigger:active { transform: none; } }
+
+.ui-stream__actions { display: flex; align-items: center; gap: var(--space-1); min-height: 24px; color: var(--color-text-secondary); font-size: var(--font-size-small); opacity: 0; transition: opacity 120ms linear; }
+.ui-stream__item:hover .ui-stream__actions, .ui-stream__actions:focus-within { opacity: 1; }
+@media (hover: none) { .ui-stream__actions { opacity: 1; } }
+.ui-stream__action { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; cursor: pointer; }
+.ui-stream__action:hover { background: var(--color-bg-surface); color: var(--color-text-primary); }
+.ui-stream__time { margin-left: var(--space-1); white-space: nowrap; }
+.ui-stream__item--highlight { animation: ui-stream-highlight 2s var(--motion-ease) both; }
+@keyframes ui-stream-highlight { 0%, 60% { background: var(--color-bg-surface); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .ui-stream__item--highlight { animation: none; background: var(--color-bg-surface); } }

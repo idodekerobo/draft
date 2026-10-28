@@ -15,6 +15,7 @@ export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
         <SessionView
           api={liveSessionsApi}
           sessionId={runId}
+          shareBaseUrl={process.env.DRAFT_APP_URL ?? "https://app.draftai.us"}
           back={<button type="button" className="ui-link" onClick={() => setRunId(null)}>Routines</button>}
         />
       </div>
