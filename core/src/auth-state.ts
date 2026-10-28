@@ -151,9 +151,24 @@ export interface AccessTokenProviderDeps {
 }
 
 export class AuthRefreshError extends Error {
-  constructor(public readonly kind: "terminal" | "transient") {
+  constructor(
+    public readonly kind: "terminal" | "transient",
+    /** The provider's HTTP status and error code, kept so a sign-out can be explained. */
+    public readonly status?: number,
+    public readonly code?: string,
+  ) {
     super(`session_refresh_${kind}`);
     this.name = "AuthRefreshError";
+  }
+}
+
+async function refreshErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const body = await response.json() as { error_code?: unknown; error?: unknown };
+    const code = typeof body.error_code === "string" ? body.error_code : body.error;
+    return typeof code === "string" ? code.slice(0, 80) : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -188,7 +203,7 @@ export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
         }
         if (!response.ok) {
           const terminal = response.status === 400 || response.status === 401 || response.status === 403;
-          throw new AuthRefreshError(terminal ? "terminal" : "transient");
+          throw new AuthRefreshError(terminal ? "terminal" : "transient", response.status, await refreshErrorCode(response));
         }
         const body = await response.json() as { access_token?: string; refresh_token?: string; expires_at?: number; expires_in?: number };
         if (!body.access_token || !body.refresh_token) throw new AuthRefreshError("transient");

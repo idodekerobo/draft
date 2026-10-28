@@ -1,4 +1,5 @@
 import { publishableClient } from "../db/client";
+import { recordRejectedToken } from "./record-rejected-token";
 
 export interface VerifiedCaller {
   userId: string;
@@ -11,7 +12,10 @@ export async function verifyAccessToken(
   if (!accessToken) return null;
 
   const { data, error } = await publishableClient.auth.getUser(accessToken);
-  if (error || !data.user) return null;
+  if (error || !data.user) {
+    recordRejectedToken(accessToken, error);
+    return null;
+  }
 
   return { userId: data.user.id, accessToken };
 }

@@ -17,10 +17,15 @@ export class SessionExpiredError extends Error {
   }
 }
 
-let onSessionExpired: (() => void) | null = null;
+export interface SessionExpiredCause {
+  error?: unknown;
+  apiStatus?: number;
+}
+
+let onSessionExpired: ((cause: SessionExpiredCause) => void) | null = null;
 
 /** Registers the one place that signs the user out when a request finds a dead login. */
-export function setSessionExpiredHandler(handler: (() => void) | null): void {
+export function setSessionExpiredHandler(handler: ((cause: SessionExpiredCause) => void) | null): void {
   onSessionExpired = handler;
 }
 
@@ -40,8 +45,8 @@ function defaultDeps(): ServerFetchDeps {
   };
 }
 
-function expireSession(): never {
-  onSessionExpired?.();
+function expireSession(cause: SessionExpiredCause): never {
+  onSessionExpired?.(cause);
   throw new SessionExpiredError();
 }
 
@@ -62,10 +67,10 @@ export function createServerFetch(deps: ServerFetchDeps = defaultDeps()) {
       if (response.status === 401) response = await send(path, init, true);
     } catch (error) {
       const terminal = error instanceof AuthRefreshError && error.kind === "terminal";
-      if (terminal || (error instanceof Error && error.message === "not_signed_in")) expireSession();
+      if (terminal || (error instanceof Error && error.message === "not_signed_in")) expireSession({ error });
       throw error;
     }
-    if (response.status === 401) expireSession();
+    if (response.status === 401) expireSession({ apiStatus: response.status });
     if (!response.ok) {
       let message = `request_failed_${response.status}`;
       let field: string | undefined;

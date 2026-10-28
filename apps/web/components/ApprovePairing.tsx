@@ -17,15 +17,7 @@ export function ApprovePairing({ code }: { code: string }) {
       `${API_URL}/link/${encodeURIComponent(code)}/approve`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          refresh_token: session.refresh_token,
-          expires_at: session.expires_at,
-          expires_in: session.expires_in,
-        }),
+        headers: { Authorization: `Bearer ${session.access_token}` },
       },
     );
     setState(r.ok ? "done" : "error");

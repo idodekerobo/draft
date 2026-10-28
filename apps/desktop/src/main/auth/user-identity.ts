@@ -1,5 +1,6 @@
 import { AuthRefreshError, clearAuthState, getFreshAccessToken, readAuthState, writeAuthState, type AuthState } from "draft-core/auth-state";
 import type { UserIdentity } from "../../rpc/schema";
+import { logLoginCleared, type ClearDetail, type ClearPath } from "./auth-log";
 
 export class TransientIdentityError extends Error {}
 
@@ -9,6 +10,8 @@ export interface IdentityDeps {
   clear(): void;
   token(forceRefresh: boolean): Promise<string>;
   fetchWhoami(token: string): Promise<Response>;
+  /** Records why the login is about to be cleared. Called before `clear`. */
+  logClear?(path: ClearPath, detail?: ClearDetail): void;
 }
 
 export function defaultIdentityDeps(): IdentityDeps {
@@ -23,6 +26,7 @@ export function defaultIdentityDeps(): IdentityDeps {
       forceRefresh,
     }),
     fetchWhoami: (token) => fetch(`${apiUrl}/whoami`, { headers: { Authorization: `Bearer ${token}` } }),
+    logClear: logLoginCleared,
   };
 }
 
@@ -36,7 +40,10 @@ async function tokenStillValid(deps: IdentityDeps, cached: AuthState): Promise<b
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message !== "not_signed_in" && !(error instanceof AuthRefreshError && error.kind === "terminal")) return true;
-    if (deps.read()?.refresh_token === cached.refresh_token) deps.clear();
+    if (deps.read()?.refresh_token === cached.refresh_token) {
+      deps.logClear?.("session_check", { error });
+      deps.clear();
+    }
     return false;
   }
 }
@@ -63,6 +70,7 @@ export async function hydrateUserIdentity(deps: IdentityDeps = defaultIdentityDe
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message === "not_signed_in" || (error instanceof AuthRefreshError && error.kind === "terminal")) {
+      deps.logClear?.("identity_hydrate", { error });
       deps.clear();
       return signedOut();
     }
@@ -70,6 +78,7 @@ export async function hydrateUserIdentity(deps: IdentityDeps = defaultIdentityDe
   }
 
   if (response.status === 401 || response.status === 403) {
+    deps.logClear?.("identity_hydrate", { whoamiStatus: response.status });
     deps.clear();
     return signedOut();
   }

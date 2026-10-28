@@ -48,6 +48,7 @@ import {
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
+import { logLoginCleared } from "./main/auth/auth-log";
 const presenceHub = new PresenceHub(connectPresence);
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
@@ -936,6 +937,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       signOut: async () => {
         browserSignInController?.abort();
         browserSignInController = null;
+        logLoginCleared("user_sign_out");
         try {
           clearAuthState();
         } catch {
@@ -992,7 +994,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   },
 });
 
-setSessionExpiredHandler(() => {
+setSessionExpiredHandler((cause) => {
+  logLoginCleared("api_call", cause);
   try { clearAuthState(); } catch {}
   try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
 });

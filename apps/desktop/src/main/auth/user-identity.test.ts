@@ -13,6 +13,28 @@ describe("hydrateUserIdentity", () => {
   test("missing auth is hydrated signed-out", async () => { expect(await hydrateUserIdentity(deps(null))).toMatchObject({ signedIn: false, hydrated: true }); });
   test("uses complete cache without a whoami request", async () => { let whoami = 0; const d = deps(state(true)); d.fetchWhoami = async () => { whoami++; return new Response(null, { status: 500 }); }; expect((await hydrateUserIdentity(d)).workspaceId).toBe("w"); expect(d.calls).toEqual([false]); expect(whoami).toBe(0); });
   test("complete cache with a terminal token error is signed out and cleared", async () => { const d = deps(state(true)); d.token = async () => { throw new AuthRefreshError("terminal"); }; expect((await hydrateUserIdentity(d)).signedIn).toBe(false); expect(d.read()).toBeNull(); });
+  test("logs why the login was cleared before clearing it", async () => {
+    const d = deps(state(true)); const logged: Array<[string, unknown]> = []; let clearedAtLog: AuthState | null | undefined;
+    const error = new AuthRefreshError("terminal", 400, "refresh_token_already_used");
+    d.token = async () => { throw error; };
+    d.logClear = (path, detail) => { clearedAtLog = d.read(); logged.push([path, detail]); };
+    await hydrateUserIdentity(d);
+    expect(logged).toEqual([["session_check", { error }]]);
+    expect(clearedAtLog).not.toBeNull();
+  });
+  test("logs a rejected whoami with its status", async () => {
+    const d = deps(state(), [new Response(null, { status: 403 }), new Response(null, { status: 403 })]); const logged: Array<[string, unknown]> = [];
+    d.logClear = (path, detail) => { logged.push([path, detail]); };
+    await hydrateUserIdentity(d);
+    expect(logged).toEqual([["identity_hydrate", { whoamiStatus: 403 }]]);
+  });
+  test("a transient token error logs nothing", async () => {
+    const d = deps(state(true)); const logged: unknown[] = [];
+    d.token = async () => { throw new AuthRefreshError("transient", 503); };
+    d.logClear = (path) => { logged.push(path); };
+    await hydrateUserIdentity(d);
+    expect(logged).toEqual([]);
+  });
   test("complete cache with a transient token error stays signed in", async () => { const d = deps(state(true)); d.token = async () => { throw new AuthRefreshError("transient"); }; expect(await hydrateUserIdentity(d)).toMatchObject({ signedIn: true, workspaceId: "w" }); expect(d.read()).not.toBeNull(); });
   test("complete cache does not clear a newer session after a terminal token error", async () => {
     let value: AuthState | null = state(true);

@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 interface FakeClientOptions {
@@ -9,6 +9,7 @@ interface FakeClientOptions {
 }
 
 let options: FakeClientOptions;
+const errorRows: Array<Record<string, unknown>> = [];
 
 function createFakeClient() {
   return {
@@ -47,6 +48,10 @@ function createFakeClient() {
         };
       }
 
+      if (table === "errors") {
+        return { insert: async (row: Record<string, unknown>) => { errorRows.push(row); return { error: null }; } };
+      }
+
       throw new Error(`Unexpected table: ${table}`);
     },
   } as unknown as SupabaseClient;
@@ -55,6 +60,7 @@ function createFakeClient() {
 const fakeClient = createFakeClient();
 mock.module("../../db/client", () => ({ serviceClient: fakeClient }));
 const { assertWorkspaceAccess } = await import("../../auth/workspace-access");
+const { resetThrottleForTests } = await import("../../errors/throttle");
 
 const ids = {
   caller: "11111111-1111-4111-8111-111111111111",
@@ -84,6 +90,8 @@ async function responseBody(response: Response): Promise<{ error: string }> {
 }
 
 describe("assertWorkspaceAccess", () => {
+  beforeEach(() => { errorRows.length = 0; resetThrottleForTests(); });
+
   it("allows a matching team_default workspace", async () => {
     options = validOptions();
     expect(await assertWorkspaceAccess(ids.workspace, ids.caller)).toBeNull();
@@ -100,6 +108,9 @@ describe("assertWorkspaceAccess", () => {
     const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
     expect(response?.status).toBe(403);
     expect(await responseBody(response!)).toEqual({ error: "forbidden" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errorRows).toHaveLength(1);
+    expect(errorRows[0]).toMatchObject({ workspace_id: ids.workspace, operation: "auth", detail_json: { code: "forbidden", caller_id: ids.caller } });
   });
 
   it("denies a workspace from another team", async () => {
