@@ -19,7 +19,7 @@ import { useSessionInputs } from "./useSessionInputs";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
-import type { LiveSession, LiveSessionLink, LiveSessionsApi } from "./types";
+import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
 
 export interface SessionMenuItem {
   label: string;
@@ -87,6 +87,27 @@ interface SessionViewProps {
   shareBaseUrl?: string;
   /** The message a link points at. The view scrolls to it and highlights it. */
   focusSeq?: number | null;
+  /** Shown on the no-access page, such as who is signed in and how to switch. */
+  noAccessNote?: ReactNode;
+}
+
+function SessionNoAccess({ back, note }: { back?: ReactNode; note?: ReactNode }) {
+  return (
+    <div className="ui-session">
+      <header className="ui-session__header">
+        <Crumbs back={back}>
+          <h1 className="ui-session__title">No access</h1>
+        </Crumbs>
+      </header>
+      <div className="ui-session__scroll">
+        <div className="ui-session__column ui-session__no-access" role="alert">
+          <p>You don&apos;t have access to this session, or it doesn&apos;t exist.</p>
+          <p className="ui-muted">Ask the person who sent the link to check it, or sign in with the account on their team.</p>
+          {note && <p className="ui-muted">{note}</p>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CopyLinkButton({ url }: { url: string }) {
@@ -162,7 +183,12 @@ function SessionPlaceholder({ back }: { back?: ReactNode }) {
 /** One session: breadcrumb header, a stream that follows new messages, and a message box pinned below. */
 export function SessionView(props: SessionViewProps) {
   return (
-    <DataBoundary key={props.sessionId} fallback={<SessionPlaceholder back={props.back} />} errorMessage="Could not load this session.">
+    <DataBoundary
+      key={props.sessionId}
+      fallback={<SessionPlaceholder back={props.back} />}
+      errorMessage="Could not load this session."
+      renderError={(error) => (error instanceof SessionNotFoundError ? <SessionNoAccess back={props.back} note={props.noAccessNote} /> : null)}
+    >
       <LoadedSession {...props} />
     </DataBoundary>
   );

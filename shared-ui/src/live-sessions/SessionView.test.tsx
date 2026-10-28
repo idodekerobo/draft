@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render as renderUi, screen, waitFor } from "@t
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
-import type { LiveSession, LiveSessionsApi } from "./types";
+import { SessionNotFoundError, type LiveSession, type LiveSessionsApi } from "./types";
 
 afterEach(cleanup);
 
@@ -183,6 +183,17 @@ describe("SessionView", () => {
     } finally {
       Element.prototype.scrollIntoView = original;
     }
+  });
+
+  it("shows a no-access page, not a retry, when the session is not found", async () => {
+    const missing = async () => {
+      throw new SessionNotFoundError();
+    };
+    render(<SessionView api={{ ...api, fetchEvents: missing }} sessionId="s1" back={<a href="/sessions">Sessions</a>} noAccessNote="Signed in as dev@example.com" />);
+    expect((await screen.findByRole("alert")).textContent).toContain("You don't have access to this session, or it doesn't exist.");
+    expect(screen.getByText("Signed in as dev@example.com")).toBeTruthy();
+    expect(screen.getByText("Sessions")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
   it("shows a failed message with Resend in the message box area, not in the log", async () => {

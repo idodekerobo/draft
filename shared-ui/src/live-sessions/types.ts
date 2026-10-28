@@ -123,3 +123,10 @@ export class LiveSessionsDisabledError extends Error {
     super("live_sessions_disabled");
   }
 }
+
+/** The session does not exist, or the viewer's team cannot see it. The two look the same on purpose. */
+export class SessionNotFoundError extends Error {
+  constructor() {
+    super("session_not_found");
+  }
+}
