@@ -411,6 +411,10 @@
 .ui-prose h2 { font-size: 24px; }
 .ui-prose h3 { font-size: 18px; }
 .ui-prose table { display: block; max-width: 100%; overflow-x: auto; }
+.ui-session__column .ui-prose { max-width: none; }
+.ui-session__column .ui-prose table { display: table; width: 100%; font-size: 14px; line-height: 1.5; }
+.ui-session__column .ui-prose th { white-space: nowrap; }
+.ui-session__column .ui-prose td { min-width: 9ch; overflow-wrap: break-word; }
 .ui-shell__link--active { background: var(--color-selected-bg); color: var(--color-selected-text); }
 
 @media (max-width: 999px) {
