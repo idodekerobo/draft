@@ -1,5 +1,5 @@
 import type { InputBlockReason, InputFailReason } from "draft-core/live-sessions";
-import type { LiveSessionInput } from "./types";
+import type { ComposerInput } from "./types";
 
 const BLOCKED: Partial<Record<InputBlockReason, string>> = {
   permission_prompt: "Claude is waiting for an approval",
@@ -13,8 +13,14 @@ const FAILED: Partial<Record<InputFailReason, string>> = {
   pane_unavailable: "the session was not reachable",
 };
 
+/** True when a queued message waits for a reason a person can act on, not just for the host to pick it up. */
+export function isBlocked(input: ComposerInput, hostOffline = false): boolean {
+  if (input.state !== "queued") return false;
+  return hostOffline || input.reason === "composer_busy" || BLOCKED[input.reason as InputBlockReason] !== undefined;
+}
+
 /** Text to show the sender of an unfinished message. */
-export function inputStatusLine(input: LiveSessionInput, ownerName: string, now = Date.now(), hostOffline = false): string {
+export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostOffline = false): string {
   switch (input.state) {
     case "queued": {
       if (hostOffline) return `Queued, ${ownerName}'s laptop is offline`;
@@ -24,6 +30,7 @@ export function inputStatusLine(input: LiveSessionInput, ownerName: string, now 
       const minutes = Math.floor((now - Date.parse(input.created_at)) / 60_000);
       return minutes >= 1 ? `Queued ${minutes} min` : "Queued, waiting for Claude";
     }
+    case "sending":
     case "delivering":
       return "Sending…";
     case "uncertain":

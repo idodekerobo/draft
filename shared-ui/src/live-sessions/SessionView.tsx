@@ -11,6 +11,7 @@ import { displayStatus } from "./display-status";
 import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
+import { pendingItems } from "./pending-items";
 import { buildStreamItems, openApprovals } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
@@ -174,8 +175,16 @@ function LoadedSession({
   const [stopping, setStopping] = useState(false);
   const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const items = useMemo(() => buildStreamItems(events), [events]);
-  const approvals = useMemo(() => openApprovals(items), [items]);
+  const logItems = useMemo(() => buildStreamItems(events), [events]);
+  const approvals = useMemo(() => openApprovals(logItems), [logItems]);
+  const ownerName = session.owner_name ?? "the owner";
+  const hostOffline = session.status === "host_offline";
+  const viewerName = viewer.name;
+  const items = useMemo(
+    () => [...logItems, ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline })],
+    [logItems, inputs.inputs, events, viewerName, ownerName, hostOffline],
+  );
+  const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
   const jumpToLatest = useCallback(() => {
     const el = scroller.current;
@@ -218,7 +227,6 @@ function LoadedSession({
     else item.onSelect();
   }, []);
 
-  const ownerName = session.owner_name ?? "the owner";
   const readOnly = session.session_type === "routine";
   const running = !readOnly && (session.status === "live" || session.status === "starting");
   const banner = sessionBanner(session);
@@ -272,7 +280,7 @@ function LoadedSession({
               approvals.map((approval) => (
                 <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
               ))}
-            <SessionComposer {...inputs} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={session.status === "host_offline"} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} />
+            <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} />
             </>
           )}
         </div>

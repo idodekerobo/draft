@@ -1,9 +1,31 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { renderMarkdown } from "../context/markdown";
+import { inputStatusLine, isBlocked } from "./input-status";
 import { approvalOutcome, type StreamItem } from "./stream-items";
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
+}
+
+const SLOW_SEND_MS = 10_000;
+const SLOW_TICK_MS = 1_000;
+
+/** Looks like a sent message. A line under it shows only when the message is blocked or has waited long. */
+function PendingBubble({ item }: { item: Extract<StreamItem, { type: "pending" }> }) {
+  const { input } = item;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), SLOW_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  const showNote = isBlocked(input, item.hostOffline) || now - Date.parse(input.created_at) >= SLOW_SEND_MS;
+  return (
+    <>
+      <span className="ui-stream__who">{item.author}</span>
+      <p className="ui-stream__bubble">{input.text}</p>
+      {showNote && <span className="ui-muted ui-stream__pending-note" role="status">{inputStatusLine(input, item.ownerName, now, item.hostOffline)}</span>}
+    </>
+  );
 }
 
 function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: string; hostName: string | null }) {
@@ -23,6 +45,8 @@ function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: stri
           <p className="ui-stream__bubble">{item.text}</p>
         </>
       );
+    case "pending":
+      return <PendingBubble item={item} />;
     case "assistant":
       return <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />;
     case "thinking":
@@ -64,6 +88,7 @@ function Item({ item, ownerName, hostName }: { item: StreamItem; ownerName: stri
   }
 }
 
+const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.seq);
 const agentOf = (item: StreamItem) => ("agentId" in item ? item.agentId : null);
 
 /** Open requests are shown in the approval panel, not in the stream. */
@@ -78,9 +103,9 @@ export function SessionStream({ items: all, ownerName = "User", hostName = null 
         const previous = index > 0 ? agentOf(items[index - 1]!) : null;
         const startsAgent = agentId !== null && previous !== agentId;
         return (
-          <Fragment key={item.seq}>
+          <Fragment key={keyOf(item)}>
             {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
-            <li className={`ui-stream__item ui-stream__item--${item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" ? " ui-stream__item--human" : ""}`}>
+            <li className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? " ui-stream__item--human" : ""}`}>
               <Item item={item} ownerName={ownerName} hostName={hostName} />
             </li>
           </Fragment>

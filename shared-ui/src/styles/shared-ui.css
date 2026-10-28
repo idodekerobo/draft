@@ -799,6 +799,7 @@
 .ui-stream { display: flex; flex-direction: column; gap: var(--space-4); }
 .ui-stream__item, .ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--thinking { padding: 0; border-bottom: 0; }
 .ui-stream__item--human { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ui-stream__pending-note { font-size: var(--font-size-secondary); }
 .ui-stream__bubble { max-width: 85%; margin: 0; padding: 8px 14px; background: var(--color-bg-surface); border-radius: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .ui-composer { margin: 0; padding: 0; border-top: 0; }

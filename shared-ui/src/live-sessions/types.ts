@@ -93,6 +93,13 @@ export interface LiveSessionInput {
   mine: boolean;
 }
 
+/** An input as the composer shows it. "sending" exists only on this device, until the server list holds the message. */
+export type ComposerInput = Omit<LiveSessionInput, "state"> & {
+  state: LiveSessionInputState | "sending";
+  /** Holds steady from the local send to the server copy, for the bubble in the stream. */
+  key?: string;
+};
+
 export type ApprovalResult =
   | { ok: true }
   | { ok: false; error: "already_decided"; byName: string | null }

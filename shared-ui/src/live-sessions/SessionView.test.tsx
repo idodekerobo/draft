@@ -108,12 +108,13 @@ describe("SessionView", () => {
     expect(ended).toBe(1);
   });
 
-  it("shows waiting messages from the same poll as the events, and fetches again right after a send", async () => {
+  it("shows waiting messages as bubbles in the log from the same poll as the events, and fetches again right after a send", async () => {
     const waiting = { id: "i1", author_user_id: "u2", author_name: "Priya", text: "run tests", state: "queued" as const, reason: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), mine: true };
     let fetches = 0;
     const sendMessage = mock(async () => {});
     render(<SessionView api={{ ...api, sendMessage, fetchEvents: async () => (fetches++, { viewer, session, events: [], inputs: [waiting] }) }} sessionId="s1" />);
-    await screen.findByText(/Queued/);
+    await screen.findByText("run tests");
+    expect(screen.queryByText(/Queued/)).toBeNull();
     const before = fetches;
     const box = screen.getByRole("textbox");
     fireEvent.change(box, { target: { value: "next" } });
@@ -143,6 +144,13 @@ describe("SessionView", () => {
     render(<SessionView api={{ ...api, fetchEvents: failing }} sessionId="s1" />);
     expect(await screen.findByText(/Could not load this session/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("shows a failed message with Resend in the message box area, not in the log", async () => {
+    const failed = { id: "i1", author_user_id: "u2", author_name: "Dev", text: "hi", state: "failed" as const, reason: "session_ended", created_at: new Date().toISOString(), updated_at: "", mine: true };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session, events: [], inputs: [failed] }) }} sessionId="s1" />);
+    expect(await screen.findByRole("button", { name: "Resend" })).toBeTruthy();
+    expect(screen.getByText("Not delivered: the session ended")).toBeTruthy();
   });
 
   it("shows one banner line when the host is offline, and says the message waits", async () => {

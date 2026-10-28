@@ -2,7 +2,7 @@
 
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { clearDraft, useDraft } from "./drafts";
+import { clearDraft, hasDraft, useDraft } from "./drafts";
 import { inputStatusLine } from "./input-status";
 import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
@@ -29,7 +29,6 @@ export function SessionComposer({
   onEmptyEscape,
 }: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void }) {
   const [text, setText] = useDraft(sessionId);
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -48,17 +47,15 @@ export function SessionComposer({
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const message = text.trim();
-    if (!message || sending) return;
-    setSending(true);
+    if (!message) return;
     setError(null);
+    setText("");
     try {
       await send(message);
-      setText("");
     } catch (failure) {
+      if (!hasDraft(sessionId)) setText(message);
       const code = failure instanceof Error ? failure.message : "";
       setError(SEND_ERRORS[code as LiveSessionErrorCode] ?? "Could not send. Try again.");
-    } finally {
-      setSending(false);
     }
   }
 
@@ -109,8 +106,8 @@ export function SessionComposer({
             }}
           />
           <div className="ui-composer__footer">
-            <button type="submit" className="ui-btn ui-btn--primary" disabled={sending || !text.trim()}>
-              {sending ? "Sending…" : "Send"}
+            <button type="submit" className="ui-btn ui-btn--primary" disabled={!text.trim()}>
+              Send
             </button>
           </div>
           </div>
