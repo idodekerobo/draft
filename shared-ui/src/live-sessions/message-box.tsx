@@ -23,6 +23,8 @@ export function useAutoGrow(ref: RefObject<HTMLTextAreaElement | null>, value: s
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    // Browsers do not scroll the caret into view after a programmatic resize.
+    if (el.selectionEnd === el.value.length) el.scrollTop = el.scrollHeight;
   }, [ref, value]);
 }
 

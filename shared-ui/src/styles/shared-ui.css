@@ -809,7 +809,7 @@
 .ui-composer__folder { display: flex; align-items: center; gap: var(--space-2); padding: 6px 12px; background: var(--color-bg-surface); color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-composer__row { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
 .ui-composer__footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
-.ui-composer__input { flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 8px; border: 0; background: none; color: var(--color-text-primary); font: var(--font-size-body) var(--font-ui); line-height: 1.4; resize: none; outline: none; }
+.ui-composer__input { flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 8px 8px 16px; border: 0; background: none; color: var(--color-text-primary); font: var(--font-size-body) var(--font-ui); line-height: 1.4; resize: none; outline: none; }
 .ui-composer__pending { margin-bottom: var(--space-3); }
 @media (prefers-reduced-motion: reduce) { .ui-session__menu-list { animation: ui-fade-in 200ms linear both; } }
 
