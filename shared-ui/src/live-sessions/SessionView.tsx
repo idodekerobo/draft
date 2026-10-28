@@ -158,6 +158,8 @@ function LoadedSession({
   useEffect(() => {
     if (viewReported.current) return;
     viewReported.current = true;
+    // Routine runs are not shared sessions: counting them would inflate the view signal.
+    if (session.session_type === "routine") return;
     track?.("session_viewed", { is_owner: session.mine === true, entry });
     // Once per open: the view remounts for another session, and a poll never gets here.
     // eslint-disable-next-line react-hooks/exhaustive-deps

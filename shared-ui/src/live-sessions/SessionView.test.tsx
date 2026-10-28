@@ -225,3 +225,23 @@ describe("SessionView for a routine run", () => {
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 });
+
+describe("SessionView view event", () => {
+  const routineSession: LiveSession = { ...session, session_type: "routine", title: "Weekly digest" };
+  const routineApi: LiveSessionsApi = { ...api, fetchEvents: async () => ({ viewer, session: routineSession, events: [], inputs: [] }) };
+
+  it("reports a shared session once per open", async () => {
+    const track = mock((_event: string, _props: unknown) => {});
+    render(<SessionView api={api} sessionId="s1" track={track as never} />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track.mock.calls[0]![0]).toBe("session_viewed");
+  });
+
+  it("does not report a routine run, even when the page passes a tracker", async () => {
+    const track = mock((_event: string, _props: unknown) => {});
+    render(<SessionView api={routineApi} sessionId="s1" track={track as never} />);
+    await screen.findByRole("heading", { name: "Weekly digest" });
+    expect(track).not.toHaveBeenCalled();
+  });
+});
