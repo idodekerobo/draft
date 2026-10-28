@@ -535,7 +535,7 @@ button {
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────────── */
 
-::-webkit-scrollbar              { width: 6px; }
+::-webkit-scrollbar              { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track        { background: transparent; }
 ::-webkit-scrollbar-thumb        { background: rgba(var(--color-overlay-rgb),0.1); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover  { background: rgba(var(--color-overlay-rgb),0.18); }
