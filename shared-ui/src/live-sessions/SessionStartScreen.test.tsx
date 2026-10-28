@@ -77,4 +77,18 @@ describe("SessionStartScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
     await waitFor(() => expect(onStart).toHaveBeenCalledWith({ folderPath: "/work/marigold", text: "go", model: "sonnet" }));
   });
+
+  it("keeps the typed text when the screen remounts, and clears it after a start", async () => {
+    const first = setup();
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "unfinished idea" } });
+    cleanup();
+    const { onStart } = setup();
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("unfinished idea");
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    cleanup();
+    setup();
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+    void first;
+  });
 });

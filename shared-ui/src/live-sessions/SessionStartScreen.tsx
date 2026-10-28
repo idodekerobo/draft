@@ -3,6 +3,7 @@
 import { LIVE_SESSION_HARNESSES, LIVE_SESSION_MODELS } from "draft-core/live-sessions";
 import { useRef, useState, type FormEvent } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
+import { clearDraft, NEW_SESSION_DRAFT_KEY, useDraft } from "./drafts";
 import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { usePopover } from "./usePopover";
@@ -29,7 +30,7 @@ export function SessionStartScreen({
   onStart: (request: StartRequest) => Promise<StartResult>;
 }) {
   const [chosen, setChosen] = useState<string | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(NEW_SESSION_DRAFT_KEY);
   const [model, setModel] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +53,8 @@ export function SessionStartScreen({
     setError(null);
     try {
       const result = await onStart({ folderPath: folder, text: message, model });
-      if (!result.ok) setError(result.error);
+      if (result.ok) clearDraft(NEW_SESSION_DRAFT_KEY);
+      else setError(result.error);
     } finally {
       setStarting(false);
     }

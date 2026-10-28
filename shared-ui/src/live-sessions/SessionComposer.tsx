@@ -2,6 +2,7 @@
 
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { clearDraft, useDraft } from "./drafts";
 import { inputStatusLine } from "./input-status";
 import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
@@ -16,6 +17,7 @@ const SEND_ERRORS: Partial<Record<LiveSessionErrorCode, string>> = {
 };
 
 export function SessionComposer({
+  sessionId,
   inputs,
   send,
   act,
@@ -25,14 +27,18 @@ export function SessionComposer({
   folderName,
   autoFocus = false,
   onEmptyEscape,
-}: SessionInputsState & { ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void }) {
-  const [text, setText] = useState("");
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void }) {
+  const [text, setText] = useDraft(sessionId);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useAutoGrow(inputRef, text);
   useTypeToFocus(inputRef, !ended);
+
+  useEffect(() => {
+    if (ended) clearDraft(sessionId);
+  }, [ended, sessionId]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), STATUS_TICK_MS);

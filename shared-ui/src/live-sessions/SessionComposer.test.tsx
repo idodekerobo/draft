@@ -13,7 +13,7 @@ const input = (patch: Partial<LiveSessionInput>): LiveSessionInput => ({
 function renderComposer(props: Partial<Parameters<typeof SessionComposer>[0]> = {}) {
   const send = mock(async (_text: string) => {});
   const act = mock(async (_id: string, _action: "resend" | "dismiss") => {});
-  render(<SessionComposer inputs={[]} send={send} act={act} ownerName="Maya" ended={false} {...props} />);
+  render(<SessionComposer sessionId="s1" inputs={[]} send={send} act={act} ownerName="Maya" ended={false} {...props} />);
   return { send, act };
 }
 
@@ -63,5 +63,27 @@ describe("SessionComposer", () => {
   it("replaces the box when the session has ended", () => {
     renderComposer({ ended: true });
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("keeps an unsent draft when the composer remounts, per session", () => {
+    const props = { inputs: [], send: mock(async () => {}), act: mock(async () => {}), ownerName: "Maya" };
+    const first = render(<SessionComposer sessionId="draft-a" ended={false} {...props} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "half a thought" } });
+    first.unmount();
+    const other = render(<SessionComposer sessionId="draft-b" ended={false} {...props} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+    other.unmount();
+    render(<SessionComposer sessionId="draft-a" ended={false} {...props} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("half a thought");
+  });
+
+  it("drops the draft once the session has ended", () => {
+    const props = { inputs: [], send: mock(async () => {}), act: mock(async () => {}), ownerName: "Maya" };
+    const first = render(<SessionComposer sessionId="draft-end" ended={false} {...props} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "too late" } });
+    first.rerender(<SessionComposer sessionId="draft-end" ended {...props} />);
+    first.unmount();
+    render(<SessionComposer sessionId="draft-end" ended={false} {...props} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
   });
 });
