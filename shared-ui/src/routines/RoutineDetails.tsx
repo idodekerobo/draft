@@ -6,7 +6,7 @@ import { agentLabel } from "./agent-label";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import { RoutineRuns } from "./RoutineRuns";
-import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, timezoneOptions } from "./schedule-fields";
+import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, timezoneOptions } from "./schedule-fields";
 import type { Routine, RoutinePatch, RoutinePreset, RoutineWeekday } from "./types";
 
 export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onOpenRun }: {
@@ -31,7 +31,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
-  const usesTime = preset === "daily" || preset === "weekdays" || preset === "weekly";
+  const usesTime = presetUsesTime(preset);
   const isDefault = preset === "draft_default";
   const effectiveTimezone = isDefault ? "UTC" : timezone;
   const zones = useMemo(() => timezoneOptions(timezone), [timezone]);

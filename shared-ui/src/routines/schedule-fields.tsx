@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { RoutinePreset, RoutineWeekday } from "./types";
 
-export type EditablePreset = Exclude<RoutinePreset, "custom">;
+type EditablePreset = Exclude<RoutinePreset, "custom">;
 
 export const PRESET_LABELS: Record<RoutinePreset, string> = {
   draft_default: "Draft default (daytime + overnight)",
@@ -33,6 +33,9 @@ export function browserTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+/** Whether a frequency is set at a time of day. */
+export const presetUsesTime = (preset: RoutinePreset): boolean => preset === "daily" || preset === "weekdays" || preset === "weekly";
+
 export interface ScheduleValue {
   preset: Exclude<EditablePreset, "draft_default">;
   time: string;
@@ -48,7 +51,7 @@ export function ScheduleFields({ value, onChange, disabled, fieldError, zones }:
   fieldError: (field: string) => ReactNode;
   zones: string[];
 }) {
-  const usesTime = value.preset === "daily" || value.preset === "weekdays" || value.preset === "weekly";
+  const usesTime = presetUsesTime(value.preset);
   return (
     <div className="ui-routines__fields">
       <label className="ui-routines__field">

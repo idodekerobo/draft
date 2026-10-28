@@ -6,7 +6,7 @@ import { SectionedPicker } from "../controls/SectionedPicker";
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun } from "./format";
-import { ScheduleFields, browserTimezone, timezoneOptions, type ScheduleValue } from "./schedule-fields";
+import { ScheduleFields, browserTimezone, presetUsesTime, timezoneOptions, type ScheduleValue } from "./schedule-fields";
 import type { CreateRoutineInput } from "./types";
 
 /** Asks for what the routine does, the agent that runs it, and when. Nothing is saved until Create. */
@@ -23,7 +23,7 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
-  const usesTime = schedule.preset === "daily" || schedule.preset === "weekdays" || schedule.preset === "weekly";
+  const usesTime = presetUsesTime(schedule.preset);
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
   const canCreate = title.trim() !== "" && prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
