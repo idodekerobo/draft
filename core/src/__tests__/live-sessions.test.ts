@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, hostErrorAction, normalizeInputText, parseClaudeVersion, presenceNames, splitAuthor } from "../live-sessions";
+import { HOST_FATAL_CODES, LIVE_SESSION_MODELS, deliveredText, isKnownModelAlias, isTestedClaudeVersion, hostErrorAction, normalizeInputText, parseClaudeVersion, presenceNames, splitAuthor, stripPasteWrapper } from "../live-sessions";
 
 describe("author tag", () => {
   it("round-trips through deliveredText and splitAuthor", () => {
@@ -18,6 +18,29 @@ describe("author tag", () => {
 
   it("drops whitespace after the tag", () => {
     expect(splitAuthor("[Dev via Draft]   hello").text).toBe("hello");
+  });
+});
+
+describe("stripPasteWrapper", () => {
+  const tagged = "[Dev via Draft] - one\n- two";
+
+  it("unwraps the form Claude Code records, with the id on the closing tag", () => {
+    const raw = `\n\n<pasted_content id="1177">\n${tagged}\n</pasted_content id="1177">\n`;
+    expect(stripPasteWrapper(raw)).toBe(tagged);
+    expect(splitAuthor(stripPasteWrapper(raw))).toEqual({ text: "- one\n- two", author: "Dev" });
+  });
+
+  it("accepts a closing tag without an id", () => {
+    expect(stripPasteWrapper(`<pasted_content id="2">\nhi\n</pasted_content>`)).toBe("hi");
+  });
+
+  it("keeps text around a block and unwraps several blocks", () => {
+    expect(stripPasteWrapper(`before <pasted_content id="1">\na\n</pasted_content id="1"> and <pasted_content id="2">\nb\n</pasted_content id="2"> after`)).toBe("before a and b after");
+  });
+
+  it("leaves plain text and an unclosed tag alone", () => {
+    expect(stripPasteWrapper("fix the bug")).toBe("fix the bug");
+    expect(stripPasteWrapper('<pasted_content id="1">\nno end')).toBe('<pasted_content id="1">\nno end');
   });
 });
 

@@ -68,6 +68,13 @@ function cleanAuthorName(name: string): string {
   return name.replace(/[\][\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "A teammate";
 }
 
+const PASTE_WRAPPER = /<pasted_content id="[^"]*">\n?([\s\S]*?)\n?<\/pasted_content(?: id="[^"]*")?>/g;
+
+/** Claude Code wraps a long paste in a `<pasted_content>` tag when it records the turn. Returns the pasted text alone. */
+export function stripPasteWrapper(text: string): string {
+  return text.includes("<pasted_content") ? text.replace(PASTE_WRAPPER, "$1").trim() : text;
+}
+
 /** What Claude sees: the message with its author in front. */
 export function deliveredText(authorName: string, text: string): string {
   return `[${cleanAuthorName(authorName)} via Draft] ${text}`;

@@ -27,6 +27,13 @@ describe("parseLiveLine: turns", () => {
     ]);
   });
 
+  it("unwraps a long paste that Claude Code records inside a pasted_content tag", () => {
+    const wrapped = '\n\n<pasted_content id="1177">\n[Dev via Draft] - one\n- two\n</pasted_content id="1177">\n';
+    const expected = [{ sourceId: "u-1", kind: "user_message" as const, payload: { timestamp: "2026-10-26T20:00:00.000Z", text: "[Dev via Draft] - one\n- two" } }];
+    expect(parse(user(wrapped))).toEqual(expected);
+    expect(parse(user([{ type: "text", text: wrapped }]))).toEqual(expected);
+  });
+
   it("maps assistant text, thinking and tool_use blocks in order", () => {
     const events = parse(
       assistant([

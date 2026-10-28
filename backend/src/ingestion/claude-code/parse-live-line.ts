@@ -1,3 +1,4 @@
+import { stripPasteWrapper } from "draft-core/live-sessions";
 import type { SessionEventKind } from "../../types/tables";
 
 export interface LiveLineInput {
@@ -94,7 +95,7 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
   } else if (parsed.type === "user" && parsed.message?.role === "user") {
     const content = parsed.message.content;
     if (typeof content === "string") {
-      const text = content.trim();
+      const text = stripPasteWrapper(content.trim());
       const output = LOCAL_COMMAND_OUTPUT.exec(text);
       if (output) {
         const note = output[2]!.replace(ANSI, "").trim();
@@ -103,7 +104,7 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
         out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
       }
     } else if (Array.isArray(content)) {
-      const text = textOf(content.filter((b) => b.type === "text" || b.type === "image")).trim();
+      const text = stripPasteWrapper(textOf(content.filter((b) => b.type === "text" || b.type === "image")).trim());
       if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
       for (const block of content) {
         if (block.type !== "tool_result") continue;
