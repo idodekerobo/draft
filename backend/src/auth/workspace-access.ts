@@ -1,5 +1,9 @@
 import { serviceClient } from "../db/client";
+import { recordError } from "../errors/record-error";
+import { allowOncePer } from "../errors/throttle";
 import type { UserRow, WorkspaceRow } from "../types/tables";
+
+const FORBIDDEN_WINDOW_MS = 60_000;
 
 export async function assertWorkspaceAccess(
   workspaceId: string,
@@ -36,6 +40,9 @@ export async function assertWorkspaceAccess(
     workspace.team_id !== user.primary_team_id ||
     workspace.access_mode !== "team_default"
   ) {
+    if (allowOncePer(`forbidden:${workspaceId}:${callerId}`, FORBIDDEN_WINDOW_MS)) {
+      void recordError({ workspaceId, operation: "auth", message: "workspace access forbidden", code: "forbidden", detail: { caller_id: callerId } });
+    }
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
