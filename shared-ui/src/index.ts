@@ -9,6 +9,7 @@ export * from "./privacy/PrivacyRows";
 export * from "./context/ContextReader";
 export * from "./context/ContextExport";
 export * from "./activity/ActivityList";
+export * from "./activity/ActivityPanel";
 export * from "./query";
 export * from "./routines";
 export * from "./live-sessions";

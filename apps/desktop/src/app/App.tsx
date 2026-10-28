@@ -170,7 +170,7 @@ export function App() {
                 />
               </div>
               {activeView === "connections" && <ConnectionsView />}
-              {activeView === "activity" && <ActivityView />}
+              {activeView === "activity" && <ActivityView onFixInConnections={() => handleNavigate("connections")} />}
               {activeView === "routines" && <RoutinesView onReconnect={() => handleNavigate("connections")} />}
               {activeView === "sessions" && sessionsEnabled && <SessionsView />}
             </>
