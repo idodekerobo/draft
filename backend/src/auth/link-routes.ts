@@ -1,5 +1,7 @@
 import { withAuth } from "./withAuth";
-import { approvePairing, consumePairing, createPairing, type PairingTokens } from "./pairing-store";
+import { serviceClient, publishableClient } from "../db/client";
+import { mintDeviceSession } from "./mint-device-session";
+import { approvePairing, consumePairing, createPairing } from "./pairing-store";
 
 type LinkCodeRequest = Bun.BunRequest<"/link/:code">;
 type LinkApproveRequest = Bun.BunRequest<"/link/:code/approve">;
@@ -14,15 +16,8 @@ export async function pollGET(req: LinkCodeRequest): Promise<Response> {
   return Response.json(result);
 }
 export const approvePOST = withAuth<LinkApproveRequest>(async (req, caller) => {
-  const code = req.params.code;
-  let body: unknown;
-  try { body = await req.json(); } catch { return Response.json({ error: "invalid_json" }, { status: 400 }); }
-  const value = body as Partial<PairingTokens>;
-  if (typeof value.refresh_token !== "string" || !value.refresh_token ||
-      (value.expires_at !== undefined && typeof value.expires_at !== "number") ||
-      (value.expires_in !== undefined && typeof value.expires_in !== "number")) {
-    return Response.json({ error: "invalid_tokens" }, { status: 400 });
-  }
-  const ok = approvePairing(code, { access_token: caller.accessToken, refresh_token: value.refresh_token, expires_at: value.expires_at, expires_in: value.expires_in });
+  const tokens = await mintDeviceSession(caller.userId, { admin: serviceClient, anon: publishableClient });
+  if (!tokens) return Response.json({ error: "session_mint_failed" }, { status: 500 });
+  const ok = approvePairing(req.params.code, tokens);
   return ok ? Response.json({ approved: true }) : Response.json({ error: "expired_or_unknown" }, { status: 404 });
 });
