@@ -30,7 +30,7 @@ export async function startAppServer(codexBin: string, id: string): Promise<AppS
   const port = await freePort();
   const token = randomBytes(24).toString("hex");
   mkdirSync(TOKEN_DIR, { recursive: true, mode: 0o700 });
-  const tokenPath = `${TOKEN_DIR}/${id}.token`;
+  const tokenPath = `${TOKEN_DIR}/${id}-${port}.token`;
   writeFileSync(tokenPath, token, { mode: 0o600 });
   chmodSync(tokenPath, 0o600);
 

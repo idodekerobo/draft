@@ -46,6 +46,7 @@ import {
   hostedLiveSessionIds,
   listLiveSessions,
   openLiveSessionInTerminal,
+  resumeLiveSession,
   resumeLiveSessions,
   sendLiveSessionMessage,
   startLiveSession,
@@ -776,6 +777,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       stopLiveSession: ({ sessionId }) => stopLiveSession(sessionId),
 
       endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
+
+      resumeLiveSession: ({ sessionId }) => resumeLiveSession(sessionId),
 
       getHostedLiveSessionIds: () => hostedLiveSessionIds(),
 

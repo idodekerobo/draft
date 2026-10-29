@@ -12,6 +12,8 @@ export interface LiveSession {
   status: LiveSessionStatus;
   started_at: string;
   ended_at: string | null;
+  /** Why it ended, such as exited, ended_by_owner or cleared. */
+  end_reason?: string | null;
   last_event_at: string | null;
   last_seq: number;
   /** Permission requests waiting for an answer. */
@@ -120,6 +122,8 @@ export interface LiveSessionsApi {
   decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
   stop(sessionId: string): Promise<{ withdrawn: string[] }>;
+  /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
+  resume?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
   watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
 }

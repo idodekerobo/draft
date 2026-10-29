@@ -21,8 +21,16 @@ interface ThreadStartResult {
 
 const textInput = (input: PendingInput) => [{ type: "text", text: input.delivered_text, text_elements: [] }];
 
+interface ResumedTurn {
+  id: string;
+  status?: string;
+  error?: unknown;
+  items?: unknown[];
+}
+
 interface ThreadResumeResult {
-  thread: { turns?: Array<{ id: string; status?: string; error?: unknown; items?: unknown[] }> };
+  thread: { turns?: ResumedTurn[] };
+  cwd?: string;
 }
 
 interface TurnStartResult {
@@ -40,6 +48,8 @@ class CodexConnection {
   busy = false;
   turnId: string | null = null;
   hasTurned = false;
+  /** Turns read when the thread was resumed, to post again once a driver is bound. */
+  history: ResumedTurn[] = [];
   rpc!: RpcClient;
 
   constructor(readonly server: AppServer, readonly threadId: string, readonly folderPath: string, readonly bin: string) {}
@@ -84,6 +94,31 @@ async function openServer(bin: string, sessionId: string) {
   }
 }
 
+/** Starts a new app server and resumes a thread from disk on it. The thread keeps the folder it ran in. */
+async function resumeConnection(input: { bin: string; sessionId: string; threadId: string; folderPath: string; model: string | null }): Promise<CodexConnection> {
+  const { server, rpc, route } = await openServer(input.bin, input.sessionId);
+  try {
+    const resumed = await rpc.request<ThreadResumeResult>("thread/resume", {
+      threadId: input.threadId,
+      ...(input.folderPath ? { cwd: input.folderPath } : {}),
+      approvalPolicy: "on-request",
+      sandbox: "workspace-write",
+      ...(input.model ? { model: input.model } : {}),
+    });
+    const connection = new CodexConnection(server, input.threadId, input.folderPath || resumed.cwd || "", input.bin);
+    connection.rpc = rpc;
+    connection.hasTurned = true;
+    connection.history = resumed.thread.turns ?? [];
+    route.connection = connection;
+    live.set(input.sessionId, connection);
+    return connection;
+  } catch (error) {
+    rpc.close();
+    server.stop();
+    throw error;
+  }
+}
+
 /** Sessions with a turn in progress. A turn stops when Draft quits, because its app server is a child of Draft. */
 export function runningCodexTurns(): number {
   return [...live.values()].filter((connection) => connection.busy).length;
@@ -123,8 +158,11 @@ export class CodexDriver implements HarnessDriver {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
     }
     const connection = this.connection;
-    if (connection) this.bind(connection);
-    else void this.attach();
+    if (connection) {
+      this.bind(connection);
+      this.backfill(connection.threadId, connection.history);
+      connection.history = [];
+    } else void this.attach();
   }
 
   private bind(connection: CodexConnection): void {
@@ -141,37 +179,23 @@ export class CodexDriver implements HarnessDriver {
   private async attach(): Promise<void> {
     this.attaching = true;
     this.attachFailed = false;
-    let opened: Awaited<ReturnType<typeof openServer>> | null = null;
     try {
       const state = this.host.state();
       const bin = findRunnerBin("codex");
       if (!bin) throw new Error("Codex is not installed");
-      opened = await openServer(bin, state.sessionId);
-      const resumed = await opened.rpc.request<ThreadResumeResult>("thread/resume", {
-        threadId: state.nativeSessionId,
-        cwd: state.folderPath,
-        approvalPolicy: "on-request",
-        sandbox: "workspace-write",
-        ...(state.model ? { model: state.model } : {}),
-      });
-      const connection = new CodexConnection(opened.server, state.nativeSessionId, state.folderPath, bin);
-      connection.rpc = opened.rpc;
-      connection.hasTurned = true;
-      opened.route.connection = connection;
-      live.set(state.sessionId, connection);
+      const connection = await resumeConnection({ bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null });
       this.bind(connection);
-      this.backfill(connection.threadId, resumed.thread.turns ?? []);
+      this.backfill(connection.threadId, connection.history);
+      connection.history = [];
     } catch (error) {
       console.error("[live-session] could not resume the codex thread", error);
-      opened?.rpc.close();
-      opened?.server.stop();
       this.attachFailed = true;
     } finally {
       this.attaching = false;
     }
   }
 
-  private backfill(threadId: string, turns: Array<{ id: string; status?: string; error?: unknown; items?: unknown[] }>): void {
+  private backfill(threadId: string, turns: ResumedTurn[]): void {
     for (const turn of turns) {
       for (const item of turn.items ?? []) this.enqueue({ method: "item/completed", params: { threadId, item } });
       if (turn.status && turn.status !== "inProgress") {
@@ -418,6 +442,14 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version: await readCodexVersion(bin) };
   },
   newNativeSessionId: () => "",
+  async resume({ sessionId, nativeSessionId, model, bin }) {
+    try {
+      const connection = await resumeConnection({ bin, sessionId, threadId: nativeSessionId, folderPath: "", model });
+      return { folderPath: connection.folderPath };
+    } catch (error) {
+      throw new LaunchError(`Codex could not resume the session: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+  },
   async launch({ sessionId, folderPath, model, bin }) {
     const { server, rpc, route } = await openServer(bin, sessionId);
     try {

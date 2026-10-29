@@ -337,6 +337,62 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   return { ok: true, sessionId };
 }
 
+/** Starts an ended session of the owner again on this computer. It is the same session, live again. */
+export async function resumeLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const workspaceId = getCachedWorkspaceId();
+  if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+  if (running.get(sessionId) && !running.get(sessionId)!.hasEnded()) return { ok: false, error: "This session is already running." };
+
+  let session: LiveSession & { native_session_id?: string | null; host_machine_id?: string; end_reason?: string | null };
+  try {
+    session = (await fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=0&limit=1`)).session as typeof session;
+  } catch {
+    return { ok: false, error: "Could not load the session." };
+  }
+  const hostMachineId = getHostMachineId();
+  if (!session.mine) return { ok: false, error: "Only the person who started a session can resume it." };
+  if (session.status !== "ended") return { ok: false, error: "This session is not ended." };
+  if (session.end_reason === "cleared") return { ok: false, error: "This conversation was cleared. Open the session that continued it." };
+  if (session.host_machine_id !== hostMachineId || !session.native_session_id) return { ok: false, error: "This session ran on another computer. Resume it there." };
+
+  const harness = session.harness ?? DEFAULT_HARNESS_ID;
+  if (!isHarnessId(harness)) return { ok: false, error: "This session's agent is not supported by this version of Draft." };
+  const { launcher } = registrationFor(harness);
+  const checked = await launcher.check();
+  if (!checked.ok) return { ok: false, error: checked.error };
+
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/reopen`, { method: "POST", body: JSON.stringify({ hostMachineId }) });
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError && error.code === "session_cleared" ? "This conversation was cleared." : "Could not reopen the session." };
+  }
+
+  let state: HostSessionState = {
+    sessionId,
+    workspaceId,
+    hostMachineId,
+    nativeSessionId: session.native_session_id,
+    folderPath: "",
+    harness,
+    cursors: {},
+    rawUploads: {},
+    ended: false,
+    model: session.model ?? null,
+    harnessVersion: checked.version,
+  };
+  try {
+    state = { ...state, ...(await launcher.resume({ sessionId, nativeSessionId: session.native_session_id, model: state.model ?? null, bin: checked.bin })) };
+  } catch (error) {
+    console.error("[live-session] resume failed", error);
+    await fetchServer(`${sessionBase(sessionId)}/end`, { method: "POST", body: JSON.stringify({ hostMachineId, reason: "resume_failed" }) }).catch(() => {});
+    return { ok: false, error: error instanceof LaunchError ? error.message : "Could not resume the session." };
+  }
+
+  saveState(state);
+  new SessionRunner(state).start();
+  return { ok: true };
+}
+
 /** Picks up the sessions this machine was forwarding when the app last closed. */
 export async function resumeLiveSessions(): Promise<void> {
   for (const state of loadStates()) {

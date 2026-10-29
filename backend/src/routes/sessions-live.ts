@@ -17,6 +17,7 @@ type EventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/ev
 type LinesRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/lines">;
 type HeartbeatRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/heartbeat">;
 type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">;
+type ReopenRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/reopen">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
 
@@ -268,6 +269,35 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
   await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
 
   return Response.json({ ok: true });
+});
+
+/** The owner continues an ended session on the computer it ran on. It is the same session, live again. */
+export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  if (!owned.ok) return owned.response;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+
+  const { session } = owned;
+  if (session.session_type !== "interactive") return errorResponse("routine_read_only", 409);
+  if (session.status !== "ended") return Response.json({ ok: true, session });
+  if (session.end_reason === "cleared") return errorResponse("session_cleared", 409);
+
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .update({ status: "live", ended_at: null, end_reason: null, last_seen: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("status", "ended")
+    .select(SESSION_COLUMNS)
+    .maybeSingle<SessionRow>();
+  if (error) return errorResponse("session_reopen_failed", 500, error, workspaceId, sessionId);
+  return Response.json({ ok: true, session: data ?? { ...session, status: "live" } });
 });
 
 export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {

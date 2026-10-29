@@ -61,6 +61,11 @@ export interface HarnessLauncher {
   check(): Promise<CheckResult>;
   /** Starts the harness in the folder. Returns the state fields only this harness has. */
   launch(input: { sessionId: string; folderPath: string; model: string | null; bin: string; nativeSessionId: string }): Promise<Partial<HostSessionState>>;
+  /**
+   * Starts an ended session again on this computer, in the same folder with the same conversation.
+   * Returns the state fields only this harness has, and the folder.
+   */
+  resume(input: { sessionId: string; nativeSessionId: string; model: string | null; bin: string }): Promise<Partial<HostSessionState> & { folderPath: string }>;
   /** The native session id to send when the session is created. Empty when only the harness knows it. */
   newNativeSessionId(): string;
   /** Shown when `launch` throws. */

@@ -364,6 +364,9 @@ export type AppRPCType = {
       /** End a live session that runs on this computer. */
       endLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
+      /** Start an ended session of the owner again on this computer. */
+      resumeLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+
       /** Ids of the live sessions that run on this computer. */
       getHostedLiveSessionIds: { params: void; response: string[] };
 

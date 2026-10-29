@@ -8,8 +8,8 @@ export const tmuxPath = () => `${process.env.HOME}/.draft/bin/tmux`;
 
 export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
-export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null, settingsPath: string | null = null): string {
-  const args = ["--session-id", nativeSessionId, ...(model ? ["--model", model] : []), ...(settingsPath ? ["--settings", settingsPath] : [])];
+export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null, settingsPath: string | null = null, resume = false): string {
+  const args = [resume ? "--resume" : "--session-id", nativeSessionId, ...(model ? ["--model", model] : []), ...(settingsPath ? ["--settings", settingsPath] : [])];
   return [shellQuote(claudeBin), ...args.map(shellQuote)].join(" ");
 }
 
@@ -30,6 +30,8 @@ export interface LaunchOptions {
   nativeSessionId: string;
   model: string | null;
   settingsPath?: string | null;
+  /** Continue the conversation with this id instead of starting it. */
+  resume?: boolean;
 }
 
 /** Starts Claude in a detached tmux pane in the folder. */
@@ -40,7 +42,7 @@ export async function launchClaudeInTmux(options: LaunchOptions): Promise<void> 
     "-x", String(PANE_COLUMNS), "-y", String(PANE_ROWS),
     "-c", options.folderPath,
     "-e", `PATH=${GUI_PATH}:${process.env.HOME}/.local/bin`,
-    buildClaudeCommand(options.claudeBin, options.nativeSessionId, options.model, options.settingsPath ?? null),
+    buildClaudeCommand(options.claudeBin, options.nativeSessionId, options.model, options.settingsPath ?? null, options.resume ?? false),
   ]);
   if (!result.ok) throw new Error(`tmux_launch_failed: ${result.stderr.trim()}`);
 }

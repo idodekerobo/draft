@@ -2,8 +2,9 @@ import { ApprovalBroker } from "./approvals";
 import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
 import { ControlActions, type ControlInput } from "./controls";
 import { findRunnerBin } from "./find-bin";
-import { TranscriptForwarder, type ForwardedLine } from "./forwarder";
-import type { DriverHost, HarnessDriver, HarnessLauncher, HarnessRegistration, HostInput } from "./harness-driver";
+import { existsSync, readFileSync } from "fs";
+import { TranscriptForwarder, findTranscript, type ForwardedLine } from "./forwarder";
+import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "./harness-driver";
 import { writeSessionSettings } from "./hook-settings";
 import { ensureHooksServer, registerSessionHooks } from "./hooks-server";
 import { InputDelivery, type PendingInput } from "./input-delivery";
@@ -189,6 +190,15 @@ export class ClaudeDriver implements HarnessDriver {
   }
 }
 
+/** The `cwd` Claude records on the lines of its transcript. */
+function folderOfTranscript(path: string): string | null {
+  for (const line of readFileSync(path, "utf8").split("\n", 50)) {
+    const cwd = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(line)?.[1];
+    if (cwd) return JSON.parse(`"${cwd}"`) as string;
+  }
+  return null;
+}
+
 const launcher: HarnessLauncher = {
   id: "claude",
   launchFailedMessage: "Could not start Claude Code.",
@@ -199,6 +209,18 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version: await readClaudeVersion(bin) };
   },
   newNativeSessionId: () => crypto.randomUUID(),
+  async resume({ sessionId, nativeSessionId, model, bin }) {
+    // The transcript says which folder the conversation ran in, and Claude finds it only from there.
+    const transcript = findTranscript(nativeSessionId);
+    const folderPath = transcript ? folderOfTranscript(transcript) : null;
+    if (!folderPath || !existsSync(folderPath)) throw new LaunchError("This conversation is not on this computer, or its folder is gone.");
+    const tmuxSession = tmuxSessionName(sessionId);
+    if (await paneIsAlive(tmuxSession)) throw new LaunchError("This session is already running.");
+    preTrustFolder(folderPath);
+    const settingsPath = writeSessionSettings(sessionId);
+    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, settingsPath, resume: true });
+    return { folderPath, tmuxSession };
+  },
   async launch({ sessionId, folderPath, model, bin, nativeSessionId }) {
     const tmuxSession = tmuxSessionName(sessionId);
     preTrustFolder(folderPath);

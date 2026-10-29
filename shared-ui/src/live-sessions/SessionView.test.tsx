@@ -76,6 +76,32 @@ describe("SessionView", () => {
     expect(button.textContent).toBe("");
   });
 
+  it("offers Resume to the owner of an ended session, shows why it failed, and hides it from others and for a cleared one", async () => {
+    const ended: LiveSession = { ...session, status: "ended", mine: true, end_reason: "exited" };
+    const resume = mock(async () => { throw new Error("This session ran on another computer. Resume it there."); });
+    const withSession = (live: LiveSession, extra: Partial<LiveSessionsApi> = {}) => ({ ...api, ...extra, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [] }) });
+
+    render(<SessionView api={withSession(ended, { resume })} sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(resume).toHaveBeenCalledWith("s1"));
+    expect((await screen.findByRole("alert")).textContent).toContain("another computer");
+    cleanup();
+
+    render(<SessionView api={withSession({ ...ended, mine: false }, { resume })} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withSession({ ...ended, end_reason: "cleared" }, { resume })} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withSession(ended)} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+
   it("puts menu actions behind a menu button and closes it on Escape", async () => {
     let opened = 0;
     render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} menuItems={() => [{ label: "Open in Terminal", onSelect: () => opened++ }]} />);
