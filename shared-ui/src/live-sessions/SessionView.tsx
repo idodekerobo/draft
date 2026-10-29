@@ -15,6 +15,7 @@ import { pendingItems } from "./pending-items";
 import { buildStreamItems, openApprovals } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
+import { prependToDraft } from "./drafts";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
@@ -290,12 +291,14 @@ function LoadedSession({
     setStopping(true);
     setActionError(null);
     try {
-      await api.stop(sessionId);
+      const { withdrawn } = await api.stop(sessionId);
+      prependToDraft(sessionId, withdrawn);
+      if (withdrawn.length > 0) await refresh();
     } catch {
       setActionError("Could not send Stop. Try again.");
     }
     setTimeout(() => setStopping(false), STOPPING_MS);
-  }, [api, sessionId]);
+  }, [api, sessionId, refresh]);
 
   const chooseMenuItem = useCallback((item: SessionMenuItem) => {
     if (item.confirm) setConfirming(item);

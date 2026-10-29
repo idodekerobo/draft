@@ -510,10 +510,11 @@ export async function decideLiveSessionApproval(
   }
 }
 
-export async function stopLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function stopLiveSession(sessionId: string): Promise<{ ok: true; withdrawn: string[] } | { ok: false; error: string }> {
   try {
-    await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: "{}" });
-    return { ok: true };
+    const response = await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: "{}" });
+    const body = (await response.json().catch(() => ({}))) as { withdrawn?: Array<{ text: string }> };
+    return { ok: true, withdrawn: (body.withdrawn ?? []).map((input) => input.text) };
   } catch (error) {
     return { ok: false, error: error instanceof ServerError ? error.code : "stop_failed" };
   }

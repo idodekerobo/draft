@@ -112,7 +112,8 @@ export interface LiveSessionsApi {
   sendMessage(sessionId: string, text: string): Promise<void>;
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
-  stop(sessionId: string): Promise<void>;
+  /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
+  stop(sessionId: string): Promise<{ withdrawn: string[] }>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
   watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
 }

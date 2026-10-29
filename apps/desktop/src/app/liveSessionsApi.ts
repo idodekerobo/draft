@@ -19,6 +19,7 @@ export const liveSessionsApi: LiveSessionsApi = {
   stop: async (sessionId) => {
     const result = await rpc.request.stopLiveSession({ sessionId });
     if (!result.ok) throw new Error(result.error);
+    return { withdrawn: result.withdrawn };
   },
   watchPresence: (sessionId, viewer, onChange) => {
     let stopped = false;

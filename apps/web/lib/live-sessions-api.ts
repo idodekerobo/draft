@@ -40,7 +40,15 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     sendMessage: (sessionId, text) => post(`${base}/${sessionId}/inputs`, { text }),
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
     decideApproval: (sessionId, requestId, decision) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, decision),
-    stop: (sessionId) => post(`${base}/${sessionId}/stop`, {}),
+    stop: async (sessionId) => {
+      try {
+        const result = await apiFetch<{ withdrawn?: Array<{ text: string }> }>(`${base}/${sessionId}/stop`, { method: "POST", body: "{}" });
+        return { withdrawn: (result.withdrawn ?? []).map((input) => input.text) };
+      } catch (error) {
+        if (error instanceof ApiError) throw new Error(error.code);
+        throw error;
+      }
+    },
     watchPresence: (sessionId, viewer, onChange) => {
       const client = createClient();
       const channel = client.channel(presenceChannel(sessionId), { config: { private: true, presence: { key: viewer.id } } });

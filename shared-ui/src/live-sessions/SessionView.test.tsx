@@ -30,7 +30,7 @@ const api: LiveSessionsApi = {
   sendMessage: async () => {},
   actOnInput: async () => {},
   decideApproval: async () => ({ ok: true }),
-  stop: async () => {},
+  stop: async () => ({ withdrawn: [] }),
 };
 
 describe("SessionView", () => {
@@ -64,11 +64,20 @@ describe("SessionView", () => {
   });
 
   it("Stop asks the host to interrupt, then shows Stopping until it settles", async () => {
-    const stop = mock(async () => {});
+    const stop = mock(async () => ({ withdrawn: [] as string[] }));
     render(<SessionView api={{ ...api, stop }} sessionId="s1" />);
     fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
     await waitFor(() => expect(stop).toHaveBeenCalledWith("s1"));
     expect((await screen.findByRole("button", { name: "Stopping…" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("Stop puts the messages it pulled back into the message box, ahead of what was typed", async () => {
+    const stop = mock(async () => ({ withdrawn: ["first", "second"] }));
+    render(<SessionView api={{ ...api, stop }} sessionId="s-restore" />);
+    const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "typed" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(box.value).toBe("first\n\nsecond\n\ntyped"));
   });
 
   it("shows no Stop for an ended session", async () => {
@@ -282,7 +291,7 @@ describe("SessionView", () => {
   });
 
   it("stops the turn when Esc is pressed in an empty message box, and not when it holds text", async () => {
-    const stop = mock(async () => {});
+    const stop = mock(async () => ({ withdrawn: [] as string[] }));
     render(<SessionView api={{ ...api, stop }} sessionId="s1" />);
     const box = await screen.findByRole("textbox");
     fireEvent.change(box, { target: { value: "draft" } });
