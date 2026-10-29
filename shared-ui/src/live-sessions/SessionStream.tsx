@@ -30,7 +30,7 @@ function PendingBubble({ item }: { item: Extract<StreamItem, { type: "pending" }
   );
 }
 
-function Item({ item, ownerName, hostName, linkFor }: { item: StreamItem; ownerName: string; hostName: string | null; linkFor?: (seq: number) => string }) {
+function Item({ item, ownerName, hostName, viewerId, linkFor }: { item: StreamItem; ownerName: string; hostName: string | null; viewerId?: string; linkFor?: (seq: number) => string }) {
   switch (item.type) {
     case "user":
       if (item.agentId) {
@@ -65,6 +65,10 @@ function Item({ item, ownerName, hostName, linkFor }: { item: StreamItem; ownerN
         </details>
       );
     case "note":
+      if (item.interruptedBy) {
+        const mine = item.interruptedBy.id === viewerId;
+        return <p className="ui-stream__note ui-stream__note--interrupted">{mine ? "You interrupted" : `Interrupted by ${item.interruptedBy.name}`}</p>;
+      }
       return <p className="ui-stream__note">{item.text}</p>;
     case "approval":
       return (
@@ -104,12 +108,15 @@ export function SessionStream({
   items: all,
   ownerName = "User",
   hostName = null,
+  viewerId,
   linkFor,
   highlightSeq = null,
 }: {
   items: StreamItem[];
   ownerName?: string;
   hostName?: string | null;
+  /** Tells "You interrupted" from "Interrupted by …". */
+  viewerId?: string;
   /** Builds the link to one message. Without it, the link action is hidden. */
   linkFor?: (seq: number) => string;
   highlightSeq?: number | null;
@@ -130,7 +137,7 @@ export function SessionStream({
               id={item.type === "pending" ? undefined : messageDomId(item.seq)}
               className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? " ui-stream__item--human" : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
             >
-              <Item item={item} ownerName={ownerName} hostName={hostName} linkFor={linkFor} />
+              <Item item={item} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} />
             </li>
           </Fragment>
         );

@@ -6,7 +6,7 @@ import type { ComposerInput, LiveSessionEvent, LiveSessionEventKind, LiveSession
 
 afterEach(cleanup);
 
-function Stream({ events, ...rest }: { events: LiveSessionEvent[]; ownerName?: string; hostName?: string | null }) {
+function Stream({ events, ...rest }: { events: LiveSessionEvent[]; ownerName?: string; hostName?: string | null; viewerId?: string }) {
   return <SessionStream items={buildStreamItems(events)} {...rest} />;
 }
 
@@ -41,6 +41,14 @@ describe("SessionStream", () => {
     expect(container.querySelector("strong")?.textContent).toBe("two");
     expect(screen.getByText("Bash")).toBeTruthy();
     expect(container.textContent).toContain("a.txt");
+  });
+
+  it("tells the person who pressed Stop apart from everyone else", () => {
+    const events = [event("session_note", { text: "Stopped by Dev", interrupted_by: { id: "u1", name: "Dev" } })];
+    const { rerender } = render(<Stream events={events} viewerId="u1" />);
+    expect(screen.getByText("You interrupted")).toBeTruthy();
+    rerender(<Stream events={events} viewerId="u2" />);
+    expect(screen.getByText("Interrupted by Dev")).toBeTruthy();
   });
 
   it("escapes HTML in assistant text instead of rendering it", () => {

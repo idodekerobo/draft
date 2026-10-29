@@ -751,6 +751,7 @@
 .ui-stream__who { color: var(--color-text-secondary); font-size: var(--font-size-small); }
 .ui-stream__text { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ui-stream__note { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); text-align: center; }
+.ui-stream__note--interrupted { color: var(--color-text-primary); font-weight: 600; }
 .ui-stream__details > summary { cursor: pointer; color: var(--color-text-secondary); font-size: var(--font-size-secondary); list-style-position: inside; }
 .ui-stream__tool { font-family: var(--font-mono); color: var(--color-text-primary); margin-right: var(--space-2); }
 .ui-stream__summary { font-family: var(--font-mono); font-size: var(--font-size-small); overflow-wrap: anywhere; }

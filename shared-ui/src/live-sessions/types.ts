@@ -52,6 +52,8 @@ export interface LiveSessionEventPayload {
   reason?: string;
   decision?: "allow" | "deny";
   by_name?: string;
+  /** session_note: who pressed Stop on a running turn. */
+  interrupted_by?: { id: string; name: string };
 }
 
 export interface LiveSessionEvent {

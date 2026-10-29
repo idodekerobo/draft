@@ -5,7 +5,7 @@ export type StreamItem =
   | { type: "user"; seq: number; at: string; text: string; agentId: string | null; /** Set when a teammate sent it through Draft. */ author: string | null }
   | { type: "assistant"; seq: number; at: string; text: string; agentId: string | null }
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
-  | { type: "note"; seq: number; text: string }
+  | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
   | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostOffline: boolean }
   | {
       type: "approval";
@@ -68,7 +68,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
         items.push({ type: "thinking", seq: event.seq, text: payload.text ?? "", agentId });
         break;
       case "session_note":
-        items.push({ type: "note", seq: event.seq, text: payload.text ?? "" });
+        items.push({ type: "note", seq: event.seq, text: payload.text ?? "", interruptedBy: payload.interrupted_by });
         break;
       case "permission_request": {
         if (!payload.requestId) break;

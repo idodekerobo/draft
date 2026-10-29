@@ -9,7 +9,7 @@ const PERMISSION = " Do you want to create a.txt?\n ❯ 1. Yes\n   3. No\n Esc t
 const stop = (id: string, state: "queued" | "delivering" = "queued"): ControlInput => ({ id, kind: "stop", state, author_user_id: "u1", author_name: "Dev", payload: {} });
 const decision = (id: string, requestId: string, value = "allow"): ControlInput => ({ id, kind: "permission_decision", state: "queued", author_user_id: "u1", author_name: "Dev", payload: { requestId, decision: value } });
 
-function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>()) {
+function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>(), posted: unknown[] = []) {
   const log: string[] = [];
   const states = new Map(pending.map((p) => [p.id, p.state as string]));
   const deps: ControlDeps = {
@@ -26,7 +26,7 @@ function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>
     },
     capture: async () => screen,
     sendEscape: async () => void log.push("escape"),
-    postEvents: async (events) => void log.push(`note:${(events[0]!.payload as { text: string }).text}`),
+    postEvents: async (events) => void (posted.push(events[0]), log.push(`note:${(events[0]!.payload as { text: string }).text}`)),
   };
   const actions = new ControlActions(deps);
   const current = () => pending.filter((p) => ["queued", "delivering"].includes(states.get(p.id)!)).map((p) => ({ ...p, state: states.get(p.id) as "queued" | "delivering" }));
@@ -38,6 +38,13 @@ describe("ControlActions", () => {
     const { actions, log } = setup([stop("s1")]);
     await actions.tick();
     expect(log).toEqual(["s1:delivering", "escape", "note:Stopped by Dev", "s1:consumed"]);
+  });
+
+  it("Stop names who interrupted in the note", async () => {
+    const events: unknown[] = [];
+    const { actions } = setup([stop("s1")], RUNNING, new Set(), events);
+    await actions.tick();
+    expect(events[0]).toMatchObject({ payload: { interrupted_by: { id: "u1", name: "Dev" } } });
   });
 
   it("Stop at an idle prompt sends nothing and says so", async () => {

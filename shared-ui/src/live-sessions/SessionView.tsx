@@ -347,6 +347,7 @@ function LoadedSession({
             items={items}
             ownerName={session.owner_name ?? undefined}
             hostName={session.host_name}
+            viewerId={viewer.id}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />

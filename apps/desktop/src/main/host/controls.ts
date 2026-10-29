@@ -74,7 +74,9 @@ export class ControlActions {
       {
         sourceId: `stop:${input.id}`,
         kind: "session_note",
-        payload: { text: interrupts ? `Stopped by ${input.author_name}` : `${input.author_name} pressed Stop, but nothing was running` },
+        payload: interrupts
+          ? { text: `Stopped by ${input.author_name}`, interrupted_by: { id: input.author_user_id, name: input.author_name } }
+          : { text: `${input.author_name} pressed Stop, but nothing was running` },
       },
     ]);
   }
