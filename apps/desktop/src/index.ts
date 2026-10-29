@@ -13,6 +13,7 @@ import {
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
+import { findRunnerBin } from "./main/host/find-bin";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
@@ -128,42 +129,6 @@ const _calUrl              = process.env.DRAFT_CAL_URL                 ?? "";
 // Migrations must complete before RPC handlers or watchers can write profile state.
 // On failure, abort startup and preserve the recoverable pre-migration files.
 await runMigrations();
-
-// ── Runner detection ──────────────────────────────────────────────────────────
-//
-// macOS GUI apps get a stripped PATH. We cannot use `which` or shell resolution
-// reliably — ~/.local/bin and nvm paths are typically set in .zshrc (interactive
-// shells only), not .zprofile (login shells). Instead we check known installation
-// paths directly with existsSync, which works regardless of shell configuration.
-
-async function findRunnerBin(name: string): Promise<string | null> {
-  const HOME = process.env.HOME ?? "";
-
-  // Check known installation paths — no PATH or subprocess needed.
-  const knownPaths = [
-    `${HOME}/.local/bin/${name}`,          // official Claude Code installer default
-    `/usr/local/bin/${name}`,              // npm global with default prefix
-    `/opt/homebrew/bin/${name}`,           // Homebrew-managed
-    `${HOME}/.npm-global/bin/${name}`,     // custom npm prefix
-  ];
-  for (const p of knownPaths) {
-    if (existsSync(p)) return p;
-  }
-
-  // Fallback: nvm — scan installed node versions for the binary.
-  const nvmDir = `${HOME}/.nvm/versions/node`;
-  if (existsSync(nvmDir)) {
-    try {
-      const versions = (await import("fs")).readdirSync(nvmDir);
-      for (const v of versions.reverse()) { // newest first
-        const p = `${nvmDir}/${v}/bin/${name}`;
-        if (existsSync(p)) return p;
-      }
-    } catch {}
-  }
-
-  return null;
-}
 
 // ── Application menu ───────────────────────────────────────────────────────────
 
@@ -773,7 +738,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: ({ folderPath, model }) => startLiveSession({ folderPath, model }, () => findRunnerBin("claude")),
+      startLiveSession: ({ harness, folderPath, model }) => startLiveSession({ harness, folderPath, model }),
 
       pollLiveSessionPresence: ({ sessionId, viewerId, viewerName }) => ({ names: presenceHub.poll(sessionId, { id: viewerId, name: viewerName }) }),
 

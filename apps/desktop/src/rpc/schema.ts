@@ -335,7 +335,7 @@ export type AppRPCType = {
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
       /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
-      startLiveSession: { params: { folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
+      startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
 
       /** The other people watching a live session. Ask every few seconds while the session is open. */
       pollLiveSessionPresence: { params: { sessionId: string; viewerId: string; viewerName: string }; response: { names: string[] } };

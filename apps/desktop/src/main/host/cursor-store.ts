@@ -20,7 +20,10 @@ export interface HostSessionState {
   hostMachineId: string;
   nativeSessionId: string;
   folderPath: string;
-  tmuxSession: string;
+  /** Which harness runs the session. Files from before Codex have none and mean Claude. */
+  harness?: string;
+  /** Claude only. */
+  tmuxSession?: string;
   cursors: Record<string, FileCursor>;
   rawUploads: Record<string, RawUploadRecord>;
   /** The pane is gone and the session was ended; only a raw upload may remain. */

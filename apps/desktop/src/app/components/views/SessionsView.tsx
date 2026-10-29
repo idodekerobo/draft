@@ -74,7 +74,7 @@ export function SessionsView() {
   }
 
   async function start({ harness, folderPath, text, model }: StartRequest): Promise<StartResult> {
-    const result = await rpc.request.startLiveSession({ folderPath, model });
+    const result = await rpc.request.startLiveSession({ harness, folderPath, model });
     if (!result.ok) return result;
     track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default" });
     setRecentFolders(rememberFolder(window.localStorage, folderPath));
