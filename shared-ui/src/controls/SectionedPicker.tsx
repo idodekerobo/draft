@@ -16,6 +16,8 @@ export interface PickerSection {
   options: PickerOption[];
   value: string;
   onChange: (value: string) => void;
+  /** Leaves the panel open after a choice, for a section whose choice decides what the next section lists. */
+  keepOpen?: boolean;
 }
 
 /**
@@ -28,6 +30,7 @@ export function SectionedPicker({ label, children, sections }: { label: string; 
 
   function choose(section: PickerSection, value: string) {
     section.onChange(value);
+    if (section.keepOpen) return;
     setOpen(false);
     triggerRef.current?.focus();
   }

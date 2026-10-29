@@ -99,7 +99,7 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
               <SectionedPicker
                 label="Agent and model"
                 sections={[
-                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: routineHarnesses.map((option) => ({ value: option.id, label: option.label })) },
+                  { id: "harness", title: "Harnesses", value: harness, keepOpen: true, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: routineHarnesses.map((option) => ({ value: option.id, label: option.label })) },
                   { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: models.map((option) => ({ value: option.alias ?? "", label: option.label })) },
                 ]}
               >

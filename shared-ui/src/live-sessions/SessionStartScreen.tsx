@@ -130,7 +130,7 @@ export function SessionStartScreen({
               <SectionedPicker
                 label="Agent and model"
                 sections={[
-                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: HARNESSES.map((option) => ({ value: option.id, label: option.label, hint: availability[option.id] ? PROBLEM_HINTS[availability[option.id]!] : undefined })) },
+                  { id: "harness", title: "Harnesses", value: harness, keepOpen: true, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: HARNESSES.map((option) => ({ value: option.id, label: option.label, hint: availability[option.id] ? PROBLEM_HINTS[availability[option.id]!] : undefined })) },
                   { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: (getHarness(harness)?.models ?? []).map((option) => ({ value: option.alias ?? "", label: option.label })) },
                 ]}
               >

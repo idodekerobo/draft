@@ -48,7 +48,9 @@ describe("SessionView", () => {
     const codex: LiveSession = { ...session, harness: "codex", model: "gpt-6-luna", harness_version: "0.165.0" };
     const { container } = render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: codex, events: [], inputs: [] }) }} sessionId="s1" />);
     await screen.findByRole("heading", { name: "fix login" });
-    expect(container.querySelector(".ui-session__meta")?.textContent).toContain("Maya · Codex · GPT-6-Luna");
+    const lines = [...container.querySelectorAll(".ui-session__meta")].map((line) => line.textContent);
+    expect(lines[0]).toContain("Maya");
+    expect(lines[1]).toBe("Codex · GPT-6-Luna");
     expect(screen.queryByText(/Draft was tested with/)).toBeNull();
   });
 
@@ -66,6 +68,12 @@ describe("SessionView", () => {
     render(<SessionView api={withSession({ ...session, harness: "claude" })} sessionId="s1" />);
     await screen.findByText(/typing in the terminal/);
     expect(screen.queryByRole("button", { name: "Send now" })).toBeNull();
+  });
+
+  it("shows the link action as an icon with a label", async () => {
+    render(<SessionView api={api} sessionId="s1" shareBaseUrl="https://draft.test" />);
+    const button = await screen.findByRole("button", { name: "Copy link" });
+    expect(button.textContent).toBe("");
   });
 
   it("puts menu actions behind a menu button and closes it on Escape", async () => {

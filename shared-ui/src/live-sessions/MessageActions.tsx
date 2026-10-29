@@ -19,13 +19,13 @@ const CopyIcon = () => (
     <path d="M10.5 3.5v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" />
   </Icon>
 );
-const LinkIcon = () => (
+export const LinkIcon = () => (
   <Icon>
     <path d="M6.5 9.5a2.5 2.5 0 0 0 3.5 0l2.5-2.5a2.5 2.5 0 0 0-3.5-3.5l-.75.75" />
     <path d="M9.5 6.5a2.5 2.5 0 0 0-3.5 0L3.5 9a2.5 2.5 0 0 0 3.5 3.5l.75-.75" />
   </Icon>
 );
-const CheckIcon = () => (
+export const CheckIcon = () => (
   <Icon>
     <path d="m3.5 8.5 3 3 6-7" />
   </Icon>

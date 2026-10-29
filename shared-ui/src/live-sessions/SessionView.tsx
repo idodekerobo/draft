@@ -10,6 +10,7 @@ import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
 import { getHarness } from "draft-core/harnesses";
 import { agentLabel } from "../routines/agent-label";
+import { CheckIcon, LinkIcon } from "./MessageActions";
 import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
@@ -123,8 +124,8 @@ function CopyLinkButton({ url }: { url: string }) {
     }).catch(() => {});
   }
   return (
-    <button type="button" className="ui-btn" onClick={copy}>
-      {copied ? "Link copied" : "Copy link"}
+    <button type="button" className="ui-btn ui-btn--icon" onClick={copy} aria-label={copied ? "Link copied" : "Copy link"} title={copied ? "Link copied" : "Copy link"}>
+      {copied ? <CheckIcon /> : <LinkIcon />}
     </button>
   );
 }
@@ -314,9 +315,14 @@ function LoadedSession({
     <div className="ui-session">
       <header className="ui-session__header">
         <Crumbs back={back}>
-          <h1 className="ui-session__title">{sessionTitle(session)}</h1>
-          <span className="ui-muted ui-session__meta">{readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · {agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })} · <StatusText session={session} /></span>
-          {watchers && <span className="ui-muted ui-session__presence" aria-live="polite">{watchers}</span>}
+          <div className="ui-session__heading">
+            <h1 className="ui-session__title">{sessionTitle(session)}</h1>
+            <span className="ui-muted ui-session__meta">
+              {readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} />
+              {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
+            </span>
+            <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })}</span>
+          </div>
         </Crumbs>
         <div className="ui-session__actions">
           {running && (

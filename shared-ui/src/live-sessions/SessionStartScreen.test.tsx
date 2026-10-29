@@ -72,7 +72,6 @@ describe("SessionStartScreen", () => {
     const { onStart } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
-    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
     expect(screen.queryByRole("menuitemradio", { name: "Opus" })).toBeNull();
     fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
