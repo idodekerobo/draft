@@ -305,6 +305,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      getWebAppUrl: async () => process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
+
       getConnectedApps: async () => {
         // Tools — read from global config.json (not per-profile)
         const cfgResult = readDraftConfig();

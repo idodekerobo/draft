@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { liveSessionsApi } from "../../liveSessionsApi";
+import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
 function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: string; onOpenSession: (id: string) => void; justStarted: boolean }) {
   const { track } = useAnalytics();
+  const webAppUrl = useWebAppUrl();
   const [hostedHere, setHostedHere] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -54,7 +56,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
       onOpenSession={onOpenSession}
       autoFocusComposer={justStarted}
       track={track}
-      shareBaseUrl={process.env.DRAFT_APP_URL ?? "https://app.draftai.us"}
+      shareBaseUrl={webAppUrl}
     />
   );
 }

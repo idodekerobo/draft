@@ -257,6 +257,9 @@ export type AppRPCType = {
       /** Ask for a folder, then save the full context there as a zip of markdown files. */
       exportContext: { params: void; response: { ok: true; path: string } | { ok: false; canceled?: boolean; error?: string } };
 
+      /** The web app origin, which the renderer cannot read from the environment. */
+      getWebAppUrl: { params: void; response: string };
+
       /** Rich connection status for all intelligence tools and input sources, plus firefliesConnections for the Settings list view. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
