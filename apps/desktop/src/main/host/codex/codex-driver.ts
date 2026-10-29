@@ -21,6 +21,10 @@ interface ThreadStartResult {
 
 const textInput = (input: PendingInput) => [{ type: "text", text: input.delivered_text, text_elements: [] }];
 
+interface ThreadResumeResult {
+  thread: { turns?: Array<{ id: string; status?: string; error?: unknown; items?: unknown[] }> };
+}
+
 interface TurnStartResult {
   turn: { id: string };
 }
@@ -63,6 +67,28 @@ async function connect(server: AppServer, handlers: RpcHandlers): Promise<RpcCli
   return rpc;
 }
 
+/** Starts an app server and connects to it. Notifications reach the connection once the caller sets `route.connection`. */
+async function openServer(bin: string, sessionId: string) {
+  const server = await startAppServer(bin, sessionId);
+  const route: { connection: CodexConnection | null } = { connection: null };
+  try {
+    const rpc = await connect(server, {
+      onNotification: (method, params) => route.connection?.sink?.notification(method, params),
+      onRequest: (id, method, params) => route.connection?.sink?.request(id, method, params),
+      onClose: () => {},
+    });
+    return { server, rpc, route };
+  } catch (error) {
+    server.stop();
+    throw error;
+  }
+}
+
+/** Sessions with a turn in progress. A turn stops when Draft quits, because its app server is a child of Draft. */
+export function runningCodexTurns(): number {
+  return [...live.values()].filter((connection) => connection.busy).length;
+}
+
 /** Codex through `codex app-server`: lines are completed items, approvals are server requests. */
 export class CodexDriver implements HarnessDriver {
   private readonly broker: ApprovalBroker;
@@ -74,6 +100,9 @@ export class CodexDriver implements HarnessDriver {
   private reported = new Map<string, string>();
   private readonly steerFailed = new Set<string>();
   private halted = false;
+  private attaching = false;
+  private attachFailed = false;
+  private respawned = false;
 
   constructor(private readonly host: DriverHost) {
     this.broker = new ApprovalBroker({
@@ -94,17 +123,71 @@ export class CodexDriver implements HarnessDriver {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
     }
     const connection = this.connection;
-    if (!connection) return;
+    if (connection) this.bind(connection);
+    else void this.attach();
+  }
+
+  private bind(connection: CodexConnection): void {
     connection.sink = {
       notification: (method, params) => this.onNotification(connection, method, params),
       request: (id, method, params) => void this.onRequest(connection, id, method, params),
     };
   }
 
+  /**
+   * Starts a new app server for a session whose old one is gone (Draft restarted, or the server crashed),
+   * resumes the thread from disk and posts its history again. The server skips items it already has.
+   */
+  private async attach(): Promise<void> {
+    this.attaching = true;
+    this.attachFailed = false;
+    let opened: Awaited<ReturnType<typeof openServer>> | null = null;
+    try {
+      const state = this.host.state();
+      const bin = findRunnerBin("codex");
+      if (!bin) throw new Error("Codex is not installed");
+      opened = await openServer(bin, state.sessionId);
+      const resumed = await opened.rpc.request<ThreadResumeResult>("thread/resume", {
+        threadId: state.nativeSessionId,
+        cwd: state.folderPath,
+        approvalPolicy: "on-request",
+        sandbox: "workspace-write",
+        ...(state.model ? { model: state.model } : {}),
+      });
+      const connection = new CodexConnection(opened.server, state.nativeSessionId, state.folderPath, bin);
+      connection.rpc = opened.rpc;
+      connection.hasTurned = true;
+      opened.route.connection = connection;
+      live.set(state.sessionId, connection);
+      this.bind(connection);
+      this.backfill(connection.threadId, resumed.thread.turns ?? []);
+    } catch (error) {
+      console.error("[live-session] could not resume the codex thread", error);
+      opened?.rpc.close();
+      opened?.server.stop();
+      this.attachFailed = true;
+    } finally {
+      this.attaching = false;
+    }
+  }
+
+  private backfill(threadId: string, turns: Array<{ id: string; status?: string; error?: unknown; items?: unknown[] }>): void {
+    for (const turn of turns) {
+      for (const item of turn.items ?? []) this.enqueue({ method: "item/completed", params: { threadId, item } });
+      if (turn.status && turn.status !== "inProgress") {
+        this.enqueue({ method: "turn/completed", params: { threadId, turn: { id: turn.id, status: turn.status, error: turn.error ?? null } } });
+      }
+    }
+  }
+
   private onNotification(connection: CodexConnection, method: string, params: unknown): void {
     const p = (params ?? {}) as { threadId?: string; turn?: { id?: string }; requestId?: number | string };
     if (method === "serverRequest/resolved") {
       if (p.requestId !== undefined) this.requests.get(p.requestId)?.abort();
+      return;
+    }
+    if (method === "account/updated") {
+      if ((params as { authMode?: unknown } | null)?.authMode === null) this.noteSignedOut();
       return;
     }
     if (p.threadId !== connection.threadId) return;
@@ -117,6 +200,13 @@ export class CodexDriver implements HarnessDriver {
       connection.turnId = null;
     }
     if (method === "item/completed" || method === "turn/completed") this.enqueue({ method, params });
+  }
+
+  /** Tells viewers to sign in again. A failed turn is never retried silently. */
+  private noteSignedOut(): void {
+    void this.host
+      .postHostEvents([{ sourceId: `auth:${Date.now()}`, kind: "session_note", payload: { text: "Codex is signed out. Run codex login in a terminal, then send a message again." } }])
+      .catch((error) => console.error("[live-session] could not post the sign-in note", error));
   }
 
   private async onRequest(connection: CodexConnection, id: number | string, method: string, params: unknown): Promise<void> {
@@ -177,8 +267,20 @@ export class CodexDriver implements HarnessDriver {
     }
   }
 
+  /** An app server that dies while the session runs gets one new server. A turn it was running is marked interrupted. */
   async isAlive(): Promise<boolean> {
-    return this.connection?.isAlive() ?? false;
+    if (this.attaching) return true;
+    const connection = this.connection;
+    if (connection?.isAlive()) return true;
+    if (!connection || this.respawned || this.halted) return false;
+    this.respawned = true;
+    if (connection.busy && connection.turnId) {
+      this.enqueue({ method: "turn/completed", params: { threadId: connection.threadId, turn: { id: connection.turnId, status: "interrupted", error: null } } });
+    }
+    connection.stop();
+    live.delete(this.host.state().sessionId);
+    await this.attach();
+    return !this.attachFailed;
   }
 
   flush(): Promise<boolean> {
@@ -317,29 +419,23 @@ const launcher: HarnessLauncher = {
   },
   newNativeSessionId: () => "",
   async launch({ sessionId, folderPath, model, bin }) {
-    const server = await startAppServer(bin, sessionId);
-    let connection: CodexConnection | null = null;
+    const { server, rpc, route } = await openServer(bin, sessionId);
     try {
-      const handlers = {
-        onNotification: (method: string, params: unknown) => connection?.sink?.notification(method, params),
-        onRequest: (id: number | string, method: string, params: unknown) => connection?.sink?.request(id, method, params),
-        onClose: () => {},
-      };
-      const rpc = await connect(server, handlers);
       const started = await rpc.request<ThreadStartResult>("thread/start", {
         ...(model ? { model } : {}),
         cwd: folderPath,
         approvalPolicy: "on-request",
         sandbox: "workspace-write",
       }).catch((error: Error) => {
-        rpc.close();
         throw new LaunchError(`Codex could not start the session: ${error.message}`);
       });
-      connection = new CodexConnection(server, started.thread.id, folderPath, bin);
+      const connection = new CodexConnection(server, started.thread.id, folderPath, bin);
       connection.rpc = rpc;
+      route.connection = connection;
       live.set(sessionId, connection);
       return { nativeSessionId: started.thread.id };
     } catch (error) {
+      rpc.close();
       server.stop();
       throw error;
     }
