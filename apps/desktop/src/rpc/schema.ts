@@ -371,6 +371,12 @@ export type AppRPCType = {
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Detect which CLI runners are installed. */
+      /** Whether Codex is installed and signed in on this computer. */
+      getCodexStatus: { params: void; response: { installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null } };
+      /** Opens the browser sign-in, or with `deviceCode` returns a link and a one-time code to enter there. The caller polls getCodexStatus. */
+      startCodexLogin: { params: { deviceCode: boolean }; response: { ok: true; deviceUrl?: string; deviceCode?: string } | { ok: false; error: string } };
+      cancelCodexLogin: { params: void; response: void };
+      codexLogout: { params: void; response: { ok: true } | { ok: false; error: string } };
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */

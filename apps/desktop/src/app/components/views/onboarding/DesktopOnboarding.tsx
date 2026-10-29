@@ -1,7 +1,7 @@
 // DesktopOnboarding.tsx — sign-in pre-flow, then the shared guided flow by workspace state.
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AGENT_SETUP_PROMPT, DEFAULT_SETUP_DIMENSIONS, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
 import { events, rpc } from "../../../rpc";
@@ -9,6 +9,7 @@ import { useAnalytics } from "../../../analytics/AnalyticsContext";
 import { useCloudSignIn } from "../../../hooks/useCloudSignIn";
 import { useConnectedApps } from "../../../hooks/useConnectedApps";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
+import { CodexConnectRow } from "../../connections/CodexConnectRow";
 import { DesktopToolList, desktopToolStatuses } from "../../connections/DesktopToolList";
 
 const READING_POLL_MS = 5_000;
@@ -35,6 +36,21 @@ function NoTeamScreen() {
       <p className="ui-flow__subtitle">Open your team&apos;s invite link in your browser to join. This app picks up your team once you join.</p>
       <button type="button" className="ui-link" onClick={() => void rpc.request.signOut()}>Use a different account</button>
     </FlowShell>
+  );
+}
+
+/** The tool list with an optional Codex sign-in under it, for people who run sessions on Codex. */
+function WithCodex({ children }: { children: ReactNode }) {
+  return (
+    <>
+      {children}
+      <section className="settings__section">
+        <h2 className="settings__section-label">Optional</h2>
+        <div className="settings__rows">
+          <CodexConnectRow />
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -125,7 +141,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
       <JoinerFlow
         orgName="your team"
         entries={files}
-        toolList={<DesktopToolList apps={apps} refresh={refresh} groups={["meetings", "agent", "team"]} />}
+        toolList={<WithCodex><DesktopToolList apps={apps} refresh={refresh} groups={["meetings", "agent", "team"]} /></WithCodex>}
         track={track}
         onFinish={(destination) => void finish(destination)}
         error={error}
@@ -135,7 +151,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
 
   return (
     <FirstUserFlow
-      toolList={<DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" />}
+      toolList={<WithCodex><DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" /></WithCodex>}
       hasSource={hasSource}
       readingSources={readingSources(apps, folderImported)}
       entries={files}

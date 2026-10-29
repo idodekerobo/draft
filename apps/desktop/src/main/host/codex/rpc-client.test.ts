@@ -16,7 +16,7 @@ function startServer(onOpen?: (ws: Socket) => void) {
     hostname: "127.0.0.1",
     fetch(req, srv) {
       if (req.headers.get("authorization") !== "Bearer secret") return new Response("no", { status: 401 });
-      return srv.upgrade(req) ? undefined : new Response("no", { status: 400 });
+      return srv.upgrade(req, { data: undefined }) ? undefined : new Response("no", { status: 400 });
     },
     websocket: {
       open: (ws) => onOpen?.(ws),

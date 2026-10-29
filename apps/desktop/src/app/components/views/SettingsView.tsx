@@ -2,6 +2,7 @@
 //
 // Sections (top → bottom):
 //   System     — Draft Cloud sign-in, notifications
+//   Agents     — Codex sign-in
 //   Privacy    — usage data and session replay, stored on the account
 //   Appearance — Light, Dark, System
 //   Updates    — current version, check for updates
@@ -14,6 +15,7 @@ import type { LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
+import { CodexConnectRow } from "../connections/CodexConnectRow";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
 
@@ -226,6 +228,14 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
             <DataBoundary fallback={<RowSkeleton label="Enable notifications" />} errorFallback={null}>
               <NotificationsRow onError={setSaveError} />
             </DataBoundary>
+          </div>
+        </section>
+
+        {/* ── Agents ─────────────────────────────────────────────────────── */}
+        <section className="settings__section">
+          <h2 className="settings__section-label">Agents</h2>
+          <div className="settings__rows">
+            <CodexConnectRow />
           </div>
         </section>
 
