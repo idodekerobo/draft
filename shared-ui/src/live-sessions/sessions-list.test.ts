@@ -23,7 +23,7 @@ describe("syncSessionIntoLists", () => {
   const key = liveSessionsQueryKey("w1");
   const setup = () => {
     const client = new QueryClient();
-    client.setQueryData(key, { enabled: true, sessions: [row("a", "2026-10-27T10:00:00Z")] });
+    client.setQueryData(key, { sessions: [row("a", "2026-10-27T10:00:00Z")] });
     return client;
   };
   const activity = (client: QueryClient) => client.getQueryData<{ sessions: LiveSession[] }>(key)!.sessions[0]!.last_event_at;
@@ -51,8 +51,8 @@ describe("syncSessionIntoLists", () => {
 
 describe("keepNewerActivity", () => {
   it("keeps a newer cached time over an older server time, and takes the server time once it passes", () => {
-    const previous = { enabled: true, sessions: [row("a", "2026-10-27T11:00:00Z")] };
-    expect(keepNewerActivity(previous, { enabled: true, sessions: [row("a", "2026-10-27T10:00:00Z")] }).sessions[0]!.last_event_at).toBe("2026-10-27T11:00:00Z");
-    expect(keepNewerActivity(previous, { enabled: true, sessions: [row("a", "2026-10-27T12:00:00Z")] }).sessions[0]!.last_event_at).toBe("2026-10-27T12:00:00Z");
+    const previous = { sessions: [row("a", "2026-10-27T11:00:00Z")] };
+    expect(keepNewerActivity(previous, { sessions: [row("a", "2026-10-27T10:00:00Z")] }).sessions[0]!.last_event_at).toBe("2026-10-27T11:00:00Z");
+    expect(keepNewerActivity(previous, { sessions: [row("a", "2026-10-27T12:00:00Z")] }).sessions[0]!.last_event_at).toBe("2026-10-27T12:00:00Z");
   });
 });

@@ -117,13 +117,6 @@ export interface LiveSessionsApi {
   watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
 }
 
-/** The workspace has the feature switched off. */
-export class LiveSessionsDisabledError extends Error {
-  constructor() {
-    super("live_sessions_disabled");
-  }
-}
-
 /** The session does not exist, or the viewer's team cannot see it. The two look the same on purpose. */
 export class SessionNotFoundError extends Error {
   constructor() {

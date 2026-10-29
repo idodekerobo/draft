@@ -11,15 +11,14 @@ interface SidebarProps {
   activeView: View;
   onNavigate: (view: View) => void;
   onOpenFeedback: () => void;
-  sessionsEnabled: boolean;
 }
 
-export const Sidebar = memo(function Sidebar({ activeView, onNavigate, onOpenFeedback, sessionsEnabled }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ activeView, onNavigate, onOpenFeedback }: SidebarProps) {
   return (
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar__brand"><Brand /></div>
       <ul className="sidebar__nav">
-        {mainNavItems(sessionsEnabled).map((item) => {
+        {mainNavItems().map((item) => {
           const isActive = item.id === activeView;
 
           return (

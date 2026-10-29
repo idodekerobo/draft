@@ -4,11 +4,11 @@ import type { QueryClient } from "@tanstack/react-query";
 import { splitAuthor } from "draft-core/live-sessions";
 import { useQuery } from "../query";
 import { POLL_MS } from "../query/options";
-import { LiveSessionsDisabledError, type LiveSession, type LiveSessionsApi } from "./types";
+import type { LiveSession, LiveSessionsApi } from "./types";
 
 export const liveSessionsQueryKey = (workspaceId: string) => ["ws", workspaceId, "live-sessions"] as const;
 
-type SessionsListData = { enabled: boolean; sessions: LiveSession[] };
+type SessionsListData = { sessions: LiveSession[] };
 
 const activityMs = (session: Pick<LiveSession, "last_event_at">) => (session.last_event_at ? Date.parse(session.last_event_at) : -Infinity);
 
@@ -38,23 +38,17 @@ export function keepNewerActivity(previous: SessionsListData | undefined, fresh:
   };
 }
 
-/** `enabled` is false when the workspace has the feature off; callers hide the Sessions entry then. */
 export function useLiveSessions(api: LiveSessionsApi, workspaceId: string) {
   const query = useQuery({
     queryKey: liveSessionsQueryKey(workspaceId),
     queryFn: async ({ client }) => {
-      try {
-        const fresh = { enabled: true, sessions: await api.listSessions() };
-        return keepNewerActivity(client.getQueryData<SessionsListData>(liveSessionsQueryKey(workspaceId)), fresh);
-      } catch (error) {
-        if (error instanceof LiveSessionsDisabledError) return { enabled: false, sessions: [] as LiveSession[] };
-        throw error;
-      }
+      const fresh = { sessions: await api.listSessions() };
+      return keepNewerActivity(client.getQueryData<SessionsListData>(liveSessionsQueryKey(workspaceId)), fresh);
     },
     refetchInterval: POLL_MS,
     staleTime: POLL_MS,
   });
-  return { ...query, enabled: query.data?.enabled ?? false, sessions: query.data?.sessions ?? [] };
+  return { ...query, sessions: query.data?.sessions ?? [] };
 }
 
 export function sessionTitle(session: Pick<LiveSession, "title" | "folder_name">): string {

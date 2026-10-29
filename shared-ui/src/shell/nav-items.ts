@@ -14,7 +14,7 @@ const MAIN_NAV: MainNavItem[] = [
   { id: "settings", label: "Settings" },
 ];
 
-/** The root sidebar entries in display order, for web and desktop. Sessions shows only when the workspace has live sessions on. */
-export function mainNavItems(sessionsEnabled: boolean): MainNavItem[] {
-  return MAIN_NAV.filter((item) => item.id !== "sessions" || sessionsEnabled);
+/** The root sidebar entries in display order, for web and desktop. */
+export function mainNavItems(): MainNavItem[] {
+  return MAIN_NAV;
 }

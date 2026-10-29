@@ -18,16 +18,8 @@ export default function SessionsSectionLayout({ children }: { children: ReactNod
 function SessionsSection({ selectedId, children }: { selectedId: string | null; children: ReactNode }) {
   const router = useRouter();
   const { markInAppNavigation } = useSessionEntry();
-  const { sessions, enabled, isPending, isError } = useWebLiveSessions();
+  const { sessions, isPending, isError } = useWebLiveSessions();
 
-  if (!isPending && !enabled) {
-    return (
-      <div className="ui-page">
-        <h1 className="ui-page__title">Sessions</h1>
-        <p className="ui-muted">Live sessions are not turned on for this workspace.</p>
-      </div>
-    );
-  }
   return (
     <SessionsLayout sessions={sessions} loading={isPending} failed={isError} selectedId={selectedId} onSelect={(id) => {
         markInAppNavigation();

@@ -1,15 +1,11 @@
-import { LiveSessionsDisabledError, toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
+import { toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
 import { rpc } from "./rpc";
 
 const PRESENCE_POLL_MS = 5_000;
 const PRESENCE_FIRST_FOLLOW_UP_MS = 1_500;
 
 export const liveSessionsApi: LiveSessionsApi = {
-  listSessions: async () => {
-    const { enabled, sessions } = await rpc.request.listLiveSessions();
-    if (!enabled) throw new LiveSessionsDisabledError();
-    return sessions;
-  },
+  listSessions: () => rpc.request.listLiveSessions(),
   fetchEvents: (sessionId, after) => rpc.request.getLiveSessionEvents({ sessionId, after }),
   sendMessage: async (sessionId, text) => {
     const result = await rpc.request.sendLiveSessionMessage({ sessionId, text });

@@ -1,4 +1,4 @@
-import { LiveSessionsDisabledError, SessionNotFoundError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
+import { SessionNotFoundError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
 import { presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
 import { ApiError, apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
@@ -7,7 +7,6 @@ async function fetchLive<T>(path: string): Promise<T> {
   try {
     return await apiFetch<T>(path);
   } catch (error) {
-    if (error instanceof ApiError && error.code === "live_sessions_disabled") throw new LiveSessionsDisabledError();
     if (error instanceof ApiError && error.code === "session_not_found") throw new SessionNotFoundError();
     throw error;
   }

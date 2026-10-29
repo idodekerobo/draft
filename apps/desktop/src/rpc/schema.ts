@@ -341,7 +341,7 @@ export type AppRPCType = {
       pollLiveSessionPresence: { params: { sessionId: string; viewerId: string; viewerName: string }; response: { names: string[] } };
 
       /** Live sessions of the workspace; `enabled` is false when the workspace has the feature off. */
-      listLiveSessions: { params: void; response: { enabled: boolean; sessions: LiveSession[] } };
+      listLiveSessions: { params: void; response: LiveSession[] };
 
       /** Events of one live session above `after`. */
       getLiveSessionEvents: { params: { sessionId: string; after: number }; response: LiveSessionEventsPage };
