@@ -61,12 +61,23 @@ describe("SessionStartScreen", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("hello");
   });
 
-  it("keeps the folder bar and puts one picker next to Start, with Claude Code the only harness", () => {
+  it("keeps the folder bar and puts one picker next to Start, listing the harnesses and the models of the chosen one", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
-    expect(screen.getAllByRole("menuitemradio", { name: /Claude Code/ }).length).toBe(1);
-    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent?.replace("✓", ""))).toEqual(["Claude Code", "Default", "Fable", "Opus", "Sonnet", "Haiku"]);
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent?.replace("✓", ""))).toEqual(["Claude Code", "Codex", "Default", "Fable", "Opus", "Sonnet", "Haiku"]);
     expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  it("shows the Codex models and starts with Codex and the chosen model", async () => {
+    const { onStart } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    expect(screen.queryByRole("menuitemradio", { name: "Opus" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "codex", folderPath: "/work/marigold", text: "go", model: "gpt-6-luna" }));
   });
 
   it("starts with the chosen model alias", async () => {

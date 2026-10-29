@@ -1,3 +1,4 @@
+import { parseCliVersion } from "draft-core/harnesses";
 import { capture } from "../../../exec";
 
 export type CodexAuth = "signed_in" | "signed_out" | "unknown";
@@ -17,15 +18,10 @@ export async function readCodexAuth(codexBin: string): Promise<CodexAuth> {
   }
 }
 
-/** The version number in the output of `codex --version`, such as "codex-cli 0.165.0". */
-export function parseCodexVersion(output: string): string | null {
-  return /\b(\d+\.\d+\.\d+)\b/.exec(output)?.[1] ?? null;
-}
-
 export async function readCodexVersion(codexBin: string): Promise<string | null> {
   try {
     const result = await capture([codexBin, "--version"], { timeoutMs: 5000 });
-    return result.exitCode === 0 ? parseCodexVersion(result.stdout) : null;
+    return result.exitCode === 0 ? parseCliVersion(result.stdout) : null;
   } catch {
     return null;
   }

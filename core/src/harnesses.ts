@@ -11,6 +11,8 @@ export interface HarnessDefinition {
   label: string;
   models: ReadonlyArray<HarnessModel>;
   capabilities: { terminal: boolean; approvals: boolean; steer: boolean };
+  /** The CLI release the host was tested with: this major and minor. */
+  testedVersion: { major: number; minor: number };
   /** How a cloud routine runs this harness. Empty when routines do not support it yet. */
   routineModes: ReadonlyArray<"print" | "exec">;
 }
@@ -27,6 +29,7 @@ export const HARNESSES = [
       { alias: "haiku", label: "Haiku" },
     ],
     capabilities: { terminal: true, approvals: true, steer: false },
+    testedVersion: { major: 2, minor: 1 },
     routineModes: ["print"],
   },
   {
@@ -44,6 +47,7 @@ export const HARNESSES = [
       { alias: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
     ],
     capabilities: { terminal: true, approvals: true, steer: false },
+    testedVersion: { major: 0, minor: 165 },
     routineModes: [],
   },
 ] as const satisfies ReadonlyArray<HarnessDefinition>;
@@ -75,4 +79,23 @@ export function isKnownModel(harnessId: string, alias: string | null | undefined
 export function modelLabel(harnessId: string, alias: string | null | undefined): string | null {
   if (!alias) return harnessModels(harnessId).find((model) => model.alias === null)?.label ?? null;
   return harnessModels(harnessId).find((model) => model.alias === alias)?.label ?? alias;
+}
+
+/** The version number in the output of a CLI's `--version`. */
+export function parseCliVersion(output: string): string | null {
+  return /\b(\d+\.\d+\.\d+)\b/.exec(output)?.[1] ?? null;
+}
+
+/** True or false for a known version, null when the version or the harness is not known. */
+export function isTestedVersion(harnessId: string, version: string | null | undefined): boolean | null {
+  const tested = getHarness(harnessId)?.testedVersion;
+  const parsed = version ? parseCliVersion(version) : null;
+  if (!tested || !parsed) return null;
+  const [major, minor] = parsed.split(".").map(Number);
+  return major === tested.major && minor === tested.minor;
+}
+
+export function testedVersionLabel(harnessId: string): string | null {
+  const tested = getHarness(harnessId)?.testedVersion;
+  return tested ? `${tested.major}.${tested.minor}.x` : null;
 }

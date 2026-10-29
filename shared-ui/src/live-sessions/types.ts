@@ -18,7 +18,11 @@ export interface LiveSession {
   open_approval_count?: number;
   /** True when the caller owns the session. */
   mine?: boolean;
-  /** The Claude Code version the host runs. */
+  /** The agent that runs the session, such as claude or codex. Rows from before harnesses were recorded may lack it. */
+  harness?: string;
+  /** Alias the harness CLI was started with; null for its own default. */
+  model?: string | null;
+  /** The version of the harness CLI the host runs. */
   harness_version?: string | null;
   /** The session this one continues after a /clear. */
   previous_session?: LiveSessionLink | null;

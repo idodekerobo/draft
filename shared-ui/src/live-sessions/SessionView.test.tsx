@@ -44,6 +44,14 @@ describe("SessionView", () => {
     expect(container.querySelector(".ui-stream__item--assistant .ui-stream__who")).toBeNull();
   });
 
+  it("names the harness and model in the header, and shows no Claude version warning for a Codex session", async () => {
+    const codex: LiveSession = { ...session, harness: "codex", model: "gpt-6-luna", harness_version: "0.165.0" };
+    const { container } = render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: codex, events: [], inputs: [] }) }} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(container.querySelector(".ui-session__meta")?.textContent).toContain("Maya · Codex · GPT-6-Luna");
+    expect(screen.queryByText(/Draft was tested with/)).toBeNull();
+  });
+
   it("puts menu actions behind a menu button and closes it on Escape", async () => {
     let opened = 0;
     render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} menuItems={() => [{ label: "Open in Terminal", onSelect: () => opened++ }]} />);

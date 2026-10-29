@@ -8,6 +8,7 @@ import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
+import { agentLabel } from "../routines/agent-label";
 import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
@@ -313,7 +314,7 @@ function LoadedSession({
       <header className="ui-session__header">
         <Crumbs back={back}>
           <h1 className="ui-session__title">{sessionTitle(session)}</h1>
-          <span className="ui-muted ui-session__meta">{readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} /></span>
+          <span className="ui-muted ui-session__meta">{readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · {agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })} · <StatusText session={session} /></span>
           {watchers && <span className="ui-muted ui-session__presence" aria-live="polite">{watchers}</span>}
         </Crumbs>
         <div className="ui-session__actions">
