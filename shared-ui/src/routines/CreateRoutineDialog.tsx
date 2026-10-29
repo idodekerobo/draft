@@ -1,6 +1,6 @@
 "use client";
 
-import { LIVE_SESSION_HARNESSES, LIVE_SESSION_MODELS } from "draft-core/live-sessions";
+import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, modelLabel, type HarnessId } from "draft-core/harnesses";
 import { useId, useMemo, useState } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { Dialog } from "./Dialog";
@@ -18,6 +18,7 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
   const titleId = `${ids}-title`;
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [harness, setHarness] = useState<HarnessId>(DEFAULT_HARNESS_ID);
   const [model, setModel] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({ preset: "daily", time: "09:00", weekday: "mon", timezone: browserTimezone() }));
   const [saving, setSaving] = useState(false);
@@ -27,7 +28,8 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
   const canCreate = title.trim() !== "" && prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
-  const modelLabel = LIVE_SESSION_MODELS.find((option) => option.alias === model)?.label;
+  const routineHarnesses = HARNESSES.filter((option) => option.routineModes.length > 0);
+  const models = getHarness(harness)?.models ?? [];
 
   async function create() {
     setSaving(true);
@@ -36,7 +38,7 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
       await onCreate({
         title: title.trim(),
         prompt: prompt.trim(),
-        harness: "claude",
+        harness,
         model,
         preset: schedule.preset,
         ...(usesTime ? { time: schedule.time } : {}),
@@ -97,11 +99,11 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
               <SectionedPicker
                 label="Agent and model"
                 sections={[
-                  { id: "harness", title: "Harnesses", value: LIVE_SESSION_HARNESSES[0].id, onChange: () => {}, options: LIVE_SESSION_HARNESSES.map((harness) => ({ value: harness.id, label: harness.label })) },
-                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: LIVE_SESSION_MODELS.map((option) => ({ value: option.alias ?? "", label: option.label })) },
+                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: routineHarnesses.map((option) => ({ value: option.id, label: option.label })) },
+                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: models.map((option) => ({ value: option.alias ?? "", label: option.label })) },
                 ]}
               >
-                {LIVE_SESSION_HARNESSES[0].label} · {modelLabel}
+                {getHarness(harness)?.label} · {modelLabel(harness, model)}
               </SectionedPicker>
             </div>
             {fieldError("model")}

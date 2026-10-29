@@ -2,7 +2,8 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import { hostErrorAction, isKnownModelAlias } from "draft-core/live-sessions";
+import { isKnownModel } from "draft-core/harnesses";
+import { hostErrorAction } from "draft-core/live-sessions";
 import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
@@ -384,7 +385,7 @@ export async function startLiveSession(
   const claudeBin = await findClaude();
   if (!claudeBin) return { ok: false, error: CLAUDE_MISSING_MESSAGE };
   if ((await readClaudeAuth(claudeBin)) === "signed_out") return { ok: false, error: CLAUDE_SIGNED_OUT_MESSAGE };
-  if (!isKnownModelAlias(input.model)) return { ok: false, error: "Choose a model from the list." };
+  if (!isKnownModel("claude", input.model)) return { ok: false, error: "Choose a model from the list." };
 
   const hostMachineId = getHostMachineId();
   const nativeSessionId = crypto.randomUUID();

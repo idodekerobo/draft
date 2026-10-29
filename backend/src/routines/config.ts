@@ -1,4 +1,4 @@
-import { isKnownModelAlias } from "draft-core/live-sessions";
+import { getHarness, isKnownModel, type HarnessId } from "draft-core/harnesses";
 
 export const ROUTINE_RUN_ID_PREFIX = "routine:";
 const ROUTINE_HOST_PREFIX = "fly:";
@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface AgentRoutineConfig {
   title: string;
   prompt: string;
-  harness: "claude";
+  harness: HarnessId;
   model: string | null;
 }
 
@@ -26,9 +26,10 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   const { title, prompt, harness, model } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
-  if (harness !== "claude") return { ok: false, field: "harness" };
-  if (model !== null && (typeof model !== "string" || !isKnownModelAlias(model))) return { ok: false, field: "model" };
-  return { ok: true, config: { title: title.trim(), prompt, harness, model } };
+  const definition = typeof harness === "string" ? getHarness(harness) : null;
+  if (!definition || definition.routineModes.length === 0) return { ok: false, field: "harness" };
+  if (model !== null && (typeof model !== "string" || !isKnownModel(definition.id, model))) return { ok: false, field: "model" };
+  return { ok: true, config: { title: title.trim(), prompt, harness: definition.id, model } };
 }
 
 export function parseAgentRoutineConfig(value: unknown): AgentRoutineConfig | null {

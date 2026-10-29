@@ -325,7 +325,7 @@ export interface SessionRow {
   workspace_id: string;
   owner_user_id: string;
   session_type: "interactive" | "routine";
-  harness: "claude";
+  harness: string;
   model: string | null;
   native_session_id: string | null;
   previous_session_id: string | null;

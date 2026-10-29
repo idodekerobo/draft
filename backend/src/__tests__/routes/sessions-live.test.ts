@@ -266,6 +266,19 @@ describe("live session routes", () => {
     expect(body.inputs.map((i) => [i.id, i.mine, i.text])).toEqual([["mine", true, "hi"], ["theirs", false, "hi"]]);
   });
 
+  it("stores the harness and model of a new session and rejects unknown ones", async () => {
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "claude", model: "haiku" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ harness: "claude", model: "haiku" });
+
+    await routes.CREATE(post("/x", { hostMachineId: "host-1" }, { id: WS }));
+    expect(inserted.at(-1)).toMatchObject({ harness: "claude" });
+
+    const unknownHarness = await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "gemini" }, { id: WS }));
+    expect(unknownHarness.status).toBe(400);
+    expect(((await unknownHarness.json()) as { error: string }).error).toBe("unknown_harness");
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", model: "gpt-5; rm -rf /" }, { id: WS }))).status).toBe(400);
+  });
+
   it("fails the queued messages of a cleared session with their own reason", async () => {
     await routes.END(post("/x", { hostMachineId: "host-1", reason: "cleared" }));
     expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_cleared" });

@@ -100,22 +100,6 @@ export function isTestedClaudeVersion(version: string | null | undefined): boole
   return major === TESTED_CLAUDE_VERSION.major && minor === TESTED_CLAUDE_VERSION.minor;
 }
 
-/** Harnesses a session can run. Claude Code only for now. */
-export const LIVE_SESSION_HARNESSES = [{ id: "claude", label: "Claude Code" }] as const;
-export type LiveSessionHarnessId = (typeof LIVE_SESSION_HARNESSES)[number]["id"];
-
-/** Models a person can pick. `alias` goes to `claude --model`; null leaves the choice to Claude's own setting. */
-export const LIVE_SESSION_MODELS: ReadonlyArray<{ alias: string | null; label: string }> = [
-  { alias: null, label: "Default" },
-  { alias: "fable", label: "Fable" },
-  { alias: "opus", label: "Opus" },
-  { alias: "sonnet", label: "Sonnet" },
-  { alias: "haiku", label: "Haiku" },
-];
-
-export const isKnownModelAlias = (alias: string | null | undefined): boolean =>
-  LIVE_SESSION_MODELS.some((model) => model.alias === (alias ?? null));
-
 /** What a person tracks on the presence channel `session:<id>`. The presence key is their user id. */
 export interface PresenceMeta {
   name?: string;

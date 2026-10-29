@@ -1,6 +1,6 @@
 "use client";
 
-import { LIVE_SESSION_HARNESSES, LIVE_SESSION_MODELS, type LiveSessionHarnessId } from "draft-core/live-sessions";
+import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, modelLabel, type HarnessId } from "draft-core/harnesses";
 import { useRef, useState, type FormEvent } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { clearDraft, NEW_SESSION_DRAFT_KEY, useDraft } from "./drafts";
@@ -13,10 +13,10 @@ const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) 
 export type StartResult = { ok: true } | { ok: false; error: string };
 
 export interface StartRequest {
-  harness: LiveSessionHarnessId;
+  harness: HarnessId;
   folderPath: string;
   text: string;
-  /** Alias for `claude --model`; null for Claude's own default. */
+  /** Alias the harness CLI takes as its model; null for the harness default. */
   model: string | null;
 }
 
@@ -32,7 +32,7 @@ export function SessionStartScreen({
 }) {
   const [chosen, setChosen] = useState<string | null>(null);
   const [text, setText] = useDraft(NEW_SESSION_DRAFT_KEY);
-  const [harness, setHarness] = useState<LiveSessionHarnessId>(LIVE_SESSION_HARNESSES[0].id);
+  const [harness, setHarness] = useState<HarnessId>(DEFAULT_HARNESS_ID);
   const [model, setModel] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,11 +112,11 @@ export function SessionStartScreen({
               <SectionedPicker
                 label="Agent and model"
                 sections={[
-                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => setHarness(value as LiveSessionHarnessId), options: LIVE_SESSION_HARNESSES.map((harness) => ({ value: harness.id, label: harness.label })) },
-                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: LIVE_SESSION_MODELS.map((option) => ({ value: option.alias ?? "", label: option.label })) },
+                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: HARNESSES.map((option) => ({ value: option.id, label: option.label })) },
+                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: (getHarness(harness)?.models ?? []).map((option) => ({ value: option.alias ?? "", label: option.label })) },
                 ]}
               >
-                {LIVE_SESSION_HARNESSES.find((option) => option.id === harness)?.label} · {LIVE_SESSION_MODELS.find((option) => option.alias === model)?.label}
+                {getHarness(harness)?.label} · {modelLabel(harness, model)}
               </SectionedPicker>
               <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
                 {starting ? "Starting…" : "Start"}
