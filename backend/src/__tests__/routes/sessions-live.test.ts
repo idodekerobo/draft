@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 
 const caller = { userId: "user-1", accessToken: "token-1" };
 let accessResult: Response | null = null;
-let liveSessionsEnabled = true;
 let rpcResult: { data: unknown; error: { message: string } | null } = { data: { last_seq: 2, inserted: 2 }, error: null };
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 let storageObjects: Array<{ name: string }> = [];
@@ -120,7 +119,6 @@ const userLine = (uuid: string, text: string) => ({
 
 beforeEach(() => {
   accessResult = null;
-  liveSessionsEnabled = true;
   rpcResult = { data: { last_seq: 2, inserted: 2 }, error: null };
   rpcCalls.length = 0;
   storageObjects = [];
@@ -129,7 +127,6 @@ beforeEach(() => {
   updates = [];
   errorRows = [];
   tables = {
-    workspaces: [{ id: WS, live_sessions_enabled: true }],
     sessions: [session()],
     session_events: [],
     users: [{ id: "user-1", display_name: "Maya", email: "maya@example.test" }],
@@ -142,14 +139,6 @@ describe("live session routes", () => {
     const res = await routes.CREATE(post("/x", { hostMachineId: "host-1" }, { id: WS }));
     expect(res.status).toBe(403);
     expect(inserted).toEqual([]);
-  });
-
-  it("rejects every route when the workspace flag is off", async () => {
-    tables.workspaces = [{ id: WS, live_sessions_enabled: false }];
-    const res = await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [] }));
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ ok: false, error: "live_sessions_disabled" });
-    expect(rpcCalls).toEqual([]);
   });
 
   it("takes the owner from the caller and never from the body", async () => {

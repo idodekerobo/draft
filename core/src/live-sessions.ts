@@ -6,7 +6,6 @@ export const MAX_INPUT_CHARS = 10_000;
 export const EVENTS_PAGE_SIZE = 500;
 
 export type LiveSessionErrorCode =
-  | "live_sessions_disabled"
   | "session_not_found"
   | "session_ended"
   | "not_session_owner"
@@ -25,7 +24,6 @@ export const HOST_FATAL_CODES: ReadonlySet<string> = new Set<LiveSessionErrorCod
   "foreign_host",
   "not_session_owner",
   "session_not_found",
-  "live_sessions_disabled",
 ]);
 
 /**
