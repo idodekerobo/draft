@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Brand, mainNavItems, useQuery } from "draft-shared-ui";
 import { apiFetch } from "@/lib/api";
-import { useWebLiveSessions } from "@/lib/live-sessions";
 import { contextQueryOptions } from "@/lib/queries";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -12,8 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { identity, workspaceId, seenContextVersion } = useWorkspace();
   const { data: snapshot } = useQuery(contextQueryOptions(workspaceId, apiFetch));
-  const { enabled: sessionsEnabled } = useWebLiveSessions();
-  const navItems = mainNavItems(sessionsEnabled).map((item) => ({ ...item, href: `/${item.id}` }));
+  const navItems = mainNavItems().map((item) => ({ ...item, href: `/${item.id}` }));
   const hasUnseenContext = snapshot != null && seenContextVersion !== null && snapshot.versionNumber > seenContextVersion;
   return (
     <div className="ui-shell">

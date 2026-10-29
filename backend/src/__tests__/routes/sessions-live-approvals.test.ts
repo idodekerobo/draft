@@ -53,7 +53,6 @@ beforeEach(() => {
   rpcCalls = [];
   rpcResult = { data: null, error: null };
   tables = {
-    workspaces: [{ id: WS, live_sessions_enabled: true }],
     sessions: [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", host_machine_id: "host-1", status: "live", last_seq: 0 }],
     session_inputs: [],
     users: [{ id: "user-2", display_name: "Priya", email: "p@example.test" }],

@@ -6,7 +6,6 @@ export const MAX_INPUT_CHARS = 10_000;
 export const EVENTS_PAGE_SIZE = 500;
 
 export type LiveSessionErrorCode =
-  | "live_sessions_disabled"
   | "session_not_found"
   | "session_ended"
   | "not_session_owner"
@@ -25,7 +24,6 @@ export const HOST_FATAL_CODES: ReadonlySet<string> = new Set<LiveSessionErrorCod
   "foreign_host",
   "not_session_owner",
   "session_not_found",
-  "live_sessions_disabled",
 ]);
 
 /**
@@ -104,6 +102,7 @@ export function isTestedClaudeVersion(version: string | null | undefined): boole
 
 /** Harnesses a session can run. Claude Code only for now. */
 export const LIVE_SESSION_HARNESSES = [{ id: "claude", label: "Claude Code" }] as const;
+export type LiveSessionHarnessId = (typeof LIVE_SESSION_HARNESSES)[number]["id"];
 
 /** Models a person can pick. `alias` goes to `claude --model`; null leaves the choice to Claude's own setting. */
 export const LIVE_SESSION_MODELS: ReadonlyArray<{ alias: string | null; label: string }> = [

@@ -33,10 +33,6 @@ export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: fal
 
 const running = new Map<string, SessionRunner>();
 
-const ERROR_MESSAGES: Record<string, string> = {
-  live_sessions_disabled: "Live sessions are not turned on for this workspace.",
-};
-
 /** Forwards one session's transcript while its pane lives, then finishes it: last lines, raw upload, end. */
 class SessionRunner {
   private readonly forwarder: TranscriptForwarder;
@@ -410,9 +406,8 @@ export async function startLiveSession(
       }),
     });
     sessionId = created.session.id;
-  } catch (error) {
-    const code = error instanceof ServerError ? error.code : null;
-    return { ok: false, error: (code && ERROR_MESSAGES[code]) ?? "Could not create the session." };
+  } catch {
+    return { ok: false, error: "Could not create the session." };
   }
 
   const state: HostSessionState = {
@@ -457,16 +452,11 @@ export async function resumeLiveSessions(): Promise<void> {
   }
 }
 
-export async function listLiveSessions(): Promise<{ enabled: boolean; sessions: LiveSession[] }> {
+export async function listLiveSessions(): Promise<LiveSession[]> {
   const workspaceId = getCachedWorkspaceId();
-  if (!workspaceId) return { enabled: false, sessions: [] };
-  try {
-    const body = await fetchServerJSON<{ sessions: LiveSession[] }>(`workspaces/${workspaceId}/live-sessions`);
-    return { enabled: true, sessions: body.sessions };
-  } catch (error) {
-    if (error instanceof ServerError && error.code === "live_sessions_disabled") return { enabled: false, sessions: [] };
-    throw error;
-  }
+  if (!workspaceId) return [];
+  const body = await fetchServerJSON<{ sessions: LiveSession[] }>(`workspaces/${workspaceId}/live-sessions`);
+  return body.sessions;
 }
 
 function sessionBase(sessionId: string): string {

@@ -2,6 +2,7 @@
 
 import { useMutation, useMutationState } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
+import type { TrackFn } from "../analytics/events";
 import { useQueryClient } from "../query";
 import { syncSessionIntoLists } from "./sessions-list";
 import { sessionStreamKey, type SessionStreamData } from "./useSessionStream";
@@ -32,12 +33,14 @@ const isCopyOf = (input: LiveSessionInput, send: SendVariables) =>
  * A send shows as "Sending…" and moves the session to the top of the sidebar at once. It stays in the
  * mutation cache until the server list holds the message, so it survives a switch to another session.
  */
-export function useSessionInputs(api: LiveSessionsApi, sessionId: string, inputs: LiveSessionInput[], refresh: () => Promise<void>): SessionInputsState {
+export function useSessionInputs(api: LiveSessionsApi, sessionId: string, inputs: LiveSessionInput[], refresh: () => Promise<void>, track?: TrackFn): SessionInputsState {
   const client = useQueryClient();
   const mutation = useMutation({
     mutationKey: sendKey(sessionId),
     mutationFn: async ({ text }: SendVariables) => {
       await api.sendMessage(sessionId, text);
+      const session = client.getQueryData<SessionStreamData>(sessionStreamKey(sessionId))?.session;
+      if (session) track?.("session_message_sent", { live_session_id: sessionId, is_owner: session.mine === true });
       await refresh();
     },
     onMutate: () => {

@@ -90,7 +90,6 @@ beforeEach(() => {
   rpcError = null;
   updates = [];
   tables = {
-    workspaces: [{ id: WS, live_sessions_enabled: true }],
     sessions: [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", status: "live", host_machine_id: "host-1", last_seq: 0 }],
     session_inputs: [],
     session_events: [],
@@ -135,11 +134,8 @@ describe("sending a message", () => {
     expect(res.status).toBe(201);
   });
 
-  it("rejects a non-member and a workspace with the flag off", async () => {
+  it("rejects a non-member", async () => {
     accessResult = Response.json({ error: "forbidden" }, { status: 403 });
-    expect((await routes.INPUTS_CREATE(request("POST", "/x", { text: "hi" }))).status).toBe(403);
-    accessResult = null;
-    tables.workspaces = [{ id: WS, live_sessions_enabled: false }];
     expect((await routes.INPUTS_CREATE(request("POST", "/x", { text: "hi" }))).status).toBe(403);
     expect(rpcCalls).toEqual([]);
   });

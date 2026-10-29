@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { RoutinesPanel, SessionView } from "draft-shared-ui";
 import { liveSessionsApi } from "../../liveSessionsApi";
+import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 
 export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
   const workspaceKey = useWorkspaceKey();
+  const webAppUrl = useWebAppUrl();
   const [runId, setRunId] = useState<string | null>(null);
 
   if (runId) {
@@ -15,7 +17,7 @@ export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
         <SessionView
           api={liveSessionsApi}
           sessionId={runId}
-          shareBaseUrl={process.env.DRAFT_APP_URL ?? "https://app.draftai.us"}
+          shareBaseUrl={webAppUrl}
           back={<button type="button" className="ui-link" onClick={() => setRunId(null)}>Routines</button>}
         />
       </div>

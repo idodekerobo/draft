@@ -2,7 +2,7 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import type { LiveSessionErrorCode } from "draft-core/live-sessions";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
-import type { SessionRow, WorkspaceRow } from "../types/tables";
+import type { SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -18,14 +18,7 @@ export function errorResponse(error: string, status = 500, detail?: unknown, wor
 }
 
 export async function authorize(workspaceId: string, userId: string): Promise<Response | null> {
-  const [denied, flag] = await Promise.all([
-    assertWorkspaceAccess(workspaceId, userId),
-    serviceClient.from("workspaces").select("live_sessions_enabled").eq("id", workspaceId).maybeSingle<Pick<WorkspaceRow, "live_sessions_enabled">>(),
-  ]);
-  if (denied) return denied;
-  if (flag.error) return errorResponse("workspace_lookup_failed", 500, flag.error, workspaceId);
-  if (!flag.data?.live_sessions_enabled) return errorResponse("live_sessions_disabled", 403);
-  return null;
+  return assertWorkspaceAccess(workspaceId, userId);
 }
 
 /** Postgres errors the live-session functions raise on purpose, and the status each one gets. */
