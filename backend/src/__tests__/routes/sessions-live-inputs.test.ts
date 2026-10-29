@@ -228,6 +228,30 @@ describe("resend and dismiss", () => {
   });
 });
 
+describe("steer", () => {
+  const queued = { id: "i1", session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", author_user_id: "user-2", author_name: "Priya", payload: { text: "also check lint" }, created_at: "t", updated_at: "t" };
+  const steer = () => routes.INPUT_ACTION(request("POST", "/x", { action: "steer" }, { id: WS, sessionId: SESSION, inputId: "i1" }));
+
+  it("marks the author's own queued message to join the running turn, for a harness that can steer", async () => {
+    tables.sessions[0]!.harness = "codex";
+    tables.session_inputs = [queued];
+    expect((await steer()).status).toBe(200);
+    expect(updates[0]!.payload).toEqual({ payload: { text: "also check lint", steer: true } });
+  });
+
+  it("refuses a harness that cannot steer, another person's message and a message that is not queued", async () => {
+    tables.sessions[0]!.harness = "claude";
+    tables.session_inputs = [queued];
+    expect((await steer()).status).toBe(409);
+    tables.sessions[0]!.harness = "codex";
+    tables.session_inputs = [{ ...queued, author_user_id: "user-9" }];
+    expect((await steer()).status).toBe(409);
+    tables.session_inputs = [{ ...queued, state: "delivering" }];
+    expect((await steer()).status).toBe(409);
+    expect(updates).toEqual([]);
+  });
+});
+
 describe("matching consumed inputs", () => {
   const waiting = (id: string, authorName: string, text: string, state = "delivering") => ({ id, session_id: SESSION, workspace_id: WS, kind: "message", state, author_name: authorName, payload: { text }, created_at: id });
   const turn = (seq: number, text: string, extra: Row = {}) => ({ session_id: SESSION, workspace_id: WS, kind: "user_message", seq, payload: { text, ...extra } });

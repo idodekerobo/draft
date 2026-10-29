@@ -46,7 +46,7 @@ export const HARNESSES = [
       { alias: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
       { alias: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
     ],
-    capabilities: { terminal: true, approvals: true, steer: false },
+    capabilities: { terminal: true, approvals: true, steer: true },
     testedVersion: { major: 0, minor: 165 },
     routineModes: [],
   },

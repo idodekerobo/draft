@@ -350,7 +350,7 @@ export type AppRPCType = {
       sendLiveSessionMessage: { params: { sessionId: string; text: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Resend or dismiss a message that may not have arrived. */
-      actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" }; response: void };
+      actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" | "steer" }; response: void };
 
       /** Allow or deny an open permission request of a live session. */
       decideLiveSessionApproval: {

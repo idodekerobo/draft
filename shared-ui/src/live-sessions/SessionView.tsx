@@ -8,6 +8,7 @@ import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
+import { getHarness } from "draft-core/harnesses";
 import { agentLabel } from "../routines/agent-label";
 import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
@@ -349,6 +350,8 @@ function LoadedSession({
             ownerName={session.owner_name ?? undefined}
             hostName={session.host_name}
             viewerId={viewer.id}
+            harness={session.harness}
+            onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />

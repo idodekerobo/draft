@@ -52,6 +52,22 @@ describe("SessionView", () => {
     expect(screen.queryByText(/Draft was tested with/)).toBeNull();
   });
 
+  it("offers Send now on the caller's own busy-queued message in a session that can steer, and not in one that cannot", async () => {
+    const waiting = { id: "i1", author_user_id: "u9", author_name: "Dev", text: "also run lint", state: "queued" as const, reason: "composer_busy", created_at: "2026-10-27T00:00:00Z", updated_at: "", mine: true };
+    const actOnInput = mock(async () => {});
+    const withSession = (live: LiveSession) => ({ ...api, actOnInput, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [waiting] }) });
+
+    render(<SessionView api={withSession({ ...session, harness: "codex" })} sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Send now" }));
+    await waitFor(() => expect(actOnInput).toHaveBeenCalledWith("s1", "i1", "steer"));
+    expect(screen.getByText("Queued, Codex is working")).toBeTruthy();
+    cleanup();
+
+    render(<SessionView api={withSession({ ...session, harness: "claude" })} sessionId="s1" />);
+    await screen.findByText(/typing in the terminal/);
+    expect(screen.queryByRole("button", { name: "Send now" })).toBeNull();
+  });
+
   it("puts menu actions behind a menu button and closes it on Escape", async () => {
     let opened = 0;
     render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} menuItems={() => [{ label: "Open in Terminal", onSelect: () => opened++ }]} />);

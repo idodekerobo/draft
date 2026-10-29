@@ -19,6 +19,8 @@ interface ThreadStartResult {
   thread: { id: string };
 }
 
+const textInput = (input: PendingInput) => [{ type: "text", text: input.delivered_text, text_elements: [] }];
+
 interface TurnStartResult {
   turn: { id: string };
 }
@@ -70,6 +72,7 @@ export class CodexDriver implements HarnessDriver {
   private flushing = false;
   private recovered = false;
   private reported = new Map<string, string>();
+  private readonly steerFailed = new Set<string>();
   private halted = false;
 
   constructor(private readonly host: DriverHost) {
@@ -231,27 +234,41 @@ export class CodexDriver implements HarnessDriver {
   }
 
   private async deliver(connection: CodexConnection, messages: PendingInput[]): Promise<void> {
-    const next = messages.find((i) => i.state === "queued");
-    if (!next) return;
+    const queued = messages.filter((i) => i.state === "queued");
+    if (queued.length === 0) return;
     if (connection.busy) {
-      if (this.reported.get(next.id) !== "composer_busy") {
-        this.reported.set(next.id, "composer_busy");
-        await this.host.setInputState(next.id, ["queued"], "queued", "composer_busy");
+      for (const input of queued) {
+        if (this.reported.get(input.id) === "composer_busy") continue;
+        this.reported.set(input.id, "composer_busy");
+        await this.host.setInputState(input.id, ["queued"], "queued", "composer_busy");
       }
+      const steered = queued.find((i) => i.payload?.steer && !this.steerFailed.has(i.id));
+      if (steered && connection.turnId) await this.steer(connection, steered);
       return;
     }
+    const next = queued[0]!;
     if (!(await this.host.setInputState(next.id, ["queued"], "delivering"))) return;
     try {
-      const started = await connection.rpc.request<TurnStartResult>("turn/start", {
-        threadId: connection.threadId,
-        input: [{ type: "text", text: next.delivered_text, text_elements: [] }],
-      });
+      const started = await connection.rpc.request<TurnStartResult>("turn/start", { threadId: connection.threadId, input: textInput(next) });
       connection.busy = true;
       connection.turnId = started.turn.id;
       connection.hasTurned = true;
     } catch (error) {
       console.error("[live-session] codex turn/start failed", next.id, error);
       await this.host.setInputState(next.id, ["delivering"], "failed", "not_submitted").catch(() => {});
+    }
+  }
+
+  /** Adds a message to the turn that runs. If that turn ended meanwhile, the message goes back to waiting for the next one. */
+  private async steer(connection: CodexConnection, input: PendingInput): Promise<void> {
+    if (!(await this.host.setInputState(input.id, ["queued"], "delivering"))) return;
+    try {
+      await connection.rpc.request("turn/steer", { threadId: connection.threadId, expectedTurnId: connection.turnId, input: textInput(input) });
+    } catch (error) {
+      console.error("[live-session] codex turn/steer failed", input.id, error);
+      this.steerFailed.add(input.id);
+      this.reported.delete(input.id);
+      await this.host.setInputState(input.id, ["delivering"], "queued", "composer_busy").catch(() => {});
     }
   }
 

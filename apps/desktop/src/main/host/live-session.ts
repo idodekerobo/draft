@@ -373,7 +373,7 @@ export async function sendLiveSessionMessage(sessionId: string, text: string): P
   }
 }
 
-export async function actOnLiveSessionInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void> {
+export async function actOnLiveSessionInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer"): Promise<void> {
   await fetchServer(`${sessionBase(sessionId)}/inputs/${inputId}`, { method: "POST", body: JSON.stringify({ action }) });
 }
 
