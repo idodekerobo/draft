@@ -14,6 +14,10 @@ import {
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
 import { findRunnerBin } from "./main/host/find-bin";
+import { runningCodexTurns } from "./main/host/codex/codex-driver";
+import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
+import { readClaudeAuth } from "./main/host/claude-check";
+import { readClaudeVersion } from "./main/host/version-check";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
@@ -160,6 +164,22 @@ function setAppMenu() {
 
 setAppMenu();
 
+/** A Codex turn stops when Draft quits, unlike a Claude session in tmux, so a person is asked first. */
+async function confirmQuit(): Promise<boolean> {
+  const turns = runningCodexTurns();
+  if (turns === 0) return true;
+  const { response } = await Utils.showMessageBox({
+    type: "warning",
+    title: "Quit Draft",
+    message: turns === 1 ? "A Codex session is working." : `${turns} Codex sessions are working.`,
+    detail: "Codex stops when Draft quits. The conversation is kept and resumes when you open Draft again, but the work in progress is lost.",
+    buttons: ["Quit anyway", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+
 Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
 
@@ -169,7 +189,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "quit-app") {
-    process.exit(0);
+    void confirmQuit().then((quit) => { if (quit) process.exit(0); });
   }
 });
 
@@ -761,14 +781,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       openLiveSessionInTerminal: ({ sessionId }) => openLiveSessionInTerminal(sessionId),
 
       getAvailableRunners: async () => {
-        const [claudePath, codexPath] = await Promise.all([
-          findRunnerBin("claude"),
-          findRunnerBin("codex"),
+        const claudePath = findRunnerBin("claude");
+        const codexPath = findRunnerBin("codex");
+        const [claudeAuth, claudeVersion, codexAuth, codexVersion] = await Promise.all([
+          claudePath ? readClaudeAuth(claudePath) : ("unknown" as const),
+          claudePath ? readClaudeVersion(claudePath) : null,
+          codexPath ? readCodexAuth(codexPath) : ("unknown" as const),
+          codexPath ? readCodexVersion(codexPath) : null,
         ]);
         return {
           runners: [
-            { name: "claude" as const, installed: claudePath !== null },
-            { name: "codex" as const, installed: codexPath !== null },
+            { name: "claude" as const, installed: claudePath !== null, auth: claudeAuth, version: claudeVersion },
+            { name: "codex" as const, installed: codexPath !== null, auth: codexAuth, version: codexVersion },
           ],
         };
       },

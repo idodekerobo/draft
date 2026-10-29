@@ -80,6 +80,27 @@ describe("SessionStartScreen", () => {
     await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "codex", folderPath: "/work/marigold", text: "go", model: "gpt-6-luna" }));
   });
 
+  it("marks a harness that is not installed or signed out, and blocks Start for it", () => {
+    const { onStart } = setup();
+    cleanup();
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ codex: "missing" }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    expect(screen.getByRole("menuitemradio", { name: /Codex/ }).textContent).toContain("Install");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Codex/ }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Codex is not installed on this computer.")).toBeTruthy();
+  });
+
+  it("only warns for an untested version", () => {
+    const { onStart } = setup();
+    cleanup();
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ claude: "untested_version" }} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("status").textContent).toContain("Some things may not work");
+  });
+
   it("starts with the chosen model alias", async () => {
     const { onStart } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));

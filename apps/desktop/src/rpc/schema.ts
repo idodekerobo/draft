@@ -371,7 +371,7 @@ export type AppRPCType = {
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Detect which CLI runners are installed. */
-      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
+      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
       getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };

@@ -20,12 +20,30 @@ export interface StartRequest {
   model: string | null;
 }
 
+/** Why a harness cannot be started on this computer yet, or may not work well. */
+export type HarnessProblem = "missing" | "signed_out" | "untested_version";
+
+const PROBLEM_HINTS: Record<HarnessProblem, string> = { missing: "Install", signed_out: "Sign in", untested_version: "Untested version" };
+
+/** Blocks Start. An untested version only warns. */
+const blocks = (problem: HarnessProblem | undefined) => problem === "missing" || problem === "signed_out";
+
+function problemLine(label: string, problem: HarnessProblem | undefined): string | null {
+  if (problem === "missing") return `${label} is not installed on this computer.`;
+  if (problem === "signed_out") return `${label} is not signed in. Run it in a terminal and sign in.`;
+  if (problem === "untested_version") return `This version of ${label} is newer or older than the one Draft was tested with. Some things may not work.`;
+  return null;
+}
+
 /** Empty state of the Sessions area: pick a folder, type a first message, start. */
 export function SessionStartScreen({
   recentFolders,
   onBrowse,
   onStart,
+  availability = {},
 }: {
+  /** What is wrong with a harness on this computer, by harness id. A harness with no entry is ready. */
+  availability?: Partial<Record<string, HarnessProblem>>;
   recentFolders: string[];
   onBrowse: () => Promise<string | null>;
   onStart: (request: StartRequest) => Promise<StartResult>;
@@ -112,19 +130,22 @@ export function SessionStartScreen({
               <SectionedPicker
                 label="Agent and model"
                 sections={[
-                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: HARNESSES.map((option) => ({ value: option.id, label: option.label })) },
+                  { id: "harness", title: "Harnesses", value: harness, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: HARNESSES.map((option) => ({ value: option.id, label: option.label, hint: availability[option.id] ? PROBLEM_HINTS[availability[option.id]!] : undefined })) },
                   { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: (getHarness(harness)?.models ?? []).map((option) => ({ value: option.alias ?? "", label: option.label })) },
                 ]}
               >
                 {getHarness(harness)?.label} · {modelLabel(harness, model)}
               </SectionedPicker>
-              <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim()}>
+              <button type="submit" className="ui-btn ui-btn--primary" disabled={starting || !folder || !text.trim() || blocks(availability[harness])}>
                 {starting ? "Starting…" : "Start"}
               </button>
             </div>
           </div>
         </form>
         {!folder && <p className="ui-muted">Choose a folder to start in.</p>}
+        {problemLine(getHarness(harness)?.label ?? harness, availability[harness]) && (
+          <p className={blocks(availability[harness]) ? "ui-error" : "ui-muted"} role="status">{problemLine(getHarness(harness)?.label ?? harness, availability[harness])}</p>
+        )}
         {error && <p className="ui-error" role="alert">{error}</p>}
       </div>
     </div>
