@@ -12,7 +12,7 @@ import { registrationFor } from "./drivers";
 import { getHostMachineId } from "./machine-id";
 import { gitRemote } from "./git-remote";
 import { startHeartbeat } from "./heartbeat";
-import type { HarnessDriver, HostInput } from "./harness-driver";
+import { LaunchError, type HarnessDriver, type HostInput } from "./harness-driver";
 
 const PANE_WATCH_MS = 2_000;
 
@@ -329,7 +329,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
       method: "POST",
       body: JSON.stringify({ hostMachineId, reason: "launch_failed" }),
     }).catch(() => {});
-    return { ok: false, error: launcher.launchFailedMessage };
+    return { ok: false, error: error instanceof LaunchError ? error.message : launcher.launchFailedMessage };
   }
 
   saveState(state);

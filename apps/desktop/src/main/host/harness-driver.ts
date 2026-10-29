@@ -50,6 +50,9 @@ export interface HarnessDriver {
   openInTerminal(): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
+/** A launch failure whose message is safe to show the person. */
+export class LaunchError extends Error {}
+
 export type CheckResult = { ok: true; bin: string; version: string | null } | { ok: false; error: string };
 
 /** What starting a session needs from a harness, before the driver exists. */
