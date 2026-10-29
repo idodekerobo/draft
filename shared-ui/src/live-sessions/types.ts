@@ -12,13 +12,19 @@ export interface LiveSession {
   status: LiveSessionStatus;
   started_at: string;
   ended_at: string | null;
+  /** Why it ended, such as exited, ended_by_owner or cleared. */
+  end_reason?: string | null;
   last_event_at: string | null;
   last_seq: number;
   /** Permission requests waiting for an answer. */
   open_approval_count?: number;
   /** True when the caller owns the session. */
   mine?: boolean;
-  /** The Claude Code version the host runs. */
+  /** The agent that runs the session, such as claude or codex. Rows from before harnesses were recorded may lack it. */
+  harness?: string;
+  /** Alias the harness CLI was started with; null for its own default. */
+  model?: string | null;
+  /** The version of the harness CLI the host runs. */
   harness_version?: string | null;
   /** The session this one continues after a /clear. */
   previous_session?: LiveSessionLink | null;
@@ -112,10 +118,12 @@ export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
   sendMessage(sessionId: string, text: string): Promise<void>;
-  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss"): Promise<void>;
+  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
   stop(sessionId: string): Promise<{ withdrawn: string[] }>;
+  /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
+  resume?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
   watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
 }

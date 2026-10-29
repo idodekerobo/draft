@@ -8,6 +8,9 @@ import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
+import { getHarness } from "draft-core/harnesses";
+import { agentLabel } from "../routines/agent-label";
+import { CheckIcon, LinkIcon } from "./MessageActions";
 import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
@@ -121,8 +124,8 @@ function CopyLinkButton({ url }: { url: string }) {
     }).catch(() => {});
   }
   return (
-    <button type="button" className="ui-btn" onClick={copy}>
-      {copied ? "Link copied" : "Copy link"}
+    <button type="button" className="ui-btn ui-btn--icon" onClick={copy} aria-label={copied ? "Link copied" : "Copy link"} title={copied ? "Link copied" : "Copy link"}>
+      {copied ? <CheckIcon /> : <LinkIcon />}
     </button>
   );
 }
@@ -305,6 +308,12 @@ function LoadedSession({
     else item.onSelect();
   }, []);
 
+  const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && session.end_reason !== "cleared";
+  const resume = useCallback(async () => {
+    await api.resume?.(sessionId);
+    await refresh();
+  }, [api, sessionId, refresh]);
+
   const readOnly = session.session_type === "routine";
   const running = !readOnly && (session.status === "live" || session.status === "starting");
   const banner = sessionBanner(session);
@@ -312,9 +321,14 @@ function LoadedSession({
     <div className="ui-session">
       <header className="ui-session__header">
         <Crumbs back={back}>
-          <h1 className="ui-session__title">{sessionTitle(session)}</h1>
-          <span className="ui-muted ui-session__meta">{readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} /></span>
-          {watchers && <span className="ui-muted ui-session__presence" aria-live="polite">{watchers}</span>}
+          <div className="ui-session__heading">
+            <h1 className="ui-session__title">{sessionTitle(session)}</h1>
+            <span className="ui-muted ui-session__meta">
+              {readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} />
+              {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
+            </span>
+            <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })}</span>
+          </div>
         </Crumbs>
         <div className="ui-session__actions">
           {running && (
@@ -348,6 +362,8 @@ function LoadedSession({
             ownerName={session.owner_name ?? undefined}
             hostName={session.host_name}
             viewerId={viewer.id}
+            harness={session.harness}
+            onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />
@@ -366,7 +382,7 @@ function LoadedSession({
               approvals.map((approval) => (
                 <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
               ))}
-            <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} />
+            <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

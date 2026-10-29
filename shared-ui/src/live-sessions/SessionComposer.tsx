@@ -16,6 +16,40 @@ const SEND_ERRORS: Partial<Record<LiveSessionErrorCode, string>> = {
   message_too_long: "This message is too long.",
 };
 
+/** "This session has ended", with Resume where the owner can continue it. */
+function EndedNote({ onResume }: { onResume?: () => Promise<void> }) {
+  const [resuming, setResuming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function resume() {
+    if (!onResume) return;
+    setResuming(true);
+    setError(null);
+    try {
+      await onResume();
+    } catch (failure) {
+      setError(failure instanceof Error && failure.message ? failure.message : "Could not resume the session.");
+    } finally {
+      setResuming(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="ui-muted">
+        This session has ended.
+        {onResume && (
+          <>
+            {" "}
+            <button type="button" className="ui-link" disabled={resuming} onClick={() => void resume()}>{resuming ? "Resuming…" : "Resume"}</button>
+          </>
+        )}
+      </p>
+      {error && <p className="ui-error" role="alert">{error}</p>}
+    </>
+  );
+}
+
 export function SessionComposer({
   sessionId,
   inputs,
@@ -27,7 +61,8 @@ export function SessionComposer({
   folderName,
   autoFocus = false,
   onEmptyEscape,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void }) {
+  onResume,
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void> }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -79,7 +114,7 @@ export function SessionComposer({
         </ul>
       )}
       {ended ? (
-        <p className="ui-muted">This session has ended.</p>
+        <EndedNote onResume={onResume} />
       ) : (
         <form className="ui-composer__box" onSubmit={submit}>
           {folderName && (

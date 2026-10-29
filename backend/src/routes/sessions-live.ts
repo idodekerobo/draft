@@ -1,8 +1,10 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
-import { eventsFor, isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
+import { isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
+import { eventsForHarness } from "../ingestion/harness-lines";
 import { latestNativeTitle } from "../ingestion/claude-code/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
@@ -15,6 +17,7 @@ type EventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/ev
 type LinesRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/lines">;
 type HeartbeatRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/heartbeat">;
 type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">;
+type ReopenRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/reopen">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
 
@@ -64,6 +67,11 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const hostMachineId = optionalString(body.hostMachineId, 200);
   if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
 
+  const harness = body.harness ?? DEFAULT_HARNESS_ID;
+  if (!isHarnessId(harness)) return errorResponse("unknown_harness", 400);
+  const model = optionalString(body.model, 100);
+  if (!isKnownModel(harness, model)) return errorResponse("unknown_model", 400);
+
   const previousSessionId = optionalString(body.previousSessionId, 100);
   if (previousSessionId) {
     const previous = await loadOwnedSession(req.params.id, previousSessionId, caller.userId);
@@ -77,12 +85,13 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
       workspace_id: req.params.id,
       owner_user_id: caller.userId,
       host_machine_id: hostMachineId,
+      harness,
       harness_version: optionalString(body.harnessVersion, 100),
       previous_session_id: previousSessionId,
       host_name: optionalString(body.hostName, 200),
       folder_name: optionalString(body.folderName, 200),
       git_remote: optionalString(body.gitRemote, 500),
-      model: optionalString(body.model, 100),
+      model,
       native_session_id: optionalString(body.nativeSessionId, 200),
     })
     .select(SESSION_COLUMNS)
@@ -179,7 +188,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
     }
   }
   const events = incoming
-    .flatMap(eventsFor)
+    .flatMap((line) => eventsForHarness(owned.session.harness, line))
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
 
   let lastSeq = owned.session.last_seq;
@@ -260,6 +269,35 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
   await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
 
   return Response.json({ ok: true });
+});
+
+/** The owner continues an ended session on the computer it ran on. It is the same session, live again. */
+export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  if (!owned.ok) return owned.response;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+
+  const { session } = owned;
+  if (session.session_type !== "interactive") return errorResponse("routine_read_only", 409);
+  if (session.status !== "ended") return Response.json({ ok: true, session });
+  if (session.end_reason === "cleared") return errorResponse("session_cleared", 409);
+
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .update({ status: "live", ended_at: null, end_reason: null, last_seen: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("status", "ended")
+    .select(SESSION_COLUMNS)
+    .maybeSingle<SessionRow>();
+  if (error) return errorResponse("session_reopen_failed", 500, error, workspaceId, sessionId);
+  return Response.json({ ok: true, session: data ?? { ...session, status: "live" } });
 });
 
 export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {

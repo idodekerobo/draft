@@ -19,6 +19,8 @@ export interface PendingInput {
   kind: "message";
   state: "queued" | "delivering";
   delivered_text: string;
+  /** Set when the sender asked to join the turn that is running. */
+  payload?: { steer?: boolean };
 }
 
 export interface DeliveryDeps {

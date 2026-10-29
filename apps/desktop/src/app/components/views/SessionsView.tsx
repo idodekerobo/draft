@@ -1,7 +1,8 @@
 // SessionsView.tsx — live Claude Code sessions of the workspace
 
 import { useEffect, useState } from "react";
-import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type StartRequest, type StartResult } from "draft-shared-ui";
+import { isTestedVersion } from "draft-core/harnesses";
+import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
@@ -69,12 +70,25 @@ export function SessionsView() {
   const [startedId, setStartedId] = useState<string | null>(null);
   const [recentFolders, setRecentFolders] = useState(() => readRecentFolders(window.localStorage));
 
+  const [availability, setAvailability] = useState<Partial<Record<string, HarnessProblem>>>({});
+  useEffect(() => {
+    void rpc.request.getAvailableRunners().then(({ runners }) => {
+      const next: Partial<Record<string, HarnessProblem>> = {};
+      for (const runner of runners) {
+        if (!runner.installed) next[runner.name] = "missing";
+        else if (runner.auth === "signed_out") next[runner.name] = "signed_out";
+        else if (isTestedVersion(runner.name, runner.version) === false) next[runner.name] = "untested_version";
+      }
+      setAvailability(next);
+    }).catch(() => {});
+  }, []);
+
   async function browse(): Promise<string | null> {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
   async function start({ harness, folderPath, text, model }: StartRequest): Promise<StartResult> {
-    const result = await rpc.request.startLiveSession({ folderPath, model });
+    const result = await rpc.request.startLiveSession({ harness, folderPath, model });
     if (!result.ok) return result;
     track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default" });
     setRecentFolders(rememberFolder(window.localStorage, folderPath));
@@ -96,7 +110,7 @@ export function SessionsView() {
       onNew={() => setSelectedId(null)}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen availability={availability} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

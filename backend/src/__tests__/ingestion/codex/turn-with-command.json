@@ -1,0 +1,125 @@
+[
+ {
+  "method": "item/completed",
+  "params": {
+   "item": {
+    "type": "userMessage",
+    "id": "01a1888e-b6cc-7ca0-aabc-6cc81ed34f71",
+    "clientId": null,
+    "content": [
+     {
+      "type": "text",
+      "text": "Run the shell command `touch spike-file.txt` in the current directory, then reply with the word done.",
+      "text_elements": []
+     }
+    ]
+   },
+   "threadId": "01a1888e-ac49-72b3-a21c-d1d55f3b4a17",
+   "turnId": "01a1888e-af76-72a3-b914-1dd147b2df81",
+   "completedAtMs": 1793292416717
+  }
+ },
+ {
+  "method": "item/completed",
+  "params": {
+   "item": {
+    "type": "reasoning",
+    "id": "rs_0d8517b86d09e306016ae37881fa54819596ca79fcabde04d1",
+    "summary": [],
+    "content": []
+   },
+   "threadId": "01a1888e-ac49-72b3-a21c-d1d55f3b4a17",
+   "turnId": "01a1888e-af76-72a3-b914-1dd147b2df81",
+   "completedAtMs": 1793292417905
+  }
+ },
+ {
+  "method": "item/completed",
+  "params": {
+   "item": {
+    "type": "agentMessage",
+    "id": "msg_0d8517b86d09e306016ae3788208bc8195854d92f7df939899",
+    "text": "I\u2019m creating `spike-file.txt` in the current directory now.",
+    "phase": "commentary",
+    "memoryCitation": null,
+    "delivery": null,
+    "questions": null
+   },
+   "threadId": "01a1888e-ac49-72b3-a21c-d1d55f3b4a17",
+   "turnId": "01a1888e-af76-72a3-b914-1dd147b2df81",
+   "completedAtMs": 1793292418195
+  }
+ },
+ {
+  "method": "item/completed",
+  "params": {
+   "item": {
+    "type": "commandExecution",
+    "id": "exec-c3a05eef-59a9-4259-a482-3b913ec69d9c",
+    "pluginId": null,
+    "scriptPath": null,
+    "command": "/bin/zsh -lc 'touch spike-file.txt'",
+    "cwd": "/work/project",
+    "processId": "27707",
+    "source": "unifiedExecStartup",
+    "status": "completed",
+    "commandActions": [
+     {
+      "type": "unknown",
+      "command": "touch spike-file.txt"
+     }
+    ],
+    "aggregatedOutput": null,
+    "exitCode": 0,
+    "durationMs": 0
+   },
+   "threadId": "01a1888e-ac49-72b3-a21c-d1d55f3b4a17",
+   "turnId": "01a1888e-af76-72a3-b914-1dd147b2df81",
+   "completedAtMs": 1793292421376
+  }
+ },
+ {
+  "method": "item/completed",
+  "params": {
+   "item": {
+    "type": "agentMessage",
+    "id": "msg_0d8517b86d09e306016ae3788643888195875824c9bab2a8d7",
+    "text": "done",
+    "phase": "final_answer",
+    "memoryCitation": null,
+    "delivery": null,
+    "questions": null
+   },
+   "threadId": "01a1888e-ac49-72b3-a21c-d1d55f3b4a17",
+   "turnId": "01a1888e-af76-72a3-b914-1dd147b2df81",
+   "completedAtMs": 1793292422274
+  }
+ },
+ {
+  "method": "turn/completed",
+  "params": {
+   "threadId": "01a1888e-ac49-72b3-a21c-d1d55f3b4a17",
+   "turn": {
+    "id": "01a1888e-af76-72a3-b914-1dd147b2df81",
+    "rootTurnId": "01a1888e-af76-72a3-b914-1dd147b2df81",
+    "items": [
+     {
+      "type": "agentMessage",
+      "id": "msg_0d8517b86d09e306016ae3788643888195875824c9bab2a8d7",
+      "text": "done",
+      "phase": "final_answer",
+      "memoryCitation": null,
+      "delivery": null,
+      "questions": null
+     }
+    ],
+    "itemsView": "summary",
+    "status": "completed",
+    "error": null,
+    "startedAt": 1793292414,
+    "completedAt": 1793292422,
+    "durationMs": 7440
+   }
+  }
+ }
+]

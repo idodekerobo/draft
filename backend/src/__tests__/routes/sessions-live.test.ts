@@ -266,6 +266,19 @@ describe("live session routes", () => {
     expect(body.inputs.map((i) => [i.id, i.mine, i.text])).toEqual([["mine", true, "hi"], ["theirs", false, "hi"]]);
   });
 
+  it("stores the harness and model of a new session and rejects unknown ones", async () => {
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "claude", model: "haiku" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ harness: "claude", model: "haiku" });
+
+    await routes.CREATE(post("/x", { hostMachineId: "host-1" }, { id: WS }));
+    expect(inserted.at(-1)).toMatchObject({ harness: "claude" });
+
+    const unknownHarness = await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "gemini" }, { id: WS }));
+    expect(unknownHarness.status).toBe(400);
+    expect(((await unknownHarness.json()) as { error: string }).error).toBe("unknown_harness");
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", model: "gpt-5; rm -rf /" }, { id: WS }))).status).toBe(400);
+  });
+
   it("fails the queued messages of a cleared session with their own reason", async () => {
     await routes.END(post("/x", { hostMachineId: "host-1", reason: "cleared" }));
     expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_cleared" });
@@ -299,6 +312,30 @@ describe("live session routes", () => {
     expect(ok.status).toBe(200);
     expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
     expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_ended" });
+  });
+
+  it("reopens an ended session as the same session, only on its own host", async () => {
+    tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "exited", ended_at: "t" })];
+    expect((await routes.REOPEN(post("/x", { hostMachineId: "host-2" }))).status).toBe(403);
+    const ok = await routes.REOPEN(post("/x", { hostMachineId: "host-1" }));
+    expect(ok.status).toBe(200);
+    expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "live", ended_at: null, end_reason: null });
+    expect(inserted).toEqual([]);
+  });
+
+  it("does not reopen a session that was cleared, a routine run, or one that is not ended", async () => {
+    tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "cleared" })];
+    const cleared = await routes.REOPEN(post("/x", { hostMachineId: "host-1" }));
+    expect(cleared.status).toBe(409);
+    expect(((await cleared.json()) as { error: string }).error).toBe("session_cleared");
+
+    tables.sessions = [session({ status: "ended", session_type: "routine" })];
+    expect((await routes.REOPEN(post("/x", { hostMachineId: "host-1" }))).status).toBe(409);
+
+    tables.sessions = [session({ session_type: "interactive", status: "live" })];
+    updates = [];
+    expect((await routes.REOPEN(post("/x", { hostMachineId: "host-1" }))).status).toBe(200);
+    expect(updates).toEqual([]);
   });
 
   it("turns an oversize item into a note and records an error without a body", async () => {

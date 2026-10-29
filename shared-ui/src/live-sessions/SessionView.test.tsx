@@ -44,6 +44,64 @@ describe("SessionView", () => {
     expect(container.querySelector(".ui-stream__item--assistant .ui-stream__who")).toBeNull();
   });
 
+  it("names the harness and model in the header, and shows no Claude version warning for a Codex session", async () => {
+    const codex: LiveSession = { ...session, harness: "codex", model: "gpt-6-luna", harness_version: "0.165.0" };
+    const { container } = render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: codex, events: [], inputs: [] }) }} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    const lines = [...container.querySelectorAll(".ui-session__meta")].map((line) => line.textContent);
+    expect(lines[0]).toContain("Maya");
+    expect(lines[1]).toBe("Codex · GPT-6-Luna");
+    expect(screen.queryByText(/Draft was tested with/)).toBeNull();
+  });
+
+  it("offers Send now on the caller's own busy-queued message in a session that can steer, and not in one that cannot", async () => {
+    const waiting = { id: "i1", author_user_id: "u9", author_name: "Dev", text: "also run lint", state: "queued" as const, reason: "composer_busy", created_at: "2026-10-27T00:00:00Z", updated_at: "", mine: true };
+    const actOnInput = mock(async () => {});
+    const withSession = (live: LiveSession) => ({ ...api, actOnInput, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [waiting] }) });
+
+    render(<SessionView api={withSession({ ...session, harness: "codex" })} sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Send now" }));
+    await waitFor(() => expect(actOnInput).toHaveBeenCalledWith("s1", "i1", "steer"));
+    expect(screen.getByText("Queued, Codex is working")).toBeTruthy();
+    cleanup();
+
+    render(<SessionView api={withSession({ ...session, harness: "claude" })} sessionId="s1" />);
+    await screen.findByText(/typing in the terminal/);
+    expect(screen.queryByRole("button", { name: "Send now" })).toBeNull();
+  });
+
+  it("shows the link action as an icon with a label", async () => {
+    render(<SessionView api={api} sessionId="s1" shareBaseUrl="https://draft.test" />);
+    const button = await screen.findByRole("button", { name: "Copy link" });
+    expect(button.textContent).toBe("");
+  });
+
+  it("offers Resume to the owner of an ended session, shows why it failed, and hides it from others and for a cleared one", async () => {
+    const ended: LiveSession = { ...session, status: "ended", mine: true, end_reason: "exited" };
+    const resume = mock(async () => { throw new Error("This session ran on another computer. Resume it there."); });
+    const withSession = (live: LiveSession, extra: Partial<LiveSessionsApi> = {}) => ({ ...api, ...extra, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [] }) });
+
+    render(<SessionView api={withSession(ended, { resume })} sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(resume).toHaveBeenCalledWith("s1"));
+    expect((await screen.findByRole("alert")).textContent).toContain("another computer");
+    cleanup();
+
+    render(<SessionView api={withSession({ ...ended, mine: false }, { resume })} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withSession({ ...ended, end_reason: "cleared" }, { resume })} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withSession(ended)} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+
   it("puts menu actions behind a menu button and closes it on Escape", async () => {
     let opened = 0;
     render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} menuItems={() => [{ label: "Open in Terminal", onSelect: () => opened++ }]} />);

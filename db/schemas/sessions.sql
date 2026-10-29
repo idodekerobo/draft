@@ -4,7 +4,7 @@ create table sessions (
   owner_user_id      uuid not null references users(id) on delete cascade,
   session_type       text not null default 'interactive'
                        check (session_type in ('interactive', 'routine')),
-  harness            text not null default 'claude' check (harness in ('claude')),
+  harness            text not null default 'claude',
   model              text,
   native_session_id  text,
   previous_session_id uuid references sessions(id) on delete set null,

@@ -13,6 +13,12 @@ import {
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
+import { findRunnerBin } from "./main/host/find-bin";
+import { runningCodexTurns } from "./main/host/codex/codex-driver";
+import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
+import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "./main/host/codex/codex-login";
+import { readClaudeAuth } from "./main/host/claude-check";
+import { readClaudeVersion } from "./main/host/version-check";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
@@ -40,6 +46,7 @@ import {
   hostedLiveSessionIds,
   listLiveSessions,
   openLiveSessionInTerminal,
+  resumeLiveSession,
   resumeLiveSessions,
   sendLiveSessionMessage,
   startLiveSession,
@@ -129,42 +136,6 @@ const _calUrl              = process.env.DRAFT_CAL_URL                 ?? "";
 // On failure, abort startup and preserve the recoverable pre-migration files.
 await runMigrations();
 
-// ── Runner detection ──────────────────────────────────────────────────────────
-//
-// macOS GUI apps get a stripped PATH. We cannot use `which` or shell resolution
-// reliably — ~/.local/bin and nvm paths are typically set in .zshrc (interactive
-// shells only), not .zprofile (login shells). Instead we check known installation
-// paths directly with existsSync, which works regardless of shell configuration.
-
-async function findRunnerBin(name: string): Promise<string | null> {
-  const HOME = process.env.HOME ?? "";
-
-  // Check known installation paths — no PATH or subprocess needed.
-  const knownPaths = [
-    `${HOME}/.local/bin/${name}`,          // official Claude Code installer default
-    `/usr/local/bin/${name}`,              // npm global with default prefix
-    `/opt/homebrew/bin/${name}`,           // Homebrew-managed
-    `${HOME}/.npm-global/bin/${name}`,     // custom npm prefix
-  ];
-  for (const p of knownPaths) {
-    if (existsSync(p)) return p;
-  }
-
-  // Fallback: nvm — scan installed node versions for the binary.
-  const nvmDir = `${HOME}/.nvm/versions/node`;
-  if (existsSync(nvmDir)) {
-    try {
-      const versions = (await import("fs")).readdirSync(nvmDir);
-      for (const v of versions.reverse()) { // newest first
-        const p = `${nvmDir}/${v}/bin/${name}`;
-        if (existsSync(p)) return p;
-      }
-    } catch {}
-  }
-
-  return null;
-}
-
 // ── Application menu ───────────────────────────────────────────────────────────
 
 function setAppMenu() {
@@ -195,6 +166,22 @@ function setAppMenu() {
 
 setAppMenu();
 
+/** A Codex turn stops when Draft quits, unlike a Claude session in tmux, so a person is asked first. */
+async function confirmQuit(): Promise<boolean> {
+  const turns = runningCodexTurns();
+  if (turns === 0) return true;
+  const { response } = await Utils.showMessageBox({
+    type: "warning",
+    title: "Quit Draft",
+    message: turns === 1 ? "A Codex session is working." : `${turns} Codex sessions are working.`,
+    detail: "Codex stops when Draft quits. The conversation is kept and resumes when you open Draft again, but the work in progress is lost.",
+    buttons: ["Quit anyway", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+
 Electrobun.events.on("application-menu-clicked", (event) => {
   const { action } = (event as { data: { action: string } }).data;
 
@@ -204,7 +191,7 @@ Electrobun.events.on("application-menu-clicked", (event) => {
   }
 
   if (action === "quit-app") {
-    process.exit(0);
+    void confirmQuit().then((quit) => { if (quit) process.exit(0); });
   }
 });
 
@@ -773,7 +760,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: ({ folderPath, model }) => startLiveSession({ folderPath, model }, () => findRunnerBin("claude")),
+      startLiveSession: ({ harness, folderPath, model }) => startLiveSession({ harness, folderPath, model }),
 
       pollLiveSessionPresence: ({ sessionId, viewerId, viewerName }) => ({ names: presenceHub.poll(sessionId, { id: viewerId, name: viewerName }) }),
 
@@ -791,19 +778,33 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
 
+      resumeLiveSession: ({ sessionId }) => resumeLiveSession(sessionId),
+
       getHostedLiveSessionIds: () => hostedLiveSessionIds(),
 
       openLiveSessionInTerminal: ({ sessionId }) => openLiveSessionInTerminal(sessionId),
 
+      getCodexStatus: () => getCodexStatus(),
+
+      startCodexLogin: ({ deviceCode }) => startCodexLogin({ deviceCode }),
+
+      cancelCodexLogin: () => cancelCodexLogin(),
+
+      codexLogout: () => codexLogout(),
+
       getAvailableRunners: async () => {
-        const [claudePath, codexPath] = await Promise.all([
-          findRunnerBin("claude"),
-          findRunnerBin("codex"),
+        const claudePath = findRunnerBin("claude");
+        const codexPath = findRunnerBin("codex");
+        const [claudeAuth, claudeVersion, codexAuth, codexVersion] = await Promise.all([
+          claudePath ? readClaudeAuth(claudePath) : ("unknown" as const),
+          claudePath ? readClaudeVersion(claudePath) : null,
+          codexPath ? readCodexAuth(codexPath) : ("unknown" as const),
+          codexPath ? readCodexVersion(codexPath) : null,
         ]);
         return {
           runners: [
-            { name: "claude" as const, installed: claudePath !== null },
-            { name: "codex" as const, installed: codexPath !== null },
+            { name: "claude" as const, installed: claudePath !== null, auth: claudeAuth, version: claudeVersion },
+            { name: "codex" as const, installed: codexPath !== null, auth: codexAuth, version: codexVersion },
           ],
         };
       },

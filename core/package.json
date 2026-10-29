@@ -9,6 +9,7 @@
     "./github-install-poll":  "./src/github-install-poll.ts",
     "./exec":                 "./src/exec.ts",
     "./live-sessions":        "./src/live-sessions.ts",
+    "./harnesses":            "./src/harnesses.ts",
     "./appState":             "./src/appState.ts",
     "./proposals":            "./src/proposals.ts",
     "./maintainer":           "./src/maintainer.ts",

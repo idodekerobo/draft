@@ -5,7 +5,7 @@
 // GUI_PATH is a broader fallback that covers common system binary locations.
 //
 // For user-installed tools (claude, codex), do NOT rely on PATH or shell
-// resolution. Use findRunnerBin() in index.ts which checks existsSync on
+// resolution. Use findRunnerBin() in main/host/find-bin.ts which checks existsSync on
 // known installation paths — works regardless of how the user's shell is
 // configured and without spawning any subprocesses.
 //

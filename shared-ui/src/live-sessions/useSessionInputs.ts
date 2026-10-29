@@ -11,7 +11,7 @@ import type { ComposerInput, LiveSessionInput, LiveSessionsApi } from "./types";
 export interface SessionInputsState {
   inputs: ComposerInput[];
   send(text: string): Promise<void>;
-  act(inputId: string, action: "resend" | "dismiss"): Promise<void>;
+  act(inputId: string, action: "resend" | "dismiss" | "steer"): Promise<void>;
 }
 
 interface SendVariables {
@@ -91,7 +91,7 @@ export function useSessionInputs(api: LiveSessionsApi, sessionId: string, inputs
   const send = useCallback((text: string) => mutateAsync({ localId: `local-${++localSeq}`, text, sentAt: Date.now() }), [mutateAsync]);
 
   const act = useCallback(
-    async (inputId: string, action: "resend" | "dismiss") => {
+    async (inputId: string, action: "resend" | "dismiss" | "steer") => {
       await api.actOnInput(sessionId, inputId, action);
       await refresh();
     },

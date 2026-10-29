@@ -19,6 +19,12 @@ describe("sessionBanner", () => {
     expect(sessionBanner({ ...base, harness_version: "2.2.0", status: "ended" })).toBeNull();
   });
 
+  it("checks a Codex session against the Codex version, never the Claude one", () => {
+    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.165.0" })).toBeNull();
+    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.170.0" })).toContain("Codex 0.170.0");
+    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.170.0" })).toContain("0.165.x");
+  });
+
   it("puts Host offline before the version warning", () => {
     expect(sessionBanner({ ...base, status: "host_offline", harness_version: "2.2.0" })).toContain("offline");
   });

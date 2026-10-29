@@ -1,3 +1,5 @@
+import type { HarnessId } from "draft-core/harnesses";
+
 export type RoutinePreset = "draft_default" | "hourly" | "daily" | "weekdays" | "weekly" | "custom";
 export type RoutineWeekday = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
 
@@ -20,8 +22,8 @@ export interface RoutineRun {
 /** Set only on agent routines. */
 export interface AgentRoutine {
   prompt: string;
-  harness: "claude";
-  /** Alias for `claude --model`; null for the harness default. */
+  harness: HarnessId;
+  /** Alias the harness CLI takes as its model; null for the harness default. */
   model: string | null;
   createdByName: string | null;
   lastRun: RoutineRun | null;
@@ -65,7 +67,7 @@ export type RoutinePatch =
 export interface CreateRoutineInput {
   title: string;
   prompt: string;
-  harness: "claude";
+  harness: HarnessId;
   model: string | null;
   preset: Exclude<RoutinePreset, "custom" | "draft_default">;
   time?: string;

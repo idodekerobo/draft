@@ -335,7 +335,7 @@ export type AppRPCType = {
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
       /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
-      startLiveSession: { params: { folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
+      startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
 
       /** The other people watching a live session. Ask every few seconds while the session is open. */
       pollLiveSessionPresence: { params: { sessionId: string; viewerId: string; viewerName: string }; response: { names: string[] } };
@@ -350,7 +350,7 @@ export type AppRPCType = {
       sendLiveSessionMessage: { params: { sessionId: string; text: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Resend or dismiss a message that may not have arrived. */
-      actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" }; response: void };
+      actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" | "steer" }; response: void };
 
       /** Allow or deny an open permission request of a live session. */
       decideLiveSessionApproval: {
@@ -364,6 +364,9 @@ export type AppRPCType = {
       /** End a live session that runs on this computer. */
       endLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
+      /** Start an ended session of the owner again on this computer. */
+      resumeLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+
       /** Ids of the live sessions that run on this computer. */
       getHostedLiveSessionIds: { params: void; response: string[] };
 
@@ -371,7 +374,13 @@ export type AppRPCType = {
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Detect which CLI runners are installed. */
-      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean }> } };
+      /** Whether Codex is installed and signed in on this computer. */
+      getCodexStatus: { params: void; response: { installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null } };
+      /** Opens the browser sign-in, or with `deviceCode` returns a link and a one-time code to enter there. The caller polls getCodexStatus. */
+      startCodexLogin: { params: { deviceCode: boolean }; response: { ok: true; deviceUrl?: string; deviceCode?: string } | { ok: false; error: string } };
+      cancelCodexLogin: { params: void; response: void };
+      codexLogout: { params: void; response: { ok: true } | { ok: false; error: string } };
+      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
       getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };
