@@ -14,7 +14,6 @@ create table workspaces (
   runs_enabled                 boolean not null default true,
   max_runs_per_day             integer check (max_runs_per_day > 0),
   max_cost_usd_per_day         numeric(10, 2),
-  live_sessions_enabled        boolean not null default false,
   created_at                   timestamptz not null default now(),
   updated_at                   timestamptz not null default now(),
 
