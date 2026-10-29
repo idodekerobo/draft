@@ -9,6 +9,7 @@ import { shellQuote } from "../launch";
 import { COMMAND_APPROVAL, FILE_CHANGE_APPROVAL, approvalDecision, approvalPayload } from "./approvals";
 import { startAppServer, type AppServer } from "./app-server-process";
 import { CODEX_MISSING_MESSAGE, CODEX_SIGNED_OUT_MESSAGE, readCodexAuth, readCodexVersion } from "./codex-check";
+import { codexPollMs } from "./poll-interval";
 import { RpcClient, type RpcHandlers } from "./rpc-client";
 
 const THREAD_FILE = "thread";
@@ -135,6 +136,7 @@ export class CodexDriver implements HarnessDriver {
   private reported = new Map<string, string>();
   private readonly steerFailed = new Set<string>();
   private halted = false;
+  private lastActivityAt = Date.now();
   private attaching = false;
   private attachFailed = false;
   private respawned = false;
@@ -215,6 +217,7 @@ export class CodexDriver implements HarnessDriver {
       return;
     }
     if (p.threadId !== connection.threadId) return;
+    this.lastActivityAt = Date.now();
     if (method === "turn/started") {
       connection.busy = true;
       connection.turnId = p.turn?.id ?? connection.turnId;
@@ -362,6 +365,7 @@ export class CodexDriver implements HarnessDriver {
   private async deliver(connection: CodexConnection, messages: PendingInput[]): Promise<void> {
     const queued = messages.filter((i) => i.state === "queued");
     if (queued.length === 0) return;
+    this.lastActivityAt = Date.now();
     if (connection.busy) {
       for (const input of queued) {
         if (this.reported.get(input.id) === "composer_busy") continue;
@@ -396,6 +400,10 @@ export class CodexDriver implements HarnessDriver {
       this.reported.delete(input.id);
       await this.host.setInputState(input.id, ["delivering"], "queued", "composer_busy").catch(() => {});
     }
+  }
+
+  pollMs(): number {
+    return codexPollMs({ busy: this.connection?.busy ?? false, lastActivityAt: this.lastActivityAt, now: Date.now() });
   }
 
   rotationTarget(): string | null {

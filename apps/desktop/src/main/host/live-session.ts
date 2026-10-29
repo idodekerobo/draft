@@ -28,7 +28,7 @@ class SessionRunner {
   private endReason = "exited";
   private uploading = false;
   private uploadWanted = false;
-  private watcher: ReturnType<typeof setInterval> | null = null;
+  private watcher: ReturnType<typeof setTimeout> | null = null;
   private stepping = false;
   private finished = false;
   private readonly base: string;
@@ -81,8 +81,16 @@ class SessionRunner {
       this.stopHeartbeat = startHeartbeat(() => this.sendHeartbeat());
       this.driver.start();
     }
-    this.watcher = setInterval(() => void this.step(), PANE_WATCH_MS);
+    this.scheduleStep();
     running.set(this.state.sessionId, this);
+  }
+
+  /** The next pass comes after the time the driver asks for, so an active session is picked up faster. */
+  private scheduleStep(): void {
+    if (this.finished) return;
+    this.watcher = setTimeout(() => {
+      void this.step().finally(() => this.scheduleStep());
+    }, this.driver.pollMs?.() ?? PANE_WATCH_MS);
   }
 
   private async sendHeartbeat(): Promise<void> {
@@ -108,7 +116,7 @@ class SessionRunner {
     this.finished = true;
     this.stopHeartbeat?.();
     this.driver.dispose();
-    if (this.watcher) clearInterval(this.watcher);
+    if (this.watcher) clearTimeout(this.watcher);
     running.delete(this.state.sessionId);
   }
 
@@ -116,7 +124,7 @@ class SessionRunner {
     this.finished = true;
     this.stopHeartbeat?.();
     this.driver.dispose();
-    if (this.watcher) clearInterval(this.watcher);
+    if (this.watcher) clearTimeout(this.watcher);
     running.delete(this.state.sessionId);
     deleteState(this.state.sessionId);
   }

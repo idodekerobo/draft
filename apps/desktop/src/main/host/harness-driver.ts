@@ -37,6 +37,8 @@ export interface HarnessDriver {
   flush(): Promise<boolean>;
   /** One pass while the process runs: control actions and message delivery. */
   serve(inputs: HostInput[]): Promise<void>;
+  /** Milliseconds to wait before the next pass. A driver without it uses the runner's default. */
+  pollMs?(): number;
   /** The native session id the pane moved to after /clear or /fork, or null. */
   rotationTarget(): string | null;
   clearRotation(): void;
