@@ -15,6 +15,8 @@ function queryBuilder(table: string) {
     select: () => builder,
     eq: (col: string, value: unknown) => (eqs.push([col, value]), builder),
     in: (col: string, values: unknown[]) => (ins.push([col, values]), builder),
+    is: () => builder,
+    order: () => builder,
     async maybeSingle() {
       return { data: matches()[0] ?? null, error: null };
     },
@@ -106,8 +108,28 @@ describe("Stop", () => {
 
     tables.session_inputs = [{ session_id: SESSION, workspace_id: WS, kind: "stop", state: "queued" }];
     const second = await routes.STOP(request("/x", {}));
-    expect(await second.json()).toEqual({ ok: true, already_requested: true });
+    expect(await second.json()).toEqual({ ok: true, already_requested: true, withdrawn: [] });
     expect(rpcCalls.length).toBe(1);
+  });
+
+  it("withdraws only the caller's queued messages, oldest first", async () => {
+    tables.session_inputs = [
+      { id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } },
+      { id: "b", session_id: SESSION, workspace_id: WS, author_user_id: "user-9", kind: "message", state: "queued", payload: { text: "theirs" } },
+      { id: "c", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "delivering", payload: { text: "sent" } },
+    ];
+    rpcResult = { data: true, error: null };
+    const res = await routes.STOP(request("/x", {}));
+    expect(await res.json()).toEqual({ ok: true, withdrawn: [{ id: "a", text: "one" }] });
+    expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "a", p_from: ["queued"], p_to: "cancelled" });
+    expect(rpcCalls[1]!.args).toMatchObject({ p_kind: "stop" });
+  });
+
+  it("leaves a message the host claimed first", async () => {
+    tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
+    rpcResult = { data: false, error: null };
+    const res = await routes.STOP(request("/x", {}));
+    expect(((await res.json()) as { withdrawn: unknown[] }).withdrawn).toEqual([]);
   });
 });
 

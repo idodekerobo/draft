@@ -360,7 +360,7 @@ export interface SessionEventRow {
 }
 
 export type SessionInputKind = "message" | "permission_decision" | "stop" | "end";
-export type SessionInputState = "queued" | "delivering" | "consumed" | "failed" | "uncertain";
+export type SessionInputState = "queued" | "delivering" | "consumed" | "failed" | "uncertain" | "cancelled";
 
 export interface SessionInputRow {
   id: string;

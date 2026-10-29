@@ -8,7 +8,7 @@ create table session_inputs (
                     check (kind in ('message', 'permission_decision', 'stop', 'end')),
   payload         jsonb not null default '{}',
   state           text not null default 'queued'
-                    check (state in ('queued', 'delivering', 'consumed', 'failed', 'uncertain')),
+                    check (state in ('queued', 'delivering', 'consumed', 'failed', 'uncertain', 'cancelled')),
   -- Why a queued input waits, or why a failed input failed.
   reason          text,
   consumed_seq    bigint,

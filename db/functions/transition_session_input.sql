@@ -1,6 +1,6 @@
 -- Input states:
 --   queued -> delivering -> consumed
---   queued -> queued (a new reason) | failed
+--   queued -> queued (a new reason) | failed | cancelled
 --   delivering -> uncertain | failed | consumed
 --   uncertain -> consumed
 -- Moves one input to a new state only if it is in one of the p_from states.
@@ -32,7 +32,7 @@ begin
   end if;
 
   if not (
-    (v_state = 'queued' and p_to in ('queued', 'delivering', 'failed'))
+    (v_state = 'queued' and p_to in ('queued', 'delivering', 'failed', 'cancelled'))
     or (v_state = 'delivering' and p_to in ('uncertain', 'failed', 'consumed'))
     or (v_state = 'uncertain' and p_to = 'consumed')
   ) then

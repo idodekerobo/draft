@@ -41,11 +41,51 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
   return Response.json({ ok: false, error: "request_closed", reason: result.reason ?? null }, { status: 409 });
 });
 
-/** Any member can ask the host to interrupt the running turn. A second Stop while one waits does nothing. */
+/** The caller's own messages that Claude has not taken yet. Stop pulls them back so the sender can edit them. */
+async function withdrawQueuedMessages(workspaceId: string, sessionId: string, userId: string): Promise<{ id: string; text: string }[]> {
+  const { data, error } = await serviceClient
+    .from("session_inputs")
+    .select("id, payload")
+    .eq("session_id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .eq("author_user_id", userId)
+    .eq("kind", "message")
+    .eq("state", "queued")
+    .is("dismissed_at", null)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  const withdrawn: { id: string; text: string }[] = [];
+  for (const row of (data ?? []) as Pick<SessionInputRow, "id" | "payload">[]) {
+    const { data: changed, error: transitionError } = await serviceClient.rpc("transition_session_input", {
+      p_input_id: row.id,
+      p_session_id: sessionId,
+      p_from: ["queued"],
+      p_to: "cancelled",
+      p_reason: null,
+      p_consumed_seq: null,
+    });
+    if (transitionError) throw transitionError;
+    if (changed === true) withdrawn.push({ id: row.id, text: typeof row.payload.text === "string" ? row.payload.text : "" });
+  }
+  return withdrawn;
+}
+
+/**
+ * Any member can ask the host to interrupt the running turn. A second Stop while one waits does nothing.
+ * The caller's own queued messages are withdrawn and returned; the host may claim one first, and then it is sent.
+ */
 export const STOP = withAuth<StopRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+
+  let withdrawn: { id: string; text: string }[];
+  try {
+    withdrawn = await withdrawQueuedMessages(workspaceId, sessionId, caller.userId);
+  } catch (error) {
+    return errorResponse("stop_failed", 500, error, workspaceId, sessionId);
+  }
 
   const { data: waiting, error: waitingError } = await serviceClient
     .from("session_inputs")
@@ -55,7 +95,7 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
     .eq("kind", "stop")
     .in("state", ["queued", "delivering"]);
   if (waitingError) return errorResponse("stop_failed", 500, waitingError, workspaceId, sessionId);
-  if (((waiting ?? []) as Pick<SessionInputRow, "id">[]).length > 0) return Response.json({ ok: true, already_requested: true });
+  if (((waiting ?? []) as Pick<SessionInputRow, "id">[]).length > 0) return Response.json({ ok: true, already_requested: true, withdrawn });
 
   const { error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
@@ -66,7 +106,7 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
     p_payload: {},
   });
   if (error) return knownDbError(error.message) ?? errorResponse("stop_failed", 500, error, workspaceId, sessionId);
-  return Response.json({ ok: true }, { status: 201 });
+  return Response.json({ ok: true, withdrawn }, { status: 201 });
 });
 
 type HostEvent = { sourceId: string; kind: string; payload: Record<string, unknown> };
