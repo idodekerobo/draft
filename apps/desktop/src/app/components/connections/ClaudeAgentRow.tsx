@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRoutineAgents } from "../../hooks/useRoutineAgents";
 import { rpc } from "../../rpc";
 import { AgentRow, type AgentLine } from "./AgentRow";
@@ -10,6 +10,8 @@ type LocalStatus = { installed: boolean; auth: "signed_in" | "signed_out" | "unk
 export function ClaudeAgentRow() {
   const [local, setLocal] = useState<LocalStatus>(null);
   const [entering, setEntering] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const wasEntering = useRef(false);
   const { status, refresh } = useRoutineAgents();
   const routinesStatus = status("claude");
 
@@ -19,6 +21,12 @@ export function ClaudeAgentRow() {
       setLocal(claude ? { installed: claude.installed, auth: claude.auth } : null);
     }).catch(() => {});
   }, []);
+
+  // Closing the form gives focus back to the button that opened it.
+  useEffect(() => {
+    if (wasEntering.current && !entering) trigger.current?.focus();
+    wasEntering.current = entering;
+  }, [entering]);
 
   // Signing in happens in Claude Code's own terminal app, so the sessions line has no action.
   const sessionsLine: AgentLine = {
@@ -39,10 +47,10 @@ export function ClaudeAgentRow() {
       : routinesStatus === "needs_reconnect" ? "The token stopped working. Paste a new one."
       : "Not connected. Run claude setup-token in a terminal and paste the token. Everyone in this workspace shares it.",
     extra: entering && (
-      <ClaudeTokenForm onSaved={() => { setEntering(false); refresh(); }} onCancel={() => setEntering(false)} />
+      <ClaudeTokenForm autoFocus onSaved={() => { setEntering(false); refresh(); }} onCancel={() => setEntering(false)} />
     ),
     actions: routinesStatus && !entering && (
-      <button type="button" className="settings__action-button" onClick={() => setEntering(true)}>{routinesStatus === "not_connected" ? "Connect" : "Replace token"}</button>
+      <button ref={trigger} type="button" className="settings__action-button" onClick={() => setEntering(true)}>{routinesStatus === "not_connected" ? "Connect" : "Replace token"}</button>
     ),
   };
 

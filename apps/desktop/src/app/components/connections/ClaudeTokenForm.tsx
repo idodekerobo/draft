@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { rpc } from "../../rpc";
 
 /** Saves the Claude token the workspace's routines run with. People make one with `claude setup-token`. */
-export function ClaudeTokenForm({ onSaved, onCancel }: { onSaved: () => void; onCancel?: () => void }) {
+export function ClaudeTokenForm({ onSaved, onCancel, autoFocus }: { onSaved: () => void; onCancel?: () => void; autoFocus?: boolean }) {
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +33,7 @@ export function ClaudeTokenForm({ onSaved, onCancel }: { onSaved: () => void; on
         placeholder="Paste the token from claude setup-token"
         value={token}
         disabled={saving}
+        autoFocus={autoFocus}
         onChange={(event) => setToken(event.target.value)}
       />
       <button type="submit" className="ui-btn ui-btn--primary" disabled={saving || !token.trim()}>{saving ? "Saving…" : "Save token"}</button>

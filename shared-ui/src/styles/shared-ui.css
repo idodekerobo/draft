@@ -879,7 +879,10 @@
 .ui-start__folder-button { display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px 4px; background: none; border: 0; border-radius: var(--radius-sm); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
 .ui-start__menu { left: 0; right: auto; top: calc(100% + 4px); min-width: 260px; max-width: 420px; }
 .ui-start__setup { width: 100%; max-width: 680px; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-notice); background: var(--color-bg-elevated); }
+.ui-start__setup { animation: ui-panel-enter 200ms var(--motion-ease) both; }
+@media (prefers-reduced-motion: reduce) { .ui-start__setup { animation: ui-fade-in 200ms linear; } }
 .ui-start__setup p { margin: 0; }
+.ui-start__setup .ui-muted { font-size: var(--font-size-secondary); }
 .ui-start__setup-title { font-weight: 600; }
 .ui-start__setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .ui-start__setup-actions .ui-input { flex: 1 1 220px; min-width: 0; }

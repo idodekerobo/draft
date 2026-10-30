@@ -1,11 +1,13 @@
 import { harnessInstallUrl } from "draft-core/harnesses";
 import { useEffect, useRef } from "react";
 import { useCodexConnection } from "../../hooks/useCodexConnection";
+import { useFocusOnChange } from "../../hooks/useFocusOnChange";
 import { rpc } from "../../rpc";
 
 /** Shown on the start screen when Codex is picked but not ready: install it, then sign in, without leaving the page. */
 export function CodexSetupPanel({ onStatusChange }: { onStatusChange: () => void }) {
-  const { phase, device, error, signIn, cancel } = useCodexConnection();
+  const { phase, device, error, starting, signIn, cancel } = useCodexConnection();
+  const panel = useFocusOnChange<HTMLElement>(phase === "signing_in");
   const notify = useRef(onStatusChange);
   notify.current = onStatusChange;
 
@@ -17,7 +19,7 @@ export function CodexSetupPanel({ onStatusChange }: { onStatusChange: () => void
   const installUrl = harnessInstallUrl("codex");
 
   return (
-    <section className="ui-start__setup" aria-label="Set up Codex">
+    <section ref={panel} tabIndex={-1} className="ui-start__setup" aria-label="Set up Codex" aria-live="polite">
       {phase === "not_installed" && (
         <>
           <p className="ui-start__setup-title">Codex is not installed</p>
@@ -32,8 +34,8 @@ export function CodexSetupPanel({ onStatusChange }: { onStatusChange: () => void
           <p className="ui-start__setup-title">Codex is installed. Sign in to use it.</p>
           <p className="ui-muted">Sign in with your ChatGPT account. Your ChatGPT plan works, and you do not need an API key.</p>
           <div className="ui-start__setup-actions">
-            <button type="button" className="ui-btn ui-btn--primary" onClick={() => void signIn({ deviceCode: false })}>Sign in with ChatGPT</button>
-            <button type="button" className="ui-link" onClick={() => void signIn({ deviceCode: true })}>Use a code instead</button>
+            <button type="button" className="ui-btn ui-btn--primary" disabled={starting !== null} onClick={() => void signIn({ deviceCode: false })}>{starting === "browser" ? "Opening your browser…" : "Sign in with ChatGPT"}</button>
+            <button type="button" className="ui-link" disabled={starting !== null} onClick={() => void signIn({ deviceCode: true })}>{starting === "code" ? "Getting a code…" : "Use a code instead"}</button>
           </div>
         </>
       )}

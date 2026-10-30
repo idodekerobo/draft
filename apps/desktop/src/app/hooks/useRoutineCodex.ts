@@ -18,6 +18,7 @@ const LOGIN_LIMIT_MS = 15 * 60_000;
  */
 export function useRoutineCodex(status: RoutineAgentStatus | undefined, onChanged: () => void) {
   const [signingIn, setSigningIn] = useState(false);
+  const [starting, setStarting] = useState<"browser" | "code" | null>(null);
   const [device, setDevice] = useState<DeviceCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const signingInRef = useRef(signingIn);
@@ -57,11 +58,13 @@ export function useRoutineCodex(status: RoutineAgentStatus | undefined, onChange
   async function connect(options: { deviceCode: boolean }) {
     setError(null);
     setDevice(null);
+    setStarting(options.deviceCode ? "code" : "browser");
     const result = await rpc.request.startRoutineCodexLogin(options).catch(() => ({ ok: false as const, error: "Could not start the sign-in." }));
+    setStarting(null);
     if (!result.ok) return setError(result.error);
     if (result.deviceUrl && result.deviceCode) setDevice({ url: result.deviceUrl, code: result.deviceCode });
     setSigningIn(true);
   }
 
-  return { phase, device, error, connect, cancel };
+  return { phase, device, error, starting, connect, cancel };
 }

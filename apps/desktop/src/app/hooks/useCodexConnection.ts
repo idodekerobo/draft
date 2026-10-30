@@ -16,6 +16,7 @@ export function useCodexConnection() {
   const [phase, setPhase] = useState<CodexPhase>("loading");
   const [device, setDevice] = useState<DeviceCode | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState<"browser" | "code" | null>(null);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
 
@@ -60,7 +61,9 @@ export function useCodexConnection() {
   async function signIn(options: { deviceCode: boolean }) {
     setError(null);
     setDevice(null);
+    setStarting(options.deviceCode ? "code" : "browser");
     const result = await rpc.request.startCodexLogin(options).catch(() => ({ ok: false as const, error: "Could not start the sign-in." }));
+    setStarting(null);
     if (!result.ok) {
       setError(result.error);
       await refresh();
@@ -84,5 +87,5 @@ export function useCodexConnection() {
     await refresh();
   }
 
-  return { phase, device, error, signIn, cancel, signOut };
+  return { phase, device, error, starting, signIn, cancel, signOut };
 }

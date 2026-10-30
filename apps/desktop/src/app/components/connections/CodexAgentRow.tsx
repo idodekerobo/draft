@@ -34,7 +34,7 @@ export function CodexAgentRow() {
         )}
         {sessions.phase === "signed_out" && (
           <span className="settings__row-desc">
-            <button type="button" className="ui-link" onClick={() => void sessions.signIn({ deviceCode: true })}>Use a code instead</button>
+            <button type="button" className="ui-link" disabled={sessions.starting !== null} onClick={() => void sessions.signIn({ deviceCode: true })}>{sessions.starting === "code" ? "Getting a code…" : "Use a code instead"}</button>
           </span>
         )}
       </>
@@ -43,7 +43,7 @@ export function CodexAgentRow() {
     actions: (
       <>
         {sessions.phase === "not_installed" && installUrl && <button type="button" className={ACTION} onClick={() => rpc.send.openUrl({ url: installUrl })}>Install guide</button>}
-        {sessions.phase === "signed_out" && <button type="button" className={ACTION} onClick={() => void sessions.signIn({ deviceCode: false })}>Sign in</button>}
+        {sessions.phase === "signed_out" && <button type="button" className={ACTION} disabled={sessions.starting !== null} onClick={() => void sessions.signIn({ deviceCode: false })}>{sessions.starting === "browser" ? "Opening…" : "Sign in"}</button>}
         {sessions.phase === "signing_in" && <button type="button" className={ACTION} onClick={() => void sessions.cancel()}>Cancel</button>}
         {sessions.phase === "signed_in" && <button type="button" className={ACTION} onClick={() => void sessions.signOut()}>Sign out</button>}
       </>
@@ -71,7 +71,7 @@ export function CodexAgentRow() {
         )}
         {canConnect && (
           <span className="settings__row-desc">
-            <button type="button" className="ui-link" onClick={() => void routines.connect({ deviceCode: true })}>Use a code instead</button>
+            <button type="button" className="ui-link" disabled={routines.starting !== null} onClick={() => void routines.connect({ deviceCode: true })}>{routines.starting === "code" ? "Getting a code…" : "Use a code instead"}</button>
           </span>
         )}
       </>
@@ -79,7 +79,7 @@ export function CodexAgentRow() {
     error: routines.error,
     actions: (
       <>
-        {canConnect && <button type="button" className={ACTION} onClick={() => void routines.connect({ deviceCode: false })}>{routines.phase === "not_connected" ? "Connect" : "Reconnect"}</button>}
+        {canConnect && <button type="button" className={ACTION} disabled={routines.starting !== null} onClick={() => void routines.connect({ deviceCode: false })}>{routines.starting === "browser" ? "Opening…" : routines.phase === "not_connected" ? "Connect" : "Reconnect"}</button>}
         {routines.phase === "signing_in" && <button type="button" className={ACTION} onClick={() => void routines.cancel()}>Cancel</button>}
       </>
     ),
