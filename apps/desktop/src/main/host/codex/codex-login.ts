@@ -34,9 +34,10 @@ export async function getCodexStatus(): Promise<CodexStatus> {
 /**
  * Runs `codex login`, which opens the browser, or `codex login --device-auth` for a link and a code.
  * Codex clears the stored login when a flow starts, so a flow that is cancelled leaves the person signed out.
- * The caller polls `getCodexStatus` until the login shows.
+ * The caller polls `getCodexStatus` until the login shows. With `codexHome` the login is made in that folder
+ * and the person's own login is not touched.
  */
-export async function startCodexLogin(options: { deviceCode: boolean }): Promise<CodexLoginStart> {
+export async function startCodexLogin(options: { deviceCode: boolean }, codexHome?: string): Promise<CodexLoginStart> {
   const bin = findRunnerBin("codex");
   if (!bin) return { ok: false, error: "Codex is not installed on this computer." };
   cancelCodexLogin();
@@ -45,7 +46,7 @@ export async function startCodexLogin(options: { deviceCode: boolean }): Promise
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, PATH: GUI_PATH },
+    env: { ...process.env, PATH: GUI_PATH, ...(codexHome ? { CODEX_HOME: codexHome } : {}) },
   });
   const current = { proc };
   login = current;

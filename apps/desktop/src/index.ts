@@ -17,6 +17,7 @@ import { findRunnerBin } from "./main/host/find-bin";
 import { runningCodexTurns } from "./main/host/codex/codex-driver";
 import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
 import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "./main/host/codex/codex-login";
+import { cancelRoutineCodexLogin, getRoutineCodexStatus, pollRoutineCodexLogin, startRoutineCodexLogin } from "./main/host/codex/codex-routine-login";
 import { readClaudeAuth } from "./main/host/claude-check";
 import { readClaudeVersion } from "./main/host/version-check";
 import { basename, extname, join, resolve } from "path";
@@ -791,6 +792,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       cancelCodexLogin: () => cancelCodexLogin(),
 
       codexLogout: () => codexLogout(),
+
+      getRoutineCodexStatus: () => getRoutineCodexStatus(),
+
+      startRoutineCodexLogin: ({ deviceCode }) => startRoutineCodexLogin({ deviceCode }),
+
+      pollRoutineCodexLogin: () => pollRoutineCodexLogin(),
+
+      cancelRoutineCodexLogin: () => cancelRoutineCodexLogin(),
 
       getAvailableRunners: async () => {
         const claudePath = findRunnerBin("claude");
