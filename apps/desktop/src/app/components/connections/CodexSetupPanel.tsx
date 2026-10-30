@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { useCodexConnection } from "../../hooks/useCodexConnection";
 import { useFocusOnChange } from "../../hooks/useFocusOnChange";
 import { rpc } from "../../rpc";
+import { DeviceCodeSteps } from "./DeviceCodeSteps";
 
 /** Shown on the start screen when Codex is picked but not ready: install it, then sign in, without leaving the page. */
 export function CodexSetupPanel({ onStatusChange }: { onStatusChange: () => void }) {
@@ -41,14 +42,8 @@ export function CodexSetupPanel({ onStatusChange }: { onStatusChange: () => void
       )}
       {phase === "signing_in" && (
         <>
-          <p className="ui-start__setup-title">{device ? "Open the link and enter this code" : "Finish signing in in your browser"}</p>
-          {device && (
-            <p>
-              <button type="button" className="ui-link" onClick={() => rpc.send.openUrl({ url: device.url })}>{device.url}</button>
-              {" "}
-              <code aria-label="One-time code">{device.code}</code>
-            </p>
-          )}
+          <p className="ui-start__setup-title">{device ? "Finish signing in with a code" : "Finish signing in in your browser"}</p>
+          {device && <DeviceCodeSteps url={device.url} code={device.code} />}
           <div className="ui-start__setup-actions">
             <button type="button" className="ui-btn" onClick={() => void cancel()}>Cancel</button>
           </div>

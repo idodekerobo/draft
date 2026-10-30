@@ -4,6 +4,7 @@ import { useRoutineAgents } from "../../hooks/useRoutineAgents";
 import { useRoutineCodex } from "../../hooks/useRoutineCodex";
 import { rpc } from "../../rpc";
 import { AgentRow, type AgentLine } from "./AgentRow";
+import { DeviceCodeSteps } from "./DeviceCodeSteps";
 
 const ACTION = "settings__action-button";
 
@@ -25,13 +26,7 @@ export function CodexAgentRow() {
       : "Sign in with ChatGPT to start Codex sessions from Draft.",
     extra: (
       <>
-        {sessions.device && (
-          <span className="settings__row-desc">
-            <button type="button" className="ui-link" onClick={() => rpc.send.openUrl({ url: sessions.device!.url })}>{sessions.device.url}</button>
-            {" "}
-            <code aria-label="One-time code">{sessions.device.code}</code>
-          </span>
-        )}
+        {sessions.device && <DeviceCodeSteps url={sessions.device.url} code={sessions.device.code} />}
         {sessions.phase === "signed_out" && (
           <span className="settings__row-desc">
             <button type="button" className="ui-link" disabled={sessions.starting !== null} onClick={() => void sessions.signIn({ deviceCode: true })}>{sessions.starting === "code" ? "Getting a code…" : "Use a code instead"}</button>
@@ -62,13 +57,7 @@ export function CodexAgentRow() {
       : "Finish signing in in your browser.",
     extra: (
       <>
-        {routines.device && (
-          <span className="settings__row-desc">
-            <button type="button" className="ui-link" onClick={() => rpc.send.openUrl({ url: routines.device!.url })}>{routines.device.url}</button>
-            {" "}
-            <code aria-label="One-time code">{routines.device.code}</code>
-          </span>
-        )}
+        {routines.device && <DeviceCodeSteps url={routines.device.url} code={routines.device.code} />}
         {canConnect && (
           <span className="settings__row-desc">
             <button type="button" className="ui-link" disabled={routines.starting !== null} onClick={() => void routines.connect({ deviceCode: true })}>{routines.starting === "code" ? "Getting a code…" : "Use a code instead"}</button>

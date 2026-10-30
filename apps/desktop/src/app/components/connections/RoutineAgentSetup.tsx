@@ -1,8 +1,8 @@
 import type { RoutineAgentStatus } from "draft-shared-ui";
 import { useFocusOnChange } from "../../hooks/useFocusOnChange";
 import { useRoutineCodex } from "../../hooks/useRoutineCodex";
-import { rpc } from "../../rpc";
 import { ClaudeTokenForm } from "./ClaudeTokenForm";
+import { DeviceCodeSteps } from "./DeviceCodeSteps";
 
 /** Shown in the new routine dialog when Codex is picked but not connected for routines: sign in without leaving the page. */
 export function RoutineCodexSetup({ status, refresh }: { status: RoutineAgentStatus; refresh: () => void }) {
@@ -13,14 +13,8 @@ export function RoutineCodexSetup({ status, refresh }: { status: RoutineAgentSta
     <section ref={panel} tabIndex={-1} className="ui-start__setup" aria-label="Connect Codex for routines" aria-live="polite">
       {phase === "signing_in" ? (
         <>
-          <p className="ui-start__setup-title">{device ? "Open the link and enter this code" : "Finish signing in in your browser"}</p>
-          {device && (
-            <p>
-              <button type="button" className="ui-link" onClick={() => rpc.send.openUrl({ url: device.url })}>{device.url}</button>
-              {" "}
-              <code aria-label="One-time code">{device.code}</code>
-            </p>
-          )}
+          <p className="ui-start__setup-title">{device ? "Finish signing in with a code" : "Finish signing in in your browser"}</p>
+          {device && <DeviceCodeSteps url={device.url} code={device.code} />}
           <div className="ui-start__setup-actions">
             <button type="button" className="ui-btn" onClick={() => void cancel()}>Cancel</button>
           </div>

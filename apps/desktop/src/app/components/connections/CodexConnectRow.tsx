@@ -1,6 +1,7 @@
 import { harnessInstallUrl } from "draft-core/harnesses";
 import { useCodexConnection } from "../../hooks/useCodexConnection";
 import { rpc } from "../../rpc";
+import { DeviceCodeSteps } from "./DeviceCodeSteps";
 
 /** Sign in and out of Codex from Draft. The login belongs to the person's own Codex, not to Draft. */
 export function CodexConnectRow() {
@@ -19,13 +20,7 @@ export function CodexConnectRow() {
       <div className="settings__row-content">
         <span className="settings__row-label">Codex</span>
         <span className="settings__row-desc">{description}</span>
-        {device && (
-          <span className="settings__row-desc">
-            <button type="button" className="ui-link" onClick={() => rpc.send.openUrl({ url: device.url })}>{device.url}</button>
-            {" "}
-            <code aria-label="One-time code">{device.code}</code>
-          </span>
-        )}
+        {device && <DeviceCodeSteps url={device.url} code={device.code} />}
         {phase === "signed_out" && (
           <span className="settings__row-desc">
             <button type="button" className="ui-link" onClick={() => void signIn({ deviceCode: true })}>Use a code instead</button>
