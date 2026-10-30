@@ -30,8 +30,12 @@ export function useCodexConnection() {
     }
   }, []);
 
+  // The person may install Codex or sign in in a terminal, so look again when they return to Draft.
   useEffect(() => {
     void refresh();
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
   // Codex writes the login itself once the person finishes in the browser, so the app only watches for it.
