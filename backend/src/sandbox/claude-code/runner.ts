@@ -201,12 +201,21 @@ export function sanitizedCodexEnv(env: NodeJS.ProcessEnv): Record<string, string
   return allowed;
 }
 
+/** The ids of the `agent` user. The base image gives id 1000 to `node`, so `agent` is 1001. Null when it is not listed. */
+export function parseAgentIds(passwd: string): { uid: number; gid: number } | null {
+  const fields = passwd.split("\n").find((line) => line.startsWith("agent:"))?.split(":");
+  const uid = Number(fields?.[2]);
+  const gid = Number(fields?.[3]);
+  return fields && Number.isInteger(uid) && Number.isInteger(gid) ? { uid, gid } : null;
+}
+
 /** Puts the workspace's login where Codex reads it, for the agent user alone. */
 export function prepareCodexHome(authJson: string): void {
+  const { uid, gid } = parseAgentIds(readFileSync("/etc/passwd", "utf8")) ?? { uid: AGENT_UID, gid: AGENT_GID };
   mkdirSync(CODEX_HOME, { recursive: true, mode: 0o700 });
-  chownSync(CODEX_HOME, AGENT_UID, AGENT_GID);
+  chownSync(CODEX_HOME, uid, gid);
   writeFileSync(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
-  chownSync(CODEX_AUTH_FILE, AGENT_UID, AGENT_GID);
+  chownSync(CODEX_AUTH_FILE, uid, gid);
 }
 
 /** The login file after the run. Codex rewrites it when it refreshes the login, and the backend keeps the new one. */

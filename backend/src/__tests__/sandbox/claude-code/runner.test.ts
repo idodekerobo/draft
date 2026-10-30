@@ -14,6 +14,7 @@ import {
   claudeCommandArgs,
   fetchAndWriteBundle,
   parseBatchManifest,
+  parseAgentIds,
   parseCodexResultLine,
   parseCompletedClaudeEnvelope,
   parseResultPayload,
@@ -611,5 +612,18 @@ describe("Codex routine run", () => {
     expect(routineFailureCode({ ...base, exitCode: 1, harness: "codex" })).toBe("codex_exit");
     expect(routineFailureCode({ ...base, timedOut: true, harness: "codex" })).toBe("timeout");
     expect(routineFailureCode({ ...base, resultIsError: true })).toBe("claude_error");
+  });
+});
+
+describe("the agent user's ids", () => {
+  test("reads agent's own ids, not the 1000 that the base image gives to node", () => {
+    const passwd = "root:x:0:0:root:/root:/bin/bash\nnode:x:1000:1000::/home/node:/bin/bash\nagent:x:1001:1001::/home/agent:/bin/bash\n";
+    expect(parseAgentIds(passwd)).toEqual({ uid: 1001, gid: 1001 });
+  });
+
+  test("is null when agent is not listed or the line is broken", () => {
+    expect(parseAgentIds("node:x:1000:1000::/home/node:/bin/bash\n")).toBeNull();
+    expect(parseAgentIds("agent:x:abc:def::/home/agent:/bin/bash\n")).toBeNull();
+    expect(parseAgentIds("")).toBeNull();
   });
 });
