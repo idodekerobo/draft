@@ -3,6 +3,7 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
+import { lacksRoutineLogin, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../schedules/permissions";
 import { ScheduleServiceError, createAgentRoutine, getRoutineTask, listRoutineRuns, listRoutines, updateRoutine } from "../schedules/service";
 import { validateCreate } from "../schedules/validate-create";
@@ -17,11 +18,13 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
   if (denied) return denied;
 
   try {
-    const [routines, canEdit] = await Promise.all([
+    const [routines, canEdit, agents] = await Promise.all([
       listRoutines(req.params.id),
       canEditSchedules(req.params.id, caller.userId),
+      // A failed lookup leaves the list working. The page then offers every agent as ready.
+      routineAgentStatuses(serviceClient, req.params.id).catch(() => undefined),
     ]);
-    const body = JSON.stringify({ routines, canEdit });
+    const body = JSON.stringify({ routines, canEdit, agents });
     // Browser reads carry an Origin header; only agent reads (CLI) count as agent usage.
     if (!req.headers.has("origin")) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
@@ -90,6 +93,9 @@ export const POST = withAuth<SchedulesRequest>(async (req, caller) => {
   if (!validation.ok) return Response.json({ error: "invalid_body", field: validation.field }, { status: 400 });
 
   try {
+    if (await lacksRoutineLogin(serviceClient, workspaceId, validation.config.harness)) {
+      return Response.json({ error: "codex_not_connected", field: "harness" }, { status: 409 });
+    }
     return Response.json(await createAgentRoutine(workspaceId, caller.userId, validation), { status: 201 });
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
