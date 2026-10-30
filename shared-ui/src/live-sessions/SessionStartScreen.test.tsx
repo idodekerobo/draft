@@ -84,11 +84,38 @@ describe("SessionStartScreen", () => {
     cleanup();
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ codex: "missing" }} />);
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
-    expect(screen.getByRole("menuitemradio", { name: /Codex/ }).textContent).toContain("Install");
+    expect(screen.getByRole("menuitemradio", { name: /Codex/ }).textContent).toContain("Set up");
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Codex/ }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Codex is not installed on this computer.")).toBeTruthy();
+  });
+
+  it("shows the setup help in place of the problem line while the chosen harness blocks Start", () => {
+    const { onStart } = setup();
+    cleanup();
+    const renderSetup = (harness: string) => (harness === "codex" ? <p>Set up Codex here</p> : null);
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ codex: "signed_out", claude: "missing" }} renderSetup={renderSetup} />);
+    expect(screen.queryByText("Set up Codex here")).toBeNull();
+    expect(screen.getByText("Claude Code is not installed on this computer.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Codex/ }));
+    expect(screen.getByText("Set up Codex here")).toBeTruthy();
+    expect(screen.queryByText(/is not signed in/)).toBeNull();
+  });
+
+  it("drops the setup help once the harness is ready, and Start turns on", () => {
+    const { onStart } = setup();
+    cleanup();
+    const renderSetup = () => <p>Set up Codex here</p>;
+    const view = render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ codex: "signed_out" }} renderSetup={renderSetup} />);
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Codex/ }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{}} renderSetup={renderSetup} />);
+    expect(screen.queryByText("Set up Codex here")).toBeNull();
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("only warns for an untested version", () => {

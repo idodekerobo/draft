@@ -1,7 +1,7 @@
 "use client";
 
 import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, modelLabel, type HarnessId } from "draft-core/harnesses";
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { clearDraft, NEW_SESSION_DRAFT_KEY, useDraft } from "./drafts";
 import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
@@ -23,7 +23,7 @@ export interface StartRequest {
 /** Why a harness cannot be started on this computer yet, or may not work well. */
 export type HarnessProblem = "missing" | "signed_out" | "untested_version";
 
-const PROBLEM_HINTS: Record<HarnessProblem, string> = { missing: "Install", signed_out: "Sign in", untested_version: "Untested version" };
+const PROBLEM_HINTS: Record<HarnessProblem, string> = { missing: "Set up", signed_out: "Set up", untested_version: "Untested version" };
 
 /** Blocks Start. An untested version only warns. */
 const blocks = (problem: HarnessProblem | undefined) => problem === "missing" || problem === "signed_out";
@@ -41,9 +41,12 @@ export function SessionStartScreen({
   onBrowse,
   onStart,
   availability = {},
+  renderSetup,
 }: {
   /** What is wrong with a harness on this computer, by harness id. A harness with no entry is ready. */
   availability?: Partial<Record<string, HarnessProblem>>;
+  /** Help to make a harness ready, shown in place of the problem line while it blocks Start. Null for a harness with none. */
+  renderSetup?: (harness: HarnessId) => ReactNode;
   recentFolders: string[];
   onBrowse: () => Promise<string | null>;
   onStart: (request: StartRequest) => Promise<StartResult>;
@@ -58,6 +61,8 @@ export function SessionStartScreen({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useAutoGrow(inputRef, text);
   const folder = chosen ?? recentFolders[0] ?? null;
+  const setup = blocks(availability[harness]) ? renderSetup?.(harness) : null;
+  const line = problemLine(getHarness(harness)?.label ?? harness, availability[harness]);
 
   async function browse() {
     setOpen(false);
@@ -143,9 +148,7 @@ export function SessionStartScreen({
           </div>
         </form>
         {!folder && <p className="ui-muted">Choose a folder to start in.</p>}
-        {problemLine(getHarness(harness)?.label ?? harness, availability[harness]) && (
-          <p className={blocks(availability[harness]) ? "ui-error" : "ui-muted"} role="status">{problemLine(getHarness(harness)?.label ?? harness, availability[harness])}</p>
-        )}
+        {setup ?? (line && <p className={blocks(availability[harness]) ? "ui-error" : "ui-muted"} role="status">{line}</p>)}
         {error && <p className="ui-error" role="alert">{error}</p>}
       </div>
     </div>
