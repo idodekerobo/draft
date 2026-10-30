@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { DraftApiProvider, type DraftApi } from "../query/api";
 import { RoutineError } from "./errors";
 import { RoutinesPanel } from "./RoutinesPanel";
-import type { CreateRoutineInput, Routine, RoutineRun, RoutinesResponse } from "./types";
+import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutineRun, RoutinesResponse } from "./types";
 
 afterEach(cleanup);
 
@@ -46,23 +46,23 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"] } = {}) {
-  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true };
+function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode } = {}) {
+  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const onOpenRun = mock((_id: string) => {});
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => response, updateRoutine: async () => response.routines[0]!, createRoutine, getRoutineRuns };
+  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine: async () => response.routines[0]!, createRoutine, getRoutineRuns };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <DraftApiProvider api={api}>
         <Suspense fallback="loading">
-          <RoutinesPanel workspaceId="ws-1" onOpenRun={onOpenRun} />
+          <RoutinesPanel workspaceId="ws-1" onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} />
         </Suspense>
       </DraftApiProvider>
     </QueryClientProvider>,
   );
-  return { createRoutine, getRoutineRuns, onOpenRun };
+  return { createRoutine, getRoutineRuns, onOpenRun, response };
 }
 
 const ready = () => screen.findByRole("button", { name: /^All/ });
@@ -149,5 +149,66 @@ describe("creating a routine", () => {
     setup({ canEdit: false });
     await ready();
     expect(screen.queryByRole("button", { name: "New routine" })).toBeNull();
+  });
+});
+
+describe("an agent that is not connected for routines", () => {
+  const chooseCodex = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Digest" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Summarize." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Agent and model" }));
+    return dialog;
+  };
+
+  it("marks the agent in the picker, shows what to do, and blocks Create until it is connected", async () => {
+    setup({ routines: [], agents: { claude: "connected", codex: "not_connected" }, renderAgentSetup: (harness) => (harness === "codex" ? <p>Connect Codex here</p> : null) });
+    await ready();
+    const dialog = await chooseCodex();
+    expect(within(dialog).getByRole("menuitemradio", { name: /Codex/ }).textContent).toContain("Connect");
+    expect(within(dialog).getByRole("menuitemradio", { name: /Claude Code/ }).textContent).not.toContain("Connect");
+
+    expect(within(dialog).queryByText("Connect Codex here")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("menuitemradio", { name: /Codex/ }));
+    expect(within(dialog).getByText("Connect Codex here")).toBeTruthy();
+    expect((within(dialog).getByRole("button", { name: "Create routine" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("says where to connect when the app has no way to do it here", async () => {
+    setup({ routines: [], agents: { codex: "needs_reconnect" } });
+    await ready();
+    const dialog = await chooseCodex();
+    fireEvent.click(within(dialog).getByRole("menuitemradio", { name: /Codex/ }));
+    expect(within(dialog).getByRole("status").textContent).toContain("Codex is not connected for routines");
+    expect((within(dialog).getByRole("button", { name: "Create routine" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("turns Create on once the setup reports the agent connected and the statuses are read again", async () => {
+    const { response } = setup({
+      routines: [],
+      agents: { codex: "not_connected" },
+      renderAgentSetup: (_harness, _status, refresh) => (
+        <button type="button" onClick={refresh}>Finished connecting</button>
+      ),
+    });
+    await ready();
+    const dialog = await chooseCodex();
+    fireEvent.click(within(dialog).getByRole("menuitemradio", { name: /Codex/ }));
+    const create = within(dialog).getByRole("button", { name: "Create routine" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+
+    response.agents = { codex: "connected" };
+    fireEvent.click(within(dialog).getByRole("button", { name: "Finished connecting" }));
+    await waitFor(() => expect(create.disabled).toBe(false));
+    expect(within(dialog).queryByRole("button", { name: "Finished connecting" })).toBeNull();
+  });
+
+  it("does not block an agent the list says nothing about", async () => {
+    setup({ routines: [] });
+    await ready();
+    const dialog = await chooseCodex();
+    fireEvent.click(within(dialog).getByRole("menuitemradio", { name: /Codex/ }));
+    expect((within(dialog).getByRole("button", { name: "Create routine" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

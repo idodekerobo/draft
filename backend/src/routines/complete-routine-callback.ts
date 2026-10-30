@@ -1,21 +1,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { authenticateSandboxCallbackRequest } from "../sandbox";
-import { eventsFor, isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
+import { isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
+import { routineEventsForHarness } from "../ingestion/harness-lines";
 import { parseLiveLine } from "../ingestion/claude-code/parse-live-line";
+import { saveRefreshedCodexLogin } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";
 import { parseAgentRoutineConfig, parseRoutineSessionId } from "./config";
 import { endRoutineSession, failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 
 const MAX_LINES_PER_POST = 2000;
-const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_machine_id, scheduled_task_id";
+const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_machine_id, scheduled_task_id, harness";
 
-type RoutineSession = RoutineSessionRef & Pick<SessionRow, "session_type" | "status" | "last_seq">;
+type RoutineSession = RoutineSessionRef & Pick<SessionRow, "session_type" | "status" | "last_seq" | "harness">;
 
 const FAILURE_NOTES: Record<string, string> = {
   timeout: "The run took too long and was stopped.",
   claude_error: "The agent reported an error.",
   claude_exit: "The agent stopped before it finished.",
+  codex_error: "The agent reported an error.",
+  codex_exit: "The agent stopped before it finished.",
   incomplete_result: "The agent stopped without a final answer.",
   bundle_fetch_failed: "The run could not load the company brain.",
   runner_error: "The run could not start.",
@@ -35,12 +39,13 @@ async function promptEvent(client: SupabaseClient, session: RoutineSession) {
   if (error) throw error;
   const config = parseAgentRoutineConfig((data as { config_json: unknown } | null)?.config_json);
   if (!config) return [];
+  if (session.harness === "codex") return [{ sourceId: `routine-prompt:${session.id}`, kind: "user_message" as const, payload: { text: config.prompt } }];
   const line = { file: "root.jsonl", offset: -1, raw: JSON.stringify({ type: "user", uuid: `routine-prompt:${session.id}`, message: { role: "user", content: config.prompt } }) };
   return parseLiveLine(line);
 }
 
 async function appendLines(client: SupabaseClient, session: RoutineSession, lines: IncomingLine[]): Promise<void> {
-  const parsed = lines.flatMap(eventsFor);
+  const parsed = lines.flatMap((line) => routineEventsForHarness(session.harness, line));
   const events = [...(session.last_seq === 0 ? await promptEvent(client, session) : []), ...parsed]
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
   if (events.length === 0) return;
@@ -56,6 +61,8 @@ async function appendLines(client: SupabaseClient, session: RoutineSession, line
 }
 
 async function finishRun(client: SupabaseClient, session: RoutineSession, result: Record<string, unknown>): Promise<void> {
+  // Saved before the session ends, because ending it frees the login for the next run.
+  if (session.harness === "codex") await saveRefreshedCodexLogin(client, session.workspace_id, result.auth_json).catch(() => undefined);
   if (result.ok === true) {
     await endRoutineSession(client, session, "completed");
     return;

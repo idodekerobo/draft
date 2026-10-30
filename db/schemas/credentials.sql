@@ -10,6 +10,8 @@
 -- `session_project_id` marks a legacy `claude_session_ingest` credential,
 -- which the ingest route detects and falls back to workspace-scoped
 -- behavior for -- no backfill, ever.
+-- `lease_run_id`/`lease_expires_at` hold a credential for one run at a time (see
+-- acquire_credential_lease). Both are null when no run holds it.
 create table credentials (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
@@ -23,6 +25,8 @@ create table credentials (
   last_used_at             timestamptz,
   session_project_id       uuid,
   allowed_providers        text[],
+  lease_run_id             uuid,
+  lease_expires_at         timestamptz,
   created_by_user_id       uuid references users(id) on delete set null,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),

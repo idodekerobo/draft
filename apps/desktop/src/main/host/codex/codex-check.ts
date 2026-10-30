@@ -1,4 +1,4 @@
-import { parseCliVersion } from "draft-core/harnesses";
+import { harnessInstallUrl, parseCliVersion } from "draft-core/harnesses";
 import { capture } from "../../../exec";
 
 export type CodexAuth = "signed_in" | "signed_out" | "unknown";
@@ -27,5 +27,5 @@ export async function readCodexVersion(codexBin: string): Promise<string | null>
   }
 }
 
-export const CODEX_MISSING_MESSAGE = "Codex is not installed on this computer. Install it from developers.openai.com/codex, then try again.";
+export const CODEX_MISSING_MESSAGE = `Codex is not installed on this computer. Install it from ${harnessInstallUrl("codex")}, then try again.`;
 export const CODEX_SIGNED_OUT_MESSAGE = "Codex is not signed in. Run codex in a terminal, sign in, then try again.";

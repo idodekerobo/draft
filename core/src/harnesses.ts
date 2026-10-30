@@ -15,6 +15,8 @@ export interface HarnessDefinition {
   testedVersion: { major: number; minor: number };
   /** How a cloud routine runs this harness. Empty when routines do not support it yet. */
   routineModes: ReadonlyArray<"print" | "exec">;
+  /** Where a person installs the harness's CLI. */
+  installUrl?: string;
 }
 
 export const HARNESSES = [
@@ -48,7 +50,8 @@ export const HARNESSES = [
     ],
     capabilities: { terminal: true, approvals: true, steer: true },
     testedVersion: { major: 0, minor: 165 },
-    routineModes: [],
+    routineModes: ["exec"],
+    installUrl: "https://learn.chatgpt.com/docs/codex/cli#getting-started",
   },
 ] as const satisfies ReadonlyArray<HarnessDefinition>;
 
@@ -66,6 +69,8 @@ export const isHarnessId = (id: unknown): id is HarnessId => typeof id === "stri
 export function harnessLabel(id: string): string {
   return getHarness(id)?.label ?? id;
 }
+
+export const harnessInstallUrl = (id: string): string | null => getHarness(id)?.installUrl ?? null;
 
 export function harnessModels(id: string): ReadonlyArray<HarnessModel> {
   return getHarness(id)?.models ?? [];

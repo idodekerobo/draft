@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HARNESSES, getHarness, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
+import { HARNESSES, getHarness, harnessInstallUrl, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
 
 describe("harness registry", () => {
   it("has unique ids and a default model first for every harness", () => {
@@ -35,6 +35,12 @@ describe("harness registry", () => {
     expect(isTestedVersion("claude", null)).toBeNull();
     expect(isTestedVersion("nope", "1.0.0")).toBeNull();
     expect(testedVersionLabel("codex")).toBe("0.165.x");
+  });
+
+  it("gives the install page of a harness that has one", () => {
+    expect(harnessInstallUrl("codex")).toBe("https://learn.chatgpt.com/docs/codex/cli#getting-started");
+    expect(harnessInstallUrl("claude")).toBeNull();
+    expect(harnessInstallUrl("nope")).toBeNull();
   });
 
   it("labels a model, naming the default and keeping an unknown alias as is", () => {

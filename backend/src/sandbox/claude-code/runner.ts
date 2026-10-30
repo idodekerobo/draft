@@ -48,6 +48,8 @@ export type RunnerFailureCode =
   | "output_too_large"
   | "claude_error"
   | "claude_exit"
+  | "codex_error"
+  | "codex_exit"
   | "incomplete_result"
   | "bundle_fetch_failed"
   | "runner_error";
@@ -181,6 +183,49 @@ export function sanitizedClaudeEnv(env: NodeJS.ProcessEnv): Record<string, strin
   };
   if (env.TZ) allowed.TZ = env.TZ;
   return allowed;
+}
+
+const CODEX_HOME = "/home/agent/.codex";
+const CODEX_AUTH_FILE = `${CODEX_HOME}/auth.json`;
+
+export function sanitizedCodexEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const allowed: Record<string, string> = {
+    HOME: "/home/agent",
+    USER: "agent",
+    LOGNAME: "agent",
+    PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    LANG: env.LANG || "C.UTF-8",
+    CODEX_HOME,
+  };
+  if (env.TZ) allowed.TZ = env.TZ;
+  return allowed;
+}
+
+/** The ids of the `agent` user. The base image gives id 1000 to `node`, so `agent` is 1001. Null when it is not listed. */
+export function parseAgentIds(passwd: string): { uid: number; gid: number } | null {
+  const fields = passwd.split("\n").find((line) => line.startsWith("agent:"))?.split(":");
+  const uid = Number(fields?.[2]);
+  const gid = Number(fields?.[3]);
+  return fields && Number.isInteger(uid) && Number.isInteger(gid) ? { uid, gid } : null;
+}
+
+/** Puts the workspace's login where Codex reads it, for the agent user alone. */
+export function prepareCodexHome(authJson: string): void {
+  const { uid, gid } = parseAgentIds(readFileSync("/etc/passwd", "utf8")) ?? { uid: AGENT_UID, gid: AGENT_GID };
+  mkdirSync(CODEX_HOME, { recursive: true, mode: 0o700 });
+  chownSync(CODEX_HOME, uid, gid);
+  writeFileSync(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
+  chownSync(CODEX_AUTH_FILE, uid, gid);
+}
+
+/** The login file after the run. Codex rewrites it when it refreshes the login, and the backend keeps the new one. */
+export function readCodexAuth(): string | undefined {
+  try {
+    const text = readFileSync(CODEX_AUTH_FILE, "utf8");
+    return text.trim() ? text : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function parseTimeoutSeconds(raw: string | undefined): number {
@@ -639,6 +684,24 @@ export function routineCommandArgs(prompt: string, model: string | null): string
   ];
 }
 
+/** Codex reads the prompt from stdin. The sandbox is read-only, and nothing is kept on disk. */
+export function codexRoutineArgs(model: string | null): string[] {
+  if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
+  return ["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", ...(model ? ["-m", model] : []), "-"];
+}
+
+/** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */
+export function parseCodexResultLine(raw: string): { is_error: boolean; subtype: string } | null {
+  if (!raw.includes('"type":"turn.completed"') && !raw.includes('"type":"turn.failed"')) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed)) return null;
+    if (parsed.type === "turn.completed") return { is_error: false, subtype: "turn.completed" };
+    if (parsed.type === "turn.failed") return { is_error: true, subtype: "turn.failed" };
+  } catch { /* a partial line is not the result */ }
+  return null;
+}
+
 // Cuts decoded stdout into whole lines. Offsets count bytes, so a line keeps the
 // same id (file + offset) however the chunks fall.
 export class StreamLineReader {
@@ -678,14 +741,17 @@ export interface RoutineEnd {
   ok: boolean;
   error?: RunnerFailureCode;
   diagnostics?: Record<string, unknown>;
+  /** A Codex run sends back its login file, which Codex may have refreshed. */
+  auth_json?: string;
 }
 
 export type RoutinePost = (result: unknown) => Promise<void>;
 
-export function routineFailureCode(input: { timedOut: boolean; resultIsError: boolean; exitCode: number | null; signal: NodeJS.Signals | null }): RunnerFailureCode {
+export function routineFailureCode(input: { timedOut: boolean; resultIsError: boolean; exitCode: number | null; signal: NodeJS.Signals | null; harness?: "claude" | "codex" }): RunnerFailureCode {
+  const codex = input.harness === "codex";
   if (input.timedOut) return "timeout";
-  if (input.resultIsError) return "claude_error";
-  if (input.exitCode !== 0 || input.signal !== null) return "claude_exit";
+  if (input.resultIsError) return codex ? "codex_error" : "claude_error";
+  if (input.exitCode !== 0 || input.signal !== null) return codex ? "codex_exit" : "claude_exit";
   return "incomplete_result";
 }
 
@@ -695,17 +761,26 @@ export async function runRoutine(
   timeoutMs: number,
   runId: string,
   post: RoutinePost,
+  harness: "claude" | "codex" = "claude",
 ): Promise<RoutineEnd> {
   const { spawn } = await import("node:child_process");
   const { StringDecoder } = await import("node:string_decoder");
-  const childEnv = sanitizedClaudeEnv(process.env);
+  const codex = harness === "codex";
+  const childEnv = codex ? sanitizedCodexEnv(process.env) : sanitizedClaudeEnv(process.env);
   const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
-  const child = spawn(
-    "gosu",
-    ["agent", "env", "-i", ...envArgs, "claude", ...routineCommandArgs(prompt, model)],
-    { cwd: "/run", detached: true, stdio: ["ignore", "pipe", "pipe"] },
-  );
-  runnerLog("claude_started", { run_id: runId, tools: "Read,Glob", permission_mode: "dontAsk", timeout_ms: timeoutMs, mode: "routine" });
+  const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model)];
+  const child = spawn("gosu", ["agent", "env", "-i", ...envArgs, ...command], {
+    cwd: "/run",
+    detached: true,
+    stdio: [codex ? "pipe" : "ignore", "pipe", "pipe"],
+  });
+  if (codex) {
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(prompt);
+  }
+  runnerLog(codex ? "codex_started" : "claude_started", codex
+    ? { run_id: runId, sandbox: "read-only", timeout_ms: timeoutMs, mode: "routine" }
+    : { run_id: runId, tools: "Read,Glob", permission_mode: "dontAsk", timeout_ms: timeoutMs, mode: "routine" });
 
   const reader = new StreamLineReader();
   const decoder = new StringDecoder("utf8");
@@ -733,7 +808,9 @@ export async function runRoutine(
     for (const line of lines) {
       if ("raw" in line) {
         queuedBytes += Buffer.byteLength(line.raw);
-        if (line.raw.includes('"type":"result"')) {
+        if (codex) {
+          resultLine = parseCodexResultLine(line.raw) ?? resultLine;
+        } else if (line.raw.includes('"type":"result"')) {
           try {
             const parsed: unknown = JSON.parse(line.raw);
             if (isObject(parsed) && parsed.type === "result") resultLine = parsed as { is_error?: boolean; subtype?: string };
@@ -772,8 +849,9 @@ export async function runRoutine(
 
   const finished = resultLine as { is_error?: boolean; subtype?: string } | null;
   const ok = !timedOut && finished !== null && finished.is_error !== true && childExit.code === 0;
-  const error = ok ? undefined : routineFailureCode({ timedOut, resultIsError: finished?.is_error === true, exitCode: childExit.code, signal: childExit.signal });
-  runnerLog("claude_finished", {
+  const error = ok ? undefined : routineFailureCode({ timedOut, resultIsError: finished?.is_error === true, exitCode: childExit.code, signal: childExit.signal, harness });
+  const authJson = codex ? readCodexAuth() : undefined;
+  runnerLog(codex ? "codex_finished" : "claude_finished", {
     run_id: runId,
     exit_code: childExit.code,
     signal: childExit.signal,
@@ -782,8 +860,9 @@ export async function runRoutine(
     failure_category: failureCategory,
     failure_code: error ?? "none",
   });
+  const refreshed = authJson ? { auth_json: authJson } : {};
   return ok
-    ? { kind: "end", ok: true }
+    ? { kind: "end", ok: true, ...refreshed }
     : {
         kind: "end",
         ok: false,
@@ -795,6 +874,7 @@ export async function runRoutine(
           result_subtype: finished?.subtype ?? null,
           stderr: sanitizeReason(stderr),
         },
+        ...refreshed,
       };
 }
 
@@ -1004,9 +1084,14 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   chmodSync("/run/scratch", 0o700);
 
   if (runMode === "routine") {
+    const harness = process.env.DRAFT_RUN_HARNESS === "codex" ? "codex" : "claude";
+    if (harness === "codex") {
+      prepareCodexHome(required("CODEX_AUTH_JSON"));
+      delete process.env.CODEX_AUTH_JSON;
+    }
     const end = await runRoutine(prompt, process.env.DRAFT_ROUTINE_MODEL || null, timeoutMs, runId, (result) =>
       callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
-    );
+    harness);
     await callback(callbackUrl, callbackToken, runId, bundleHash, end, undefined);
     runnerLog("final", { run_id: runId, status: end.ok ? "completed" : "failed", failure_code: end.error ?? "none" });
     if (!end.ok) process.exitCode = 1;

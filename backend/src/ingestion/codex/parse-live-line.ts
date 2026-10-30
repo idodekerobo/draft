@@ -10,7 +10,7 @@ interface UserInputPart {
   text?: string;
 }
 
-interface CodexItem {
+export interface CodexItem {
   type?: string;
   id?: string;
   /** Input parts for a user message, plain strings for reasoning. */
@@ -37,7 +37,7 @@ interface CodexNotification {
   params?: { threadId?: string; item?: CodexItem; turn?: { id?: string; status?: string; error?: { message?: string } | null } };
 }
 
-type Pending = Pick<ParsedLiveEvent, "kind" | "payload">;
+export type Pending = Pick<ParsedLiveEvent, "kind" | "payload">;
 
 function clip(text: string, max: number): { text: string; truncated?: true } {
   return text.length <= max ? { text } : { text: text.slice(0, max), truncated: true };
@@ -53,7 +53,7 @@ function toolResult(toolUseId: string, content: string, isError: boolean): Pendi
   return { kind: "tool_result", payload: { tool_use_id: toolUseId, content: result.text, is_error: isError, ...(result.truncated ? { truncated: true } : {}) } };
 }
 
-function itemEvents(item: CodexItem): Pending[] {
+export function itemEvents(item: CodexItem): Pending[] {
   const id = item.id ?? "";
   switch (item.type) {
     case "userMessage": {

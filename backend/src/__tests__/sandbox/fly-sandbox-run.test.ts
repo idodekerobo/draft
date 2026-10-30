@@ -335,6 +335,31 @@ describe("launchFlySandboxRun routine mode", () => {
     expect(launched!.env).not.toHaveProperty("DRAFT_OUTPUT_SCHEMA_PATH");
   });
 
+  it("hands a Codex run its auth file and no Claude token", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    let launched: CreateFlyMachineInput | undefined;
+
+    await launchFlySandboxRun({
+      bundle: bundle(), prompt: "Summarize the week.\n", mode: "routine", harness: "codex", codexAuthJson: "{\"auth_mode\":\"chatgpt\"}", config,
+    }, {
+      flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } },
+      bundleUploader: uploader,
+    });
+
+    expect(launched!.env).toMatchObject({ DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{\"auth_mode\":\"chatgpt\"}", DRAFT_RUN_MODE: "routine" });
+    expect(launched!.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
+  });
+
+  it("refuses a Codex run that is not a routine or has no auth file, and a Claude run with no token", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    const run = (input: object) => launchFlySandboxRun({ bundle: bundle(), prompt: "p", jsonSchema, config, ...input }, { flyClient: client, bundleUploader: uploader });
+    await expect(run({ harness: "codex", codexAuthJson: "{}" })).rejects.toThrow("only mode \"routine\"");
+    await expect(run({ harness: "codex", mode: "routine" })).rejects.toThrow("codexAuthJson must not be empty");
+    await expect(run({ mode: "routine" })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
+  });
+
   it("still requires a schema outside routine mode", async () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();

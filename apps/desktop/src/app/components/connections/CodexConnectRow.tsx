@@ -1,5 +1,7 @@
+import { harnessInstallUrl } from "draft-core/harnesses";
 import { useCodexConnection } from "../../hooks/useCodexConnection";
 import { rpc } from "../../rpc";
+import { DeviceCodeSteps } from "./DeviceCodeSteps";
 
 /** Sign in and out of Codex from Draft. The login belongs to the person's own Codex, not to Draft. */
 export function CodexConnectRow() {
@@ -7,7 +9,7 @@ export function CodexConnectRow() {
 
   const description =
     phase === "loading" ? "Checking…"
-    : phase === "not_installed" ? "Codex is not installed on this computer. Install it from developers.openai.com/codex."
+    : phase === "not_installed" ? "Codex is not installed on this computer."
     : phase === "signed_in" ? "Signed in. You can start Codex sessions."
     : phase === "signing_in" && device ? "Open the link and enter this code to finish signing in."
     : phase === "signing_in" ? "Finish signing in in your browser."
@@ -18,13 +20,7 @@ export function CodexConnectRow() {
       <div className="settings__row-content">
         <span className="settings__row-label">Codex</span>
         <span className="settings__row-desc">{description}</span>
-        {device && (
-          <span className="settings__row-desc">
-            <button type="button" className="ui-link" onClick={() => rpc.send.openUrl({ url: device.url })}>{device.url}</button>
-            {" "}
-            <code aria-label="One-time code">{device.code}</code>
-          </span>
-        )}
+        {device && <DeviceCodeSteps url={device.url} code={device.code} />}
         {phase === "signed_out" && (
           <span className="settings__row-desc">
             <button type="button" className="ui-link" onClick={() => void signIn({ deviceCode: true })}>Use a code instead</button>
@@ -32,6 +28,9 @@ export function CodexConnectRow() {
         )}
         {error && <span className="ui-error" role="alert">{error}</span>}
       </div>
+      {phase === "not_installed" && harnessInstallUrl("codex") && (
+        <button type="button" className="settings__action-button" onClick={() => rpc.send.openUrl({ url: harnessInstallUrl("codex")! })}>Install guide</button>
+      )}
       {phase === "signed_out" && (
         <button type="button" className="settings__action-button" onClick={() => void signIn({ deviceCode: false })}>Sign in</button>
       )}

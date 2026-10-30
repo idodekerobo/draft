@@ -53,9 +53,14 @@ export interface Routine {
   agent: AgentRoutine | null;
 }
 
+/** Whether the workspace's routines can run on an agent. A login that stopped working needs a new sign-in. */
+export type RoutineAgentStatus = "connected" | "not_connected" | "needs_reconnect";
+
 export interface RoutinesResponse {
   routines: Routine[];
   canEdit: boolean;
+  /** By harness id. An agent with no entry is treated as ready. */
+  agents?: Partial<Record<string, RoutineAgentStatus>>;
 }
 
 /** Body for PATCH /workspaces/:id/schedules/:taskId. */

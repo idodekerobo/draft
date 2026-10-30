@@ -27,7 +27,8 @@ export type CredentialProvider =
   | "github"
   | "claude_code"
   | "claude_session_ingest"
-  | "agent_session_ingest";
+  | "agent_session_ingest"
+  | "codex_chatgpt_auth";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
 

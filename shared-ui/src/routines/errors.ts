@@ -19,6 +19,7 @@ export class RoutineError extends Error {
 
 /** Turns an API error code (and optional field) into a message a member can act on. */
 export function toRoutineError(code: string, field?: string): RoutineError {
+  if (code === "codex_not_connected") return new RoutineError("Connect Codex for routines first.", "harness");
   if (field && FIELD_MESSAGES[field]) return new RoutineError(FIELD_MESSAGES[field], field);
   if (code === "not_found") return new RoutineError("This routine no longer exists. Refresh and try again.");
   if (code === "network") return new RoutineError("Could not reach Draft. Check your connection.");

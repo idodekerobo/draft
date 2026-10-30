@@ -1,9 +1,10 @@
 // SessionsView.tsx — live Claude Code sessions of the workspace
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { isTestedVersion } from "draft-core/harnesses";
 import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
+import { CodexSetupPanel } from "../connections/CodexSetupPanel";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
@@ -71,7 +72,7 @@ export function SessionsView() {
   const [recentFolders, setRecentFolders] = useState(() => readRecentFolders(window.localStorage));
 
   const [availability, setAvailability] = useState<Partial<Record<string, HarnessProblem>>>({});
-  useEffect(() => {
+  const loadAvailability = useCallback(() => {
     void rpc.request.getAvailableRunners().then(({ runners }) => {
       const next: Partial<Record<string, HarnessProblem>> = {};
       for (const runner of runners) {
@@ -82,6 +83,7 @@ export function SessionsView() {
       setAvailability(next);
     }).catch(() => {});
   }, []);
+  useEffect(loadAvailability, [loadAvailability]);
 
   async function browse(): Promise<string | null> {
     return (await rpc.request.selectSetupFolder()).folderPath;
@@ -110,7 +112,7 @@ export function SessionsView() {
       onNew={() => setSelectedId(null)}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen availability={availability} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

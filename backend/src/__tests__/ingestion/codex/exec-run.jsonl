@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"01a18e76-fa77-7f30-ba0a-6c13dcf2f27a"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution","command":"/bin/zsh -lc 'echo hello-from-exec'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"/bin/zsh -lc 'echo hello-from-exec'","aggregated_output":"hello-from-exec\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"It printed `hello-from-exec`."}}
+{"type":"turn.completed","usage":{"input_tokens":35652,"cached_input_tokens":29184,"cache_write_input_tokens":0,"output_tokens":48,"reasoning_output_tokens":0}}

@@ -1,7 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import { dispatchAgentRoutine } from "../../routines/dispatch-routine";
 import { failStaleRoutineSessions } from "../../routines/fail-stale-routine-sessions";
-import type { LaunchRoutineRun } from "../../routines/launch-routine-run";
+import { CredentialError } from "../../credentials/crypto";
+import { RoutineLeaseBusyError, type LaunchRoutineRun } from "../../routines/launch-routine-run";
 import type { ScheduledTaskRow } from "../../types/tables";
 import { fakeClient, fakeDb } from "./fake-client";
 
@@ -121,5 +122,48 @@ describe("failStaleRoutineSessions", () => {
   it("never touches interactive sessions", async () => {
     const db = fakeDb({ sessions: [session("mine", "2026-10-27T08:00:00.000Z", { session_type: "interactive" })], errors: [] });
     expect(await failStaleRoutineSessions(fakeClient(db), now)).toBe(0);
+  });
+});
+
+describe("dispatchAgentRoutine on Codex", () => {
+  const codexTask = { config_json: { title: "Weekly digest", prompt: "Summarize the week.", harness: "codex", model: null } } as Partial<ScheduledTaskRow>;
+  const rejecting = (error: Error) => mock<LaunchRoutineRun>(async () => { throw error; });
+
+  it("leaves a run out, with a note and no error row, while another Codex run holds the login", async () => {
+    const db = newDb();
+    await dispatch(db, rejecting(new RoutineLeaseBusyError()), "2026-10-27T09:00:00.000Z", codexTask);
+
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed", harness: "codex" });
+    expect(db.tables.errors).toHaveLength(0);
+    const events = db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_events as Array<{ payload: { text: string } }>;
+    expect(events[0]!.payload.text).toBe("Another Codex routine was still running, so this run was skipped.");
+  });
+
+  it("says Codex is not connected when the workspace has no login, and records the error", async () => {
+    const db = newDb();
+    await dispatch(db, rejecting(new CredentialError("no login", "missing")), "2026-10-27T09:00:00.000Z", codexTask);
+
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed" });
+    expect(db.tables.errors).toHaveLength(1);
+    const events = db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_events as Array<{ payload: { text: string } }>;
+    expect(events[0]!.payload.text).toContain("Codex is not connected");
+  });
+
+  it("gives a Claude routine the old note for the same kind of error", async () => {
+    const db = newDb();
+    await dispatch(db, rejecting(new CredentialError("no token", "missing")));
+    const events = db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_events as Array<{ payload: { text: string } }>;
+    expect(events[0]!.payload.text).toBe("The run could not start.");
+  });
+
+  it("frees the login's lease when a Codex session ends, and only for the run that holds it", async () => {
+    const db = fakeDb(
+      { sessions: [], errors: [], credentials: [{ id: "cred-1", workspace_id: "ws-1", provider: "codex_chatgpt_auth" }] },
+      { unique: { sessions: [["workspace_id", "idempotency_key"]] }, rpcs: { release_credential_lease: () => ({ data: true }) } },
+    );
+    await dispatch(db, rejecting(new Error("fly down")), "2026-10-27T09:00:00.000Z", codexTask);
+
+    const release = db.rpcCalls.find((c) => c.name === "release_credential_lease")!;
+    expect(release.args).toEqual({ p_credential_id: "cred-1", p_run_id: db.tables.sessions![0]!.id });
   });
 });

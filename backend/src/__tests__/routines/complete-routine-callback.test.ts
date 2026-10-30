@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { createSandboxCallbackToken } from "../../sandbox/callback-token";
 import { completeRoutineRunCallback } from "../../routines/complete-routine-callback";
+import { encryptCredentialPayload } from "../../credentials/crypto";
 import { routineHostMachineId, routineRunId } from "../../routines/config";
 import { fakeClient, fakeDb, type FakeDb } from "./fake-client";
 
+process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64");
 const SECRET = "callback-secret";
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const WORKSPACE_ID = "ws-1";
@@ -48,6 +50,24 @@ describe("completeRoutineRunCallback", () => {
     const call = db.rpcCalls.find((c) => c.name === "append_session_events")!;
     expect(call.args.p_host_machine_id).toBe(routineHostMachineId(SESSION_ID));
     expect((call.args.p_events as Array<{ kind: string }>).map((e) => e.kind)).toEqual(["user_message", "assistant_text"]);
+  });
+
+  it("reads a Codex routine's lines as codex exec output, with the prompt first", async () => {
+    const db = seed({ harness: "codex" });
+    const answer = { file: "exec.jsonl", offset: 4, raw: JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "agent_message", text: "Here is the digest." } }) };
+    const response = await completeRoutineRunCallback(post({ kind: "lines", lines: [answer, assistantLine] }), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    const events = db.rpcCalls[0]!.args.p_events as Array<{ kind: string; payload: { text?: string } }>;
+    expect(events.map((e) => e.kind)).toEqual(["user_message", "assistant_text"]);
+    expect(events[0]!.payload.text).toBe("Summarize the week.");
+  });
+
+  it("names a Codex failure code in the session note", async () => {
+    const db = seed({ status: "live", harness: "codex" });
+    await completeRoutineRunCallback(post({ kind: "end", ok: false, error: "codex_exit" }), SECRET, fakeClient(db));
+    expect(db.tables.errors).toHaveLength(1);
+    expect(JSON.stringify(db.tables.errors![0])).toContain("codex_exit");
   });
 
   it("does not repeat the prompt once the session has events", async () => {
@@ -99,5 +119,43 @@ describe("completeRoutineRunCallback", () => {
   it("rejects a body that is neither lines nor an end message", async () => {
     const response = await completeRoutineRunCallback(post({ kind: "other" }), SECRET, fakeClient(seed()));
     expect(response.status).toBe(400);
+  });
+});
+
+describe("completeRoutineRunCallback for a Codex run", () => {
+  const login = (refresh: string, lastRefresh: string) => JSON.stringify({ auth_mode: "chatgpt", last_refresh: lastRefresh, tokens: { refresh_token: refresh } });
+  const seedCodex = (stored: string) => {
+    const db = seed({ status: "live", harness: "codex" });
+    db.tables.credentials = [{ id: "cred-1", workspace_id: WORKSPACE_ID, provider: "codex_chatgpt_auth", status: "active", expires_at: null, encryption_key_version: "v2", encrypted_payload: encryptCredentialPayload(stored, "v2") }];
+    db.rpcs.release_credential_lease = () => ({ data: true });
+    return db;
+  };
+
+  it("keeps the login the run sent back when Codex refreshed it, then frees the lease", async () => {
+    const db = seedCodex(login("r1", "t1"));
+    await completeRoutineRunCallback(post({ kind: "end", ok: true, auth_json: login("r2", "t2") }), SECRET, fakeClient(db));
+
+    const stored = db.tables.credentials![0]!.encrypted_payload as string;
+    expect(stored).not.toBe(encryptCredentialPayload(login("r1", "t1"), "v2"));
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "completed" });
+    expect(db.rpcCalls.map((c) => c.name)).toContain("release_credential_lease");
+  });
+
+  it("still saves the login and frees the lease when the run failed", async () => {
+    const db = seedCodex(login("r1", "t1"));
+    await completeRoutineRunCallback(post({ kind: "end", ok: false, error: "codex_error", auth_json: login("r2", "t2") }), SECRET, fakeClient(db));
+
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed" });
+    expect(db.rpcCalls.map((c) => c.name)).toContain("release_credential_lease");
+  });
+
+  it("ends the run and frees the lease when the file sent back is not usable", async () => {
+    const db = seedCodex(login("r1", "t1"));
+    const before = db.tables.credentials![0]!.encrypted_payload;
+    const response = await completeRoutineRunCallback(post({ kind: "end", ok: true, auth_json: "garbage" }), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    expect(db.tables.credentials![0]!.encrypted_payload).toBe(before);
+    expect(db.rpcCalls.map((c) => c.name)).toContain("release_credential_lease");
   });
 });

@@ -380,6 +380,12 @@ export type AppRPCType = {
       startCodexLogin: { params: { deviceCode: boolean }; response: { ok: true; deviceUrl?: string; deviceCode?: string } | { ok: false; error: string } };
       cancelCodexLogin: { params: void; response: void };
       codexLogout: { params: void; response: { ok: true } | { ok: false; error: string } };
+      /** Whether the workspace has a Codex login for its routines: its status, or null when it has none. */
+      getRoutineCodexStatus: { params: void; response: { ok: true; status: string | null } | { ok: false; error: string } };
+      /** Signs in to Codex for the workspace's routines, in a folder of its own. The caller polls pollRoutineCodexLogin. */
+      startRoutineCodexLogin: { params: { deviceCode: boolean }; response: { ok: true; deviceUrl?: string; deviceCode?: string } | { ok: false; error: string } };
+      pollRoutineCodexLogin: { params: void; response: { state: "idle" | "waiting" | "connected" } | { state: "failed"; error: string } };
+      cancelRoutineCodexLogin: { params: void; response: void };
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
