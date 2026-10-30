@@ -50,6 +50,24 @@ describe("completeRoutineRunCallback", () => {
     expect((call.args.p_events as Array<{ kind: string }>).map((e) => e.kind)).toEqual(["user_message", "assistant_text"]);
   });
 
+  it("reads a Codex routine's lines as codex exec output, with the prompt first", async () => {
+    const db = seed({ harness: "codex" });
+    const answer = { file: "exec.jsonl", offset: 4, raw: JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "agent_message", text: "Here is the digest." } }) };
+    const response = await completeRoutineRunCallback(post({ kind: "lines", lines: [answer, assistantLine] }), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    const events = db.rpcCalls[0]!.args.p_events as Array<{ kind: string; payload: { text?: string } }>;
+    expect(events.map((e) => e.kind)).toEqual(["user_message", "assistant_text"]);
+    expect(events[0]!.payload.text).toBe("Summarize the week.");
+  });
+
+  it("names a Codex failure code in the session note", async () => {
+    const db = seed({ status: "live", harness: "codex" });
+    await completeRoutineRunCallback(post({ kind: "end", ok: false, error: "codex_exit" }), SECRET, fakeClient(db));
+    expect(db.tables.errors).toHaveLength(1);
+    expect(JSON.stringify(db.tables.errors![0])).toContain("codex_exit");
+  });
+
   it("does not repeat the prompt once the session has events", async () => {
     const db = seed({ last_seq: 3 });
     await completeRoutineRunCallback(post({ kind: "lines", lines: [assistantLine] }), SECRET, fakeClient(db));
