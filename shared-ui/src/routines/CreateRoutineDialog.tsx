@@ -1,18 +1,24 @@
 "use client";
 
 import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, modelLabel, type HarnessId } from "draft-core/harnesses";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun } from "./format";
 import { ScheduleFields, browserTimezone, presetUsesTime, timezoneOptions, type ScheduleValue } from "./schedule-fields";
-import type { CreateRoutineInput } from "./types";
+import type { CreateRoutineInput, RoutineAgentStatus } from "./types";
 
 /** Asks for what the routine does, the agent that runs it, and when. Nothing is saved until Create. */
-export function CreateRoutineDialog({ onClose, onCreate }: {
+export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgentSetup, refreshAgents }: {
   onClose: () => void;
   onCreate: (input: CreateRoutineInput) => Promise<void>;
+  /** Whether each agent is connected for this workspace's routines, by harness id. */
+  agents?: Partial<Record<string, RoutineAgentStatus>>;
+  /** Help to connect an agent, shown while it blocks Create. Call `refresh` after a connection changes. Null for an agent with none. */
+  renderAgentSetup?: (harness: HarnessId, status: RoutineAgentStatus, refresh: () => void) => ReactNode;
+  /** Reads the agents' statuses again. */
+  refreshAgents?: () => void;
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
@@ -26,7 +32,9 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
 
   const usesTime = presetUsesTime(schedule.preset);
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
-  const canCreate = title.trim() !== "" && prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving;
+  const status = agents[harness];
+  const blocked = status === "not_connected" || status === "needs_reconnect";
+  const canCreate = title.trim() !== "" && prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving && !blocked;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
   const routineHarnesses = HARNESSES.filter((option) => option.routineModes.length > 0);
   const models = getHarness(harness)?.models ?? [];
@@ -99,14 +107,22 @@ export function CreateRoutineDialog({ onClose, onCreate }: {
               <SectionedPicker
                 label="Agent and model"
                 sections={[
-                  { id: "harness", title: "Harnesses", value: harness, keepOpen: true, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: routineHarnesses.map((option) => ({ value: option.id, label: option.label })) },
+                  { id: "harness", title: "Harnesses", value: harness, keepOpen: true, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: routineHarnesses.map((option) => ({ value: option.id, label: option.label, hint: agents[option.id] === "not_connected" || agents[option.id] === "needs_reconnect" ? "Connect" : undefined })) },
                   { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: models.map((option) => ({ value: option.alias ?? "", label: option.label })) },
                 ]}
               >
                 {getHarness(harness)?.label} · {modelLabel(harness, model)}
               </SectionedPicker>
             </div>
+            {fieldError("harness")}
             {fieldError("model")}
+            {blocked && status && (
+              (renderAgentSetup?.(harness, status, refreshAgents ?? (() => {})) ?? null) ?? (
+                <p className="ui-routines__notice" role="status">
+                  {getHarness(harness)?.label} is not connected for routines. Connect it in the Draft desktop app, under Settings, then Agents.
+                </p>
+              )
+            )}
           </div>
         </div>
 

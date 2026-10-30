@@ -1,6 +1,7 @@
 "use client";
 
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import type { HarnessId } from "draft-core/harnesses";
 import { useId, useState, type ReactNode } from "react";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
@@ -18,7 +19,7 @@ import { CreateRoutineDialog } from "./CreateRoutineDialog";
 import { RoutineDetails } from "./RoutineDetails";
 import { RunStatus } from "./RoutineRuns";
 import { agentLabel } from "./agent-label";
-import type { CreateRoutineInput, Routine, RoutinePatch } from "./types";
+import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutinePatch } from "./types";
 import { useRoutineMutations } from "./useRoutineMutations";
 
 const FILTERS: Array<[RoutineFilter, string]> = [
@@ -122,11 +123,13 @@ function RoutinesSkeleton() {
   );
 }
 
-function RoutinesList({ workspaceId, onReconnect, onOpenRun }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void }) {
+type RenderAgentSetup = (harness: HarnessId, status: RoutineAgentStatus, refresh: () => void) => ReactNode;
+
+function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void; renderAgentSetup?: RenderAgentSetup }) {
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
-  const { routines, canEdit } = data;
+  const { routines, canEdit, agents } = data;
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -305,13 +308,21 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun }: { workspaceId: st
         />
       )}
 
-      {creating && <CreateRoutineDialog onClose={() => setCreating(false)} onCreate={onCreate} />}
+      {creating && (
+        <CreateRoutineDialog
+          onClose={() => setCreating(false)}
+          onCreate={onCreate}
+          agents={agents}
+          renderAgentSetup={renderAgentSetup}
+          refreshAgents={() => void queryClient.invalidateQueries({ queryKey: routinesQueryOptions(api, workspaceId).queryKey })}
+        />
+      )}
     </>
   );
 }
 
 /** Loading and error states match the Routines page; the title stays on screen throughout. */
-export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void }) {
+export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void; renderAgentSetup?: RenderAgentSetup }) {
   return (
     <div className="ui-routines">
       <h1 className="ui-routines__title">Routines</h1>
@@ -325,7 +336,7 @@ export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun }: { workspa
           </div>
         )}
       >
-        <RoutinesList workspaceId={workspaceId} onReconnect={onReconnect} onOpenRun={onOpenRun} />
+        <RoutinesList workspaceId={workspaceId} onReconnect={onReconnect} onOpenRun={onOpenRun} renderAgentSetup={renderAgentSetup} />
       </DataBoundary>
     </div>
   );
