@@ -13,6 +13,11 @@ describe("validateCreate", () => {
     });
   });
 
+  it("accepts a Codex routine with one of its own models, and not a Claude model", () => {
+    expect(validateCreate({ ...valid, harness: "codex", model: "gpt-6-luna" })).toMatchObject({ ok: true, config: { harness: "codex", model: "gpt-6-luna" } });
+    expect(validateCreate({ ...valid, harness: "codex", model: "haiku" })).toEqual({ ok: false, field: "model" });
+  });
+
   it("treats a missing model as the harness default", () => {
     const { model: _model, ...withoutModel } = valid;
     expect(validateCreate(withoutModel)).toMatchObject({ ok: true, config: { model: null } });
@@ -21,7 +26,7 @@ describe("validateCreate", () => {
   it.each([
     ["title", { title: "  " }],
     ["prompt", { prompt: "" }],
-    ["harness", { harness: "codex" }],
+    ["harness", { harness: "gemini" }],
     ["model", { model: "gpt-9" }],
     ["preset", { preset: "yearly" }],
     ["weekday", { weekday: "someday" }],

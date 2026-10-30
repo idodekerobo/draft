@@ -50,7 +50,7 @@ export const HARNESSES = [
     ],
     capabilities: { terminal: true, approvals: true, steer: true },
     testedVersion: { major: 0, minor: 165 },
-    routineModes: [],
+    routineModes: ["exec"],
     installUrl: "https://learn.chatgpt.com/docs/codex/cli#getting-started",
   },
 ] as const satisfies ReadonlyArray<HarnessDefinition>;
