@@ -2,7 +2,7 @@
 //
 // Sections (top → bottom):
 //   System     — Draft Cloud sign-in, notifications
-//   Agents     — Claude Code status, Codex sign-in
+//   Agents     — Claude Code status, Codex sign-in, Codex for routines
 //   Privacy    — usage data and session replay, stored on the account
 //   Appearance — Light, Dark, System
 //   Updates    — current version, check for updates
@@ -17,6 +17,7 @@ import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { ClaudeCodeRow } from "../connections/ClaudeCodeRow";
 import { CodexConnectRow } from "../connections/CodexConnectRow";
+import { RoutineCodexRow } from "../connections/RoutineCodexRow";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
 
@@ -238,6 +239,7 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
           <div className="settings__rows">
             <ClaudeCodeRow />
             <CodexConnectRow />
+            <RoutineCodexRow />
           </div>
         </section>
 
