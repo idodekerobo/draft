@@ -2,6 +2,7 @@ import * as firefliesWebhook from "../webhooks/fireflies/route";
 import * as granolaWebhook from "../webhooks/granola/route";
 import * as githubWebhook from "../webhooks/github/route";
 import * as linearWebhook from "../webhooks/linear/route";
+import * as codexCredential from "./codex-credential";
 import * as connections from "./connections";
 import * as githubCallback from "./github-callback";
 import * as githubInstall from "./github-install";
@@ -48,6 +49,7 @@ export const routes = {
   "/workspaces/:id/context/export-links": { POST: withCors(workspaceContextExport.exportLinkPOST), OPTIONS },
   "/context-exports/:token": { GET: workspaceContextExport.redeemGET },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
+  "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
   "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
