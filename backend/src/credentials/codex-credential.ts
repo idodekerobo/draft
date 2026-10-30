@@ -97,6 +97,22 @@ export async function resolveCodexCredential(client: SupabaseClient, workspaceId
   return { credentialId: row.id, authJson: decryptCredentialPayload(row.encrypted_payload, row.encryption_key_version) };
 }
 
+/** Ends this run's lease on the workspace's login. Does nothing when the workspace has no login or the run does not hold the lease. */
+export async function releaseCodexLeaseForRun(client: SupabaseClient, workspaceId: string, runId: string): Promise<void> {
+  const row = await loadRow(client, workspaceId);
+  if (row) await releaseCodexLease(client, row.id, runId);
+}
+
+/** Keeps the login a run sent back when Codex refreshed it. A file that is unreadable or unchanged is ignored. */
+export async function saveRefreshedCodexLogin(client: SupabaseClient, workspaceId: string, sentBack: unknown): Promise<boolean> {
+  const authJson = parseCodexAuthJson(sentBack);
+  if (!authJson) return false;
+  const current = await resolveCodexCredential(client, workspaceId);
+  if (!authJsonChanged(current.authJson, authJson)) return false;
+  await updateCodexCredential(client, current.credentialId, authJson);
+  return true;
+}
+
 /** Writes back a login that Codex refreshed during a run. */
 export async function updateCodexCredential(client: SupabaseClient, credentialId: string, authJson: string): Promise<void> {
   const { error } = await client

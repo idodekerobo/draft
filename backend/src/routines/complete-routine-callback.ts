@@ -3,6 +3,7 @@ import { authenticateSandboxCallbackRequest } from "../sandbox";
 import { isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
 import { routineEventsForHarness } from "../ingestion/harness-lines";
 import { parseLiveLine } from "../ingestion/claude-code/parse-live-line";
+import { saveRefreshedCodexLogin } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";
 import { parseAgentRoutineConfig, parseRoutineSessionId } from "./config";
@@ -60,6 +61,8 @@ async function appendLines(client: SupabaseClient, session: RoutineSession, line
 }
 
 async function finishRun(client: SupabaseClient, session: RoutineSession, result: Record<string, unknown>): Promise<void> {
+  // Saved before the session ends, because ending it frees the login for the next run.
+  if (session.harness === "codex") await saveRefreshedCodexLogin(client, session.workspace_id, result.auth_json).catch(() => undefined);
   if (result.ok === true) {
     await endRoutineSession(client, session, "completed");
     return;

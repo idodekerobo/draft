@@ -4,7 +4,8 @@ import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId } from "./config";
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
-import { launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
+import { CredentialError } from "../credentials/crypto";
+import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -66,9 +67,18 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
   try {
     await (options.launch ?? launchRoutineRun)({ sessionId, workspaceId: task.workspace_id, routine, config, client });
   } catch (error) {
+    if (error instanceof RoutineLeaseBusyError) {
+      await failRoutineSession(client, session, {
+        code: "routine_run_skipped",
+        note: "Another Codex routine was still running, so this run was skipped.",
+        message: `Routine ${task.id} was skipped while another Codex run held the login`,
+        silent: true,
+      });
+      return;
+    }
     await failRoutineSession(client, session, {
       code: "routine_launch_failed",
-      note: "The run could not start.",
+      note: error instanceof CredentialError && routine.harness === "codex" ? "Codex is not connected for this workspace. Connect it in Settings." : "The run could not start.",
       message: `Routine ${task.id} could not start its run`,
       error,
     });

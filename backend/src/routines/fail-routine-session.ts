@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { releaseCodexLeaseForRun } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";
 
@@ -11,6 +12,8 @@ export interface RoutineFailure {
   message: string;
   detail?: Record<string, unknown>;
   error?: unknown;
+  /** True when the run was left out on purpose, so no error row is written. */
+  silent?: boolean;
 }
 
 /** Moves a running session to ended. Returns false when it had already ended, so only one caller records the outcome. */
@@ -25,9 +28,12 @@ export async function endRoutineSession(
     .eq("id", session.id)
     .eq("workspace_id", session.workspace_id)
     .neq("status", "ended")
-    .select("id");
+    .select("id, harness");
   if (error) throw error;
-  return (data?.length ?? 0) > 0;
+  const ended = (data as Array<{ harness: string }> | null)?.[0];
+  // A Codex run holds its workspace's login until it ends, however it ends.
+  if (ended?.harness === "codex") await releaseCodexLeaseForRun(client, session.workspace_id, session.id).catch(() => undefined);
+  return !!ended;
 }
 
 /**
@@ -52,6 +58,7 @@ export async function failRoutineSession(
     .then(() => undefined, () => undefined);
 
   if (!(await endRoutineSession(client, session, "failed"))) return false;
+  if (failure.silent) return true;
 
   await recordError({
     client,
