@@ -7,6 +7,7 @@ RUN bun build --target=node --outfile=runner.mjs runner.ts
 FROM node:22-bookworm-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.220
+ARG CODEX_VERSION=0.165.0
 
 # Use a runtime supported by the pinned Claude Code release. The image uses
 # Debian packages available to Fly's remote builder and does not rely on a
@@ -17,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iptables \
     tini \
   && rm -rf /var/lib/apt/lists/* \
-  && npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+  && npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@openai/codex@${CODEX_VERSION}" \
   && npm cache clean --force \
   && useradd --create-home --shell /bin/bash agent
 

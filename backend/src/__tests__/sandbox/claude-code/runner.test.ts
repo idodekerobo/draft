@@ -9,10 +9,12 @@ import {
   callback,
   classifyClaudeEnvelopeFailure,
   classifyClaudeFailureChunk,
+  codexRoutineArgs,
   extractStructuredOutput,
   claudeCommandArgs,
   fetchAndWriteBundle,
   parseBatchManifest,
+  parseCodexResultLine,
   parseCompletedClaudeEnvelope,
   parseResultPayload,
   parseStreamJsonTranscript,
@@ -25,6 +27,7 @@ import {
   runBatch,
   sanitizeReason,
   sanitizedClaudeEnv,
+  sanitizedCodexEnv,
   shouldRetryCallback,
   StreamLineReader,
 } from "../../../sandbox/claude-code/runner";
@@ -571,4 +574,42 @@ test("a routine failure is named by the first cause that applies", () => {
   expect(routineFailureCode({ ...base, exitCode: 1 })).toBe("claude_exit");
   expect(routineFailureCode({ ...base, signal: "SIGKILL" })).toBe("claude_exit");
   expect(routineFailureCode(base)).toBe("incomplete_result");
+});
+
+describe("Codex routine run", () => {
+  test("the command reads the prompt from stdin, runs read-only and keeps nothing on disk", () => {
+    expect(codexRoutineArgs("gpt-6-luna")).toEqual(["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
+    expect(codexRoutineArgs(null)).not.toContain("-m");
+    expect(() => codexRoutineArgs("bad model; rm")).toThrow("DRAFT_ROUTINE_MODEL");
+  });
+
+  test("the child gets its own home and no token of ours", () => {
+    const env = sanitizedCodexEnv({ LANG: "en_US.UTF-8", TZ: "UTC", CODEX_AUTH_JSON: "secret", CLAUDE_CODE_OAUTH_TOKEN: "other", PATH: "/evil" });
+    expect(env).toEqual({
+      HOME: "/home/agent",
+      USER: "agent",
+      LOGNAME: "agent",
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      LANG: "en_US.UTF-8",
+      CODEX_HOME: "/home/agent/.codex",
+      TZ: "UTC",
+    });
+    expect(JSON.stringify(env)).not.toContain("secret");
+  });
+
+  test("a finished turn is the result, a failed turn is an error result, and other lines are neither", () => {
+    expect(parseCodexResultLine('{"type":"turn.completed","usage":{}}')).toEqual({ is_error: false, subtype: "turn.completed" });
+    expect(parseCodexResultLine('{"type":"turn.failed","error":{"message":"x"}}')).toEqual({ is_error: true, subtype: "turn.failed" });
+    expect(parseCodexResultLine('{"type":"item.completed"}')).toBeNull();
+    expect(parseCodexResultLine('{"type":"turn.completed"')).toBeNull();
+    expect(parseCodexResultLine('{"type":"item.completed","item":{"text":"\\"type\\":\\"turn.completed\\""}}')).toBeNull();
+  });
+
+  test("a failure is named for Codex, and a Claude run keeps its names", () => {
+    const base = { timedOut: false, resultIsError: false, exitCode: 0, signal: null };
+    expect(routineFailureCode({ ...base, resultIsError: true, harness: "codex" })).toBe("codex_error");
+    expect(routineFailureCode({ ...base, exitCode: 1, harness: "codex" })).toBe("codex_exit");
+    expect(routineFailureCode({ ...base, timedOut: true, harness: "codex" })).toBe("timeout");
+    expect(routineFailureCode({ ...base, resultIsError: true })).toBe("claude_error");
+  });
 });

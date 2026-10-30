@@ -30,9 +30,10 @@ for host in $(printf '%s' "$DRAFT_EGRESS_HOSTS" | tr ',' ' '); do
   hosts="$hosts $host"
 done
 
+required_host="${DRAFT_EGRESS_REQUIRED_HOST:-api.anthropic.com}"
 case " $hosts " in
-  *" api.anthropic.com "*) ;;
-  *) echo "[egress] fatal: api.anthropic.com must be allowlisted" >&2; exit 1 ;;
+  *" $required_host "*) ;;
+  *) echo "[egress] fatal: $required_host must be allowlisted" >&2; exit 1 ;;
 esac
 case " $hosts " in
   *" $DRAFT_CALLBACK_HOST "*) ;;
