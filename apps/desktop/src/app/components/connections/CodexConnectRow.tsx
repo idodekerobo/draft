@@ -1,3 +1,4 @@
+import { harnessInstallUrl } from "draft-core/harnesses";
 import { useCodexConnection } from "../../hooks/useCodexConnection";
 import { rpc } from "../../rpc";
 
@@ -7,7 +8,7 @@ export function CodexConnectRow() {
 
   const description =
     phase === "loading" ? "Checking…"
-    : phase === "not_installed" ? "Codex is not installed on this computer. Install it from developers.openai.com/codex."
+    : phase === "not_installed" ? "Codex is not installed on this computer."
     : phase === "signed_in" ? "Signed in. You can start Codex sessions."
     : phase === "signing_in" && device ? "Open the link and enter this code to finish signing in."
     : phase === "signing_in" ? "Finish signing in in your browser."
@@ -32,6 +33,9 @@ export function CodexConnectRow() {
         )}
         {error && <span className="ui-error" role="alert">{error}</span>}
       </div>
+      {phase === "not_installed" && harnessInstallUrl("codex") && (
+        <button type="button" className="settings__action-button" onClick={() => rpc.send.openUrl({ url: harnessInstallUrl("codex")! })}>Install guide</button>
+      )}
       {phase === "signed_out" && (
         <button type="button" className="settings__action-button" onClick={() => void signIn({ deviceCode: false })}>Sign in</button>
       )}
