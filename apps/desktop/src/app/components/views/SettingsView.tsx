@@ -2,7 +2,7 @@
 //
 // Sections (top → bottom):
 //   System     — Draft Cloud sign-in, notifications
-//   Agents     — Claude Code status, Codex sign-in, Codex for routines
+//   Agents     — Claude Code and Codex, each for sessions and for routines
 //   Privacy    — usage data and session replay, stored on the account
 //   Appearance — Light, Dark, System
 //   Updates    — current version, check for updates
@@ -15,9 +15,8 @@ import type { LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
-import { ClaudeCodeRow } from "../connections/ClaudeCodeRow";
-import { CodexConnectRow } from "../connections/CodexConnectRow";
-import { RoutineCodexRow } from "../connections/RoutineCodexRow";
+import { ClaudeAgentRow } from "../connections/ClaudeAgentRow";
+import { CodexAgentRow } from "../connections/CodexAgentRow";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
 
@@ -237,9 +236,8 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
         <section className="settings__section">
           <h2 className="settings__section-label">Agents</h2>
           <div className="settings__rows">
-            <ClaudeCodeRow />
-            <CodexConnectRow />
-            <RoutineCodexRow />
+            <ClaudeAgentRow />
+            <CodexAgentRow />
           </div>
         </section>
 
