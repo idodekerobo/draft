@@ -41,7 +41,12 @@ export interface LaunchFlySandboxRunInput {
   prompt?: string;
   /** Required unless mode is "routine" -- a routine streams free text instead of a structured result. */
   jsonSchema?: Record<string, unknown>;
-  claudeCodeOAuthToken: string;
+  /** Which CLI the runner starts. Omitted means Claude Code. */
+  harness?: "claude" | "codex";
+  /** The secret for a Claude Code run. */
+  claudeCodeOAuthToken?: string;
+  /** The contents of `auth.json` for a Codex run. Codex runs are routines only. */
+  codexAuthJson?: string;
   config: SandboxDeploymentConfig;
   /** Additive: omitted preserves today's single-prompt runner behavior. */
   mode?: "single" | "batch" | "routine";
@@ -111,7 +116,13 @@ export async function launchFlySandboxRun(
   dependencies: LaunchFlySandboxRunDependencies = {},
 ): Promise<FlySandboxRunReceipt> {
   if (input.mode !== "batch") assertNonEmpty(input.prompt ?? "", "prompt");
-  assertNonEmpty(input.claudeCodeOAuthToken, "claudeCodeOAuthToken");
+  const harness = input.harness ?? "claude";
+  if (harness === "codex") {
+    if (input.mode !== "routine") throw new Error("codex runs support only mode \"routine\"");
+    assertNonEmpty(input.codexAuthJson ?? "", "codexAuthJson");
+  } else {
+    assertNonEmpty(input.claudeCodeOAuthToken ?? "", "claudeCodeOAuthToken");
+  }
   const config = validateSandboxDeploymentConfig(input.config);
 
   if (Object.hasOwn(input.bundle.files, PROMPT_PATH)) {
@@ -165,10 +176,15 @@ export async function launchFlySandboxRun(
     DRAFT_EGRESS_HOSTS: storageHost,
     DRAFT_CALLBACK_URL: config.callbackUrl,
     DRAFT_CALLBACK_TOKEN: callbackToken,
-    CLAUDE_CODE_OAUTH_TOKEN: input.claudeCodeOAuthToken,
     DRAFT_PROMPT_PATH: `/run/${PROMPT_PATH}`,
     DRAFT_TIMEOUT_SECONDS: String(input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS),
   };
+  if (harness === "codex") {
+    env.DRAFT_RUN_HARNESS = "codex";
+    env.CODEX_AUTH_JSON = input.codexAuthJson!;
+  } else {
+    env.CLAUDE_CODE_OAUTH_TOKEN = input.claudeCodeOAuthToken!;
+  }
   if (serializedSchema !== null) env.DRAFT_OUTPUT_SCHEMA_PATH = `/run/${OUTPUT_SCHEMA_PATH}`;
   if (input.mode === "routine") {
     env.DRAFT_RUN_MODE = "routine";
