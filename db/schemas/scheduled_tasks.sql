@@ -16,7 +16,9 @@ create table scheduled_tasks (
   -- agent_routine: prompt, harness, model and title.
   config_json              jsonb not null default '{}',
   next_due_at              timestamptz,
-  last_enqueued_at         timestamptz,
+  -- Set when a person deletes the routine. The row stays for its past runs.
+  deleted_at               timestamptz,
+  last_enqueued_at        timestamptz,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),
   updated_by_user_id       uuid references users(id) on delete set null,

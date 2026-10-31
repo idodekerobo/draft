@@ -16,6 +16,10 @@ const api: DraftApi = {
     if (!result.ok) throw toRoutineError(result.code, result.field);
     return result.routine;
   },
+  deleteRoutine: async (id) => {
+    const result = await rpc.request.deleteRoutine({ id });
+    if (!result.ok) throw toRoutineError(result.code, result.field);
+  },
   getRoutineRuns: (id) => rpc.request.listRoutineRuns({ id }),
 };
 

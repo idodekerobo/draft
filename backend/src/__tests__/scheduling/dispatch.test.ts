@@ -17,6 +17,7 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     enabled: true,
     config_json: {},
     next_due_at: "2026-08-05T08:00:00.000Z",
+    deleted_at: null,
     last_enqueued_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
@@ -75,6 +76,16 @@ describe("dispatchScheduledTask", () => {
   it("no-ops when the fresh task row is no longer enabled", async () => {
     const task = baseTask({ task_type: "synthesize_workspace" });
     const client = fakeClient({ ...task, enabled: false });
+    const deps = neverCalledDeps();
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.launchSynthesisRun).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the fresh task row was deleted", async () => {
+    const task = baseTask({ task_type: "synthesize_workspace" });
+    const client = fakeClient({ ...task, deleted_at: "2026-08-05T07:00:00.000Z" });
     const deps = neverCalledDeps();
 
     await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);

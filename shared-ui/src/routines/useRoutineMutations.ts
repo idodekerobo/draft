@@ -43,5 +43,11 @@ export function useRoutineMutations(workspaceId: string, onToggleError: (error: 
       queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => current && { ...current, routines: [...current.routines, created] }),
   });
 
-  return { toggle, save, create };
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteRoutine(id),
+    onSuccess: (_result, id) =>
+      queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => current && { ...current, routines: current.routines.filter((row) => row.id !== id) }),
+  });
+
+  return { toggle, save, create, remove };
 }

@@ -3,14 +3,35 @@ import { assertSafeDocumentPath } from "../synthesis/context-version-files";
 import type { SandboxRunBundle } from "../sandbox";
 import { routineRunId } from "./config";
 
-const PREAMBLE = [
-  "You are running as a scheduled routine for a company. Its shared knowledge is in Markdown files under /run/input/context.",
-  "Use the Glob and Read tools to read them. You have no other tools and no internet access.",
-  "Answer the request below. Your reply is saved as the result of this run.",
-].join("\n");
+export interface RoutinePromptContext {
+  title: string;
+  /** The cadence in words, for example "Daily at 9:00 AM". */
+  schedule: string;
+  timezone: string;
+  startedAt: Date;
+}
 
-export function renderRoutinePrompt(prompt: string): string {
-  return `${PREAMBLE}\n\n---\n\n${prompt.trim()}\n`;
+function startedAtIn(timezone: string, startedAt: Date): string {
+  const format = (timeZone: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "short", timeZone }).format(startedAt);
+  try {
+    return format(timezone);
+  } catch {
+    return `${format("UTC")} UTC`;
+  }
+}
+
+/** One text for every agent: it names no tool, because each agent reads files with its own. */
+export function renderRoutinePrompt(prompt: string, context: RoutinePromptContext): string {
+  const preamble = [
+    "You are running as a scheduled routine.",
+    `Routine: ${context.title}`,
+    `Schedule: ${context.schedule} (${context.timezone})`,
+    `This run started: ${startedAtIn(context.timezone, context.startedAt)}`,
+    "",
+    "The company's shared knowledge is in Markdown files under /run/input/context. Read them as needed. They are read-only.",
+    "Answer the request below. Your reply is saved as the result of this run.",
+  ].join("\n");
+  return `${preamble}\n\n---\n\n${prompt.trim()}\n`;
 }
 
 /** The brain's documents as files under input/context, like a synthesis run's bundle. Unsafe paths are left out. */

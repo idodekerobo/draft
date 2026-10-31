@@ -192,6 +192,7 @@ export interface ScheduledTaskRow {
   enabled: boolean;
   config_json: Record<string, unknown>;
   next_due_at: string | null;
+  deleted_at: string | null;
   last_enqueued_at: string | null;
   created_at: string;
   updated_at: string;

@@ -16,6 +16,7 @@ function queryBuilder(table: string) {
   const builder = {
     select: () => builder,
     eq: () => builder,
+    is: () => builder,
     in: () => builder,
     order: () => builder,
     limit: () => builder,

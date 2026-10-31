@@ -5,7 +5,7 @@ import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
 import { routineRunsQueryOptions } from "../query/options";
 import { formatDuration, formatWhen } from "./format";
-import type { Routine, RoutineRun, RoutineRunStatus } from "./types";
+import type { OpenRun, Routine, RoutineRun, RoutineRunStatus } from "./types";
 
 const STATUS_LABEL: Record<RoutineRunStatus, string> = { running: "Running", completed: "Completed", failed: "Failed" };
 
@@ -42,7 +42,7 @@ function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; 
   );
 }
 
-function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; routine: Routine; onOpenRun?: (sessionId: string) => void }) {
+function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; routine: Routine; onOpenRun?: OpenRun }) {
   const api = useDraftApi();
   const { data: runs } = useSuspenseQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
   if (runs.length === 0) {
@@ -51,14 +51,14 @@ function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; ro
   return (
     <ul className="ui-routines__runs">
       {runs.map((run) => (
-        <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id))} />
+        <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
       ))}
     </ul>
   );
 }
 
 /** The newest runs of an agent routine. Each opens in the session view. */
-export function RoutineRuns(props: { workspaceId: string; routine: Routine; onOpenRun?: (sessionId: string) => void }) {
+export function RoutineRuns(props: { workspaceId: string; routine: Routine; onOpenRun?: OpenRun }) {
   return (
     <DataBoundary
       fallback={<RunsSkeleton />}

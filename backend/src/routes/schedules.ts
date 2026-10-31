@@ -5,7 +5,8 @@ import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { lacksRoutineLogin, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../schedules/permissions";
-import { ScheduleServiceError, createAgentRoutine, getRoutineTask, listRoutineRuns, listRoutines, updateRoutine } from "../schedules/service";
+import { parseAgentRoutineConfig } from "../routines/config";
+import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask, listRoutineRuns, listRoutines, updateRoutine } from "../schedules/service";
 import { validateCreate } from "../schedules/validate-create";
 import { validatePatch } from "../schedules/validate-patch";
 
@@ -58,11 +59,16 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
   try {
     const routineTask = await getRoutineTask(workspaceId, taskId);
     if (!routineTask) return Response.json({ error: "not_found" }, { status: 404 });
-    const { definition } = routineTask;
+    const { definition, task } = routineTask;
+    const current = task.task_type === "agent_routine" ? parseAgentRoutineConfig(task.config_json) : null;
 
-    const validation = validatePatch(body, definition.editable);
+    const validation = validatePatch(body, definition.editable, current);
     if (!validation.ok) {
       return Response.json({ error: validation.error, field: validation.field }, { status: 400 });
+    }
+    const harness = validation.patch.agent?.harness;
+    if (harness && harness !== current?.harness && (await lacksRoutineLogin(serviceClient, workspaceId, harness))) {
+      return Response.json({ error: "codex_not_connected", field: "harness" }, { status: 409 });
     }
     return Response.json(await updateRoutine(routineTask, validation.patch, caller.userId));
   } catch (error) {
@@ -72,6 +78,30 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
     }
     recordRouteError({ workspaceId, operation: "commit", errorCode: "schedules_update_failed", error });
     return Response.json({ error: "schedules_update_failed" }, { status: 500 });
+  }
+});
+
+export const DELETE = withAuth<ScheduleRequest>(async (req, caller) => {
+  const { id: workspaceId, taskId } = req.params;
+  const denied = await assertWorkspaceAccess(workspaceId, caller.userId);
+  if (denied) return denied;
+  if (!(await canEditSchedules(workspaceId, caller.userId))) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+
+  try {
+    const routineTask = await getRoutineTask(workspaceId, taskId);
+    if (!routineTask) return Response.json({ error: "not_found" }, { status: 404 });
+    // Only a routine that a person made can be deleted. The built-in ones are part of the product.
+    if (routineTask.task.task_type !== "agent_routine") return Response.json({ error: "field_not_editable" }, { status: 400 });
+    await deleteRoutine(routineTask, caller.userId);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    if (error instanceof ScheduleServiceError && error.code === "not_found") {
+      return Response.json({ error: "not_found" }, { status: 404 });
+    }
+    recordRouteError({ workspaceId, operation: "commit", errorCode: "schedules_delete_failed", error });
+    return Response.json({ error: "schedules_delete_failed" }, { status: 500 });
   }
 });
 
