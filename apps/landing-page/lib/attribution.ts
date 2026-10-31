@@ -70,17 +70,3 @@ export function getVisitorId(): string {
     return "unknown";
   }
 }
-
-export const CAL_BASE = "https://cal.com/idode/learn-about-draft";
-
-// Carries the visitor's channel into the booking; falls back to a site-origin tag.
-export function buildCalLink(): string {
-  const last = read().last ?? {};
-  const params = new URLSearchParams({
-    utm_source: last.utm_source ?? "draftai_site",
-    utm_medium: last.utm_medium ?? "website",
-    utm_campaign: last.utm_campaign ?? "book_a_call",
-  });
-  if (last.utm_content) params.set("utm_content", last.utm_content);
-  return `${CAL_BASE}?${params.toString()}`;
-}

@@ -4,11 +4,9 @@ import { useEffect, useState } from "react";
 import Cal, { getCalApi } from "@calcom/embed-react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
-import { getAttribution } from "@/lib/attribution";
+import { buildCalConfig, CAL_NAMESPACE, CAL_PATH } from "@/lib/cal";
 import { trackCallBooked } from "@/lib/track";
-
-const CAL_NAMESPACE = "learn-about-draft";
-const CAL_PATH = "idode/learn-about-draft";
+import type { ProfileAnswers } from "@/lib/waitlist-questions";
 
 const READY_FALLBACK_MS = 6000;
 
@@ -32,7 +30,7 @@ function CalSkeleton() {
   );
 }
 
-export function CalEmbed({ email, source }: { email: string; source: string }) {
+export function CalEmbed({ email, source, profile = {} }: { email: string; source: string; profile?: ProfileAnswers }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -60,18 +58,18 @@ export function CalEmbed({ email, source }: { email: string; source: string }) {
     };
   }, [source]);
 
-  const last = getAttribution().last ?? {};
-  const utm = Object.fromEntries(Object.entries(last).filter(([key]) => key.startsWith("utm_")));
+  const config = buildCalConfig(email, profile);
 
   return (
     <div className="cal-embed" data-ready={ready}>
       <CalSkeleton />
       <div className="cal-embed-frame">
         <Cal
+          key={JSON.stringify(config)}
           namespace={CAL_NAMESPACE}
           calLink={CAL_PATH}
           style={{ width: "100%" }}
-          config={{ layout: "month_view", email, ...utm }}
+          config={config}
         />
       </div>
     </div>
@@ -85,6 +83,7 @@ interface PostSignupCallProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   inlineEmbed?: boolean;
+  profile?: ProfileAnswers;
 }
 
 export default function PostSignupCall({
@@ -93,6 +92,7 @@ export default function PostSignupCall({
   open: openProp,
   onOpenChange,
   inlineEmbed = true,
+  profile,
 }: PostSignupCallProps) {
   const ph = usePostHog();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -101,7 +101,7 @@ export default function PostSignupCall({
   if (open) {
     return inlineEmbed ? (
       <div style={{ marginTop: "1.25rem" }}>
-        <CalEmbed email={email} source={source} />
+        <CalEmbed email={email} source={source} profile={profile} />
       </div>
     ) : null;
   }
@@ -117,7 +117,7 @@ export default function PostSignupCall({
       }}
       style={{ marginTop: "1.25rem", gap: "12px" }}
     >
-      Skip the wait: book a call
+      Book a call
       <span aria-hidden="true">↗</span>
     </button>
   );

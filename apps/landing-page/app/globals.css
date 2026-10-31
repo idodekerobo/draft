@@ -290,7 +290,11 @@ body {
 
 .getstarted-call-link {
   align-items: center;
+  background: none;
+  border: 0;
   color: var(--getstarted-muted);
+  cursor: pointer;
+  font-family: inherit;
   display: inline-flex;
   font-size: 0.88rem;
   justify-content: center;

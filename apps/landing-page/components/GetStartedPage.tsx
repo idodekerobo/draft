@@ -4,16 +4,15 @@ import Image from "next/image";
 import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
-import { buildCalLink, CAL_BASE } from "@/lib/attribution";
 import { submitWaitlist } from "@/lib/waitlist";
+import type { ProfileAnswers } from "@/lib/waitlist-questions";
 import WaitlistProfileStep from "@/components/WaitlistProfileStep";
-import PostSignupCall, { CalEmbed } from "@/components/PostSignupCall";
+import { CalEmbed } from "@/components/PostSignupCall";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { OrbComposing } from "@/components/ui/thinking-orb";
 
 const DESKTOP_QUERY = "(min-width: 901px)";
-const subscribeNoop = () => () => {};
 const subscribeDesktop = (onChange: () => void) => {
   const query = window.matchMedia(DESKTOP_QUERY);
   query.addEventListener("change", onChange);
@@ -55,10 +54,12 @@ export default function GetStartedPage() {
   const [email, setEmail] = useState("");
   const [signupToken, setSignupToken] = useState("");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
-  const calHref = useSyncExternalStore(subscribeNoop, buildCalLink, () => CAL_BASE);
   const isDesktop = useSyncExternalStore(subscribeDesktop, getIsDesktop, () => false);
   const [callOpen, setCallOpen] = useState(false);
+  const [profile, setProfile] = useState<ProfileAnswers>({});
+  const [profileDone, setProfileDone] = useState(false);
   const sideCal = callOpen && isDesktop;
+  const calRef = useRef<HTMLDivElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
   const closingRef = useRef<HTMLElement>(null);
   const [copyVisible, setCopyVisible] = useState(true);
@@ -98,27 +99,45 @@ export default function GetStartedPage() {
     }
   };
 
+  const handleOpenCall = (location: CtaLocation) => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const behavior = reduceMotion ? "auto" : "smooth";
+    ph?.capture(EVENTS.CTA_CLICKED, { source: "getstarted", cta_text: "Book a Call", location });
+    if (callOpen) {
+      calRef.current?.scrollIntoView({ behavior, block: "start" });
+      return;
+    }
+    setCallOpen(true);
+    ph?.capture(EVENTS.CALL_EMBED_OPENED, { source: "getstarted", location });
+    if (location !== "hero") copyRef.current?.scrollIntoView({ behavior, block: "start" });
+  };
+
+  const handleProfileDone = (answers: ProfileAnswers) => {
+    setProfile(answers);
+    setProfileDone(true);
+    if (!callOpen) handleOpenCall("hero");
+  };
+
   const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => (
     <div className="getstarted-actions">
       <button
         type="button"
         className="minimal-button getstarted-primary"
+        onClick={() => handleOpenCall(location)}
+        aria-expanded={callOpen}
+      >
+        Book a call
+        <span aria-hidden="true">↗</span>
+      </button>
+      <button
+        type="button"
+        className="getstarted-call-link"
         onClick={() => handleOpenWaitlist(location)}
         aria-expanded={waitlistOpen}
         aria-controls="getstarted-waitlist"
       >
-        Join the waitlist
-        <span aria-hidden="true">↗</span>
+        Not ready? Leave your email <span aria-hidden="true">↗</span>
       </button>
-      <a
-        className="getstarted-call-link"
-        href={calHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={() => ph?.capture(EVENTS.CTA_CLICKED, { source: "getstarted", cta_text: "Book a Call", location })}
-      >
-        Book a Call <span aria-hidden="true">↗</span>
-      </a>
     </div>
   );
 
@@ -156,20 +175,13 @@ export default function GetStartedPage() {
               {submitState === "success" ? (
                 <>
                   <p className="getstarted-success" role="status">
-                    You&apos;re on the list. We&apos;ll be in touch ASAP.
+                    {profileDone ? "Thanks. Pick a time to talk." : "Thanks. We'll be in touch soon."}
                   </p>
-                  <PostSignupCall
-                    email={email}
-                    source="getstarted"
-                    open={callOpen}
-                    onOpenChange={setCallOpen}
-                    inlineEmbed={!isDesktop}
-                  />
-                  <WaitlistProfileStep signupToken={signupToken} source="getstarted" />
+                  <WaitlistProfileStep signupToken={signupToken} source="getstarted" onDone={handleProfileDone} />
                 </>
               ) : (
                 <form onSubmit={handleSubmit}>
-                  <label htmlFor="getstarted-email">Enter your email and we&apos;ll let you know when Draft is ready.</label>
+                  <label htmlFor="getstarted-email">Leave your email and we&apos;ll reach out to see if Draft fits your team.</label>
                   <div className="getstarted-form-row">
                     <input
                       ref={emailRef}
@@ -184,7 +196,7 @@ export default function GetStartedPage() {
                       disabled={submitState === "submitting"}
                     />
                     <button type="submit" disabled={submitState === "submitting"}>
-                      {submitState === "submitting" ? "Joining…" : "Join waitlist"}
+                      {submitState === "submitting" ? "Sending…" : "Send"}
                     </button>
                   </div>
                   {submitState === "error" && (
@@ -196,14 +208,20 @@ export default function GetStartedPage() {
               )}
             </div>
           )}
+
+          {callOpen && !isDesktop && (
+            <div ref={calRef} style={{ marginTop: "1.25rem" }}>
+              <CalEmbed email={email} source="getstarted" profile={profile} />
+            </div>
+          )}
         </div>
 
 
       </section>
 
       {sideCal && (
-        <aside className="getstarted-cal" aria-label="Book a call">
-          <CalEmbed email={email} source="getstarted" />
+        <aside ref={calRef} className="getstarted-cal" aria-label="Book a call">
+          <CalEmbed email={email} source="getstarted" profile={profile} />
         </aside>
       )}
 
@@ -260,9 +278,9 @@ export default function GetStartedPage() {
           <button
             type="button"
             className="minimal-button getstarted-primary"
-            onClick={() => handleOpenWaitlist("sticky_bar")}
+            onClick={() => handleOpenCall("sticky_bar")}
           >
-            Join the waitlist
+            Book a call
             <span aria-hidden="true">↗</span>
           </button>
         </div>

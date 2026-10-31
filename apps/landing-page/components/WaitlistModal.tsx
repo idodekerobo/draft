@@ -6,6 +6,7 @@ import { EVENTS } from "@/lib/analytics";
 import { submitWaitlist } from "@/lib/waitlist";
 import WaitlistProfileStep from "@/components/WaitlistProfileStep";
 import PostSignupCall from "@/components/PostSignupCall";
+import type { ProfileAnswers } from "@/lib/waitlist-questions";
 
 const OPEN_WAITLIST_EVENT = "draft:open-waitlist";
 
@@ -23,6 +24,7 @@ export default function WaitlistModal() {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [signupToken, setSignupToken] = useState("");
+  const [profile, setProfile] = useState<ProfileAnswers>({});
   const [source, setSource] = useState("unknown");
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
 
@@ -31,6 +33,7 @@ export default function WaitlistModal() {
       const detail = (event as CustomEvent<{ source?: string }>).detail;
       setSource(detail?.source ?? "unknown");
       setSubmitState("idle");
+      setProfile({});
       setOpen(true);
       ph?.capture(EVENTS.WAITLIST_OPENED, { source: detail?.source ?? "unknown" });
     };
@@ -163,8 +166,8 @@ export default function WaitlistModal() {
             <p style={{ margin: 0, color: "var(--color-muted)", lineHeight: 1.6 }}>
               We&apos;ll be in touch ASAP.
             </p>
-            <PostSignupCall email={email} source={source} />
-            <WaitlistProfileStep signupToken={signupToken} source={source} />
+            <WaitlistProfileStep signupToken={signupToken} source={source} onDone={setProfile} />
+            <PostSignupCall email={email} source={source} profile={profile} />
           </div>
         ) : (
           <>
