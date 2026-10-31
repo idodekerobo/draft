@@ -63,10 +63,18 @@ export interface RoutinesResponse {
   agents?: Partial<Record<string, RoutineAgentStatus>>;
 }
 
+/** What a person can change on an agent routine. Send only the fields that changed. */
+export interface AgentRoutineEdit {
+  title?: string;
+  prompt?: string;
+  harness?: HarnessId;
+  model?: string | null;
+}
+
 /** Body for PATCH /workspaces/:id/schedules/:taskId. */
 export type RoutinePatch =
   | { enabled: boolean }
-  | { preset: Exclude<RoutinePreset, "custom">; time?: string; weekday?: RoutineWeekday; timezone?: string };
+  | (AgentRoutineEdit & { preset?: Exclude<RoutinePreset, "custom">; time?: string; weekday?: RoutineWeekday; timezone?: string });
 
 /** Body for POST /workspaces/:id/schedules: an agent routine and when it runs. */
 export interface CreateRoutineInput {

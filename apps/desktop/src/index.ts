@@ -427,6 +427,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      deleteRoutine: async ({ id }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, code: "signed_out" };
+        try {
+          await fetchServer(`workspaces/${workspaceId}/schedules/${id}`, { method: "DELETE" });
+          return { ok: true };
+        } catch (err) {
+          return err instanceof ServerError
+            ? { ok: false, code: err.code, field: err.field }
+            : { ok: false, code: err instanceof Error ? err.message : "unknown" };
+        }
+      },
+
       listRoutineRuns: async ({ id }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");

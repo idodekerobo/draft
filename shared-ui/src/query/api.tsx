@@ -10,6 +10,8 @@ export interface DraftApi {
   getRoutines(): Promise<RoutinesResponse>;
   updateRoutine(id: string, patch: RoutinePatch): Promise<Routine>;
   createRoutine(input: CreateRoutineInput): Promise<Routine>;
+  /** Hides an agent routine and stops its runs. Its past runs stay. */
+  deleteRoutine(id: string): Promise<void>;
   getRoutineRuns(id: string): Promise<RoutineRun[]>;
 }
 

@@ -137,7 +137,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }:
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const labelPrefix = useId();
 
-  const { toggle, save, create } = useRoutineMutations(workspaceId, (error) =>
+  const { toggle, save, create, remove } = useRoutineMutations(workspaceId, (error) =>
     toast.error("Could not update the routine", { description: error.message }),
   );
 
@@ -178,9 +178,17 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }:
 
   async function onSave(routine: Routine, patch: RoutinePatch) {
     await save.mutateAsync({ id: routine.id, patch });
-    toast.success("Schedule saved.");
+    toast.success(routine.agent ? `${routine.title} saved.` : "Schedule saved.");
     setOpenId(null);
   }
+
+  async function onDelete(routine: Routine) {
+    await remove.mutateAsync(routine.id);
+    toast.success(`${routine.title} deleted.`);
+    setOpenId(null);
+  }
+
+  const refreshAgents = () => void queryClient.invalidateQueries({ queryKey: routinesQueryOptions(api, workspaceId).queryKey });
 
   return (
     <>
@@ -304,7 +312,11 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }:
           canEdit={canEdit}
           onClose={() => setOpenId(null)}
           onSave={(patch) => onSave(open, patch)}
+          onDelete={open.agent ? () => onDelete(open) : undefined}
           onOpenRun={onOpenRun}
+          agents={agents}
+          renderAgentSetup={renderAgentSetup}
+          refreshAgents={refreshAgents}
         />
       )}
 
@@ -314,7 +326,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }:
           onCreate={onCreate}
           agents={agents}
           renderAgentSetup={renderAgentSetup}
-          refreshAgents={() => void queryClient.invalidateQueries({ queryKey: routinesQueryOptions(api, workspaceId).queryKey })}
+          refreshAgents={refreshAgents}
         />
       )}
     </>

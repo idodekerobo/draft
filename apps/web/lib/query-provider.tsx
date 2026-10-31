@@ -32,6 +32,14 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
         throw error;
       }
     },
+    deleteRoutine: async (id) => {
+      try {
+        await apiFetch<null>(`/workspaces/${workspaceId}/schedules/${id}`, { method: "DELETE" });
+      } catch (error) {
+        if (error instanceof ApiError) throw toRoutineError(error.code, error.field);
+        throw error;
+      }
+    },
     getRoutineRuns: async (id) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs`)).runs,
   };
   return <DraftQueryProvider api={api}>{children}</DraftQueryProvider>;

@@ -611,6 +611,8 @@
   color: var(--color-text-primary);
 }
 .ui-routines__btn--primary { border-color: var(--color-accent-fill); background: var(--color-accent-fill); color: var(--color-text-on-accent); }
+.ui-routines__btn--danger-quiet { color: var(--color-status-red); }
+.ui-routines__btn--danger { border-color: var(--color-status-red); color: var(--color-status-red); }
 
 /* Dialog: explicit centering so app resets cannot move it. */
 .ui-dialog {
@@ -693,6 +695,9 @@
 .ui-routines__actions { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
 .ui-routines__actions .ui-routines__secondary { margin-right: auto; }
 .ui-routines__error { margin: 0; color: var(--color-status-red); font-size: 13px; }
+.ui-routines__danger { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.ui-routines__danger p { margin: 0 0 12px; font-size: 14px; }
+.ui-routines__danger .ui-routines__actions { margin-top: 0; justify-content: flex-end; }
 
 @media (max-width: 1150px) {
   .ui-routines-page { padding: 40px 32px; }

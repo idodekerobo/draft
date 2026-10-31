@@ -272,6 +272,9 @@ export type AppRPCType = {
       /** Create an agent routine. Failures carry the API error code and offending field. */
       createRoutine: { params: CreateRoutineInput; response: { ok: true; routine: Routine } | { ok: false; code: string; field?: string } };
 
+      /** Delete an agent routine: it leaves the list and stops running. Its past runs stay. */
+      deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
+
       /** The newest runs of one agent routine. */
       listRoutineRuns: { params: { id: string }; response: RoutineRun[] };
 
