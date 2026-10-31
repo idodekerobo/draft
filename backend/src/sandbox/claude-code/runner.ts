@@ -187,6 +187,7 @@ export function sanitizedClaudeEnv(env: NodeJS.ProcessEnv): Record<string, strin
 
 const CODEX_HOME = "/home/agent/.codex";
 const CODEX_AUTH_FILE = `${CODEX_HOME}/auth.json`;
+const CODEX_WORK_DIR = "/home/agent/work";
 
 export function sanitizedCodexEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const allowed: Record<string, string> = {
@@ -216,6 +217,8 @@ export function prepareCodexHome(authJson: string): void {
   chownSync(CODEX_HOME, uid, gid);
   writeFileSync(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
   chownSync(CODEX_AUTH_FILE, uid, gid);
+  mkdirSync(CODEX_WORK_DIR, { recursive: true, mode: 0o700 });
+  chownSync(CODEX_WORK_DIR, uid, gid);
 }
 
 /** The login file after the run. Codex rewrites it when it refreshes the login, and the backend keeps the new one. */
@@ -684,10 +687,10 @@ export function routineCommandArgs(prompt: string, model: string | null): string
   ];
 }
 
-/** Codex reads the prompt from stdin. The sandbox is read-only, and nothing is kept on disk. */
+/** Codex reads the prompt from stdin. It may write inside its work folder only, and keeps no session on disk. */
 export function codexRoutineArgs(model: string | null): string[] {
   if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
-  return ["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", ...(model ? ["-m", model] : []), "-"];
+  return ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", ...(model ? ["-m", model] : []), "-"];
 }
 
 /** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */
@@ -770,7 +773,7 @@ export async function runRoutine(
   const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
   const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model)];
   const child = spawn("gosu", ["agent", "env", "-i", ...envArgs, ...command], {
-    cwd: "/run",
+    cwd: codex ? CODEX_WORK_DIR : "/run",
     detached: true,
     stdio: [codex ? "pipe" : "ignore", "pipe", "pipe"],
   });
@@ -779,7 +782,7 @@ export async function runRoutine(
     child.stdin?.end(prompt);
   }
   runnerLog(codex ? "codex_started" : "claude_started", codex
-    ? { run_id: runId, sandbox: "read-only", timeout_ms: timeoutMs, mode: "routine" }
+    ? { run_id: runId, sandbox: "workspace-write", timeout_ms: timeoutMs, mode: "routine" }
     : { run_id: runId, tools: "Read,Glob", permission_mode: "dontAsk", timeout_ms: timeoutMs, mode: "routine" });
 
   const reader = new StreamLineReader();
