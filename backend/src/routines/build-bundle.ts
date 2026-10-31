@@ -28,7 +28,7 @@ export function renderRoutinePrompt(prompt: string, context: RoutinePromptContex
     `Schedule: ${context.schedule} (${context.timezone})`,
     `This run started: ${startedAtIn(context.timezone, context.startedAt)}`,
     "",
-    "The company's shared knowledge is in Markdown files under /run/input/context. Read them as needed. They are read-only, and you have no internet access.",
+    "The company's shared knowledge is in Markdown files under /run/input/context. Read them as needed. They are read-only.",
     "Answer the request below. Your reply is saved as the result of this run.",
   ].join("\n");
   return `${preamble}\n\n---\n\n${prompt.trim()}\n`;
