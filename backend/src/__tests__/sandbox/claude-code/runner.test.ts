@@ -578,8 +578,8 @@ test("a routine failure is named by the first cause that applies", () => {
 });
 
 describe("Codex routine run", () => {
-  test("the command reads the prompt from stdin, runs read-only and keeps nothing on disk", () => {
-    expect(codexRoutineArgs("gpt-6-luna")).toEqual(["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
+  test("the command reads the prompt from stdin, may write only in its work folder and keeps nothing on disk", () => {
+    expect(codexRoutineArgs("gpt-6-luna")).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
     expect(codexRoutineArgs(null)).not.toContain("-m");
     expect(() => codexRoutineArgs("bad model; rm")).toThrow("DRAFT_ROUTINE_MODEL");
   });
