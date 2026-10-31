@@ -16,6 +16,7 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     enabled: true,
     config_json: {},
     next_due_at: null,
+    deleted_at: null,
     last_enqueued_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",

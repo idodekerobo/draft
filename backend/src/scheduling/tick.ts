@@ -26,6 +26,7 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     .from("scheduled_tasks")
     .select("*")
     .eq("enabled", true)
+    .is("deleted_at", null)
     .lte("next_due_at", now.toISOString());
   if (error) throw error;
   const dueTasks = (data ?? []) as ScheduledTaskRow[];

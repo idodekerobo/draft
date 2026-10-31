@@ -199,7 +199,7 @@ export async function dispatchScheduledTask(
     .maybeSingle();
   if (freshError) throw freshError;
   const fresh = freshData as ScheduledTaskRow | null;
-  if (!fresh || !fresh.enabled) return fresh;
+  if (!fresh || !fresh.enabled || fresh.deleted_at) return fresh;
 
   if (fresh.task_type === "ingest_source") {
     await dispatchIngestSource(fresh, options.client, deps);

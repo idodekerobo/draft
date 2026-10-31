@@ -150,6 +150,7 @@ async function loadTasks(workspaceId: string): Promise<ScheduledTaskRow[]> {
     .from("scheduled_tasks")
     .select("*")
     .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
     .in("task_type", ROUTINE_TASK_TYPES)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -293,6 +294,7 @@ export async function getRoutineTask(workspaceId: string, taskId: string): Promi
     .select("*")
     .eq("id", taskId)
     .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
     .in("task_type", ROUTINE_TASK_TYPES)
     .maybeSingle();
   if (error) throw error;
@@ -334,6 +336,7 @@ export async function updateRoutine(
 ): Promise<Routine> {
   const changes: Partial<ScheduledTaskRow> = {};
   if (patch.enabled !== undefined) changes.enabled = patch.enabled;
+  if (patch.agent) changes.config_json = { ...patch.agent };
 
   if (patch.schedule) {
     const built = buildSchedule(patch.schedule);
@@ -376,6 +379,22 @@ export async function updateRoutine(
   return routine!;
 }
 
+/** Hides the routine and stops its runs. The row stays, because its past runs point at it. */
+export async function deleteRoutine({ task }: RoutineTask, userId: string, now: Date = new Date()): Promise<void> {
+  const { data, error } = await serviceClient
+    .from("scheduled_tasks")
+    .update({ deleted_at: now.toISOString(), enabled: false, updated_by_user_id: userId })
+    .eq("id", task.id)
+    .eq("workspace_id", task.workspace_id)
+    .is("deleted_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new ScheduleServiceError("not_found");
+
+  console.log(JSON.stringify({ event: "schedule_deleted", workspaceId: task.workspace_id, taskId: task.id, userId }));
+}
+
 function pickLogged(task: ScheduledTaskRow) {
   return {
     enabled: task.enabled,
@@ -395,6 +414,7 @@ export async function listRoutineRuns(workspaceId: string, taskId: string): Prom
     .eq("id", taskId)
     .eq("workspace_id", workspaceId)
     .eq("task_type", "agent_routine")
+    .is("deleted_at", null)
     .maybeSingle();
   if (taskError) throw taskError;
   if (!task) return null;
@@ -423,7 +443,8 @@ export async function createAgentRoutine(
     .from("scheduled_tasks")
     .select("id", { count: "exact", head: true })
     .eq("workspace_id", workspaceId)
-    .eq("task_type", "agent_routine");
+    .eq("task_type", "agent_routine")
+    .is("deleted_at", null);
   if (countError) throw countError;
   if ((count ?? 0) >= MAX_AGENT_ROUTINES) throw new ScheduleServiceError("invalid_schedule", "limit");
 

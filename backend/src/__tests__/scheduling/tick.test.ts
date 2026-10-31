@@ -18,6 +18,7 @@ function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     enabled: true,
     config_json: {},
     next_due_at: "2026-08-05T10:00:00.000Z",
+    deleted_at: null,
     last_enqueued_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
@@ -43,7 +44,7 @@ function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?:
         return {
           select: () => ({
             eq: () => ({
-              lte: async () => ({ data: dueTasks, error: null }),
+              is: () => ({ lte: async () => ({ data: dueTasks, error: null }) }),
             }),
           }),
           update: (payload: Record<string, unknown>) => ({
