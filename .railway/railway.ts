@@ -10,6 +10,7 @@ export default defineRailway(() => {
     replicas: { "us-west2": 1 },
     domains: ["api.draftai.us"],
     env: {
+      CAL_WEBHOOK_SECRET: preserve(),
       CONTEXT_EXPORT_SECRET: preserve(),
       DRAFT_API_BASE_URL: preserve(),
       DRAFT_APP_URL: preserve(),
@@ -23,6 +24,10 @@ export default defineRailway(() => {
       GITHUB_APP_SLUG: preserve(),
       GITHUB_APP_WEBHOOK_SECRET: preserve(),
       INFERENCE_CREDENTIAL_KEK_V1: preserve(),
+      LANDING_PROXY_SECRET: preserve(),
+      META_CAPI_ACCESS_TOKEN: preserve(),
+      META_CAPI_LIVE: preserve(),
+      META_PIXEL_ID: preserve(),
       SANDBOX_CALLBACK_SECRET: preserve(),
       SUPABASE_DB_PASSWORD: preserve(),
       SUPABASE_PUBLISHABLE_KEY: preserve(),

@@ -4,8 +4,22 @@ export const runtime = "nodejs";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+interface WaitlistBody {
+  email?: unknown;
+  source?: unknown;
+  attribution?: unknown;
+  posthog_distinct_id?: unknown;
+  event_id?: unknown;
+  client?: { source_url?: unknown };
+}
+
+// The backend sees this server's address, so the visitor's own is forwarded for Meta matching.
+function clientIp(request: NextRequest): string | undefined {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || undefined;
+}
+
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => null) as { email?: unknown; source?: unknown; attribution?: unknown; posthog_distinct_id?: unknown } | null;
+  const body = await request.json().catch(() => null) as WaitlistBody | null;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const source = typeof body?.source === "string" ? body.source.slice(0, 80) : "unknown";
 
@@ -23,12 +37,21 @@ export async function POST(request: NextRequest) {
   try {
     response = await fetch(`${backendUrl.replace(/\/$/, "")}/waitlist`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.LANDING_PROXY_SECRET ? { "x-draft-landing-secret": process.env.LANDING_PROXY_SECRET } : {}),
+      },
       body: JSON.stringify({
         email,
         source,
         attribution: body?.attribution,
         posthog_distinct_id: body?.posthog_distinct_id,
+        event_id: body?.event_id,
+        client: {
+          ip: clientIp(request),
+          user_agent: request.headers.get("user-agent") ?? undefined,
+          source_url: body?.client?.source_url,
+        },
       }),
       signal: AbortSignal.timeout(5000),
     });

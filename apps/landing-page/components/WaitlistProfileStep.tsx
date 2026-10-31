@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
 import { submitWaitlistProfile } from "@/lib/waitlist";
+import { AI_TOOL_OPTIONS, ROLE_OPTIONS, TEAM_SIZE_OPTIONS, type ProfileAnswers } from "@/lib/waitlist-questions";
 
 const fieldStyle = {
   width: "100%",
@@ -25,72 +26,131 @@ const labelStyle = {
   lineHeight: 1.5,
 } as const;
 
-export default function WaitlistProfileStep({ signupToken, source }: { signupToken: string; source: string }) {
+const rowStyle = { marginBottom: "0.8rem" } as const;
+
+interface WaitlistProfileStepProps {
+  signupToken: string;
+  source: string;
+  onDone?: (answers: ProfileAnswers) => void;
+}
+
+export default function WaitlistProfileStep({ signupToken, source, onDone }: WaitlistProfileStepProps) {
   const ph = usePostHog();
-  const [howHeard, setHowHeard] = useState("");
-  const [useCase, setUseCase] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
   const [teamSize, setTeamSize] = useState("");
+  const [aiTools, setAiTools] = useState<string[]>([]);
+  const [useCase, setUseCase] = useState("");
+  const [howHeard, setHowHeard] = useState("");
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const answers: ProfileAnswers = {
+    ...(name.trim() ? { name: name.trim() } : {}),
+    ...(role ? { role } : {}),
+    ...(teamSize ? { team_size: teamSize } : {}),
+    ...(aiTools.length > 0 ? { ai_tools: aiTools } : {}),
+    ...(useCase.trim() ? { use_case: useCase.trim() } : {}),
+    ...(howHeard.trim() ? { how_heard: howHeard.trim() } : {}),
+  };
+  const hasAnswers = Object.keys(answers).length > 0;
+
+  const toggleTool = (code: string) =>
+    setAiTools((current) => (current.includes(code) ? current.filter((item) => item !== code) : [...current, code]));
+
+  const finish = (submitted: ProfileAnswers) => {
+    setDone(true);
+    onDone?.(submitted);
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
     try {
-      await submitWaitlistProfile(signupToken, { how_heard: howHeard, use_case: useCase, team_size: teamSize });
+      await submitWaitlistProfile(signupToken, answers);
       ph?.capture(EVENTS.WAITLIST_PROFILE_SUBMITTED, { source });
     } catch {
       // Saving these optional answers never interrupts the signup confirmation.
     } finally {
       setSubmitting(false);
-      setDone(true);
+      finish(answers);
     }
   };
 
-  if (done) {
-    return (
-      <p role="status" style={{ margin: "1rem 0 0", color: "var(--color-muted)", fontSize: "0.9rem" }}>
-        Thanks, that helps.
-      </p>
-    );
-  }
+  if (done) return null;
 
   return (
     <form onSubmit={handleSubmit} style={{ marginTop: "1.25rem", textAlign: "left" }}>
       <p style={{ margin: "0 0 0.9rem", color: "var(--color-muted)", fontSize: "0.85rem", lineHeight: 1.5 }}>
-        A few optional questions to learn more about you.
+        A few optional questions help us prepare for your call.
       </p>
-      <label htmlFor="waitlist-use-case" style={labelStyle}>What do you use AI for in your business?</label>
-      <textarea
-        id="waitlist-use-case"
-        rows={2}
-        maxLength={1000}
-        value={useCase}
-        onChange={(event) => setUseCase(event.target.value)}
-        style={{ ...fieldStyle, marginBottom: "0.8rem", resize: "vertical" }}
-      />
-      <label htmlFor="waitlist-team-size" style={labelStyle}>How large is your team?</label>
-      <input
-        id="waitlist-team-size"
-        type="text"
-        maxLength={200}
-        value={teamSize}
-        onChange={(event) => setTeamSize(event.target.value)}
-        style={{ ...fieldStyle, marginBottom: "0.8rem" }}
-      />
-      <label htmlFor="waitlist-how-heard" style={labelStyle}>How did you hear about us?</label>
-      <input
-        id="waitlist-how-heard"
-        type="text"
-        maxLength={200}
-        value={howHeard}
-        onChange={(event) => setHowHeard(event.target.value)}
-        style={{ ...fieldStyle, marginBottom: "0.9rem" }}
-      />
+      <div style={rowStyle}>
+        <label htmlFor="waitlist-name" style={labelStyle}>Your name</label>
+        <input
+          id="waitlist-name"
+          type="text"
+          autoComplete="name"
+          maxLength={100}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          style={fieldStyle}
+        />
+      </div>
+      <div style={rowStyle}>
+        <label htmlFor="waitlist-role" style={labelStyle}>Your role</label>
+        <select id="waitlist-role" value={role} onChange={(event) => setRole(event.target.value)} style={fieldStyle}>
+          <option value="">Select</option>
+          {ROLE_OPTIONS.map((option) => (
+            <option key={option.code} value={option.code}>{option.label}</option>
+          ))}
+        </select>
+      </div>
+      <div style={rowStyle}>
+        <label htmlFor="waitlist-team-size" style={labelStyle}>How many people on your team use AI at work?</label>
+        <select id="waitlist-team-size" value={teamSize} onChange={(event) => setTeamSize(event.target.value)} style={fieldStyle}>
+          <option value="">Select</option>
+          {TEAM_SIZE_OPTIONS.map((option) => (
+            <option key={option.code} value={option.code}>{option.label}</option>
+          ))}
+        </select>
+      </div>
+      <fieldset style={{ ...rowStyle, border: 0, padding: 0, margin: "0 0 0.8rem" }}>
+        <legend style={{ ...labelStyle, padding: 0 }}>Which AI tools does your team use?</legend>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 1rem" }}>
+          {AI_TOOL_OPTIONS.map((option) => (
+            <label key={option.code} style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center", fontSize: "0.85rem", color: "var(--color-primary)" }}>
+              <input type="checkbox" checked={aiTools.includes(option.code)} onChange={() => toggleTool(option.code)} />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div style={rowStyle}>
+        <label htmlFor="waitlist-use-case" style={labelStyle}>What are you trying to get done?</label>
+        <textarea
+          id="waitlist-use-case"
+          rows={2}
+          maxLength={1000}
+          value={useCase}
+          onChange={(event) => setUseCase(event.target.value)}
+          style={{ ...fieldStyle, resize: "vertical" }}
+        />
+      </div>
+      <div style={{ marginBottom: "0.9rem" }}>
+        <label htmlFor="waitlist-how-heard" style={labelStyle}>How did you hear about us?</label>
+        <input
+          id="waitlist-how-heard"
+          type="text"
+          maxLength={200}
+          value={howHeard}
+          onChange={(event) => setHowHeard(event.target.value)}
+          style={fieldStyle}
+        />
+      </div>
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
         <button
           type="submit"
-          disabled={submitting || (!howHeard.trim() && !useCase.trim() && !teamSize.trim())}
+          disabled={submitting || !hasAnswers}
           style={{
             padding: "0.65rem 1.1rem",
             border: 0,
@@ -101,14 +161,14 @@ export default function WaitlistProfileStep({ signupToken, source }: { signupTok
             fontSize: "0.85rem",
             fontWeight: 700,
             cursor: submitting ? "wait" : "pointer",
-            opacity: submitting || (!howHeard.trim() && !useCase.trim() && !teamSize.trim()) ? 0.6 : 1,
+            opacity: submitting || !hasAnswers ? 0.6 : 1,
           }}
         >
           Send
         </button>
         <button
           type="button"
-          onClick={() => setDone(true)}
+          onClick={() => finish({})}
           style={{ padding: 0, border: 0, background: "transparent", color: "var(--color-muted)", font: "inherit", fontSize: "0.85rem", cursor: "pointer" }}
         >
           Skip

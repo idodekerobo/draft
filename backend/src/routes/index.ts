@@ -1,3 +1,4 @@
+import * as calWebhook from "../webhooks/cal/route";
 import * as firefliesWebhook from "../webhooks/fireflies/route";
 import * as granolaWebhook from "../webhooks/granola/route";
 import * as githubWebhook from "../webhooks/github/route";
@@ -119,4 +120,5 @@ export const routes = {
   "/webhooks/granola/:connectionKey": { POST: granolaWebhook.POST },
   "/webhooks/linear/:connectionKey": { POST: linearWebhook.POST },
   "/webhooks/github": { POST: githubWebhook.POST },
+  "/webhooks/cal": { POST: calWebhook.POST },
 };
