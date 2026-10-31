@@ -1,7 +1,7 @@
 // RoutinesView.tsx — recurring routines and their schedules, and the runs of agent routines
 
 import { useState } from "react";
-import { RoutinesPanel, SessionView } from "draft-shared-ui";
+import { BackButton, RoutinesPanel, SessionView } from "draft-shared-ui";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { RoutineClaudeSetup, RoutineCodexSetup } from "../connections/RoutineAgentSetup";
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
@@ -21,11 +21,7 @@ export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
           api={liveSessionsApi}
           sessionId={run.id}
           shareBaseUrl={webAppUrl}
-          back={
-            <button type="button" className="ui-link" onClick={() => { setReturnTo(run.routine.id); setRun(null); }}>
-              Back to {run.routine.title}
-            </button>
-          }
+          back={<BackButton onClick={() => { setReturnTo(run.routine.id); setRun(null); }} />}
         />
       </div>
     );
