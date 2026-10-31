@@ -19,7 +19,7 @@ import { CreateRoutineDialog } from "./CreateRoutineDialog";
 import { RoutineDetails } from "./RoutineDetails";
 import { RunStatus } from "./RoutineRuns";
 import { agentLabel } from "./agent-label";
-import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutinePatch } from "./types";
+import type { CreateRoutineInput, OpenRun, Routine, RoutineAgentStatus, RoutinePatch } from "./types";
 import { useRoutineMutations } from "./useRoutineMutations";
 
 const FILTERS: Array<[RoutineFilter, string]> = [
@@ -125,14 +125,14 @@ function RoutinesSkeleton() {
 
 type RenderAgentSetup = (harness: HarnessId, status: RoutineAgentStatus, refresh: () => void) => ReactNode;
 
-function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void; renderAgentSetup?: RenderAgentSetup }) {
+function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, initialOpenId }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: OpenRun; renderAgentSetup?: RenderAgentSetup; initialOpenId?: string }) {
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
   const { routines, canEdit, agents } = data;
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const [creating, setCreating] = useState(false);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const labelPrefix = useId();
@@ -334,7 +334,8 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }:
 }
 
 /** Loading and error states match the Routines page; the title stays on screen throughout. */
-export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun, renderAgentSetup }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: (sessionId: string) => void; renderAgentSetup?: RenderAgentSetup }) {
+/** `initialOpenId` opens that routine's details at first, for a person who comes back from one of its runs. */
+export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, initialOpenId }: { workspaceId: string; onReconnect?: () => void; onOpenRun?: OpenRun; renderAgentSetup?: RenderAgentSetup; initialOpenId?: string }) {
   return (
     <div className="ui-routines">
       <h1 className="ui-routines__title">Routines</h1>
@@ -348,7 +349,7 @@ export function RoutinesPanel({ workspaceId, onReconnect, onOpenRun, renderAgent
           </div>
         )}
       >
-        <RoutinesList workspaceId={workspaceId} onReconnect={onReconnect} onOpenRun={onOpenRun} renderAgentSetup={renderAgentSetup} />
+        <RoutinesList workspaceId={workspaceId} onReconnect={onReconnect} onOpenRun={onOpenRun} renderAgentSetup={renderAgentSetup} initialOpenId={initialOpenId} />
       </DataBoundary>
     </div>
   );

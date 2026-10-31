@@ -9,7 +9,7 @@ import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import { RoutineRuns } from "./RoutineRuns";
 import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, timezoneOptions } from "./schedule-fields";
-import type { AgentRoutineEdit, Routine, RoutineAgentStatus, RoutinePatch, RoutinePreset, RoutineWeekday } from "./types";
+import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutinePatch, RoutinePreset, RoutineWeekday } from "./types";
 
 export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onDelete, onOpenRun, agents = {}, renderAgentSetup, refreshAgents }: {
   workspaceId: string;
@@ -20,7 +20,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   /** Deletes an agent routine. Without it the Delete action does not show. */
   onDelete?: () => Promise<void>;
   /** Opens a run of an agent routine. Without it the runs are listed but not linked. */
-  onOpenRun?: (sessionId: string) => void;
+  onOpenRun?: OpenRun;
   /** Whether each agent is connected for this workspace's routines, by harness id. */
   agents?: AgentStatuses;
   /** Help to connect an agent, shown while it blocks Save. */

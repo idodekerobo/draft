@@ -10,16 +10,22 @@ import { useWorkspaceKey } from "../../DesktopQueryProvider";
 export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
   const workspaceKey = useWorkspaceKey();
   const webAppUrl = useWebAppUrl();
-  const [runId, setRunId] = useState<string | null>(null);
+  const [run, setRun] = useState<{ id: string; routine: { id: string; title: string } } | null>(null);
+  // The routine whose details were open, so Back lands on them again.
+  const [returnTo, setReturnTo] = useState<string | undefined>(undefined);
 
-  if (runId) {
+  if (run) {
     return (
       <div className="routines-view routines-view--run">
         <SessionView
           api={liveSessionsApi}
-          sessionId={runId}
+          sessionId={run.id}
           shareBaseUrl={webAppUrl}
-          back={<button type="button" className="ui-link" onClick={() => setRunId(null)}>Routines</button>}
+          back={
+            <button type="button" className="ui-link" onClick={() => { setReturnTo(run.routine.id); setRun(null); }}>
+              Back to {run.routine.title}
+            </button>
+          }
         />
       </div>
     );
@@ -29,7 +35,8 @@ export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
       <RoutinesPanel
         workspaceId={workspaceKey}
         onReconnect={onReconnect}
-        onOpenRun={setRunId}
+        initialOpenId={returnTo}
+        onOpenRun={(id, routine) => setRun({ id, routine })}
         renderAgentSetup={(harness, status, refresh) =>
           harness === "codex" ? <RoutineCodexSetup status={status} refresh={refresh} />
           : harness === "claude" ? <RoutineClaudeSetup status={status} refresh={refresh} />

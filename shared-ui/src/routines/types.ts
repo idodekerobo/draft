@@ -19,6 +19,9 @@ export interface RoutineRun {
   endedAt: string | null;
 }
 
+/** Opens one run of an agent routine. The routine tells the caller where to come back to. */
+export type OpenRun = (sessionId: string, routine: Pick<Routine, "id" | "title">) => void;
+
 /** Set only on agent routines. */
 export interface AgentRoutine {
   prompt: string;

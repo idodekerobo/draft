@@ -46,20 +46,20 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode } = {}) {
+function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
   const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
   const deleteRoutine = mock(options.deleteRoutine ?? (async () => {}));
-  const onOpenRun = mock((_id: string) => {});
+  const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
   const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <DraftApiProvider api={api}>
         <Suspense fallback="loading">
-          <RoutinesPanel workspaceId="ws-1" onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} />
+          <RoutinesPanel workspaceId="ws-1" onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} initialOpenId={options.initialOpenId} />
         </Suspense>
       </DraftApiProvider>
     </QueryClientProvider>,
@@ -95,7 +95,13 @@ describe("run history", () => {
     expect(rows).toHaveLength(2);
 
     fireEvent.click(rows[1]!);
-    expect(onOpenRun).toHaveBeenCalledWith("run-1");
+    expect(onOpenRun).toHaveBeenCalledWith("run-1", expect.objectContaining({ id: "digest", title: "Weekly digest" }));
+  });
+
+  it("opens the routine's details at first when it is told where a person came back from", async () => {
+    setup({ initialOpenId: "digest" });
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Weekly digest" })).toBeTruthy();
   });
 
   it("is already loaded when the dialog opens, so no loading state flashes", async () => {
