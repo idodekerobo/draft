@@ -77,9 +77,12 @@ META_CAPI_ACCESS_TOKEN=
 META_CAPI_TEST_EVENT_CODE=
 META_CAPI_LIVE=
 LANDING_PROXY_SECRET=
+CAL_WEBHOOK_SECRET=
 ~~~
 
 Waitlist signups send a server-side `Lead` event to Meta. Sending is off unless META_PIXEL_ID and META_CAPI_ACCESS_TOKEN are set. Outside production a META_CAPI_TEST_EVENT_CODE is also required, so events land in Meta's Test Events tab. Only production sets META_CAPI_LIVE=true. The backend sends an event only for requests that carry LANDING_PROXY_SECRET, which the landing page's server route adds.
+
+Cal.com bookings reach POST /webhooks/cal, which checks the X-Cal-Signature-256 header against CAL_WEBHOOK_SECRET. A booking sends a `Schedule` event to Meta, and a booking by someone who never signed up also creates the signup and sends `Lead`.
 
 ## Tests
 

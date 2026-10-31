@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Cal, { getCalApi } from "@calcom/embed-react";
 import { usePostHog } from "posthog-js/react";
 import { EVENTS } from "@/lib/analytics";
-import { buildCalConfig, CAL_NAMESPACE, CAL_PATH } from "@/lib/cal";
+import { buildCalConfig, CAL_NAMESPACE, CAL_PATH, createCalMetadata } from "@/lib/cal";
 import { trackCallBooked } from "@/lib/track";
 import type { ProfileAnswers } from "@/lib/waitlist-questions";
 
@@ -32,6 +32,9 @@ function CalSkeleton() {
 
 export function CalEmbed({ email, source, profile = {} }: { email: string; source: string; profile?: ProfileAnswers }) {
   const [ready, setReady] = useState(false);
+  // Created once per embed, so the browser and server Schedule events share one id.
+  const [eventId] = useState(() => crypto.randomUUID());
+  const [metadata] = useState(() => createCalMetadata(eventId, source));
 
   useEffect(() => {
     let removeListeners: (() => void) | undefined;
@@ -40,7 +43,7 @@ export function CalEmbed({ email, source, profile = {} }: { email: string; sourc
     const fallback = setTimeout(() => setReady(true), READY_FALLBACK_MS);
     getCalApi({ namespace: CAL_NAMESPACE }).then((cal) => {
       if (cancelled) return;
-      const onBooked = () => trackCallBooked(source);
+      const onBooked = () => trackCallBooked(source, eventId);
       const onReady = () => setReady(true);
       cal("on", { action: "bookingSuccessfulV2", callback: onBooked });
       cal("on", { action: "linkReady", callback: onReady });
@@ -56,9 +59,9 @@ export function CalEmbed({ email, source, profile = {} }: { email: string; sourc
       clearTimeout(fallback);
       removeListeners?.();
     };
-  }, [source]);
+  }, [source, eventId]);
 
-  const config = buildCalConfig(email, profile);
+  const config = buildCalConfig(email, profile, metadata);
 
   return (
     <div className="cal-embed" data-ready={ready}>

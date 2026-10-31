@@ -17,8 +17,8 @@ export function trackWaitlistSignup(source: string, eventId: string) {
   window.fbq?.("track", "Lead", { content_name: source }, { eventID: eventId });
 }
 
-export function trackCallBooked(source: string) {
-  const eventId = crypto.randomUUID();
+// The same event_id travels to Cal as booking metadata, so the webhook's server Schedule dedupes against this one.
+export function trackCallBooked(source: string, eventId: string) {
   capture(EVENTS.CALL_BOOKED, { source, event_id: eventId });
   window.fbq?.("track", "Schedule", { content_name: source }, { eventID: eventId });
 }

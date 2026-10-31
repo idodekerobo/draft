@@ -1,25 +1,31 @@
 import { recordError } from "../errors/record-error";
-import { MetaSendError, sendMetaEvent, type MetaEventInput } from "../meta/capi";
+import { MetaSendError, sendMetaEvent, type MetaEventInput, type MetaEventName } from "../meta/capi";
 import { readMetaSettings, type MetaSettings } from "../meta/settings";
 
 export type Attribution = Record<string, Record<string, string>> | null;
 
-export interface LeadSignup {
+export interface SignupEvent {
   signupId: string;
   email: string;
   eventId: string;
   source: string;
   attribution: Attribution;
   client: { ip?: string; userAgent?: string; sourceUrl?: string };
+  firstName?: string;
+  lastName?: string;
+  // Take precedence over the ids stored in attribution.
+  fbp?: string;
+  fbc?: string;
+  optedOut?: boolean;
 }
 
-export interface LeadDeps {
+export interface EventDeps {
   settings: MetaSettings | null;
   send: (event: MetaEventInput, settings: MetaSettings) => Promise<void>;
   logError: typeof recordError;
 }
 
-export type LeadResult = "sent" | "skipped_unconfigured" | "skipped_opt_out" | "failed";
+export type EventResult = "sent" | "skipped_unconfigured" | "skipped_opt_out" | "failed";
 
 function touchValue(attribution: Attribution, key: string): string | undefined {
   return attribution?.last?.[key] ?? attribution?.first?.[key];
@@ -34,25 +40,30 @@ export function metaIdentifiers(attribution: Attribution) {
   return { fbp: touchValue(attribution, "fbp"), fbc: touchValue(attribution, "fbc") };
 }
 
-export async function sendLeadEvent(
-  signup: LeadSignup,
-  deps: LeadDeps = { settings: readMetaSettings(), send: sendMetaEvent, logError: recordError },
-): Promise<LeadResult> {
-  if (!deps.settings) return "skipped_unconfigured";
-  if (hasOptedOut(signup.attribution)) return "skipped_opt_out";
+export function defaultEventDeps(): EventDeps {
+  return { settings: readMetaSettings(), send: sendMetaEvent, logError: recordError };
+}
 
+async function sendSignupEvent(eventName: MetaEventName, signup: SignupEvent, deps: EventDeps): Promise<EventResult> {
+  if (!deps.settings) return "skipped_unconfigured";
+  if (signup.optedOut || hasOptedOut(signup.attribution)) return "skipped_opt_out";
+
+  const stored = metaIdentifiers(signup.attribution);
   try {
     await deps.send(
       {
-        eventName: "Lead",
+        eventName,
         eventId: signup.eventId,
         email: signup.email,
         externalId: signup.signupId,
         sourceUrl: signup.client.sourceUrl,
         clientIp: signup.client.ip,
         userAgent: signup.client.userAgent,
+        firstName: signup.firstName,
+        lastName: signup.lastName,
         contentName: signup.source,
-        ...metaIdentifiers(signup.attribution),
+        fbp: signup.fbp ?? stored.fbp,
+        fbc: signup.fbc ?? stored.fbc,
       },
       deps.settings,
     );
@@ -64,10 +75,18 @@ export async function sendLeadEvent(
       workspaceId: null,
       allowUnattributed: true,
       operation: "execution",
-      message: "Meta Lead event send failed",
+      message: `Meta ${eventName} event send failed`,
       error,
       detail: { signup_id: signup.signupId, event_id: signup.eventId, status, meta_code: metaCode },
     });
     return "failed";
   }
+}
+
+export function sendLeadEvent(signup: SignupEvent, deps: EventDeps = defaultEventDeps()): Promise<EventResult> {
+  return sendSignupEvent("Lead", signup, deps);
+}
+
+export function sendScheduleEvent(signup: SignupEvent, deps: EventDeps = defaultEventDeps()): Promise<EventResult> {
+  return sendSignupEvent("Schedule", signup, deps);
 }

@@ -10,6 +10,7 @@ export default defineRailway(() => {
     replicas: { "us-west2": 1 },
     domains: ["api.draftai.us"],
     env: {
+      CAL_WEBHOOK_SECRET: preserve(),
       CONTEXT_EXPORT_SECRET: preserve(),
       DRAFT_API_BASE_URL: preserve(),
       DRAFT_APP_URL: preserve(),

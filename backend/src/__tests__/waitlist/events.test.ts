@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { MetaSendError, type MetaEventInput } from "../../meta/capi";
-import { hasOptedOut, sendLeadEvent, type LeadDeps, type LeadSignup } from "../../waitlist/events";
+import { hasOptedOut, sendLeadEvent, type EventDeps, type SignupEvent } from "../../waitlist/events";
 
 const settings = { pixelId: "1", accessToken: "t", testEventCode: "TEST1" };
 
-function signup(overrides: Partial<LeadSignup> = {}): LeadSignup {
+function signup(overrides: Partial<SignupEvent> = {}): SignupEvent {
   return {
     signupId: "signup-1",
     email: "person@example.com",
@@ -16,17 +16,17 @@ function signup(overrides: Partial<LeadSignup> = {}): LeadSignup {
   };
 }
 
-function deps(overrides: Partial<LeadDeps> = {}) {
+function deps(overrides: Partial<EventDeps> = {}) {
   const sent: MetaEventInput[] = [];
   const errors: unknown[] = [];
-  const value: LeadDeps = {
+  const value: EventDeps = {
     settings,
     send: async (event) => {
       sent.push(event);
     },
     logError: (async (input: unknown) => {
       errors.push(input);
-    }) as LeadDeps["logError"],
+    }) as EventDeps["logError"],
     ...overrides,
   };
   return { value, sent, errors };
