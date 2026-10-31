@@ -1,4 +1,4 @@
-import { getAttribution, getVisitorId } from "@/lib/attribution";
+import { getSubmitAttribution, getVisitorId } from "@/lib/attribution";
 import { trackWaitlistSignup } from "@/lib/track";
 import { PROFILE_VERSION, type ProfileAnswers } from "@/lib/waitlist-questions";
 
@@ -13,13 +13,16 @@ async function post(path: string, body: unknown) {
 }
 
 export async function submitWaitlist(email: string, source: string) {
+  const eventId = crypto.randomUUID();
   const result = await post("/api/waitlist", {
     email,
     source,
-    attribution: getAttribution(),
+    attribution: getSubmitAttribution(),
     posthog_distinct_id: getVisitorId(),
+    event_id: eventId,
+    client: { source_url: window.location.href },
   });
-  trackWaitlistSignup(source);
+  trackWaitlistSignup(source, eventId);
   return result as { signup_token: string };
 }
 

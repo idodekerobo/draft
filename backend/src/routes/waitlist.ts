@@ -1,6 +1,8 @@
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { sendLeadEvent } from "../waitlist/events";
 import { cleanProfile } from "../waitlist/profile";
+import { isTrustedLandingRequest } from "../waitlist/trust";
 import { createWaitlistToken, verifyWaitlistToken } from "./waitlist-token";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -19,6 +21,7 @@ const ATTRIBUTION_KEYS = [
   "fbclid",
   "fbp",
   "fbc",
+  "gpc",
   "landing_url",
   "referrer",
 ] as const;
@@ -28,6 +31,8 @@ interface WaitlistRequest {
   source?: unknown;
   attribution?: unknown;
   posthog_distinct_id?: unknown;
+  event_id?: unknown;
+  client?: unknown;
 }
 
 interface WaitlistProfileRequest {
@@ -69,6 +74,11 @@ function cleanAttribution(input: unknown): Record<string, Record<string, string>
   return Object.keys(result).length > 0 ? result : null;
 }
 
+// Browser details the landing page's server route forwards for Meta matching.
+function cleanClient(input: unknown) {
+  return pickStrings(input, ["ip", "user_agent", "source_url"], MAX_ATTRIBUTION_VALUE_LENGTH);
+}
+
 function cleanEmail(value: unknown): string | null {
   const email = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email)) return null;
@@ -84,20 +94,23 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Enter a valid email address" }, { status: 400 });
   }
 
-  const { error } = await serviceClient
+  const attribution = cleanAttribution(body?.attribution);
+  // With ignoreDuplicates only a newly inserted row comes back, so a repeat signup is not a new lead.
+  const { data: inserted, error } = await serviceClient
     .from("waitlist_signups")
     .upsert(
       {
         email,
         source,
-        attribution: cleanAttribution(body?.attribution),
+        attribution,
         posthog_distinct_id: cleanString(body?.posthog_distinct_id, MAX_ID_LENGTH),
       },
       { onConflict: "email", ignoreDuplicates: true },
-    );
+    )
+    .select("id");
 
   if (error) {
-    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist signup save failed", error, detail: { email, source, attribution: cleanAttribution(body?.attribution) } });
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist signup save failed", error, detail: { email, source, attribution } });
     return Response.json({ error: error.message }, { status: 500 });
   }
 
@@ -111,7 +124,20 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Could not prepare waitlist signup" }, { status: 500 });
   }
   try {
-    return Response.json({ ok: true, signup_token: createWaitlistToken(signup.id) });
+    const signupToken = createWaitlistToken(signup.id);
+    const eventId = cleanString(body?.event_id, MAX_ID_LENGTH);
+    if (inserted?.length && eventId && isTrustedLandingRequest(request)) {
+      const client = cleanClient(body?.client);
+      void sendLeadEvent({
+        signupId: signup.id,
+        email,
+        eventId,
+        source,
+        attribution,
+        client: { ip: client.ip, userAgent: client.user_agent, sourceUrl: client.source_url },
+      });
+    }
+    return Response.json({ ok: true, signup_token: signupToken });
   } catch (error) {
     await recordError({ workspaceId: null, allowUnattributed: true, operation: "auth", message: "Waitlist signup token creation failed", error, detail: { signup_id: signup.id, email, source } });
     return Response.json({ error: "Could not prepare waitlist signup" }, { status: 500 });
