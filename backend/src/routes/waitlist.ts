@@ -1,5 +1,6 @@
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { cleanProfile } from "../waitlist/profile";
 import { createWaitlistToken, verifyWaitlistToken } from "./waitlist-token";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -7,7 +8,6 @@ const MAX_EMAIL_LENGTH = 320;
 const MAX_SOURCE_LENGTH = 80;
 const MAX_ID_LENGTH = 200;
 const MAX_ATTRIBUTION_VALUE_LENGTH = 500;
-const MAX_PROFILE_VALUE_LENGTH = 1000;
 
 const ATTRIBUTION_KEYS = [
   "utm_source",
@@ -17,10 +17,11 @@ const ATTRIBUTION_KEYS = [
   "utm_term",
   "ttclid",
   "fbclid",
+  "fbp",
+  "fbc",
   "landing_url",
   "referrer",
 ] as const;
-const PROFILE_KEYS = ["how_heard", "use_case", "team_size"] as const;
 
 interface WaitlistRequest {
   email?: unknown;
@@ -120,7 +121,7 @@ export async function POST(request: Request): Promise<Response> {
 // A signed signup token authorizes this update without relying on PostHog identity matching.
 export async function PROFILE_POST(request: Request): Promise<Response> {
   const body = await request.json().catch(() => null) as WaitlistProfileRequest | null;
-  const profile = pickStrings(body?.profile, PROFILE_KEYS, MAX_PROFILE_VALUE_LENGTH);
+  const profile = cleanProfile(body?.profile);
   if (Object.keys(profile).length === 0) {
     return Response.json({ ok: true });
   }
@@ -140,19 +141,27 @@ export async function PROFILE_POST(request: Request): Promise<Response> {
     return Response.json({ error: "Could not save answers" }, { status: 401 });
   }
 
-  const { data, error } = await serviceClient
+  const { data: existing, error: readError } = await serviceClient
     .from("waitlist_signups")
-    .update({ profile })
+    .select("profile")
     .eq("id", signupId)
-    .select("id");
+    .maybeSingle();
+  if (readError) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist profile read failed", error: readError, detail: { signup_id: signupId } });
+    return Response.json({ error: readError.message }, { status: 500 });
+  }
+  if (!existing) {
+    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist profile save matched no signup", detail: { signup_id: signupId, profile } });
+    return Response.json({ error: "Waitlist signup could not be matched" }, { status: 404 });
+  }
 
+  const { error } = await serviceClient
+    .from("waitlist_signups")
+    .update({ profile: { ...(existing.profile ?? {}), ...profile } })
+    .eq("id", signupId);
   if (error) {
     await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist profile save failed", error, detail: { signup_id: signupId, profile } });
     return Response.json({ error: error.message }, { status: 500 });
-  }
-  if (!data?.length) {
-    await recordError({ workspaceId: null, allowUnattributed: true, operation: "read", message: "Waitlist profile save matched no signup", detail: { signup_id: signupId, profile } });
-    return Response.json({ error: "Waitlist signup could not be matched" }, { status: 404 });
   }
 
   return Response.json({ ok: true });
