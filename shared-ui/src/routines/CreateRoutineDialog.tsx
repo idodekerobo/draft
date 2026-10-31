@@ -1,8 +1,8 @@
 "use client";
 
-import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, modelLabel, type HarnessId } from "draft-core/harnesses";
+import { DEFAULT_HARNESS_ID, type HarnessId } from "draft-core/harnesses";
 import { useId, useMemo, useState, type ReactNode } from "react";
-import { SectionedPicker } from "../controls/SectionedPicker";
+import { AgentFields, isDisconnected, type AgentValue } from "./AgentFields";
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun } from "./format";
@@ -22,32 +22,26 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
-  const [title, setTitle] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [harness, setHarness] = useState<HarnessId>(DEFAULT_HARNESS_ID);
-  const [model, setModel] = useState<string | null>(null);
+  const [agent, setAgent] = useState<AgentValue>({ title: "", prompt: "", harness: DEFAULT_HARNESS_ID, model: null });
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({ preset: "daily", time: "09:00", weekday: "mon", timezone: browserTimezone() }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
   const usesTime = presetUsesTime(schedule.preset);
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
-  const status = agents[harness];
-  const blocked = status === "not_connected" || status === "needs_reconnect";
-  const canCreate = title.trim() !== "" && prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving && !blocked;
+  const blocked = isDisconnected(agents[agent.harness]);
+  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving && !blocked;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
-  const routineHarnesses = HARNESSES.filter((option) => option.routineModes.length > 0);
-  const models = getHarness(harness)?.models ?? [];
 
   async function create() {
     setSaving(true);
     setError(null);
     try {
       await onCreate({
-        title: title.trim(),
-        prompt: prompt.trim(),
-        harness,
-        model,
+        title: agent.title.trim(),
+        prompt: agent.prompt.trim(),
+        harness: agent.harness,
+        model: agent.model,
         preset: schedule.preset,
         ...(usesTime ? { time: schedule.time } : {}),
         ...(schedule.preset === "weekly" ? { weekday: schedule.weekday } : {}),
@@ -84,46 +78,17 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
         }}
       >
         <div className="ui-routines__fields">
-          <label className="ui-routines__field ui-routines__field--wide">
-            Name
-            <input type="text" value={title} maxLength={120} placeholder="Weekly product digest" disabled={saving} autoFocus onChange={(event) => setTitle(event.target.value)} />
-            {fieldError("title")}
-          </label>
-          <label className="ui-routines__field ui-routines__field--wide">
-            What should it do?
-            <textarea
-              value={prompt}
-              rows={5}
-              maxLength={20000}
-              placeholder="Summarize what changed in the product this week and flag anything that looks at risk."
-              disabled={saving}
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-            {fieldError("prompt")}
-          </label>
-          <div className="ui-routines__field ui-routines__field--wide">
-            Agent and model
-            <div>
-              <SectionedPicker
-                label="Agent and model"
-                sections={[
-                  { id: "harness", title: "Harnesses", value: harness, keepOpen: true, onChange: (value) => { setHarness(value as HarnessId); setModel(null); }, options: routineHarnesses.map((option) => ({ value: option.id, label: option.label, hint: agents[option.id] === "not_connected" || agents[option.id] === "needs_reconnect" ? "Connect" : undefined })) },
-                  { id: "model", title: "Models", value: model ?? "", onChange: (value) => setModel(value || null), options: models.map((option) => ({ value: option.alias ?? "", label: option.label })) },
-                ]}
-              >
-                {getHarness(harness)?.label} · {modelLabel(harness, model)}
-              </SectionedPicker>
-            </div>
-            {fieldError("harness")}
-            {fieldError("model")}
-            {blocked && status && (
-              (renderAgentSetup?.(harness, status, refreshAgents ?? (() => {})) ?? null) ?? (
-                <p className="ui-routines__notice" role="status">
-                  {getHarness(harness)?.label} is not connected for routines. Connect it in the Draft desktop app, under Settings, then Agents.
-                </p>
-              )
-            )}
-          </div>
+          <AgentFields
+            value={agent}
+            onChange={setAgent}
+            disabled={saving}
+            autoFocus
+            agents={agents}
+            blocked={blocked}
+            renderAgentSetup={renderAgentSetup}
+            refreshAgents={refreshAgents}
+            fieldError={fieldError}
+          />
         </div>
 
         <ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />
