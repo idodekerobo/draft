@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import { loadDisplayNames } from "../routes/session-display-names";
+import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { computeNextDueAt } from "../scheduling/next-due-at";
 import {
   buildSchedule,
@@ -107,10 +108,7 @@ function toRoutine(
     taskType: task.task_type,
     title: definition.title,
     routineDescription: definition.routineDescription,
-    scheduleDescription:
-      task.schedule_kind === "interval" && task.interval_seconds
-        ? describeInterval(task.interval_seconds)
-        : describeSchedule(parsed),
+    scheduleDescription: describeTaskSchedule(task),
     preset: parsed.preset,
     time: parsed.time,
     weekday: parsed.weekday,

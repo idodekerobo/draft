@@ -9,6 +9,8 @@ export interface LaunchRoutineRunInput {
   sessionId: string;
   workspaceId: string;
   routine: AgentRoutineConfig;
+  /** When the routine runs, so the agent can know its own cadence. */
+  schedule: { description: string; timezone: string };
   config: SandboxDeploymentConfig;
   client: SupabaseClient;
 }
@@ -23,7 +25,7 @@ export class RoutineLeaseBusyError extends Error {
   }
 }
 
-export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceId, routine, config, client }) => {
+export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceId, routine, schedule, config, client }) => {
   const { data, error } = await client.from("workspaces").select("organization_id").eq("id", workspaceId).single();
   if (error) throw error;
   const organizationId = (data as { organization_id: string }).organization_id;
@@ -35,7 +37,12 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceI
 
   const run = {
     bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, documents }),
-    prompt: renderRoutinePrompt(routine.prompt),
+    prompt: renderRoutinePrompt(routine.prompt, {
+      title: routine.title,
+      schedule: schedule.description,
+      timezone: schedule.timezone,
+      startedAt: new Date(),
+    }),
     mode: "routine" as const,
     model: routine.model ?? undefined,
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,

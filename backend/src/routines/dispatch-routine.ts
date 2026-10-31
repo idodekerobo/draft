@@ -5,6 +5,7 @@ import type { ScheduledTaskRow } from "../types/tables";
 import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId } from "./config";
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 import { CredentialError } from "../credentials/crypto";
+import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
 
 const UNIQUE_VIOLATION = "23505";
@@ -65,7 +66,14 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
   const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
 
   try {
-    await (options.launch ?? launchRoutineRun)({ sessionId, workspaceId: task.workspace_id, routine, config, client });
+    await (options.launch ?? launchRoutineRun)({
+      sessionId,
+      workspaceId: task.workspace_id,
+      routine,
+      schedule: { description: describeTaskSchedule(task), timezone: task.timezone },
+      config,
+      client,
+    });
   } catch (error) {
     if (error instanceof RoutineLeaseBusyError) {
       await failRoutineSession(client, session, {
