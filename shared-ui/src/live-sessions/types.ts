@@ -68,6 +68,8 @@ export interface LiveSessionEvent {
   kind: LiveSessionEventKind;
   payload: LiveSessionEventPayload;
   created_at: string;
+  /** On a user_message sent through Draft: who sent it. Null when it is unknown or typed in the terminal. */
+  author_user_id?: string | null;
 }
 
 export interface LiveSessionViewer {

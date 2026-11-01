@@ -2,7 +2,7 @@ import { splitAuthor } from "draft-core/live-sessions";
 import type { ComposerInput, LiveSessionEvent } from "./types";
 
 export type StreamItem =
-  | { type: "user"; seq: number; at: string; text: string; agentId: string | null; /** Set when a teammate sent it through Draft. */ author: string | null }
+  | { type: "user"; seq: number; at: string; text: string; agentId: string | null; /** Set when someone sent it through Draft. */ author: string | null; authorUserId: string | null }
   | { type: "assistant"; seq: number; at: string; text: string; agentId: string | null }
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
@@ -59,7 +59,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
 
     switch (event.kind) {
       case "user_message":
-        items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), agentId });
+        items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), authorUserId: event.author_user_id ?? null, agentId });
         break;
       case "assistant_text":
         items.push({ type: "assistant", seq: event.seq, at: event.created_at, text: payload.text ?? "", agentId });
@@ -138,4 +138,15 @@ export function approvalOutcome(approval: OpenApproval, hostName: string | null)
     default:
       return `Moved to the terminal, ${timeOf(resolved.at)}`;
   }
+}
+
+/** Whether the viewer wrote this human message. Prefers the author's user id, then the name, then session ownership. */
+export function isMine(
+  item: Extract<StreamItem, { type: "user" | "pending" }>,
+  viewer: { id?: string; name: string; isOwner: boolean },
+): boolean {
+  if (item.type === "pending") return item.input.mine;
+  if (item.authorUserId) return item.authorUserId === viewer.id;
+  if (item.author) return item.author === viewer.name;
+  return viewer.isOwner;
 }

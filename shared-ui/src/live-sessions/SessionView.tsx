@@ -362,6 +362,8 @@ function LoadedSession({
             ownerName={session.owner_name ?? undefined}
             hostName={session.host_name}
             viewerId={viewer.id}
+            viewerName={viewer.name}
+            viewerIsOwner={session.mine ?? false}
             harness={session.harness}
             onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}

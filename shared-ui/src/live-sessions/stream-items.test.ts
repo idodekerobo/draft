@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { approvalOutcome, buildStreamItems, openApprovals, toolSummary } from "./stream-items";
+import { approvalOutcome, buildStreamItems, isMine, openApprovals, toolSummary } from "./stream-items";
 import type { LiveSessionEvent, LiveSessionEventKind, LiveSessionEventPayload } from "./types";
 
 let seq = 0;
@@ -111,5 +111,32 @@ describe("approvals", () => {
     expect(outcome({ reason: "answered_locally" }, null)).toBe("Answered in the terminal");
     expect(outcome({ reason: "expired" })).toBe("Expired");
     expect(outcome({ reason: "hook_gone" })).toBe("Moved to the terminal");
+  });
+});
+
+describe("isMine", () => {
+  const viewer = { id: "u1", name: "Maya", isOwner: true };
+  const turn = (over: { author?: string | null; authorUserId?: string | null }) =>
+    buildStreamItems([{ ...event("user_message", { text: over.author ? `[${over.author} via Draft] hi` : "hi" }), author_user_id: over.authorUserId ?? null }])[0] as Extract<ReturnType<typeof buildStreamItems>[number], { type: "user" }>;
+
+  it("trusts the author's user id over the name", () => {
+    expect(isMine(turn({ author: "Maya", authorUserId: "u2" }), viewer)).toBe(false);
+    expect(isMine(turn({ author: "Someone", authorUserId: "u1" }), viewer)).toBe(true);
+  });
+
+  it("falls back to the name when no id is known", () => {
+    expect(isMine(turn({ author: "Maya" }), viewer)).toBe(true);
+    expect(isMine(turn({ author: "Priya" }), viewer)).toBe(false);
+  });
+
+  it("treats a turn typed in the terminal as the owner's", () => {
+    expect(isMine(turn({}), viewer)).toBe(true);
+    expect(isMine(turn({}), { ...viewer, isOwner: false })).toBe(false);
+  });
+
+  it("uses the input's own flag for a message still waiting", () => {
+    const pending = (mine: boolean) => ({ type: "pending" as const, key: "k", author: "x", ownerName: "o", hostOffline: false, input: { mine } as never });
+    expect(isMine(pending(true), viewer)).toBe(true);
+    expect(isMine(pending(false), viewer)).toBe(false);
   });
 });

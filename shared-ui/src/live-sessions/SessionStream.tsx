@@ -3,7 +3,7 @@ import { renderMarkdown } from "../context/markdown";
 import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { inputStatusLine, isBlocked } from "./input-status";
-import { approvalOutcome, type StreamItem } from "./stream-items";
+import { approvalOutcome, isMine, type StreamItem } from "./stream-items";
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
@@ -13,7 +13,7 @@ const SLOW_SEND_MS = 10_000;
 const SLOW_TICK_MS = 1_000;
 
 /** Looks like a sent message. A line under it shows only when the message is blocked or has waited long. */
-function PendingBubble({ item, harness, onSteer }: { item: Extract<StreamItem, { type: "pending" }>; harness: string; onSteer?: (inputId: string) => void }) {
+function PendingBubble({ item, mine, harness, onSteer }: { item: Extract<StreamItem, { type: "pending" }>; mine: boolean; harness: string; onSteer?: (inputId: string) => void }) {
   const { input } = item;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -23,7 +23,7 @@ function PendingBubble({ item, harness, onSteer }: { item: Extract<StreamItem, {
   const showNote = isBlocked(input, item.hostOffline) || now - Date.parse(input.created_at) >= SLOW_SEND_MS;
   return (
     <>
-      <span className="ui-stream__who">{item.author}</span>
+      {!mine && <span className="ui-stream__who">{item.author}</span>}
       <p className="ui-stream__bubble">{input.text}</p>
       {showNote && <span className="ui-muted ui-stream__pending-note" role="status">{inputStatusLine(input, item.ownerName, now, item.hostOffline, harness)}</span>}
       {onSteer && input.mine && input.state === "queued" && input.reason === "composer_busy" && (
@@ -33,7 +33,7 @@ function PendingBubble({ item, harness, onSteer }: { item: Extract<StreamItem, {
   );
 }
 
-function Item({ item, ownerName, hostName, viewerId, linkFor, harness, onSteer }: { item: StreamItem; ownerName: string; hostName: string | null; viewerId?: string; linkFor?: (seq: number) => string; harness: string; onSteer?: (inputId: string) => void }) {
+function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onSteer }: { item: StreamItem; mine: boolean; ownerName: string; hostName: string | null; viewerId?: string; linkFor?: (seq: number) => string; harness: string; onSteer?: (inputId: string) => void }) {
   switch (item.type) {
     case "user":
       if (item.agentId) {
@@ -46,13 +46,13 @@ function Item({ item, ownerName, hostName, viewerId, linkFor, harness, onSteer }
       }
       return (
         <>
-          <span className="ui-stream__who">{item.author ?? ownerName}</span>
+          {!mine && <span className="ui-stream__who">{item.author ?? ownerName}</span>}
           <p className="ui-stream__bubble">{item.text}</p>
           <MessageActions text={item.text} at={item.at} linkUrl={linkFor?.(item.seq)} />
         </>
       );
     case "pending":
-      return <PendingBubble item={item} harness={harness} onSteer={onSteer} />;
+      return <PendingBubble item={item} mine={mine} harness={harness} onSteer={onSteer} />;
     case "assistant":
       return (
         <>
@@ -112,6 +112,8 @@ export function SessionStream({
   ownerName = "User",
   hostName = null,
   viewerId,
+  viewerName = "",
+  viewerIsOwner = false,
   harness = "claude",
   onSteer,
   linkFor,
@@ -122,6 +124,9 @@ export function SessionStream({
   hostName?: string | null;
   /** Tells "You interrupted" from "Interrupted by …". */
   viewerId?: string;
+  /** With `viewerIsOwner`, tells the viewer's messages from a teammate's. */
+  viewerName?: string;
+  viewerIsOwner?: boolean;
   /** The agent that runs the session, for the wording of a waiting message. */
   harness?: string;
   /** Puts a waiting message into the running turn. Without it, the Send now action is hidden. */
@@ -139,14 +144,16 @@ export function SessionStream({
         const agentId = agentOf(item);
         const previous = index > 0 ? agentOf(items[index - 1]!) : null;
         const startsAgent = agentId !== null && previous !== agentId;
+        const human = !agentId && (item.type === "user" || item.type === "pending");
+        const mine = human ? isMine(item, { id: viewerId, name: viewerName, isOwner: viewerIsOwner }) : true;
         return (
           <Fragment key={keyOf(item)}>
             {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
             <li
               id={item.type === "pending" ? undefined : messageDomId(item.seq)}
-              className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? " ui-stream__item--human" : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+              className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
             >
-              <Item item={item} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} />
+              <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} />
             </li>
           </Fragment>
         );

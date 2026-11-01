@@ -6,7 +6,7 @@ import type { ComposerInput, LiveSessionEvent, LiveSessionEventKind, LiveSession
 
 afterEach(cleanup);
 
-function Stream({ events, ...rest }: { events: LiveSessionEvent[]; ownerName?: string; hostName?: string | null; viewerId?: string }) {
+function Stream({ events, ...rest }: { events: LiveSessionEvent[]; ownerName?: string; hostName?: string | null; viewerId?: string; viewerName?: string; viewerIsOwner?: boolean }) {
   return <SessionStream items={buildStreamItems(events)} {...rest} />;
 }
 
@@ -41,6 +41,26 @@ describe("SessionStream", () => {
     expect(container.querySelector("strong")?.textContent).toBe("two");
     expect(screen.getByText("Bash")).toBeTruthy();
     expect(container.textContent).toContain("a.txt");
+  });
+
+  it("puts a teammate's message on the left with their name, and hides the label on the viewer's own", () => {
+    const { container } = render(
+      <Stream
+        viewerId="u1"
+        viewerName="Maya"
+        viewerIsOwner
+        events={[
+          { ...event("user_message", { text: "[Priya via Draft] from priya" }), author_user_id: "u2" },
+          { ...event("user_message", { text: "[Maya via Draft] from maya" }), author_user_id: "u1" },
+          event("assistant_text", { text: "ok" }),
+        ]}
+      />,
+    );
+    const rows = Array.from(container.querySelectorAll("li.ui-stream__item--human"));
+    expect(rows.map((r) => r.classList.contains("ui-stream__item--theirs"))).toEqual([true, false]);
+    expect(screen.getByText("Priya")).toBeTruthy();
+    expect(screen.queryByText("Maya")).toBeNull();
+    expect(container.querySelector("li.ui-stream__item--assistant")?.className).not.toContain("--theirs");
   });
 
   it("tells the person who pressed Stop apart from everyone else", () => {
