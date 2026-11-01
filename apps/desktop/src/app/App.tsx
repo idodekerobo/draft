@@ -32,14 +32,13 @@ const STATUS_POLL_MS = 5_000;
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [activeView, setActiveView]     = useState<View>("context");
+  const [activeView, setActiveView]     = useState<View>("sessions");
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
   // app renders immediately instead of waiting on identityRefreshNeeded's
   // async round trip to land before identity.onboardingCompletedAt updates.
   const [justCompletedOnboarding, setJustCompletedOnboarding] = useState(false);
   const [syncToast, setSyncToast] = useState<Toast | null>(null);
   const [supportOpen, setSupportOpen]           = useState(false);
-  const landedRef = useRef(false);
   const sawEmptyContextRef = useRef(false);
   const identity = useUserIdentity();
   const { workspaceId, hydrated: identityHydrated } = identity;
@@ -83,13 +82,6 @@ export function App() {
   }, []);
 
   const contextEmpty = contextSettled && contextFiles.length === 0;
-
-  // On launch, land on Connections when the workspace has no context yet.
-  useEffect(() => {
-    if (landedRef.current || !contextSettled || !identity.onboardingCompletedAt) return;
-    landedRef.current = true;
-    if (contextEmpty) setActiveView("connections");
-  }, [contextSettled, contextEmpty, identity.onboardingCompletedAt]);
 
   // Notify once when an empty workspace gets its first context. The query polls while empty.
   useEffect(() => {
@@ -148,8 +140,7 @@ export function App() {
               onComplete={async (destination) => {
                 setJustCompletedOnboarding(true);
                 await reloadContextFiles();
-                // Land on Context when documents exist, otherwise Connections.
-                setActiveView(destination === "connections" || contextFiles.length === 0 ? "connections" : "context");
+                setActiveView(destination === "connections" ? "connections" : "sessions");
               }}
             />
           )}

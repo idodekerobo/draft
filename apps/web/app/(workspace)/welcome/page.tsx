@@ -21,7 +21,7 @@ function Welcome({ entries }: { entries: ContextFileEntry[] }) {
     try {
       // Next and Skip both set the flag, so desktop skips the flow too.
       await completeOnboarding();
-      router.replace(destination === "connections" ? "/connections" : "/");
+      router.replace(destination === "connections" ? "/connections" : "/sessions");
     } catch {
       setError("Could not save your progress. Check your connection and try again.");
     }
