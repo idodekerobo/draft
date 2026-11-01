@@ -63,6 +63,12 @@ describe("SessionStream", () => {
     expect(container.querySelector("li.ui-stream__item--assistant")?.className).not.toContain("--theirs");
   });
 
+  it("shows a teammate's current name over the one saved in the message text", () => {
+    render(<Stream viewerId="u1" events={[{ ...event("user_message", { text: "[priya@example.test via Draft] hi" }), author_user_id: "u2", author_name: "Priya Shah" }]} />);
+    expect(screen.getByText("Priya Shah")).toBeTruthy();
+    expect(screen.queryByText("priya@example.test")).toBeNull();
+  });
+
   it("tells the person who pressed Stop apart from everyone else", () => {
     const events = [event("session_note", { text: "Stopped by Dev", interrupted_by: { id: "u1", name: "Dev" } })];
     const { rerender } = render(<Stream events={events} viewerId="u1" />);

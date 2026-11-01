@@ -254,6 +254,19 @@ describe("live session routes", () => {
     expect(body.events.map((e) => [e.seq, e.author_user_id])).toEqual([[1, null], [2, "user-9"], [3, undefined]]);
   });
 
+  it("labels a turn and a waiting message with the sender's current name, not the one saved at send time", async () => {
+    tables.users.push({ id: "user-9", display_name: "Priya Shah", email: "priya@example.test" });
+    tables.session_events = [{ session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message" }];
+    tables.session_inputs = [
+      { session_id: SESSION, workspace_id: WS, kind: "message", consumed_seq: 1, author_user_id: "user-9", state: "consumed" },
+      { id: "w", session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", payload: { text: "hi" }, created_at: "t", updated_at: "t", author_user_id: "user-9", author_name: "priya@example.test" },
+    ];
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const body = (await (await routes.EVENTS(req)).json()) as { events: Row[]; inputs: Row[] };
+    expect(body.events[0].author_name).toBe("Priya Shah");
+    expect(body.inputs[0].author_name).toBe("Priya Shah");
+  });
+
   it("links a session to the one it continues and to the one that replaced it", async () => {
     tables.sessions = [
       session({ id: "old", status: "ended", end_reason: "cleared", title: "Old chat", folder_name: "app" }),

@@ -2,7 +2,7 @@ import { splitAuthor } from "draft-core/live-sessions";
 import type { ComposerInput, LiveSessionEvent } from "./types";
 
 export type StreamItem =
-  | { type: "user"; seq: number; at: string; text: string; agentId: string | null; /** Set when someone sent it through Draft. */ author: string | null; authorUserId: string | null }
+  | { type: "user"; seq: number; at: string; text: string; agentId: string | null; /** Set when someone sent it through Draft. */ author: string | null; authorUserId: string | null; /** The sender's current name. Wins over `author`, a name saved in the text at send time. */ authorName: string | null }
   | { type: "assistant"; seq: number; at: string; text: string; agentId: string | null }
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
@@ -59,7 +59,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
 
     switch (event.kind) {
       case "user_message":
-        items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), authorUserId: event.author_user_id ?? null, agentId });
+        items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), authorUserId: event.author_user_id ?? null, authorName: event.author_name ?? null, agentId });
         break;
       case "assistant_text":
         items.push({ type: "assistant", seq: event.seq, at: event.created_at, text: payload.text ?? "", agentId });

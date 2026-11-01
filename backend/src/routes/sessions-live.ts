@@ -152,8 +152,17 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const rows = (events ?? []) as Partial<SessionEventRow>[];
   const authors = await loadTurnAuthors(workspaceId, sessionId, rows);
   if (!authors.ok) return errorResponse("inputs_lookup_failed", 500, authors.error, workspaceId, sessionId);
-  const withAuthors = rows.map((e) => (e.kind === "user_message" ? { ...e, author_user_id: authors.bySeq.get(e.seq as number) ?? null } : e));
-  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: withAuthors, inputs: viewerInputs.inputs });
+  const authorIds = [...new Set([...authors.bySeq.values(), ...viewerInputs.inputs.map((i) => i.author_user_id)])];
+  const names = await loadDisplayNames(serviceClient, authorIds, []);
+  if (!names.ok) return errorResponse(names.code, 500, names.detail, workspaceId, sessionId);
+  const withAuthors = rows.map((e) => {
+    if (e.kind !== "user_message") return e;
+    const authorId = authors.bySeq.get(e.seq as number) ?? null;
+    return { ...e, author_user_id: authorId, author_name: authorId ? (names.users.get(authorId) ?? null) : null };
+  });
+  // The name saved with a waiting message is from send time. The current one wins.
+  const inputs = viewerInputs.inputs.map((i) => ({ ...i, author_name: names.users.get(i.author_user_id) ?? i.author_name }));
+  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: withAuthors, inputs });
 });
 
 /** Who sent each user turn that came through Draft, by event seq. A turn typed in the terminal has no entry. */

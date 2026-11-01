@@ -70,6 +70,8 @@ export interface LiveSessionEvent {
   created_at: string;
   /** On a user_message sent through Draft: who sent it. Null when it is unknown or typed in the terminal. */
   author_user_id?: string | null;
+  /** The sender's current display name, when author_user_id is known. */
+  author_name?: string | null;
 }
 
 export interface LiveSessionViewer {

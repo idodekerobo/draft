@@ -46,7 +46,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
       }
       return (
         <>
-          {!mine && <span className="ui-stream__who">{item.author ?? ownerName}</span>}
+          {!mine && <span className="ui-stream__who">{item.authorName ?? item.author ?? ownerName}</span>}
           <p className="ui-stream__bubble">{item.text}</p>
           <MessageActions text={item.text} at={item.at} linkUrl={linkFor?.(item.seq)} />
         </>
