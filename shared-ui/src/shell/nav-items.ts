@@ -6,11 +6,11 @@ export interface MainNavItem {
 }
 
 const MAIN_NAV: MainNavItem[] = [
-  { id: "context", label: "Context" },
   { id: "sessions", label: "Sessions" },
-  { id: "activity", label: "Activity" },
   { id: "routines", label: "Routines" },
+  { id: "context", label: "Context" },
   { id: "connections", label: "Connections" },
+  { id: "activity", label: "Activity" },
   { id: "settings", label: "Settings" },
 ];
 
