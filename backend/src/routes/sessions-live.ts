@@ -149,8 +149,29 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   if (named instanceof Response) return named;
   const links = await loadSessionLinks(workspaceId, session);
   if (links instanceof Response) return links;
-  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: (events ?? []) as Partial<SessionEventRow>[], inputs: viewerInputs.inputs });
+  const rows = (events ?? []) as Partial<SessionEventRow>[];
+  const authors = await loadTurnAuthors(workspaceId, sessionId, rows);
+  if (!authors.ok) return errorResponse("inputs_lookup_failed", 500, authors.error, workspaceId, sessionId);
+  const withAuthors = rows.map((e) => (e.kind === "user_message" ? { ...e, author_user_id: authors.bySeq.get(e.seq as number) ?? null } : e));
+  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: withAuthors, inputs: viewerInputs.inputs });
 });
+
+/** Who sent each user turn that came through Draft, by event seq. A turn typed in the terminal has no entry. */
+async function loadTurnAuthors(workspaceId: string, sessionId: string, events: Partial<SessionEventRow>[]) {
+  const seqs = events.filter((e) => e.kind === "user_message").map((e) => e.seq as number);
+  const bySeq = new Map<number, string>();
+  if (seqs.length === 0) return { ok: true as const, bySeq };
+  const { data, error } = await serviceClient
+    .from("session_inputs")
+    .select("consumed_seq, author_user_id")
+    .eq("session_id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .eq("kind", "message")
+    .in("consumed_seq", seqs);
+  if (error) return { ok: false as const, error };
+  for (const row of (data ?? []) as { consumed_seq: number; author_user_id: string }[]) bySeq.set(row.consumed_seq, row.author_user_id);
+  return { ok: true as const, bySeq };
+}
 
 function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim())?.trim().slice(0, TITLE_MAX_CHARS) ?? "";

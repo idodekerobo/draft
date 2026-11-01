@@ -239,6 +239,21 @@ describe("live session routes", () => {
     expect(body.inputs).toEqual([]);
   });
 
+  it("names the sender of a user turn that came through Draft, and leaves the others null", async () => {
+    tables.session_events = [
+      { session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message" },
+      { session_id: SESSION, workspace_id: WS, seq: 2, kind: "user_message" },
+      { session_id: SESSION, workspace_id: WS, seq: 3, kind: "assistant_text" },
+    ];
+    tables.session_inputs = [
+      { session_id: SESSION, workspace_id: WS, kind: "message", consumed_seq: 2, author_user_id: "user-9", state: "consumed" },
+      { session_id: SESSION, workspace_id: WS, kind: "stop", consumed_seq: 1, author_user_id: "user-8", state: "consumed" },
+    ];
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const body = (await (await routes.EVENTS(req)).json()) as { events: Row[] };
+    expect(body.events.map((e) => [e.seq, e.author_user_id])).toEqual([[1, null], [2, "user-9"], [3, undefined]]);
+  });
+
   it("links a session to the one it continues and to the one that replaced it", async () => {
     tables.sessions = [
       session({ id: "old", status: "ended", end_reason: "cleared", title: "Old chat", folder_name: "app" }),
