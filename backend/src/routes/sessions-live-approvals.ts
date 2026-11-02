@@ -11,6 +11,48 @@ const MAX_HOST_EVENTS = 20;
 const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "session_note"]);
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,100}$/;
 
+const MAX_ANSWERS = 20;
+const MAX_ANSWER_KEY_CHARS = 1000;
+const MAX_ANSWER_CHARS = 2000;
+const MAX_ANSWER_LIST = 50;
+const MAX_MESSAGE_CHARS = 2000;
+
+type Extras = { answers: Record<string, string | string[]> | null; message: string | null; scope: "once" | "session" | null };
+
+const isShortString = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_ANSWER_CHARS;
+
+/** The optional parts of a decision: answers to a question, a reason, and how long an allow lasts. */
+function parseExtras(body: Record<string, unknown>): { ok: true; extras: Extras } | { ok: false; error: string } {
+  let answers: Extras["answers"] = null;
+  if (body.answers !== undefined && body.answers !== null) {
+    const raw = body.answers;
+    if (typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "invalid_answers" };
+    const entries = Object.entries(raw as Record<string, unknown>);
+    if (entries.length > MAX_ANSWERS) return { ok: false, error: "invalid_answers" };
+    answers = {};
+    for (const [key, value] of entries) {
+      if (!key || key.length > MAX_ANSWER_KEY_CHARS) return { ok: false, error: "invalid_answers" };
+      if (isShortString(value)) answers[key] = value;
+      else if (Array.isArray(value) && value.length <= MAX_ANSWER_LIST && value.every(isShortString)) answers[key] = value;
+      else return { ok: false, error: "invalid_answers" };
+    }
+  }
+
+  let message: string | null = null;
+  if (body.message !== undefined && body.message !== null) {
+    if (typeof body.message !== "string") return { ok: false, error: "invalid_message" };
+    if (body.message.length > MAX_MESSAGE_CHARS) return { ok: false, error: "message_too_long" };
+    message = body.message.trim() || null;
+  }
+
+  let scope: Extras["scope"] = null;
+  if (body.scope !== undefined && body.scope !== null) {
+    if (body.scope !== "once" && body.scope !== "session") return { ok: false, error: "invalid_scope" };
+    scope = body.scope;
+  }
+  return { ok: true, extras: { answers, message, scope } };
+}
+
 /** Any member can decide an open permission request. The first decision wins. */
 export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, requestId } = req.params;
@@ -22,6 +64,8 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
   if (!parsed.ok) return parsed.response;
   const decision = parsed.body.decision;
   if (decision !== "allow" && decision !== "deny") return errorResponse("invalid_decision", 400);
+  const extras = parseExtras(parsed.body);
+  if (!extras.ok) return errorResponse(extras.error, 400);
 
   const { data, error } = await serviceClient.rpc("create_permission_decision", {
     p_session_id: sessionId,
@@ -30,6 +74,9 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
     p_author_name: await authorName(caller.userId),
     p_request_id: requestId,
     p_decision: decision,
+    p_answers: extras.extras.answers,
+    p_message: extras.extras.message,
+    p_scope: extras.extras.scope,
   });
   if (error) return knownDbError(error.message) ?? errorResponse("decision_failed", 500, error, workspaceId, sessionId);
 

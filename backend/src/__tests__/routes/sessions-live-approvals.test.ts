@@ -92,6 +92,35 @@ describe("deciding a permission request", () => {
     expect((await decide({ decision: "allow" })).status).toBe(409);
   });
 
+  it("passes answers, a reason and a scope to the database", async () => {
+    rpcResult = { data: { outcome: "created" }, error: null };
+    const res = await decide({ decision: "allow", answers: { "Pick colors": ["Red", "Blue"], Size: "L" }, message: "  because  ", scope: "session" });
+    expect(res.status).toBe(201);
+    expect(rpcCalls[0]!.args).toMatchObject({ p_answers: { "Pick colors": ["Red", "Blue"], Size: "L" }, p_message: "because", p_scope: "session" });
+  });
+
+  it("sends null for the optional parts when a plain decision omits them", async () => {
+    rpcResult = { data: { outcome: "created" }, error: null };
+    await decide({ decision: "deny", message: "   " });
+    expect(rpcCalls[0]!.args).toMatchObject({ p_answers: null, p_message: null, p_scope: null });
+  });
+
+  it("rejects malformed answers, a long reason or an unknown scope before any database call", async () => {
+    const bad = [
+      { answers: [1] },
+      { answers: "x" },
+      { answers: { Q: 3 } },
+      { answers: { Q: [1] } },
+      { answers: { Q: "x".repeat(2001) } },
+      { answers: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`q${i}`, "a"])) },
+      { message: 5 },
+      { message: "x".repeat(2001) },
+      { scope: "forever" },
+    ];
+    for (const extra of bad) expect((await decide({ decision: "allow", ...extra })).status).toBe(400);
+    expect(rpcCalls).toEqual([]);
+  });
+
   it("rejects a bad decision or request id before any database call", async () => {
     expect((await decide({ decision: "maybe" })).status).toBe(400);
     expect((await decide({ decision: "allow" }, "../x")).status).toBe(400);
