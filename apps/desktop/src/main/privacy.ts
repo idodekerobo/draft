@@ -4,6 +4,7 @@ import { fetchServerJSON } from "./server/server-client";
 export interface PrivacyState {
   /** Null when signed out; analytics then fall back to the local choice without identity. */
   userId: string | null;
+  email: string | null;
   analyticsConsent: boolean;
 }
 
@@ -28,16 +29,16 @@ function mirror(server: ServerPrivacy): void {
 function localState(): PrivacyState {
   const result = readDraftConfig();
   const analytics = ensureAnalyticsConfig(result.ok ? result.config : { version: "1", tools: {} });
-  return { userId: null, analyticsConsent: analytics.consent === "opted_in" };
+  return { userId: null, email: null, analyticsConsent: analytics.consent === "opted_in" };
 }
 
 /** Signed in: the account (/whoami) is the source of truth. Signed out: the local config. */
 export async function getPrivacy(signedIn: boolean): Promise<PrivacyState> {
   if (!signedIn) return localState();
   try {
-    const me = await fetchServerJSON<ServerPrivacy & { id: string }>("whoami");
+    const me = await fetchServerJSON<ServerPrivacy & { id: string; email: string }>("whoami");
     mirror(me);
-    return { userId: me.id, analyticsConsent: me.analytics_consent === true };
+    return { userId: me.id, email: me.email, analyticsConsent: me.analytics_consent === true };
   } catch {
     return localState();
   }

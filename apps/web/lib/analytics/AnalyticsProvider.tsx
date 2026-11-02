@@ -11,6 +11,7 @@ const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posth
 
 interface AnalyticsUser {
   id: string;
+  email: string;
   analytics_consent: boolean | null;
   workspace_id?: string | null;
 }
@@ -44,7 +45,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         opt_out_capturing_by_default: true,
         persistence: "localStorage",
         disable_session_recording: true,
-        session_recording: { maskAllInputs: false, maskTextSelector: "*" },
+        session_recording: { maskAllInputs: false },
       });
       posthog.register({ [PLATFORM_PROPERTY]: "web" });
       posthogRef.current = posthog;
@@ -67,7 +68,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       if (user.workspace_id) posthog.register({ workspace_id: user.workspace_id });
       if (!optedIn.current) {
         posthog.opt_in_capturing();
-        posthog.identify(user.id);
+        posthog.identify(user.id, { email: user.email });
         optedIn.current = true;
         for (const [event, props] of pending.current) posthog.capture(event, props);
         pending.current = [];

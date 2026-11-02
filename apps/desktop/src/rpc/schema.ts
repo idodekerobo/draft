@@ -119,6 +119,7 @@ export interface AppVersionInfo {
 /** The account's analytics choice. userId is null when signed out. */
 export interface PrivacyState {
   userId: string | null;
+  email: string | null;
   analyticsConsent: boolean;
 }
 

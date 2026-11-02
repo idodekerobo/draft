@@ -48,7 +48,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         autocapture: false,
         capture_pageview: false,
         disable_session_recording: true,
-        session_recording: { maskTextSelector: "*", maskAllInputs: false },
+        session_recording: { maskAllInputs: false },
         persistence: "localStorage",
         opt_out_capturing_by_default: true,
       });
@@ -72,8 +72,8 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         pendingRef.current = [];
         posthog.startSessionRecording();
       }
-      // User id only, never email or name. Signed out: PostHog keeps its own anonymous id.
-      if (next.userId) posthog.identify(next.userId);
+      // Signed in: user id and email. Signed out: PostHog keeps its own anonymous id.
+      if (next.userId) posthog.identify(next.userId, next.email ? { email: next.email } : undefined);
       return;
     }
     pendingRef.current = [];
