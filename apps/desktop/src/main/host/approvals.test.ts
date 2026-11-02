@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { ApprovalBroker, questionsFromInput, summarizeToolInput, type HostEvent } from "./approvals";
 
-function setup(options: { failPost?: boolean; pane?: boolean; expireMs?: number } = {}) {
+function setup(options: { failPost?: boolean; pane?: boolean; expireMs?: number; oneAtATime?: boolean } = {}) {
   const events: HostEvent[] = [];
   const open = new Set<string>();
   const pane = { blocked: options.pane ?? false };
@@ -16,6 +16,7 @@ function setup(options: { failPost?: boolean; pane?: boolean; expireMs?: number 
     onOpen: (id) => open.add(id),
     onClose: (id) => open.delete(id),
     expireMs: options.expireMs,
+    oneAtATime: options.oneAtATime,
   });
   return { broker, events, open, pane };
 }
@@ -96,6 +97,30 @@ describe("ApprovalBroker", () => {
     expect(open.size).toBe(1);
     broker.decide("r1", "allow", { userId: "u", name: "Dev" });
     await held;
+  });
+
+  it("a new request closes the held one as answered in the terminal when Claude asks one at a time", async () => {
+    const { broker, events, open, pane } = setup({ oneAtATime: true, pane: true });
+    const plan = broker.hold({ tool_name: "ExitPlanMode", tool_input: { plan: "# p" } }, new AbortController().signal);
+    await tick();
+    const write = broker.hold({ tool_name: "Write", tool_input: { file_path: "/a" } }, new AbortController().signal);
+    await tick();
+    expect(await plan).toBeNull();
+    expect(events.filter((e) => e.kind === "permission_resolved")).toEqual([
+      expect.objectContaining({ sourceId: "permres:r1", payload: { requestId: "r1", reason: "answered_locally" } }),
+    ]);
+    expect([...open]).toEqual(["r2"]);
+    broker.decide("r2", "allow", { userId: "u1", name: "Dev" });
+    expect(await write).toEqual({ behavior: "allow" });
+    expect(pane.blocked).toBe(true);
+  });
+
+  it("holds several requests at once when the harness can ask in parallel", async () => {
+    const { broker, open } = setup();
+    void broker.hold(bash, new AbortController().signal);
+    void broker.hold(bash, new AbortController().signal);
+    await tick();
+    expect([...open].sort()).toEqual(["r1", "r2"]);
   });
 
   it("a hook that ends while the pane still asks is hook_gone", async () => {

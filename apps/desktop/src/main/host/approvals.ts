@@ -58,6 +58,8 @@ export interface ApprovalDeps {
   onOpen(requestId: string): void;
   onClose(requestId: string): void;
   expireMs?: number;
+  /** Claude asks one thing at a time, so a new request means the held ones were answered in the terminal. */
+  oneAtATime?: boolean;
 }
 
 type Outcome = { type: "decided"; decision: "allow" | "deny"; by: Decider; extras: DecisionExtras } | { type: "expired" } | { type: "gone" } | { type: "local" };
@@ -156,6 +158,8 @@ export class ApprovalBroker {
   async hold(payload: { tool_name?: unknown; tool_input?: unknown }, signal: AbortSignal): Promise<HookAnswer | null> {
     const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
     if (!toolName) return null;
+
+    if (this.deps.oneAtATime) for (const entry of [...this.held.values()]) entry.finish({ type: "local" });
 
     const requestId = this.deps.newId();
     try {

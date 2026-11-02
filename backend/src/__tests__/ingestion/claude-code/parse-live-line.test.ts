@@ -47,6 +47,19 @@ describe("parseLiveLine: a message sent mid-turn", () => {
   });
 });
 
+describe("parseLiveLine: an interrupted tool call", () => {
+  it("shows Claude Code's interrupt marker as a note, not as something a person typed", () => {
+    for (const marker of ["[Request interrupted by user for tool use]", "[Request interrupted by user]"]) {
+      expect(parse(user([{ type: "text", text: marker }]))).toEqual([{ sourceId: "u-1", kind: "session_note", payload: { timestamp: "2026-10-26T20:00:00.000Z", text: marker } }]);
+      expect(parse(user(marker))).toEqual([{ sourceId: "u-1", kind: "session_note", payload: { timestamp: "2026-10-26T20:00:00.000Z", text: marker } }]);
+    }
+  });
+
+  it("still maps a person's message that only mentions an interrupt", () => {
+    expect(parse(user("Why did you say [Request interrupted by user] earlier?"))[0]?.kind).toBe("user_message");
+  });
+});
+
 describe("parseLiveLine: turns", () => {
   it("maps a typed user turn", () => {
     expect(parse(user("Run ls in this folder"))).toEqual([
