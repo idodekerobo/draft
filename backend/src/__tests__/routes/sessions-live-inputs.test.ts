@@ -151,6 +151,12 @@ describe("host routes", () => {
     expect(body.inputs[0]!.delivered_text).toBe("[Dev via Draft] run tests");
   });
 
+  it("puts the start of the input id in the tag", async () => {
+    tables.session_inputs = [{ ...input, id: "ab12cd34-0000-4000-8000-000000000000" }];
+    const body = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as { inputs: Array<{ delivered_text: string }> };
+    expect(body.inputs[0]!.delivered_text).toBe("[Dev via Draft #ab12cd34] run tests");
+  });
+
   it("refuses pending inputs to a user who does not own the session and to another host", async () => {
     tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_machine_id: "host-1", last_seq: 0 }];
     expect((await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).status).toBe(403);
@@ -261,6 +267,39 @@ describe("matching consumed inputs", () => {
     tables.session_events = [turn(5, "[Priya via Draft] ship it")];
     await routes.matchConsumedInputs(WS, SESSION, 4, 5);
     expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_to, c.args.p_consumed_seq])).toEqual([["b", "consumed", 5]]);
+  });
+
+  describe("by the id in the tag", () => {
+    const A = "aaaa1111-0000-4000-8000-000000000000";
+    const B = "bbbb2222-0000-4000-8000-000000000000";
+
+    it("links a turn whose text differs from the message, by its id", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests")];
+      tables.session_events = [turn(4, "[Dev via Draft #aaaa1111] run tests, edited by Claude Code")];
+      await routes.matchConsumedInputs(WS, SESSION, 3, 4);
+      expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_consumed_seq])).toEqual([[A, 4]]);
+    });
+
+    it("gives two identical messages to the right inputs, whatever their order", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "go"), waiting(B, "Priya", "go")];
+      tables.session_events = [turn(2, "[Priya via Draft #bbbb2222] go"), turn(3, "[Dev via Draft #aaaa1111] go")];
+      await routes.matchConsumedInputs(WS, SESSION, 1, 3);
+      expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_consumed_seq])).toEqual([[B, 2], [A, 3]]);
+    });
+
+    it("links nothing for an unknown id or an input that is no longer waiting", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "go"), waiting(B, "Dev", "go", "consumed")];
+      tables.session_events = [turn(2, "[Dev via Draft #cccc3333] go"), turn(3, "[Dev via Draft #bbbb2222] go")];
+      await routes.matchConsumedInputs(WS, SESSION, 1, 3);
+      expect(rpcCalls).toEqual([]);
+    });
+
+    it("still links an old turn with no id by its text", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "go")];
+      tables.session_events = [turn(2, "[Dev via Draft] go")];
+      await routes.matchConsumedInputs(WS, SESSION, 1, 2);
+      expect(rpcCalls.map((c) => c.args.p_input_id)).toEqual([A]);
+    });
   });
 
   it("matches multi-line text when whitespace differs", async () => {
