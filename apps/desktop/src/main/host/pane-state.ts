@@ -54,7 +54,7 @@ export function classifyPane(screen: string): PaneState {
   if (composer) {
     const text = raw
       .slice(composer.start, composer.end)
-      .map((line, index) => typedText(index === 0 ? line.slice(line.indexOf("❯") + 1) : line))
+      .map((line, index) => (index === 0 ? typedText(line).replace(/^\s*❯/, "") : typedText(line)))
       .join("")
       .trim();
     return text === "" ? "ready" : "composer_busy";
