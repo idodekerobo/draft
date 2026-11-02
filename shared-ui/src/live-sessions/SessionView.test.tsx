@@ -160,6 +160,25 @@ describe("SessionView", () => {
     await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "r2", { decision: "allow" }));
   });
 
+  it("shows an open question as a form, sends the answers, and shows the answer in the stream once it is resolved", async () => {
+    const question = { key: "Pick", question: "Pick", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "A" }, { label: "B" }] };
+    const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "AskUserQuestion", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];
+    const decideApproval = mock(async () => ({ ok: true as const }));
+    const view = render(<SessionView api={{ ...api, decideApproval, fetchEvents: async () => ({ viewer, session, events: open, inputs: [] }) }} sessionId="s1" />);
+    await screen.findByRole("group", { name: "Question from Claude" });
+    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "allow", answers: { Pick: "B" } }));
+    view.unmount();
+
+    const resolved = [...open, { seq: 2, source_id: "b", kind: "permission_resolved" as const, payload: { requestId: "q1", reason: "decided", decision: "allow" as const, by_name: "Dev", answers: { Pick: "B" } }, created_at: "2026-10-27T10:01:00Z" }];
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session, events: resolved, inputs: [] }) }} sessionId="s1" />);
+    await screen.findByText(/Answered by Dev/);
+    expect(screen.queryByRole("group", { name: "Question from Claude" })).toBeNull();
+    expect(screen.getByText("B")).toBeTruthy();
+  });
+
   it("asks before a menu action that needs confirming", async () => {
     let ended = 0;
     render(<SessionView api={api} sessionId="s1" menuItems={() => [{ label: "End session", confirm: "End this session?", onSelect: () => ended++ }]} />);

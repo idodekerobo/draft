@@ -74,6 +74,22 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
       }
       return <p className="ui-stream__note">{item.text}</p>;
     case "approval":
+      if (item.kind === "question" && item.questions.length > 0) {
+        const answers = item.resolved?.answers ?? {};
+        return (
+          <div className="ui-stream__note ui-stream__answers">
+            <p>Question · {approvalOutcome(item, hostName)}</p>
+            <ul>
+              {item.questions.map((q) => (
+                <li key={q.key}>
+                  <span className="ui-muted">{q.question}</span>
+                  {answers[q.key] !== undefined && <strong> {q.isSecret ? "••••" : [answers[q.key]].flat().join(", ")}</strong>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      }
       return (
         <p className="ui-stream__note">
           {item.tool}

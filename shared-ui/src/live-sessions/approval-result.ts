@@ -6,3 +6,10 @@ export function toApprovalResult(code: string, byName?: string | null): Exclude<
   if (code === "request_closed" || code === "session_ended") return { ok: false, error: code };
   return { ok: false, error: "failed" };
 }
+
+/** The line that replaces the buttons when a decision came too late. */
+export function closedMessage(result: Exclude<ApprovalResult, { ok: true }>): string {
+  if (result.error === "already_decided") return result.byName ? `Already decided by ${result.byName}` : "Already decided";
+  if (result.error === "session_ended") return "This session has ended";
+  return "This request already ended";
+}

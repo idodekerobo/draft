@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { OpenApproval } from "./stream-items";
+import { closedMessage } from "./approval-result";
 import type { ApprovalResult } from "./types";
 
 const PREVIEW_LINES = 3;
@@ -10,12 +11,6 @@ type Phase = { name: "idle" } | { name: "sending"; decision: "allow" | "deny" } 
 
 function inputText(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
-}
-
-function closedMessage(result: Exclude<ApprovalResult, { ok: true }>): string {
-  if (result.error === "already_decided") return result.byName ? `Already decided by ${result.byName}` : "Already decided";
-  if (result.error === "session_ended") return "This session has ended";
-  return "This request already ended";
 }
 
 /** One permission request that waits for an answer. Anyone on the team can answer; the first answer wins. */

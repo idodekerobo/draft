@@ -89,7 +89,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
           requestId: payload.requestId,
           kind: payload.kind ?? "approval",
           tool: payload.name ?? "Tool",
-          summary: toolSummary(payload.input),
+          summary: payload.kind === "question" ? (payload.questions?.[0]?.question ?? "") : toolSummary(payload.input),
           input: payload.input,
           questions: payload.questions ?? [],
           plan: payload.plan ?? null,
@@ -153,6 +153,7 @@ export function approvalOutcome(approval: OpenApproval, hostName: string | null)
   const where = hostName ? `on ${hostName}` : "in the terminal";
   switch (resolved.reason) {
     case "decided":
+      if (approval.kind === "question" && resolved.decision === "allow") return `Answered by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
       return `${resolved.decision === "deny" ? "Denied" : "Allowed"} by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
     case "answered_locally":
       return `Answered ${where}, ${timeOf(resolved.at)}`;

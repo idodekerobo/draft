@@ -133,6 +133,9 @@ describe("approvals", () => {
     };
     expect(outcome({ reason: "decided", decision: "allow", by_name: "Dev" })).toBe("Allowed by Dev");
     expect(outcome({ reason: "decided", decision: "deny", by_name: "Priya" })).toBe("Denied by Priya");
+    const [asked] = buildStreamItems([event("permission_request", { requestId: "q", kind: "question", name: "AskUserQuestion", questions: [{ key: "Pick", question: "Pick one?", options: [], multiSelect: false, isOther: true, isSecret: false }] }), event("permission_resolved", { requestId: "q", reason: "decided", decision: "allow", by_name: "Dev" })]);
+    expect(approvalOutcome(asked as never, null).replace(/, \d{1,2}:\d{2}.*$/, "")).toBe("Answered by Dev");
+    expect(asked).toMatchObject({ summary: "Pick one?" });
     expect(outcome({ reason: "answered_locally" })).toBe("Answered on Maya's MacBook");
     expect(outcome({ reason: "answered_locally" }, null)).toBe("Answered in the terminal");
     expect(outcome({ reason: "expired" })).toBe("Expired");
