@@ -157,7 +157,7 @@ describe("SessionView", () => {
     expect(screen.queryByRole("group", { name: "Permission request: Write" })).toBeNull();
     expect(screen.getByText(/Allowed by Dev/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
-    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "r2", "allow"));
+    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "r2", { decision: "allow" }));
   });
 
   it("asks before a menu action that needs confirming", async () => {

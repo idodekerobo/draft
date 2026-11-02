@@ -786,7 +786,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       actOnLiveSessionInput: ({ sessionId, inputId, action }) => actOnLiveSessionInput(sessionId, inputId, action),
 
-      decideLiveSessionApproval: ({ sessionId, requestId, decision }) => decideLiveSessionApproval(sessionId, requestId, decision),
+      decideLiveSessionApproval: ({ sessionId, requestId, ...response }) => decideLiveSessionApproval(sessionId, requestId, response),
 
       stopLiveSession: ({ sessionId }) => stopLiveSession(sessionId),
 

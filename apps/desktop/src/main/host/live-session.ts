@@ -4,7 +4,7 @@ import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { hostErrorAction } from "draft-core/live-sessions";
-import type { LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
+import type { ApprovalResponse, LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import type { HostEvent } from "./approvals";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
@@ -457,10 +457,10 @@ export async function openLiveSessionInTerminal(sessionId: string): Promise<{ ok
 export async function decideLiveSessionApproval(
   sessionId: string,
   requestId: string,
-  decision: "allow" | "deny",
+  response: ApprovalResponse,
 ): Promise<{ ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null }> {
   try {
-    await fetchServer(`${sessionBase(sessionId)}/approvals/${encodeURIComponent(requestId)}/decision`, { method: "POST", body: JSON.stringify({ decision }) });
+    await fetchServer(`${sessionBase(sessionId)}/approvals/${encodeURIComponent(requestId)}/decision`, { method: "POST", body: JSON.stringify(response) });
     return { ok: true };
   } catch (error) {
     if (!(error instanceof ServerError)) return { ok: false, error: "decision_failed" };

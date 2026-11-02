@@ -227,7 +227,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { CreateRoutineInput, LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
+import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -358,7 +358,7 @@ export type AppRPCType = {
 
       /** Allow or deny an open permission request of a live session. */
       decideLiveSessionApproval: {
-        params: { sessionId: string; requestId: string; decision: "allow" | "deny" };
+        params: { sessionId: string; requestId: string } & ApprovalResponse;
         response: { ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null };
       };
 

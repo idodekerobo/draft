@@ -382,7 +382,7 @@ function LoadedSession({
             <>
             {session.status !== "ended" &&
               approvals.map((approval) => (
-                <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
+                <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, { decision })} />
               ))}
             <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>

@@ -7,7 +7,7 @@ import type { ApprovalResult } from "./types";
 afterEach(cleanup);
 
 const approval = (input: unknown = { file_path: "/a/hello.txt", content: "hi" }): OpenApproval => ({
-  type: "approval", seq: 1, requestId: "r1", tool: "Write", summary: "/a/hello.txt", input, resolved: null,
+  type: "approval", seq: 1, requestId: "r1", kind: "approval", tool: "Write", summary: "/a/hello.txt", input, questions: [], plan: null, resolved: null,
 });
 
 function renderPanel(result: ApprovalResult = { ok: true }, props: Partial<Parameters<typeof ApprovalPanel>[0]> = {}) {

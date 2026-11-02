@@ -96,6 +96,32 @@ describe("approvals", () => {
     expect(items[0]).toMatchObject({ tool: "Write", summary: "/a/hello.txt", resolved: { reason: "decided", decision: "allow", byName: "Dev" } });
   });
 
+  it("a request without a kind is a plain approval, and a question or plan keeps its fields", () => {
+    const [old, ask, plan] = buildStreamItems([
+      request("r1"),
+      event("permission_request", {
+        requestId: "r2",
+        kind: "question",
+        name: "AskUserQuestion",
+        questions: [{ key: "Pick", question: "Pick", options: [{ label: "A" }], multiSelect: false, isOther: true, isSecret: false }],
+      }),
+      event("permission_request", { requestId: "r3", kind: "plan", name: "ExitPlanMode", plan: "# Plan" }),
+    ]);
+    expect(old).toMatchObject({ kind: "approval", questions: [], plan: null });
+    expect(ask).toMatchObject({ kind: "question", questions: [{ key: "Pick" }] });
+    expect(plan).toMatchObject({ kind: "plan", plan: "# Plan" });
+  });
+
+  it("keeps what the decider answered or wrote on the resolved request", () => {
+    const [item] = buildStreamItems([
+      event("permission_request", { requestId: "r1", kind: "question", name: "AskUserQuestion" }),
+      event("permission_resolved", { requestId: "r1", reason: "decided", decision: "allow", by_name: "Dev", answers: { Pick: ["A", "B"] }, message: "why" }),
+    ]);
+    expect(item).toMatchObject({ resolved: { answers: { Pick: ["A", "B"] }, message: "why" } });
+    const [plain] = buildStreamItems([request("r2"), event("permission_resolved", { requestId: "r2", reason: "expired" })]);
+    expect(plain).toMatchObject({ resolved: { answers: null, message: null } });
+  });
+
   it("ignores a result for an unknown request", () => {
     expect(buildStreamItems([event("permission_resolved", { requestId: "zzz", reason: "expired" })])).toEqual([]);
   });

@@ -1,5 +1,5 @@
 import { splitAuthor } from "draft-core/live-sessions";
-import type { ComposerInput, LiveSessionEvent } from "./types";
+import type { AnswerValue, ApprovalKind, ComposerInput, LiveQuestion, LiveSessionEvent } from "./types";
 
 export type StreamItem =
   | { type: "user"; seq: number; at: string; text: string; agentId: string | null; /** Set when someone sent it through Draft. */ author: string | null; authorUserId: string | null; /** The sender's current name. Wins over `author`, a name saved in the text at send time. */ authorName: string | null }
@@ -11,11 +11,22 @@ export type StreamItem =
       type: "approval";
       seq: number;
       requestId: string;
+      /** Requests posted before kinds existed have none and count as plain approvals. */
+      kind: ApprovalKind;
       tool: string;
       summary: string;
       input: unknown;
+      questions: LiveQuestion[];
+      plan: string | null;
       /** Null while the request waits for an answer. */
-      resolved: { reason: string; decision: "allow" | "deny" | null; byName: string | null; at: string } | null;
+      resolved: {
+        reason: string;
+        decision: "allow" | "deny" | null;
+        byName: string | null;
+        at: string;
+        answers: Record<string, AnswerValue> | null;
+        message: string | null;
+      } | null;
     }
   | {
       type: "tool";
@@ -76,9 +87,12 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
           type: "approval",
           seq: event.seq,
           requestId: payload.requestId,
+          kind: payload.kind ?? "approval",
           tool: payload.name ?? "Tool",
           summary: toolSummary(payload.input),
           input: payload.input,
+          questions: payload.questions ?? [],
+          plan: payload.plan ?? null,
           resolved: null,
         };
         items.push(approval);
@@ -87,7 +101,16 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
       }
       case "permission_resolved": {
         const approval = payload.requestId ? approvalsById.get(payload.requestId) : undefined;
-        if (approval) approval.resolved = { reason: payload.reason ?? "decided", decision: payload.decision ?? null, byName: payload.by_name ?? null, at: event.created_at };
+        if (approval) {
+          approval.resolved = {
+            reason: payload.reason ?? "decided",
+            decision: payload.decision ?? null,
+            byName: payload.by_name ?? null,
+            at: event.created_at,
+            answers: payload.answers ?? null,
+            message: payload.message ?? null,
+          };
+        }
         break;
       }
       case "tool_use": {

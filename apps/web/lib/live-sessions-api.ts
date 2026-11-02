@@ -1,4 +1,4 @@
-import { SessionNotFoundError, toApprovalResult, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
+import { SessionNotFoundError, toApprovalResult, type ApprovalResponse, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
 import { presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
 import { ApiError, apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
@@ -22,9 +22,9 @@ async function post(path: string, body: unknown): Promise<void> {
   }
 }
 
-async function decide(path: string, decision: "allow" | "deny"): Promise<ApprovalResult> {
+async function decide(path: string, response: ApprovalResponse): Promise<ApprovalResult> {
   try {
-    await apiFetch(path, { method: "POST", body: JSON.stringify({ decision }) });
+    await apiFetch(path, { method: "POST", body: JSON.stringify(response) });
     return { ok: true };
   } catch (error) {
     if (!(error instanceof ApiError)) return { ok: false, error: "failed" };
@@ -39,7 +39,7 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     fetchEvents: (sessionId, after) => fetchLive<LiveSessionEventsPage>(`${base}/${sessionId}/events?after=${after}`),
     sendMessage: (sessionId, text) => post(`${base}/${sessionId}/inputs`, { text }),
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
-    decideApproval: (sessionId, requestId, decision) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, decision),
+    decideApproval: (sessionId, requestId, response) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, response),
     stop: async (sessionId) => {
       try {
         const result = await apiFetch<{ withdrawn?: Array<{ text: string }> }>(`${base}/${sessionId}/stop`, { method: "POST", body: "{}" });
