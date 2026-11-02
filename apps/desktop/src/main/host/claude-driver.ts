@@ -62,7 +62,7 @@ export class ClaudeDriver implements HarnessDriver {
     });
     this.controls = new ControlActions({
       setState: host.setInputState,
-      decide: (requestId, decision, by) => this.broker.decide(requestId, decision, by),
+      decide: (requestId, decision, by, extras) => this.broker.decide(requestId, decision, by, extras),
       capture: () => capturePane(this.tmux),
       sendEscape: () => pressEscape(this.tmux),
       postEvents: (events) => host.postHostEvents(events),

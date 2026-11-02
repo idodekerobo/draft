@@ -11,7 +11,33 @@
  * If the request cannot be posted, the hook gets no answer and only the dialog remains.
  */
 
-export type HookAnswer = { behavior: "allow" } | { behavior: "deny"; message: string };
+export type HookAnswer = { behavior: "allow"; updatedInput?: Record<string, unknown> } | { behavior: "deny"; message: string };
+
+export type AnswerValue = string | string[];
+
+/** What a person adds to an allow or deny: answers to a question, a reason, how long an allow lasts. */
+export interface DecisionExtras {
+  answers?: Record<string, AnswerValue>;
+  message?: string;
+  scope?: "once" | "session";
+}
+
+export type RequestKind = "approval" | "question" | "plan";
+
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface Question {
+  key: string;
+  header?: string;
+  question: string;
+  options: QuestionOption[];
+  multiSelect: boolean;
+  isOther: boolean;
+  isSecret: boolean;
+}
 
 export interface HostEvent {
   sourceId: string;
@@ -34,19 +60,91 @@ export interface ApprovalDeps {
   expireMs?: number;
 }
 
-type Outcome = { type: "decided"; decision: "allow" | "deny"; by: Decider } | { type: "expired" } | { type: "gone" } | { type: "local" };
+type Outcome = { type: "decided"; decision: "allow" | "deny"; by: Decider; extras: DecisionExtras } | { type: "expired" } | { type: "gone" } | { type: "local" };
 
 const EXPIRE_MS = 55 * 60 * 1000;
 const MAX_INPUT_CHARS = 4000;
 /** Checks in a row without the dialog before the owner counts as having answered. */
 const MISSES_TO_CLOSE = 2;
-/** Claude asks its own questions in the pane; they are not an allow or deny. */
-const NOT_APPROVALS = new Set(["AskUserQuestion"]);
+const MAX_MESSAGE_CHARS = 2000;
+
+export function requestKind(toolName: string): RequestKind {
+  if (toolName === "AskUserQuestion") return "question";
+  if (toolName === "ExitPlanMode") return "plan";
+  return "approval";
+}
+
+/** The questions Claude's AskUserQuestion tool asked, in the shape the chat shows. Malformed entries are dropped. */
+export function questionsFromInput(input: unknown): Question[] {
+  const raw = (input as { questions?: unknown } | null)?.questions;
+  if (!Array.isArray(raw)) return [];
+  const questions: Question[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.question !== "string" || !e.question || !Array.isArray(e.options)) continue;
+    const options: QuestionOption[] = [];
+    for (const option of e.options) {
+      const o = typeof option === "string" ? { label: option } : (option as Record<string, unknown> | null);
+      if (!o || typeof o.label !== "string" || !o.label) continue;
+      options.push(typeof o.description === "string" && o.description ? { label: o.label, description: o.description } : { label: o.label });
+    }
+    if (options.length === 0) continue;
+    questions.push({
+      key: e.question,
+      ...(typeof e.header === "string" && e.header ? { header: e.header } : {}),
+      question: e.question,
+      options,
+      multiSelect: e.multiSelect === true,
+      isOther: true,
+      isSecret: false,
+    });
+  }
+  return questions;
+}
+
+/** Keeps answers to the asked questions only, as strings or lists of strings. */
+function cleanAnswers(answers: unknown, questions: Question[]): Record<string, AnswerValue> {
+  const clean: Record<string, AnswerValue> = {};
+  if (!answers || typeof answers !== "object") return clean;
+  for (const question of questions) {
+    const value = (answers as Record<string, unknown>)[question.key];
+    if (typeof value === "string") clean[question.key] = value;
+    else if (Array.isArray(value) && value.every((v) => typeof v === "string")) clean[question.key] = value as string[];
+  }
+  return clean;
+}
+
+function requestPayload(requestId: string, toolName: string, toolInput: unknown): Record<string, unknown> {
+  const kind = requestKind(toolName);
+  const base = { requestId, name: toolName, kind, ...summarizeToolInput(toolInput) };
+  if (kind === "question") return { ...base, questions: questionsFromInput(toolInput) };
+  const plan = (toolInput as { plan?: unknown } | null)?.plan;
+  if (kind === "plan" && typeof plan === "string") return { ...base, plan };
+  return base;
+}
 
 export function summarizeToolInput(input: unknown): { input: unknown; input_truncated: boolean } {
   const text = JSON.stringify(input ?? null) ?? "null";
   if (text.length <= MAX_INPUT_CHARS) return { input, input_truncated: false };
   return { input: text.slice(0, MAX_INPUT_CHARS), input_truncated: true };
+}
+
+/** What Claude's hook gets back. A question carries the answers, and a plan carries its own input, or Claude asks again in the pane. */
+function hookAnswer(toolName: string, toolInput: unknown, outcome: Extract<Outcome, { type: "decided" }>): HookAnswer {
+  const input = toolInput && typeof toolInput === "object" && !Array.isArray(toolInput) ? (toolInput as Record<string, unknown>) : null;
+  const reason = outcome.extras.message?.trim().slice(0, MAX_MESSAGE_CHARS);
+  if (outcome.decision === "deny") {
+    return { behavior: "deny", message: reason ? `Denied by ${outcome.by.name} in Draft: ${reason}` : `Denied by ${outcome.by.name} in Draft.` };
+  }
+  if (!input) return { behavior: "allow" };
+  const kind = requestKind(toolName);
+  if (kind === "plan") return { behavior: "allow", updatedInput: input };
+  if (kind === "question") {
+    const answers = cleanAnswers(outcome.extras.answers, questionsFromInput(input));
+    return Object.keys(answers).length > 0 ? { behavior: "allow", updatedInput: { ...input, answers } } : { behavior: "allow" };
+  }
+  return { behavior: "allow" };
 }
 
 export class ApprovalBroker {
@@ -57,12 +155,12 @@ export class ApprovalBroker {
   /** Holds the hook until someone decides. Returns null to let Claude's own dialog handle it. */
   async hold(payload: { tool_name?: unknown; tool_input?: unknown }, signal: AbortSignal): Promise<HookAnswer | null> {
     const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
-    if (!toolName || NOT_APPROVALS.has(toolName)) return null;
+    if (!toolName) return null;
 
     const requestId = this.deps.newId();
     try {
       await this.deps.postEvents([
-        { sourceId: `perm:${requestId}`, kind: "permission_request", payload: { requestId, name: toolName, ...summarizeToolInput(payload.tool_input) } },
+        { sourceId: `perm:${requestId}`, kind: "permission_request", payload: requestPayload(requestId, toolName, payload.tool_input) },
       ]);
     } catch (error) {
       console.error("[live-session] could not post a permission request", error);
@@ -86,14 +184,14 @@ export class ApprovalBroker {
 
     await this.resolve(requestId, outcome);
     if (outcome.type !== "decided") return null;
-    return outcome.decision === "allow" ? { behavior: "allow" } : { behavior: "deny", message: `Denied by ${outcome.by.name} in Draft.` };
+    return hookAnswer(toolName, payload.tool_input, outcome);
   }
 
   /** Answers a held request. False when it is not held any more. */
-  decide(requestId: string, decision: "allow" | "deny", by: Decider): boolean {
+  decide(requestId: string, decision: "allow" | "deny", by: Decider, extras: DecisionExtras = {}): boolean {
     const entry = this.held.get(requestId);
     if (!entry) return false;
-    entry.finish({ type: "decided", decision, by });
+    entry.finish({ type: "decided", decision, by, extras });
     return true;
   }
 
@@ -122,7 +220,12 @@ export class ApprovalBroker {
             ? "answered_locally"
             : "hook_gone";
     const payload: Record<string, unknown> = { requestId, reason };
-    if (outcome.type === "decided") Object.assign(payload, { decision: outcome.decision, by_user_id: outcome.by.userId, by_name: outcome.by.name });
+    if (outcome.type === "decided") {
+      Object.assign(payload, { decision: outcome.decision, by_user_id: outcome.by.userId, by_name: outcome.by.name });
+      const { answers, message } = outcome.extras;
+      if (answers && Object.keys(answers).length > 0) payload.answers = answers;
+      if (message?.trim()) payload.message = message.trim().slice(0, MAX_MESSAGE_CHARS);
+    }
     await this.closeOnServer(requestId, payload);
   }
 

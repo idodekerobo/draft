@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ApprovalBroker, summarizeToolInput, type HostEvent } from "./approvals";
+import { ApprovalBroker, questionsFromInput, summarizeToolInput, type HostEvent } from "./approvals";
 
 function setup(options: { failPost?: boolean; pane?: boolean; expireMs?: number } = {}) {
   const events: HostEvent[] = [];
@@ -120,9 +120,9 @@ describe("ApprovalBroker", () => {
     expect(open.size).toBe(0);
   });
 
-  it("does not turn a question into an allow or deny", async () => {
+  it("leaves a hook call with no tool name to Claude's own dialog", async () => {
     const { broker, events } = setup();
-    expect(await broker.hold({ tool_name: "AskUserQuestion", tool_input: {} }, new AbortController().signal)).toBeNull();
+    expect(await broker.hold({ tool_input: {} }, new AbortController().signal)).toBeNull();
     expect(events).toEqual([]);
   });
 
@@ -141,5 +141,85 @@ describe("summarizeToolInput", () => {
     const big = summarizeToolInput({ text: "x".repeat(9000) });
     expect(big.input_truncated).toBe(true);
     expect((big.input as string).length).toBe(4000);
+  });
+
+  describe("questions", () => {
+    const ask = {
+      tool_name: "AskUserQuestion",
+      tool_input: {
+        questions: [
+          { question: "Pick colors", header: "Color", multiSelect: true, options: [{ label: "Red", description: "warm" }, { label: "Blue" }] },
+          { question: "Pick a size", options: [{ label: "S" }, { label: "L" }] },
+        ],
+      },
+    };
+
+    it("posts the question as a request of kind question, with the questions in a plain shape", async () => {
+      const { broker, events } = setup();
+      void broker.hold(ask, new AbortController().signal);
+      await tick();
+      const payload = events[0]!.payload as { kind: string; questions: Array<{ key: string; multiSelect: boolean; options: unknown[] }> };
+      expect(payload.kind).toBe("question");
+      expect(payload.questions.map((q) => [q.key, q.multiSelect, q.options.length])).toEqual([["Pick colors", true, 2], ["Pick a size", false, 2]]);
+    });
+
+    it("answers allow with the answers merged into the original input", async () => {
+      const { broker, events } = setup();
+      const held = broker.hold(ask, new AbortController().signal);
+      await tick();
+      broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { answers: { "Pick colors": ["Red", "Blue"], "Pick a size": "Huge (typed)", "Not asked": "x" } });
+      expect(await held).toEqual({
+        behavior: "allow",
+        updatedInput: { ...ask.tool_input, answers: { "Pick colors": ["Red", "Blue"], "Pick a size": "Huge (typed)" } },
+      });
+      expect(events[1]!.payload).toMatchObject({ reason: "decided", answers: { "Pick a size": "Huge (typed)" } });
+    });
+
+    it("allow without answers leaves Claude to ask in the pane", async () => {
+      const { broker } = setup();
+      const held = broker.hold(ask, new AbortController().signal);
+      await tick();
+      broker.decide("r1", "allow", { userId: "u1", name: "Dev" });
+      expect(await held).toEqual({ behavior: "allow" });
+    });
+
+    it("drops malformed questions", () => {
+      expect(questionsFromInput({ questions: [{ question: "", options: [] }, { question: "Q", options: [] }, { question: "Ok", options: ["A", { label: "" }] }] })).toEqual([
+        { key: "Ok", question: "Ok", options: [{ label: "A" }], multiSelect: false, isOther: true, isSecret: false },
+      ]);
+      expect(questionsFromInput(null)).toEqual([]);
+    });
+  });
+
+  describe("plans and reasons", () => {
+    const plan = { tool_name: "ExitPlanMode", tool_input: { plan: "# Plan\n" + "x".repeat(9000), planFilePath: "/p.md" } };
+
+    it("keeps the whole plan and answers allow with the original input, or Claude asks again in the pane", async () => {
+      const { broker, events } = setup();
+      const held = broker.hold(plan, new AbortController().signal);
+      await tick();
+      const payload = events[0]!.payload as { kind: string; plan: string };
+      expect(payload.kind).toBe("plan");
+      expect(payload.plan.length).toBe(plan.tool_input.plan.length);
+      broker.decide("r1", "allow", { userId: "u1", name: "Dev" });
+      expect(await held).toEqual({ behavior: "allow", updatedInput: plan.tool_input });
+    });
+
+    it("a deny reason reaches the message, with the decider named", async () => {
+      const { broker, events } = setup();
+      const held = broker.hold(plan, new AbortController().signal);
+      await tick();
+      broker.decide("r1", "deny", { userId: "u1", name: "Dev" }, { message: "  make it two steps  " });
+      expect(await held).toEqual({ behavior: "deny", message: "Denied by Dev in Draft: make it two steps" });
+      expect(events[1]!.payload).toMatchObject({ message: "make it two steps" });
+    });
+
+    it("a plain approval still carries kind approval and no extra fields", async () => {
+      const { broker, events } = setup();
+      void broker.hold(bash, new AbortController().signal);
+      await tick();
+      expect(events[0]!.payload).toMatchObject({ kind: "approval", name: "Bash" });
+      expect(events[0]!.payload).not.toHaveProperty("questions");
+    });
   });
 });

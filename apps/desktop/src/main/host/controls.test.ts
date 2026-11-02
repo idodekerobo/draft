@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ControlActions, type ControlInput, type ControlDeps } from "./controls";
+import { ControlActions, decisionExtras, type ControlInput, type ControlDeps } from "./controls";
 
 const RULE = "─".repeat(100);
 const READY = `${RULE}\n❯ \n${RULE}\n  ⏸ manual mode on\n`;
@@ -82,5 +82,17 @@ describe("ControlActions", () => {
     const { actions, log } = setup([stop("s1")]);
     await Promise.all([actions.tick(), actions.tick()]);
     expect(log.filter((l) => l === "escape").length).toBe(1);
+  });
+});
+
+describe("decisionExtras", () => {
+  it("passes answers, a reason and a scope through, and drops anything of the wrong type", () => {
+    expect(decisionExtras({ answers: { Q: "A", M: ["x", "y"], Bad: 3, BadList: [1] }, message: "why", scope: "session" })).toEqual({
+      answers: { Q: "A", M: ["x", "y"] },
+      message: "why",
+      scope: "session",
+    });
+    expect(decisionExtras({ answers: [1], message: 5, scope: "forever" })).toEqual({});
+    expect(decisionExtras({})).toEqual({});
   });
 });
