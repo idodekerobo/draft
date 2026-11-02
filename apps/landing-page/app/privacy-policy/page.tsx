@@ -138,6 +138,10 @@ export default function PrivacyPolicyPage() {
           <p style={pStyle}>When you use the Service, we automatically collect:</p>
           <ul style={ulStyle}>
             <li>Usage data such as features accessed, session duration, and interaction logs</li>
+            <li>
+              If you agree to analytics, session recordings of how you use the Service, which can
+              include the text shown on your screen
+            </li>
             <li>Device and browser information (type, operating system, IP address)</li>
             <li>Cookies and similar tracking technologies (see Section 7)</li>
             <li>
@@ -210,8 +214,12 @@ export default function PrivacyPolicyPage() {
             <li>
               <strong style={{ color: "var(--color-primary)" }}>Third-Party Analytics:</strong> We use
               analytics tools to understand how the Service is used. These tools may collect anonymized
-              or pseudonymized usage data. On our marketing website we use PostHog for analytics and
-              session replay, with text and form inputs masked.
+              or pseudonymized usage data. We use PostHog for analytics and session replay on our
+              marketing website and in our apps. In our apps, we use it only if you agree to
+              analytics in your settings. We then send PostHog your user ID and email address, and
+              recordings can include the text shown on your screen. We exclude the session prompt box
+              and credential fields from recordings. You can withdraw your consent at any time in
+              your settings.
             </li>
             <li>
               <strong style={{ color: "var(--color-primary)" }}>Advertising Partners:</strong> We use
@@ -261,7 +269,7 @@ export default function PrivacyPolicyPage() {
           </p>
           <p style={pStyle}>
             On our marketing website, we and our partners use cookies and similar technologies for
-            analytics and advertising. These include PostHog analytics and the Meta Pixel, which sets
+            analytics and advertising. These include PostHog analytics and session replay, and the Meta Pixel, which sets
             the &quot;_fbp&quot; and &quot;_fbc&quot; cookies to identify your browser and to link a visit to an ad click.
             To limit this, you can block cookies or use an ad blocker in your browser. You can also
             manage how Meta uses your information for ads in your{" "}
