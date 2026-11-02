@@ -40,6 +40,37 @@ export interface LiveSessionLink {
 
 export type LiveSessionEventKind = "user_message" | "assistant_text" | "tool_use" | "tool_result" | "thinking" | "session_note" | "permission_request" | "permission_resolved";
 
+/** What a request waits for: an allow or deny, answers to questions, or a decision on a plan. */
+export type ApprovalKind = "approval" | "question" | "plan";
+
+export interface LiveQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface LiveQuestion {
+  /** The key the answer goes under. */
+  key: string;
+  header?: string;
+  question: string;
+  options: LiveQuestionOption[];
+  multiSelect: boolean;
+  isOther: boolean;
+  isSecret: boolean;
+}
+
+export type AnswerValue = string | string[];
+
+/** A person's answer to an open request. */
+export interface ApprovalResponse {
+  decision: "allow" | "deny";
+  /** Answers to a question request, by question key. */
+  answers?: Record<string, AnswerValue>;
+  /** Why a request was denied, or what to change in a plan. */
+  message?: string;
+  scope?: "once" | "session";
+}
+
 export interface LiveSessionEventPayload {
   text?: string;
   timestamp?: string | null;
@@ -58,6 +89,13 @@ export interface LiveSessionEventPayload {
   reason?: string;
   decision?: "allow" | "deny";
   by_name?: string;
+  /** permission_request */
+  kind?: ApprovalKind;
+  questions?: LiveQuestion[];
+  plan?: string;
+  /** permission_resolved: what the decider answered or wrote. */
+  answers?: Record<string, AnswerValue>;
+  message?: string;
   /** session_note: who pressed Stop on a running turn. */
   interrupted_by?: { id: string; name: string };
 }
@@ -122,8 +160,8 @@ export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
   sendMessage(sessionId: string, text: string): Promise<void>;
-  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer"): Promise<void>;
-  decideApproval(sessionId: string, requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
+  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer" | "cancel"): Promise<void>;
+  decideApproval(sessionId: string, requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
   stop(sessionId: string): Promise<{ withdrawn: string[] }>;
   /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */

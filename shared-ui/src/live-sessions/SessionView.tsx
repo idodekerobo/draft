@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { QuestionCard } from "./QuestionCard";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
@@ -366,6 +367,8 @@ function LoadedSession({
             viewerIsOwner={session.mine ?? false}
             harness={session.harness}
             onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
+            onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
+            onShowRequest={() => document.querySelector(".ui-approval")?.scrollIntoView?.({ block: "center", behavior: "smooth" })}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />
@@ -381,9 +384,13 @@ function LoadedSession({
           ) : (
             <>
             {session.status !== "ended" &&
-              approvals.map((approval) => (
-                <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, decision) => api.decideApproval(sessionId, requestId, decision)} />
-              ))}
+              approvals.map((approval) =>
+                approval.kind === "question" && approval.questions.length > 0 ? (
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                ) : (
+                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                ),
+              )}
             <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}

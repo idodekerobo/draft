@@ -2,16 +2,16 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ApprovalPanel } from "./ApprovalPanel";
 import type { OpenApproval } from "./stream-items";
-import type { ApprovalResult } from "./types";
+import type { ApprovalResponse, ApprovalResult } from "./types";
 
 afterEach(cleanup);
 
 const approval = (input: unknown = { file_path: "/a/hello.txt", content: "hi" }): OpenApproval => ({
-  type: "approval", seq: 1, requestId: "r1", tool: "Write", summary: "/a/hello.txt", input, resolved: null,
+  type: "approval", seq: 1, requestId: "r1", kind: "approval", tool: "Write", summary: "/a/hello.txt", input, questions: [], plan: null, resolved: null,
 });
 
 function renderPanel(result: ApprovalResult = { ok: true }, props: Partial<Parameters<typeof ApprovalPanel>[0]> = {}) {
-  const onDecide = mock(async (_id: string, _decision: "allow" | "deny") => result);
+  const onDecide = mock(async (_id: string, _response: ApprovalResponse) => result);
   render(<ApprovalPanel approval={approval()} hostName="Maya's MacBook" onDecide={onDecide} {...props} />);
   return onDecide;
 }
@@ -27,15 +27,34 @@ describe("ApprovalPanel", () => {
   it("Allow sends the decision and then waits for the host", async () => {
     const onDecide = renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
-    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", "allow"));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "allow" }));
     await screen.findByText(/Waiting for Maya's MacBook/);
     expect((screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("Deny sends deny", async () => {
+  it("Deny opens a reason box, and a second click sends deny without a reason when it is empty", async () => {
     const onDecide = renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
-    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", "deny"));
+    expect(screen.getByText("Tell Claude why (optional)")).toBeTruthy();
+    expect(onDecide).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "deny" }));
+  });
+
+  it("Deny sends the typed reason as the message", async () => {
+    const onDecide = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "  use a temp dir  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "deny", message: "use a temp dir" }));
+  });
+
+  it("Allow ignores a reason that was typed", async () => {
+    const onDecide = renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "no" } });
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "allow" }));
   });
 
   it("a late decider sees who decided and loses the buttons", async () => {
@@ -47,6 +66,7 @@ describe("ApprovalPanel", () => {
 
   it("says when the request ended another way", async () => {
     renderPanel({ ok: false, error: "request_closed" });
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
     await screen.findByText("This request already ended");
   });

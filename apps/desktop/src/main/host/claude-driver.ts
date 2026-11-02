@@ -56,13 +56,14 @@ export class ClaudeDriver implements HarnessDriver {
         const pane = classifyPane(await capturePane(this.tmux));
         return pane !== "ready" && pane !== "composer_busy";
       },
+      oneAtATime: true,
       newId: () => `r${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
       onOpen: (id) => host.persist({ openRequests: [...(host.state().openRequests ?? []), id] }),
       onClose: (id) => host.persist({ openRequests: (host.state().openRequests ?? []).filter((open) => open !== id) }),
     });
     this.controls = new ControlActions({
       setState: host.setInputState,
-      decide: (requestId, decision, by) => this.broker.decide(requestId, decision, by),
+      decide: (requestId, decision, by, extras) => this.broker.decide(requestId, decision, by, extras),
       capture: () => capturePane(this.tmux),
       sendEscape: () => pressEscape(this.tmux),
       postEvents: (events) => host.postHostEvents(events),

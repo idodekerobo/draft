@@ -923,8 +923,21 @@
 .ui-approval__input { margin: 0; padding: var(--space-2) var(--space-3); max-height: 240px; overflow: auto; background: var(--color-bg-surface); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--font-size-small); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ui-approval__more { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-size: var(--font-size-secondary); cursor: pointer; touch-action: manipulation; }
 .ui-approval__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ui-approval__reason { display: grid; gap: var(--space-1); }
 .ui-approval__status { margin: 0; font-size: var(--font-size-secondary); }
 .ui-approval .ui-btn { touch-action: manipulation; }
+.ui-question { display: grid; gap: var(--space-3); }
+.ui-question__item { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.ui-question__legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); padding: 0; font-size: var(--font-size-body); font-weight: 600; }
+.ui-question__header { font-size: var(--font-size-small); font-weight: 500; color: var(--color-text-secondary); }
+.ui-question__option { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; touch-action: manipulation; }
+.ui-question__option:has(input:checked) { border-color: var(--color-border-strong); background: var(--color-bg-surface); }
+.ui-question__option input { margin-top: 3px; }
+.ui-question__label { display: grid; gap: 2px; min-width: 0; }
+.ui-question__desc { font-size: var(--font-size-secondary); color: var(--color-text-secondary); }
+.ui-question__other { margin-left: calc(var(--space-3) + 16px); }
+.ui-stream__answers p { margin: 0; }
+.ui-stream__answers ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 @media (prefers-reduced-motion: reduce) {
   .ui-approval, .ui-session__confirm { animation: ui-fade-in 200ms linear both; }
 }

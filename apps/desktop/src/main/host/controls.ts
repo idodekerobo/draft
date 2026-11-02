@@ -1,6 +1,6 @@
 import type { InputFailReason } from "draft-core/live-sessions";
 import { classifyPane, isTurnRunning } from "./pane-state";
-import type { Decider, HostEvent } from "./approvals";
+import type { AnswerValue, Decider, DecisionExtras, HostEvent } from "./approvals";
 
 export interface ControlInput {
   id: string;
@@ -8,15 +8,32 @@ export interface ControlInput {
   state: "queued" | "delivering";
   author_user_id: string;
   author_name: string;
-  payload: { requestId?: string; decision?: string };
+  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown };
 }
 
 export interface ControlDeps {
   setState(id: string, from: Array<"queued" | "delivering">, to: "delivering" | "failed" | "consumed", reason?: InputFailReason): Promise<boolean>;
-  decide(requestId: string, decision: "allow" | "deny", by: Decider): boolean;
+  decide(requestId: string, decision: "allow" | "deny", by: Decider, extras?: DecisionExtras): boolean;
   capture(): Promise<string>;
   sendEscape(): Promise<void>;
   postEvents(events: HostEvent[]): Promise<void>;
+}
+
+/** Reads the optional parts of a decision from the input row. Anything of the wrong type is ignored. */
+export function decisionExtras(payload: ControlInput["payload"]): DecisionExtras {
+  const extras: DecisionExtras = {};
+  const { answers, message, scope } = payload;
+  if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+    const clean: Record<string, AnswerValue> = {};
+    for (const [key, value] of Object.entries(answers)) {
+      if (typeof value === "string") clean[key] = value;
+      else if (Array.isArray(value) && value.every((v) => typeof v === "string")) clean[key] = value as string[];
+    }
+    extras.answers = clean;
+  }
+  if (typeof message === "string") extras.message = message;
+  if (scope === "once" || scope === "session") extras.scope = scope;
+  return extras;
 }
 
 /** Acts on the Stop buttons and permission decisions that teammates sent. */
@@ -53,7 +70,7 @@ export class ControlActions {
         const decided =
           typeof requestId === "string" &&
           (decision === "allow" || decision === "deny") &&
-          this.deps.decide(requestId, decision, { userId: input.author_user_id, name: input.author_name });
+          this.deps.decide(requestId, decision, { userId: input.author_user_id, name: input.author_name }, decisionExtras(input.payload));
         await this.deps.setState(input.id, ["delivering"], decided ? "consumed" : "failed", decided ? undefined : "request_not_open");
         return;
       }

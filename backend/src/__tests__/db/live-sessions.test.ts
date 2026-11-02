@@ -346,9 +346,18 @@ describeWithDatabase("permission approvals", () => {
     payload: { requestId: id, ...payload },
   });
 
-  async function decide(sessionId: string, workspaceId: string, author: string, name: string, requestId: string, decision = "allow") {
-    const [row] = await db()<[{ result: { outcome: string; by_name?: string; reason?: string; input?: { id: string } } }]>`
-      select create_permission_decision(${sessionId}, ${workspaceId}, ${author}, ${name}, ${requestId}, ${decision}) as result
+  async function decide(
+    sessionId: string,
+    workspaceId: string,
+    author: string,
+    name: string,
+    requestId: string,
+    decision = "allow",
+    extras: { answers?: unknown; message?: string; scope?: string } = {},
+  ) {
+    const answers = extras.answers === undefined ? null : JSON.stringify(extras.answers);
+    const [row] = await db()<[{ result: { outcome: string; by_name?: string; reason?: string; input?: { id: string; payload: Record<string, unknown> } } }]>`
+      select create_permission_decision(${sessionId}, ${workspaceId}, ${author}, ${name}, ${requestId}, ${decision}, ${answers}::text::jsonb, ${extras.message ?? null}, ${extras.scope ?? null}) as result
     `;
     return row.result;
   }
@@ -405,6 +414,29 @@ describeWithDatabase("permission approvals", () => {
 
     await db()`update sessions set status = 'ended' where id = ${sessionId}`;
     await expect(decide(sessionId, workspaceId, author, "Dev", "r1")).rejects.toThrow("session_ended");
+  });
+
+  test("answers, a reason and a scope are kept in the input payload; a plain decision keeps only the two basics", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1"), request("r2")]);
+
+    const answered = await decide(sessionId, workspaceId, author, "Dev", "r1", "allow", { answers: { Q: ["A", "B"], Size: "L" }, message: "  why  ", scope: "session" });
+    expect(answered.input!.payload).toEqual({ requestId: "r1", decision: "allow", answers: { Q: ["A", "B"], Size: "L" }, message: "why", scope: "session" });
+    const plain = await decide(sessionId, workspaceId, author, "Dev", "r2");
+    expect(plain.input!.payload).toEqual({ requestId: "r2", decision: "allow" });
+  });
+
+  test("bad answers, a long reason and an unknown scope are refused", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1")]);
+
+    await expect(decide(sessionId, workspaceId, author, "Dev", "r1", "allow", { answers: ["x"] })).rejects.toThrow("invalid_answers");
+    await expect(decide(sessionId, workspaceId, author, "Dev", "r1", "allow", { message: "x".repeat(2001) })).rejects.toThrow("invalid_message");
+    await expect(decide(sessionId, workspaceId, author, "Dev", "r1", "allow", { scope: "forever" })).rejects.toThrow("invalid_scope");
   });
 
   test("a failed decision lets the request be decided again", async () => {

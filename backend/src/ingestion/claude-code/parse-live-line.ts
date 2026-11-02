@@ -34,6 +34,7 @@ interface LiveJsonlLine {
   isMeta?: boolean;
   isCompactSummary?: boolean;
   message?: { role?: string; content?: string | ContentBlock[] };
+  attachment?: { type?: string; prompt?: unknown };
 }
 
 const TEXT_MAX_CHARS = 100_000;
@@ -41,6 +42,8 @@ const TOOL_FIELD_MAX_CHARS = 20_000;
 
 // User lines Claude Code writes for its own bookkeeping, not typed by a person.
 const HARNESS_WRAPPER = /^<(task-notification|command-name|command-message|system-reminder)>/;
+// Claude Code writes this as a user line when someone rejects or interrupts a tool call.
+const INTERRUPT_MARKER = /^\[Request interrupted by user[^\]]*\]$/;
 const LOCAL_COMMAND_OUTPUT = /^<local-command-(stdout|stderr)>([\s\S]*?)<\/local-command-\1>\s*$/;
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
@@ -92,6 +95,10 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
 
   if (parsed.type === "system") {
     if (parsed.subtype === "compact_boundary") out.push({ kind: "session_note", payload: { ...common, text: "Conversation compacted" } });
+  } else if (parsed.type === "attachment" && parsed.attachment?.type === "queued_command" && typeof parsed.attachment.prompt === "string") {
+    // A message sent while Claude was mid-turn is logged as this attachment, never as a user line.
+    const text = stripPasteWrapper(parsed.attachment.prompt.trim());
+    if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
   } else if (parsed.type === "user" && parsed.message?.role === "user") {
     const content = parsed.message.content;
     if (typeof content === "string") {
@@ -100,12 +107,15 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
       if (output) {
         const note = output[2]!.replace(ANSI, "").trim();
         if (note) out.push({ kind: "session_note", payload: { ...common, text: clip(note, TEXT_MAX_CHARS).text } });
+      } else if (INTERRUPT_MARKER.test(text)) {
+        out.push({ kind: "session_note", payload: { ...common, text } });
       } else if (text && !HARNESS_WRAPPER.test(text)) {
         out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
       }
     } else if (Array.isArray(content)) {
       const text = stripPasteWrapper(textOf(content.filter((b) => b.type === "text" || b.type === "image")).trim());
-      if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
+      if (INTERRUPT_MARKER.test(text)) out.push({ kind: "session_note", payload: { ...common, text } });
+      else if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
       for (const block of content) {
         if (block.type !== "tool_result") continue;
         const result = clip(textOf(block.content), TOOL_FIELD_MAX_CHARS);

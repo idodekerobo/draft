@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { OpenApproval } from "./stream-items";
-import type { ApprovalResult } from "./types";
+import { closedMessage } from "./approval-result";
+import type { ApprovalResponse, ApprovalResult } from "./types";
 
 const PREVIEW_LINES = 3;
 
@@ -10,12 +11,6 @@ type Phase = { name: "idle" } | { name: "sending"; decision: "allow" | "deny" } 
 
 function inputText(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
-}
-
-function closedMessage(result: Exclude<ApprovalResult, { ok: true }>): string {
-  if (result.error === "already_decided") return result.byName ? `Already decided by ${result.byName}` : "Already decided";
-  if (result.error === "session_ended") return "This session has ended";
-  return "This request already ended";
 }
 
 /** One permission request that waits for an answer. Anyone on the team can answer; the first answer wins. */
@@ -26,10 +21,12 @@ export function ApprovalPanel({
 }: {
   approval: OpenApproval;
   hostName: string | null;
-  onDecide(requestId: string, decision: "allow" | "deny"): Promise<ApprovalResult>;
+  onDecide(requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
 }) {
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const [expanded, setExpanded] = useState(false);
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reason, setReason] = useState("");
 
   const lines = inputText(approval.input).split("\n");
   const long = lines.length > PREVIEW_LINES;
@@ -39,8 +36,9 @@ export function ApprovalPanel({
 
   async function decide(decision: "allow" | "deny") {
     setPhase({ name: "sending", decision });
+    const message = decision === "deny" ? reason.trim() : "";
     try {
-      const result = await onDecide(approval.requestId, decision);
+      const result = await onDecide(approval.requestId, message ? { decision, message } : { decision });
       if (result.ok) setPhase({ name: "sent" });
       else if (result.error === "failed") setPhase({ name: "failed" });
       else setPhase({ name: "closed", message: closedMessage(result) });
@@ -66,16 +64,24 @@ export function ApprovalPanel({
       {phase.name === "closed" ? (
         <p className="ui-approval__status" role="status">{phase.message}</p>
       ) : (
+        <>
+        {reasonOpen && (
+          <label className="ui-approval__reason">
+            <span className="ui-muted">Tell Claude why (optional)</span>
+            <input className="ui-input" value={reason} maxLength={500} disabled={busy} autoFocus onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !busy && void decide("deny")} />
+          </label>
+        )}
         <div className="ui-approval__actions">
           <button type="button" className="ui-btn ui-btn--primary" disabled={busy} onClick={() => void decide("allow")}>
             {phase.name === "sending" && phase.decision === "allow" ? "Sending…" : "Allow"}
           </button>
-          <button type="button" className="ui-btn" disabled={busy} onClick={() => void decide("deny")}>
+          <button type="button" className="ui-btn" disabled={busy} aria-expanded={reasonOpen} onClick={() => (reasonOpen ? void decide("deny") : setReasonOpen(true))}>
             {phase.name === "sending" && phase.decision === "deny" ? "Sending…" : "Deny"}
           </button>
           {phase.name === "sent" && <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>}
           {phase.name === "failed" && <span className="ui-error ui-approval__status" role="alert">Could not send. Try again.</span>}
         </div>
+        </>
       )}
     </section>
   );

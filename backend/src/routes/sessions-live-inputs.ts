@@ -133,6 +133,34 @@ async function steerInput(workspaceId: string, sessionId: string, inputId: strin
   return Response.json({ ok: true });
 }
 
+/** Withdraws the author's own message before the host takes it. The host may claim it first, and then it is sent. */
+async function cancelInput(workspaceId: string, sessionId: string, inputId: string, userId: string): Promise<Response> {
+  const { data, error } = await serviceClient
+    .from("session_inputs")
+    .select("id")
+    .eq("id", inputId)
+    .eq("session_id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .eq("author_user_id", userId)
+    .eq("kind", "message")
+    .eq("state", "queued")
+    .is("dismissed_at", null)
+    .maybeSingle<{ id: string }>();
+  if (error) return errorResponse("input_update_failed", 500, error, workspaceId, sessionId);
+  if (!data) return errorResponse("input_not_actionable", 409);
+
+  const { data: changed, error: transitionError } = await serviceClient.rpc("transition_session_input", {
+    p_input_id: inputId,
+    p_session_id: sessionId,
+    p_from: ["queued"],
+    p_to: "cancelled",
+    p_reason: null,
+    p_consumed_seq: null,
+  });
+  if (transitionError) return errorResponse("input_update_failed", 500, transitionError, workspaceId, sessionId);
+  return changed === true ? Response.json({ ok: true }) : errorResponse("input_not_actionable", 409);
+}
+
 export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, inputId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
@@ -141,7 +169,8 @@ export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const action = parsed.body.action;
-  if (action !== "resend" && action !== "dismiss" && action !== "steer") return errorResponse("invalid_action", 400);
+  if (action !== "resend" && action !== "dismiss" && action !== "steer" && action !== "cancel") return errorResponse("invalid_action", 400);
+  if (action === "cancel") return cancelInput(workspaceId, sessionId, inputId, caller.userId);
   if (action === "steer") return steerInput(workspaceId, sessionId, inputId, caller.userId);
 
   const { data: dismissed, error } = await serviceClient
