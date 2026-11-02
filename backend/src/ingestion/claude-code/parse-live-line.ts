@@ -34,6 +34,7 @@ interface LiveJsonlLine {
   isMeta?: boolean;
   isCompactSummary?: boolean;
   message?: { role?: string; content?: string | ContentBlock[] };
+  attachment?: { type?: string; prompt?: unknown };
 }
 
 const TEXT_MAX_CHARS = 100_000;
@@ -92,6 +93,10 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
 
   if (parsed.type === "system") {
     if (parsed.subtype === "compact_boundary") out.push({ kind: "session_note", payload: { ...common, text: "Conversation compacted" } });
+  } else if (parsed.type === "attachment" && parsed.attachment?.type === "queued_command" && typeof parsed.attachment.prompt === "string") {
+    // A message sent while Claude was mid-turn is logged as this attachment, never as a user line.
+    const text = stripPasteWrapper(parsed.attachment.prompt.trim());
+    if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
   } else if (parsed.type === "user" && parsed.message?.role === "user") {
     const content = parsed.message.content;
     if (typeof content === "string") {

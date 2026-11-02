@@ -20,6 +20,33 @@ const assistant = (content: unknown[], extra: Record<string, unknown> = {}) => (
   ...extra,
 });
 
+describe("parseLiveLine: a message sent mid-turn", () => {
+  const prompt = "[Idode via Draft #141302b0] can you also tell me the list of steps?";
+  const attachment = (extra: Record<string, unknown> = {}) => ({
+    type: "attachment",
+    uuid: "att-1",
+    timestamp: "2026-11-02T22:10:44.059Z",
+    attachment: { type: "queued_command", prompt, commandMode: "prompt", origin: { kind: "human" }, humanTurn: true },
+    rendered: [{ content: `<system-reminder>\nThe user sent a new message while you were working:\n${prompt}\n</system-reminder>` }],
+    ...extra,
+  });
+
+  it("maps a queued_command attachment to one user message with the author tag intact", () => {
+    expect(parse(attachment())).toEqual([{ sourceId: "att-1", kind: "user_message", payload: { timestamp: "2026-11-02T22:10:44.059Z", text: prompt } }]);
+  });
+
+  it("shows nothing for the queue-operation lines that surround it", () => {
+    const content = prompt;
+    expect(parse({ type: "queue-operation", operation: "enqueue", timestamp: "2026-11-02T22:10:43.000Z", content })).toEqual([]);
+    expect(parse({ type: "queue-operation", operation: "remove", reason: "absorbed_mid_turn", timestamp: "2026-11-02T22:10:44.082Z", content })).toEqual([]);
+  });
+
+  it("ignores other attachments and a queued command that is Claude's own bookkeeping", () => {
+    expect(parse({ type: "attachment", uuid: "att-2", attachment: { type: "command_permissions", allowedTools: ["Bash"] } })).toEqual([]);
+    expect(parse(attachment({ attachment: { type: "queued_command", prompt: "<task-notification>done</task-notification>" } }))).toEqual([]);
+  });
+});
+
 describe("parseLiveLine: turns", () => {
   it("maps a typed user turn", () => {
     expect(parse(user("Run ls in this folder"))).toEqual([
