@@ -258,6 +258,25 @@ describe("steer", () => {
   });
 });
 
+describe("cancel", () => {
+  const queued = { id: "i1", session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", author_user_id: "user-2", author_name: "Priya", payload: { text: "hello" }, created_at: "t", updated_at: "t" };
+  const cancel = () => routes.INPUT_ACTION(request("POST", "/x", { action: "cancel" }, { id: WS, sessionId: SESSION, inputId: "i1" }));
+
+  it("withdraws the author's own queued message", async () => {
+    tables.session_inputs = [queued];
+    expect((await cancel()).status).toBe(200);
+    expect(rpcCalls).toEqual([{ fn: "transition_session_input", args: { p_input_id: "i1", p_session_id: SESSION, p_from: ["queued"], p_to: "cancelled", p_reason: null, p_consumed_seq: null } }]);
+  });
+
+  it("refuses another person's message and one the host already took", async () => {
+    tables.session_inputs = [{ ...queued, author_user_id: "user-9" }];
+    expect((await cancel()).status).toBe(409);
+    tables.session_inputs = [{ ...queued, state: "delivering" }];
+    expect((await cancel()).status).toBe(409);
+    expect(rpcCalls).toEqual([]);
+  });
+});
+
 describe("matching consumed inputs", () => {
   const waiting = (id: string, authorName: string, text: string, state = "delivering") => ({ id, session_id: SESSION, workspace_id: WS, kind: "message", state, author_name: authorName, payload: { text }, created_at: id });
   const turn = (seq: number, text: string, extra: Row = {}) => ({ session_id: SESSION, workspace_id: WS, kind: "user_message", seq, payload: { text, ...extra } });

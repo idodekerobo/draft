@@ -160,7 +160,7 @@ export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
   sendMessage(sessionId: string, text: string): Promise<void>;
-  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer"): Promise<void>;
+  actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer" | "cancel"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
   stop(sessionId: string): Promise<{ withdrawn: string[] }>;

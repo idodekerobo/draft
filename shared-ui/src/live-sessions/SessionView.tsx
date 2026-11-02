@@ -367,6 +367,8 @@ function LoadedSession({
             viewerIsOwner={session.mine ?? false}
             harness={session.harness}
             onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
+            onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
+            onShowRequest={() => document.querySelector(".ui-approval")?.scrollIntoView?.({ block: "center", behavior: "smooth" })}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />
