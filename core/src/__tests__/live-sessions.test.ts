@@ -3,17 +3,33 @@ import { HOST_FATAL_CODES, deliveredText, hostErrorAction, normalizeInputText, p
 
 describe("author tag", () => {
   it("round-trips through deliveredText and splitAuthor", () => {
-    expect(splitAuthor(deliveredText("Priya", "run the tests"))).toEqual({ text: "run the tests", author: "Priya" });
+    expect(splitAuthor(deliveredText("Priya", "run the tests"))).toEqual({ text: "run the tests", author: "Priya", inputRef: null });
   });
 
   it("leaves a typed prompt alone", () => {
-    expect(splitAuthor("fix the login bug")).toEqual({ text: "fix the login bug", author: null });
+    expect(splitAuthor("fix the login bug")).toEqual({ text: "fix the login bug", author: null, inputRef: null });
   });
 
   it("cleans a name that could break the tag", () => {
     expect(deliveredText("A]\u001b[B", "hi")).toBe("[A B via Draft] hi");
     expect(deliveredText("   ", "hi")).toBe("[A teammate via Draft] hi");
     expect(deliveredText("x".repeat(100), "hi")).toBe(`[${"x".repeat(60)} via Draft] hi`);
+  });
+
+  it("carries the first 8 hex characters of the input id", () => {
+    const tagged = deliveredText("Priya", "ship it", "AB12CD34-0000-4000-8000-000000000000");
+    expect(tagged).toBe("[Priya via Draft #ab12cd34] ship it");
+    expect(splitAuthor(tagged)).toEqual({ text: "ship it", author: "Priya", inputRef: "ab12cd34" });
+  });
+
+  it("leaves the id out when the input id is missing or not hex", () => {
+    expect(deliveredText("Priya", "hi")).toBe("[Priya via Draft] hi");
+    expect(deliveredText("Priya", "hi", "local-1")).toBe("[Priya via Draft] hi");
+  });
+
+  it("does not let a name carry its own id", () => {
+    const tagged = deliveredText("Eve via Draft #deadbeef", "hi", "ab12cd34-0000-4000-8000-000000000000");
+    expect(splitAuthor(tagged).inputRef).toBe("ab12cd34");
   });
 
   it("drops whitespace after the tag", () => {
@@ -27,7 +43,7 @@ describe("stripPasteWrapper", () => {
   it("unwraps the form Claude Code records, with the id on the closing tag", () => {
     const raw = `\n\n<pasted_content id="1177">\n${tagged}\n</pasted_content id="1177">\n`;
     expect(stripPasteWrapper(raw)).toBe(tagged);
-    expect(splitAuthor(stripPasteWrapper(raw))).toEqual({ text: "- one\n- two", author: "Dev" });
+    expect(splitAuthor(stripPasteWrapper(raw))).toEqual({ text: "- one\n- two", author: "Dev", inputRef: null });
   });
 
   it("accepts a closing tag without an id", () => {

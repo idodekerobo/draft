@@ -60,7 +60,7 @@ export function normalizeInputText(text: string): string {
   return text.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 }
 
-const AUTHOR_PREFIX = /^\[([^\]\n]{1,60}) via Draft\]\s*/;
+const AUTHOR_PREFIX = /^\[([^\]\n]{1,60}) via Draft(?: #([0-9a-f]{8}))?\]\s*/;
 
 function cleanAuthorName(name: string): string {
   // eslint-disable-next-line no-control-regex
@@ -74,15 +74,20 @@ export function stripPasteWrapper(text: string): string {
   return text.includes("<pasted_content") ? text.replace(PASTE_WRAPPER, "$1").trim() : text;
 }
 
-/** What Claude sees: the message with its author in front. */
-export function deliveredText(authorName: string, text: string): string {
-  return `[${cleanAuthorName(authorName)} via Draft] ${text}`;
+/** What Claude sees: the message with its author in front. With an input id, the tag carries its first 8 hex characters. */
+export function deliveredText(authorName: string, text: string, inputId?: string): string {
+  const ref = inputId?.slice(0, 8).toLowerCase();
+  const tag = ref && /^[0-9a-f]{8}$/.test(ref) ? ` #${ref}` : "";
+  return `[${cleanAuthorName(authorName)} via Draft${tag}] ${text}`;
 }
 
-/** Splits an author tag from a prompt that was sent through Draft. The author is null for a typed prompt. */
-export function splitAuthor(text: string): { text: string; author: string | null } {
+/**
+ * Splits an author tag from a prompt that was sent through Draft. The author is null for a typed prompt.
+ * `inputRef` is the start of the id of the input that carried it, null for a tag without one.
+ */
+export function splitAuthor(text: string): { text: string; author: string | null; inputRef: string | null } {
   const match = AUTHOR_PREFIX.exec(text);
-  return match ? { text: text.slice(match[0].length), author: match[1]! } : { text, author: null };
+  return match ? { text: text.slice(match[0].length), author: match[1]!, inputRef: match[2] ?? null } : { text, author: null, inputRef: null };
 }
 
 /** What a person tracks on the presence channel `session:<id>`. The presence key is their user id. */

@@ -2,7 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { getHarness } from "draft-core/harnesses";
-import { MAX_INPUT_CHARS, deliveredText } from "draft-core/live-sessions";
+import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "../ingestion/claude-code/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
 import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
@@ -193,7 +193,7 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
     ...publicInput(row),
     payload: row.payload,
-    ...(row.kind === "message" ? { delivered_text: deliveredText(row.author_name, textOf(row)) } : {}),
+    ...(row.kind === "message" ? { delivered_text: deliveredText(row.author_name, textOf(row), row.id) } : {}),
   }));
   return Response.json({ inputs });
 });
@@ -274,11 +274,17 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
 
     const candidates = [...(waiting as Pick<SessionInputRow, "id" | "author_name" | "payload" | "state">[])];
     for (const turn of turns) {
-      const index = candidates.findIndex((c) => sameText(deliveredText(c.author_name, textOf(c)), turn.payload.text as string));
-      if (index === -1) continue;
-      const [match] = candidates.splice(index, 1);
+      const turnText = turn.payload.text as string;
+      const { inputRef } = splitAuthor(turnText);
+      // Messages sent before the tag carried an id have none, and fall back to the text.
+      const sameBody = (c: (typeof candidates)[number]) =>
+        sameText(deliveredText(c.author_name, textOf(c), c.id), turnText) || sameText(deliveredText(c.author_name, textOf(c)), turnText);
+      const byRef = inputRef ? candidates.filter((c) => c.id.startsWith(inputRef)) : [];
+      const match = byRef.length === 1 ? byRef[0] : (byRef.length > 1 ? byRef : candidates).find(sameBody);
+      if (!match) continue;
+      candidates.splice(candidates.indexOf(match), 1);
       const { error: moveError } = await serviceClient.rpc("transition_session_input", {
-        p_input_id: match!.id,
+        p_input_id: match.id,
         p_session_id: sessionId,
         p_from: ["delivering", "uncertain"],
         p_to: "consumed",

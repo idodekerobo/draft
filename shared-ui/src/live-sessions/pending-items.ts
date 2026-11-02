@@ -15,14 +15,18 @@ export function pendingItems(
 ): PendingItem[] {
   const turns = events
     .filter((event) => event.kind === "user_message" && !event.payload.agent_id && typeof event.payload.text === "string")
-    .map((event) => ({ text: splitAuthor(event.payload.text as string).text.trim(), at: Date.parse(event.created_at) }));
+    .map((event) => {
+      const { text, inputRef } = splitAuthor(event.payload.text as string);
+      return { text: text.trim(), inputRef, at: Date.parse(event.created_at) };
+    });
   const taken = new Set<number>();
 
   return inputs
     .filter((input) => input.state === "sending" || input.state === "queued" || input.state === "delivering")
     .filter((input) => {
       const since = Date.parse(input.created_at) - CLOCK_SLACK_MS;
-      const index = turns.findIndex((turn, i) => !taken.has(i) && turn.text === input.text.trim() && turn.at >= since);
+      const byId = turns.findIndex((turn, i) => !taken.has(i) && turn.inputRef !== null && input.id.startsWith(turn.inputRef));
+      const index = byId !== -1 ? byId : turns.findIndex((turn, i) => !taken.has(i) && turn.text === input.text.trim() && turn.at >= since);
       if (index === -1) return true;
       taken.add(index);
       return false;
