@@ -923,6 +923,7 @@
 .ui-approval__input { margin: 0; padding: var(--space-2) var(--space-3); max-height: 240px; overflow: auto; background: var(--color-bg-surface); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--font-size-small); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ui-approval__more { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-size: var(--font-size-secondary); cursor: pointer; touch-action: manipulation; }
 .ui-approval__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ui-approval__reason { display: grid; gap: var(--space-1); }
 .ui-approval__status { margin: 0; font-size: var(--font-size-secondary); }
 .ui-approval .ui-btn { touch-action: manipulation; }
 .ui-question { display: grid; gap: var(--space-3); }
