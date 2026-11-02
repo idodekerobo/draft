@@ -127,14 +127,16 @@ describe("SessionStream", () => {
     const pending = (input: ComposerInput) => ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostOffline: false }) as const;
     const onCancel = mock((_id: string) => {});
     const onShowRequest = mock(() => {});
-    const view = render(<SessionStream items={[pending(base)]} onCancel={onCancel} onShowRequest={onShowRequest} />);
-    fireEvent.click(screen.getByRole("button", { name: "Answer it" }));
-    expect(onShowRequest).toHaveBeenCalledTimes(1);
+    const onSkipQuestions = mock(() => {});
+    const view = render(<SessionStream items={[pending(base)]} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} />);
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+    expect(onSkipQuestions).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledWith("i1");
 
     view.rerender(<SessionStream items={[pending({ ...base, reason: "permission_prompt" })]} onCancel={onCancel} onShowRequest={onShowRequest} />);
-    expect(screen.getByRole("button", { name: "Review it" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review it" }));
+    expect(onShowRequest).toHaveBeenCalledTimes(1);
     view.rerender(<SessionStream items={[pending({ ...base, mine: false })]} onCancel={onCancel} onShowRequest={onShowRequest} />);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     view.rerender(<SessionStream items={[pending({ ...base, state: "delivering", reason: null })]} onCancel={onCancel} onShowRequest={onShowRequest} />);

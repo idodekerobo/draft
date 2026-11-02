@@ -179,6 +179,47 @@ describe("SessionView", () => {
     expect(screen.getByText("B")).toBeTruthy();
   });
 
+  describe("an open question", () => {
+    const question = { key: "Pick", question: "Pick", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "A" }, { label: "B" }] };
+    const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "AskUserQuestion", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];
+    const setup = () => {
+      const decideApproval = mock(async (..._args: unknown[]) => ({ ok: true as const }));
+      const sendMessage = mock(async (..._args: unknown[]) => {});
+      render(<SessionView api={{ ...api, decideApproval, sendMessage, fetchEvents: async () => ({ viewer, session, events: open, inputs: [] }) }} sessionId="s1" />);
+      return { decideApproval, sendMessage };
+    };
+
+    it("is skipped by Esc, like the terminal", async () => {
+      const { decideApproval } = setup();
+      await screen.findByRole("group", { name: "Question from Claude" });
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." }));
+    });
+
+    it("is skipped by its Skip button", async () => {
+      const { decideApproval } = setup();
+      fireEvent.click(await screen.findByRole("button", { name: /^Skip/ }));
+      await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." }));
+    });
+
+    it("is skipped when a message is sent from the message box, and the message is sent after", async () => {
+      const { decideApproval, sendMessage } = setup();
+      await screen.findByRole("group", { name: "Question from Claude" });
+      fireEvent.change(screen.getByPlaceholderText(/Message/), { target: { value: "do this instead" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("s1", "do this instead"));
+      expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." });
+    });
+
+    it("keeps Esc in an empty message box for the question, not for Stop", async () => {
+      const stop = mock(async () => ({ withdrawn: [] }));
+      render(<SessionView api={{ ...api, stop, fetchEvents: async () => ({ viewer, session, events: open, inputs: [] }) }} sessionId="s1" />);
+      await screen.findByRole("group", { name: "Question from Claude" });
+      fireEvent.keyDown(screen.getByPlaceholderText(/Message/), { key: "Escape" });
+      expect(stop).not.toHaveBeenCalled();
+    });
+  });
+
   it("asks before a menu action that needs confirming", async () => {
     let ended = 0;
     render(<SessionView api={api} sessionId="s1" menuItems={() => [{ label: "End session", confirm: "End this session?", onSelect: () => ended++ }]} />);

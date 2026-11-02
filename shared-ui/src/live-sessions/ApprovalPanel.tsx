@@ -76,7 +76,7 @@ export function ApprovalPanel({
             {phase.name === "sending" && phase.decision === "allow" ? "Sending…" : "Allow"}
           </button>
           <button type="button" className="ui-btn" disabled={busy} aria-expanded={reasonOpen} onClick={() => (reasonOpen ? void decide("deny") : setReasonOpen(true))}>
-            {phase.name === "sending" && phase.decision === "deny" ? "Sending…" : "Deny"}
+            {phase.name === "sending" && phase.decision === "deny" ? "Sending…" : <>Deny <kbd className="ui-kbd">Esc</kbd></>}
           </button>
           {phase.name === "sent" && <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>}
           {phase.name === "failed" && <span className="ui-error ui-approval__status" role="alert">Could not send. Try again.</span>}

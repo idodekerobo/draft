@@ -98,4 +98,22 @@ describe("QuestionCard", () => {
     await screen.findByText("Could not send. Try again.");
     expect(send().disabled).toBe(false);
   });
+
+  it("types the Other answer into a wrapping text area inside the card", () => {
+    renderCard([size]);
+    const container = document.body;
+    fireEvent.click(screen.getByRole("radio", { name: "Other" }));
+    const field = screen.getByLabelText(/Your answer to/);
+    expect(field.tagName).toBe("TEXTAREA");
+    expect(container.querySelector(".ui-question__item")?.contains(field)).toBe(true);
+    fireEvent.change(field, { target: { value: "one\ntwo" } });
+    expect((field as HTMLTextAreaElement).value).toBe("one\ntwo");
+  });
+
+  it("shows the header on its own line, apart from the question text", () => {
+    renderCard([colors]);
+    const container = document.body;
+    expect(container.querySelector(".ui-question__header")?.textContent).toBe("Color");
+    expect(container.querySelector(".ui-question__text")?.textContent).toBe("Pick colors");
+  });
 });

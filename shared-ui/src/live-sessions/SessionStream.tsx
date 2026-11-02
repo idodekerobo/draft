@@ -13,7 +13,7 @@ const SLOW_SEND_MS = 10_000;
 const SLOW_TICK_MS = 1_000;
 
 /** Looks like a sent message. A line under it shows only when the message is blocked or has waited long. */
-function PendingBubble({ item, mine, harness, onSteer, onCancel, onShowRequest }: { item: Extract<StreamItem, { type: "pending" }>; mine: boolean; harness: string; onSteer?: (inputId: string) => void; onCancel?: (inputId: string) => void; onShowRequest?: () => void }) {
+function PendingBubble({ item, mine, harness, onSteer, onCancel, onShowRequest, onSkipQuestions }: { item: Extract<StreamItem, { type: "pending" }>; mine: boolean; harness: string; onSteer?: (inputId: string) => void; onCancel?: (inputId: string) => void; onShowRequest?: () => void; onSkipQuestions?: () => void }) {
   const { input } = item;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -29,8 +29,11 @@ function PendingBubble({ item, mine, harness, onSteer, onCancel, onShowRequest }
       {onSteer && input.mine && input.state === "queued" && input.reason === "composer_busy" && (
         <button type="button" className="ui-link ui-stream__steer" onClick={() => onSteer(input.id)}>Send now</button>
       )}
-      {onShowRequest && input.state === "queued" && (input.reason === "question_prompt" || input.reason === "permission_prompt") && (
-        <button type="button" className="ui-link ui-stream__steer" onClick={onShowRequest}>{input.reason === "question_prompt" ? "Answer it" : "Review it"}</button>
+      {onSkipQuestions && input.state === "queued" && input.reason === "question_prompt" && (
+        <button type="button" className="ui-link ui-stream__steer" onClick={onSkipQuestions}>Send now</button>
+      )}
+      {onShowRequest && input.state === "queued" && input.reason === "permission_prompt" && (
+        <button type="button" className="ui-link ui-stream__steer" onClick={onShowRequest}>Review it</button>
       )}
       {onCancel && input.mine && input.state === "queued" && (
         <button type="button" className="ui-link ui-stream__steer" onClick={() => onCancel(input.id)}>Cancel</button>
@@ -39,7 +42,7 @@ function PendingBubble({ item, mine, harness, onSteer, onCancel, onShowRequest }
   );
 }
 
-function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onSteer, onCancel, onShowRequest }: { item: StreamItem; mine: boolean; ownerName: string; hostName: string | null; viewerId?: string; linkFor?: (seq: number) => string; harness: string; onSteer?: (inputId: string) => void; onCancel?: (inputId: string) => void; onShowRequest?: () => void }) {
+function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onSteer, onCancel, onShowRequest, onSkipQuestions }: { item: StreamItem; mine: boolean; ownerName: string; hostName: string | null; viewerId?: string; linkFor?: (seq: number) => string; harness: string; onSteer?: (inputId: string) => void; onCancel?: (inputId: string) => void; onShowRequest?: () => void; onSkipQuestions?: () => void }) {
   switch (item.type) {
     case "user":
       if (item.agentId) {
@@ -58,7 +61,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         </>
       );
     case "pending":
-      return <PendingBubble item={item} mine={mine} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} />;
+      return <PendingBubble item={item} mine={mine} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} />;
     case "assistant":
       return (
         <>
@@ -140,6 +143,7 @@ export function SessionStream({
   onSteer,
   onCancel,
   onShowRequest,
+  onSkipQuestions,
   linkFor,
   highlightSeq = null,
 }: {
@@ -157,6 +161,7 @@ export function SessionStream({
   onSteer?: (inputId: string) => void;
   onCancel?: (inputId: string) => void;
   onShowRequest?: () => void;
+  onSkipQuestions?: () => void;
   /** Builds the link to one message. Without it, the link action is hidden. */
   linkFor?: (seq: number) => string;
   highlightSeq?: number | null;
@@ -179,7 +184,7 @@ export function SessionStream({
               id={item.type === "pending" ? undefined : messageDomId(item.seq)}
               className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
             >
-              <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} />
+              <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} />
             </li>
           </Fragment>
         );

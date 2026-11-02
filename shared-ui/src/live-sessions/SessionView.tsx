@@ -33,6 +33,7 @@ export interface SessionMenuItem {
   confirm?: string;
 }
 
+const SKIPPED_MESSAGE = "The user skipped this.";
 const NEAR_BOTTOM_PX = 96;
 
 /** Scroll offset per session, kept while the app runs; null means the user was following the latest message. */
@@ -304,6 +305,31 @@ function LoadedSession({
     setTimeout(() => setStopping(false), STOPPING_MS);
   }, [api, sessionId, refresh]);
 
+  const skipRequest = useCallback(
+    (requestId: string) => api.decideApproval(sessionId, requestId, { decision: "deny", message: SKIPPED_MESSAGE }),
+    [api, sessionId],
+  );
+  const openQuestions = useMemo(() => approvals.filter((a) => a.kind === "question"), [approvals]);
+  const canAnswer = session.status !== "ended" && session.session_type !== "routine";
+  // A new message replaces an open question, as typing over a prompt does in the terminal.
+  const sendMessage = useCallback(
+    async (text: string) => {
+      if (canAnswer && openQuestions.length > 0) await Promise.all(openQuestions.map((q) => skipRequest(q.requestId).catch(() => {})));
+      return inputs.send(text);
+    },
+    [canAnswer, openQuestions, skipRequest, inputs],
+  );
+  const firstOpenRequest = canAnswer ? approvals[0] : undefined;
+  useEffect(() => {
+    if (!firstOpenRequest) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      void skipRequest(firstOpenRequest.requestId).catch(() => {});
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [firstOpenRequest, skipRequest]);
+
   const chooseMenuItem = useCallback((item: SessionMenuItem) => {
     if (item.confirm) setConfirming(item);
     else item.onSelect();
@@ -368,7 +394,8 @@ function LoadedSession({
             harness={session.harness}
             onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
             onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
-            onShowRequest={() => document.querySelector(".ui-approval")?.scrollIntoView?.({ block: "center", behavior: "smooth" })}
+            onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
+            onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void Promise.all(openQuestions.map((q) => skipRequest(q.requestId))).catch(() => {}) : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />
@@ -386,12 +413,12 @@ function LoadedSession({
             {session.status !== "ended" &&
               approvals.map((approval) =>
                 approval.kind === "question" && approval.questions.length > 0 ? (
-                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

@@ -34,24 +34,24 @@ describe("ApprovalPanel", () => {
 
   it("Deny opens a reason box, and a second click sends deny without a reason when it is empty", async () => {
     const onDecide = renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
     expect(screen.getByText("Tell Claude why (optional)")).toBeTruthy();
     expect(onDecide).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
     await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "deny" }));
   });
 
   it("Deny sends the typed reason as the message", async () => {
     const onDecide = renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "  use a temp dir  " } });
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
     await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "deny", message: "use a temp dir" }));
   });
 
   it("Allow ignores a reason that was typed", async () => {
     const onDecide = renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "no" } });
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
     await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "allow" }));
@@ -66,8 +66,8 @@ describe("ApprovalPanel", () => {
 
   it("says when the request ended another way", async () => {
     renderPanel({ ok: false, error: "request_closed" });
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
     await screen.findByText("This request already ended");
   });
 

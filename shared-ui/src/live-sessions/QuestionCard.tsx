@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState, useEffect } from "react";
 import { closedMessage } from "./approval-result";
 import type { OpenApproval } from "./stream-items";
 import type { AnswerValue, ApprovalResult, LiveQuestion } from "./types";
@@ -37,14 +37,28 @@ export function collectAnswers(questions: LiveQuestion[], choices: Record<string
 }
 
 /** Claude's questions as a form. Anyone on the team can answer; the first answer wins. */
+function OtherText({ label, secret, value, onChange }: { label: string; secret: boolean; value: string; onChange(value: string): void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  if (secret) return <input className="ui-question__other" type="password" aria-label={label} value={value} autoFocus onChange={(e) => onChange(e.target.value)} />;
+  return <textarea ref={ref} className="ui-question__other" rows={1} aria-label={label} value={value} autoFocus onChange={(e) => onChange(e.target.value)} />;
+}
+
 export function QuestionCard({
   approval,
   hostName,
   onAnswer,
+  onSkip,
 }: {
   approval: OpenApproval;
   hostName: string | null;
   onAnswer(requestId: string, answers: Record<string, AnswerValue>): Promise<ApprovalResult>;
+  onSkip?(requestId: string): Promise<ApprovalResult>;
 }) {
   const id = useId();
   const [choices, setChoices] = useState<Record<string, Choice>>({});
@@ -73,6 +87,7 @@ export function QuestionCard({
         <h2 className="ui-approval__title">Claude has a question</h2>
         <p className="ui-muted ui-approval__where">You can also answer in the terminal on {hostName ?? "the owner's computer"}.</p>
       </div>
+      <div className="ui-question__body">
       {approval.questions.map((question, index) => {
         const choice = choices[question.key] ?? EMPTY;
         const name = `${id}-${index}`;
@@ -81,7 +96,7 @@ export function QuestionCard({
           <fieldset key={question.key} className="ui-question__item" disabled={busy}>
             <legend className="ui-question__legend">
               {question.header && <span className="ui-question__header">{question.header}</span>}
-              <span>{question.question}</span>
+              <span className="ui-question__text">{question.question}</span>
             </legend>
             {question.options.map((option) => (
               <label key={option.label} className="ui-question__option">
@@ -105,7 +120,7 @@ export function QuestionCard({
             ))}
             {question.isOther && (
               <>
-                <label className="ui-question__option">
+                <label className="ui-question__option ui-question__option--other">
                   <input
                     type={type}
                     name={name}
@@ -115,20 +130,14 @@ export function QuestionCard({
                   <span className="ui-question__label">Other</span>
                 </label>
                 {choice.otherOn && (
-                  <input
-                    className="ui-input ui-question__other"
-                    type={question.isSecret ? "password" : "text"}
-                    aria-label={`Your answer to: ${question.question}`}
-                    value={choice.other}
-                    autoFocus
-                    onChange={(e) => update(question.key, (c) => ({ ...c, other: e.target.value }))}
-                  />
+                  <OtherText label={`Your answer to: ${question.question}`} secret={question.isSecret} value={choice.other} onChange={(other) => update(question.key, (c) => ({ ...c, other }))} />
                 )}
               </>
             )}
           </fieldset>
         );
       })}
+      </div>
       {phase.name === "closed" ? (
         <p className="ui-approval__status" role="status">{phase.message}</p>
       ) : (
@@ -136,6 +145,11 @@ export function QuestionCard({
           <button type="button" className="ui-btn ui-btn--primary" disabled={busy || !answers} onClick={() => void submit()}>
             {phase.name === "sending" ? "Sending…" : "Send answer"}
           </button>
+          {onSkip && (
+            <button type="button" className="ui-btn" disabled={busy} onClick={() => void onSkip(approval.requestId)}>
+              Skip <kbd className="ui-kbd">Esc</kbd>
+            </button>
+          )}
           {phase.name === "sent" && <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>}
           {phase.name === "failed" && <span className="ui-error ui-approval__status" role="alert">Could not send. Try again.</span>}
         </div>
