@@ -32,6 +32,13 @@ describe("pendingItems", () => {
     expect(pendingItems([input({}), input({ id: "i2" })], events, context).map((item) => item.input.id)).toEqual(["i2"]);
   });
 
+  it("leaves out a message by its id even when the logged text differs", () => {
+    const id = "ab12cd34-0000-4000-8000-000000000000";
+    const events = [turn(1, "[Priya via Draft #ab12cd34] something else entirely")];
+    expect(pendingItems([input({ id })], events, context)).toEqual([]);
+    expect(pendingItems([input({ id: "ffff0000-0000-4000-8000-000000000000" })], events, context).length).toBe(1);
+  });
+
   it("keeps a message when the same words were in the log long before it", () => {
     const old = turn(1, "run the tests", NOW - 10 * 60_000);
     expect(pendingItems([input({})], [old], context).length).toBe(1);
