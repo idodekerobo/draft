@@ -4,13 +4,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
 import { PlanCard } from "./PlanCard";
+import { ModeMenu, nextMode, useSwitching } from "./ModeMenu";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
-import { getHarness } from "draft-core/harnesses";
+import { getHarness, harnessModes } from "draft-core/harnesses";
 import { agentLabel } from "../routines/agent-label";
 import { CheckIcon, LinkIcon } from "./MessageActions";
 import { sessionBanner } from "./session-banner";
@@ -324,6 +325,42 @@ function LoadedSession({
     },
     [canAnswer, openQuestions, skipRequest, inputs],
   );
+  const modes = harnessModes(session.harness ?? "claude");
+  const permissionSwitch = useSwitching(session.permission_mode);
+  const approvalSwitch = useSwitching(session.approval_mode);
+  const changeMode = useCallback(
+    (change: { permissionMode?: string; approvalMode?: string }) => {
+      if (change.permissionMode) permissionSwitch.start(change.permissionMode);
+      if (change.approvalMode) approvalSwitch.start(change.approvalMode);
+      void api.setMode(sessionId, change).catch(() => {
+        permissionSwitch.start("");
+        setActionError("Could not change the mode. Try again.");
+      });
+    },
+    [api, sessionId, permissionSwitch, approvalSwitch],
+  );
+  const cycleMode = useCallback(() => {
+    const next = permissionSwitch.target ? null : nextMode(modes.permission, session.permission_mode);
+    if (next) changeMode({ permissionMode: next });
+  }, [modes.permission, session.permission_mode, permissionSwitch.target, changeMode]);
+
+  const showModes = canAnswer && (modes.permission.length > 0 || modes.approval.length > 0);
+  const modeControl = (
+    <>
+      {modes.permission.length > 0 && (
+        <ModeMenu
+          label={modes.approval.length > 0 ? "Mode" : "Permissions"}
+          options={modes.permission}
+          value={session.permission_mode ?? null}
+          switchingTo={permissionSwitch.target || null}
+          onSelect={(permissionMode) => changeMode({ permissionMode })}
+        />
+      )}
+      {modes.approval.length > 0 && (
+        <ModeMenu label="Approvals" options={modes.approval} value={session.approval_mode ?? null} switchingTo={approvalSwitch.target || null} onSelect={(approvalMode) => changeMode({ approvalMode })} />
+      )}
+    </>
+  );
   const firstOpenRequest = canAnswer ? approvals[0] : undefined;
   // A prompt in the terminal that Draft shows no card for. Only the owner can dismiss it, and queued messages stay.
   const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && (i.reason === "dialog" || i.reason === "permission_prompt" || i.reason === "question_prompt"));
@@ -430,7 +467,7 @@ function LoadedSession({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={showModes ? modeControl : undefined} onCycleMode={showModes && modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

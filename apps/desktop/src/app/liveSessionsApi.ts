@@ -16,6 +16,10 @@ export const liveSessionsApi: LiveSessionsApi = {
     const result = await rpc.request.decideLiveSessionApproval({ sessionId, requestId, ...response });
     return result.ok ? { ok: true } : toApprovalResult(result.error, result.byName);
   },
+  setMode: async (sessionId, change) => {
+    const result = await rpc.request.setLiveSessionMode({ sessionId, ...change });
+    if (!result.ok) throw new Error(result.error);
+  },
   stop: async (sessionId, options) => {
     const result = await rpc.request.stopLiveSession({ sessionId, keepQueued: options?.keepQueued });
     if (!result.ok) throw new Error(result.error);

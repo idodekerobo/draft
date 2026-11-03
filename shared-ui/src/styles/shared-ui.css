@@ -816,6 +816,14 @@
 .ui-composer__box { transition: border-color 120ms var(--motion-ease); }
 .ui-composer__box:focus-within { border-color: var(--color-focus); }
 .ui-composer__box .ui-composer__input:focus-visible { outline: none; }
+.ui-composer__modes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-bottom: var(--space-2); }
+.ui-mode { position: relative; }
+.ui-mode__trigger { min-height: 30px; padding: 0 10px; font-size: var(--font-size-secondary); touch-action: manipulation; }
+.ui-mode__list { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 10; min-width: 260px; margin: 0; padding: var(--space-1); list-style: none; background: var(--color-bg-elevated); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); }
+.ui-mode__item { display: grid; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text-primary); font: inherit; text-align: left; cursor: pointer; touch-action: manipulation; }
+.ui-mode__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.ui-mode__desc { font-size: var(--font-size-small); color: var(--color-text-secondary); }
+@media (hover: hover) and (pointer: fine) { .ui-mode__item:hover { background: var(--color-bg-hover); } }
 .ui-composer__folder { display: flex; align-items: center; gap: var(--space-2); padding: 6px 12px; background: var(--color-bg-surface); color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-composer__row { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
 .ui-composer__footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }

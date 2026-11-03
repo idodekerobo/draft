@@ -31,6 +31,7 @@ const api: LiveSessionsApi = {
   actOnInput: async () => {},
   decideApproval: async () => ({ ok: true }),
   stop: async () => ({ withdrawn: [] }),
+  setMode: async () => {},
 };
 
 describe("SessionView", () => {
@@ -485,5 +486,50 @@ describe("SessionView view event", () => {
     render(<SessionView api={routineApi} sessionId="s1" track={track as never} />);
     await screen.findByRole("heading", { name: "Weekly digest" });
     expect(track).not.toHaveBeenCalled();
+  });
+
+  describe("the mode menu", () => {
+    const live = (extra: Partial<LiveSession> = {}): LiveSession => ({ ...session, mine: false, ...extra });
+    const setup = (extra: Partial<LiveSession> = {}) => {
+      const setMode = mock(async (..._args: unknown[]) => {});
+      render(<SessionView api={{ ...api, setMode, fetchEvents: async () => ({ viewer, session: live(extra), events: [], inputs: [] }) }} sessionId="s1" />);
+      return setMode;
+    };
+
+    it("shows Claude's current mode and the four choices in Shift+Tab order, and asks for the chosen one", async () => {
+      const setMode = setup({ permission_mode: "auto" });
+      fireEvent.click(await screen.findByRole("button", { name: "Permissions: Auto" }));
+      expect(screen.getAllByRole("menuitemradio").map((m) => m.querySelector(".ui-mode__name")?.textContent)).toEqual(["Manual", "Auto ✓", "Accept edits", "Plan"]);
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /Plan/ }));
+      await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { permissionMode: "plan" }));
+      expect((await screen.findByRole("button", { name: /Permissions: Plan/ }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("cycles to the next mode on Shift+Tab in the message box", async () => {
+      const setMode = setup({ permission_mode: "plan" });
+      await screen.findByRole("button", { name: "Permissions: Plan" });
+      fireEvent.keyDown(screen.getByPlaceholderText(/Message/), { key: "Tab", shiftKey: true });
+      await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { permissionMode: "default" }));
+    });
+
+    it("shows a mode the menu does not list, without letting it be changed", async () => {
+      setup({ permission_mode: "bypassPermissions" });
+      const trigger = (await screen.findByRole("button", { name: /Permissions: Bypass Permissions/ })) as HTMLButtonElement;
+      expect(trigger.disabled).toBe(true);
+    });
+
+    it("gives Codex a mode menu and an approvals menu", async () => {
+      const setMode = setup({ harness: "codex", permission_mode: "default", approval_mode: "ask-for-approval" });
+      await screen.findByRole("button", { name: "Mode: Default" });
+      fireEvent.click(screen.getByRole("button", { name: "Approvals: Ask for approval" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
+      await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { approvalMode: "full-access" }));
+    });
+
+    it("is hidden once the session has ended, and for a routine run", async () => {
+      setup({ status: "ended" });
+      await screen.findByText(/This session has ended/);
+      expect(screen.queryByRole("button", { name: /Permissions:/ })).toBeNull();
+    });
   });
 });

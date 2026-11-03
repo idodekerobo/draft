@@ -1,7 +1,7 @@
 "use client";
 
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { clearDraft, hasDraft, useDraft } from "./drafts";
 import { inputStatusLine } from "./input-status";
 import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
@@ -62,7 +62,9 @@ export function SessionComposer({
   autoFocus = false,
   onEmptyEscape,
   onResume,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void> }) {
+  modeControl,
+  onCycleMode,
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -116,6 +118,8 @@ export function SessionComposer({
       {ended ? (
         <EndedNote onResume={onResume} />
       ) : (
+        <>
+        {modeControl && <div className="ui-composer__modes">{modeControl}</div>}
         <form className="ui-composer__box" onSubmit={submit}>
           {folderName && (
             <div className="ui-composer__folder">
@@ -136,7 +140,10 @@ export function SessionComposer({
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Escape" && !text && onEmptyEscape) onEmptyEscape();
+              if (event.key === "Tab" && event.shiftKey && onCycleMode && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                onCycleMode();
+              } else if (event.key === "Escape" && !text && onEmptyEscape) onEmptyEscape();
               else submitOnEnter(() => void submit())(event);
             }}
           />
@@ -147,6 +154,7 @@ export function SessionComposer({
           </div>
           </div>
         </form>
+        </>
       )}
       {error && <p className="ui-error" role="alert">{error}</p>}
     </div>

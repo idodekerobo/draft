@@ -362,6 +362,9 @@ export type AppRPCType = {
         response: { ok: true } | { ok: false; error: string; byName?: string | null; reason?: string | null };
       };
 
+      /** Ask the host to switch a live session to other modes. */
+      setLiveSessionMode: { params: { sessionId: string; permissionMode?: string; approvalMode?: string }; response: { ok: true } | { ok: false; error: string } };
+
       /** Ask the host to interrupt the running turn of a live session. `withdrawn` holds the caller's queued messages that were pulled back. */
       stopLiveSession: { params: { sessionId: string; keepQueued?: boolean }; response: { ok: true; withdrawn: string[] } | { ok: false; error: string } };
 

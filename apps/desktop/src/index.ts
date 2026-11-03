@@ -52,6 +52,7 @@ import {
   sendLiveSessionMessage,
   startLiveSession,
   stopLiveSession,
+  setLiveSessionMode,
 } from "./main/host/live-session";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
@@ -789,6 +790,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       decideLiveSessionApproval: ({ sessionId, requestId, ...response }) => decideLiveSessionApproval(sessionId, requestId, response),
 
       stopLiveSession: ({ sessionId, keepQueued }) => stopLiveSession(sessionId, keepQueued),
+      setLiveSessionMode: ({ sessionId, ...change }) => setLiveSessionMode(sessionId, change),
 
       endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
 

@@ -478,6 +478,15 @@ export async function decideLiveSessionApproval(
   }
 }
 
+export async function setLiveSessionMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await fetchServer(`${sessionBase(sessionId)}/mode`, { method: "POST", body: JSON.stringify(change) });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "mode_failed" };
+  }
+}
+
 export async function stopLiveSession(sessionId: string, keepQueued = false): Promise<{ ok: true; withdrawn: string[] } | { ok: false; error: string }> {
   try {
     const response = await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: JSON.stringify(keepQueued ? { keepQueued: true } : {}) });
