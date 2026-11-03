@@ -54,6 +54,13 @@ export type InputFailReason =
 
 export type InputReason = InputBlockReason | InputFailReason;
 
+/** A prompt in the terminal is what holds the message back. */
+const PROMPT_BLOCK_REASONS: ReadonlySet<string> = new Set<InputBlockReason>(["dialog", "permission_prompt", "question_prompt"]);
+export const isPromptBlock = (reason: string | null | undefined): boolean => reason != null && PROMPT_BLOCK_REASONS.has(reason);
+
+/** The longest reason or feedback a decision carries. */
+export const MAX_DECISION_MESSAGE_CHARS = 2000;
+
 /** Line breaks become `\n` and control characters go. A control character in a paste could end it early. */
 export function normalizeInputText(text: string): string {
   // eslint-disable-next-line no-control-regex

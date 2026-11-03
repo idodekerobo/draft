@@ -25,14 +25,8 @@ export interface ControlDeps {
 export function decisionExtras(payload: ControlInput["payload"]): DecisionExtras {
   const extras: DecisionExtras = {};
   const { answers, message, scope, permissionMode } = payload;
-  if (answers && typeof answers === "object" && !Array.isArray(answers)) {
-    const clean: Record<string, AnswerValue> = {};
-    for (const [key, value] of Object.entries(answers)) {
-      if (typeof value === "string") clean[key] = value;
-      else if (Array.isArray(value) && value.every((v) => typeof v === "string")) clean[key] = value as string[];
-    }
-    extras.answers = clean;
-  }
+  // Each answer is checked against its question when the decision is applied (cleanAnswers).
+  if (answers && typeof answers === "object" && !Array.isArray(answers)) extras.answers = answers as Record<string, AnswerValue>;
   if (typeof message === "string") extras.message = message;
   if (scope === "once" || scope === "session") extras.scope = scope;
   if (permissionMode === "auto" || permissionMode === "default") extras.permissionMode = permissionMode;

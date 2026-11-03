@@ -1,3 +1,5 @@
+import { harnessModeValues } from "draft-core/harnesses";
+
 export type ClaudeMode = "default" | "acceptEdits" | "plan" | "auto" | "bypassPermissions" | "dontAsk";
 
 /** The footer Claude Code shows under the message box, for each mode. There is no command to set a mode, only Shift+Tab. */
@@ -11,7 +13,7 @@ const FOOTERS: Array<[RegExp, ClaudeMode]> = [
 ];
 
 /** Modes Shift+Tab can reach. The two launch-only modes are never a target. */
-export const CYCLE_MODES: ReadonlySet<string> = new Set(["default", "acceptEdits", "plan", "auto"]);
+export const CYCLE_MODES: ReadonlySet<string> = new Set(harnessModeValues("claude", "permission"));
 
 const MAX_PRESSES = 8;
 const SETTLE_POLLS = 20;

@@ -11,6 +11,8 @@
  * If the request cannot be posted, the hook gets no answer and only the dialog remains.
  */
 
+import { MAX_DECISION_MESSAGE_CHARS } from "draft-core/live-sessions";
+
 export type SessionMode = "auto" | "default";
 
 export type HookAnswer =
@@ -79,9 +81,13 @@ const EXPIRE_MS = 55 * 60 * 1000;
 const MAX_INPUT_CHARS = 4000;
 /** Checks in a row without the dialog before the owner counts as having answered. */
 const MISSES_TO_CLOSE = 2;
-const MAX_MESSAGE_CHARS = 2000;
 const RESULT_ATTEMPTS = 3;
 const RESULT_RETRY_MS = 250;
+
+/** A reason or feedback, trimmed and cut to the longest a decision carries. Empty when there is none. */
+function clip(message: string | undefined): string {
+  return message?.trim().slice(0, MAX_DECISION_MESSAGE_CHARS) ?? "";
+}
 
 export function requestKind(toolName: string): RequestKind {
   if (toolName === "AskUserQuestion") return "question";
@@ -149,13 +155,13 @@ export function summarizeToolInput(input: unknown): { input: unknown; input_trun
 /** What Claude's hook gets back. A question carries the answers, and a plan carries its own input, or Claude asks again in the pane. */
 function hookAnswer(toolName: string, toolInput: unknown, outcome: Extract<Outcome, { type: "decided" }>): HookAnswer {
   const input = toolInput && typeof toolInput === "object" && !Array.isArray(toolInput) ? (toolInput as Record<string, unknown>) : null;
-  const reason = outcome.extras.message?.trim().slice(0, MAX_MESSAGE_CHARS);
+  const reason = clip(outcome.extras.message);
+  const kind = requestKind(toolName);
   if (outcome.decision === "deny") {
-    if (requestKind(toolName) === "plan" && reason) return { behavior: "deny", message: `${outcome.by.name} did not approve the plan. Change it as they ask: ${reason}` };
+    if (kind === "plan" && reason) return { behavior: "deny", message: `${outcome.by.name} did not approve the plan. Change it as they ask: ${reason}` };
     return { behavior: "deny", message: reason ? `Denied by ${outcome.by.name} in Draft: ${reason}` : `Denied by ${outcome.by.name} in Draft.` };
   }
   if (!input) return { behavior: "allow" };
-  const kind = requestKind(toolName);
   if (kind === "plan") {
     const mode = outcome.extras.permissionMode;
     return { behavior: "allow", updatedInput: input, ...(mode ? { updatedPermissions: [{ type: "setMode" as const, mode, destination: "session" as const }] } : {}) };
@@ -255,7 +261,7 @@ export class ApprovalBroker {
       const { answers, message, permissionMode } = outcome.extras;
       if (permissionMode) payload.permissionMode = permissionMode;
       if (answers && Object.keys(answers).length > 0) payload.answers = answers;
-      if (message?.trim()) payload.message = message.trim().slice(0, MAX_MESSAGE_CHARS);
+      if (clip(message)) payload.message = clip(message);
     }
     await this.closeOnServer(requestId, payload);
   }

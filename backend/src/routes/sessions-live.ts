@@ -1,7 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
-import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
 import { eventsForHarness } from "../ingestion/harness-lines";
@@ -255,8 +255,8 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   return Response.json({ ok: true, last_seq: lastSeq, inserted });
 });
 
-const REPORTED_PERMISSION_MODES = ["default", "acceptEdits", "plan", "auto", "bypassPermissions", "dontAsk"];
-const APPROVAL_MODES = ["ask-for-approval", "approve-for-me", "full-access"];
+const REPORTED_PERMISSION_MODES = [...harnessModeValues("claude", "permission"), ...CLAUDE_LAUNCH_ONLY_MODES];
+const APPROVAL_MODES = harnessModeValues("codex", "approval");
 
 /** A mode the host reports, or null for anything unknown, which leaves the saved mode as it is. */
 const reportedMode = (value: unknown, allowed: string[]): string | null => (typeof value === "string" && allowed.includes(value) ? value : null);

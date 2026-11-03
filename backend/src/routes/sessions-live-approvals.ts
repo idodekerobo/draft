@@ -1,4 +1,5 @@
 import { harnessModes } from "draft-core/harnesses";
+import { MAX_DECISION_MESSAGE_CHARS } from "draft-core/live-sessions";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { SessionInputRow } from "../types/tables";
@@ -17,7 +18,6 @@ const MAX_ANSWERS = 20;
 const MAX_ANSWER_KEY_CHARS = 4000;
 const MAX_ANSWER_CHARS = 2000;
 const MAX_ANSWER_LIST = 50;
-const MAX_MESSAGE_CHARS = 2000;
 
 type Extras = { answers: Record<string, string | string[]> | null; message: string | null; scope: "once" | "session" | null; permissionMode: "auto" | "default" | null };
 
@@ -43,7 +43,7 @@ function parseExtras(body: Record<string, unknown>): { ok: true; extras: Extras 
   let message: string | null = null;
   if (body.message !== undefined && body.message !== null) {
     if (typeof body.message !== "string") return { ok: false, error: "invalid_message" };
-    if (body.message.length > MAX_MESSAGE_CHARS) return { ok: false, error: "message_too_long" };
+    if (body.message.length > MAX_DECISION_MESSAGE_CHARS) return { ok: false, error: "message_too_long" };
     message = body.message.trim() || null;
   }
 
