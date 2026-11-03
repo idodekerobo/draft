@@ -234,6 +234,7 @@ function LoadedSession({
   const [stopping, setStopping] = useState(false);
   const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [modeError, setModeError] = useState<string | null>(null);
   const logItems = useMemo(() => buildStreamItems(events), [events]);
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
   const ownerName = session.owner_name ?? "the owner";
@@ -330,11 +331,13 @@ function LoadedSession({
   const approvalSwitch = useSwitching(session.approval_mode);
   const changeMode = useCallback(
     (change: { permissionMode?: string; approvalMode?: string }) => {
+      setModeError(null);
       if (change.permissionMode) permissionSwitch.start(change.permissionMode);
       if (change.approvalMode) approvalSwitch.start(change.approvalMode);
       void api.setMode(sessionId, change).catch(() => {
         permissionSwitch.start("");
-        setActionError("Could not change the mode. Try again.");
+        approvalSwitch.start("");
+        setModeError("Could not change the mode. Try again.");
       });
     },
     [api, sessionId, permissionSwitch, approvalSwitch],
@@ -359,8 +362,22 @@ function LoadedSession({
       {modes.approval.length > 0 && (
         <ModeMenu label="Approvals" options={modes.approval} value={session.approval_mode ?? null} switchingTo={approvalSwitch.target || null} onSelect={(approvalMode) => changeMode({ approvalMode })} />
       )}
+      {modeError && <p className="ui-error ui-mode__error" role="alert">{modeError}</p>}
     </>
   );
+  const openCount = approvals.length;
+  const hadOpen = useRef(false);
+  useEffect(() => {
+    if (openCount > 0) {
+      hadOpen.current = true;
+      return;
+    }
+    if (!hadOpen.current) return;
+    hadOpen.current = false;
+    const active = document.activeElement;
+    // The card that held focus is gone, so focus goes back to the message box. Focus elsewhere stays.
+    if (!active || active === document.body || active.closest(".ui-approval")) document.getElementById("session-message")?.focus();
+  }, [openCount]);
   const firstOpenRequest = canAnswer ? approvals[0] : undefined;
   // A prompt in the terminal that Draft shows no card for. Only the owner can dismiss it, and queued messages stay.
   const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && (i.reason === "dialog" || i.reason === "permission_prompt" || i.reason === "question_prompt"));
