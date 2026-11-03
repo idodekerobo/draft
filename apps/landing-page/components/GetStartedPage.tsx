@@ -11,6 +11,7 @@ import { CalEmbed } from "@/components/PostSignupCall";
 import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import { OrbComposing } from "@/components/ui/thinking-orb";
+import { DEFAULT_CONTENT, type GetStartedContent } from "@/lib/getstarted-content";
 
 const DESKTOP_QUERY = "(min-width: 901px)";
 const subscribeDesktop = (onChange: () => void) => {
@@ -23,22 +24,6 @@ const getIsDesktop = () => window.matchMedia(DESKTOP_QUERY).matches;
 type SubmitState = "idle" | "submitting" | "success" | "error";
 type CtaLocation = "hero" | "sticky_bar" | "closing";
 
-const WHAT_DRAFT_DOES = [
-  {
-    title: "A shared company brain",
-    body: "Pulls context from Slack, GitHub, Linear, GMail, meetings, and more. Keeps it current as your team works.",
-  },
-  {
-    title: "Routines on any agent",
-    body: "Schedule recurring jobs, like a daily summary of your team's action items, and run them with the agent you prefer.",
-  },
-  {
-    title: "Shared coding sessions",
-    body: "Work in the same session as a teammate, with any agent (Claude Code, Codex, and more) you like.",
-    soon: true,
-  },
-];
-
 function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
   return (
     <div className={`getstarted-orb ${mobile ? "getstarted-orb-mobile" : "getstarted-orb-desktop"}`} aria-hidden="true">
@@ -47,7 +32,34 @@ function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
   );
 }
 
-export default function GetStartedPage() {
+function CtaButton({
+  primary,
+  label,
+  onClick,
+  expanded,
+  controls,
+}: {
+  primary: boolean;
+  label: string;
+  onClick: () => void;
+  expanded: boolean;
+  controls?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={primary ? "minimal-button getstarted-primary" : "getstarted-call-link"}
+      onClick={onClick}
+      aria-expanded={expanded}
+      aria-controls={controls}
+    >
+      {label} <span aria-hidden="true">↗</span>
+    </button>
+  );
+}
+
+export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?: GetStartedContent }) {
+  const { source, media } = content;
   const ph = usePostHog();
   const emailRef = useRef<HTMLInputElement>(null);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
@@ -87,9 +99,9 @@ export default function GetStartedPage() {
 
   const handleOpenWaitlist = (location: CtaLocation) => {
     setWaitlistOpen(true);
-    ph?.capture(EVENTS.WAITLIST_OPENED, { source: "getstarted", location });
+    ph?.capture(EVENTS.WAITLIST_OPENED, { source, location });
     ph?.capture(EVENTS.CTA_CLICKED, {
-      source: "getstarted",
+      source,
       cta_text: "Join the waitlist",
       location,
     });
@@ -102,13 +114,13 @@ export default function GetStartedPage() {
   const handleOpenCall = (location: CtaLocation) => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const behavior = reduceMotion ? "auto" : "smooth";
-    ph?.capture(EVENTS.CTA_CLICKED, { source: "getstarted", cta_text: "Book a Call", location });
+    ph?.capture(EVENTS.CTA_CLICKED, { source, cta_text: "Book a Call", location });
     if (callOpen) {
       calRef.current?.scrollIntoView({ behavior, block: "start" });
       return;
     }
     setCallOpen(true);
-    ph?.capture(EVENTS.CALL_EMBED_OPENED, { source: "getstarted", location });
+    ph?.capture(EVENTS.CALL_EMBED_OPENED, { source, location });
     if (location !== "hero") copyRef.current?.scrollIntoView({ behavior, block: "start" });
   };
 
@@ -118,35 +130,40 @@ export default function GetStartedPage() {
     if (!callOpen) handleOpenCall("hero");
   };
 
-  const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => (
-    <div className="getstarted-actions">
-      <button
-        type="button"
-        className="minimal-button getstarted-primary"
+  const waitlistPrimary = content.primaryCta === "waitlist";
+
+  const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => {
+    const call = (
+      <CtaButton
+        primary={!waitlistPrimary}
+        label={content.callLabel}
         onClick={() => handleOpenCall(location)}
-        aria-expanded={callOpen}
-      >
-        Book a call
-        <span aria-hidden="true">↗</span>
-      </button>
-      <button
-        type="button"
-        className="getstarted-call-link"
+        expanded={callOpen}
+      />
+    );
+    const waitlist = (
+      <CtaButton
+        primary={waitlistPrimary}
+        label={content.waitlistLabel}
         onClick={() => handleOpenWaitlist(location)}
-        aria-expanded={waitlistOpen}
-        aria-controls="getstarted-waitlist"
-      >
-        Not ready? Leave your email <span aria-hidden="true">↗</span>
-      </button>
-    </div>
-  );
+        expanded={waitlistOpen}
+        controls="getstarted-waitlist"
+      />
+    );
+    return (
+      <div className="getstarted-actions">
+        {waitlistPrimary ? waitlist : call}
+        {waitlistPrimary ? call : waitlist}
+      </div>
+    );
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitState("submitting");
 
     try {
-      const result = await submitWaitlist(email, "getstarted");
+      const result = await submitWaitlist(email, source);
       setSignupToken(result.signup_token);
       setSubmitState("success");
     } catch {
@@ -163,10 +180,8 @@ export default function GetStartedPage() {
         <GetStartedOrb mobile />
 
         <div className="getstarted-copy" ref={copyRef}>
-          <h1 id="getstarted-title">One brain for every agent your team uses.</h1>
-          <p className="getstarted-lede">
-            Draft keeps your company&apos;s decisions, customer context, and priorities current. Every AI agent can read them.
-          </p>
+          <h1 id="getstarted-title">{content.heading}</h1>
+          <p className="getstarted-lede">{content.lede}</p>
 
           {renderActions("hero")}
 
@@ -177,7 +192,7 @@ export default function GetStartedPage() {
                   <p className="getstarted-success" role="status">
                     {profileDone ? "Thanks. Pick a time to talk." : "Thanks. We'll be in touch soon."}
                   </p>
-                  <WaitlistProfileStep signupToken={signupToken} source="getstarted" onDone={handleProfileDone} />
+                  <WaitlistProfileStep signupToken={signupToken} source={source} onDone={handleProfileDone} />
                 </>
               ) : (
                 <form onSubmit={handleSubmit}>
@@ -211,7 +226,7 @@ export default function GetStartedPage() {
 
           {callOpen && !isDesktop && (
             <div ref={calRef} style={{ marginTop: "1.25rem" }}>
-              <CalEmbed email={email} source="getstarted" profile={profile} />
+              <CalEmbed email={email} source={source} profile={profile} />
             </div>
           )}
         </div>
@@ -221,38 +236,53 @@ export default function GetStartedPage() {
 
       {sideCal && (
         <aside ref={calRef} className="getstarted-cal" aria-label="Book a call">
-          <CalEmbed email={email} source="getstarted" profile={profile} />
+          <CalEmbed email={email} source={source} profile={profile} />
         </aside>
       )}
 
       <figure className="getstarted-media">
         <GetStartedOrb />
         <div className="getstarted-media-frame">
-          <Image
-            src="/agent-loading-action-items.gif"
-            alt="Draft preparing action items from company context"
-            width={1472}
-            height={1080}
-            priority
-            unoptimized
-            sizes="(max-width: 600px) 90vw, (max-width: 900px) 560px, 42vw"
-          />
+          {media.kind === "video" ? (
+            <video
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              poster={media.poster}
+              width={media.width}
+              height={media.height}
+              aria-label={media.alt}
+            >
+              {media.webm && <source src={media.webm} type="video/webm" />}
+              <source src={media.mp4} type="video/mp4" />
+            </video>
+          ) : (
+            <Image
+              src={media.src}
+              alt={media.alt}
+              width={media.width}
+              height={media.height}
+              priority
+              unoptimized
+              sizes="(max-width: 600px) 90vw, (max-width: 900px) 560px, 42vw"
+            />
+          )}
         </div>
-        <figcaption>One company brain. Every agent in sync.</figcaption>
+        <figcaption>{content.caption}</figcaption>
       </figure>
 
       <div className="getstarted-story">
         <section className="getstarted-story-block" aria-labelledby="getstarted-problem">
-          <h2 id="getstarted-problem">Your agents start every session knowing nothing about your company.</h2>
-          <p>
-            Decisions live in Slack threads, call notes, and old tickets. Each agent has to be told again, and each teammate tells it something different.
-          </p>
+          <h2 id="getstarted-problem">{content.problemHeading}</h2>
+          <p>{content.problemBody}</p>
         </section>
 
         <section className="getstarted-story-block" aria-labelledby="getstarted-what">
-          <h2 id="getstarted-what">What Draft does</h2>
+          <h2 id="getstarted-what">{content.whatHeading}</h2>
           <ul className="getstarted-rows">
-            {WHAT_DRAFT_DOES.map((item) => (
+            {content.rows.map((item) => (
               <li key={item.title}>
                 <h3>
                   {item.title}
@@ -265,24 +295,27 @@ export default function GetStartedPage() {
           </ul>
         </section>
 
-        <p className="getstarted-agents">Works with Claude Code, Codex, Cursor, and more, through MCP or CLI.</p>
+        <p className="getstarted-agents">{content.agentsLine}</p>
 
         <section className="getstarted-story-block getstarted-closing" ref={closingRef} aria-labelledby="getstarted-closing-title">
-          <h2 id="getstarted-closing-title">Give every agent the same brain.</h2>
+          <h2 id="getstarted-closing-title">{content.closingHeading}</h2>
           {renderActions("closing")}
         </section>
       </div>
 
       {showStickyBar && (
         <div className="getstarted-sticky">
-          <button
-            type="button"
-            className="minimal-button getstarted-primary"
-            onClick={() => handleOpenCall("sticky_bar")}
-          >
-            Book a call
-            <span aria-hidden="true">↗</span>
-          </button>
+          {waitlistPrimary ? (
+            <CtaButton
+              primary
+              label={content.waitlistLabel}
+              onClick={() => handleOpenWaitlist("sticky_bar")}
+              expanded={waitlistOpen}
+              controls="getstarted-waitlist"
+            />
+          ) : (
+            <CtaButton primary label={content.callLabel} onClick={() => handleOpenCall("sticky_bar")} expanded={callOpen} />
+          )}
         </div>
       )}
       <Footer />
