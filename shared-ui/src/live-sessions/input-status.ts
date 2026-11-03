@@ -3,7 +3,7 @@ import type { InputBlockReason, InputFailReason } from "draft-core/live-sessions
 import type { ComposerInput } from "./types";
 
 /** "Claude" for Claude Code, "Codex" for Codex. */
-const shortName = (harness: string) => harnessLabel(harness).split(" ")[0]!;
+export const shortName = (harness: string) => harnessLabel(harness).split(" ")[0]!;
 
 const BLOCKED: Partial<Record<InputBlockReason, string>> = {
   permission_prompt: "is waiting for an approval",

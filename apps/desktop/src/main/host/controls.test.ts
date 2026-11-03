@@ -107,7 +107,7 @@ describe("decisionExtras", () => {
   it("passes answers, a reason and a scope through, and drops anything of the wrong type", () => {
     expect(decisionExtras({ permissionMode: "auto" })).toEqual({ permissionMode: "auto" });
     expect(decisionExtras({ permissionMode: "plan" })).toEqual({});
-    expect(decisionExtras({ answers: { Q: "A", M: ["x", "y"], Bad: 3, BadList: [1] }, message: "why", scope: "session" })).toEqual({
+    expect(decisionExtras({ answers: { Q: "A", M: ["x", "y"] }, message: "why", scope: "session" })).toEqual({
       answers: { Q: "A", M: ["x", "y"] },
       message: "why",
       scope: "session",

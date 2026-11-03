@@ -1,3 +1,5 @@
+import { harnessModeValues } from "draft-core/harnesses";
+
 export type ClaudeMode = "default" | "acceptEdits" | "plan" | "auto" | "bypassPermissions" | "dontAsk";
 
 /** The footer Claude Code shows under the message box, for each mode. There is no command to set a mode, only Shift+Tab. */
@@ -11,7 +13,7 @@ const FOOTERS: Array<[RegExp, ClaudeMode]> = [
 ];
 
 /** Modes Shift+Tab can reach. The two launch-only modes are never a target. */
-export const CYCLE_MODES: ReadonlySet<string> = new Set(["default", "acceptEdits", "plan", "auto"]);
+export const CYCLE_MODES: ReadonlySet<string> = new Set(harnessModeValues("claude", "permission"));
 
 const MAX_PRESSES = 8;
 const SETTLE_POLLS = 20;
@@ -37,8 +39,8 @@ export interface ModeDeps {
 export type SwitchResult = { ok: true; mode: ClaudeMode } | { ok: false; reason: "unreadable" | "unreachable"; mode: ClaudeMode | null };
 
 /** Presses Shift+Tab until the footer shows the target. The cycle is walked, because its length varies with the session. */
-export async function switchMode(target: ClaudeMode, deps: ModeDeps): Promise<SwitchResult> {
-  let current = modeFromScreen(await deps.capture());
+export async function switchMode(target: ClaudeMode, deps: ModeDeps, firstScreen?: string): Promise<SwitchResult> {
+  let current = modeFromScreen(firstScreen ?? (await deps.capture()));
   if (current === null) return { ok: false, reason: "unreadable", mode: null };
   for (let press = 0; press < MAX_PRESSES; press++) {
     if (current === target) return { ok: true, mode: current };

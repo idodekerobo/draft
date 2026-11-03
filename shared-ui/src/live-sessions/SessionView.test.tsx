@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render as renderUi, screen, waitFor } from "@t
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
-import { SessionNotFoundError, type LiveSession, type LiveSessionsApi } from "./types";
+import { SessionNotFoundError, type LiveSession, type LiveSessionEvent, type LiveSessionsApi } from "./types";
 
 afterEach(cleanup);
 
@@ -229,6 +229,23 @@ describe("SessionView", () => {
       fireEvent.keyDown(document.body, { key: "Escape" });
       await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." }));
     });
+
+    it("returns focus to the message box when its card is gone", async () => {
+      let events: LiveSessionEvent[] = open;
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      renderUi(
+        <QueryClientProvider client={client}>
+          <SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session, events, inputs: [] }) }} sessionId="s1" />
+        </QueryClientProvider>,
+      );
+      fireEvent.click(await screen.findByRole("radio", { name: "Other" }));
+      (screen.getByLabelText(/Your answer to/) as HTMLElement).focus();
+      events = [...open, { seq: 2, source_id: "b", kind: "permission_resolved" as const, payload: { requestId: "q1", reason: "decided", decision: "allow" as const }, created_at: "2026-10-27T10:01:00Z" }];
+      void client.invalidateQueries();
+      await new Promise((r) => setTimeout(r, 1500));
+      await waitFor(() => expect(screen.queryByRole("group", { name: "Question from Claude" })).toBeNull(), { timeout: 4000 });
+      await waitFor(() => expect(document.activeElement?.id).toBe("session-message"), { timeout: 4000 });
+    }, 15_000);
 
     it("is skipped by its Skip button", async () => {
       const { decideApproval } = setup();
@@ -524,6 +541,17 @@ describe("SessionView view event", () => {
       fireEvent.click(screen.getByRole("button", { name: "Approvals: Ask for approval" }));
       fireEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
       await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { approvalMode: "full-access" }));
+    });
+
+    it("shows a failed change beside the menu, not in the page banner", async () => {
+      const setMode = mock(async (..._args: unknown[]) => { throw new Error("nope"); });
+      const { container } = render(<SessionView api={{ ...api, setMode, fetchEvents: async () => ({ viewer, session: live({ permission_mode: "auto" }), events: [], inputs: [] }) }} sessionId="s1" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Permissions: Auto" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /Plan/ }));
+      const alert = await screen.findByText("Could not change the mode. Try again.");
+      expect(alert.closest(".ui-composer__modes")).toBeTruthy();
+      expect(container.querySelector(".ui-session__notice")).toBeNull();
+      expect((screen.getByRole("button", { name: "Permissions: Auto" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
     it("is hidden once the session has ended, and for a routine run", async () => {

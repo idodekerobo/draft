@@ -261,6 +261,14 @@ describe("answers by position", () => {
     expect(await held).toEqual({ behavior: "allow", updatedInput: { ...ask.tool_input, answers: { [long]: "typed", Size: ["S", "L"] } } });
   });
 
+  it("drops an answer of the wrong type, and one for a question that was not asked", async () => {
+    const { broker } = setup();
+    const held = broker.hold(ask, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { answers: { "0": "A", "1": 3, extra: "x" } as never });
+    expect(await held).toMatchObject({ updatedInput: { answers: { [long]: "A" } } });
+  });
+
   it("still takes answers keyed by question text from an older client", async () => {
     const { broker } = setup();
     const held = broker.hold(ask, new AbortController().signal);

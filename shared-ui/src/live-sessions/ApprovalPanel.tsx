@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { SendStatus, useSend } from "./useSend";
 import type { OpenApproval } from "./stream-items";
-import { closedMessage } from "./approval-result";
 import type { ApprovalResponse, ApprovalResult } from "./types";
 
 const PREVIEW_LINES = 3;
-
-type Phase = { name: "idle" } | { name: "sending"; decision: "allow" | "deny" } | { name: "sent" } | { name: "closed"; message: string } | { name: "failed" };
 
 function inputText(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
@@ -29,7 +27,7 @@ export function ApprovalPanel({
   /** Whether the agent reads a reason for a denial. Codex has no field for one. */
   explainsDenial?: boolean;
 }) {
-  const [phase, setPhase] = useState<Phase>({ name: "idle" });
+  const { phase, run, busy, sendingWhat } = useSend();
   const [expanded, setExpanded] = useState(false);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -38,19 +36,10 @@ export function ApprovalPanel({
   const long = lines.length > PREVIEW_LINES;
   const shown = expanded || !long ? lines.join("\n") : `${lines.slice(0, PREVIEW_LINES).join("\n")}\n…`;
   const where = hostName ? `Runs on ${hostName}` : "Runs on the owner's computer";
-  const busy = phase.name === "sending" || phase.name === "sent";
 
-  async function decide(decision: "allow" | "deny", scope?: "session") {
-    setPhase({ name: "sending", decision });
+  function decide(decision: "allow" | "deny", scope?: "session") {
     const message = decision === "deny" ? reason.trim() : "";
-    try {
-      const result = await onDecide(approval.requestId, { decision, ...(message ? { message } : {}), ...(scope ? { scope } : {}) });
-      if (result.ok) setPhase({ name: "sent" });
-      else if (result.error === "failed") setPhase({ name: "failed" });
-      else setPhase({ name: "closed", message: closedMessage(result) });
-    } catch {
-      setPhase({ name: "failed" });
-    }
+    return run(scope ? "allow-session" : decision, () => onDecide(approval.requestId, { decision, ...(message ? { message } : {}), ...(scope ? { scope } : {}) }));
   }
 
   return (
@@ -79,7 +68,7 @@ export function ApprovalPanel({
         )}
         <div className="ui-approval__actions">
           <button type="button" className="ui-btn ui-btn--primary" disabled={busy} onClick={() => void decide("allow")}>
-            {phase.name === "sending" && phase.decision === "allow" ? "Sending…" : "Allow"}
+            {sendingWhat("allow") ? "Sending…" : "Allow"}
           </button>
           {approval.allowSession && (
             <button type="button" className="ui-btn" disabled={busy} onClick={() => void decide("allow", "session")}>
@@ -87,10 +76,9 @@ export function ApprovalPanel({
             </button>
           )}
           <button type="button" className="ui-btn" disabled={busy} aria-expanded={reasonOpen} onClick={() => (reasonOpen || !explainsDenial ? void decide("deny") : setReasonOpen(true))}>
-            {phase.name === "sending" && phase.decision === "deny" ? "Sending…" : <>Deny <kbd className="ui-kbd">Esc</kbd></>}
+            {sendingWhat("deny") ? "Sending…" : <>Deny <kbd className="ui-kbd">Esc</kbd></>}
           </button>
-          {phase.name === "sent" && <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>}
-          {phase.name === "failed" && <span className="ui-error ui-approval__status" role="alert">Could not send. Try again.</span>}
+          <SendStatus phase={phase} hostName={hostName} />
         </div>
         </>
       )}

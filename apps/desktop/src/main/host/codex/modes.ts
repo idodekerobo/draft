@@ -1,11 +1,15 @@
+import { harnessModeValues } from "draft-core/harnesses";
+
 export type CodexApproval = "ask-for-approval" | "approve-for-me" | "full-access";
 export type CodexCollaboration = "default" | "plan";
 
 export const DEFAULT_APPROVAL: CodexApproval = "ask-for-approval";
 export const DEFAULT_COLLABORATION: CodexCollaboration = "default";
 
-export const isApproval = (value: unknown): value is CodexApproval => value === "ask-for-approval" || value === "approve-for-me" || value === "full-access";
-export const isCollaboration = (value: unknown): value is CodexCollaboration => value === "default" || value === "plan";
+const APPROVALS = harnessModeValues("codex", "approval");
+const COLLABORATIONS = harnessModeValues("codex", "permission");
+export const isApproval = (value: unknown): value is CodexApproval => typeof value === "string" && APPROVALS.includes(value);
+export const isCollaboration = (value: unknown): value is CodexCollaboration => typeof value === "string" && COLLABORATIONS.includes(value);
 
 /**
  * The turn/start settings for an approval choice. Codex keeps them for the turn and the turns after it, so they

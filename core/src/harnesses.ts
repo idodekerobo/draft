@@ -106,6 +106,14 @@ export function harnessLabel(id: string): string {
   return getHarness(id)?.label ?? id;
 }
 
+/** Modes Claude can start in but Shift+Tab never reaches. A host may report them, and no one can switch to them. */
+export const CLAUDE_LAUNCH_ONLY_MODES = ["bypassPermissions", "dontAsk"] as const;
+
+/** The values of a harness's mode menus. */
+export function harnessModeValues(id: string, axis: keyof HarnessModes): string[] {
+  return harnessModes(id)[axis].map((mode) => mode.value);
+}
+
 /** The mode menu for a harness, or empty lists for one this build does not know. */
 export function harnessModes(id: string | null | undefined): HarnessModes {
   return getHarness(id)?.modes ?? { permission: [], approval: [] };
