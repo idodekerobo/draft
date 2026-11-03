@@ -53,6 +53,7 @@ class SessionRunner {
       requestUpload: () => {
         this.uploadWanted = true;
       },
+      reportModes: (modes) => this.reportModes(modes),
     });
   }
 
@@ -93,11 +94,19 @@ class SessionRunner {
     }, this.driver.pollMs?.() ?? PANE_WATCH_MS);
   }
 
+  private modes: { permissionMode?: string | null; approvalMode?: string | null } = {};
+
+  private reportModes(modes: { permissionMode?: string | null; approvalMode?: string | null }): void {
+    const changed = (Object.keys(modes) as Array<keyof typeof modes>).some((key) => modes[key] != null && modes[key] !== this.modes[key]);
+    this.modes = { ...this.modes, ...Object.fromEntries(Object.entries(modes).filter(([, value]) => value != null)) };
+    if (changed) void this.sendHeartbeat();
+  }
+
   private async sendHeartbeat(): Promise<void> {
     try {
       await fetchServer(`${this.base}/heartbeat`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null }),
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes }),
       });
     } catch (error) {
       this.reportInputError("heartbeat", error);

@@ -4,11 +4,11 @@ import type { AnswerValue, Decider, DecisionExtras, HostEvent } from "./approval
 
 export interface ControlInput {
   id: string;
-  kind: "stop" | "permission_decision";
+  kind: "stop" | "permission_decision" | "set_mode";
   state: "queued" | "delivering";
   author_user_id: string;
   author_name: string;
-  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown; permissionMode?: unknown };
+  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown; permissionMode?: unknown; approvalMode?: unknown };
 }
 
 export interface ControlDeps {
@@ -16,6 +16,8 @@ export interface ControlDeps {
   decide(requestId: string, decision: "allow" | "deny", by: Decider, extras?: DecisionExtras): boolean;
   capture(): Promise<string>;
   sendEscape(): Promise<void>;
+  /** Switches the session to the modes asked for. */
+  setMode(modes: { permissionMode?: string; approvalMode?: string }): Promise<{ ok: true } | { ok: false; note: string }>;
   postEvents(events: HostEvent[]): Promise<void>;
 }
 
@@ -73,6 +75,18 @@ export class ControlActions {
           (decision === "allow" || decision === "deny") &&
           this.deps.decide(requestId, decision, { userId: input.author_user_id, name: input.author_name }, decisionExtras(input.payload));
         await this.deps.setState(input.id, ["delivering"], decided ? "consumed" : "failed", decided ? undefined : "request_not_open");
+        return;
+      }
+      if (input.kind === "set_mode") {
+        const { permissionMode, approvalMode } = input.payload;
+        const result = await this.deps.setMode({
+          ...(typeof permissionMode === "string" ? { permissionMode } : {}),
+          ...(typeof approvalMode === "string" ? { approvalMode } : {}),
+        });
+        if (!result.ok) {
+          await this.deps.postEvents([{ sourceId: `mode:${input.id}`, kind: "session_note", payload: { text: result.note } }]);
+        }
+        await this.deps.setState(input.id, ["delivering"], result.ok ? "consumed" : "failed", result.ok ? undefined : "pane_unavailable");
         return;
       }
       await this.stop(input);
