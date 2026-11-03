@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
+import { PlanCard } from "./PlanCard";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
@@ -421,7 +422,9 @@ function LoadedSession({
             <>
             {session.status !== "ended" &&
               approvals.map((approval) =>
-                approval.kind === "question" && approval.questions.length > 0 ? (
+                approval.kind === "plan" && approval.plan ? (
+                  <PlanCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                ) : approval.kind === "question" && approval.questions.length > 0 ? (
                   <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} hasTerminal={hasTerminal} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />

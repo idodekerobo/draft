@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { approvalOutcome, buildStreamItems, isMine, openApprovals, toolSummary } from "./stream-items";
+import { approvalOutcome, buildStreamItems, isMine, openApprovals, toolSummary, type OpenApproval } from "./stream-items";
 import type { LiveSessionEvent, LiveSessionEventKind, LiveSessionEventPayload } from "./types";
 
 let seq = 0;
@@ -167,5 +167,20 @@ describe("isMine", () => {
     const pending = (mine: boolean) => ({ type: "pending" as const, key: "k", author: "x", ownerName: "o", hostOffline: false, input: { mine } as never });
     expect(isMine(pending(true), viewer)).toBe(true);
     expect(isMine(pending(false), viewer)).toBe(false);
+  });
+
+  it("words a plan's outcome by what was chosen", () => {
+    const at = "2026-10-27T10:00:00Z";
+    const events = (resolved: Record<string, unknown>): LiveSessionEvent[] => [
+      { seq: 1, source_id: "a", kind: "permission_request", payload: { requestId: "p1", kind: "plan", name: "ExitPlanMode", plan: "# P", permissionMode: "plan" }, created_at: at },
+      { seq: 2, source_id: "b", kind: "permission_resolved", payload: { requestId: "p1", reason: "decided", by_name: "Dev", ...resolved }, created_at: at },
+    ];
+    const outcome = (resolved: Record<string, unknown>) => {
+      const item = buildStreamItems(events(resolved)).find((i) => i.type === "approval") as OpenApproval;
+      return approvalOutcome(item, null);
+    };
+    expect(outcome({ decision: "allow", permissionMode: "auto" })).toMatch(/^Approved by Dev, auto mode, /);
+    expect(outcome({ decision: "allow", permissionMode: "default" })).toMatch(/^Approved by Dev, manual edits, /);
+    expect(outcome({ decision: "deny", message: "2 steps" })).toMatch(/^Dev asked for changes, /);
   });
 });

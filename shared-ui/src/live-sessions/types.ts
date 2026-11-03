@@ -69,6 +69,8 @@ export interface ApprovalResponse {
   /** Why a request was denied, or what to change in a plan. */
   message?: string;
   scope?: "once" | "session";
+  /** For a plan approval: the mode the session switches to. */
+  permissionMode?: "auto" | "default";
 }
 
 export interface LiveSessionEventPayload {
@@ -95,6 +97,8 @@ export interface LiveSessionEventPayload {
   plan?: string;
   /** The harness can allow this for the rest of the session. */
   allowSession?: boolean;
+  /** permission_request for a plan: the mode the session was in. permission_resolved: the mode the approval switched to. */
+  permissionMode?: string;
   /** permission_resolved: what the decider answered or wrote. */
   answers?: Record<string, AnswerValue>;
   message?: string;

@@ -10,7 +10,7 @@ const colors: LiveQuestion = { key: "Pick colors", header: "Color", question: "P
 const size: LiveQuestion = { key: "Pick a size", question: "Pick a size", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "S" }, { label: "L" }] };
 
 const approval = (questions: LiveQuestion[]): OpenApproval => ({
-  type: "approval", seq: 1, requestId: "r1", kind: "question", tool: "AskUserQuestion", summary: "", input: {}, questions, plan: null, allowSession: false, resolved: null,
+  type: "approval", seq: 1, requestId: "r1", kind: "question", tool: "AskUserQuestion", summary: "", input: {}, questions, plan: null, allowSession: false, permissionMode: null, resolved: null,
 });
 
 function renderCard(questions: LiveQuestion[], result: ApprovalResult = { ok: true }) {

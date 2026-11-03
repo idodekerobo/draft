@@ -929,6 +929,11 @@
 .ui-approval { max-height: min(60vh, 60dvh); overflow-y: auto; overscroll-behavior: contain; }
 .ui-approval__actions:last-child { position: sticky; bottom: calc(-1 * var(--space-3)); padding: var(--space-2) 0; background: var(--color-bg-elevated); }
 .ui-kbd { margin-left: 4px; padding: 0 5px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font: inherit; font-size: var(--font-size-small); color: var(--color-text-secondary); }
+.ui-plan { display: grid; }
+.ui-plan__body { max-height: min(40vh, 40dvh); overflow-y: auto; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-surface); font-size: var(--font-size-secondary); }
+.ui-plan__body.ui-prose { max-width: none; padding-top: var(--space-2); }
+.ui-plan__choices { display: grid; gap: var(--space-2); justify-items: start; }
+.ui-plan__feedback { display: grid; gap: var(--space-1); width: 100%; }
 .ui-question { display: grid; gap: var(--space-3); }
 .ui-question__body { display: grid; gap: var(--space-4); }
 .ui-question__item { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; min-width: 0; }

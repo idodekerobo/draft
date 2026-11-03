@@ -247,7 +247,8 @@ export class ApprovalBroker {
     const payload: Record<string, unknown> = { requestId, reason };
     if (outcome.type === "decided") {
       Object.assign(payload, { decision: outcome.decision, by_user_id: outcome.by.userId, by_name: outcome.by.name });
-      const { answers, message } = outcome.extras;
+      const { answers, message, permissionMode } = outcome.extras;
+      if (permissionMode) payload.permissionMode = permissionMode;
       if (answers && Object.keys(answers).length > 0) payload.answers = answers;
       if (message?.trim()) payload.message = message.trim().slice(0, MAX_MESSAGE_CHARS);
     }

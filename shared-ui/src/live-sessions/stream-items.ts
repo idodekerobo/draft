@@ -19,6 +19,8 @@ export type StreamItem =
       questions: LiveQuestion[];
       plan: string | null;
       allowSession: boolean;
+      /** For a plan: the mode the session is in. */
+      permissionMode: string | null;
       /** Null while the request waits for an answer. */
       resolved: {
         reason: string;
@@ -27,6 +29,7 @@ export type StreamItem =
         at: string;
         answers: Record<string, AnswerValue> | null;
         message: string | null;
+        permissionMode: string | null;
       } | null;
     }
   | {
@@ -95,6 +98,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
           questions: payload.questions ?? [],
           plan: payload.plan ?? null,
           allowSession: payload.allowSession === true,
+          permissionMode: payload.permissionMode ?? null,
           resolved: null,
         };
         items.push(approval);
@@ -111,6 +115,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
             at: event.created_at,
             answers: payload.answers ?? null,
             message: payload.message ?? null,
+            permissionMode: payload.permissionMode ?? null,
           };
         }
         break;
@@ -156,6 +161,12 @@ export function approvalOutcome(approval: OpenApproval, hostName: string | null)
   switch (resolved.reason) {
     case "decided":
       if (approval.kind === "question" && resolved.decision === "allow") return `Answered by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
+      if (approval.kind === "plan") {
+        const who = resolved.byName ?? "a teammate";
+        if (resolved.decision === "deny") return `${who} asked for changes, ${timeOf(resolved.at)}`;
+        const mode = resolved.permissionMode === "auto" ? ", auto mode" : resolved.permissionMode === "default" ? ", manual edits" : "";
+        return `Approved by ${who}${mode}, ${timeOf(resolved.at)}`;
+      }
       return `${resolved.decision === "deny" ? "Denied" : "Allowed"} by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
     case "answered_locally":
       return `Answered ${where}, ${timeOf(resolved.at)}`;

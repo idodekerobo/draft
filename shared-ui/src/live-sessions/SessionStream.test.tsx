@@ -153,4 +153,15 @@ describe("SessionStream", () => {
     view.rerender(<SessionStream items={[{ ...item, input: { ...base, reason: "composer_busy" } }]} onDismissPrompt={onDismissPrompt} />);
     expect(screen.queryByRole("button", { name: /Dismiss in terminal/ })).toBeNull();
   });
+
+  it("shows an approved plan's tool row as formatted text, open", () => {
+    const items = buildStreamItems([
+      { seq: 1, source_id: "a", kind: "tool_use", payload: { tool_use_id: "t1", name: "ExitPlanMode", input: { plan: "# Plan\n\n1. Write it" } }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "tool_result", payload: { tool_use_id: "t1", content: "approved" }, created_at: "" },
+    ]);
+    const { container } = render(<SessionStream items={items} />);
+    expect(screen.getByRole("heading", { name: "Plan" })).toBeTruthy();
+    expect(screen.getByText("Write it")).toBeTruthy();
+    expect(container.querySelector("details")?.hasAttribute("open")).toBe(true);
+  });
 });

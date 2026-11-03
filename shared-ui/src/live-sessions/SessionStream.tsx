@@ -111,6 +111,14 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         </p>
       );
     case "tool":
+      if (item.name === "ExitPlanMode" && typeof (item.input as { plan?: unknown } | null)?.plan === "string") {
+        return (
+          <details className="ui-stream__details" open>
+            <summary><span className="ui-stream__tool">Plan</span></summary>
+            <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown((item.input as { plan: string }).plan) }} />
+          </details>
+        );
+      }
       return (
         <details className="ui-stream__details">
           <summary>
