@@ -12,6 +12,9 @@ export type GetStartedMedia =
 
 export type GetStartedContent = {
   source: string;
+  primaryCta: "call" | "waitlist";
+  callLabel: string;
+  waitlistLabel: string;
   title: string;
   heading: string;
   lede: string;
@@ -27,6 +30,9 @@ export type GetStartedContent = {
 
 export const DEFAULT_CONTENT: GetStartedContent = {
   source: "getstarted",
+  primaryCta: "call",
+  callLabel: "Book a call",
+  waitlistLabel: "Not ready? Leave your email",
   title: "Get started with Draft",
   heading: "One brain for every agent your team uses.",
   lede: "Draft keeps your company's decisions, customer context, and priorities current. Every AI agent can read them.",
@@ -64,7 +70,10 @@ export const DEFAULT_CONTENT: GetStartedContent = {
 export const MULTIPLAYER_CODING_CONTENT: GetStartedContent = {
   ...DEFAULT_CONTENT,
   source: "getstarted-multiplayer-coding",
-  title: "Multiplayer coding sessions with Draft",
+  primaryCta: "waitlist",
+  callLabel: "Have Questions? Book a Call",
+  waitlistLabel: "Get a Download Link",
+  title: "Multiplayer Coding Sessions with Draft",
   heading: "Code with your whole team in one agent session.",
   lede: "Invite a teammate into your Claude Code or Codex session. You both prompt the same agent and see the same work. Draft saves what you decide to your company brain.",
   caption: "Two teammates. One session. Saved to your company brain.",

@@ -32,6 +32,32 @@ function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
   );
 }
 
+function CtaButton({
+  primary,
+  label,
+  onClick,
+  expanded,
+  controls,
+}: {
+  primary: boolean;
+  label: string;
+  onClick: () => void;
+  expanded: boolean;
+  controls?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={primary ? "minimal-button getstarted-primary" : "getstarted-call-link"}
+      onClick={onClick}
+      aria-expanded={expanded}
+      aria-controls={controls}
+    >
+      {label} <span aria-hidden="true">↗</span>
+    </button>
+  );
+}
+
 export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?: GetStartedContent }) {
   const { source, media } = content;
   const ph = usePostHog();
@@ -104,28 +130,33 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
     if (!callOpen) handleOpenCall("hero");
   };
 
-  const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => (
-    <div className="getstarted-actions">
-      <button
-        type="button"
-        className="minimal-button getstarted-primary"
+  const waitlistPrimary = content.primaryCta === "waitlist";
+
+  const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => {
+    const call = (
+      <CtaButton
+        primary={!waitlistPrimary}
+        label={content.callLabel}
         onClick={() => handleOpenCall(location)}
-        aria-expanded={callOpen}
-      >
-        Book a call
-        <span aria-hidden="true">↗</span>
-      </button>
-      <button
-        type="button"
-        className="getstarted-call-link"
+        expanded={callOpen}
+      />
+    );
+    const waitlist = (
+      <CtaButton
+        primary={waitlistPrimary}
+        label={content.waitlistLabel}
         onClick={() => handleOpenWaitlist(location)}
-        aria-expanded={waitlistOpen}
-        aria-controls="getstarted-waitlist"
-      >
-        Not ready? Leave your email <span aria-hidden="true">↗</span>
-      </button>
-    </div>
-  );
+        expanded={waitlistOpen}
+        controls="getstarted-waitlist"
+      />
+    );
+    return (
+      <div className="getstarted-actions">
+        {waitlistPrimary ? waitlist : call}
+        {waitlistPrimary ? call : waitlist}
+      </div>
+    );
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -274,14 +305,17 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
 
       {showStickyBar && (
         <div className="getstarted-sticky">
-          <button
-            type="button"
-            className="minimal-button getstarted-primary"
-            onClick={() => handleOpenCall("sticky_bar")}
-          >
-            Book a call
-            <span aria-hidden="true">↗</span>
-          </button>
+          {waitlistPrimary ? (
+            <CtaButton
+              primary
+              label={content.waitlistLabel}
+              onClick={() => handleOpenWaitlist("sticky_bar")}
+              expanded={waitlistOpen}
+              controls="getstarted-waitlist"
+            />
+          ) : (
+            <CtaButton primary label={content.callLabel} onClick={() => handleOpenCall("sticky_bar")} expanded={callOpen} />
+          )}
         </div>
       )}
       <Footer />
