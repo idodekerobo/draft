@@ -1,7 +1,8 @@
 -- Records the first decision for an open permission request.
 -- Returns {outcome: 'created', input}, or {outcome: 'already_decided', by_name, decision},
 -- or {outcome: 'request_closed', reason} when the request ended some other way.
--- p_answers (object of string or string[]), p_message and p_scope ride along in the input payload.
+-- p_answers (object of string or string[]), p_message, p_scope and p_permission_mode ride along in the input payload.
+-- p_permission_mode is the mode a plan approval switches the session to.
 create or replace function create_permission_decision(
   p_session_id uuid,
   p_workspace_id uuid,
@@ -11,7 +12,8 @@ create or replace function create_permission_decision(
   p_decision text,
   p_answers jsonb default null,
   p_message text default null,
-  p_scope text default null
+  p_scope text default null,
+  p_permission_mode text default null
 )
 returns jsonb
 language plpgsql
@@ -35,6 +37,9 @@ begin
   end if;
   if p_scope is not null and p_scope not in ('once', 'session') then
     raise exception 'invalid_scope';
+  end if;
+  if p_permission_mode is not null and p_permission_mode not in ('auto', 'default') then
+    raise exception 'invalid_permission_mode';
   end if;
 
   select status into v_status
@@ -82,12 +87,13 @@ begin
             'decision', p_decision,
             'answers', p_answers,
             'message', nullif(btrim(p_message), ''),
-            'scope', p_scope)))
+            'scope', p_scope,
+            'permissionMode', p_permission_mode)))
   returning * into v_row;
 
   return jsonb_build_object('outcome', 'created', 'input', to_jsonb(v_row));
 end;
 $$;
 
-revoke all on function create_permission_decision(uuid, uuid, uuid, text, text, text, jsonb, text, text) from public;
-grant execute on function create_permission_decision(uuid, uuid, uuid, text, text, text, jsonb, text, text) to service_role;
+revoke all on function create_permission_decision(uuid, uuid, uuid, text, text, text, jsonb, text, text, text) from public;
+grant execute on function create_permission_decision(uuid, uuid, uuid, text, text, text, jsonb, text, text, text) to service_role;

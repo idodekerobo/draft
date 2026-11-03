@@ -92,6 +92,15 @@ describe("deciding a permission request", () => {
     expect((await decide({ decision: "allow" })).status).toBe(409);
   });
 
+  it("passes the mode a plan approval switches to, and refuses any other", async () => {
+    rpcResult = { data: { outcome: "created" }, error: null };
+    expect((await decide({ decision: "allow", permissionMode: "auto" })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args).toMatchObject({ p_permission_mode: "auto" });
+    for (const permissionMode of ["bypassPermissions", 3, "plan"]) {
+      expect((await decide({ decision: "allow", permissionMode })).status).toBe(400);
+    }
+  });
+
   it("passes answers, a reason and a scope to the database", async () => {
     rpcResult = { data: { outcome: "created" }, error: null };
     expect((await decide({ decision: "allow", answers: { ["Q".repeat(1341)]: "A" } })).status).toBe(201);

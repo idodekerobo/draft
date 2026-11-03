@@ -17,7 +17,7 @@ const MAX_ANSWER_CHARS = 2000;
 const MAX_ANSWER_LIST = 50;
 const MAX_MESSAGE_CHARS = 2000;
 
-type Extras = { answers: Record<string, string | string[]> | null; message: string | null; scope: "once" | "session" | null };
+type Extras = { answers: Record<string, string | string[]> | null; message: string | null; scope: "once" | "session" | null; permissionMode: "auto" | "default" | null };
 
 const isShortString = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_ANSWER_CHARS;
 
@@ -50,7 +50,12 @@ function parseExtras(body: Record<string, unknown>): { ok: true; extras: Extras 
     if (body.scope !== "once" && body.scope !== "session") return { ok: false, error: "invalid_scope" };
     scope = body.scope;
   }
-  return { ok: true, extras: { answers, message, scope } };
+  let permissionMode: Extras["permissionMode"] = null;
+  if (body.permissionMode !== undefined && body.permissionMode !== null) {
+    if (body.permissionMode !== "auto" && body.permissionMode !== "default") return { ok: false, error: "invalid_permission_mode" };
+    permissionMode = body.permissionMode;
+  }
+  return { ok: true, extras: { answers, message, scope, permissionMode } };
 }
 
 /** Any member can decide an open permission request. The first decision wins. */
@@ -77,6 +82,7 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
     p_answers: extras.extras.answers,
     p_message: extras.extras.message,
     p_scope: extras.extras.scope,
+    p_permission_mode: extras.extras.permissionMode,
   });
   if (error) return knownDbError(error.message) ?? errorResponse("decision_failed", 500, error, workspaceId, sessionId);
 
