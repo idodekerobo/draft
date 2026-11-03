@@ -6,6 +6,9 @@ const READY = `${RULE}\n❯ \n${RULE}\n  ⏸ manual mode on\n`;
 const RUNNING = `✻ Working… (3s · esc to interrupt)\n${RULE}\n❯ \n${RULE}\n`;
 const PERMISSION = " Do you want to create a.txt?\n ❯ 1. Yes\n   3. No\n Esc to cancel · Tab to amend\n";
 
+const PLAN = " Claude has written up a plan and is ready to execute. Would you like to proceed?\n ❯ 1. Yes, and use auto mode\n   2. Yes, manually approve edits\n   3. Tell Claude what to change\n      shift+tab to approve with this feedback\n ctrl+g to edit in Vim · ~/.claude/plans/p.md\n";
+const UNKNOWN_DIALOG = " Some prompt Draft has never seen\n ❯ Continue\n";
+
 const stop = (id: string, state: "queued" | "delivering" = "queued"): ControlInput => ({ id, kind: "stop", state, author_user_id: "u1", author_name: "Dev", payload: {} });
 const decision = (id: string, requestId: string, value = "allow"): ControlInput => ({ id, kind: "permission_decision", state: "queued", author_user_id: "u1", author_name: "Dev", payload: { requestId, decision: value } });
 
@@ -51,6 +54,18 @@ describe("ControlActions", () => {
     const { actions, log } = setup([stop("s1")], READY);
     await actions.tick();
     expect(log).toEqual(["s1:delivering", "note:Dev pressed Stop, but nothing was running", "s1:consumed"]);
+  });
+
+  it("Stop cancels an open plan dialog, which has no 'Do you want to' line", async () => {
+    const { actions, log } = setup([stop("s1")], PLAN);
+    await actions.tick();
+    expect(log).toContain("escape");
+  });
+
+  it("Stop cancels a dialog Draft does not recognise, so the owner is never stuck", async () => {
+    const { actions, log } = setup([stop("s1")], UNKNOWN_DIALOG);
+    await actions.tick();
+    expect(log).toContain("escape");
   });
 
   it("Stop cancels an open permission dialog", async () => {

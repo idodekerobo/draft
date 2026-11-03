@@ -62,7 +62,7 @@ export function classifyPane(screen: string): PaneState {
 
   const bottom = plain.filter((line) => line.trim() !== "").slice(-DIALOG_LINES).join("\n");
   if (/Enter to select|↑\/↓ to navigate/.test(bottom)) return "question";
-  if (/Do you want to|Esc to cancel · Tab to amend/.test(bottom)) return "permission";
+  if (/Do you want to|Would you like to proceed\?|Esc to cancel · Tab to amend/.test(bottom)) return "permission";
   return "dialog";
 }
 

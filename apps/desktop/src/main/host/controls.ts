@@ -82,10 +82,12 @@ export class ControlActions {
     }
   }
 
-  /** Esc interrupts a running turn and cancels a dialog. At an empty prompt it would do nothing, so the host leaves it. */
+  /** Esc interrupts a running turn and cancels a dialog. At a prompt it would do nothing or clear typed text, so the host leaves it. */
   private async stop(input: ControlInput): Promise<void> {
     const screen = await this.deps.capture();
-    const interrupts = isTurnRunning(screen) || ["permission", "question"].includes(classifyPane(screen));
+    const pane = classifyPane(screen);
+    // Any dialog counts, including one Draft does not recognise, so the owner is never stuck behind it.
+    const interrupts = isTurnRunning(screen) || (pane !== "ready" && pane !== "composer_busy");
     if (interrupts) await this.deps.sendEscape();
     await this.deps.postEvents([
       {
