@@ -180,6 +180,42 @@ describe("Stop", () => {
   });
 });
 
+describe("switching the mode", () => {
+  const mode = (body: unknown) => routes.MODE(request("/x", body));
+  const setHarness = (harness: string, extra: Row = {}) => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-9", host_machine_id: "host-1", status: "live", session_type: "interactive", harness, ...extra }];
+  };
+
+  it("queues a mode change from any member, with the author taken from the caller", async () => {
+    setHarness("claude");
+    rpcResult = { data: { id: "i1" }, error: null };
+    expect((await mode({ permissionMode: "auto" })).status).toBe(201);
+    expect(rpcCalls[0]).toEqual({ fn: "create_session_input", args: { p_session_id: SESSION, p_workspace_id: WS, p_author_user_id: "user-2", p_author_name: "Priya", p_kind: "set_mode", p_payload: { permissionMode: "auto" } } });
+  });
+
+  it("takes only the modes of the session's harness", async () => {
+    setHarness("claude");
+    for (const body of [{ permissionMode: "bypassPermissions" }, { permissionMode: "ask-for-approval" }, { approvalMode: "full-access" }, {}, { permissionMode: 3 }]) {
+      expect((await mode(body)).status).toBe(400);
+    }
+    setHarness("codex");
+    expect((await mode({ permissionMode: "acceptEdits" })).status).toBe(400);
+    expect((await mode({ permissionMode: "plan", approvalMode: "approve-for-me" })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args.p_payload).toEqual({ permissionMode: "plan", approvalMode: "approve-for-me" });
+    expect(rpcCalls).toHaveLength(1);
+  });
+
+  it("refuses a missing, ended or routine session", async () => {
+    tables.sessions = [];
+    expect((await mode({ permissionMode: "plan" })).status).toBe(404);
+    setHarness("claude", { status: "ended" });
+    expect((await mode({ permissionMode: "plan" })).status).toBe(409);
+    setHarness("claude", { session_type: "routine" });
+    expect((await mode({ permissionMode: "plan" })).status).toBe(409);
+    expect(rpcCalls).toEqual([]);
+  });
+});
+
 describe("host events", () => {
   const event = { sourceId: "perm:r1", kind: "permission_request", payload: { requestId: "r1" } };
 

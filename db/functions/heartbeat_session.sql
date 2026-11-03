@@ -1,11 +1,13 @@
--- Records that the host is alive. A host_offline session returns to live.
+-- Records that the host is alive, and the modes the session is in. A host_offline session returns to live.
 -- A session that is still starting stays starting. Writes for an ended session
 -- or from another host are rejected.
 create or replace function heartbeat_session(
   p_session_id uuid,
   p_workspace_id uuid,
   p_host_machine_id text,
-  p_harness_version text default null
+  p_harness_version text default null,
+  p_permission_mode text default null,
+  p_approval_mode text default null
 )
 returns text
 language plpgsql
@@ -36,12 +38,14 @@ begin
   update sessions
   set last_seen = now(),
       status = v_status,
-      harness_version = coalesce(p_harness_version, harness_version)
+      harness_version = coalesce(p_harness_version, harness_version),
+      permission_mode = coalesce(p_permission_mode, permission_mode),
+      approval_mode = coalesce(p_approval_mode, approval_mode)
   where id = p_session_id;
 
   return v_status;
 end;
 $$;
 
-revoke all on function heartbeat_session(uuid, uuid, text, text) from public;
-grant execute on function heartbeat_session(uuid, uuid, text, text) to service_role;
+revoke all on function heartbeat_session(uuid, uuid, text, text, text, text) from public;
+grant execute on function heartbeat_session(uuid, uuid, text, text, text, text) to service_role;

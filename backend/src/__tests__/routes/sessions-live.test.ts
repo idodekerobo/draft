@@ -325,7 +325,12 @@ describe("live session routes", () => {
     rpcResult = { data: "live", error: null };
     const ok = await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", harnessVersion: "2.1.0" }));
     expect(await ok.json()).toEqual({ ok: true, status: "live" });
-    expect(rpcCalls[0]).toEqual({ fn: "heartbeat_session", args: { p_session_id: SESSION, p_workspace_id: WS, p_host_machine_id: "host-1", p_harness_version: "2.1.0" } });
+    expect(rpcCalls[0]).toEqual({ fn: "heartbeat_session", args: { p_session_id: SESSION, p_workspace_id: WS, p_host_machine_id: "host-1", p_harness_version: "2.1.0", p_permission_mode: null, p_approval_mode: null } });
+
+    await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", permissionMode: "plan", approvalMode: "full-access" }));
+    expect(rpcCalls.at(-1)!.args).toMatchObject({ p_permission_mode: "plan", p_approval_mode: "full-access" });
+    await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", permissionMode: "rm -rf", approvalMode: 4 }));
+    expect(rpcCalls.at(-1)!.args).toMatchObject({ p_permission_mode: null, p_approval_mode: null });
 
     expect((await routes.HEARTBEAT(post("/x", {}))).status).toBe(400);
     rpcResult = { data: null, error: { message: "session_ended" } };

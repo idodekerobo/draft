@@ -348,6 +348,8 @@ export interface SessionRow {
   raw_uploaded_at: string | null;
   scheduled_task_id: string | null;
   idempotency_key: string | null;
+  permission_mode: string | null;
+  approval_mode: string | null;
 }
 
 export interface SessionEventRow {
@@ -360,7 +362,7 @@ export interface SessionEventRow {
   created_at: string;
 }
 
-export type SessionInputKind = "message" | "permission_decision" | "stop" | "end";
+export type SessionInputKind = "message" | "permission_decision" | "stop" | "end" | "set_mode";
 export type SessionInputState = "queued" | "delivering" | "consumed" | "failed" | "uncertain" | "cancelled";
 
 export interface SessionInputRow {

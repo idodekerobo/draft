@@ -6,11 +6,27 @@ export interface HarnessModel {
   label: string;
 }
 
+/** One choice in a session's mode menu. `value` goes to the host. */
+export interface HarnessModeOption {
+  value: string;
+  label: string;
+  description: string;
+}
+
+/** The modes a running session can be switched between. Empty lists mean the harness has none. */
+export interface HarnessModes {
+  /** Claude: its four permission modes. Codex: its collaboration mode. In menu order, which is also the Shift+Tab order. */
+  permission: ReadonlyArray<HarnessModeOption>;
+  /** Codex only: how often it asks before acting. */
+  approval: ReadonlyArray<HarnessModeOption>;
+}
+
 export interface HarnessDefinition {
   id: string;
   label: string;
   models: ReadonlyArray<HarnessModel>;
   capabilities: { terminal: boolean; approvals: boolean; steer: boolean };
+  modes: HarnessModes;
   /** The CLI release the host was tested with: this major and minor. */
   testedVersion: { major: number; minor: number };
   /** How a cloud routine runs this harness. Empty when routines do not support it yet. */
@@ -31,6 +47,15 @@ export const HARNESSES = [
       { alias: "haiku", label: "Haiku" },
     ],
     capabilities: { terminal: true, approvals: true, steer: false },
+    modes: {
+      permission: [
+        { value: "default", label: "Manual", description: "Asks before edits and commands" },
+        { value: "auto", label: "Auto", description: "Runs on its own; a classifier blocks risky actions" },
+        { value: "acceptEdits", label: "Accept edits", description: "Applies file edits; commands still ask" },
+        { value: "plan", label: "Plan", description: "Plans only, and makes no edits" },
+      ],
+      approval: [],
+    },
     testedVersion: { major: 2, minor: 1 },
     routineModes: ["print"],
   },
@@ -49,6 +74,17 @@ export const HARNESSES = [
       { alias: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
     ],
     capabilities: { terminal: true, approvals: true, steer: true },
+    modes: {
+      permission: [
+        { value: "default", label: "Default", description: "Works on the task and asks when it needs to" },
+        { value: "plan", label: "Plan", description: "Plans first, and asks questions before it acts" },
+      ],
+      approval: [
+        { value: "ask-for-approval", label: "Ask for approval", description: "Works in the folder; asks for outside edits and the internet" },
+        { value: "approve-for-me", label: "Approve for me", description: "Only asks for actions a reviewer finds unsafe" },
+        { value: "full-access", label: "Full access", description: "Runs everything with no prompts or sandbox" },
+      ],
+    },
     testedVersion: { major: 0, minor: 165 },
     routineModes: ["exec"],
     installUrl: "https://learn.chatgpt.com/docs/codex/cli#getting-started",
@@ -68,6 +104,11 @@ export const isHarnessId = (id: unknown): id is HarnessId => typeof id === "stri
 /** The harness's label, or the raw id for one this build does not know. */
 export function harnessLabel(id: string): string {
   return getHarness(id)?.label ?? id;
+}
+
+/** The mode menu for a harness, or empty lists for one this build does not know. */
+export function harnessModes(id: string | null | undefined): HarnessModes {
+  return getHarness(id)?.modes ?? { permission: [], approval: [] };
 }
 
 export const harnessInstallUrl = (id: string): string | null => getHarness(id)?.installUrl ?? null;

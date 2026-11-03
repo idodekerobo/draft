@@ -83,6 +83,7 @@ export const routes = {
   "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId/state": { POST: withCors(sessionsLiveInputs.INPUT_STATE), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision": { POST: withCors(sessionsLiveApprovals.DECISION), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/stop": { POST: withCors(sessionsLiveApprovals.STOP), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/mode": { POST: withCors(sessionsLiveApprovals.MODE), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/host-events": { POST: withCors(sessionsLiveApprovals.HOST_EVENTS), OPTIONS },
   "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
   "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
