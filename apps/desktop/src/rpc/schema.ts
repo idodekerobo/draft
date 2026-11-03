@@ -363,7 +363,7 @@ export type AppRPCType = {
       };
 
       /** Ask the host to interrupt the running turn of a live session. `withdrawn` holds the caller's queued messages that were pulled back. */
-      stopLiveSession: { params: { sessionId: string }; response: { ok: true; withdrawn: string[] } | { ok: false; error: string } };
+      stopLiveSession: { params: { sessionId: string; keepQueued?: boolean }; response: { ok: true; withdrawn: string[] } | { ok: false; error: string } };
 
       /** End a live session that runs on this computer. */
       endLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };

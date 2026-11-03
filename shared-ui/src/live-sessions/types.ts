@@ -163,7 +163,7 @@ export interface LiveSessionsApi {
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer" | "cancel"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
-  stop(sessionId: string): Promise<{ withdrawn: string[] }>;
+  stop(sessionId: string, options?: { keepQueued?: boolean }): Promise<{ withdrawn: string[] }>;
   /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
   resume?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */

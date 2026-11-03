@@ -179,6 +179,30 @@ describe("SessionView", () => {
     expect(screen.getByText("B")).toBeTruthy();
   });
 
+  describe("a prompt in the terminal with no card", () => {
+    const blocked = { id: "i1", author_user_id: "u9", author_name: "Dev", text: "go on", state: "queued" as const, reason: "dialog", created_at: "2026-10-27T00:00:00Z", updated_at: "", mine: true };
+    const ownerSession = { ...session, mine: true };
+    const setup = (live: LiveSession = ownerSession) => {
+      const stop = mock(async (..._args: unknown[]) => ({ withdrawn: [] as string[] }));
+      render(<SessionView api={{ ...api, stop, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [blocked] }) }} sessionId="s1" />);
+      return stop;
+    };
+
+    it("is dismissed by the owner's button or Esc, and the queued message stays", async () => {
+      const stop = setup();
+      fireEvent.click(await screen.findByRole("button", { name: /Dismiss in terminal/ }));
+      await waitFor(() => expect(stop).toHaveBeenCalledWith("s1", { keepQueued: true }));
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
+    });
+
+    it("is not offered to someone who does not own the session", async () => {
+      setup({ ...session, mine: false });
+      await screen.findByText("go on");
+      expect(screen.queryByRole("button", { name: /Dismiss in terminal/ })).toBeNull();
+    });
+  });
+
   describe("an open question", () => {
     const question = { key: "Pick", question: "Pick", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "A" }, { label: "B" }] };
     const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "AskUserQuestion", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];

@@ -469,9 +469,9 @@ export async function decideLiveSessionApproval(
   }
 }
 
-export async function stopLiveSession(sessionId: string): Promise<{ ok: true; withdrawn: string[] } | { ok: false; error: string }> {
+export async function stopLiveSession(sessionId: string, keepQueued = false): Promise<{ ok: true; withdrawn: string[] } | { ok: false; error: string }> {
   try {
-    const response = await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: "{}" });
+    const response = await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: JSON.stringify(keepQueued ? { keepQueued: true } : {}) });
     const body = (await response.json().catch(() => ({}))) as { withdrawn?: Array<{ text: string }> };
     return { ok: true, withdrawn: (body.withdrawn ?? []).map((input) => input.text) };
   } catch (error) {

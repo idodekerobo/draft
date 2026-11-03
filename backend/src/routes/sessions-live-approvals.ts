@@ -127,9 +127,13 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
 
+  // Dismissing a prompt keeps the caller's queued messages, so they go through once it is gone.
+  const parsed = await readBody(req);
+  const keepQueued = parsed.ok && parsed.body.keepQueued === true;
+
   let withdrawn: { id: string; text: string }[];
   try {
-    withdrawn = await withdrawQueuedMessages(workspaceId, sessionId, caller.userId);
+    withdrawn = keepQueued ? [] : await withdrawQueuedMessages(workspaceId, sessionId, caller.userId);
   } catch (error) {
     return errorResponse("stop_failed", 500, error, workspaceId, sessionId);
   }

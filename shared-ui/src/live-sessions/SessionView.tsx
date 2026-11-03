@@ -320,15 +320,19 @@ function LoadedSession({
     [canAnswer, openQuestions, skipRequest, inputs],
   );
   const firstOpenRequest = canAnswer ? approvals[0] : undefined;
+  // A prompt in the terminal that Draft shows no card for. Only the owner can dismiss it, and queued messages stay.
+  const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && (i.reason === "dialog" || i.reason === "permission_prompt" || i.reason === "question_prompt"));
+  const dismissPrompt = useCallback(() => void api.stop(sessionId, { keepQueued: true }).then(() => refresh()).catch(() => setActionError("Could not dismiss the prompt. Try again.")), [api, sessionId, refresh]);
   useEffect(() => {
-    if (!firstOpenRequest) return;
+    if (!firstOpenRequest && !blockedByPrompt) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-      void skipRequest(firstOpenRequest.requestId).catch(() => {});
+      if (firstOpenRequest) void skipRequest(firstOpenRequest.requestId).catch(() => {});
+      else dismissPrompt();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [firstOpenRequest, skipRequest]);
+  }, [firstOpenRequest, blockedByPrompt, skipRequest, dismissPrompt]);
 
   const chooseMenuItem = useCallback((item: SessionMenuItem) => {
     if (item.confirm) setConfirming(item);
@@ -395,6 +399,7 @@ function LoadedSession({
             onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
             onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
             onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
+            onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}
             onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void Promise.all(openQuestions.map((q) => skipRequest(q.requestId))).catch(() => {}) : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
@@ -418,7 +423,7 @@ function LoadedSession({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

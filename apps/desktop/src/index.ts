@@ -788,7 +788,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       decideLiveSessionApproval: ({ sessionId, requestId, ...response }) => decideLiveSessionApproval(sessionId, requestId, response),
 
-      stopLiveSession: ({ sessionId }) => stopLiveSession(sessionId),
+      stopLiveSession: ({ sessionId, keepQueued }) => stopLiveSession(sessionId, keepQueued),
 
       endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
 

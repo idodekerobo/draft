@@ -40,9 +40,9 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     sendMessage: (sessionId, text) => post(`${base}/${sessionId}/inputs`, { text }),
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
     decideApproval: (sessionId, requestId, response) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, response),
-    stop: async (sessionId) => {
+    stop: async (sessionId, options) => {
       try {
-        const result = await apiFetch<{ withdrawn?: Array<{ text: string }> }>(`${base}/${sessionId}/stop`, { method: "POST", body: "{}" });
+        const result = await apiFetch<{ withdrawn?: Array<{ text: string }> }>(`${base}/${sessionId}/stop`, { method: "POST", body: JSON.stringify(options?.keepQueued ? { keepQueued: true } : {}) });
         return { withdrawn: (result.withdrawn ?? []).map((input) => input.text) };
       } catch (error) {
         if (error instanceof ApiError) throw new Error(error.code);

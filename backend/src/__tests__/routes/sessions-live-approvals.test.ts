@@ -154,6 +154,13 @@ describe("Stop", () => {
     expect(rpcCalls[1]!.args).toMatchObject({ p_kind: "stop" });
   });
 
+  it("keeps the caller's queued messages when only a prompt is dismissed", async () => {
+    tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
+    const res = await routes.STOP(request("/x", { keepQueued: true }));
+    expect(await res.json()).toEqual({ ok: true, withdrawn: [] });
+    expect(rpcCalls.map((c) => c.args.p_kind ?? c.args.p_to)).toEqual(["stop"]);
+  });
+
   it("leaves a message the host claimed first", async () => {
     tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
     rpcResult = { data: false, error: null };

@@ -142,4 +142,15 @@ describe("SessionStream", () => {
     view.rerender(<SessionStream items={[pending({ ...base, state: "delivering", reason: null })]} onCancel={onCancel} onShowRequest={onShowRequest} />);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
+
+  it("offers the owner a way to dismiss a prompt that blocks a queued message", () => {
+    const base: ComposerInput = { id: "i1", author_user_id: "u1", author_name: "Priya", text: "run tests", state: "queued", reason: "dialog", created_at: new Date().toISOString(), updated_at: "", mine: true };
+    const item = { type: "pending", key: "i1", input: base, author: "Priya", ownerName: "Maya", hostOffline: false } as const;
+    const onDismissPrompt = mock(() => {});
+    const view = render(<SessionStream items={[item]} onDismissPrompt={onDismissPrompt} />);
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss in terminal/ }));
+    expect(onDismissPrompt).toHaveBeenCalledTimes(1);
+    view.rerender(<SessionStream items={[{ ...item, input: { ...base, reason: "composer_busy" } }]} onDismissPrompt={onDismissPrompt} />);
+    expect(screen.queryByRole("button", { name: /Dismiss in terminal/ })).toBeNull();
+  });
 });
