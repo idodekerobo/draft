@@ -112,14 +112,14 @@ describe("approvals", () => {
     expect(plan).toMatchObject({ kind: "plan", plan: "# Plan" });
   });
 
-  it("keeps what the decider answered or wrote on the resolved request", () => {
+  it("keeps what the decider answered on the resolved request", () => {
     const [item] = buildStreamItems([
       event("permission_request", { requestId: "r1", kind: "question", name: "AskUserQuestion" }),
-      event("permission_resolved", { requestId: "r1", reason: "decided", decision: "allow", by_name: "Dev", answers: { Pick: ["A", "B"] }, message: "why" }),
+      event("permission_resolved", { requestId: "r1", reason: "decided", decision: "allow", by_name: "Dev", answers: { Pick: ["A", "B"] } }),
     ]);
-    expect(item).toMatchObject({ resolved: { answers: { Pick: ["A", "B"] }, message: "why" } });
+    expect(item).toMatchObject({ resolved: { answers: { Pick: ["A", "B"] } } });
     const [plain] = buildStreamItems([request("r2"), event("permission_resolved", { requestId: "r2", reason: "expired" })]);
-    expect(plain).toMatchObject({ resolved: { answers: null, message: null } });
+    expect(plain).toMatchObject({ resolved: { answers: null } });
   });
 
   it("ignores a result for an unknown request", () => {

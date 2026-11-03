@@ -5,6 +5,7 @@ import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
 import { PlanCard } from "./PlanCard";
 import { ModeMenu, nextMode, useSwitching } from "./ModeMenu";
+import { shortName } from "./input-status";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
@@ -12,6 +13,7 @@ import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
 import { getHarness, harnessModes } from "draft-core/harnesses";
+import { isPromptBlock } from "draft-core/live-sessions";
 import { agentLabel } from "../routines/agent-label";
 import { CheckIcon, LinkIcon } from "./MessageActions";
 import { sessionBanner } from "./session-banner";
@@ -239,7 +241,7 @@ function LoadedSession({
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
   const ownerName = session.owner_name ?? "the owner";
   const harnessId = session.harness ?? "claude";
-  const agentName = (getHarness(harnessId)?.label ?? "Claude").split(" ")[0]!;
+  const agentName = shortName(harnessId);
   // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
   const hasTerminal = harnessId === "claude";
   const hostOffline = session.status === "host_offline";
@@ -319,12 +321,13 @@ function LoadedSession({
   const openQuestions = useMemo(() => approvals.filter((a) => a.kind === "question"), [approvals]);
   const canAnswer = session.status !== "ended" && session.session_type !== "routine";
   // A new message replaces an open question, as typing over a prompt does in the terminal.
+  const skipQuestions = useCallback(async () => void (await Promise.all(openQuestions.map((q) => skipRequest(q.requestId).catch(() => {})))), [openQuestions, skipRequest]);
   const sendMessage = useCallback(
     async (text: string) => {
-      if (canAnswer && openQuestions.length > 0) await Promise.all(openQuestions.map((q) => skipRequest(q.requestId).catch(() => {})));
+      if (canAnswer) await skipQuestions();
       return inputs.send(text);
     },
-    [canAnswer, openQuestions, skipRequest, inputs],
+    [canAnswer, skipQuestions, inputs],
   );
   const modes = harnessModes(session.harness ?? "claude");
   const permissionSwitch = useSwitching(session.permission_mode);
@@ -335,12 +338,12 @@ function LoadedSession({
       if (change.permissionMode) permissionSwitch.start(change.permissionMode);
       if (change.approvalMode) approvalSwitch.start(change.approvalMode);
       void api.setMode(sessionId, change).catch(() => {
-        permissionSwitch.start("");
-        approvalSwitch.start("");
+        permissionSwitch.clear();
+        approvalSwitch.clear();
         setModeError("Could not change the mode. Try again.");
       });
     },
-    [api, sessionId, permissionSwitch, approvalSwitch],
+    [api, sessionId, permissionSwitch.start, permissionSwitch.clear, approvalSwitch.start, approvalSwitch.clear],
   );
   const cycleMode = useCallback(() => {
     const next = permissionSwitch.target ? null : nextMode(modes.permission, session.permission_mode);
@@ -348,7 +351,7 @@ function LoadedSession({
   }, [modes.permission, session.permission_mode, permissionSwitch.target, changeMode]);
 
   const showModes = canAnswer && (modes.permission.length > 0 || modes.approval.length > 0);
-  const modeControl = (
+  const modeControl = !showModes ? undefined : (
     <>
       {modes.permission.length > 0 && (
         <ModeMenu
@@ -365,10 +368,9 @@ function LoadedSession({
       {modeError && <p className="ui-error ui-mode__error" role="alert">{modeError}</p>}
     </>
   );
-  const openCount = approvals.length;
   const hadOpen = useRef(false);
   useEffect(() => {
-    if (openCount > 0) {
+    if (approvals.length > 0) {
       hadOpen.current = true;
       return;
     }
@@ -377,10 +379,10 @@ function LoadedSession({
     const active = document.activeElement;
     // The card that held focus is gone, so focus goes back to the message box. Focus elsewhere stays.
     if (!active || active === document.body || active.closest(".ui-approval")) document.getElementById("session-message")?.focus();
-  }, [openCount]);
+  }, [approvals.length]);
   const firstOpenRequest = canAnswer ? approvals[0] : undefined;
   // A prompt in the terminal that Draft shows no card for. Only the owner can dismiss it, and queued messages stay.
-  const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && (i.reason === "dialog" || i.reason === "permission_prompt" || i.reason === "question_prompt"));
+  const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && isPromptBlock(i.reason));
   const dismissPrompt = useCallback(() => void api.stop(sessionId, { keepQueued: true }).then(() => refresh()).catch(() => setActionError("Could not dismiss the prompt. Try again.")), [api, sessionId, refresh]);
   useEffect(() => {
     if (!firstOpenRequest && !blockedByPrompt) return;
@@ -459,7 +461,7 @@ function LoadedSession({
             onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
             onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
             onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}
-            onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void Promise.all(openQuestions.map((q) => skipRequest(q.requestId))).catch(() => {}) : undefined}
+            onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void skipQuestions() : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />
@@ -484,7 +486,7 @@ function LoadedSession({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={showModes ? modeControl : undefined} onCycleMode={showModes && modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

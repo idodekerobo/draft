@@ -2,11 +2,17 @@ import { Fragment, useEffect, useState } from "react";
 import { renderMarkdown } from "../context/markdown";
 import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
+import { isPromptBlock } from "draft-core/live-sessions";
 import { inputStatusLine, isBlocked } from "./input-status";
 import { approvalOutcome, isMine, type StreamItem } from "./stream-items";
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
+}
+
+/** A text-style action under a waiting message. */
+function ActionLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" className="ui-link ui-stream__steer" onClick={onClick}>{children}</button>;
 }
 
 const SLOW_SEND_MS = 10_000;
@@ -27,19 +33,19 @@ function PendingBubble({ item, mine, harness, onSteer, onCancel, onShowRequest, 
       <p className="ui-stream__bubble">{input.text}</p>
       {showNote && <span className="ui-muted ui-stream__pending-note" role="status">{inputStatusLine(input, item.ownerName, now, item.hostOffline, harness)}</span>}
       {onSteer && input.mine && input.state === "queued" && input.reason === "composer_busy" && (
-        <button type="button" className="ui-link ui-stream__steer" onClick={() => onSteer(input.id)}>Send now</button>
+        <ActionLink onClick={() => onSteer(input.id)}>Send now</ActionLink>
       )}
       {onSkipQuestions && input.state === "queued" && input.reason === "question_prompt" && (
-        <button type="button" className="ui-link ui-stream__steer" onClick={onSkipQuestions}>Send now</button>
+        <ActionLink onClick={onSkipQuestions}>Send now</ActionLink>
       )}
-      {onDismissPrompt && input.state === "queued" && (input.reason === "dialog" || input.reason === "permission_prompt" || input.reason === "question_prompt") && (
-        <button type="button" className="ui-link ui-stream__steer" onClick={onDismissPrompt}>Dismiss in terminal <kbd className="ui-kbd">Esc</kbd></button>
+      {onDismissPrompt && input.state === "queued" && isPromptBlock(input.reason) && (
+        <ActionLink onClick={onDismissPrompt}>Dismiss in terminal <kbd className="ui-kbd">Esc</kbd></ActionLink>
       )}
       {onShowRequest && input.state === "queued" && input.reason === "permission_prompt" && (
-        <button type="button" className="ui-link ui-stream__steer" onClick={onShowRequest}>Review it</button>
+        <ActionLink onClick={onShowRequest}>Review it</ActionLink>
       )}
       {onCancel && input.mine && input.state === "queued" && (
-        <button type="button" className="ui-link ui-stream__steer" onClick={() => onCancel(input.id)}>Cancel</button>
+        <ActionLink onClick={() => onCancel(input.id)}>Cancel</ActionLink>
       )}
     </>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { HarnessModeOption } from "draft-core/harnesses";
 import { usePopover } from "./usePopover";
 
@@ -68,8 +68,10 @@ export function ModeMenu({
 }
 
 /** Tracks a mode the person just chose, until the session reports it or the wait runs out. */
-export function useSwitching(actual: string | null | undefined): { target: string | null; start(value: string): void } {
+export function useSwitching(actual: string | null | undefined): { target: string | null; start(value: string): void; clear(): void } {
   const [target, setTarget] = useState<string | null>(null);
+  const start = useCallback((value: string) => setTarget(value), []);
+  const clear = useCallback(() => setTarget(null), []);
   useEffect(() => {
     if (target !== null && actual === target) setTarget(null);
   }, [actual, target]);
@@ -78,5 +80,5 @@ export function useSwitching(actual: string | null | undefined): { target: strin
     const timer = setTimeout(() => setTarget(null), SWITCH_WAIT_MS);
     return () => clearTimeout(timer);
   }, [target]);
-  return { target, start: setTarget };
+  return { target, start, clear };
 }

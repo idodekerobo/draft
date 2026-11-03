@@ -1,11 +1,9 @@
 "use client";
 
 import { useId, useRef, useState, useEffect } from "react";
-import { closedMessage } from "./approval-result";
+import { SendStatus, useSend } from "./useSend";
 import type { OpenApproval } from "./stream-items";
 import type { AnswerValue, ApprovalResult, LiveQuestion } from "./types";
-
-type Phase = { name: "idle" } | { name: "sending" } | { name: "sent" } | { name: "closed"; message: string } | { name: "failed" };
 
 /** What a person picked for one question. `other` is typed text; `picked` holds option labels. */
 interface Choice {
@@ -36,7 +34,6 @@ export function collectAnswers(questions: LiveQuestion[], choices: Record<string
   return answers;
 }
 
-/** Claude's questions as a form. Anyone on the team can answer; the first answer wins. */
 function OtherText({ label, secret, value, onChange }: { label: string; secret: boolean; value: string; onChange(value: string): void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -49,6 +46,7 @@ function OtherText({ label, secret, value, onChange }: { label: string; secret: 
   return <textarea ref={ref} className="ui-question__other" rows={1} aria-label={label} value={value} autoFocus onChange={(e) => onChange(e.target.value)} />;
 }
 
+/** Claude's questions as a form. Anyone on the team can answer; the first answer wins. */
 export function QuestionCard({
   approval,
   hostName,
@@ -67,25 +65,16 @@ export function QuestionCard({
 }) {
   const id = useId();
   const [choices, setChoices] = useState<Record<string, Choice>>({});
-  const [phase, setPhase] = useState<Phase>({ name: "idle" });
+  const { phase, run, busy, sendingWhat } = useSend();
   const answers = collectAnswers(approval.questions, choices);
-  const busy = phase.name === "sending" || phase.name === "sent";
 
   const update = (key: string, change: (current: Choice) => Choice) => setChoices((all) => ({ ...all, [key]: change(all[key] ?? EMPTY) }));
 
-  async function submit() {
+  const submit = () => {
     if (!answers) return;
-    setPhase({ name: "sending" });
-    try {
-      const byPosition = Object.fromEntries(approval.questions.map((q, index) => [String(index), answers[q.key]!]));
-      const result = await onAnswer(approval.requestId, byPosition);
-      if (result.ok) setPhase({ name: "sent" });
-      else if (result.error === "failed") setPhase({ name: "failed" });
-      else setPhase({ name: "closed", message: closedMessage(result) });
-    } catch {
-      setPhase({ name: "failed" });
-    }
-  }
+    const byPosition = Object.fromEntries(approval.questions.map((q, index) => [String(index), answers[q.key]!]));
+    return run("answer", () => onAnswer(approval.requestId, byPosition));
+  };
 
   return (
     <section className="ui-approval ui-question" role="group" aria-label={`Question from ${agent}`}>
@@ -149,15 +138,14 @@ export function QuestionCard({
       ) : (
         <div className="ui-approval__actions">
           <button type="button" className="ui-btn ui-btn--primary" disabled={busy || !answers} onClick={() => void submit()}>
-            {phase.name === "sending" ? "Sending…" : "Send answer"}
+            {sendingWhat("answer") ? "Sending…" : "Send answer"}
           </button>
           {onSkip && (
             <button type="button" className="ui-btn" disabled={busy} onClick={() => void onSkip(approval.requestId)}>
               Skip <kbd className="ui-kbd">Esc</kbd>
             </button>
           )}
-          {phase.name === "sent" && <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>}
-          {phase.name === "failed" && <span className="ui-error ui-approval__status" role="alert">Could not send. Try again.</span>}
+          <SendStatus phase={phase} hostName={hostName} />
         </div>
       )}
     </section>

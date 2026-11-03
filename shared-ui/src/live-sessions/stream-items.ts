@@ -28,7 +28,6 @@ export type StreamItem =
         byName: string | null;
         at: string;
         answers: Record<string, AnswerValue> | null;
-        message: string | null;
         permissionMode: string | null;
       } | null;
     }
@@ -137,7 +136,6 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
             byName: payload.by_name ?? null,
             at: event.created_at,
             answers: payload.answers ?? null,
-            message: payload.message ?? null,
             permissionMode: payload.permissionMode ?? null,
           };
         }
