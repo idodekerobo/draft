@@ -109,12 +109,13 @@ export function questionsFromInput(input: unknown): Question[] {
   return questions;
 }
 
-/** Keeps answers to the asked questions only, as strings or lists of strings. */
+/** Keeps answers to the asked questions only, as strings or lists of strings. They arrive by position, or by question text from older clients. */
 function cleanAnswers(answers: unknown, questions: Question[]): Record<string, AnswerValue> {
   const clean: Record<string, AnswerValue> = {};
   if (!answers || typeof answers !== "object") return clean;
-  for (const question of questions) {
-    const value = (answers as Record<string, unknown>)[question.key];
+  const given = answers as Record<string, unknown>;
+  for (const [index, question] of questions.entries()) {
+    const value = given[String(index)] ?? given[question.key];
     if (typeof value === "string") clean[question.key] = value;
     else if (Array.isArray(value) && value.every((v) => typeof v === "string")) clean[question.key] = value as string[];
   }

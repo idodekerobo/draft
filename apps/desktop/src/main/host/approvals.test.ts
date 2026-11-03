@@ -211,6 +211,27 @@ describe("ApprovalBroker", () => {
   });
 });
 
+describe("answers by position", () => {
+  const long = "Q".repeat(1341);
+  const ask = { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: long, header: "H", multiSelect: false, options: [{ label: "A", description: "a" }, { label: "B", description: "b" }] }, { question: "Size", multiSelect: true, options: [{ label: "S", description: "s" }, { label: "L", description: "l" }] }] } };
+
+  it("maps answers keyed by position to the question text Claude expects, even for a very long question", async () => {
+    const { broker } = setup();
+    const held = broker.hold(ask, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { answers: { "0": "typed", "1": ["S", "L"] } });
+    expect(await held).toEqual({ behavior: "allow", updatedInput: { ...ask.tool_input, answers: { [long]: "typed", Size: ["S", "L"] } } });
+  });
+
+  it("still takes answers keyed by question text from an older client", async () => {
+    const { broker } = setup();
+    const held = broker.hold(ask, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { answers: { Size: ["L"], [long]: "A" } });
+    expect(await held).toMatchObject({ updatedInput: { answers: { [long]: "A", Size: ["L"] } } });
+  });
+});
+
 describe("summarizeToolInput", () => {
   it("keeps a small input and cuts a large one", () => {
     expect(summarizeToolInput({ a: 1 })).toEqual({ input: { a: 1 }, input_truncated: false });

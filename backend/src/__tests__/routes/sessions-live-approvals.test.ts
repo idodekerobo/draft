@@ -94,6 +94,8 @@ describe("deciding a permission request", () => {
 
   it("passes answers, a reason and a scope to the database", async () => {
     rpcResult = { data: { outcome: "created" }, error: null };
+    expect((await decide({ decision: "allow", answers: { ["Q".repeat(1341)]: "A" } })).status).toBe(201);
+    rpcCalls = [];
     const res = await decide({ decision: "allow", answers: { "Pick colors": ["Red", "Blue"], Size: "L" }, message: "  because  ", scope: "session" });
     expect(res.status).toBe(201);
     expect(rpcCalls[0]!.args).toMatchObject({ p_answers: { "Pick colors": ["Red", "Blue"], Size: "L" }, p_message: "because", p_scope: "session" });

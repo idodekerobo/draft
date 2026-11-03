@@ -72,7 +72,8 @@ export function QuestionCard({
     if (!answers) return;
     setPhase({ name: "sending" });
     try {
-      const result = await onAnswer(approval.requestId, answers);
+      const byPosition = Object.fromEntries(approval.questions.map((q, index) => [String(index), answers[q.key]!]));
+      const result = await onAnswer(approval.requestId, byPosition);
       if (result.ok) setPhase({ name: "sent" });
       else if (result.error === "failed") setPhase({ name: "failed" });
       else setPhase({ name: "closed", message: closedMessage(result) });

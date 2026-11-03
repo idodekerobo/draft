@@ -62,7 +62,7 @@ describe("QuestionCard", () => {
     fireEvent.click(screen.getByRole("radio", { name: "S" }));
     fireEvent.click(screen.getByRole("radio", { name: "L" }));
     fireEvent.click(send());
-    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "Pick colors": ["Red", "Blue"], "Pick a size": "L" }));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "0": ["Red", "Blue"], "1": "L" }));
     await screen.findByText(/Waiting for Maya's MacBook/);
     expect(send().disabled).toBe(true);
   });
@@ -74,7 +74,7 @@ describe("QuestionCard", () => {
     expect(send().disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Your answer to: Pick a size"), { target: { value: "Huge" } });
     fireEvent.click(send());
-    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "Pick a size": "Huge" }));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "0": "Huge" }));
   });
 
   it("hides a secret answer while it is typed", () => {

@@ -12,7 +12,7 @@ const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 const MAX_ANSWERS = 20;
-const MAX_ANSWER_KEY_CHARS = 1000;
+const MAX_ANSWER_KEY_CHARS = 4000;
 const MAX_ANSWER_CHARS = 2000;
 const MAX_ANSWER_LIST = 50;
 const MAX_MESSAGE_CHARS = 2000;

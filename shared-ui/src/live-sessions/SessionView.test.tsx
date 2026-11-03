@@ -169,7 +169,7 @@ describe("SessionView", () => {
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "B" }));
     fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
-    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "allow", answers: { Pick: "B" } }));
+    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "allow", answers: { "0": "B" } }));
     view.unmount();
 
     const resolved = [...open, { seq: 2, source_id: "b", kind: "permission_resolved" as const, payload: { requestId: "q1", reason: "decided", decision: "allow" as const, by_name: "Dev", answers: { Pick: "B" } }, created_at: "2026-10-27T10:01:00Z" }];
