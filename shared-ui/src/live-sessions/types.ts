@@ -95,6 +95,8 @@ export interface LiveSessionEventPayload {
   kind?: ApprovalKind;
   questions?: LiveQuestion[];
   plan?: string;
+  /** assistant_text: an early copy of a message that ends in a request. The transcript sends the real one later. */
+  preview?: boolean;
   /** The harness can allow this for the rest of the session. */
   allowSession?: boolean;
   /** permission_request for a plan: the mode the session was in. permission_resolved: the mode the approval switched to. */

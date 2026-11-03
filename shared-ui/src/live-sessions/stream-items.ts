@@ -62,11 +62,23 @@ export function toolSummary(input: unknown): string {
   return typeof first === "string" ? oneLine(first) : "";
 }
 
+const PREFIX_CHARS = 60;
+
+/** Letters and digits only, so Markdown marks and spacing do not stop two copies of a message from matching. */
+const plain = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+function sameMessage(a: string, b: string): boolean {
+  if (a === b) return true;
+  return a.length >= PREFIX_CHARS && b.length >= PREFIX_CHARS && a.slice(0, PREFIX_CHARS) === b.slice(0, PREFIX_CHARS);
+}
+
 /** Turns the event log into display items. A tool result joins its tool call by id. */
 export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
   const items: StreamItem[] = [];
   const toolsById = new Map<string, Extract<StreamItem, { type: "tool" }>>();
   const approvalsById = new Map<string, Extract<StreamItem, { type: "approval" }>>();
+  // Early copies of messages that end in a request. The transcript's own copy arrives after the request ends and is dropped.
+  const previews: string[] = [];
 
   for (const event of events) {
     const { payload } = event;
@@ -74,11 +86,22 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
 
     switch (event.kind) {
       case "user_message":
+        previews.length = 0;
         items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), authorUserId: event.author_user_id ?? null, authorName: event.author_name ?? null, agentId });
         break;
-      case "assistant_text":
+      case "assistant_text": {
+        const key = plain(payload.text ?? "");
+        if (payload.preview) previews.push(key);
+        else {
+          const match = previews.findIndex((p) => sameMessage(p, key));
+          if (match >= 0) {
+            previews.splice(match, 1);
+            break;
+          }
+        }
         items.push({ type: "assistant", seq: event.seq, at: event.created_at, text: payload.text ?? "", agentId });
         break;
+      }
       case "thinking":
         items.push({ type: "thinking", seq: event.seq, text: payload.text ?? "", agentId });
         break;

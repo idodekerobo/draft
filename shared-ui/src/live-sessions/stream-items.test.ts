@@ -183,4 +183,41 @@ describe("isMine", () => {
     expect(outcome({ decision: "allow", permissionMode: "default" })).toMatch(/^Approved by Dev, manual edits, /);
     expect(outcome({ decision: "deny", message: "2 steps" })).toMatch(/^Dev asked for changes, /);
   });
+
+  describe("an early copy of a message that ends in a request", () => {
+    const at = "2026-10-27T10:00:00Z";
+    const ev = (seq: number, kind: LiveSessionEventKind, payload: LiveSessionEventPayload): LiveSessionEvent => ({ seq, source_id: `s${seq}`, kind, payload, created_at: at });
+    const texts = (events: LiveSessionEvent[]) => buildStreamItems(events).filter((i) => i.type === "assistant").map((i) => (i as { text: string }).text);
+
+    it("shows once: the transcript's copy is dropped, even when its Markdown differs", () => {
+      const events = [
+        ev(1, "assistant_text", { text: "I will run **the tests** now, then report.", preview: true }),
+        ev(2, "permission_request", { requestId: "r1", kind: "approval", name: "Bash" }),
+        ev(3, "permission_resolved", { requestId: "r1", reason: "decided", decision: "allow" }),
+        ev(4, "assistant_text", { text: "I will run the tests now, then report." }),
+        ev(5, "assistant_text", { text: "All green." }),
+      ];
+      expect(texts(events)).toEqual(["I will run **the tests** now, then report.", "All green."]);
+    });
+
+    it("shows the early copy alone while the request is open, and the transcript's copy alone when there is none", () => {
+      expect(texts([ev(1, "assistant_text", { text: "Which one?", preview: true })])).toEqual(["Which one?"]);
+      expect(texts([ev(1, "assistant_text", { text: "Which one?" })])).toEqual(["Which one?"]);
+    });
+
+    it("drops one copy per early copy, so a message said twice still shows twice", () => {
+      const events = [
+        ev(1, "assistant_text", { text: "Ready?", preview: true }),
+        ev(2, "assistant_text", { text: "Ready?" }),
+        ev(3, "assistant_text", { text: "Ready?" }),
+      ];
+      expect(texts(events)).toEqual(["Ready?", "Ready?"]);
+    });
+
+    it("matches long messages by their first 60 letters, and forgets early copies at the next person's message", () => {
+      const long = "Here is a long explanation of the choice you are about to make and why it matters to us";
+      expect(texts([ev(1, "assistant_text", { text: long, preview: true }), ev(2, "assistant_text", { text: `${long} and more text that was added.` })])).toEqual([long]);
+      expect(texts([ev(1, "assistant_text", { text: "Ready?", preview: true }), ev(2, "user_message", { text: "[Dev via Draft] go" }), ev(3, "assistant_text", { text: "Ready?" })])).toEqual(["Ready?", "Ready?"]);
+    });
+  });
 });
