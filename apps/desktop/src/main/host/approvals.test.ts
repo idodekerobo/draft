@@ -139,6 +139,57 @@ describe("ApprovalBroker", () => {
     expect(events[1]!.payload).toMatchObject({ reason: "expired" });
   });
 
+  it("keeps a request open for the next start when its result cannot be posted", async () => {
+    const posted: HostEvent[] = [];
+    const open = new Set<string>();
+    let failResolved = true;
+    const broker = new ApprovalBroker({
+      postEvents: async (batch) => {
+        if (batch[0]!.kind === "permission_resolved" && failResolved) throw new Error("offline");
+        posted.push(...batch);
+      },
+      paneBlocked: async () => false,
+      newId: () => "r1",
+      onOpen: (id) => open.add(id),
+      onClose: (id) => open.delete(id),
+      retryMs: 1,
+    });
+    const held = broker.hold(bash, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" });
+    expect(await held).toEqual({ behavior: "allow" });
+    expect(posted.some((e) => e.kind === "permission_resolved")).toBe(false);
+    expect([...open]).toEqual(["r1"]);
+
+    failResolved = false;
+    await broker.closeOnServer("r1", { requestId: "r1", reason: "hook_gone" });
+    expect(posted.at(-1)).toMatchObject({ sourceId: "permres:r1", kind: "permission_resolved" });
+    expect(open.size).toBe(0);
+  });
+
+  it("retries a result that fails to post once, then closes the request", async () => {
+    const posted: HostEvent[] = [];
+    let failures = 1;
+    const open = new Set<string>();
+    const broker = new ApprovalBroker({
+      postEvents: async (batch) => {
+        if (batch[0]!.kind === "permission_resolved" && failures-- > 0) throw new Error("blip");
+        posted.push(...batch);
+      },
+      paneBlocked: async () => false,
+      newId: () => "r1",
+      onOpen: (id) => open.add(id),
+      onClose: (id) => open.delete(id),
+      retryMs: 1,
+    });
+    const held = broker.hold(bash, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "deny", { userId: "u1", name: "Dev" });
+    await held;
+    expect(posted.filter((e) => e.kind === "permission_resolved")).toHaveLength(1);
+    expect(open.size).toBe(0);
+  });
+
   it("falls back to the dialog when the request cannot be posted", async () => {
     const { broker, open } = setup({ failPost: true });
     expect(await broker.hold(bash, new AbortController().signal)).toBeNull();

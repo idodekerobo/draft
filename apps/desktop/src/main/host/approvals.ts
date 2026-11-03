@@ -60,6 +60,8 @@ export interface ApprovalDeps {
   expireMs?: number;
   /** Claude asks one thing at a time, so a new request means the held ones were answered in the terminal. */
   oneAtATime?: boolean;
+  /** Wait before the first retry of a result that did not post, doubled for each later one. */
+  retryMs?: number;
 }
 
 type Outcome = { type: "decided"; decision: "allow" | "deny"; by: Decider; extras: DecisionExtras } | { type: "expired" } | { type: "gone" } | { type: "local" };
@@ -69,6 +71,8 @@ const MAX_INPUT_CHARS = 4000;
 /** Checks in a row without the dialog before the owner counts as having answered. */
 const MISSES_TO_CLOSE = 2;
 const MAX_MESSAGE_CHARS = 2000;
+const RESULT_ATTEMPTS = 3;
+const RESULT_RETRY_MS = 250;
 
 export function requestKind(toolName: string): RequestKind {
   if (toolName === "AskUserQuestion") return "question";
@@ -235,12 +239,18 @@ export class ApprovalBroker {
 
   /** Reports a request that no hook is waiting for, such as one left open by an earlier run of the app. */
   async closeOnServer(requestId: string, payload: Record<string, unknown>): Promise<void> {
-    try {
-      await this.deps.postEvents([{ sourceId: `permres:${requestId}`, kind: "permission_resolved", payload }]);
-    } catch (error) {
-      console.error("[live-session] could not post a permission result", error);
-    } finally {
-      this.deps.onClose(requestId);
+    let wait = this.deps.retryMs ?? RESULT_RETRY_MS;
+    for (let attempt = 1; attempt <= RESULT_ATTEMPTS; attempt++) {
+      try {
+        await this.deps.postEvents([{ sourceId: `permres:${requestId}`, kind: "permission_resolved", payload }]);
+        this.deps.onClose(requestId);
+        return;
+      } catch (error) {
+        console.error("[live-session] could not post a permission result", error);
+        if (attempt < RESULT_ATTEMPTS) await new Promise((done) => setTimeout(done, wait));
+        wait *= 2;
+      }
     }
+    // The id stays in the saved open requests, so the next start closes the card.
   }
 }
