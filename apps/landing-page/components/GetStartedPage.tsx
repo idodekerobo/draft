@@ -176,9 +176,6 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
       <Nav showWaitlist={false} />
       <section className="getstarted-panel" aria-labelledby="getstarted-title">
 
-
-        <GetStartedOrb mobile />
-
         <div className="getstarted-copy" ref={copyRef}>
           <h1 id="getstarted-title">{content.heading}</h1>
           <p className="getstarted-lede">{content.lede}</p>
@@ -230,9 +227,9 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
             </div>
           )}
         </div>
-
-
       </section>
+
+      <GetStartedOrb mobile />
 
       {sideCal && (
         <aside ref={calRef} className="getstarted-cal" aria-label="Book a call">
