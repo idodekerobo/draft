@@ -64,7 +64,7 @@ export interface ApprovalDeps {
   retryMs?: number;
 }
 
-type Outcome = { type: "decided"; decision: "allow" | "deny"; by: Decider; extras: DecisionExtras } | { type: "expired" } | { type: "gone" } | { type: "local" };
+export type Outcome = { type: "decided"; decision: "allow" | "deny"; by: Decider; extras: DecisionExtras } | { type: "expired" } | { type: "gone" } | { type: "local" };
 
 const EXPIRE_MS = 55 * 60 * 1000;
 const MAX_INPUT_CHARS = 4000;
@@ -110,7 +110,7 @@ export function questionsFromInput(input: unknown): Question[] {
 }
 
 /** Keeps answers to the asked questions only, as strings or lists of strings. They arrive by position, or by question text from older clients. */
-function cleanAnswers(answers: unknown, questions: Question[]): Record<string, AnswerValue> {
+export function cleanAnswers(answers: unknown, questions: Question[]): Record<string, AnswerValue> {
   const clean: Record<string, AnswerValue> = {};
   if (!answers || typeof answers !== "object") return clean;
   const given = answers as Record<string, unknown>;
@@ -163,14 +163,21 @@ export class ApprovalBroker {
   async hold(payload: { tool_name?: unknown; tool_input?: unknown }, signal: AbortSignal): Promise<HookAnswer | null> {
     const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
     if (!toolName) return null;
+    const outcome = await this.ask((requestId) => requestPayload(requestId, toolName, payload.tool_input), signal);
+    if (!outcome || outcome.type !== "decided") return null;
+    return hookAnswer(toolName, payload.tool_input, outcome);
+  }
 
+  /**
+   * Posts a request and waits for how it ends. `payload` builds the event body for the request id.
+   * Returns null when the request could not be posted, so only the harness's own dialog remains.
+   */
+  async ask(payload: (requestId: string) => Record<string, unknown>, signal: AbortSignal): Promise<Outcome | null> {
     if (this.deps.oneAtATime) for (const entry of [...this.held.values()]) entry.finish({ type: "local" });
 
     const requestId = this.deps.newId();
     try {
-      await this.deps.postEvents([
-        { sourceId: `perm:${requestId}`, kind: "permission_request", payload: requestPayload(requestId, toolName, payload.tool_input) },
-      ]);
+      await this.deps.postEvents([{ sourceId: `perm:${requestId}`, kind: "permission_request", payload: payload(requestId) }]);
     } catch (error) {
       console.error("[live-session] could not post a permission request", error);
       return null;
@@ -192,8 +199,7 @@ export class ApprovalBroker {
     });
 
     await this.resolve(requestId, outcome);
-    if (outcome.type !== "decided") return null;
-    return hookAnswer(toolName, payload.tool_input, outcome);
+    return outcome;
   }
 
   /** Answers a held request. False when it is not held any more. */

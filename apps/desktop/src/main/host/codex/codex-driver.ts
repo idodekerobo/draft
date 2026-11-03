@@ -6,7 +6,7 @@ import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher,
 import type { PendingInput } from "../input-delivery";
 import { openCommandInTerminal } from "../open-in-terminal";
 import { shellQuote } from "../launch";
-import { COMMAND_APPROVAL, FILE_CHANGE_APPROVAL, approvalDecision, approvalPayload } from "./approvals";
+import { codexRequest } from "./approvals";
 import { startAppServer, type AppServer } from "./app-server-process";
 import { CODEX_MISSING_MESSAGE, CODEX_SIGNED_OUT_MESSAGE, readCodexAuth, readCodexVersion } from "./codex-check";
 import { codexPollMs } from "./poll-interval";
@@ -231,24 +231,34 @@ export class CodexDriver implements HarnessDriver {
 
   /** Tells viewers to sign in again. A failed turn is never retried silently. */
   private noteSignedOut(): void {
+    this.note("Codex is signed out. Run codex login in a terminal, then send a message again.");
+  }
+
+  private note(text: string): void {
     void this.host
-      .postHostEvents([{ sourceId: `auth:${Date.now()}`, kind: "session_note", payload: { text: "Codex is signed out. Run codex login in a terminal, then send a message again." } }])
-      .catch((error) => console.error("[live-session] could not post the sign-in note", error));
+      .postHostEvents([{ sourceId: `note:${Date.now()}:${crypto.randomUUID().slice(0, 6)}`, kind: "session_note", payload: { text } }])
+      .catch((error) => console.error("[live-session] could not post a note", error));
   }
 
   private async onRequest(connection: CodexConnection, id: number | string, method: string, params: unknown): Promise<void> {
-    const payload = approvalPayload(method, params);
-    if (!payload) {
+    const request = codexRequest(method, params);
+    if (!request) {
       connection.rpc.respondError(id, -32601, "Draft does not handle this request.");
+      return;
+    }
+    if (request.type === "decline") {
+      this.note(request.note);
+      connection.rpc.respond(id, request.result);
       return;
     }
     const controller = new AbortController();
     this.requests.set(id, controller);
-    const answer = await this.broker.hold(payload, controller.signal);
+    const outcome = await this.broker.ask(request.payload, controller.signal);
     this.requests.delete(id);
     // Answered in another client, such as the terminal. Codex already moved on.
     if (controller.signal.aborted || !connection.isAlive()) return;
-    connection.rpc.respond(id, { decision: approvalDecision(answer) });
+    // No answer from a person means the request ended without one, so the step is cancelled.
+    connection.rpc.respond(id, request.answer(outcome && (outcome.type === "decided" || outcome.type === "expired") ? outcome : { type: "expired" }));
   }
 
   private enqueue(note: { method: string; params: unknown }): void {
