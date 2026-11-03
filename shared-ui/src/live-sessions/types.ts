@@ -93,6 +93,8 @@ export interface LiveSessionEventPayload {
   kind?: ApprovalKind;
   questions?: LiveQuestion[];
   plan?: string;
+  /** The harness can allow this for the rest of the session. */
+  allowSession?: boolean;
   /** permission_resolved: what the decider answered or wrote. */
   answers?: Record<string, AnswerValue>;
   message?: string;

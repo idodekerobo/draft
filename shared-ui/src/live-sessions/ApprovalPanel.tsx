@@ -18,10 +18,16 @@ export function ApprovalPanel({
   approval,
   hostName,
   onDecide,
+  agent = "Claude",
+  explainsDenial = true,
 }: {
   approval: OpenApproval;
   hostName: string | null;
   onDecide(requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
+  /** Who is asking, for the title. */
+  agent?: string;
+  /** Whether the agent reads a reason for a denial. Codex has no field for one. */
+  explainsDenial?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const [expanded, setExpanded] = useState(false);
@@ -34,11 +40,11 @@ export function ApprovalPanel({
   const where = hostName ? `Runs on ${hostName}` : "Runs on the owner's computer";
   const busy = phase.name === "sending" || phase.name === "sent";
 
-  async function decide(decision: "allow" | "deny") {
+  async function decide(decision: "allow" | "deny", scope?: "session") {
     setPhase({ name: "sending", decision });
     const message = decision === "deny" ? reason.trim() : "";
     try {
-      const result = await onDecide(approval.requestId, message ? { decision, message } : { decision });
+      const result = await onDecide(approval.requestId, { decision, ...(message ? { message } : {}), ...(scope ? { scope } : {}) });
       if (result.ok) setPhase({ name: "sent" });
       else if (result.error === "failed") setPhase({ name: "failed" });
       else setPhase({ name: "closed", message: closedMessage(result) });
@@ -51,7 +57,7 @@ export function ApprovalPanel({
     <section className="ui-approval" role="group" aria-label={`Permission request: ${approval.tool}`}>
       <div className="ui-approval__head">
         <h2 className="ui-approval__title">
-          Claude wants to use <span className="ui-approval__tool">{approval.tool}</span>
+          {agent} wants to use <span className="ui-approval__tool">{approval.tool}</span>
         </h2>
         <p className="ui-muted ui-approval__where">{where}</p>
       </div>
@@ -67,7 +73,7 @@ export function ApprovalPanel({
         <>
         {reasonOpen && (
           <label className="ui-approval__reason">
-            <span className="ui-muted">Tell Claude why (optional)</span>
+            <span className="ui-muted">Tell {agent} why (optional)</span>
             <input className="ui-input" value={reason} maxLength={500} disabled={busy} autoFocus onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !busy && void decide("deny")} />
           </label>
         )}
@@ -75,7 +81,12 @@ export function ApprovalPanel({
           <button type="button" className="ui-btn ui-btn--primary" disabled={busy} onClick={() => void decide("allow")}>
             {phase.name === "sending" && phase.decision === "allow" ? "Sending…" : "Allow"}
           </button>
-          <button type="button" className="ui-btn" disabled={busy} aria-expanded={reasonOpen} onClick={() => (reasonOpen ? void decide("deny") : setReasonOpen(true))}>
+          {approval.allowSession && (
+            <button type="button" className="ui-btn" disabled={busy} onClick={() => void decide("allow", "session")}>
+              Allow for session
+            </button>
+          )}
+          <button type="button" className="ui-btn" disabled={busy} aria-expanded={reasonOpen} onClick={() => (reasonOpen || !explainsDenial ? void decide("deny") : setReasonOpen(true))}>
             {phase.name === "sending" && phase.decision === "deny" ? "Sending…" : <>Deny <kbd className="ui-kbd">Esc</kbd></>}
           </button>
           {phase.name === "sent" && <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>}

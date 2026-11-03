@@ -54,11 +54,16 @@ export function QuestionCard({
   hostName,
   onAnswer,
   onSkip,
+  agent = "Claude",
+  hasTerminal = true,
 }: {
   approval: OpenApproval;
   hostName: string | null;
   onAnswer(requestId: string, answers: Record<string, AnswerValue>): Promise<ApprovalResult>;
   onSkip?(requestId: string): Promise<ApprovalResult>;
+  agent?: string;
+  /** Whether the question also shows in a terminal the owner can answer in. */
+  hasTerminal?: boolean;
 }) {
   const id = useId();
   const [choices, setChoices] = useState<Record<string, Choice>>({});
@@ -83,10 +88,10 @@ export function QuestionCard({
   }
 
   return (
-    <section className="ui-approval ui-question" role="group" aria-label="Question from Claude">
+    <section className="ui-approval ui-question" role="group" aria-label={`Question from ${agent}`}>
       <div className="ui-approval__head">
-        <h2 className="ui-approval__title">Claude has a question</h2>
-        <p className="ui-muted ui-approval__where">You can also answer in the terminal on {hostName ?? "the owner's computer"}.</p>
+        <h2 className="ui-approval__title">{agent} has a question</h2>
+        {hasTerminal && <p className="ui-muted ui-approval__where">You can also answer in the terminal on {hostName ?? "the owner's computer"}.</p>}
       </div>
       <div className="ui-question__body">
       {approval.questions.map((question, index) => {

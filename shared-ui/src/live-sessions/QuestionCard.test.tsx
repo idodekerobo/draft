@@ -10,7 +10,7 @@ const colors: LiveQuestion = { key: "Pick colors", header: "Color", question: "P
 const size: LiveQuestion = { key: "Pick a size", question: "Pick a size", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "S" }, { label: "L" }] };
 
 const approval = (questions: LiveQuestion[]): OpenApproval => ({
-  type: "approval", seq: 1, requestId: "r1", kind: "question", tool: "AskUserQuestion", summary: "", input: {}, questions, plan: null, resolved: null,
+  type: "approval", seq: 1, requestId: "r1", kind: "question", tool: "AskUserQuestion", summary: "", input: {}, questions, plan: null, allowSession: false, resolved: null,
 });
 
 function renderCard(questions: LiveQuestion[], result: ApprovalResult = { ok: true }) {
@@ -115,5 +115,12 @@ describe("QuestionCard", () => {
     const container = document.body;
     expect(container.querySelector(".ui-question__header")?.textContent).toBe("Color");
     expect(container.querySelector(".ui-question__text")?.textContent).toBe("Pick colors");
+  });
+
+  it("names the agent and drops the terminal hint for a harness with no terminal", () => {
+    render(<QuestionCard approval={approval([size])} hostName="Maya's MacBook" agent="Codex" hasTerminal={false} onAnswer={async () => ({ ok: true })} />);
+    expect(screen.getByText("Codex has a question")).toBeTruthy();
+    expect(screen.queryByText(/answer in the terminal/)).toBeNull();
+    expect(screen.getByRole("group", { name: "Question from Codex" })).toBeTruthy();
   });
 });

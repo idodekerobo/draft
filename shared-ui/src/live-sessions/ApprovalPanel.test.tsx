@@ -7,7 +7,7 @@ import type { ApprovalResponse, ApprovalResult } from "./types";
 afterEach(cleanup);
 
 const approval = (input: unknown = { file_path: "/a/hello.txt", content: "hi" }): OpenApproval => ({
-  type: "approval", seq: 1, requestId: "r1", kind: "approval", tool: "Write", summary: "/a/hello.txt", input, questions: [], plan: null, resolved: null,
+  type: "approval", seq: 1, requestId: "r1", kind: "approval", tool: "Write", summary: "/a/hello.txt", input, questions: [], plan: null, allowSession: false, resolved: null,
 });
 
 function renderPanel(result: ApprovalResult = { ok: true }, props: Partial<Parameters<typeof ApprovalPanel>[0]> = {}) {
@@ -85,5 +85,24 @@ describe("ApprovalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show all" }));
     expect(screen.getByText(/line 7/)).toBeTruthy();
     expect(screen.getByText("Runs on the owner's computer")).toBeTruthy();
+  });
+
+  it("offers Allow for session only when the harness can, and sends the scope", async () => {
+    const onDecide = mock(async (_id: string, _response: ApprovalResponse) => ({ ok: true as const }));
+    const view = render(<ApprovalPanel approval={approval()} hostName={null} onDecide={onDecide} />);
+    expect(screen.queryByRole("button", { name: "Allow for session" })).toBeNull();
+    view.unmount();
+    render(<ApprovalPanel approval={{ ...approval(), allowSession: true }} hostName={null} onDecide={onDecide} agent="Codex" explainsDenial={false} />);
+    expect(screen.getByText("Codex wants to use")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Allow for session" }));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "allow", scope: "session" }));
+  });
+
+  it("denies at once, with no reason box, when the agent cannot read a reason", async () => {
+    const onDecide = mock(async (_id: string, _response: ApprovalResponse) => ({ ok: true as const }));
+    render(<ApprovalPanel approval={approval()} hostName={null} onDecide={onDecide} agent="Codex" explainsDenial={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Deny/ }));
+    await waitFor(() => expect(onDecide).toHaveBeenCalledWith("r1", { decision: "deny" }));
+    expect(screen.queryByText(/why/i)).toBeNull();
   });
 });

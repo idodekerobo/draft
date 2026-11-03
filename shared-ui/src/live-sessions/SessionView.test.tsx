@@ -203,6 +203,15 @@ describe("SessionView", () => {
     });
   });
 
+  it("shows a Codex question as Codex's, with no terminal hint", async () => {
+    const codex: LiveSession = { ...session, harness: "codex" };
+    const question = { key: "area", question: "Which area?", multiSelect: false, isOther: false, isSecret: false, options: [{ label: "Auth" }] };
+    const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "request_user_input", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: codex, events: open, inputs: [] }) }} sessionId="s1" />);
+    await screen.findByRole("group", { name: "Question from Codex" });
+    expect(screen.queryByText(/answer in the terminal/)).toBeNull();
+  });
+
   describe("an open question", () => {
     const question = { key: "Pick", question: "Pick", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "A" }, { label: "B" }] };
     const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "AskUserQuestion", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];

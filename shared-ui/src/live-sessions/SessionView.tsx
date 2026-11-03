@@ -235,6 +235,10 @@ function LoadedSession({
   const logItems = useMemo(() => buildStreamItems(events), [events]);
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
   const ownerName = session.owner_name ?? "the owner";
+  const harnessId = session.harness ?? "claude";
+  const agentName = (getHarness(harnessId)?.label ?? "Claude").split(" ")[0]!;
+  // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
+  const hasTerminal = harnessId === "claude";
   const hostOffline = session.status === "host_offline";
   const viewerName = viewer.name;
   const items = useMemo(
@@ -418,9 +422,9 @@ function LoadedSession({
             {session.status !== "ended" &&
               approvals.map((approval) =>
                 approval.kind === "question" && approval.questions.length > 0 ? (
-                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} hasTerminal={hasTerminal} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
-                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
             <SessionComposer {...inputs} send={sendMessage} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />

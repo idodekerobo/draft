@@ -18,6 +18,7 @@ export type StreamItem =
       input: unknown;
       questions: LiveQuestion[];
       plan: string | null;
+      allowSession: boolean;
       /** Null while the request waits for an answer. */
       resolved: {
         reason: string;
@@ -93,6 +94,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
           input: payload.input,
           questions: payload.questions ?? [],
           plan: payload.plan ?? null,
+          allowSession: payload.allowSession === true,
           resolved: null,
         };
         items.push(approval);
