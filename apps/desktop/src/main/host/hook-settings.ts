@@ -5,6 +5,7 @@ export const HOST_DIR = `${process.env.HOME}/.draft/host`;
 const PERMISSION_TIMEOUT_SECONDS = 3600;
 const STOP_TIMEOUT_SECONDS = 30;
 const SESSION_START_TIMEOUT_SECONDS = 30;
+const MESSAGE_TIMEOUT_SECONDS = 5;
 
 /**
  * Calls the host's local server. The server writes its port and token for each session it serves, named by the session id.
@@ -15,7 +16,9 @@ export function hookScript(): string {
 dir="$HOME/.draft/host/hooks"
 port=$(cat "$dir/$1.port" 2>/dev/null) || exit 1
 token=$(cat "$dir/$1.token" 2>/dev/null) || exit 1
-exec curl -sS --fail --max-time 3700 -X POST -H "x-draft-token: $token" --data-binary @- "http://127.0.0.1:$port/hook/$1/$2"
+wait=3700
+[ "$2" = message ] && wait=3
+exec curl -sS --fail --max-time "$wait" -X POST -H "x-draft-token: $token" --data-binary @- "http://127.0.0.1:$port/hook/$1/$2"
 `;
 }
 
@@ -28,6 +31,7 @@ export function hookSettings(scriptPath: string, sessionId: string) {
       PermissionRequest: [command("permission", PERMISSION_TIMEOUT_SECONDS)],
       Stop: [command("stop", STOP_TIMEOUT_SECONDS)],
       SessionStart: [command("session-start", SESSION_START_TIMEOUT_SECONDS)],
+      MessageDisplay: [command("message", MESSAGE_TIMEOUT_SECONDS)],
     },
   };
 }

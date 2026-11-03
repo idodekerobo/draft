@@ -5,6 +5,8 @@ import { HOST_DIR } from "./hook-settings";
 export interface SessionHooks {
   permission(payload: Record<string, unknown>, signal: AbortSignal): Promise<HookAnswer | null>;
   stopped(): void;
+  /** One streamed chunk of an assistant message. */
+  message(payload: Record<string, unknown>): void;
   /** Claude started or replaced its conversation; `/clear` and `/fork` give it a new session id. */
   sessionStarted(payload: Record<string, unknown>): void;
 }
@@ -62,13 +64,17 @@ export function ensureHooksServer(dir = HOST_DIR): void {
     port: 0,
     async fetch(req, bunServer) {
       const url = new URL(req.url);
-      const match = /^\/hook\/([^/]+)\/(permission|stop|session-start)$/.exec(url.pathname);
+      const match = /^\/hook\/([^/]+)\/(permission|stop|session-start|message)$/.exec(url.pathname);
       if (req.method !== "POST" || !match || req.headers.get("x-draft-token") !== token) return new Response("not found", { status: 404 });
       const hooks = sessions.get(match[1]!);
       if (!hooks) return new Response(null, { status: 204 });
 
       if (match[2] === "stop") {
         hooks.stopped();
+        return new Response(null, { status: 204 });
+      }
+      if (match[2] === "message") {
+        hooks.message(await readPayload(req));
         return new Response(null, { status: 204 });
       }
       if (match[2] === "session-start") {

@@ -47,7 +47,7 @@ export interface Question {
 
 export interface HostEvent {
   sourceId: string;
-  kind: "permission_request" | "permission_resolved" | "session_note";
+  kind: "permission_request" | "permission_resolved" | "session_note" | "assistant_text";
   payload: Record<string, unknown>;
 }
 
@@ -66,6 +66,9 @@ export interface ApprovalDeps {
   expireMs?: number;
   /** Claude asks one thing at a time, so a new request means the held ones were answered in the terminal. */
   oneAtATime?: boolean;
+  /** A request starts waiting for a person, and stops waiting. */
+  onHold?(): void;
+  onRelease?(): void;
   /** Wait before the first retry of a result that did not post, doubled for each later one. */
   retryMs?: number;
 }
@@ -193,6 +196,7 @@ export class ApprovalBroker {
       return null;
     }
     this.deps.onOpen(requestId);
+    this.deps.onHold?.();
 
     const outcome = await new Promise<Outcome>((resolve) => {
       const finish = (value: Outcome) => {
@@ -208,6 +212,7 @@ export class ApprovalBroker {
       else signal.addEventListener("abort", onAbort, { once: true });
     });
 
+    this.deps.onRelease?.();
     await this.resolve(requestId, outcome);
     return outcome;
   }

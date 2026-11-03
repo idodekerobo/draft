@@ -8,6 +8,7 @@ import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher,
 import { writeSessionSettings } from "./hook-settings";
 import { ensureHooksServer, registerSessionHooks } from "./hooks-server";
 import { InputDelivery, type PendingInput } from "./input-delivery";
+import { LeadInRelay } from "./lead-in";
 import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
 import { openPaneInTerminal } from "./open-in-terminal";
 import { classifyPane, isTurnRunning } from "./pane-state";
@@ -27,6 +28,7 @@ export class ClaudeDriver implements HarnessDriver {
   private readonly forwarder: TranscriptForwarder;
   private readonly delivery: InputDelivery;
   private readonly broker: ApprovalBroker;
+  private readonly leadIn: LeadInRelay;
   private readonly controls: ControlActions;
   private unregisterHooks: (() => void) | null = null;
   private rotateTo: string | null = null;
@@ -50,6 +52,7 @@ export class ClaudeDriver implements HarnessDriver {
       pressEnter: () => pressEnter(this.tmux),
       sleep,
     });
+    this.leadIn = new LeadInRelay((events) => host.postHostEvents(events));
     this.broker = new ApprovalBroker({
       postEvents: (events) => host.postHostEvents(events),
       paneBlocked: async () => {
@@ -59,6 +62,8 @@ export class ClaudeDriver implements HarnessDriver {
       oneAtATime: true,
       newId: () => `r${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
       onOpen: (id) => host.persist({ openRequests: [...(host.state().openRequests ?? []), id] }),
+      onHold: () => this.leadIn.requestOpened(),
+      onRelease: () => this.leadIn.requestClosed(),
       onClose: (id) => host.persist({ openRequests: (host.state().openRequests ?? []).filter((open) => open !== id) }),
     });
     this.controls = new ControlActions({
@@ -80,6 +85,7 @@ export class ClaudeDriver implements HarnessDriver {
     this.unregisterHooks = registerSessionHooks(state.hookId ?? state.sessionId, {
       permission: (payload, signal) => this.broker.hold(payload, signal),
       stopped: () => this.host.requestUpload(),
+      message: (payload) => this.leadIn.message(payload),
       sessionStarted: (payload) => {
         this.rotateTo ??= rotationTarget(this.host.state().nativeSessionId, payload);
       },
