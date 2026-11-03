@@ -8,7 +8,7 @@ type StopRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/stop
 type HostEventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/host-events">;
 
 const MAX_HOST_EVENTS = 20;
-const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "session_note"]);
+const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "session_note", "assistant_text"]);
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 const MAX_ANSWERS = 20;

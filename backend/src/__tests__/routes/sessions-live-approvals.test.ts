@@ -190,6 +190,13 @@ describe("host events", () => {
     expect(rpcCalls[0]!.args.p_events).toEqual([{ source_id: "perm:r1", kind: "permission_request", payload: { requestId: "r1" } }]);
   });
 
+  it("accepts the early copy of a message that ends in a request", async () => {
+    rpcResult = { data: { last_seq: 5, inserted: 1 }, error: null };
+    const lead = { sourceId: "lead:m1", kind: "assistant_text", payload: { text: "I will run the tests.", preview: true } };
+    expect((await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [lead] }))).status).toBe(200);
+    expect(rpcCalls[0]!.args.p_events).toEqual([{ source_id: "lead:m1", kind: "assistant_text", payload: { text: "I will run the tests.", preview: true } }]);
+  });
+
   it("refuses other event kinds, other users and other hosts", async () => {
     const bad = await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [{ ...event, kind: "user_message" }] }));
     expect(bad.status).toBe(400);
