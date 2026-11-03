@@ -141,13 +141,14 @@ export class ClaudeDriver implements HarnessDriver {
 
   private async setMode(target: string | undefined): Promise<{ ok: true } | { ok: false; note: string }> {
     if (!target || !CYCLE_MODES.has(target)) return { ok: false, note: "That mode cannot be set from Draft." };
-    const pane = classifyPane(await capturePane(this.tmux));
+    const screen = await capturePane(this.tmux);
+    const pane = classifyPane(screen);
     if (pane !== "ready" && pane !== "composer_busy") return { ok: false, note: `Claude is waiting on a prompt, so the mode did not change. Answer it first.` };
-    const result = await switchMode(target as ClaudeMode, {
-      capture: () => capturePane(this.tmux),
-      pressBackTab: () => pressBackTab(this.tmux),
-      sleep,
-    });
+    const result = await switchMode(
+      target as ClaudeMode,
+      { capture: () => capturePane(this.tmux), pressBackTab: () => pressBackTab(this.tmux), sleep },
+      screen,
+    );
     if (result.mode) this.host.reportModes({ permissionMode: result.mode });
     if (result.ok) return { ok: true };
     return { ok: false, note: result.reason === "unreadable" ? "Could not read Claude's mode, so it did not change." : "Could not reach that mode from Draft. Claude's own mode list does not include it." };

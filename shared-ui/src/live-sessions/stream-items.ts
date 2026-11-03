@@ -90,9 +90,9 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
         items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), authorUserId: event.author_user_id ?? null, authorName: event.author_name ?? null, agentId });
         break;
       case "assistant_text": {
-        const key = plain(payload.text ?? "");
-        if (payload.preview) previews.push(key);
-        else {
+        if (payload.preview) previews.push(plain(payload.text ?? ""));
+        else if (previews.length > 0) {
+          const key = plain(payload.text ?? "");
           const match = previews.findIndex((p) => sameMessage(p, key));
           if (match >= 0) {
             previews.splice(match, 1);

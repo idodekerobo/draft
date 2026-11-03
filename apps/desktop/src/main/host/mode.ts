@@ -39,8 +39,8 @@ export interface ModeDeps {
 export type SwitchResult = { ok: true; mode: ClaudeMode } | { ok: false; reason: "unreadable" | "unreachable"; mode: ClaudeMode | null };
 
 /** Presses Shift+Tab until the footer shows the target. The cycle is walked, because its length varies with the session. */
-export async function switchMode(target: ClaudeMode, deps: ModeDeps): Promise<SwitchResult> {
-  let current = modeFromScreen(await deps.capture());
+export async function switchMode(target: ClaudeMode, deps: ModeDeps, firstScreen?: string): Promise<SwitchResult> {
+  let current = modeFromScreen(firstScreen ?? (await deps.capture()));
   if (current === null) return { ok: false, reason: "unreadable", mode: null };
   for (let press = 0; press < MAX_PRESSES; press++) {
     if (current === target) return { ok: true, mode: current };

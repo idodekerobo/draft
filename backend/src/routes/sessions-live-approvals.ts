@@ -66,6 +66,7 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
   if (!REQUEST_ID.test(requestId)) return errorResponse("invalid_request_id", 400);
+  const name = authorName(caller.userId);
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
@@ -78,7 +79,7 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: caller.userId,
-    p_author_name: await authorName(caller.userId),
+    p_author_name: await name,
     p_request_id: requestId,
     p_decision: decision,
     p_answers: extras.extras.answers,
@@ -138,21 +139,19 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
   // Dismissing a prompt keeps the caller's queued messages, so they go through once it is gone.
   const parsed = await readBody(req);
   const keepQueued = parsed.ok && parsed.body.keepQueued === true;
+  const name = authorName(caller.userId);
 
   let withdrawn: { id: string; text: string }[];
+  let waitingResult;
   try {
-    withdrawn = keepQueued ? [] : await withdrawQueuedMessages(workspaceId, sessionId, caller.userId);
+    [withdrawn, waitingResult] = await Promise.all([
+      keepQueued ? Promise.resolve([]) : withdrawQueuedMessages(workspaceId, sessionId, caller.userId),
+      serviceClient.from("session_inputs").select("id").eq("session_id", sessionId).eq("workspace_id", workspaceId).eq("kind", "stop").in("state", ["queued", "delivering"]),
+    ]);
   } catch (error) {
     return errorResponse("stop_failed", 500, error, workspaceId, sessionId);
   }
-
-  const { data: waiting, error: waitingError } = await serviceClient
-    .from("session_inputs")
-    .select("id")
-    .eq("session_id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .eq("kind", "stop")
-    .in("state", ["queued", "delivering"]);
+  const { data: waiting, error: waitingError } = waitingResult;
   if (waitingError) return errorResponse("stop_failed", 500, waitingError, workspaceId, sessionId);
   if (((waiting ?? []) as Pick<SessionInputRow, "id">[]).length > 0) return Response.json({ ok: true, already_requested: true, withdrawn });
 
@@ -160,7 +159,7 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: caller.userId,
-    p_author_name: await authorName(caller.userId),
+    p_author_name: await name,
     p_kind: "stop",
     p_payload: {},
   });
@@ -176,6 +175,7 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
+  const name = authorName(caller.userId);
   const { permissionMode, approvalMode } = parsed.body;
   if (permissionMode === undefined && approvalMode === undefined) return errorResponse("invalid_mode", 400);
 
@@ -192,20 +192,17 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
 
   const modes = harnessModes(session.harness);
   const payload: Record<string, string> = {};
-  if (permissionMode !== undefined) {
-    if (typeof permissionMode !== "string" || !modes.permission.some((m) => m.value === permissionMode)) return errorResponse("invalid_mode", 400);
-    payload.permissionMode = permissionMode;
-  }
-  if (approvalMode !== undefined) {
-    if (typeof approvalMode !== "string" || !modes.approval.some((m) => m.value === approvalMode)) return errorResponse("invalid_mode", 400);
-    payload.approvalMode = approvalMode;
+  for (const [field, asked, options] of [["permissionMode", permissionMode, modes.permission], ["approvalMode", approvalMode, modes.approval]] as const) {
+    if (asked === undefined) continue;
+    if (typeof asked !== "string" || !options.some((m) => m.value === asked)) return errorResponse("invalid_mode", 400);
+    payload[field] = asked;
   }
 
   const { error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: caller.userId,
-    p_author_name: await authorName(caller.userId),
+    p_author_name: await name,
     p_kind: "set_mode",
     p_payload: payload,
   });
