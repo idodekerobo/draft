@@ -211,6 +211,44 @@ describe("ApprovalBroker", () => {
   });
 });
 
+describe("plan approval", () => {
+  const plan = { tool_name: "ExitPlanMode", permission_mode: "plan", tool_input: { plan: "# Plan\n1. x", planFilePath: "/p.md" } };
+
+  it("posts the plan in full with the session's current mode", async () => {
+    const { broker, events } = setup();
+    void broker.hold({ ...plan, tool_input: { plan: "x".repeat(9000) } }, new AbortController().signal);
+    await tick();
+    expect(events[0]!.payload).toMatchObject({ kind: "plan", permissionMode: "plan" });
+    expect((events[0]!.payload as { plan: string }).plan).toHaveLength(9000);
+  });
+
+  it("approves with the plan's own input, and switches the session mode when asked", async () => {
+    for (const mode of ["auto", "default"] as const) {
+      const { broker } = setup();
+      const held = broker.hold(plan, new AbortController().signal);
+      await tick();
+      broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { permissionMode: mode });
+      expect(await held).toEqual({ behavior: "allow", updatedInput: plan.tool_input, updatedPermissions: [{ type: "setMode", mode, destination: "session" }] });
+    }
+  });
+
+  it("approves without touching the mode when none is chosen", async () => {
+    const { broker } = setup();
+    const held = broker.hold(plan, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" });
+    expect(await held).toEqual({ behavior: "allow", updatedInput: plan.tool_input });
+  });
+
+  it("sends the feedback to Claude as what to change", async () => {
+    const { broker } = setup();
+    const held = broker.hold(plan, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "deny", { userId: "u1", name: "Dev" }, { message: "make it 2 steps" });
+    expect(await held).toEqual({ behavior: "deny", message: "Dev did not approve the plan. Change it as they ask: make it 2 steps" });
+  });
+});
+
 describe("answers by position", () => {
   const long = "Q".repeat(1341);
   const ask = { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: long, header: "H", multiSelect: false, options: [{ label: "A", description: "a" }, { label: "B", description: "b" }] }, { question: "Size", multiSelect: true, options: [{ label: "S", description: "s" }, { label: "L", description: "l" }] }] } };
@@ -307,7 +345,7 @@ describe("summarizeToolInput", () => {
       const held = broker.hold(plan, new AbortController().signal);
       await tick();
       broker.decide("r1", "deny", { userId: "u1", name: "Dev" }, { message: "  make it two steps  " });
-      expect(await held).toEqual({ behavior: "deny", message: "Denied by Dev in Draft: make it two steps" });
+      expect(await held).toEqual({ behavior: "deny", message: "Dev did not approve the plan. Change it as they ask: make it two steps" });
       expect(events[1]!.payload).toMatchObject({ message: "make it two steps" });
     });
 

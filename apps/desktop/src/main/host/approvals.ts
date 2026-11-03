@@ -11,7 +11,11 @@
  * If the request cannot be posted, the hook gets no answer and only the dialog remains.
  */
 
-export type HookAnswer = { behavior: "allow"; updatedInput?: Record<string, unknown> } | { behavior: "deny"; message: string };
+export type SessionMode = "auto" | "default";
+
+export type HookAnswer =
+  | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: Array<{ type: "setMode"; mode: SessionMode; destination: "session" }> }
+  | { behavior: "deny"; message: string };
 
 export type AnswerValue = string | string[];
 
@@ -20,6 +24,8 @@ export interface DecisionExtras {
   answers?: Record<string, AnswerValue>;
   message?: string;
   scope?: "once" | "session";
+  /** For a plan approval: the mode the session switches to. */
+  permissionMode?: SessionMode;
 }
 
 export type RequestKind = "approval" | "question" | "plan";
@@ -122,12 +128,12 @@ export function cleanAnswers(answers: unknown, questions: Question[]): Record<st
   return clean;
 }
 
-function requestPayload(requestId: string, toolName: string, toolInput: unknown): Record<string, unknown> {
+function requestPayload(requestId: string, toolName: string, toolInput: unknown, mode?: unknown): Record<string, unknown> {
   const kind = requestKind(toolName);
   const base = { requestId, name: toolName, kind, ...summarizeToolInput(toolInput) };
   if (kind === "question") return { ...base, questions: questionsFromInput(toolInput) };
   const plan = (toolInput as { plan?: unknown } | null)?.plan;
-  if (kind === "plan" && typeof plan === "string") return { ...base, plan };
+  if (kind === "plan" && typeof plan === "string") return { ...base, plan, ...(typeof mode === "string" ? { permissionMode: mode } : {}) };
   return base;
 }
 
@@ -142,11 +148,15 @@ function hookAnswer(toolName: string, toolInput: unknown, outcome: Extract<Outco
   const input = toolInput && typeof toolInput === "object" && !Array.isArray(toolInput) ? (toolInput as Record<string, unknown>) : null;
   const reason = outcome.extras.message?.trim().slice(0, MAX_MESSAGE_CHARS);
   if (outcome.decision === "deny") {
+    if (requestKind(toolName) === "plan" && reason) return { behavior: "deny", message: `${outcome.by.name} did not approve the plan. Change it as they ask: ${reason}` };
     return { behavior: "deny", message: reason ? `Denied by ${outcome.by.name} in Draft: ${reason}` : `Denied by ${outcome.by.name} in Draft.` };
   }
   if (!input) return { behavior: "allow" };
   const kind = requestKind(toolName);
-  if (kind === "plan") return { behavior: "allow", updatedInput: input };
+  if (kind === "plan") {
+    const mode = outcome.extras.permissionMode;
+    return { behavior: "allow", updatedInput: input, ...(mode ? { updatedPermissions: [{ type: "setMode" as const, mode, destination: "session" as const }] } : {}) };
+  }
   if (kind === "question") {
     const answers = cleanAnswers(outcome.extras.answers, questionsFromInput(input));
     return Object.keys(answers).length > 0 ? { behavior: "allow", updatedInput: { ...input, answers } } : { behavior: "allow" };
@@ -160,10 +170,10 @@ export class ApprovalBroker {
   constructor(private readonly deps: ApprovalDeps) {}
 
   /** Holds the hook until someone decides. Returns null to let Claude's own dialog handle it. */
-  async hold(payload: { tool_name?: unknown; tool_input?: unknown }, signal: AbortSignal): Promise<HookAnswer | null> {
+  async hold(payload: { tool_name?: unknown; tool_input?: unknown; permission_mode?: unknown }, signal: AbortSignal): Promise<HookAnswer | null> {
     const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
     if (!toolName) return null;
-    const outcome = await this.ask((requestId) => requestPayload(requestId, toolName, payload.tool_input), signal);
+    const outcome = await this.ask((requestId) => requestPayload(requestId, toolName, payload.tool_input, payload.permission_mode), signal);
     if (!outcome || outcome.type !== "decided") return null;
     return hookAnswer(toolName, payload.tool_input, outcome);
   }

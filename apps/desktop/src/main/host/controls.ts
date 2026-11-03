@@ -8,7 +8,7 @@ export interface ControlInput {
   state: "queued" | "delivering";
   author_user_id: string;
   author_name: string;
-  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown };
+  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown; permissionMode?: unknown };
 }
 
 export interface ControlDeps {
@@ -22,7 +22,7 @@ export interface ControlDeps {
 /** Reads the optional parts of a decision from the input row. Anything of the wrong type is ignored. */
 export function decisionExtras(payload: ControlInput["payload"]): DecisionExtras {
   const extras: DecisionExtras = {};
-  const { answers, message, scope } = payload;
+  const { answers, message, scope, permissionMode } = payload;
   if (answers && typeof answers === "object" && !Array.isArray(answers)) {
     const clean: Record<string, AnswerValue> = {};
     for (const [key, value] of Object.entries(answers)) {
@@ -33,6 +33,7 @@ export function decisionExtras(payload: ControlInput["payload"]): DecisionExtras
   }
   if (typeof message === "string") extras.message = message;
   if (scope === "once" || scope === "session") extras.scope = scope;
+  if (permissionMode === "auto" || permissionMode === "default") extras.permissionMode = permissionMode;
   return extras;
 }
 
