@@ -1,3 +1,4 @@
+import { harnessModes } from "draft-core/harnesses";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { SessionInputRow } from "../types/tables";
@@ -5,19 +6,20 @@ import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, o
 
 type DecisionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision">;
 type StopRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/stop">;
+type ModeRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/mode">;
 type HostEventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/host-events">;
 
 const MAX_HOST_EVENTS = 20;
-const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "session_note"]);
+const HOST_EVENT_KINDS = new Set(["permission_request", "permission_resolved", "session_note", "assistant_text"]);
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 const MAX_ANSWERS = 20;
-const MAX_ANSWER_KEY_CHARS = 1000;
+const MAX_ANSWER_KEY_CHARS = 4000;
 const MAX_ANSWER_CHARS = 2000;
 const MAX_ANSWER_LIST = 50;
 const MAX_MESSAGE_CHARS = 2000;
 
-type Extras = { answers: Record<string, string | string[]> | null; message: string | null; scope: "once" | "session" | null };
+type Extras = { answers: Record<string, string | string[]> | null; message: string | null; scope: "once" | "session" | null; permissionMode: "auto" | "default" | null };
 
 const isShortString = (value: unknown): value is string => typeof value === "string" && value.length <= MAX_ANSWER_CHARS;
 
@@ -50,7 +52,12 @@ function parseExtras(body: Record<string, unknown>): { ok: true; extras: Extras 
     if (body.scope !== "once" && body.scope !== "session") return { ok: false, error: "invalid_scope" };
     scope = body.scope;
   }
-  return { ok: true, extras: { answers, message, scope } };
+  let permissionMode: Extras["permissionMode"] = null;
+  if (body.permissionMode !== undefined && body.permissionMode !== null) {
+    if (body.permissionMode !== "auto" && body.permissionMode !== "default") return { ok: false, error: "invalid_permission_mode" };
+    permissionMode = body.permissionMode;
+  }
+  return { ok: true, extras: { answers, message, scope, permissionMode } };
 }
 
 /** Any member can decide an open permission request. The first decision wins. */
@@ -77,6 +84,7 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
     p_answers: extras.extras.answers,
     p_message: extras.extras.message,
     p_scope: extras.extras.scope,
+    p_permission_mode: extras.extras.permissionMode,
   });
   if (error) return knownDbError(error.message) ?? errorResponse("decision_failed", 500, error, workspaceId, sessionId);
 
@@ -127,9 +135,13 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
 
+  // Dismissing a prompt keeps the caller's queued messages, so they go through once it is gone.
+  const parsed = await readBody(req);
+  const keepQueued = parsed.ok && parsed.body.keepQueued === true;
+
   let withdrawn: { id: string; text: string }[];
   try {
-    withdrawn = await withdrawQueuedMessages(workspaceId, sessionId, caller.userId);
+    withdrawn = keepQueued ? [] : await withdrawQueuedMessages(workspaceId, sessionId, caller.userId);
   } catch (error) {
     return errorResponse("stop_failed", 500, error, workspaceId, sessionId);
   }
@@ -154,6 +166,51 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
   });
   if (error) return knownDbError(error.message) ?? errorResponse("stop_failed", 500, error, workspaceId, sessionId);
   return Response.json({ ok: true, withdrawn }, { status: 201 });
+});
+
+/** Any member can ask the host to switch the session's mode. The host applies it, and reports the mode it reached. */
+export const MODE = withAuth<ModeRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  const { permissionMode, approvalMode } = parsed.body;
+  if (permissionMode === undefined && approvalMode === undefined) return errorResponse("invalid_mode", 400);
+
+  const { data: session, error: lookupError } = await serviceClient
+    .from("sessions")
+    .select("harness, status, session_type")
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle<{ harness: string; status: string; session_type: string }>();
+  if (lookupError) return errorResponse("mode_failed", 500, lookupError, workspaceId, sessionId);
+  if (!session) return errorResponse("session_not_found", 404);
+  if (session.session_type === "routine") return errorResponse("routine_read_only", 409);
+  if (session.status === "ended") return errorResponse("session_ended", 409);
+
+  const modes = harnessModes(session.harness);
+  const payload: Record<string, string> = {};
+  if (permissionMode !== undefined) {
+    if (typeof permissionMode !== "string" || !modes.permission.some((m) => m.value === permissionMode)) return errorResponse("invalid_mode", 400);
+    payload.permissionMode = permissionMode;
+  }
+  if (approvalMode !== undefined) {
+    if (typeof approvalMode !== "string" || !modes.approval.some((m) => m.value === approvalMode)) return errorResponse("invalid_mode", 400);
+    payload.approvalMode = approvalMode;
+  }
+
+  const { error } = await serviceClient.rpc("create_session_input", {
+    p_session_id: sessionId,
+    p_workspace_id: workspaceId,
+    p_author_user_id: caller.userId,
+    p_author_name: await authorName(caller.userId),
+    p_kind: "set_mode",
+    p_payload: payload,
+  });
+  if (error) return knownDbError(error.message) ?? errorResponse("mode_failed", 500, error, workspaceId, sessionId);
+  return Response.json({ ok: true }, { status: 201 });
 });
 
 type HostEvent = { sourceId: string; kind: string; payload: Record<string, unknown> };

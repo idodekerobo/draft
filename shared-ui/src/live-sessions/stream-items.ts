@@ -18,6 +18,9 @@ export type StreamItem =
       input: unknown;
       questions: LiveQuestion[];
       plan: string | null;
+      allowSession: boolean;
+      /** For a plan: the mode the session is in. */
+      permissionMode: string | null;
       /** Null while the request waits for an answer. */
       resolved: {
         reason: string;
@@ -26,6 +29,7 @@ export type StreamItem =
         at: string;
         answers: Record<string, AnswerValue> | null;
         message: string | null;
+        permissionMode: string | null;
       } | null;
     }
   | {
@@ -58,11 +62,23 @@ export function toolSummary(input: unknown): string {
   return typeof first === "string" ? oneLine(first) : "";
 }
 
+const PREFIX_CHARS = 60;
+
+/** Letters and digits only, so Markdown marks and spacing do not stop two copies of a message from matching. */
+const plain = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+function sameMessage(a: string, b: string): boolean {
+  if (a === b) return true;
+  return a.length >= PREFIX_CHARS && b.length >= PREFIX_CHARS && a.slice(0, PREFIX_CHARS) === b.slice(0, PREFIX_CHARS);
+}
+
 /** Turns the event log into display items. A tool result joins its tool call by id. */
 export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
   const items: StreamItem[] = [];
   const toolsById = new Map<string, Extract<StreamItem, { type: "tool" }>>();
   const approvalsById = new Map<string, Extract<StreamItem, { type: "approval" }>>();
+  // Early copies of messages that end in a request. The transcript's own copy arrives after the request ends and is dropped.
+  const previews: string[] = [];
 
   for (const event of events) {
     const { payload } = event;
@@ -70,11 +86,22 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
 
     switch (event.kind) {
       case "user_message":
+        previews.length = 0;
         items.push({ type: "user", seq: event.seq, at: event.created_at, ...splitAuthor(payload.text ?? ""), authorUserId: event.author_user_id ?? null, authorName: event.author_name ?? null, agentId });
         break;
-      case "assistant_text":
+      case "assistant_text": {
+        const key = plain(payload.text ?? "");
+        if (payload.preview) previews.push(key);
+        else {
+          const match = previews.findIndex((p) => sameMessage(p, key));
+          if (match >= 0) {
+            previews.splice(match, 1);
+            break;
+          }
+        }
         items.push({ type: "assistant", seq: event.seq, at: event.created_at, text: payload.text ?? "", agentId });
         break;
+      }
       case "thinking":
         items.push({ type: "thinking", seq: event.seq, text: payload.text ?? "", agentId });
         break;
@@ -93,6 +120,8 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
           input: payload.input,
           questions: payload.questions ?? [],
           plan: payload.plan ?? null,
+          allowSession: payload.allowSession === true,
+          permissionMode: payload.permissionMode ?? null,
           resolved: null,
         };
         items.push(approval);
@@ -109,6 +138,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
             at: event.created_at,
             answers: payload.answers ?? null,
             message: payload.message ?? null,
+            permissionMode: payload.permissionMode ?? null,
           };
         }
         break;
@@ -154,6 +184,12 @@ export function approvalOutcome(approval: OpenApproval, hostName: string | null)
   switch (resolved.reason) {
     case "decided":
       if (approval.kind === "question" && resolved.decision === "allow") return `Answered by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
+      if (approval.kind === "plan") {
+        const who = resolved.byName ?? "a teammate";
+        if (resolved.decision === "deny") return `${who} asked for changes, ${timeOf(resolved.at)}`;
+        const mode = resolved.permissionMode === "auto" ? ", auto mode" : resolved.permissionMode === "default" ? ", manual edits" : "";
+        return `Approved by ${who}${mode}, ${timeOf(resolved.at)}`;
+      }
       return `${resolved.decision === "deny" ? "Denied" : "Allowed"} by ${resolved.byName ?? "a teammate"}, ${timeOf(resolved.at)}`;
     case "answered_locally":
       return `Answered ${where}, ${timeOf(resolved.at)}`;

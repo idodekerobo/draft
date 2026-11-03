@@ -31,6 +31,7 @@ const api: LiveSessionsApi = {
   actOnInput: async () => {},
   decideApproval: async () => ({ ok: true }),
   stop: async () => ({ withdrawn: [] }),
+  setMode: async () => {},
 };
 
 describe("SessionView", () => {
@@ -169,7 +170,7 @@ describe("SessionView", () => {
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "B" }));
     fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
-    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "allow", answers: { Pick: "B" } }));
+    await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "allow", answers: { "0": "B" } }));
     view.unmount();
 
     const resolved = [...open, { seq: 2, source_id: "b", kind: "permission_resolved" as const, payload: { requestId: "q1", reason: "decided", decision: "allow" as const, by_name: "Dev", answers: { Pick: "B" } }, created_at: "2026-10-27T10:01:00Z" }];
@@ -177,6 +178,80 @@ describe("SessionView", () => {
     await screen.findByText(/Answered by Dev/);
     expect(screen.queryByRole("group", { name: "Question from Claude" })).toBeNull();
     expect(screen.getByText("B")).toBeTruthy();
+  });
+
+  describe("a prompt in the terminal with no card", () => {
+    const blocked = { id: "i1", author_user_id: "u9", author_name: "Dev", text: "go on", state: "queued" as const, reason: "dialog", created_at: "2026-10-27T00:00:00Z", updated_at: "", mine: true };
+    const ownerSession = { ...session, mine: true };
+    const setup = (live: LiveSession = ownerSession) => {
+      const stop = mock(async (..._args: unknown[]) => ({ withdrawn: [] as string[] }));
+      render(<SessionView api={{ ...api, stop, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [blocked] }) }} sessionId="s1" />);
+      return stop;
+    };
+
+    it("is dismissed by the owner's button or Esc, and the queued message stays", async () => {
+      const stop = setup();
+      fireEvent.click(await screen.findByRole("button", { name: /Dismiss in terminal/ }));
+      await waitFor(() => expect(stop).toHaveBeenCalledWith("s1", { keepQueued: true }));
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
+    });
+
+    it("is not offered to someone who does not own the session", async () => {
+      setup({ ...session, mine: false });
+      await screen.findByText("go on");
+      expect(screen.queryByRole("button", { name: /Dismiss in terminal/ })).toBeNull();
+    });
+  });
+
+  it("shows a Codex question as Codex's, with no terminal hint", async () => {
+    const codex: LiveSession = { ...session, harness: "codex" };
+    const question = { key: "area", question: "Which area?", multiSelect: false, isOther: false, isSecret: false, options: [{ label: "Auth" }] };
+    const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "request_user_input", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: codex, events: open, inputs: [] }) }} sessionId="s1" />);
+    await screen.findByRole("group", { name: "Question from Codex" });
+    expect(screen.queryByText(/answer in the terminal/)).toBeNull();
+  });
+
+  describe("an open question", () => {
+    const question = { key: "Pick", question: "Pick", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "A" }, { label: "B" }] };
+    const open = [{ seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "q1", kind: "question" as const, name: "AskUserQuestion", questions: [question] }, created_at: "2026-10-27T10:00:00Z" }];
+    const setup = () => {
+      const decideApproval = mock(async (..._args: unknown[]) => ({ ok: true as const }));
+      const sendMessage = mock(async (..._args: unknown[]) => {});
+      render(<SessionView api={{ ...api, decideApproval, sendMessage, fetchEvents: async () => ({ viewer, session, events: open, inputs: [] }) }} sessionId="s1" />);
+      return { decideApproval, sendMessage };
+    };
+
+    it("is skipped by Esc, like the terminal", async () => {
+      const { decideApproval } = setup();
+      await screen.findByRole("group", { name: "Question from Claude" });
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." }));
+    });
+
+    it("is skipped by its Skip button", async () => {
+      const { decideApproval } = setup();
+      fireEvent.click(await screen.findByRole("button", { name: /^Skip/ }));
+      await waitFor(() => expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." }));
+    });
+
+    it("is skipped when a message is sent from the message box, and the message is sent after", async () => {
+      const { decideApproval, sendMessage } = setup();
+      await screen.findByRole("group", { name: "Question from Claude" });
+      fireEvent.change(screen.getByPlaceholderText(/Message/), { target: { value: "do this instead" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("s1", "do this instead"));
+      expect(decideApproval).toHaveBeenCalledWith("s1", "q1", { decision: "deny", message: "The user skipped this." });
+    });
+
+    it("keeps Esc in an empty message box for the question, not for Stop", async () => {
+      const stop = mock(async () => ({ withdrawn: [] }));
+      render(<SessionView api={{ ...api, stop, fetchEvents: async () => ({ viewer, session, events: open, inputs: [] }) }} sessionId="s1" />);
+      await screen.findByRole("group", { name: "Question from Claude" });
+      fireEvent.keyDown(screen.getByPlaceholderText(/Message/), { key: "Escape" });
+      expect(stop).not.toHaveBeenCalled();
+    });
   });
 
   it("asks before a menu action that needs confirming", async () => {
@@ -411,5 +486,50 @@ describe("SessionView view event", () => {
     render(<SessionView api={routineApi} sessionId="s1" track={track as never} />);
     await screen.findByRole("heading", { name: "Weekly digest" });
     expect(track).not.toHaveBeenCalled();
+  });
+
+  describe("the mode menu", () => {
+    const live = (extra: Partial<LiveSession> = {}): LiveSession => ({ ...session, mine: false, ...extra });
+    const setup = (extra: Partial<LiveSession> = {}) => {
+      const setMode = mock(async (..._args: unknown[]) => {});
+      render(<SessionView api={{ ...api, setMode, fetchEvents: async () => ({ viewer, session: live(extra), events: [], inputs: [] }) }} sessionId="s1" />);
+      return setMode;
+    };
+
+    it("shows Claude's current mode and the four choices in Shift+Tab order, and asks for the chosen one", async () => {
+      const setMode = setup({ permission_mode: "auto" });
+      fireEvent.click(await screen.findByRole("button", { name: "Permissions: Auto" }));
+      expect(screen.getAllByRole("menuitemradio").map((m) => m.querySelector(".ui-mode__name")?.textContent)).toEqual(["Manual", "Auto ✓", "Accept edits", "Plan"]);
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /Plan/ }));
+      await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { permissionMode: "plan" }));
+      expect((await screen.findByRole("button", { name: /Permissions: Plan/ }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("cycles to the next mode on Shift+Tab in the message box", async () => {
+      const setMode = setup({ permission_mode: "plan" });
+      await screen.findByRole("button", { name: "Permissions: Plan" });
+      fireEvent.keyDown(screen.getByPlaceholderText(/Message/), { key: "Tab", shiftKey: true });
+      await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { permissionMode: "default" }));
+    });
+
+    it("shows a mode the menu does not list, without letting it be changed", async () => {
+      setup({ permission_mode: "bypassPermissions" });
+      const trigger = (await screen.findByRole("button", { name: /Permissions: Bypass Permissions/ })) as HTMLButtonElement;
+      expect(trigger.disabled).toBe(true);
+    });
+
+    it("gives Codex a mode menu and an approvals menu", async () => {
+      const setMode = setup({ harness: "codex", permission_mode: "default", approval_mode: "ask-for-approval" });
+      await screen.findByRole("button", { name: "Mode: Default" });
+      fireEvent.click(screen.getByRole("button", { name: "Approvals: Ask for approval" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
+      await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { approvalMode: "full-access" }));
+    });
+
+    it("is hidden once the session has ended, and for a routine run", async () => {
+      setup({ status: "ended" });
+      await screen.findByText(/This session has ended/);
+      expect(screen.queryByRole("button", { name: /Permissions:/ })).toBeNull();
+    });
   });
 });

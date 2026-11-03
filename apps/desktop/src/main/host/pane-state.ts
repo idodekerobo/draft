@@ -54,7 +54,7 @@ export function classifyPane(screen: string): PaneState {
   if (composer) {
     const text = raw
       .slice(composer.start, composer.end)
-      .map((line, index) => typedText(index === 0 ? line.slice(line.indexOf("❯") + 1) : line))
+      .map((line, index) => (index === 0 ? typedText(line).replace(/^\s*❯/, "") : typedText(line)))
       .join("")
       .trim();
     return text === "" ? "ready" : "composer_busy";
@@ -62,7 +62,7 @@ export function classifyPane(screen: string): PaneState {
 
   const bottom = plain.filter((line) => line.trim() !== "").slice(-DIALOG_LINES).join("\n");
   if (/Enter to select|↑\/↓ to navigate/.test(bottom)) return "question";
-  if (/Do you want to|Esc to cancel · Tab to amend/.test(bottom)) return "permission";
+  if (/Do you want to|Would you like to proceed\?|Esc to cancel · Tab to amend/.test(bottom)) return "permission";
   return "dialog";
 }
 

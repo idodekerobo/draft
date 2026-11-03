@@ -353,11 +353,11 @@ describeWithDatabase("permission approvals", () => {
     name: string,
     requestId: string,
     decision = "allow",
-    extras: { answers?: unknown; message?: string; scope?: string } = {},
+    extras: { answers?: unknown; message?: string; scope?: string; permissionMode?: string } = {},
   ) {
     const answers = extras.answers === undefined ? null : JSON.stringify(extras.answers);
     const [row] = await db()<[{ result: { outcome: string; by_name?: string; reason?: string; input?: { id: string; payload: Record<string, unknown> } } }]>`
-      select create_permission_decision(${sessionId}, ${workspaceId}, ${author}, ${name}, ${requestId}, ${decision}, ${answers}::text::jsonb, ${extras.message ?? null}, ${extras.scope ?? null}) as result
+      select create_permission_decision(${sessionId}, ${workspaceId}, ${author}, ${name}, ${requestId}, ${decision}, ${answers}::text::jsonb, ${extras.message ?? null}, ${extras.scope ?? null}, ${extras.permissionMode ?? null}) as result
     `;
     return row.result;
   }
@@ -426,6 +426,17 @@ describeWithDatabase("permission approvals", () => {
     expect(answered.input!.payload).toEqual({ requestId: "r1", decision: "allow", answers: { Q: ["A", "B"], Size: "L" }, message: "why", scope: "session" });
     const plain = await decide(sessionId, workspaceId, author, "Dev", "r2");
     expect(plain.input!.payload).toEqual({ requestId: "r2", decision: "allow" });
+  });
+
+  test("a plan approval keeps the mode it switches to, and only auto or default", async () => {
+    const { workspaceId } = await createWorkspace();
+    const sessionId = await createSession(workspaceId);
+    const author = await createMember(workspaceId);
+    await append(sessionId, workspaceId, [request("r1"), request("r2")]);
+
+    const plan = await decide(sessionId, workspaceId, author, "Dev", "r1", "allow", { permissionMode: "auto" });
+    expect(plan.input!.payload).toEqual({ requestId: "r1", decision: "allow", permissionMode: "auto" });
+    await expect(decide(sessionId, workspaceId, author, "Dev", "r2", "allow", { permissionMode: "plan" })).rejects.toThrow("invalid_permission_mode");
   });
 
   test("bad answers, a long reason and an unknown scope are refused", async () => {

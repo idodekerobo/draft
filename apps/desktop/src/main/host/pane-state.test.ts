@@ -19,6 +19,17 @@ describe("classifyPane", () => {
     expect(classifyPane(screen(`\u001b[39m❯${NBSP}${DIM}create nope.txt again${RESET}`))).toBe("ready");
   });
 
+  it("the queued-messages hint while Claude works is a dim placeholder, even when the prompt sign is what turned dim on", () => {
+    const hint = "\u001b[2m❯ \u001b[39mPress up to edit queued messages\u001b[0m";
+    const queued = `❯ [Priya via Draft #aaaa1111] write an essay\n❯ [Idode via Draft #bbbb2222] also say pineapple\n  ctrl+x ctrl+s to send now\n· Actualizing… (7s · thinking)`;
+    expect(classifyPane(`${header}${queued}\n${RULE}\n${hint}\n${RULE}\n  ⏵⏵ auto mode on · esc to interrupt\n`)).toBe("ready");
+  });
+
+  it("the plan dialog is a permission prompt", () => {
+    const plan = " Claude has written up a plan and is ready to execute. Would you like to proceed?\n ❯ 1. Yes, and use auto mode\n   2. Yes, manually approve edits\n   3. Tell Claude what to change\n";
+    expect(classifyPane(`${header}${plan}`)).toBe("permission");
+  });
+
   it("typed text makes the composer busy", () => {
     expect(classifyPane(screen(`\u001b[39m❯${NBSP}partial text`))).toBe("composer_busy");
   });

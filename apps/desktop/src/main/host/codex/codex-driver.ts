@@ -6,7 +6,8 @@ import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher,
 import type { PendingInput } from "../input-delivery";
 import { openCommandInTerminal } from "../open-in-terminal";
 import { shellQuote } from "../launch";
-import { COMMAND_APPROVAL, FILE_CHANGE_APPROVAL, approvalDecision, approvalPayload } from "./approvals";
+import { codexRequest } from "./approvals";
+import { DEFAULT_APPROVAL, DEFAULT_COLLABORATION, approvalOverrides, collaborationUpdate, isApproval, isCollaboration, type CodexApproval, type CodexCollaboration } from "./modes";
 import { startAppServer, type AppServer } from "./app-server-process";
 import { CODEX_MISSING_MESSAGE, CODEX_SIGNED_OUT_MESSAGE, readCodexAuth, readCodexVersion } from "./codex-check";
 import { codexPollMs } from "./poll-interval";
@@ -18,6 +19,7 @@ export const TERMINAL_TOKEN_ENV = "DRAFT_CODEX_TOKEN";
 
 interface ThreadStartResult {
   thread: { id: string };
+  model?: string;
 }
 
 const textInput = (input: PendingInput) => [{ type: "text", text: input.delivered_text, text_elements: [] }];
@@ -32,6 +34,7 @@ interface ResumedTurn {
 interface ThreadResumeResult {
   thread: { turns?: ResumedTurn[] };
   cwd?: string;
+  model?: string;
 }
 
 interface TurnStartResult {
@@ -52,6 +55,12 @@ class CodexConnection {
   /** Turns read when the thread was resumed, to post again once a driver is bound. */
   history: ResumedTurn[] = [];
   rpc!: RpcClient;
+  /** The model the thread runs, which a collaboration mode change must name. */
+  model: string | null = null;
+  collaboration: CodexCollaboration = DEFAULT_COLLABORATION;
+  approval: CodexApproval = DEFAULT_APPROVAL;
+  /** Until someone chooses, turns keep the thread's own approval settings. */
+  approvalChosen = false;
 
   constructor(readonly server: AppServer, readonly threadId: string, readonly folderPath: string, readonly bin: string) {}
 
@@ -73,7 +82,7 @@ process.on("exit", () => {
 
 async function connect(server: AppServer, handlers: RpcHandlers): Promise<RpcClient> {
   const rpc = await RpcClient.connect(server.url, server.token, handlers);
-  await rpc.request("initialize", { clientInfo: { name: "draft", title: "Draft", version: "0" }, capabilities: null });
+  await rpc.request("initialize", { clientInfo: { name: "draft", title: "Draft", version: "0" }, capabilities: { experimentalApi: true } });
   rpc.notify("initialized");
   return rpc;
 }
@@ -108,6 +117,7 @@ async function resumeConnection(input: { bin: string; sessionId: string; threadI
     });
     const connection = new CodexConnection(server, input.threadId, input.folderPath || resumed.cwd || "", input.bin);
     connection.rpc = rpc;
+    connection.model = resumed.model ?? input.model;
     connection.hasTurned = true;
     connection.history = resumed.thread.turns ?? [];
     route.connection = connection;
@@ -168,6 +178,7 @@ export class CodexDriver implements HarnessDriver {
   }
 
   private bind(connection: CodexConnection): void {
+    this.reportModes(connection);
     connection.sink = {
       notification: (method, params) => this.onNotification(connection, method, params),
       request: (id, method, params) => void this.onRequest(connection, id, method, params),
@@ -231,24 +242,34 @@ export class CodexDriver implements HarnessDriver {
 
   /** Tells viewers to sign in again. A failed turn is never retried silently. */
   private noteSignedOut(): void {
+    this.note("Codex is signed out. Run codex login in a terminal, then send a message again.");
+  }
+
+  private note(text: string): void {
     void this.host
-      .postHostEvents([{ sourceId: `auth:${Date.now()}`, kind: "session_note", payload: { text: "Codex is signed out. Run codex login in a terminal, then send a message again." } }])
-      .catch((error) => console.error("[live-session] could not post the sign-in note", error));
+      .postHostEvents([{ sourceId: `note:${Date.now()}:${crypto.randomUUID().slice(0, 6)}`, kind: "session_note", payload: { text } }])
+      .catch((error) => console.error("[live-session] could not post a note", error));
   }
 
   private async onRequest(connection: CodexConnection, id: number | string, method: string, params: unknown): Promise<void> {
-    const payload = approvalPayload(method, params);
-    if (!payload) {
+    const request = codexRequest(method, params);
+    if (!request) {
       connection.rpc.respondError(id, -32601, "Draft does not handle this request.");
+      return;
+    }
+    if (request.type === "decline") {
+      this.note(request.note);
+      connection.rpc.respond(id, request.result);
       return;
     }
     const controller = new AbortController();
     this.requests.set(id, controller);
-    const answer = await this.broker.hold(payload, controller.signal);
+    const outcome = await this.broker.ask(request.payload, controller.signal);
     this.requests.delete(id);
     // Answered in another client, such as the terminal. Codex already moved on.
     if (controller.signal.aborted || !connection.isAlive()) return;
-    connection.rpc.respond(id, { decision: approvalDecision(answer) });
+    // No answer from a person means the request ended without one, so the step is cancelled.
+    connection.rpc.respond(id, request.answer(outcome && (outcome.type === "decided" || outcome.type === "expired") ? outcome : { type: "expired" }));
   }
 
   private enqueue(note: { method: string; params: unknown }): void {
@@ -340,6 +361,31 @@ export class CodexDriver implements HarnessDriver {
     this.recovered = true;
   }
 
+  /** Switches the thread's modes. Returns a note for the viewers when it could not. */
+  private async setMode(connection: CodexConnection, payload: { permissionMode?: unknown; approvalMode?: unknown }): Promise<string | null> {
+    const { permissionMode, approvalMode } = payload;
+    if (isCollaboration(permissionMode)) {
+      if (!connection.model) return "Codex has not said which model it runs, so the mode did not change. Send a message first.";
+      try {
+        await connection.rpc.request("thread/settings/update", collaborationUpdate(connection.threadId, permissionMode, connection.model));
+        connection.collaboration = permissionMode;
+      } catch (error) {
+        console.error("[live-session] codex mode change failed", error);
+        return `Codex did not accept the ${permissionMode === "plan" ? "Plan" : "Default"} mode: ${error instanceof Error ? error.message : "unknown error"}`;
+      }
+    }
+    if (isApproval(approvalMode)) {
+      connection.approval = approvalMode;
+      connection.approvalChosen = true;
+    }
+    this.reportModes(connection);
+    return null;
+  }
+
+  private reportModes(connection: CodexConnection): void {
+    this.host.reportModes({ permissionMode: connection.collaboration, approvalMode: connection.approval });
+  }
+
   private async runControls(connection: CodexConnection, controls: ControlInput[]): Promise<void> {
     for (const input of controls.filter((i) => i.state === "queued")) {
       if (!(await this.host.setInputState(input.id, ["queued"], "delivering"))) continue;
@@ -351,6 +397,10 @@ export class CodexDriver implements HarnessDriver {
             (decision === "allow" || decision === "deny") &&
             this.broker.decide(requestId, decision, { userId: input.author_user_id, name: input.author_name });
           await this.host.setInputState(input.id, ["delivering"], decided ? "consumed" : "failed", decided ? undefined : "request_not_open");
+        } else if (input.kind === "set_mode") {
+          const note = await this.setMode(connection, input.payload);
+          if (note) this.note(note);
+          await this.host.setInputState(input.id, ["delivering"], note ? "failed" : "consumed", note ? "pane_unavailable" : undefined);
         } else {
           if (connection.busy && connection.turnId) await connection.rpc.request("turn/interrupt", { threadId: connection.threadId, turnId: connection.turnId });
           await this.host.setInputState(input.id, ["delivering"], "consumed");
@@ -379,7 +429,11 @@ export class CodexDriver implements HarnessDriver {
     const next = queued[0]!;
     if (!(await this.host.setInputState(next.id, ["queued"], "delivering"))) return;
     try {
-      const started = await connection.rpc.request<TurnStartResult>("turn/start", { threadId: connection.threadId, input: textInput(next) });
+      const started = await connection.rpc.request<TurnStartResult>("turn/start", {
+        threadId: connection.threadId,
+        input: textInput(next),
+        ...(connection.approvalChosen ? approvalOverrides(connection.approval) : {}),
+      });
       connection.busy = true;
       connection.turnId = started.turn.id;
       connection.hasTurned = true;
@@ -471,6 +525,7 @@ const launcher: HarnessLauncher = {
       });
       const connection = new CodexConnection(server, started.thread.id, folderPath, bin);
       connection.rpc = rpc;
+      connection.model = started.model ?? model;
       route.connection = connection;
       live.set(sessionId, connection);
       return { nativeSessionId: started.thread.id };

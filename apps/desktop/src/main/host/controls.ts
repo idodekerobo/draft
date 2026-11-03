@@ -4,11 +4,11 @@ import type { AnswerValue, Decider, DecisionExtras, HostEvent } from "./approval
 
 export interface ControlInput {
   id: string;
-  kind: "stop" | "permission_decision";
+  kind: "stop" | "permission_decision" | "set_mode";
   state: "queued" | "delivering";
   author_user_id: string;
   author_name: string;
-  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown };
+  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown; permissionMode?: unknown; approvalMode?: unknown };
 }
 
 export interface ControlDeps {
@@ -16,13 +16,15 @@ export interface ControlDeps {
   decide(requestId: string, decision: "allow" | "deny", by: Decider, extras?: DecisionExtras): boolean;
   capture(): Promise<string>;
   sendEscape(): Promise<void>;
+  /** Switches the session to the modes asked for. */
+  setMode(modes: { permissionMode?: string; approvalMode?: string }): Promise<{ ok: true } | { ok: false; note: string }>;
   postEvents(events: HostEvent[]): Promise<void>;
 }
 
 /** Reads the optional parts of a decision from the input row. Anything of the wrong type is ignored. */
 export function decisionExtras(payload: ControlInput["payload"]): DecisionExtras {
   const extras: DecisionExtras = {};
-  const { answers, message, scope } = payload;
+  const { answers, message, scope, permissionMode } = payload;
   if (answers && typeof answers === "object" && !Array.isArray(answers)) {
     const clean: Record<string, AnswerValue> = {};
     for (const [key, value] of Object.entries(answers)) {
@@ -33,6 +35,7 @@ export function decisionExtras(payload: ControlInput["payload"]): DecisionExtras
   }
   if (typeof message === "string") extras.message = message;
   if (scope === "once" || scope === "session") extras.scope = scope;
+  if (permissionMode === "auto" || permissionMode === "default") extras.permissionMode = permissionMode;
   return extras;
 }
 
@@ -74,6 +77,18 @@ export class ControlActions {
         await this.deps.setState(input.id, ["delivering"], decided ? "consumed" : "failed", decided ? undefined : "request_not_open");
         return;
       }
+      if (input.kind === "set_mode") {
+        const { permissionMode, approvalMode } = input.payload;
+        const result = await this.deps.setMode({
+          ...(typeof permissionMode === "string" ? { permissionMode } : {}),
+          ...(typeof approvalMode === "string" ? { approvalMode } : {}),
+        });
+        if (!result.ok) {
+          await this.deps.postEvents([{ sourceId: `mode:${input.id}`, kind: "session_note", payload: { text: result.note } }]);
+        }
+        await this.deps.setState(input.id, ["delivering"], result.ok ? "consumed" : "failed", result.ok ? undefined : "pane_unavailable");
+        return;
+      }
       await this.stop(input);
       await this.deps.setState(input.id, ["delivering"], "consumed");
     } catch (error) {
@@ -82,10 +97,12 @@ export class ControlActions {
     }
   }
 
-  /** Esc interrupts a running turn and cancels a dialog. At an empty prompt it would do nothing, so the host leaves it. */
+  /** Esc interrupts a running turn and cancels a dialog. At a prompt it would do nothing or clear typed text, so the host leaves it. */
   private async stop(input: ControlInput): Promise<void> {
     const screen = await this.deps.capture();
-    const interrupts = isTurnRunning(screen) || ["permission", "question"].includes(classifyPane(screen));
+    const pane = classifyPane(screen);
+    // Any dialog counts, including one Draft does not recognise, so the owner is never stuck behind it.
+    const interrupts = isTurnRunning(screen) || (pane !== "ready" && pane !== "composer_busy");
     if (interrupts) await this.deps.sendEscape();
     await this.deps.postEvents([
       {

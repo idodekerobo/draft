@@ -53,6 +53,7 @@ class SessionRunner {
       requestUpload: () => {
         this.uploadWanted = true;
       },
+      reportModes: (modes) => this.reportModes(modes),
     });
   }
 
@@ -93,11 +94,19 @@ class SessionRunner {
     }, this.driver.pollMs?.() ?? PANE_WATCH_MS);
   }
 
+  private modes: { permissionMode?: string | null; approvalMode?: string | null } = {};
+
+  private reportModes(modes: { permissionMode?: string | null; approvalMode?: string | null }): void {
+    const changed = (Object.keys(modes) as Array<keyof typeof modes>).some((key) => modes[key] != null && modes[key] !== this.modes[key]);
+    this.modes = { ...this.modes, ...Object.fromEntries(Object.entries(modes).filter(([, value]) => value != null)) };
+    if (changed) void this.sendHeartbeat();
+  }
+
   private async sendHeartbeat(): Promise<void> {
     try {
       await fetchServer(`${this.base}/heartbeat`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null }),
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes }),
       });
     } catch (error) {
       this.reportInputError("heartbeat", error);
@@ -469,9 +478,18 @@ export async function decideLiveSessionApproval(
   }
 }
 
-export async function stopLiveSession(sessionId: string): Promise<{ ok: true; withdrawn: string[] } | { ok: false; error: string }> {
+export async function setLiveSessionMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const response = await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: "{}" });
+    await fetchServer(`${sessionBase(sessionId)}/mode`, { method: "POST", body: JSON.stringify(change) });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "mode_failed" };
+  }
+}
+
+export async function stopLiveSession(sessionId: string, keepQueued = false): Promise<{ ok: true; withdrawn: string[] } | { ok: false; error: string }> {
+  try {
+    const response = await fetchServer(`${sessionBase(sessionId)}/stop`, { method: "POST", body: JSON.stringify(keepQueued ? { keepQueued: true } : {}) });
     const body = (await response.json().catch(() => ({}))) as { withdrawn?: Array<{ text: string }> };
     return { ok: true, withdrawn: (body.withdrawn ?? []).map((input) => input.text) };
   } catch (error) {

@@ -10,7 +10,7 @@ const colors: LiveQuestion = { key: "Pick colors", header: "Color", question: "P
 const size: LiveQuestion = { key: "Pick a size", question: "Pick a size", multiSelect: false, isOther: true, isSecret: false, options: [{ label: "S" }, { label: "L" }] };
 
 const approval = (questions: LiveQuestion[]): OpenApproval => ({
-  type: "approval", seq: 1, requestId: "r1", kind: "question", tool: "AskUserQuestion", summary: "", input: {}, questions, plan: null, resolved: null,
+  type: "approval", seq: 1, requestId: "r1", kind: "question", tool: "AskUserQuestion", summary: "", input: {}, questions, plan: null, allowSession: false, permissionMode: null, resolved: null,
 });
 
 function renderCard(questions: LiveQuestion[], result: ApprovalResult = { ok: true }) {
@@ -62,7 +62,7 @@ describe("QuestionCard", () => {
     fireEvent.click(screen.getByRole("radio", { name: "S" }));
     fireEvent.click(screen.getByRole("radio", { name: "L" }));
     fireEvent.click(send());
-    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "Pick colors": ["Red", "Blue"], "Pick a size": "L" }));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "0": ["Red", "Blue"], "1": "L" }));
     await screen.findByText(/Waiting for Maya's MacBook/);
     expect(send().disabled).toBe(true);
   });
@@ -74,7 +74,7 @@ describe("QuestionCard", () => {
     expect(send().disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Your answer to: Pick a size"), { target: { value: "Huge" } });
     fireEvent.click(send());
-    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "Pick a size": "Huge" }));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("r1", { "0": "Huge" }));
   });
 
   it("hides a secret answer while it is typed", () => {
@@ -97,5 +97,30 @@ describe("QuestionCard", () => {
     fireEvent.click(send());
     await screen.findByText("Could not send. Try again.");
     expect(send().disabled).toBe(false);
+  });
+
+  it("types the Other answer into a wrapping text area inside the card", () => {
+    renderCard([size]);
+    const container = document.body;
+    fireEvent.click(screen.getByRole("radio", { name: "Other" }));
+    const field = screen.getByLabelText(/Your answer to/);
+    expect(field.tagName).toBe("TEXTAREA");
+    expect(container.querySelector(".ui-question__item")?.contains(field)).toBe(true);
+    fireEvent.change(field, { target: { value: "one\ntwo" } });
+    expect((field as HTMLTextAreaElement).value).toBe("one\ntwo");
+  });
+
+  it("shows the header on its own line, apart from the question text", () => {
+    renderCard([colors]);
+    const container = document.body;
+    expect(container.querySelector(".ui-question__header")?.textContent).toBe("Color");
+    expect(container.querySelector(".ui-question__text")?.textContent).toBe("Pick colors");
+  });
+
+  it("names the agent and drops the terminal hint for a harness with no terminal", () => {
+    render(<QuestionCard approval={approval([size])} hostName="Maya's MacBook" agent="Codex" hasTerminal={false} onAnswer={async () => ({ ok: true })} />);
+    expect(screen.getByText("Codex has a question")).toBeTruthy();
+    expect(screen.queryByText(/answer in the terminal/)).toBeNull();
+    expect(screen.getByRole("group", { name: "Question from Codex" })).toBeTruthy();
   });
 });

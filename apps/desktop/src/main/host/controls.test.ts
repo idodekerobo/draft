@@ -6,10 +6,15 @@ const READY = `${RULE}\n❯ \n${RULE}\n  ⏸ manual mode on\n`;
 const RUNNING = `✻ Working… (3s · esc to interrupt)\n${RULE}\n❯ \n${RULE}\n`;
 const PERMISSION = " Do you want to create a.txt?\n ❯ 1. Yes\n   3. No\n Esc to cancel · Tab to amend\n";
 
+const PLAN = " Claude has written up a plan and is ready to execute. Would you like to proceed?\n ❯ 1. Yes, and use auto mode\n   2. Yes, manually approve edits\n   3. Tell Claude what to change\n      shift+tab to approve with this feedback\n ctrl+g to edit in Vim · ~/.claude/plans/p.md\n";
+const UNKNOWN_DIALOG = " Some prompt Draft has never seen\n ❯ Continue\n";
+
 const stop = (id: string, state: "queued" | "delivering" = "queued"): ControlInput => ({ id, kind: "stop", state, author_user_id: "u1", author_name: "Dev", payload: {} });
 const decision = (id: string, requestId: string, value = "allow"): ControlInput => ({ id, kind: "permission_decision", state: "queued", author_user_id: "u1", author_name: "Dev", payload: { requestId, decision: value } });
 
-function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>(), posted: unknown[] = []) {
+const setMode = (id: string, payload: ControlInput["payload"]): ControlInput => ({ id, kind: "set_mode", state: "queued", author_user_id: "u1", author_name: "Dev", payload });
+
+function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>(), posted: unknown[] = [], modeResult: { ok: true } | { ok: false; note: string } = { ok: true }) {
   const log: string[] = [];
   const states = new Map(pending.map((p) => [p.id, p.state as string]));
   const deps: ControlDeps = {
@@ -26,6 +31,7 @@ function setup(pending: ControlInput[], screen = RUNNING, held = new Set<string>
     },
     capture: async () => screen,
     sendEscape: async () => void log.push("escape"),
+    setMode: async (modes) => (log.push(`mode:${JSON.stringify(modes)}`), modeResult),
     postEvents: async (events) => void (posted.push(events[0]), log.push(`note:${(events[0]!.payload as { text: string }).text}`)),
   };
   const actions = new ControlActions(deps);
@@ -51,6 +57,18 @@ describe("ControlActions", () => {
     const { actions, log } = setup([stop("s1")], READY);
     await actions.tick();
     expect(log).toEqual(["s1:delivering", "note:Dev pressed Stop, but nothing was running", "s1:consumed"]);
+  });
+
+  it("Stop cancels an open plan dialog, which has no 'Do you want to' line", async () => {
+    const { actions, log } = setup([stop("s1")], PLAN);
+    await actions.tick();
+    expect(log).toContain("escape");
+  });
+
+  it("Stop cancels a dialog Draft does not recognise, so the owner is never stuck", async () => {
+    const { actions, log } = setup([stop("s1")], UNKNOWN_DIALOG);
+    await actions.tick();
+    expect(log).toContain("escape");
   });
 
   it("Stop cancels an open permission dialog", async () => {
@@ -87,6 +105,8 @@ describe("ControlActions", () => {
 
 describe("decisionExtras", () => {
   it("passes answers, a reason and a scope through, and drops anything of the wrong type", () => {
+    expect(decisionExtras({ permissionMode: "auto" })).toEqual({ permissionMode: "auto" });
+    expect(decisionExtras({ permissionMode: "plan" })).toEqual({});
     expect(decisionExtras({ answers: { Q: "A", M: ["x", "y"], Bad: 3, BadList: [1] }, message: "why", scope: "session" })).toEqual({
       answers: { Q: "A", M: ["x", "y"] },
       message: "why",
@@ -94,5 +114,18 @@ describe("decisionExtras", () => {
     });
     expect(decisionExtras({ answers: [1], message: 5, scope: "forever" })).toEqual({});
     expect(decisionExtras({})).toEqual({});
+  });
+
+  it("a mode switch asks the driver for the modes in the input, ignoring anything else in it", async () => {
+    const { actions, log } = setup([setMode("m1", { permissionMode: "plan", approvalMode: "full-access", requestId: "x", answers: {} })]);
+    await actions.tick();
+    expect(log).toEqual(["m1:delivering", 'mode:{"permissionMode":"plan","approvalMode":"full-access"}', "m1:consumed"]);
+  });
+
+  it("a mode switch that cannot be done leaves a note and fails the input", async () => {
+    const posted: unknown[] = [];
+    const { actions, log } = setup([setMode("m1", { permissionMode: "auto" })], READY, new Set(), posted, { ok: false, note: "Claude is waiting on a prompt." });
+    await actions.tick();
+    expect(log).toEqual(["m1:delivering", 'mode:{"permissionMode":"auto"}', "note:Claude is waiting on a prompt.", "m1:failed(pane_unavailable)"]);
   });
 });

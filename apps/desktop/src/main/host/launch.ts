@@ -93,3 +93,9 @@ export async function restorePaneSize(tmuxSession: string): Promise<void> {
 }
 
 export const attachCommand = (tmuxSession: string) => `${shellQuote(tmuxPath())} -L ${TMUX_SOCKET} attach -t ${shellQuote(tmuxSession)}`;
+
+/** Shift+Tab, which cycles Claude's permission mode. */
+export async function pressBackTab(tmuxSession: string): Promise<void> {
+  const result = await runTmux(["send-keys", "-t", tmuxSession, "BTab"]);
+  if (!result.ok) throw new Error(`tmux_send_failed: ${result.stderr.trim()}`);
+}

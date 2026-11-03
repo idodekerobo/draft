@@ -8,8 +8,10 @@ import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher,
 import { writeSessionSettings } from "./hook-settings";
 import { ensureHooksServer, registerSessionHooks } from "./hooks-server";
 import { InputDelivery, type PendingInput } from "./input-delivery";
-import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
+import { LeadInRelay } from "./lead-in";
+import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressBackTab, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
 import { openPaneInTerminal } from "./open-in-terminal";
+import { CYCLE_MODES, modeFromScreen, switchMode, type ClaudeMode } from "./mode";
 import { classifyPane, isTurnRunning } from "./pane-state";
 import { preTrustFolder } from "./pre-trust";
 import { putSigned, uploadRawFiles } from "./raw-upload";
@@ -27,6 +29,7 @@ export class ClaudeDriver implements HarnessDriver {
   private readonly forwarder: TranscriptForwarder;
   private readonly delivery: InputDelivery;
   private readonly broker: ApprovalBroker;
+  private readonly leadIn: LeadInRelay;
   private readonly controls: ControlActions;
   private unregisterHooks: (() => void) | null = null;
   private rotateTo: string | null = null;
@@ -50,6 +53,7 @@ export class ClaudeDriver implements HarnessDriver {
       pressEnter: () => pressEnter(this.tmux),
       sleep,
     });
+    this.leadIn = new LeadInRelay((events) => host.postHostEvents(events));
     this.broker = new ApprovalBroker({
       postEvents: (events) => host.postHostEvents(events),
       paneBlocked: async () => {
@@ -59,6 +63,8 @@ export class ClaudeDriver implements HarnessDriver {
       oneAtATime: true,
       newId: () => `r${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
       onOpen: (id) => host.persist({ openRequests: [...(host.state().openRequests ?? []), id] }),
+      onHold: () => this.leadIn.requestOpened(),
+      onRelease: () => this.leadIn.requestClosed(),
       onClose: (id) => host.persist({ openRequests: (host.state().openRequests ?? []).filter((open) => open !== id) }),
     });
     this.controls = new ControlActions({
@@ -66,6 +72,7 @@ export class ClaudeDriver implements HarnessDriver {
       decide: (requestId, decision, by, extras) => this.broker.decide(requestId, decision, by, extras),
       capture: () => capturePane(this.tmux),
       sendEscape: () => pressEscape(this.tmux),
+      setMode: (modes) => this.setMode(modes.permissionMode),
       postEvents: (events) => host.postHostEvents(events),
     });
   }
@@ -80,6 +87,7 @@ export class ClaudeDriver implements HarnessDriver {
     this.unregisterHooks = registerSessionHooks(state.hookId ?? state.sessionId, {
       permission: (payload, signal) => this.broker.hold(payload, signal),
       stopped: () => this.host.requestUpload(),
+      message: (payload) => this.leadIn.message(payload),
       sessionStarted: (payload) => {
         this.rotateTo ??= rotationTarget(this.host.state().nativeSessionId, payload);
       },
@@ -119,9 +127,30 @@ export class ClaudeDriver implements HarnessDriver {
   async serve(inputs: HostInput[]): Promise<void> {
     await restorePaneSize(this.tmux).catch(() => {});
     await this.broker.watchPane();
+    await this.guarded("mode watch", () => this.watchMode());
     await this.guarded("control actions", () => this.controls.tick(inputs.filter((i): i is ControlInput => i.kind !== "message")));
     if (!this.caughtUp) return;
     await this.guarded("input delivery", () => this.delivery.tick(inputs.filter((i): i is PendingInput => i.kind === "message")));
+  }
+
+  /** Reports the mode in the footer, so a switch with Shift+Tab in the terminal reaches the chat too. */
+  private async watchMode(): Promise<void> {
+    const mode = modeFromScreen(await capturePane(this.tmux));
+    if (mode) this.host.reportModes({ permissionMode: mode });
+  }
+
+  private async setMode(target: string | undefined): Promise<{ ok: true } | { ok: false; note: string }> {
+    if (!target || !CYCLE_MODES.has(target)) return { ok: false, note: "That mode cannot be set from Draft." };
+    const pane = classifyPane(await capturePane(this.tmux));
+    if (pane !== "ready" && pane !== "composer_busy") return { ok: false, note: `Claude is waiting on a prompt, so the mode did not change. Answer it first.` };
+    const result = await switchMode(target as ClaudeMode, {
+      capture: () => capturePane(this.tmux),
+      pressBackTab: () => pressBackTab(this.tmux),
+      sleep,
+    });
+    if (result.mode) this.host.reportModes({ permissionMode: result.mode });
+    if (result.ok) return { ok: true };
+    return { ok: false, note: result.reason === "unreadable" ? "Could not read Claude's mode, so it did not change." : "Could not reach that mode from Draft. Claude's own mode list does not include it." };
   }
 
   private async guarded(what: string, work: () => Promise<void>): Promise<void> {

@@ -139,6 +139,57 @@ describe("ApprovalBroker", () => {
     expect(events[1]!.payload).toMatchObject({ reason: "expired" });
   });
 
+  it("keeps a request open for the next start when its result cannot be posted", async () => {
+    const posted: HostEvent[] = [];
+    const open = new Set<string>();
+    let failResolved = true;
+    const broker = new ApprovalBroker({
+      postEvents: async (batch) => {
+        if (batch[0]!.kind === "permission_resolved" && failResolved) throw new Error("offline");
+        posted.push(...batch);
+      },
+      paneBlocked: async () => false,
+      newId: () => "r1",
+      onOpen: (id) => open.add(id),
+      onClose: (id) => open.delete(id),
+      retryMs: 1,
+    });
+    const held = broker.hold(bash, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" });
+    expect(await held).toEqual({ behavior: "allow" });
+    expect(posted.some((e) => e.kind === "permission_resolved")).toBe(false);
+    expect([...open]).toEqual(["r1"]);
+
+    failResolved = false;
+    await broker.closeOnServer("r1", { requestId: "r1", reason: "hook_gone" });
+    expect(posted.at(-1)).toMatchObject({ sourceId: "permres:r1", kind: "permission_resolved" });
+    expect(open.size).toBe(0);
+  });
+
+  it("retries a result that fails to post once, then closes the request", async () => {
+    const posted: HostEvent[] = [];
+    let failures = 1;
+    const open = new Set<string>();
+    const broker = new ApprovalBroker({
+      postEvents: async (batch) => {
+        if (batch[0]!.kind === "permission_resolved" && failures-- > 0) throw new Error("blip");
+        posted.push(...batch);
+      },
+      paneBlocked: async () => false,
+      newId: () => "r1",
+      onOpen: (id) => open.add(id),
+      onClose: (id) => open.delete(id),
+      retryMs: 1,
+    });
+    const held = broker.hold(bash, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "deny", { userId: "u1", name: "Dev" });
+    await held;
+    expect(posted.filter((e) => e.kind === "permission_resolved")).toHaveLength(1);
+    expect(open.size).toBe(0);
+  });
+
   it("falls back to the dialog when the request cannot be posted", async () => {
     const { broker, open } = setup({ failPost: true });
     expect(await broker.hold(bash, new AbortController().signal)).toBeNull();
@@ -157,6 +208,65 @@ describe("ApprovalBroker", () => {
     await broker.closeOnServer("old", { requestId: "old", reason: "hook_gone" });
     expect(events[0]).toMatchObject({ sourceId: "permres:old", kind: "permission_resolved" });
     expect(open.size).toBe(0);
+  });
+});
+
+describe("plan approval", () => {
+  const plan = { tool_name: "ExitPlanMode", permission_mode: "plan", tool_input: { plan: "# Plan\n1. x", planFilePath: "/p.md" } };
+
+  it("posts the plan in full with the session's current mode", async () => {
+    const { broker, events } = setup();
+    void broker.hold({ ...plan, tool_input: { plan: "x".repeat(9000) } }, new AbortController().signal);
+    await tick();
+    expect(events[0]!.payload).toMatchObject({ kind: "plan", permissionMode: "plan" });
+    expect((events[0]!.payload as { plan: string }).plan).toHaveLength(9000);
+  });
+
+  it("approves with the plan's own input, and switches the session mode when asked", async () => {
+    for (const mode of ["auto", "default"] as const) {
+      const { broker } = setup();
+      const held = broker.hold(plan, new AbortController().signal);
+      await tick();
+      broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { permissionMode: mode });
+      expect(await held).toEqual({ behavior: "allow", updatedInput: plan.tool_input, updatedPermissions: [{ type: "setMode", mode, destination: "session" }] });
+    }
+  });
+
+  it("approves without touching the mode when none is chosen", async () => {
+    const { broker } = setup();
+    const held = broker.hold(plan, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" });
+    expect(await held).toEqual({ behavior: "allow", updatedInput: plan.tool_input });
+  });
+
+  it("sends the feedback to Claude as what to change", async () => {
+    const { broker } = setup();
+    const held = broker.hold(plan, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "deny", { userId: "u1", name: "Dev" }, { message: "make it 2 steps" });
+    expect(await held).toEqual({ behavior: "deny", message: "Dev did not approve the plan. Change it as they ask: make it 2 steps" });
+  });
+});
+
+describe("answers by position", () => {
+  const long = "Q".repeat(1341);
+  const ask = { tool_name: "AskUserQuestion", tool_input: { questions: [{ question: long, header: "H", multiSelect: false, options: [{ label: "A", description: "a" }, { label: "B", description: "b" }] }, { question: "Size", multiSelect: true, options: [{ label: "S", description: "s" }, { label: "L", description: "l" }] }] } };
+
+  it("maps answers keyed by position to the question text Claude expects, even for a very long question", async () => {
+    const { broker } = setup();
+    const held = broker.hold(ask, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { answers: { "0": "typed", "1": ["S", "L"] } });
+    expect(await held).toEqual({ behavior: "allow", updatedInput: { ...ask.tool_input, answers: { [long]: "typed", Size: ["S", "L"] } } });
+  });
+
+  it("still takes answers keyed by question text from an older client", async () => {
+    const { broker } = setup();
+    const held = broker.hold(ask, new AbortController().signal);
+    await tick();
+    broker.decide("r1", "allow", { userId: "u1", name: "Dev" }, { answers: { Size: ["L"], [long]: "A" } });
+    expect(await held).toMatchObject({ updatedInput: { answers: { [long]: "A", Size: ["L"] } } });
   });
 });
 
@@ -235,7 +345,7 @@ describe("summarizeToolInput", () => {
       const held = broker.hold(plan, new AbortController().signal);
       await tick();
       broker.decide("r1", "deny", { userId: "u1", name: "Dev" }, { message: "  make it two steps  " });
-      expect(await held).toEqual({ behavior: "deny", message: "Denied by Dev in Draft: make it two steps" });
+      expect(await held).toEqual({ behavior: "deny", message: "Dev did not approve the plan. Change it as they ask: make it two steps" });
       expect(events[1]!.payload).toMatchObject({ message: "make it two steps" });
     });
 

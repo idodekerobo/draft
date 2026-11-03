@@ -7,7 +7,7 @@ import { ensureHooksServer, hookOutput, registerSessionHooks } from "./hooks-ser
 const dir = mkdtempSync(join(tmpdir(), "hooks-server-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 ensureHooksServer(dir);
-registerSessionHooks("boot", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+registerSessionHooks("boot", { permission: async () => null, stopped: () => {}, sessionStarted: () => {}, message: () => {} });
 const endpoint = (id: string, name: "port" | "token") => readFileSync(`${dir}/hooks/${id}.${name}`, "utf8");
 const port = endpoint("boot", "port");
 const token = endpoint("boot", "token");
@@ -17,14 +17,14 @@ const call = (path: string, init: RequestInit = {}) =>
 
 describe("hooks server", () => {
   it("answers a permission hook with Claude's hook output format", async () => {
-    registerSessionHooks("s1", { permission: async () => ({ behavior: "allow" }), stopped: () => {}, sessionStarted: () => {} });
+    registerSessionHooks("s1", { permission: async () => ({ behavior: "allow" }), stopped: () => {}, sessionStarted: () => {}, message: () => {} });
     const res = await call("/hook/s1/permission");
     expect(await res.json()).toEqual({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } });
     expect(hookOutput({ behavior: "deny", message: "no" })).toContain('"message":"no"');
   });
 
   it("gives no output when the host wants Claude's own dialog", async () => {
-    registerSessionHooks("s2", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+    registerSessionHooks("s2", { permission: async () => null, stopped: () => {}, sessionStarted: () => {}, message: () => {} });
     const res = await call("/hook/s2/permission");
     expect(res.status).toBe(204);
   });
@@ -35,7 +35,7 @@ describe("hooks server", () => {
     registerSessionHooks("s3", {
       permission: (_payload, signal) => new Promise((resolve) => signal.addEventListener("abort", () => (aborted(), resolve(null)))),
       stopped: () => {},
-      sessionStarted: () => {},
+      sessionStarted: () => {}, message: () => {},
     });
     const controller = new AbortController();
     void call("/hook/s3/permission", { signal: controller.signal }).catch(() => {});
@@ -46,7 +46,7 @@ describe("hooks server", () => {
 
   it("runs the Stop handler and refuses a wrong token, an unknown route and a GET", async () => {
     let stopped = 0;
-    registerSessionHooks("s4", { permission: async () => null, stopped: () => void stopped++, sessionStarted: () => {} });
+    registerSessionHooks("s4", { permission: async () => null, stopped: () => void stopped++, sessionStarted: () => {}, message: () => {} });
     expect((await call("/hook/s4/stop")).status).toBe(204);
     expect(stopped).toBe(1);
     expect((await call("/hook/s4/stop", { headers: { "x-draft-token": "wrong" } })).status).toBe(404);
@@ -58,16 +58,24 @@ describe("hooks server", () => {
     expect((await call("/hook/nobody/permission")).status).toBe(204);
   });
 
+  it("passes each streamed message chunk to the session and answers at once", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    registerSessionHooks("s8", { permission: async () => null, stopped: () => {}, sessionStarted: () => {}, message: (payload) => void seen.push(payload) });
+    const res = await call("/hook/s8/message", { body: JSON.stringify({ message_id: "m1", index: 0, final: true, delta: "hi" }) });
+    expect(res.status).toBe(204);
+    expect(seen).toEqual([{ message_id: "m1", index: 0, final: true, delta: "hi" }]);
+  });
+
   it("passes the SessionStart payload to the session", async () => {
     const seen: Array<Record<string, unknown>> = [];
-    registerSessionHooks("s5", { permission: async () => null, stopped: () => {}, sessionStarted: (payload) => void seen.push(payload) });
+    registerSessionHooks("s5", { permission: async () => null, stopped: () => {}, sessionStarted: (payload) => void seen.push(payload), message: () => {} });
     const res = await call("/hook/s5/session-start", { body: JSON.stringify({ source: "clear", session_id: "n2" }) });
     expect(res.status).toBe(204);
     expect(seen).toEqual([{ source: "clear", session_id: "n2" }]);
   });
 
   it("writes endpoint files per session and removes them when the session stops", () => {
-    const stop = registerSessionHooks("s6", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+    const stop = registerSessionHooks("s6", { permission: async () => null, stopped: () => {}, sessionStarted: () => {}, message: () => {} });
     expect(endpoint("s6", "port")).toBe(port);
     expect(endpoint("s6", "token")).toBe(token);
     stop();
@@ -76,8 +84,8 @@ describe("hooks server", () => {
   });
 
   it("keeps the files when a newer registration for the same session replaced the old one", () => {
-    const first = registerSessionHooks("s7", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
-    registerSessionHooks("s7", { permission: async () => null, stopped: () => {}, sessionStarted: () => {} });
+    const first = registerSessionHooks("s7", { permission: async () => null, stopped: () => {}, sessionStarted: () => {}, message: () => {} });
+    registerSessionHooks("s7", { permission: async () => null, stopped: () => {}, sessionStarted: () => {}, message: () => {} });
     first();
     expect(existsSync(`${dir}/hooks/s7.port`)).toBe(true);
   });

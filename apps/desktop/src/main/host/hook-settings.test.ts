@@ -13,6 +13,7 @@ describe("hook settings", () => {
     expect(settings.hooks.PermissionRequest[0]!.hooks[0]).toEqual({ type: "command", command: "'/h/hook.sh' 's-1' permission", timeout: 3600 });
     expect(settings.hooks.Stop[0]!.hooks[0]).toMatchObject({ command: "'/h/hook.sh' 's-1' stop", timeout: 30 });
     expect(settings.hooks.SessionStart[0]!.hooks[0]).toMatchObject({ command: "'/h/hook.sh' 's-1' session-start", timeout: 30 });
+    expect(settings.hooks.MessageDisplay[0]!.hooks[0]).toMatchObject({ command: "'/h/hook.sh' 's-1' message", timeout: 5 });
   });
 
   it("quotes a path with a quote or a space", () => {
@@ -25,6 +26,7 @@ describe("hook settings", () => {
     expect(script).toContain("|| exit 1");
     expect(script).toContain("--fail");
     expect(script).toContain('"$dir/$1.port"');
+    expect(script).toContain('[ "$2" = message ] && wait=3');
   });
 
   it("writes an executable script and a settings file for the session", () => {

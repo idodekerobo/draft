@@ -5,7 +5,7 @@ create table session_inputs (
   author_user_id  uuid not null references users(id) on delete cascade,
   author_name     text not null,
   kind            text not null
-                    check (kind in ('message', 'permission_decision', 'stop', 'end')),
+                    check (kind in ('message', 'permission_decision', 'stop', 'end', 'set_mode')),
   payload         jsonb not null default '{}',
   state           text not null default 'queued'
                     check (state in ('queued', 'delivering', 'consumed', 'failed', 'uncertain', 'cancelled')),

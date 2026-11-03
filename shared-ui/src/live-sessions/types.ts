@@ -26,6 +26,10 @@ export interface LiveSession {
   model?: string | null;
   /** The version of the harness CLI the host runs. */
   harness_version?: string | null;
+  /** Claude: manual (default), acceptEdits, plan or auto. Codex: default or plan. Null until the host reports it. */
+  permission_mode?: string | null;
+  /** Codex only: ask-for-approval, approve-for-me or full-access. */
+  approval_mode?: string | null;
   /** The session this one continues after a /clear. */
   previous_session?: LiveSessionLink | null;
   /** The session that continued this one after a /clear. */
@@ -69,6 +73,8 @@ export interface ApprovalResponse {
   /** Why a request was denied, or what to change in a plan. */
   message?: string;
   scope?: "once" | "session";
+  /** For a plan approval: the mode the session switches to. */
+  permissionMode?: "auto" | "default";
 }
 
 export interface LiveSessionEventPayload {
@@ -93,6 +99,12 @@ export interface LiveSessionEventPayload {
   kind?: ApprovalKind;
   questions?: LiveQuestion[];
   plan?: string;
+  /** assistant_text: an early copy of a message that ends in a request. The transcript sends the real one later. */
+  preview?: boolean;
+  /** The harness can allow this for the rest of the session. */
+  allowSession?: boolean;
+  /** permission_request for a plan: the mode the session was in. permission_resolved: the mode the approval switched to. */
+  permissionMode?: string;
   /** permission_resolved: what the decider answered or wrote. */
   answers?: Record<string, AnswerValue>;
   message?: string;
@@ -163,7 +175,9 @@ export interface LiveSessionsApi {
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer" | "cancel"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
-  stop(sessionId: string): Promise<{ withdrawn: string[] }>;
+  stop(sessionId: string, options?: { keepQueued?: boolean }): Promise<{ withdrawn: string[] }>;
+  /** Asks the host to switch the session to these modes. It reports the mode it reaches, which the next poll shows. */
+  setMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string }): Promise<void>;
   /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
   resume?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */

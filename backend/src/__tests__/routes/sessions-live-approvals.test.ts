@@ -92,8 +92,19 @@ describe("deciding a permission request", () => {
     expect((await decide({ decision: "allow" })).status).toBe(409);
   });
 
+  it("passes the mode a plan approval switches to, and refuses any other", async () => {
+    rpcResult = { data: { outcome: "created" }, error: null };
+    expect((await decide({ decision: "allow", permissionMode: "auto" })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args).toMatchObject({ p_permission_mode: "auto" });
+    for (const permissionMode of ["bypassPermissions", 3, "plan"]) {
+      expect((await decide({ decision: "allow", permissionMode })).status).toBe(400);
+    }
+  });
+
   it("passes answers, a reason and a scope to the database", async () => {
     rpcResult = { data: { outcome: "created" }, error: null };
+    expect((await decide({ decision: "allow", answers: { ["Q".repeat(1341)]: "A" } })).status).toBe(201);
+    rpcCalls = [];
     const res = await decide({ decision: "allow", answers: { "Pick colors": ["Red", "Blue"], Size: "L" }, message: "  because  ", scope: "session" });
     expect(res.status).toBe(201);
     expect(rpcCalls[0]!.args).toMatchObject({ p_answers: { "Pick colors": ["Red", "Blue"], Size: "L" }, p_message: "because", p_scope: "session" });
@@ -154,11 +165,54 @@ describe("Stop", () => {
     expect(rpcCalls[1]!.args).toMatchObject({ p_kind: "stop" });
   });
 
+  it("keeps the caller's queued messages when only a prompt is dismissed", async () => {
+    tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
+    const res = await routes.STOP(request("/x", { keepQueued: true }));
+    expect(await res.json()).toEqual({ ok: true, withdrawn: [] });
+    expect(rpcCalls.map((c) => c.args.p_kind ?? c.args.p_to)).toEqual(["stop"]);
+  });
+
   it("leaves a message the host claimed first", async () => {
     tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
     rpcResult = { data: false, error: null };
     const res = await routes.STOP(request("/x", {}));
     expect(((await res.json()) as { withdrawn: unknown[] }).withdrawn).toEqual([]);
+  });
+});
+
+describe("switching the mode", () => {
+  const mode = (body: unknown) => routes.MODE(request("/x", body));
+  const setHarness = (harness: string, extra: Row = {}) => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-9", host_machine_id: "host-1", status: "live", session_type: "interactive", harness, ...extra }];
+  };
+
+  it("queues a mode change from any member, with the author taken from the caller", async () => {
+    setHarness("claude");
+    rpcResult = { data: { id: "i1" }, error: null };
+    expect((await mode({ permissionMode: "auto" })).status).toBe(201);
+    expect(rpcCalls[0]).toEqual({ fn: "create_session_input", args: { p_session_id: SESSION, p_workspace_id: WS, p_author_user_id: "user-2", p_author_name: "Priya", p_kind: "set_mode", p_payload: { permissionMode: "auto" } } });
+  });
+
+  it("takes only the modes of the session's harness", async () => {
+    setHarness("claude");
+    for (const body of [{ permissionMode: "bypassPermissions" }, { permissionMode: "ask-for-approval" }, { approvalMode: "full-access" }, {}, { permissionMode: 3 }]) {
+      expect((await mode(body)).status).toBe(400);
+    }
+    setHarness("codex");
+    expect((await mode({ permissionMode: "acceptEdits" })).status).toBe(400);
+    expect((await mode({ permissionMode: "plan", approvalMode: "approve-for-me" })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args.p_payload).toEqual({ permissionMode: "plan", approvalMode: "approve-for-me" });
+    expect(rpcCalls).toHaveLength(1);
+  });
+
+  it("refuses a missing, ended or routine session", async () => {
+    tables.sessions = [];
+    expect((await mode({ permissionMode: "plan" })).status).toBe(404);
+    setHarness("claude", { status: "ended" });
+    expect((await mode({ permissionMode: "plan" })).status).toBe(409);
+    setHarness("claude", { session_type: "routine" });
+    expect((await mode({ permissionMode: "plan" })).status).toBe(409);
+    expect(rpcCalls).toEqual([]);
   });
 });
 
@@ -170,6 +224,13 @@ describe("host events", () => {
     const res = await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [event] }));
     expect(await res.json()).toEqual({ ok: true, last_seq: 4, inserted: 1 });
     expect(rpcCalls[0]!.args.p_events).toEqual([{ source_id: "perm:r1", kind: "permission_request", payload: { requestId: "r1" } }]);
+  });
+
+  it("accepts the early copy of a message that ends in a request", async () => {
+    rpcResult = { data: { last_seq: 5, inserted: 1 }, error: null };
+    const lead = { sourceId: "lead:m1", kind: "assistant_text", payload: { text: "I will run the tests.", preview: true } };
+    expect((await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [lead] }))).status).toBe(200);
+    expect(rpcCalls[0]!.args.p_events).toEqual([{ source_id: "lead:m1", kind: "assistant_text", payload: { text: "I will run the tests.", preview: true } }]);
   });
 
   it("refuses other event kinds, other users and other hosts", async () => {

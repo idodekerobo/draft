@@ -23,6 +23,12 @@ create table sessions (
   host_machine_id    text not null,
   host_name          text,
   harness_version    text,
+  -- Claude: default, acceptEdits, plan, auto (and launch-only bypassPermissions, dontAsk). Codex: default, plan.
+  permission_mode    text
+                       check (permission_mode in ('default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions', 'dontAsk')),
+  -- Codex only.
+  approval_mode      text
+                       check (approval_mode in ('ask-for-approval', 'approve-for-me', 'full-access')),
   raw_storage_path   text,
   raw_uploaded_at    timestamptz,
   -- Routine sessions only. idempotency_key is '<task_id>:<occurrence_at>'.

@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
+import { PlanCard } from "./PlanCard";
+import { ModeMenu, nextMode, useSwitching } from "./ModeMenu";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
-import { getHarness } from "draft-core/harnesses";
+import { getHarness, harnessModes } from "draft-core/harnesses";
 import { agentLabel } from "../routines/agent-label";
 import { CheckIcon, LinkIcon } from "./MessageActions";
 import { sessionBanner } from "./session-banner";
@@ -33,6 +35,7 @@ export interface SessionMenuItem {
   confirm?: string;
 }
 
+const SKIPPED_MESSAGE = "The user skipped this.";
 const NEAR_BOTTOM_PX = 96;
 
 /** Scroll offset per session, kept while the app runs; null means the user was following the latest message. */
@@ -234,6 +237,10 @@ function LoadedSession({
   const logItems = useMemo(() => buildStreamItems(events), [events]);
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
   const ownerName = session.owner_name ?? "the owner";
+  const harnessId = session.harness ?? "claude";
+  const agentName = (getHarness(harnessId)?.label ?? "Claude").split(" ")[0]!;
+  // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
+  const hasTerminal = harnessId === "claude";
   const hostOffline = session.status === "host_offline";
   const viewerName = viewer.name;
   const items = useMemo(
@@ -304,6 +311,71 @@ function LoadedSession({
     setTimeout(() => setStopping(false), STOPPING_MS);
   }, [api, sessionId, refresh]);
 
+  const skipRequest = useCallback(
+    (requestId: string) => api.decideApproval(sessionId, requestId, { decision: "deny", message: SKIPPED_MESSAGE }),
+    [api, sessionId],
+  );
+  const openQuestions = useMemo(() => approvals.filter((a) => a.kind === "question"), [approvals]);
+  const canAnswer = session.status !== "ended" && session.session_type !== "routine";
+  // A new message replaces an open question, as typing over a prompt does in the terminal.
+  const sendMessage = useCallback(
+    async (text: string) => {
+      if (canAnswer && openQuestions.length > 0) await Promise.all(openQuestions.map((q) => skipRequest(q.requestId).catch(() => {})));
+      return inputs.send(text);
+    },
+    [canAnswer, openQuestions, skipRequest, inputs],
+  );
+  const modes = harnessModes(session.harness ?? "claude");
+  const permissionSwitch = useSwitching(session.permission_mode);
+  const approvalSwitch = useSwitching(session.approval_mode);
+  const changeMode = useCallback(
+    (change: { permissionMode?: string; approvalMode?: string }) => {
+      if (change.permissionMode) permissionSwitch.start(change.permissionMode);
+      if (change.approvalMode) approvalSwitch.start(change.approvalMode);
+      void api.setMode(sessionId, change).catch(() => {
+        permissionSwitch.start("");
+        setActionError("Could not change the mode. Try again.");
+      });
+    },
+    [api, sessionId, permissionSwitch, approvalSwitch],
+  );
+  const cycleMode = useCallback(() => {
+    const next = permissionSwitch.target ? null : nextMode(modes.permission, session.permission_mode);
+    if (next) changeMode({ permissionMode: next });
+  }, [modes.permission, session.permission_mode, permissionSwitch.target, changeMode]);
+
+  const showModes = canAnswer && (modes.permission.length > 0 || modes.approval.length > 0);
+  const modeControl = (
+    <>
+      {modes.permission.length > 0 && (
+        <ModeMenu
+          label={modes.approval.length > 0 ? "Mode" : "Permissions"}
+          options={modes.permission}
+          value={session.permission_mode ?? null}
+          switchingTo={permissionSwitch.target || null}
+          onSelect={(permissionMode) => changeMode({ permissionMode })}
+        />
+      )}
+      {modes.approval.length > 0 && (
+        <ModeMenu label="Approvals" options={modes.approval} value={session.approval_mode ?? null} switchingTo={approvalSwitch.target || null} onSelect={(approvalMode) => changeMode({ approvalMode })} />
+      )}
+    </>
+  );
+  const firstOpenRequest = canAnswer ? approvals[0] : undefined;
+  // A prompt in the terminal that Draft shows no card for. Only the owner can dismiss it, and queued messages stay.
+  const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && (i.reason === "dialog" || i.reason === "permission_prompt" || i.reason === "question_prompt"));
+  const dismissPrompt = useCallback(() => void api.stop(sessionId, { keepQueued: true }).then(() => refresh()).catch(() => setActionError("Could not dismiss the prompt. Try again.")), [api, sessionId, refresh]);
+  useEffect(() => {
+    if (!firstOpenRequest && !blockedByPrompt) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      if (firstOpenRequest) void skipRequest(firstOpenRequest.requestId).catch(() => {});
+      else dismissPrompt();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [firstOpenRequest, blockedByPrompt, skipRequest, dismissPrompt]);
+
   const chooseMenuItem = useCallback((item: SessionMenuItem) => {
     if (item.confirm) setConfirming(item);
     else item.onSelect();
@@ -368,7 +440,9 @@ function LoadedSession({
             harness={session.harness}
             onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
             onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
-            onShowRequest={() => document.querySelector(".ui-approval")?.scrollIntoView?.({ block: "center", behavior: "smooth" })}
+            onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
+            onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}
+            onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void Promise.all(openQuestions.map((q) => skipRequest(q.requestId))).catch(() => {}) : undefined}
             linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
             highlightSeq={highlightSeq}
           />
@@ -385,13 +459,15 @@ function LoadedSession({
             <>
             {session.status !== "ended" &&
               approvals.map((approval) =>
-                approval.kind === "question" && approval.questions.length > 0 ? (
-                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                approval.kind === "plan" && approval.plan ? (
+                  <PlanCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                ) : approval.kind === "question" && approval.questions.length > 0 ? (
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} hasTerminal={hasTerminal} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
-                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={showModes ? modeControl : undefined} onCycleMode={showModes && modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

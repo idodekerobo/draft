@@ -255,6 +255,12 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   return Response.json({ ok: true, last_seq: lastSeq, inserted });
 });
 
+const REPORTED_PERMISSION_MODES = ["default", "acceptEdits", "plan", "auto", "bypassPermissions", "dontAsk"];
+const APPROVAL_MODES = ["ask-for-approval", "approve-for-me", "full-access"];
+
+/** A mode the host reports, or null for anything unknown, which leaves the saved mode as it is. */
+const reportedMode = (value: unknown, allowed: string[]): string | null => (typeof value === "string" && allowed.includes(value) ? value : null);
+
 /** The host says it is alive. A session marked host_offline returns to live. */
 export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
@@ -271,6 +277,8 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
     p_workspace_id: workspaceId,
     p_host_machine_id: hostMachineId,
     p_harness_version: optionalString(parsed.body.harnessVersion, 100),
+    p_permission_mode: reportedMode(parsed.body.permissionMode, REPORTED_PERMISSION_MODES),
+    p_approval_mode: reportedMode(parsed.body.approvalMode, APPROVAL_MODES),
   });
   if (error) return knownDbError(error.message) ?? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId);
   return Response.json({ ok: true, status: data });

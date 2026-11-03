@@ -127,17 +127,41 @@ describe("SessionStream", () => {
     const pending = (input: ComposerInput) => ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostOffline: false }) as const;
     const onCancel = mock((_id: string) => {});
     const onShowRequest = mock(() => {});
-    const view = render(<SessionStream items={[pending(base)]} onCancel={onCancel} onShowRequest={onShowRequest} />);
-    fireEvent.click(screen.getByRole("button", { name: "Answer it" }));
-    expect(onShowRequest).toHaveBeenCalledTimes(1);
+    const onSkipQuestions = mock(() => {});
+    const view = render(<SessionStream items={[pending(base)]} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} />);
+    fireEvent.click(screen.getByRole("button", { name: "Send now" }));
+    expect(onSkipQuestions).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledWith("i1");
 
     view.rerender(<SessionStream items={[pending({ ...base, reason: "permission_prompt" })]} onCancel={onCancel} onShowRequest={onShowRequest} />);
-    expect(screen.getByRole("button", { name: "Review it" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Review it" }));
+    expect(onShowRequest).toHaveBeenCalledTimes(1);
     view.rerender(<SessionStream items={[pending({ ...base, mine: false })]} onCancel={onCancel} onShowRequest={onShowRequest} />);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     view.rerender(<SessionStream items={[pending({ ...base, state: "delivering", reason: null })]} onCancel={onCancel} onShowRequest={onShowRequest} />);
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("offers the owner a way to dismiss a prompt that blocks a queued message", () => {
+    const base: ComposerInput = { id: "i1", author_user_id: "u1", author_name: "Priya", text: "run tests", state: "queued", reason: "dialog", created_at: new Date().toISOString(), updated_at: "", mine: true };
+    const item = { type: "pending", key: "i1", input: base, author: "Priya", ownerName: "Maya", hostOffline: false } as const;
+    const onDismissPrompt = mock(() => {});
+    const view = render(<SessionStream items={[item]} onDismissPrompt={onDismissPrompt} />);
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss in terminal/ }));
+    expect(onDismissPrompt).toHaveBeenCalledTimes(1);
+    view.rerender(<SessionStream items={[{ ...item, input: { ...base, reason: "composer_busy" } }]} onDismissPrompt={onDismissPrompt} />);
+    expect(screen.queryByRole("button", { name: /Dismiss in terminal/ })).toBeNull();
+  });
+
+  it("shows an approved plan's tool row as formatted text, open", () => {
+    const items = buildStreamItems([
+      { seq: 1, source_id: "a", kind: "tool_use", payload: { tool_use_id: "t1", name: "ExitPlanMode", input: { plan: "# Plan\n\n1. Write it" } }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "tool_result", payload: { tool_use_id: "t1", content: "approved" }, created_at: "" },
+    ]);
+    const { container } = render(<SessionStream items={items} />);
+    expect(screen.getByRole("heading", { name: "Plan" })).toBeTruthy();
+    expect(screen.getByText("Write it")).toBeTruthy();
+    expect(container.querySelector("details")?.hasAttribute("open")).toBe(true);
   });
 });
