@@ -72,7 +72,7 @@ export const MULTIPLAYER_CODING_CONTENT: GetStartedContent = {
   source: "getstarted-multiplayer-coding",
   primaryCta: "waitlist",
   callLabel: "Have Questions? Book a Call",
-  waitlistLabel: "Get a Download Link",
+  waitlistLabel: "Get Early Access",
   title: "Multiplayer Coding Sessions with Draft",
   heading: "Code with your whole team in one agent session.",
   lede: "Invite a teammate into your Claude Code or Codex session. You both prompt the same agent and see the same work. Draft saves what you decide to your company brain.",
