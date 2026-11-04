@@ -2,7 +2,8 @@
   "name": "draft-web-app",
   "private": true,
   "scripts": {
-    "prebuild": "cp ../../assets/icon.png app/icon.png",
+    "prebuild": "cp ../../assets/icon.png app/icon.png && mkdir -p public && cp ../../assets/multiplayer-coding-demo.mp4 ../../assets/multiplayer-coding-demo-poster.jpg public/",
+    "predev": "mkdir -p public && cp ../../assets/multiplayer-coding-demo.mp4 ../../assets/multiplayer-coding-demo-poster.jpg public/",
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint",

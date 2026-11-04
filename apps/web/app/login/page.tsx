@@ -10,6 +10,9 @@ export default async function Login({
     <FlowShell>
       <h1>Sign in to Draft</h1>
       <AuthForm initialMode="login" next={p.next || "/"} />
+      <p className="auth-switch">
+        New to Draft? <a className="ui-link" href="/signup">Create an account</a>
+      </p>
     </FlowShell>
   );
 }

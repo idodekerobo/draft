@@ -14,6 +14,8 @@ import {
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
 import { findRunnerBin } from "./main/host/find-bin";
+import { shellQuote } from "./main/host/launch";
+import { openCommandInTerminal } from "./main/host/open-in-terminal";
 import { runningCodexTurns } from "./main/host/codex/codex-driver";
 import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
 import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "./main/host/codex/codex-login";
@@ -37,7 +39,7 @@ import type {
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
-import { getUserIdentity } from "./main/auth/user-identity";
+import { getUserIdentity, invalidateResolvedIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
   actOnLiveSessionInput,
@@ -816,6 +818,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       cancelRoutineCodexLogin: () => cancelRoutineCodexLogin(),
 
+      openClaudeSignIn: async () => {
+        const bin = findRunnerBin("claude");
+        if (!bin) return { ok: false, error: "Claude Code is not installed on this computer." };
+        return openCommandInTerminal("claude-sign-in", `exec ${shellQuote(bin)}`);
+      },
       getAvailableRunners: async () => {
         const claudePath = findRunnerBin("claude");
         const codexPath = findRunnerBin("codex");
@@ -985,6 +992,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (hadSession && identity && !identity.signedIn) {
           try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
         }
+        return { ok: true };
+      },
+      refreshUserIdentity: async () => {
+        invalidateResolvedIdentity();
+        await getUserIdentity().catch(() => null);
+        try { rpc.send.identityRefreshNeeded({}); } catch {}
         return { ok: true };
       },
       completeOnboarding: async () => {

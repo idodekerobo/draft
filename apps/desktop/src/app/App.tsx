@@ -20,6 +20,7 @@ import { ConnectionsView } from "./components/views/ConnectionsView";
 import { RoutinesView } from "./components/views/RoutinesView";
 import { SessionsView } from "./components/views/SessionsView";
 import { DesktopOnboarding } from "./components/views/onboarding/DesktopOnboarding";
+import { FolderImportPrompt } from "./components/views/onboarding/FolderImportPrompt";
 import { SupportPanel } from "./components/SupportPanel";
 import { useCrispChat } from "./support/useCrispChat";
 import { useAppUpdates, type Toast } from "./hooks/useAppUpdates";
@@ -146,6 +147,10 @@ export function App() {
           )}
           {identityHydrated && !showOnboarding && (
             <>
+              {/* Onboarding was finished elsewhere (web) and nothing has been read yet. */}
+              {contextEmpty && workspaceId && identity.onboardingCompletedAt && !justCompletedOnboarding && (
+                <FolderImportPrompt key={workspaceId} workspaceId={workspaceId} />
+              )}
               {/* Stays mounted so the selected document and tree state survive tab changes. */}
               <div className="content__view" hidden={activeView !== "context"}>
                 <ContextViewer

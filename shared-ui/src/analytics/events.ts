@@ -9,11 +9,22 @@ export type AnalyticsPlatform = "web" | "desktop" | "landing";
 /** How a person reached a session: inside the app, or from a URL such as a shared link. */
 export type SessionEntry = "list" | "direct";
 
-export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "give_source" | "reading" | "first_context";
+export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "give_source" | "agents" | "routines" | "reading" | "ready" | "first_context";
+
+/** Where a creator came from. Always a coded value, never the raw query string. */
+export type SignupSource = "download" | "desktop" | "direct";
+
+export type DownloadSurface = "sources_step" | "agents_step" | "reading_step" | "download_page" | "settings";
 
 export type SharedAnalyticsEvent =
   | { event: "invite_viewed";              props: Record<string, never> }
   | { event: "account_created";            props: { method: "email" | "google" } }
+  | { event: "org_create_viewed";          props: { source: SignupSource } }
+  | { event: "org_created";                props: { source: SignupSource } }
+  | { event: "org_create_failed";          props: { reason: "invalid_name" | "already_in_organization" | "network" | "server" } }
+  | { event: "invite_link_copied";         props: { surface: "reading" | "ready" | "first_context" } }
+  | { event: "desktop_download_clicked";   props: { surface: DownloadSurface } }
+  | { event: "onboarding_finish_chosen";   props: { choice: "web" | "desktop" } }
   | { event: "invite_joined";              props: Record<string, never> }
   | { event: "onboarding_step_viewed";     props: { step: FlowStep } }
   | { event: "onboarding_completed";       props: { step: FlowStep } }

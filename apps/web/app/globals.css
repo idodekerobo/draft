@@ -81,13 +81,15 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 .auth-divider small { color: var(--color-text-tertiary); font-size: var(--font-size-small); }
 
 .mode-switch {
-  padding: 0;
+  padding: 8px 0;
   border: 0;
   background: none;
   color: var(--color-accent-text);
   font: var(--font-size-secondary) var(--font-ui);
   cursor: pointer;
 }
+
+.ui-flow__column .auth-switch { margin: 20px 0 0; font-size: var(--font-size-body); }
 
 .error { color: var(--color-status-red); font-size: var(--font-size-secondary); }
 .status { color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
@@ -115,10 +117,16 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 }
 .pairing-panel .ui-flow__title { font-size: 28px; margin-bottom: 12px; }
 .pairing-panel .ui-flow__subtitle { margin: 0; line-height: 1.6; }
+/* `.ui-flow__column p` sets a bottom margin on every paragraph, so these need the extra class. */
+.desktop-nudge { margin-top: 32px; }
+.desktop-nudge .ui-btn { margin: 20px 0 16px; }
+.desktop-nudge .ui-flow__note { margin: 0; }
+
 .pairing-panel__actions { margin-top: 28px; }
 .pairing-panel__actions > button { width: 100%; min-height: 44px; }
-.pairing-panel__note {
-  margin: 24px 0 0;
+/* Needs the extra class: `.ui-flow__column p` would otherwise reset the margin. */
+.pairing-panel .pairing-panel__note {
+  margin: 28px 0 0;
   padding-top: 20px;
   border-top: 1px solid var(--color-border);
   color: var(--color-text-tertiary);

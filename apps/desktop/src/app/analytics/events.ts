@@ -26,6 +26,9 @@ type DesktopAnalyticsEvent =
   | { event: "profile_actioned";           props: { action: "created" | "selected" } }
   | { event: "install_skipped";            props: { tools: string[] } }
   | { event: "onboarding_path_chosen";      props: { path: "join" | "solo" } }
+  | { event: "folder_import_prompt_viewed";   props: Record<string, never> }
+  | { event: "folder_import_prompt_imported"; props: Record<string, never> }
+  | { event: "folder_import_prompt_skipped";  props: Record<string, never> }
   | { event: "github_join_started";        props: Record<string, never> }
   | { event: "github_join_code_displayed"; props: Record<string, never> }
   | { event: "github_join_succeeded";      props: Record<string, never> }

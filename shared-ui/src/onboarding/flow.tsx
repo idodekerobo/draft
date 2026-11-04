@@ -62,18 +62,16 @@ export function WhatDraftKnowsScreen({ orgName, entries, onOpenContext, onConnec
   );
 }
 
-export function ConnectToolsScreen({ toolList, onNext, onSkip, onBrowseAll }: {
+export function ConnectToolsScreen({ toolList, onNext, onSkip }: {
   toolList: ReactNode;
   onNext: () => void;
   onSkip: () => void;
-  onBrowseAll: () => void;
 }) {
   return (
     <>
       <h1 className="ui-flow__title">Connect your tools</h1>
       <p className="ui-flow__subtitle">Your meetings and agent are yours. Team sources are already set up.</p>
       {toolList}
-      <button type="button" className="ui-link ui-flow__browse" onClick={onBrowseAll}>Browse all tools</button>
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onNext}>Next</button>}
         secondary={<button type="button" className="ui-link" onClick={onSkip}>Skip</button>}
@@ -119,7 +117,6 @@ export function JoinerFlow({ orgName, entries, toolList, track, onFinish, error 
           toolList={toolList}
           onNext={() => finish("context", "completed")}
           onSkip={() => finish("context", "skipped")}
-          onBrowseAll={() => finish("connections", "completed")}
         />
       )}
     </FlowShell>

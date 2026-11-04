@@ -55,7 +55,8 @@ export function createServerFetch(deps: ServerFetchDeps = defaultDeps()) {
     const accessToken = await deps.token(forceRefresh);
     return deps.fetch(`${apiUrl}/${path}`, {
       ...init,
-      headers: { ...init?.headers, Authorization: `Bearer ${accessToken}` },
+      // Tells the backend this is the app, not an agent, so its reads are not counted as agent usage.
+      headers: { ...init?.headers, Authorization: `Bearer ${accessToken}`, "x-draft-client": "desktop" },
     });
   };
 

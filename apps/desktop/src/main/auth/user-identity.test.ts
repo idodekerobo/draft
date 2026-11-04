@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createIdentityHydrator, hydrateUserIdentity, TransientIdentityError, type IdentityDeps } from "./user-identity";
+import { createIdentityHydrator, hydrateUserIdentity, invalidateResolvedIdentity, TransientIdentityError, type IdentityDeps } from "./user-identity";
 import { AuthRefreshError, type AuthState } from "draft-core/auth-state";
 
 const state = (resolved = false): AuthState => ({ access_token: "a", refresh_token: "r", expires_at: 9e9, organization_id: "o", team_id: "t", workspace_id: "w", identity_resolved: resolved, onboarding_completed_at: null });
@@ -60,4 +60,16 @@ describe("hydrateUserIdentity", () => {
     const first = hydrate(); const second = hydrate(); expect(calls).toBe(0); await Promise.resolve(); expect(calls).toBe(1);
     release(Response.json({ workspace_id: "z" })); expect(await Promise.all([first, second])).toHaveLength(2); expect(calls).toBe(1);
   });
+});
+
+describe("invalidateResolvedIdentity", () => {
+  test("a stale identity is fetched from /whoami again", async () => {
+    const d = deps({ ...state(true), organization_id: null, team_id: null, workspace_id: null });
+    expect((await hydrateUserIdentity(d)).workspaceId).toBeNull();
+    invalidateResolvedIdentity(d);
+    d.fetchWhoami = async () => Response.json({ organization_id: "o2", primary_team_id: "t2", workspace_id: "w2" });
+    expect(await hydrateUserIdentity(d)).toMatchObject({ organizationId: "o2", workspaceId: "w2" });
+    expect(d.read()?.identity_resolved).toBe(true);
+  });
+  test("does nothing when signed out", () => { const d = deps(null); invalidateResolvedIdentity(d); expect(d.read()).toBeNull(); });
 });

@@ -5,6 +5,7 @@ import {
   CodingSessionsPanel,
   DataBoundary,
   FirefliesConnectPanel,
+  GithubConnectPanel,
   GranolaConnectPanel,
   LinearConnectPanel,
   ToolList,
@@ -25,9 +26,10 @@ import { apiFetch } from "@/lib/api";
 import { API_URL } from "@/lib/config";
 import { connectionsQueryOptions, sessionReposQueryOptions } from "@/lib/queries";
 import { webToolStatuses } from "@/lib/tool-statuses";
+import { useGithubInstall } from "@/lib/use-github-install";
 import { useWorkspace } from "@/lib/workspace";
 
-function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola"; query?: string }) {
+function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github"; query?: string }) {
   const { workspaceId } = useWorkspace();
   const reloadConnections = useRefreshQuery(queryKeys.connections(workspaceId));
   const { track } = useIntegrationActions();
@@ -53,8 +55,24 @@ function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "g
   );
 }
 
-/** Web connects personal tools, Linear and coding sessions; Slack and GitHub need the desktop app for now. */
-function WebToolListBody({ groups, allowDisconnect }: { groups?: ToolGroup[]; allowDisconnect: boolean }) {
+function GithubPanel({ onDone }: { onDone: () => void }) {
+  const { workspaceId } = useWorkspace();
+  const { track } = useIntegrationActions();
+  const reloadConnections = useRefreshQuery(queryKeys.connections(workspaceId));
+  const { phase, error, connect } = useGithubInstall(workspaceId, async () => {
+    track("integration_connected", { source: "github" });
+    await reloadConnections();
+    onDone();
+  });
+  return (
+    <GithubConnectPanel detail={undefined} classPrefix="ui-panel" phase={phase} error={error} onConnected={onDone} onConnect={connect} />
+  );
+}
+
+const DEFAULT_UNAVAILABLE_HINT = "Ask your admin to connect this in the Draft desktop app.";
+
+/** Web connects personal tools, Linear, GitHub and coding sessions; Slack needs the desktop app for now. */
+function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?: ToolGroup[]; allowDisconnect: boolean; unavailableHint: string }) {
   const { workspaceId } = useWorkspace();
   const { data: connections } = useSuspenseQuery(connectionsQueryOptions(workspaceId, apiFetch));
   const reposQuery = useQuery(sessionReposQueryOptions(workspaceId, apiFetch));
@@ -82,6 +100,7 @@ function WebToolListBody({ groups, allowDisconnect }: { groups?: ToolGroup[]; al
     fireflies: (close) => <FirefliesConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     granola: (close) => <GranolaConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     linear: (close) => <LinearConnectPanel detail={undefined} classPrefix="ui-panel" onConnected={async () => { await refresh(); close(); }} />,
+    github: (close) => <GithubPanel onDone={close} />,
     "coding-sessions": () => sessionsPanel(),
   };
   const managePanels: Partial<Record<ToolId, ManagePanel>> = { "coding-sessions": { label: "View repos", render: () => sessionsPanel() } };
@@ -99,17 +118,18 @@ function WebToolListBody({ groups, allowDisconnect }: { groups?: ToolGroup[]; al
       connectedActions={allowDisconnect ? {
         fireflies: <DisconnectButton provider="fireflies" />,
         granola: <DisconnectButton provider="granola" query="?account_kind=personal" />,
+        github: <DisconnectButton provider="github" />,
       } : {}}
-      unavailableHint="Ask your admin to connect this in the Draft desktop app."
+      unavailableHint={unavailableHint}
       searchable
     />
   );
 }
 
-export function WebToolList({ groups, allowDisconnect = false }: { groups?: ToolGroup[]; allowDisconnect?: boolean }) {
+export function WebToolList({ groups, allowDisconnect = false, unavailableHint = DEFAULT_UNAVAILABLE_HINT }: { groups?: ToolGroup[]; allowDisconnect?: boolean; unavailableHint?: string }) {
   return (
     <DataBoundary fallback={<p className="ui-muted" role="status">Loading connections…</p>} errorMessage="Could not load your connections.">
-      <WebToolListBody groups={groups} allowDisconnect={allowDisconnect} />
+      <WebToolListBody groups={groups} allowDisconnect={allowDisconnect} unavailableHint={unavailableHint} />
     </DataBoundary>
   );
 }

@@ -1,6 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
+import { isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { getWorkspaceContext } from "../services/workspace-context";
 
@@ -18,9 +19,7 @@ export const contextGET = withAuth<ContextRequest>(async (req, caller) => {
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
   const body = JSON.stringify(result.snapshot);
-  // Browser reads (the web app) carry an Origin header; agent reads (CLI,
-  // desktop main process) do not. Only agent reads count as agent usage.
-  if (!req.headers.has("origin")) void recordAgentQueryLog(serviceClient, {
+  if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
     command: "context.read",

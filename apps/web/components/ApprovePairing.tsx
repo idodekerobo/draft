@@ -23,7 +23,7 @@ export function ApprovePairing({ code }: { code: string }) {
     setState(r.ok ? "done" : "error");
   }
   if (state === "done")
-    return <p>Your device is signed in. You can close this window.</p>;
+    return <p>Your device is signed in. Return to the Draft app to continue setup. You can close this window.</p>;
   return (
     <>
       <button disabled={state === "working"} onClick={approve}>

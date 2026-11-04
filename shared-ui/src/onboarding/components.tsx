@@ -4,11 +4,12 @@ import { useState } from "react";
 
 // ── CopyableCmd ───────────────────────────────────────────────────────────────
 
-export function CopyableCmd({ cmd }: { cmd: string }) {
+export function CopyableCmd({ cmd, onCopy }: { cmd: string; onCopy?: () => void }) {
   const [copied, setCopied] = useState(false);
   function handleCopy() {
     // If the clipboard is blocked, the command text stays selectable.
     void navigator.clipboard.writeText(cmd).then(() => {
+      onCopy?.();
       setCopied(true);
       setTimeout(() => setCopied(false), 2_000);
     }).catch(() => {});

@@ -213,6 +213,12 @@ describe("schedules routes", () => {
       expect(logged).toEqual([]);
     });
 
+    it("does not log reads from the desktop app or the web server's prefetch", async () => {
+      await get("ws-1", { "x-draft-client": "desktop" });
+      await get("ws-1", { "x-draft-client": "web" });
+      expect(logged).toEqual([]);
+    });
+
     it("flags a disconnected Slack connection", async () => {
       tables.source_connections![0]!.status = "revoked";
       const body = (await (await get()).json()) as { routines: Row[] };

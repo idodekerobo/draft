@@ -2,6 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
+import { isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { lacksRoutineLogin, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../schedules/permissions";
@@ -26,8 +27,7 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
       routineAgentStatuses(serviceClient, req.params.id).catch(() => undefined),
     ]);
     const body = JSON.stringify({ routines, canEdit, agents });
-    // Browser reads carry an Origin header; only agent reads (CLI) count as agent usage.
-    if (!req.headers.has("origin")) void recordAgentQueryLog(serviceClient, {
+    if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
       userId: caller.userId,
       command: "routines.list",

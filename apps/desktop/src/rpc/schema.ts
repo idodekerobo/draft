@@ -393,6 +393,8 @@ export type AppRPCType = {
       startRoutineCodexLogin: { params: { deviceCode: boolean }; response: { ok: true; deviceUrl?: string; deviceCode?: string } | { ok: false; error: string } };
       pollRoutineCodexLogin: { params: void; response: { state: "idle" | "waiting" | "connected" } | { state: "failed"; error: string } };
       cancelRoutineCodexLogin: { params: void; response: void };
+      /** Opens the user's terminal app running `claude`, whose first run walks through signing in. */
+      openClaudeSignIn: { params: void; response: ActionResult };
       getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
@@ -455,6 +457,8 @@ export type AppRPCType = {
       getUserIdentity: { params: void; response: UserIdentity };
       /** Re-checks that the saved login still works; signs the user out if it does not. Throttled. */
       verifySession: { params: void; response: ActionResult };
+      /** Asks the server for the user's team again, for someone who just created or joined one in the browser. */
+      refreshUserIdentity: { params: void; response: ActionResult };
 
       /**
        * Mark the signed-in user's onboarding wizard as complete, server-side

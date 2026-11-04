@@ -67,6 +67,8 @@ export default {
       "src/app/index.css":  "views/app/index.css",
       "../../shared-ui/src/styles/tokens.css": "views/app/tokens.css",
       "../../shared-ui/src/styles/shared-ui.css": "views/app/shared-ui.css",
+      "../../assets/multiplayer-coding-demo.mp4": "views/app/multiplayer-coding-demo.mp4",
+      "../../assets/multiplayer-coding-demo-poster.jpg": "views/app/multiplayer-coding-demo-poster.jpg",
     },
     mac: {
       icons: isDev ? "../../assets/AppIcon.iconset" : "assets/icon.iconset",

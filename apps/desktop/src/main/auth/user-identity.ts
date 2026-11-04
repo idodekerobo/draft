@@ -92,6 +92,12 @@ export async function hydrateUserIdentity(deps: IdentityDeps = defaultIdentityDe
   return { signedIn: true, hydrated: true, organizationId: resolved.organization_id, teamId: resolved.team_id, workspaceId: resolved.workspace_id, onboardingCompletedAt: resolved.onboarding_completed_at };
 }
 
+/** Makes the next hydrate ask /whoami again, for example after the person created a company in the browser. */
+export function invalidateResolvedIdentity(deps: Pick<IdentityDeps, "read" | "write"> = defaultIdentityDeps()): void {
+  const current = deps.read();
+  if (current?.identity_resolved) deps.write({ ...current, identity_resolved: false });
+}
+
 export function createIdentityHydrator(deps: IdentityDeps) {
   let inFlight: Promise<UserIdentity> | null = null;
   return () => {

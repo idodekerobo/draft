@@ -52,8 +52,8 @@ const { createMcpHandler } = await import("@modelcontextprotocol/server");
 const { buildMcpServer } = await import("../../mcp/tools");
 const { verifyContextExportToken } = await import("../../context-export/token");
 
-function request(params: Record<string, string>): never {
-  return Object.assign(new Request("http://internal.test"), { params }) as never;
+function request(params: Record<string, string>, headers: Record<string, string> = {}): never {
+  return Object.assign(new Request("http://internal.test", { headers }), { params }) as never;
 }
 
 async function mintLink(): Promise<string> {
@@ -78,6 +78,22 @@ describe("context export routes", () => {
     expect(strFromU8(entries["draft-context/memory/2026-10.md"]!)).toBe("remember");
     await Promise.resolve();
     expect(logged[0]).toMatchObject({ command: "context.export", workspaceId: "ws-1" });
+  });
+
+  it("does not log an export the web app or desktop app asked for", async () => {
+    for (const headers of [{ origin: "https://app.draftai.us" }, { "x-draft-client": "desktop" }]) {
+      const response = await routes.exportGET(request({ id: "ws-1" }, headers));
+      expect(response.status).toBe(200);
+    }
+    await Promise.resolve();
+    expect(logged).toEqual([]);
+  });
+
+  it("still logs a redeemed link, which is how an agent downloads one", async () => {
+    const token = await mintLink();
+    await routes.redeemGET(request({ token }, { "x-draft-client": "desktop" }));
+    await Promise.resolve();
+    expect(logged[0]).toMatchObject({ command: "context.export", argsJson: { via: "link" } });
   });
 
   it("denies a forbidden workspace", async () => {

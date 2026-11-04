@@ -2,18 +2,32 @@
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENT_SETUP_PROMPT, DEFAULT_SETUP_DIMENSIONS, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
-import { events, rpc } from "../../../rpc";
+import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
 import { useCloudSignIn } from "../../../hooks/useCloudSignIn";
 import { useConnectedApps } from "../../../hooks/useConnectedApps";
+import { useFolderImport } from "../../../hooks/useFolderImport";
+import { useWebAppUrl } from "../../../hooks/useWebAppUrl";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
 import { CodexConnectRow } from "../../connections/CodexConnectRow";
 import { DesktopToolList, desktopToolStatuses } from "../../connections/DesktopToolList";
+import { AgentsSetup } from "./AgentsSetup";
 
 const READING_POLL_MS = 5_000;
 const READING_POLL_LIMIT_MS = 10 * 60_000;
+
+// Relative to the app's index.html: electrobun.config.ts copies both files next to it.
+const DESKTOP_AGENTS_STEP: AgentsStepContent = {
+  subtitle: "Get your agents ready, then start a session from the Sessions tab.",
+  video: {
+    src: "./multiplayer-coding-demo.mp4",
+    poster: "./multiplayer-coding-demo-poster.jpg",
+    alt: "Two teammates brainstorming with Claude Code in the same Draft session",
+  },
+  body: <AgentsSetup />,
+};
 
 function SignInScreen() {
   const { cloudSignIn, cloudSignInError, handleCloudSignIn } = useCloudSignIn();
@@ -30,10 +44,27 @@ function SignInScreen() {
 }
 
 function NoTeamScreen() {
+  const webUrl = useWebAppUrl();
+
+  // The saved identity says "no team" until it is asked again, so ask whenever the person comes back from the browser.
+  useEffect(() => {
+    const refresh = () => void rpc.request.refreshUserIdentity().catch(() => {});
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+
   return (
     <FlowShell>
       <h1 className="ui-flow__title">You&apos;re signed in</h1>
-      <p className="ui-flow__subtitle">Open your team&apos;s invite link in your browser to join. This app picks up your team once you join.</p>
+      <p className="ui-flow__subtitle">Create your company in your browser, or open your team&apos;s invite link to join one. This app picks up your team when you come back.</p>
+      <button
+        type="button"
+        className="ui-btn ui-btn--primary ui-btn--wide"
+        disabled={!webUrl}
+        onClick={() => webUrl && rpc.send.openUrl({ url: `${webUrl}/onboarding/create?src=desktop` })}
+      >
+        Create your company
+      </button>
       <button type="button" className="ui-link" onClick={() => void rpc.request.signOut()}>Use a different account</button>
     </FlowShell>
   );
@@ -55,16 +86,11 @@ function WithCodex({ children }: { children: ReactNode }) {
 }
 
 function readingSources(apps: NonNullable<ReturnType<typeof useConnectedApps>["apps"]>, folderImported: boolean): ReadingSource[] {
-  const statuses = desktopToolStatuses(apps);
-  const sources: ReadingSource[] = (["slack", "github", "linear", "fireflies", "granola"] as const)
-    .filter((id) => statuses[id] && statuses[id]!.state !== "disconnected")
-    .map((id) => ({
-      name: { slack: "Slack", github: "GitHub", linear: "Linear", fireflies: "Fireflies", granola: "Granola" }[id],
-      status: statuses[id]!,
-      detail: id === "slack" && apps.integrations.slack.channels ? `Reading ${apps.integrations.slack.channels} channels` : undefined,
-    }));
-  if (folderImported) sources.push({ name: "Folder", status: { state: "connected" }, detail: "Uploaded from this computer" });
-  return sources;
+  const slackChannels = apps.integrations.slack.channels;
+  return buildReadingSources(desktopToolStatuses(apps), {
+    folderImported,
+    details: slackChannels ? { slack: `Reading ${slackChannels} channels` } : undefined,
+  });
 }
 
 export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
@@ -77,7 +103,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
   const { track } = useAnalytics();
   const { apps, refresh } = useConnectedApps();
   const [error, setError] = useState<string | null>(null);
-  const [folderImported, setFolderImported] = useState(false);
+  const { imported: folderImported, error: folderError, importFolder } = useFolderImport();
   const [reading, setReading] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   // Cohort is decided once, so the first context landing mid-flow does not switch flows.
@@ -88,10 +114,11 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     setCohort(files.length > 0 ? "joiner" : "first_user");
   }, [cohort, loading, files.length, identity.workspaceId]);
 
+  // Needed on the Skip screen as well as after the first context lands, and the first request creates the link.
   useEffect(() => {
-    if (cohort !== "first_user" || files.length === 0) return;
+    if (cohort !== "first_user") return;
     void rpc.request.getInviteLink().then((result) => { if (result.ok && result.url) setInviteUrl(result.url); }).catch(() => {});
-  }, [cohort, files.length]);
+  }, [cohort]);
 
   // Poll only while "Draft is reading" is shown; stop on success or after 10 minutes.
   useEffect(() => {
@@ -120,19 +147,6 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     onComplete(destination);
   }
 
-  async function importFolder() {
-    setError(null);
-    const picked = await rpc.request.selectUploadFolder();
-    if (!picked.folderPath) return;
-    const result = await rpc.request.bootstrapWorkspaceContext({ folderPath: picked.folderPath, dimensions: toDimensionHints(DEFAULT_SETUP_DIMENSIONS) });
-    if (result.ok && result.runId) {
-      events.emit("bootstrapRunStarted", { runId: result.runId });
-      setFolderImported(true);
-    } else {
-      setError(result.reason === "no_ready_items" ? "That folder has no files Draft can read. Choose a different one." : result.error ?? "Could not import that folder.");
-    }
-  }
-
   const statuses = desktopToolStatuses(apps);
   const hasSource = folderImported || Object.values(statuses).some((status) => status?.state === "connected" || status?.state === "pending");
 
@@ -151,7 +165,8 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
 
   return (
     <FirstUserFlow
-      toolList={<WithCodex><DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" /></WithCodex>}
+      toolList={<DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" />}
+      agentsStep={DESKTOP_AGENTS_STEP}
       hasSource={hasSource}
       readingSources={readingSources(apps, folderImported)}
       entries={files}
@@ -161,7 +176,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
       onReadingChange={setReading}
       track={track}
       onFinish={(destination) => void finish(destination)}
-      error={error}
+      error={error ?? folderError}
     />
   );
 }

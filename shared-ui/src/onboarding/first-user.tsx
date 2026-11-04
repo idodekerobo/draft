@@ -5,29 +5,112 @@ import { contextExcerpt, type ContextFileEntry } from "../context/context-files"
 import type { FlowStep, TrackFn } from "../analytics/events";
 import type { ToolStatus } from "../integrations/registry";
 import { CopyButton, CopyableCmd } from "./components";
+import { DemoVideo, type DemoVideoSource } from "./DemoVideo";
 import { FlowActions, FlowShell, type FlowDestination } from "./flow";
 
-export function GiveSourceScreen({ toolList, hasSource, onImportFolder, onNext, onSkip, onBrowseAll }: {
+export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, onNext, onSkip }: {
   toolList: ReactNode;
   hasSource: boolean;
   /** Desktop only. */
   onImportFolder?: () => void;
+  /** Shown under the tool list, for example the web app's desktop download card. */
+  footer?: ReactNode;
   onNext: () => void;
   onSkip: () => void;
-  onBrowseAll: () => void;
 }) {
   return (
     <>
       <h1 className="ui-flow__title">Give Draft something to read</h1>
       <p className="ui-flow__subtitle">Connect one source to start. Your context stays empty until you connect a source.</p>
       {toolList}
-      <div className="ui-flow__buttons ui-flow__browse">
-        <button type="button" className="ui-link" onClick={onBrowseAll}>Browse all tools</button>
-        {onImportFolder && <button type="button" className="ui-link" onClick={onImportFolder}>Import from a folder on this computer</button>}
-      </div>
+      {onImportFolder && (
+        <div className="ui-flow__buttons ui-flow__browse">
+          <button type="button" className="ui-link" onClick={onImportFolder}>Import from a folder on this computer</button>
+        </div>
+      )}
+      {footer}
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onNext} disabled={!hasSource}>Next</button>}
         secondary={<button type="button" className="ui-link" onClick={onSkip}>Skip</button>}
+      />
+    </>
+  );
+}
+
+/** What the host puts on the multiplayer coding sessions step. The headline and demo are shared; the rest differs by app. */
+export interface AgentsStepContent {
+  subtitle: string;
+  video: DemoVideoSource;
+  /** Between the video and the actions, for example the desktop's tool status rows. */
+  body?: ReactNode;
+  /** Replaces the default Continue button. */
+  actions?: (onContinue: () => void) => ReactNode;
+}
+
+export function AgentsScreen({ content, onContinue }: { content: AgentsStepContent; onContinue: () => void }) {
+  return (
+    <>
+      <h1 className="ui-flow__title ui-flow__title--lead">Code with your whole team in one agent session.</h1>
+      <p className="ui-flow__subtitle">{content.subtitle}</p>
+      <DemoVideo {...content.video} />
+      {content.body}
+      {content.actions?.(onContinue) ?? (
+        <FlowActions primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onContinue}>Continue</button>} />
+      )}
+    </>
+  );
+}
+
+const ROUTINES = [
+  { name: "Update company context", body: "New Slack messages, meetings and code activity refresh what your team knows." },
+  { name: "Summarize coding sessions", body: "Agent sessions turn into decisions and next steps." },
+  { name: "Schedule your own", body: "An agent reads your brain on a schedule, like a daily digest of action items. It can't change anything." },
+];
+
+/** Explains the background work Draft does, so a quiet workspace does not look broken. */
+export function RoutinesScreen({ onContinue }: { onContinue: () => void }) {
+  return (
+    <>
+      <h1 className="ui-flow__title ui-flow__title--lead">Draft keeps your brain fresh for you.</h1>
+      <p className="ui-flow__subtitle">Routines run in the background on a schedule. Nobody updates anything by hand.</p>
+      <ul className="ui-rows">
+        {ROUTINES.map((routine) => (
+          <li key={routine.name} className="ui-feature-row">
+            <span className="ui-feature-row__name">{routine.name}</span>
+            <span className="ui-feature-row__body">{routine.body}</span>
+          </li>
+        ))}
+      </ul>
+      <FlowActions
+        primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onContinue}>Continue</button>}
+        note="Find them on the Routines tab."
+      />
+    </>
+  );
+}
+
+/** After Skip: nothing to read yet, but the invite link and any extras still belong at the end of setup. */
+export function ReadyScreen({ inviteUrl, onInviteCopied, extra, onOpenDraft, onConnectSource }: {
+  inviteUrl?: string | null;
+  onInviteCopied?: () => void;
+  extra?: ReactNode;
+  onOpenDraft: () => void;
+  onConnectSource: () => void;
+}) {
+  return (
+    <>
+      <h1 className="ui-flow__title ui-flow__title--lead">You&apos;re set up.</h1>
+      <p className="ui-flow__subtitle">Connect a source whenever you&apos;re ready.</p>
+      {inviteUrl && (
+        <>
+          <h2 className="ui-group-label">Invite your team</h2>
+          <CopyableCmd cmd={inviteUrl} onCopy={onInviteCopied} />
+        </>
+      )}
+      {extra}
+      <FlowActions
+        primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onOpenDraft}>Open Draft</button>}
+        secondary={<button type="button" className="ui-link" onClick={onConnectSource}>Connect a source</button>}
       />
     </>
   );
@@ -41,8 +124,12 @@ export interface ReadingSource {
 }
 
 /** Honest wait copy, no promise of a notification. No Skip. */
-export function ReadingScreen({ sources, onOpenDraft }: {
+export function ReadingScreen({ sources, inviteUrl, onInviteCopied, extra, onOpenDraft }: {
   sources: ReadingSource[];
+  inviteUrl?: string | null;
+  onInviteCopied?: () => void;
+  /** Shown above the Open Draft button, for example the web app's desktop download card. */
+  extra?: ReactNode;
   onOpenDraft: () => void;
 }) {
   return (
@@ -61,6 +148,13 @@ export function ReadingScreen({ sources, onOpenDraft }: {
           </li>
         ))}
       </ul>
+      {inviteUrl && (
+        <>
+          <h2 className="ui-group-label">Invite your team</h2>
+          <CopyableCmd cmd={inviteUrl} onCopy={onInviteCopied} />
+        </>
+      )}
+      {extra}
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onOpenDraft}>Open Draft</button>}
         note="Context appears in the Context tab when it is ready."
@@ -69,9 +163,10 @@ export function ReadingScreen({ sources, onOpenDraft }: {
   );
 }
 
-export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContext }: {
+export function FirstContextScreen({ entry, inviteUrl, onInviteCopied, agentPrompt, onOpenContext }: {
   entry: ContextFileEntry;
   inviteUrl: string | null;
+  onInviteCopied?: () => void;
   agentPrompt: string;
   onOpenContext: () => void;
 }) {
@@ -82,9 +177,8 @@ export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContex
       <p className="ui-flow__lede">{contextExcerpt(entry.content, 420)}</p>
       {inviteUrl && (
         <>
-          <h2 className="ui-group-label">Invite a teammate</h2>
-          <p className="ui-flow__subtitle">Anyone with this link joins your team and sees this context.</p>
-          <CopyableCmd cmd={inviteUrl} />
+          <h2 className="ui-group-label">Invite your team</h2>
+          <CopyableCmd cmd={inviteUrl} onCopy={onInviteCopied} />
         </>
       )}
       <h2 className="ui-group-label">Connect your AI agent</h2>
@@ -96,7 +190,7 @@ export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContex
 }
 
 /** First user: Give Draft something to read, Draft is reading, then First context appears. */
-export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, onReadingChange, track, onFinish, error }: {
+export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, sourceFooter, readingExtra, agentsStep, onReadingChange, track, onFinish, error }: {
   toolList: ReactNode;
   hasSource: boolean;
   readingSources: ReadingSource[];
@@ -104,6 +198,12 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
   inviteUrl: string | null;
   agentPrompt: string;
   onImportFolder?: () => void;
+  /** Under the tool list on "Give Draft something to read". */
+  sourceFooter?: ReactNode;
+  /** On "Draft is reading", above the Open Draft button. */
+  readingExtra?: ReactNode;
+  /** Content for the multiplayer coding sessions step. Without it the step is left out. */
+  agentsStep?: AgentsStepContent;
   /** Lets the host poll only while "Draft is reading" is shown. */
   onReadingChange?: (reading: boolean) => void;
   track: TrackFn;
@@ -111,6 +211,8 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
   error?: string | null;
 }) {
   const [step, setStep] = useState<FlowStep>("give_source");
+  // Where the steps after sources end: reading if a source was connected, ready if the person skipped.
+  const [endScreen, setEndScreen] = useState<"reading" | "ready">("reading");
   const first = entries.find((entry) => entry.kind === "dim") ?? entries[0];
   const shown: FlowStep = step === "reading" && first ? "first_context" : step;
 
@@ -130,16 +232,46 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
           toolList={toolList}
           hasSource={hasSource}
           onImportFolder={onImportFolder}
-          onNext={() => setStep("reading")}
-          onSkip={() => finish("connections", "skipped")}
-          onBrowseAll={() => finish("connections", "completed")}
+          footer={sourceFooter}
+          onNext={() => {
+            setEndScreen("reading");
+            setStep(agentsStep ? "agents" : "routines");
+          }}
+          onSkip={() => {
+            track("onboarding_skipped", { step: "give_source" });
+            setEndScreen("ready");
+            setStep(agentsStep ? "agents" : "routines");
+          }}
+        />
+      )}
+      {shown === "agents" && agentsStep && <AgentsScreen content={agentsStep} onContinue={() => setStep("routines")} />}
+      {shown === "routines" && <RoutinesScreen onContinue={() => setStep(endScreen)} />}
+      {shown === "ready" && (
+        <ReadyScreen
+          inviteUrl={inviteUrl}
+          onInviteCopied={() => track("invite_link_copied", { surface: "ready" })}
+          extra={readingExtra}
+          onOpenDraft={() => finish("context", "completed")}
+          onConnectSource={() => finish("connections", "completed")}
         />
       )}
       {shown === "reading" && (
-        <ReadingScreen sources={readingSources} onOpenDraft={() => finish("context", "completed")} />
+        <ReadingScreen
+          sources={readingSources}
+          inviteUrl={inviteUrl}
+          onInviteCopied={() => track("invite_link_copied", { surface: "reading" })}
+          extra={readingExtra}
+          onOpenDraft={() => finish("context", "completed")}
+        />
       )}
       {shown === "first_context" && first && (
-        <FirstContextScreen entry={first} inviteUrl={inviteUrl} agentPrompt={agentPrompt} onOpenContext={() => finish("context", "completed")} />
+        <FirstContextScreen
+          entry={first}
+          inviteUrl={inviteUrl}
+          onInviteCopied={() => track("invite_link_copied", { surface: "first_context" })}
+          agentPrompt={agentPrompt}
+          onOpenContext={() => finish("context", "completed")}
+        />
       )}
     </FlowShell>
   );
