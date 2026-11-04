@@ -13,6 +13,7 @@ import { useWebAppUrl } from "../../../hooks/useWebAppUrl";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
 import { CodexConnectRow } from "../../connections/CodexConnectRow";
 import { DesktopToolList, desktopToolStatuses } from "../../connections/DesktopToolList";
+import { AgentsSetup } from "./AgentsSetup";
 
 const READING_POLL_MS = 5_000;
 const READING_POLL_LIMIT_MS = 10 * 60_000;
@@ -153,7 +154,8 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
 
   return (
     <FirstUserFlow
-      toolList={<WithCodex><DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" /></WithCodex>}
+      toolList={<DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" />}
+      agentsStep={<AgentsSetup />}
       hasSource={hasSource}
       readingSources={readingSources(apps, folderImported)}
       entries={files}

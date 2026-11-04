@@ -14,6 +14,8 @@ import {
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
 import { findRunnerBin } from "./main/host/find-bin";
+import { shellQuote } from "./main/host/launch";
+import { openCommandInTerminal } from "./main/host/open-in-terminal";
 import { runningCodexTurns } from "./main/host/codex/codex-driver";
 import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
 import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "./main/host/codex/codex-login";
@@ -816,6 +818,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       cancelRoutineCodexLogin: () => cancelRoutineCodexLogin(),
 
+      openClaudeSignIn: async () => {
+        const bin = findRunnerBin("claude");
+        if (!bin) return { ok: false, error: "Claude Code is not installed on this computer." };
+        return openCommandInTerminal("claude-sign-in", `exec ${shellQuote(bin)}`);
+      },
       getAvailableRunners: async () => {
         const claudePath = findRunnerBin("claude");
         const codexPath = findRunnerBin("codex");

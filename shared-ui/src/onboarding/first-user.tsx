@@ -36,6 +36,18 @@ export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, 
   );
 }
 
+/** Run Claude Code or Codex sessions inside Draft. The host supplies what the person can do about it. */
+export function AgentsScreen({ children, onContinue }: { children: ReactNode; onContinue: () => void }) {
+  return (
+    <>
+      <h1 className="ui-flow__title">Run coding agents in Draft</h1>
+      <p className="ui-flow__subtitle">Start Claude Code or Codex sessions that your team can watch live and join.</p>
+      {children}
+      <FlowActions primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onContinue}>Continue</button>} />
+    </>
+  );
+}
+
 /** After Skip: nothing to read yet, but the invite link and any extras still belong at the end of setup. */
 export function ReadyScreen({ inviteUrl, onInviteCopied, extra, onOpenDraft, onConnectSource }: {
   inviteUrl?: string | null;
@@ -140,7 +152,7 @@ export function FirstContextScreen({ entry, inviteUrl, onInviteCopied, agentProm
 }
 
 /** First user: Give Draft something to read, Draft is reading, then First context appears. */
-export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, sourceFooter, readingExtra, onReadingChange, track, onFinish, error }: {
+export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, sourceFooter, readingExtra, agentsStep, onReadingChange, track, onFinish, error }: {
   toolList: ReactNode;
   hasSource: boolean;
   readingSources: ReadingSource[];
@@ -152,6 +164,8 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
   sourceFooter?: ReactNode;
   /** On "Draft is reading", above the Open Draft button. */
   readingExtra?: ReactNode;
+  /** Content for the coding agents step. Without it the step is left out. */
+  agentsStep?: ReactNode;
   /** Lets the host poll only while "Draft is reading" is shown. */
   onReadingChange?: (reading: boolean) => void;
   track: TrackFn;
@@ -159,6 +173,8 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
   error?: string | null;
 }) {
   const [step, setStep] = useState<FlowStep>("give_source");
+  // Where "Continue" on the agents step goes: reading if a source was connected, ready if the person skipped.
+  const [afterAgents, setAfterAgents] = useState<"reading" | "ready">("reading");
   const first = entries.find((entry) => entry.kind === "dim") ?? entries[0];
   const shown: FlowStep = step === "reading" && first ? "first_context" : step;
 
@@ -179,13 +195,18 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
           hasSource={hasSource}
           onImportFolder={onImportFolder}
           footer={sourceFooter}
-          onNext={() => setStep("reading")}
+          onNext={() => {
+            setAfterAgents("reading");
+            setStep(agentsStep ? "agents" : "reading");
+          }}
           onSkip={() => {
             track("onboarding_skipped", { step: "give_source" });
-            setStep("ready");
+            setAfterAgents("ready");
+            setStep(agentsStep ? "agents" : "ready");
           }}
         />
       )}
+      {shown === "agents" && <AgentsScreen onContinue={() => setStep(afterAgents)}>{agentsStep}</AgentsScreen>}
       {shown === "ready" && (
         <ReadyScreen
           inviteUrl={inviteUrl}

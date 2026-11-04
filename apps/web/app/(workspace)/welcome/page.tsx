@@ -109,6 +109,7 @@ function CreatorWelcome() {
       inviteUrl={inviteUrl}
       agentPrompt={AGENT_SETUP_PROMPT}
       sourceFooter={<DesktopNudge surface="sources_step" />}
+      agentsStep={<DesktopNudge surface="agents_step" />}
       readingExtra={<DesktopNudge surface="reading_step" />}
       onReadingChange={setReading}
       track={track}
