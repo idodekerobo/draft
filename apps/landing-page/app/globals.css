@@ -682,18 +682,18 @@ body {
   .minimal-nav-cta { margin-left: auto; }
 }
 
-.download-page { display: flex; flex-direction: column; min-height: 100dvh; background: var(--color-bg); color: var(--color-primary); }
-.download-hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6vh 24px 10vh; text-align: center; }
-.download-orb { width: min(100%, 340px); margin-bottom: 2rem; }
-.download-hero h1 { margin: 0; font-size: clamp(2.6rem, 6vw, 4.4rem); letter-spacing: -0.06em; line-height: 1; }
-.download-lede { max-width: 460px; margin: 1.5rem 0 0; color: var(--color-muted); font-size: clamp(1.05rem, 1.35vw, 1.28rem); line-height: 1.45; }
-.download-cta { min-height: 56px; margin-top: 2.25rem; padding: 0.8rem 1.8rem; border-radius: 999px; text-decoration: none; }
-.download-note { margin: 1rem 0 0; color: var(--color-muted); font-size: 0.8rem; }
-.download-page :is(a,button):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 5px; }
+.signup-hero-page { display: flex; flex-direction: column; min-height: 100dvh; background: var(--color-bg); color: var(--color-primary); }
+.signup-hero-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6vh 24px 10vh; text-align: center; }
+.signup-hero-orb { width: min(100%, 340px); margin-bottom: 2rem; }
+.signup-hero-body h1 { margin: 0; font-size: clamp(2.6rem, 6vw, 4.4rem); letter-spacing: -0.06em; line-height: 1; }
+.signup-hero-lede { max-width: 460px; margin: 1.5rem 0 0; color: var(--color-muted); font-size: clamp(1.05rem, 1.35vw, 1.28rem); line-height: 1.45; }
+.signup-hero-cta { min-height: 56px; margin-top: 2.25rem; padding: 0.8rem 1.8rem; border-radius: 999px; text-decoration: none; }
+.signup-hero-note { margin: 1rem 0 0; color: var(--color-muted); font-size: 0.8rem; }
+.signup-hero-page :is(a,button):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 5px; }
 @media (hover: hover) and (pointer: fine) {
-  .download-cta:hover { opacity: .82; }
+  .signup-hero-cta:hover { opacity: .82; }
 }
 @media (max-width: 560px) {
-  .download-orb { width: 200px; margin-bottom: 1.5rem; }
-  .download-cta { width: 100%; max-width: 320px; }
+  .signup-hero-orb { width: 200px; margin-bottom: 1.5rem; }
+  .signup-hero-cta { width: 100%; max-width: 320px; }
 }
