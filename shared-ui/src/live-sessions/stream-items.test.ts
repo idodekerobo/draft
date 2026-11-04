@@ -42,8 +42,8 @@ describe("buildStreamItems", () => {
   });
 
   it("carries the sub-agent id", () => {
-    const [item] = buildStreamItems([event("assistant_text", { text: "listing", agent_id: "a1" })]);
-    expect(item).toMatchObject({ type: "assistant", agentId: "a1" });
+    const [host] = buildStreamItems([event("assistant_text", { text: "listing", agent_id: "a1" })]);
+    expect(host).toMatchObject({ type: "tool", children: [{ type: "assistant", agentId: "a1" }] });
   });
 
   it("marks failed and clipped results", () => {

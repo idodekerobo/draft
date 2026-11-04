@@ -96,8 +96,8 @@ describe("SessionStream", () => {
     expect(container.textContent).toContain("failed");
   });
 
-  it("labels the first item of a sub-agent run once", () => {
-    render(
+  it("groups a sub-agent run with no launching call in one block of its own", () => {
+    const { container } = render(
       <Stream
         events={[
           event("assistant_text", { text: "one", agent_id: "a1" }),
@@ -107,6 +107,31 @@ describe("SessionStream", () => {
       />,
     );
     expect(screen.getAllByText("Sub-agent")).toHaveLength(1);
+    expect(container.querySelectorAll(".ui-stream__nested > li")).toHaveLength(2);
+  });
+
+  it("nests a sub-agent's items under the call that launched it, with a bold title", () => {
+    const items = buildStreamItems([
+      { seq: 1, source_id: "a", kind: "tool_use", payload: { tool_use_id: "t1", name: "Agent", input: { description: "Scan inbox", prompt: "Read it" } }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "assistant_text", payload: { text: "inner note", agent_id: "a1" }, created_at: "" },
+      { seq: 3, source_id: "c", kind: "tool_result", payload: { tool_use_id: "t1", content: "Async agent launched.\nagentId: a1 (internal)" }, created_at: "" },
+    ]);
+    expect(items).toHaveLength(1);
+    const { container } = render(<SessionStream items={items} />);
+    const title = screen.getByText("Scan inbox");
+    expect(title.className).toContain("ui-stream__summary--title");
+    expect(container.querySelectorAll("details")).toHaveLength(1);
+    expect(container.querySelector(".ui-stream__nested")?.textContent).toContain("inner note");
+  });
+
+  it("does not claim a run for a non-agent tool that quotes an agent id", () => {
+    const items = buildStreamItems([
+      { seq: 1, source_id: "a", kind: "tool_use", payload: { tool_use_id: "t1", name: "Bash", input: { command: "grep" } }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "tool_result", payload: { tool_use_id: "t1", content: "agentId: a1" }, created_at: "" },
+      { seq: 3, source_id: "c", kind: "assistant_text", payload: { text: "inner", agent_id: "a1" }, created_at: "" },
+    ]);
+    expect(items).toHaveLength(2);
+    expect(items[1]).toMatchObject({ type: "tool", name: "Sub-agent" });
   });
 
   it("shows a pending message as a bubble with no note, then a note when it is blocked", () => {

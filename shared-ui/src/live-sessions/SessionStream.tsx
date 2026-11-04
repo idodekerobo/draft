@@ -1,10 +1,12 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { renderMarkdown } from "../context/markdown";
 import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { isPromptBlock } from "draft-core/live-sessions";
 import { inputStatusLine, isBlocked } from "./input-status";
 import { approvalOutcome, isMine, type StreamItem } from "./stream-items";
+
+const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.seq);
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
@@ -125,6 +127,29 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
           </details>
         );
       }
+      if (item.children) {
+        const title = typeof (item.input as { description?: unknown } | null)?.description === "string" ? (item.input as { description: string }).description : "";
+        const steps = item.children.filter((child) => child.type === "tool").length;
+        return (
+          <details className="ui-stream__details">
+            <summary>
+              <span className="ui-stream__tool">{item.name}</span>
+              {title && <span className="ui-stream__summary ui-stream__summary--title">{title}</span>}
+              {item.result === null && <span className="ui-muted"> · running</span>}
+              {item.result?.isError && <span className="ui-error"> · failed</span>}
+              {steps > 0 && <span className="ui-muted"> · {steps} {steps === 1 ? "step" : "steps"}</span>}
+            </summary>
+            <ol className="ui-stream__nested">
+              {item.children.map((child) => (
+                <li key={keyOf(child)} id={child.type === "pending" ? undefined : messageDomId(child.seq)} className={`ui-stream__item ui-stream__item--${child.type}`}>
+                  <Item item={child} mine ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} />
+                </li>
+              ))}
+            </ol>
+            {item.result?.isError && <pre className="ui-stream__code ui-stream__code--error">{item.result.text || "(no output)"}</pre>}
+          </details>
+        );
+      }
       return (
         <details className="ui-stream__details">
           <summary>
@@ -145,8 +170,6 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
   }
 }
 
-const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.seq);
-const agentOf = (item: StreamItem) => ("agentId" in item ? item.agentId : null);
 
 /** Open requests are shown in the approval panel, not in the stream. */
 export function SessionStream({
@@ -190,22 +213,17 @@ export function SessionStream({
 
   return (
     <ol className="ui-stream">
-      {items.map((item, index) => {
-        const agentId = agentOf(item);
-        const previous = index > 0 ? agentOf(items[index - 1]!) : null;
-        const startsAgent = agentId !== null && previous !== agentId;
-        const human = !agentId && (item.type === "user" || item.type === "pending");
+      {items.map((item) => {
+        const human = item.type === "user" || item.type === "pending";
         const mine = human ? isMine(item, { id: viewerId, name: viewerName, isOwner: viewerIsOwner }) : true;
         return (
-          <Fragment key={keyOf(item)}>
-            {startsAgent && <li className="ui-stream__agent-label">Sub-agent</li>}
-            <li
-              id={item.type === "pending" ? undefined : messageDomId(item.seq)}
-              className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${agentId ? " ui-stream__item--agent" : item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
-            >
-              <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} onDismissPrompt={onDismissPrompt} />
-            </li>
-          </Fragment>
+          <li
+            key={keyOf(item)}
+            id={item.type === "pending" ? undefined : messageDomId(item.seq)}
+            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+          >
+            <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} onDismissPrompt={onDismissPrompt} />
+          </li>
         );
       })}
     </ol>

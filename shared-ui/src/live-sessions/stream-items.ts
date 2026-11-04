@@ -40,6 +40,8 @@ export type StreamItem =
       /** Null until the result arrives. */
       result: { text: string; isError: boolean; truncated: boolean } | null;
       agentId: string | null;
+      /** The sub-agent's own items, for a tool call that started one. */
+      children?: StreamItem[];
     };
 
 const SUMMARY_MAX_CHARS = 100;
@@ -69,6 +71,41 @@ const plain = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "
 function sameMessage(a: string, b: string): boolean {
   if (a === b) return true;
   return a.length >= PREFIX_CHARS && b.length >= PREFIX_CHARS && a.slice(0, PREFIX_CHARS) === b.slice(0, PREFIX_CHARS);
+}
+
+const AGENT_TOOLS = new Set(["Agent", "Task"]);
+const LAUNCHED_AGENT_ID = /agentId:\s*([A-Za-z0-9_-]+)/;
+
+/**
+ * Moves each sub-agent's items under the tool call that started it, found by the agent id in the
+ * call's result. A run with no such call gets a block of its own, so nothing sits loose in the stream.
+ */
+function nestAgentRuns(items: StreamItem[]): StreamItem[] {
+  const hosts = new Map<string, Extract<StreamItem, { type: "tool" }>>();
+  for (const item of items) {
+    if (item.type !== "tool" || item.agentId !== null || !AGENT_TOOLS.has(item.name)) continue;
+    const id = item.result ? LAUNCHED_AGENT_ID.exec(item.result.text)?.[1] : undefined;
+    if (id && !hosts.has(id)) hosts.set(id, item);
+  }
+  const launched = new Set(hosts.values());
+  const out: StreamItem[] = [];
+  for (const item of items) {
+    if (!("agentId" in item) || item.agentId === null) {
+      out.push(item);
+      continue;
+    }
+    const id = item.agentId;
+    let host = hosts.get(id);
+    if (!host) {
+      host = { type: "tool", seq: item.seq, name: "Sub-agent", summary: "", input: null, result: { text: "", isError: false, truncated: false }, agentId: null, children: [] };
+      hosts.set(id, host);
+      out.push(host);
+    }
+    // A launched agent's prompt is already in the call's input.
+    if (item.type === "user" && launched.has(host)) continue;
+    (host.children ??= []).push(item);
+  }
+  return out;
 }
 
 /** Turns the event log into display items. A tool result joins its tool call by id. */
@@ -162,7 +199,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
       }
     }
   }
-  return items;
+  return nestAgentRuns(items);
 }
 
 export type OpenApproval = Extract<StreamItem, { type: "approval" }>;
