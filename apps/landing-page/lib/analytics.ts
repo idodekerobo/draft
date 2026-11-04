@@ -7,6 +7,7 @@
 export const EVENTS = {
   // Page / section visibility
   SECTION_VIEWED: 'section_viewed',
+  DOWNLOAD_PAGE_VIEWED: 'download_page_viewed',
 
   // CTA interactions
   CTA_CLICKED: 'cta_clicked',
