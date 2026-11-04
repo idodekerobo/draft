@@ -2,7 +2,7 @@
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENT_SETUP_PROMPT, DEFAULT_SETUP_DIMENSIONS, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, DEFAULT_SETUP_DIMENSIONS, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
 import { events, rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
@@ -55,16 +55,11 @@ function WithCodex({ children }: { children: ReactNode }) {
 }
 
 function readingSources(apps: NonNullable<ReturnType<typeof useConnectedApps>["apps"]>, folderImported: boolean): ReadingSource[] {
-  const statuses = desktopToolStatuses(apps);
-  const sources: ReadingSource[] = (["slack", "github", "linear", "fireflies", "granola"] as const)
-    .filter((id) => statuses[id] && statuses[id]!.state !== "disconnected")
-    .map((id) => ({
-      name: { slack: "Slack", github: "GitHub", linear: "Linear", fireflies: "Fireflies", granola: "Granola" }[id],
-      status: statuses[id]!,
-      detail: id === "slack" && apps.integrations.slack.channels ? `Reading ${apps.integrations.slack.channels} channels` : undefined,
-    }));
-  if (folderImported) sources.push({ name: "Folder", status: { state: "connected" }, detail: "Uploaded from this computer" });
-  return sources;
+  const slackChannels = apps.integrations.slack.channels;
+  return buildReadingSources(desktopToolStatuses(apps), {
+    folderImported,
+    details: slackChannels ? { slack: `Reading ${slackChannels} channels` } : undefined,
+  });
 }
 
 export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {

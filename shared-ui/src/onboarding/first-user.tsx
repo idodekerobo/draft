@@ -7,11 +7,13 @@ import type { ToolStatus } from "../integrations/registry";
 import { CopyButton, CopyableCmd } from "./components";
 import { FlowActions, FlowShell, type FlowDestination } from "./flow";
 
-export function GiveSourceScreen({ toolList, hasSource, onImportFolder, onNext, onSkip, onBrowseAll }: {
+export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, onNext, onSkip, onBrowseAll }: {
   toolList: ReactNode;
   hasSource: boolean;
   /** Desktop only. */
   onImportFolder?: () => void;
+  /** Shown under the tool list, for example the web app's desktop download card. */
+  footer?: ReactNode;
   onNext: () => void;
   onSkip: () => void;
   onBrowseAll: () => void;
@@ -25,6 +27,7 @@ export function GiveSourceScreen({ toolList, hasSource, onImportFolder, onNext, 
         <button type="button" className="ui-link" onClick={onBrowseAll}>Browse all tools</button>
         {onImportFolder && <button type="button" className="ui-link" onClick={onImportFolder}>Import from a folder on this computer</button>}
       </div>
+      {footer}
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onNext} disabled={!hasSource}>Next</button>}
         secondary={<button type="button" className="ui-link" onClick={onSkip}>Skip</button>}
@@ -41,8 +44,12 @@ export interface ReadingSource {
 }
 
 /** Honest wait copy, no promise of a notification. No Skip. */
-export function ReadingScreen({ sources, onOpenDraft }: {
+export function ReadingScreen({ sources, inviteUrl, onInviteCopied, extra, onOpenDraft }: {
   sources: ReadingSource[];
+  inviteUrl?: string | null;
+  onInviteCopied?: () => void;
+  /** Shown above the Open Draft button, for example the web app's desktop download card. */
+  extra?: ReactNode;
   onOpenDraft: () => void;
 }) {
   return (
@@ -61,6 +68,14 @@ export function ReadingScreen({ sources, onOpenDraft }: {
           </li>
         ))}
       </ul>
+      {inviteUrl && (
+        <>
+          <h2 className="ui-group-label">Invite a teammate</h2>
+          <p className="ui-flow__subtitle">Anyone with this link joins your team and sees this context.</p>
+          <CopyableCmd cmd={inviteUrl} onCopy={onInviteCopied} />
+        </>
+      )}
+      {extra}
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onOpenDraft}>Open Draft</button>}
         note="Context appears in the Context tab when it is ready."
@@ -69,9 +84,10 @@ export function ReadingScreen({ sources, onOpenDraft }: {
   );
 }
 
-export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContext }: {
+export function FirstContextScreen({ entry, inviteUrl, onInviteCopied, agentPrompt, onOpenContext }: {
   entry: ContextFileEntry;
   inviteUrl: string | null;
+  onInviteCopied?: () => void;
   agentPrompt: string;
   onOpenContext: () => void;
 }) {
@@ -84,7 +100,7 @@ export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContex
         <>
           <h2 className="ui-group-label">Invite a teammate</h2>
           <p className="ui-flow__subtitle">Anyone with this link joins your team and sees this context.</p>
-          <CopyableCmd cmd={inviteUrl} />
+          <CopyableCmd cmd={inviteUrl} onCopy={onInviteCopied} />
         </>
       )}
       <h2 className="ui-group-label">Connect your AI agent</h2>
@@ -96,7 +112,7 @@ export function FirstContextScreen({ entry, inviteUrl, agentPrompt, onOpenContex
 }
 
 /** First user: Give Draft something to read, Draft is reading, then First context appears. */
-export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, onReadingChange, track, onFinish, error }: {
+export function FirstUserFlow({ toolList, hasSource, readingSources, entries, inviteUrl, agentPrompt, onImportFolder, sourceFooter, readingExtra, onReadingChange, track, onFinish, error }: {
   toolList: ReactNode;
   hasSource: boolean;
   readingSources: ReadingSource[];
@@ -104,6 +120,10 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
   inviteUrl: string | null;
   agentPrompt: string;
   onImportFolder?: () => void;
+  /** Under the tool list on "Give Draft something to read". */
+  sourceFooter?: ReactNode;
+  /** On "Draft is reading", above the Open Draft button. */
+  readingExtra?: ReactNode;
   /** Lets the host poll only while "Draft is reading" is shown. */
   onReadingChange?: (reading: boolean) => void;
   track: TrackFn;
@@ -130,16 +150,29 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
           toolList={toolList}
           hasSource={hasSource}
           onImportFolder={onImportFolder}
+          footer={sourceFooter}
           onNext={() => setStep("reading")}
           onSkip={() => finish("connections", "skipped")}
           onBrowseAll={() => finish("connections", "completed")}
         />
       )}
       {shown === "reading" && (
-        <ReadingScreen sources={readingSources} onOpenDraft={() => finish("context", "completed")} />
+        <ReadingScreen
+          sources={readingSources}
+          inviteUrl={inviteUrl}
+          onInviteCopied={() => track("invite_link_copied", { surface: "reading" })}
+          extra={readingExtra}
+          onOpenDraft={() => finish("context", "completed")}
+        />
       )}
       {shown === "first_context" && first && (
-        <FirstContextScreen entry={first} inviteUrl={inviteUrl} agentPrompt={agentPrompt} onOpenContext={() => finish("context", "completed")} />
+        <FirstContextScreen
+          entry={first}
+          inviteUrl={inviteUrl}
+          onInviteCopied={() => track("invite_link_copied", { surface: "first_context" })}
+          agentPrompt={agentPrompt}
+          onOpenContext={() => finish("context", "completed")}
+        />
       )}
     </FlowShell>
   );
