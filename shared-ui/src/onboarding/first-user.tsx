@@ -7,7 +7,7 @@ import type { ToolStatus } from "../integrations/registry";
 import { CopyButton, CopyableCmd } from "./components";
 import { FlowActions, FlowShell, type FlowDestination } from "./flow";
 
-export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, onNext, onSkip, onBrowseAll }: {
+export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, onNext, onSkip }: {
   toolList: ReactNode;
   hasSource: boolean;
   /** Desktop only. */
@@ -16,21 +16,49 @@ export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, 
   footer?: ReactNode;
   onNext: () => void;
   onSkip: () => void;
-  onBrowseAll: () => void;
 }) {
   return (
     <>
       <h1 className="ui-flow__title">Give Draft something to read</h1>
       <p className="ui-flow__subtitle">Connect one source to start. Your context stays empty until you connect a source.</p>
       {toolList}
-      <div className="ui-flow__buttons ui-flow__browse">
-        <button type="button" className="ui-link" onClick={onBrowseAll}>Browse all tools</button>
-        {onImportFolder && <button type="button" className="ui-link" onClick={onImportFolder}>Import from a folder on this computer</button>}
-      </div>
+      {onImportFolder && (
+        <div className="ui-flow__buttons ui-flow__browse">
+          <button type="button" className="ui-link" onClick={onImportFolder}>Import from a folder on this computer</button>
+        </div>
+      )}
       {footer}
       <FlowActions
         primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onNext} disabled={!hasSource}>Next</button>}
         secondary={<button type="button" className="ui-link" onClick={onSkip}>Skip</button>}
+      />
+    </>
+  );
+}
+
+/** After Skip: nothing to read yet, but the invite link and any extras still belong at the end of setup. */
+export function ReadyScreen({ inviteUrl, onInviteCopied, extra, onOpenDraft, onConnectSource }: {
+  inviteUrl?: string | null;
+  onInviteCopied?: () => void;
+  extra?: ReactNode;
+  onOpenDraft: () => void;
+  onConnectSource: () => void;
+}) {
+  return (
+    <>
+      <h1 className="ui-flow__title">You&apos;re set up</h1>
+      <p className="ui-flow__subtitle">Draft has nothing to read yet, so your context is empty. Connect a source any time from Connections.</p>
+      {inviteUrl && (
+        <>
+          <h2 className="ui-group-label">Invite a teammate</h2>
+          <p className="ui-flow__subtitle">Anyone with this link joins your team.</p>
+          <CopyableCmd cmd={inviteUrl} onCopy={onInviteCopied} />
+        </>
+      )}
+      {extra}
+      <FlowActions
+        primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onOpenDraft}>Open Draft</button>}
+        secondary={<button type="button" className="ui-link" onClick={onConnectSource}>Connect a source</button>}
       />
     </>
   );
@@ -152,8 +180,19 @@ export function FirstUserFlow({ toolList, hasSource, readingSources, entries, in
           onImportFolder={onImportFolder}
           footer={sourceFooter}
           onNext={() => setStep("reading")}
-          onSkip={() => finish("connections", "skipped")}
-          onBrowseAll={() => finish("connections", "completed")}
+          onSkip={() => {
+            track("onboarding_skipped", { step: "give_source" });
+            setStep("ready");
+          }}
+        />
+      )}
+      {shown === "ready" && (
+        <ReadyScreen
+          inviteUrl={inviteUrl}
+          onInviteCopied={() => track("invite_link_copied", { surface: "ready" })}
+          extra={readingExtra}
+          onOpenDraft={() => finish("context", "completed")}
+          onConnectSource={() => finish("connections", "completed")}
         />
       )}
       {shown === "reading" && (

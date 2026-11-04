@@ -102,10 +102,11 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     setCohort(files.length > 0 ? "joiner" : "first_user");
   }, [cohort, loading, files.length, identity.workspaceId]);
 
+  // Needed on the Skip screen as well as after the first context lands, and the first request creates the link.
   useEffect(() => {
-    if (cohort !== "first_user" || files.length === 0) return;
+    if (cohort !== "first_user") return;
     void rpc.request.getInviteLink().then((result) => { if (result.ok && result.url) setInviteUrl(result.url); }).catch(() => {});
-  }, [cohort, files.length]);
+  }, [cohort]);
 
   // Poll only while "Draft is reading" is shown; stop on success or after 10 minutes.
   useEffect(() => {

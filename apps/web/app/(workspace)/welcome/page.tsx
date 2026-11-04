@@ -93,13 +93,12 @@ function CreatorWelcome() {
     return () => clearTimeout(timer);
   }, [reading]);
 
-  // The invite link is created on first request, so ask only once the person reaches this screen.
+  // Both ways of finishing (reading, or Skip) show the invite link, and the first request creates it.
   useEffect(() => {
-    if (!reading || inviteUrl) return;
     apiFetch<{ url: string | null }>("/invites/mine")
       .then((body) => setInviteUrl(body.url))
       .catch(() => {});
-  }, [reading, inviteUrl]);
+  }, []);
 
   return (
     <FirstUserFlow
