@@ -9,7 +9,7 @@ export type AnalyticsPlatform = "web" | "desktop" | "landing";
 /** How a person reached a session: inside the app, or from a URL such as a shared link. */
 export type SessionEntry = "list" | "direct";
 
-export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "give_source" | "agents" | "reading" | "ready" | "first_context";
+export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "give_source" | "agents" | "routines" | "reading" | "ready" | "first_context";
 
 /** Where a creator came from. Always a coded value, never the raw query string. */
 export type SignupSource = "download" | "desktop" | "direct";

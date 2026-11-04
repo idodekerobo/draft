@@ -11,9 +11,11 @@ import {
   JoinerFlow,
   useQuery,
   useSuspenseQuery,
+  type AgentsStepContent,
   type FlowDestination,
 } from "draft-shared-ui";
 import { documentsToEntries, type ContextFileEntry } from "draft-shared-ui/context-files";
+import { AgentsDownloadActions } from "@/components/AgentsDownloadActions";
 import { DesktopNudge } from "@/components/DesktopNudge";
 import { WebToolList } from "@/components/WebToolList";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
@@ -21,6 +23,16 @@ import { apiFetch } from "@/lib/api";
 import { connectionsQueryOptions, contextQueryOptions } from "@/lib/queries";
 import { webToolStatuses } from "@/lib/tool-statuses";
 import { useWorkspace } from "@/lib/workspace";
+
+const WEB_AGENTS_STEP: AgentsStepContent = {
+  subtitle: "Invite a teammate into your Claude Code or Codex session. You both prompt the same agent.",
+  video: {
+    src: "/multiplayer-coding-demo.mp4",
+    poster: "/multiplayer-coding-demo-poster.jpg",
+    alt: "Two teammates brainstorming with Claude Code in the same Draft session",
+  },
+  actions: (onContinue) => <AgentsDownloadActions onContinue={onContinue} />,
+};
 
 const READING_POLL_MS = 5_000;
 const READING_POLL_LIMIT_MS = 10 * 60_000;
@@ -109,7 +121,7 @@ function CreatorWelcome() {
       inviteUrl={inviteUrl}
       agentPrompt={AGENT_SETUP_PROMPT}
       sourceFooter={<DesktopNudge surface="sources_step" />}
-      agentsStep={<DesktopNudge surface="agents_step" />}
+      agentsStep={WEB_AGENTS_STEP}
       readingExtra={<DesktopNudge surface="reading_step" />}
       onReadingChange={setReading}
       track={track}

@@ -2,7 +2,7 @@
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
@@ -17,6 +17,17 @@ import { AgentsSetup } from "./AgentsSetup";
 
 const READING_POLL_MS = 5_000;
 const READING_POLL_LIMIT_MS = 10 * 60_000;
+
+// Relative to the app's index.html: electrobun.config.ts copies both files next to it.
+const DESKTOP_AGENTS_STEP: AgentsStepContent = {
+  subtitle: "Get your agents ready, then start a session from the Sessions tab.",
+  video: {
+    src: "./multiplayer-coding-demo.mp4",
+    poster: "./multiplayer-coding-demo-poster.jpg",
+    alt: "Two teammates brainstorming with Claude Code in the same Draft session",
+  },
+  body: <AgentsSetup />,
+};
 
 function SignInScreen() {
   const { cloudSignIn, cloudSignInError, handleCloudSignIn } = useCloudSignIn();
@@ -155,7 +166,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
   return (
     <FirstUserFlow
       toolList={<DesktopToolList apps={apps} refresh={refresh} groups={["team", "meetings"]} startHere="slack" />}
-      agentsStep={<AgentsSetup />}
+      agentsStep={DESKTOP_AGENTS_STEP}
       hasSource={hasSource}
       readingSources={readingSources(apps, folderImported)}
       entries={files}

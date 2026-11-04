@@ -71,3 +71,7 @@ internal-apps/
 
 # Local backend validation scripts — never include in the public repository.
 backend/scripts/
+
+# Copied from assets/ by the web app's predev and prebuild scripts.
+apps/web/public/multiplayer-coding-demo.mp4
+apps/web/public/multiplayer-coding-demo-poster.jpg

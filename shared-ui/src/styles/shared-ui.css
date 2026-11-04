@@ -15,8 +15,10 @@
   color: var(--color-text-primary);
   font: 500 var(--font-size-secondary) / 1 var(--font-ui);
   white-space: nowrap;
+  text-decoration: none;
   cursor: pointer;
 }
+.ui-btn--large { min-height: 44px; padding: 0 22px; font-size: var(--font-size-body); }
 @media (hover: hover) and (pointer: fine) { .ui-btn:hover:not(:disabled) { background: var(--color-bg-hover); } }
 .ui-btn:disabled { opacity: 0.5; cursor: default; }
 .ui-btn--primary {
@@ -228,6 +230,14 @@
 .ui-flow__browse { margin-top: 16px; font-size: var(--font-size-secondary); }
 .ui-flow__field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-flow__divider { height: 1px; margin: 24px 0; background: var(--color-border); border: 0; }
+.ui-flow__title--lead { font-size: 32px; line-height: 1.15; letter-spacing: -0.02em; }
+
+.ui-demo-video { display: block; width: 100%; aspect-ratio: 1104 / 720; margin: 24px 0; border: 1px solid var(--color-border); border-radius: var(--radius-notice); background: var(--color-bg-elevated); object-fit: cover; }
+
+.ui-feature-row { display: flex; flex-direction: column; gap: 4px; padding: 14px 0; }
+.ui-feature-row + .ui-feature-row { border-top: 1px solid var(--color-border); }
+.ui-feature-row__name { color: var(--color-text-primary); font-size: var(--font-size-body); font-weight: 500; }
+.ui-feature-row__body { color: var(--color-text-secondary); font-size: var(--font-size-body); line-height: 1.5; }
 
 .ui-dimension-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; }
 .ui-dimension-row__name { color: var(--color-text-primary); font-size: var(--font-size-body); }
