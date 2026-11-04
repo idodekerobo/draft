@@ -33,7 +33,7 @@ export function DesktopNudge({ surface }: { surface: DownloadSurface }) {
       <h2 className="ui-group-label">{title}</h2>
       <p className="ui-flow__subtitle">{body}</p>
       <a className="ui-btn" href={DOWNLOAD_URL} onClick={onClick}>Download for Mac</a>
-      <p className="ui-flow__note">macOS with Apple Silicon.</p>
+      <p className="ui-flow__note">Apple Silicon Macs only (M1 or later). Intel Macs and Windows are not supported yet.</p>
     </section>
   );
 }

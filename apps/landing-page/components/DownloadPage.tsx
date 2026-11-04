@@ -34,9 +34,9 @@ export default function DownloadPage() {
           href={SIGNUP_URL}
           onClick={() => ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source: "download_page" })}
         >
-          Download <span aria-hidden="true">↗</span>
+          Download for Mac <span aria-hidden="true">↗</span>
         </a>
-        <p className="download-note">For macOS with Apple Silicon.</p>
+        <p className="download-note">Apple Silicon Macs only (M1 or later). Intel Macs and Windows are not supported yet.</p>
       </section>
       <Footer />
     </main>
