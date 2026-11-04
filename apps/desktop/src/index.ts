@@ -37,7 +37,7 @@ import type {
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
 import { clearAuthState, getCachedWorkspaceId, readAuthState, writeAuthState } from "draft-core/auth-state";
-import { getUserIdentity } from "./main/auth/user-identity";
+import { getUserIdentity, invalidateResolvedIdentity } from "./main/auth/user-identity";
 import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
   actOnLiveSessionInput,
@@ -985,6 +985,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (hadSession && identity && !identity.signedIn) {
           try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
         }
+        return { ok: true };
+      },
+      refreshUserIdentity: async () => {
+        invalidateResolvedIdentity();
+        await getUserIdentity().catch(() => null);
+        try { rpc.send.identityRefreshNeeded({}); } catch {}
         return { ok: true };
       },
       completeOnboarding: async () => {

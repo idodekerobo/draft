@@ -2,12 +2,14 @@
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENT_SETUP_PROMPT, DEFAULT_SETUP_DIMENSIONS, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, toDimensionHints, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
-import { events, rpc } from "../../../rpc";
+import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
 import { useCloudSignIn } from "../../../hooks/useCloudSignIn";
 import { useConnectedApps } from "../../../hooks/useConnectedApps";
+import { useFolderImport } from "../../../hooks/useFolderImport";
+import { useWebAppUrl } from "../../../hooks/useWebAppUrl";
 import { useUserIdentity } from "../../../identity/UserIdentityContext";
 import { CodexConnectRow } from "../../connections/CodexConnectRow";
 import { DesktopToolList, desktopToolStatuses } from "../../connections/DesktopToolList";
@@ -30,10 +32,27 @@ function SignInScreen() {
 }
 
 function NoTeamScreen() {
+  const webUrl = useWebAppUrl();
+
+  // The saved identity says "no team" until it is asked again, so ask whenever the person comes back from the browser.
+  useEffect(() => {
+    const refresh = () => void rpc.request.refreshUserIdentity().catch(() => {});
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+
   return (
     <FlowShell>
       <h1 className="ui-flow__title">You&apos;re signed in</h1>
-      <p className="ui-flow__subtitle">Open your team&apos;s invite link in your browser to join. This app picks up your team once you join.</p>
+      <p className="ui-flow__subtitle">Create your company in your browser, or open your team&apos;s invite link to join one. This app picks up your team when you come back.</p>
+      <button
+        type="button"
+        className="ui-btn ui-btn--primary ui-btn--wide"
+        disabled={!webUrl}
+        onClick={() => webUrl && rpc.send.openUrl({ url: `${webUrl}/onboarding/create?src=desktop` })}
+      >
+        Create your company
+      </button>
       <button type="button" className="ui-link" onClick={() => void rpc.request.signOut()}>Use a different account</button>
     </FlowShell>
   );
@@ -72,7 +91,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
   const { track } = useAnalytics();
   const { apps, refresh } = useConnectedApps();
   const [error, setError] = useState<string | null>(null);
-  const [folderImported, setFolderImported] = useState(false);
+  const { imported: folderImported, error: folderError, importFolder } = useFolderImport();
   const [reading, setReading] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   // Cohort is decided once, so the first context landing mid-flow does not switch flows.
@@ -115,19 +134,6 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     onComplete(destination);
   }
 
-  async function importFolder() {
-    setError(null);
-    const picked = await rpc.request.selectUploadFolder();
-    if (!picked.folderPath) return;
-    const result = await rpc.request.bootstrapWorkspaceContext({ folderPath: picked.folderPath, dimensions: toDimensionHints(DEFAULT_SETUP_DIMENSIONS) });
-    if (result.ok && result.runId) {
-      events.emit("bootstrapRunStarted", { runId: result.runId });
-      setFolderImported(true);
-    } else {
-      setError(result.reason === "no_ready_items" ? "That folder has no files Draft can read. Choose a different one." : result.error ?? "Could not import that folder.");
-    }
-  }
-
   const statuses = desktopToolStatuses(apps);
   const hasSource = folderImported || Object.values(statuses).some((status) => status?.state === "connected" || status?.state === "pending");
 
@@ -156,7 +162,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
       onReadingChange={setReading}
       track={track}
       onFinish={(destination) => void finish(destination)}
-      error={error}
+      error={error ?? folderError}
     />
   );
 }

@@ -455,6 +455,8 @@ export type AppRPCType = {
       getUserIdentity: { params: void; response: UserIdentity };
       /** Re-checks that the saved login still works; signs the user out if it does not. Throttled. */
       verifySession: { params: void; response: ActionResult };
+      /** Asks the server for the user's team again, for someone who just created or joined one in the browser. */
+      refreshUserIdentity: { params: void; response: ActionResult };
 
       /**
        * Mark the signed-in user's onboarding wizard as complete, server-side
