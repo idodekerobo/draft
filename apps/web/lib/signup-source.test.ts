@@ -4,6 +4,7 @@ import { createOrgPath, parseSignupSource } from "./signup-source";
 describe("parseSignupSource", () => {
   it("accepts the known sources", () => {
     expect(parseSignupSource("download")).toBe("download");
+    expect(parseSignupSource("join")).toBe("join");
     expect(parseSignupSource("desktop")).toBe("desktop");
   });
 
@@ -21,6 +22,7 @@ describe("createOrgPath", () => {
 
   it("keeps the source", () => {
     expect(createOrgPath("download")).toBe("/onboarding/create?src=download");
+    expect(createOrgPath("join")).toBe("/onboarding/create?src=join");
   });
 
   it("encodes a next path that has its own query", () => {

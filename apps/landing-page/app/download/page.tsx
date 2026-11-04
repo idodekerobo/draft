@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import DownloadPage from "@/components/DownloadPage";
+import SignupHero from "@/components/SignupHero";
 
 export const metadata: Metadata = {
   title: "Download Draft",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Download() {
-  return <DownloadPage />;
+  return <SignupHero variant="download" />;
 }

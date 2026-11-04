@@ -2,7 +2,7 @@ import type { SignupSource } from "draft-shared-ui";
 
 /** `src` comes from a URL anyone can edit, so only known values pass through. */
 export function parseSignupSource(value: string | string[] | null | undefined): SignupSource {
-  return value === "download" || value === "desktop" ? value : "direct";
+  return value === "download" || value === "join" || value === "desktop" ? value : "direct";
 }
 
 /** The create-company URL, keeping where the creator came from and where to go afterwards. */
