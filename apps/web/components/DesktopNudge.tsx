@@ -1,0 +1,39 @@
+"use client";
+
+import type { DownloadSurface } from "draft-shared-ui";
+import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
+import { DOWNLOAD_URL } from "@/lib/config";
+
+const COPY: Record<DownloadSurface, { title: string; body: string }> = {
+  sources_step: {
+    title: "Want more sources?",
+    body: "The desktop app can read a folder of docs on your computer and connect Slack. It also shares your coding sessions with your team.",
+  },
+  reading_step: {
+    title: "Add more while Draft reads",
+    body: "Get the desktop app to import a folder of docs, connect Slack and share your coding sessions with your team.",
+  },
+  download_page: {
+    title: "Get the desktop app",
+    body: "Import a folder of docs, connect Slack and share your coding sessions with your team.",
+  },
+};
+
+export function DesktopNudge({ surface }: { surface: DownloadSurface }) {
+  const { track } = useAnalytics();
+  const { title, body } = COPY[surface];
+
+  function onClick() {
+    track("desktop_download_clicked", { surface });
+    if (surface !== "sources_step") track("onboarding_finish_chosen", { choice: "desktop" });
+  }
+
+  return (
+    <section aria-label={title}>
+      <h2 className="ui-group-label">{title}</h2>
+      <p className="ui-flow__subtitle">{body}</p>
+      <a className="ui-btn" href={DOWNLOAD_URL} onClick={onClick}>Download for Mac</a>
+      <p className="ui-flow__note">macOS with Apple Silicon.</p>
+    </section>
+  );
+}

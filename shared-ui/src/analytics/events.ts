@@ -14,17 +14,13 @@ export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "
 /** Where a creator came from. Always a coded value, never the raw query string. */
 export type SignupSource = "download" | "desktop" | "direct";
 
-/** "pairing" is the create-company step reached from a desktop sign-in. */
-export type CreateOrgMode = "web" | "pairing";
-
 export type DownloadSurface = "sources_step" | "reading_step" | "download_page";
 
 export type SharedAnalyticsEvent =
   | { event: "invite_viewed";              props: Record<string, never> }
-  | { event: "signup_viewed";              props: { source: SignupSource } }
   | { event: "account_created";            props: { method: "email" | "google" } }
-  | { event: "org_create_viewed";          props: { mode: CreateOrgMode } }
-  | { event: "org_created";                props: { mode: CreateOrgMode } }
+  | { event: "org_create_viewed";          props: { source: SignupSource } }
+  | { event: "org_created";                props: { source: SignupSource } }
   | { event: "org_create_failed";          props: { reason: "invalid_name" | "already_in_organization" | "network" | "server" } }
   | { event: "invite_link_copied";         props: { surface: "reading" | "first_context" } }
   | { event: "desktop_download_clicked";   props: { surface: DownloadSurface } }

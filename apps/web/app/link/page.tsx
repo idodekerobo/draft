@@ -1,4 +1,7 @@
+import { redirect } from "next/navigation";
 import { FlowShell } from "draft-shared-ui";
+import { getServerIdentity } from "@/lib/server-identity";
+import { createOrgPath } from "@/lib/signup-source";
 import { createClient } from "@/lib/supabase/server";
 import { AuthForm } from "@/components/AuthForm";
 import { ApprovePairing } from "@/components/ApprovePairing";
@@ -45,12 +48,19 @@ export default async function LinkPage({
   const {
     data: { user },
   } = await client.auth.getUser();
+  if (user) {
+    const result = await getServerIdentity();
+    // No company yet: create one first, then come back here to approve.
+    if (result.state === "ok" && !result.identity.organization_id) {
+      redirect(createOrgPath("desktop", `/link?code=${encodeURIComponent(code)}`));
+    }
+  }
   return (
     <PairingPanel
       title="Connect Draft"
       description={user
         ? "Connect your local CLI or desktop app to your Draft account."
-        : "Sign in to connect your local CLI or desktop app to Draft."}
+        : "Sign in or create an account to connect your local CLI or desktop app to Draft."}
     >
       <div className="pairing-panel__actions">
         {user ? (
@@ -59,6 +69,7 @@ export default async function LinkPage({
           <AuthForm
             next={`/link?code=${encodeURIComponent(code)}`}
             initialMode="login"
+            allowSignup
           />
         )}
       </div>

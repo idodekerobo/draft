@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { FlowShell, HydrationBoundary, dehydrate, makeQueryClient } from "draft-shared-ui";
 import { safeNext } from "@/lib/safe-redirect";
+import { createOrgPath } from "@/lib/signup-source";
 import { WebQueryProvider } from "@/lib/query-provider";
 import { getServerAccessToken, getServerIdentity } from "@/lib/server-identity";
 import { prefetchWorkspace } from "@/lib/server-prefetch";
@@ -23,12 +24,12 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
     );
   }
   const { identity } = result;
-  if (!identity.organization_id || !identity.workspace_id) {
-    // TODO: self-serve org creation replaces this dead end.
+  if (!identity.organization_id) redirect(createOrgPath("direct"));
+  if (!identity.workspace_id) {
     return (
       <FlowShell>
-        <h1>You&apos;re signed in</h1>
-        <p>Ask your workspace admin for an invite link to join your team.</p>
+        <h1>Your team has no workspace yet</h1>
+        <p>Ask your workspace admin to finish setting up your team.</p>
       </FlowShell>
     );
   }
