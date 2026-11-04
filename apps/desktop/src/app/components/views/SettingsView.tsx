@@ -17,6 +17,7 @@ import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { ClaudeAgentRow } from "../connections/ClaudeAgentRow";
 import { CodexAgentRow } from "../connections/CodexAgentRow";
+import { ImportFolderRow } from "./ImportFolderRow";
 import { useCloudSignIn } from "../../hooks/useCloudSignIn";
 import { appVersionQueryOptions, crispConfigQueryOptions, localConfigQueryOptions } from "../../queries";
 
@@ -253,6 +254,7 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
         <section className="settings__section">
           <h2 className="settings__section-label">Your data</h2>
           <ul className="ui-rows">
+            <ImportFolderRow />
             <ContextExport onExport={exportContext} />
           </ul>
         </section>

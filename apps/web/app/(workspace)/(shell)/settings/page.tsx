@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { AppearanceRow, ContextExport, InviteLinkRow, type InviteLink, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { apiFetch, apiFetchBlob } from "@/lib/api";
+import { DOWNLOAD_URL } from "@/lib/config";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -38,6 +40,7 @@ const loadInvite = (createIfMissing: boolean) => apiFetch<InviteLink>(`/invites/
 
 export default function SettingsPage() {
   const { identity, updatePrivacy, workspaceId } = useWorkspace();
+  const { track } = useAnalytics();
   const [theme, setTheme] = useThemePreference();
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +71,17 @@ export default function SettingsPage() {
             label="Draft Cloud"
             helper={`Signed in as ${identity.email}`}
             control={<button type="button" className="ui-btn" onClick={() => void signOut()}>Sign out</button>}
+          />
+        </li>
+      </ul>
+
+      <h2 className="ui-group-label">Desktop app</h2>
+      <ul className="ui-rows">
+        <li>
+          <SettingsRow
+            label="Draft for Mac"
+            helper="Import a folder of docs, connect Slack and share your coding sessions with your team. Apple Silicon Macs only (M1 or later)."
+            control={<a className="ui-btn" href={DOWNLOAD_URL} onClick={() => track("desktop_download_clicked", { surface: "settings" })}>Download</a>}
           />
         </li>
       </ul>

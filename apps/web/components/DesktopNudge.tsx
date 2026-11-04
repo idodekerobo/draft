@@ -4,7 +4,9 @@ import type { DownloadSurface } from "draft-shared-ui";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { DOWNLOAD_URL } from "@/lib/config";
 
-const COPY: Record<DownloadSurface, { title: string; body: string }> = {
+type NudgeSurface = Exclude<DownloadSurface, "settings">;
+
+const COPY: Record<NudgeSurface, { title: string; body: string }> = {
   sources_step: {
     title: "Want more sources?",
     body: "The desktop app can read a folder of docs on your computer and connect Slack. It also shares your coding sessions with your team.",
@@ -19,7 +21,7 @@ const COPY: Record<DownloadSurface, { title: string; body: string }> = {
   },
 };
 
-export function DesktopNudge({ surface }: { surface: DownloadSurface }) {
+export function DesktopNudge({ surface }: { surface: NudgeSurface }) {
   const { track } = useAnalytics();
   const { title, body } = COPY[surface];
 
