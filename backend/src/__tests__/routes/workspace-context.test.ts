@@ -193,4 +193,22 @@ describe("workspace context routes", () => {
     await routeModule.contextGET(request({ id: "workspace-1" }, undefined, { origin: "https://app.draftai.us" }) as never);
     expect(queryLogCalls).toBe(1);
   });
+
+  it("does not log reads from the desktop app or the web server's prefetch", async () => {
+    queryResult = {
+      data: {
+        id: "version-1",
+        version_number: 1,
+        content_hash: "hash-1",
+        creation_reason: "synthesis",
+        created_at: "2026-08-06T00:00:00.000Z",
+        documents_json: {},
+      },
+      error: null,
+    };
+
+    await routeModule.contextGET(request({ id: "workspace-1" }, undefined, { "x-draft-client": "desktop" }) as never);
+    await routeModule.contextGET(request({ id: "workspace-1" }, undefined, { "x-draft-client": "web" }) as never);
+    expect(queryLogCalls).toBe(0);
+  });
 });

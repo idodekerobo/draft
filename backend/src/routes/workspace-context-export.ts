@@ -4,6 +4,7 @@ import { contextExportSettings } from "../config";
 import { createContextExportLink } from "../context-export/link";
 import { ContextExportTokenError, verifyContextExportToken } from "../context-export/token";
 import { serviceClient } from "../db/client";
+import { isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { buildContextExport } from "../services/context-export";
 import { getWorkspaceContext } from "../services/workspace-context";
@@ -12,7 +13,7 @@ type ExportRequest = Bun.BunRequest<"/workspaces/:id/context/export">;
 type ExportLinkRequest = Bun.BunRequest<"/workspaces/:id/context/export-links">;
 type RedeemRequest = Bun.BunRequest<"/context-exports/:token">;
 
-async function zipResponse(workspaceId: string, userId: string, via: string): Promise<Response> {
+async function zipResponse(workspaceId: string, userId: string, via: string, logAsAgent: boolean): Promise<Response> {
   const result = await getWorkspaceContext(workspaceId);
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
@@ -24,7 +25,7 @@ async function zipResponse(workspaceId: string, userId: string, via: string): Pr
     return Response.json({ error: "export_failed" }, { status: 500 });
   }
 
-  void recordAgentQueryLog(serviceClient, {
+  if (logAsAgent) void recordAgentQueryLog(serviceClient, {
     workspaceId,
     userId,
     command: "context.export",
@@ -45,7 +46,7 @@ async function zipResponse(workspaceId: string, userId: string, via: string): Pr
 export const exportGET = withAuth<ExportRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
-  return zipResponse(req.params.id, caller.userId, "authenticated");
+  return zipResponse(req.params.id, caller.userId, "authenticated", isAgentRequest(req));
 });
 
 export const exportLinkPOST = withAuth<ExportLinkRequest>(async (req, caller) => {
@@ -72,5 +73,6 @@ export async function redeemGET(req: RedeemRequest): Promise<Response> {
 
   const denied = await assertWorkspaceAccess(claims.workspaceId, claims.userId);
   if (denied) return denied;
-  return zipResponse(claims.workspaceId, claims.userId, "link");
+  // A signed link is what a person hands to an agent, so a download through one is agent usage.
+  return zipResponse(claims.workspaceId, claims.userId, "link", true);
 }

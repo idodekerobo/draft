@@ -20,6 +20,21 @@ function setup(statuses: number[], token: ServerFetchDeps["token"] = async (forc
 
 afterEach(() => setSessionExpiredHandler(null));
 
+describe("fetchServer client header", () => {
+  test("marks every call as coming from the desktop app, so the backend does not count it as an agent", async () => {
+    const seen: Array<Record<string, string>> = [];
+    const fetchServer = createServerFetch({
+      token: async () => "old",
+      fetch: async (_url, init) => {
+        seen.push(init.headers as Record<string, string>);
+        return new Response(null, { status: 200 });
+      },
+    });
+    await fetchServer("workspaces/w/context", { headers: { "X-Other": "kept" } });
+    expect(seen[0]).toMatchObject({ "x-draft-client": "desktop", Authorization: "Bearer old", "X-Other": "kept" });
+  });
+});
+
 describe("fetchServer session expiry", () => {
   test("terminal refresh error calls the handler and throws SessionExpiredError", async () => {
     const t = setup([], async () => { throw new AuthRefreshError("terminal"); });
