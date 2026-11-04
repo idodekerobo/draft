@@ -10,6 +10,7 @@ import * as githubInstall from "./github-install";
 import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
+import * as organizations from "./organizations";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
@@ -44,6 +45,7 @@ export const routes = {
   "/waitlist": { POST: waitlist.POST },
   "/waitlist/profile": { POST: waitlist.PROFILE_POST },
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
+  "/organizations": { POST: withCors(organizations.POST), OPTIONS },
   "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
   "/workspaces/:id/context": { GET: withCors(workspaceContext.contextGET), OPTIONS },
   "/workspaces/:id/context/export": { GET: withCors(workspaceContextExport.exportGET), OPTIONS },
@@ -60,8 +62,8 @@ export const routes = {
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/sources/search": { POST: sources.searchPOST },
   "/workspaces/:id/sources/:sourceItemId/read": { POST: sources.readPOST },
-  "/workspaces/:id/github/install-sessions": { POST: githubInstall.createPOST },
-  "/workspaces/:id/github/install-sessions/:code": { GET: githubInstall.pollGET },
+  "/workspaces/:id/github/install-sessions": { POST: withCors(githubInstall.createPOST), OPTIONS },
+  "/workspaces/:id/github/install-sessions/:code": { GET: withCors(githubInstall.pollGET), OPTIONS },
   "/workspaces/github/callback": { GET: githubCallback.GET },
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
   "/workspaces/:id/sessions/tokens/:credentialId": { DELETE: sessionTokens.DELETE },
