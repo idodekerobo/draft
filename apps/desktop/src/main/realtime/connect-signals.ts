@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getFreshAccessToken } from "draft-core/auth-state";
+import { SIGNAL_EVENTS } from "draft-core/live-sessions";
 import type { SignalSource } from "./realtime-manager";
 
 const TOKEN_REFRESH_MS = 10 * 60_000;
@@ -30,15 +31,20 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
   let lastRefresh = 0;
   const joined = new Set<Joined>();
 
-  const refreshToken = async () => {
-    client ??= makeClient();
-    try {
-      await client.realtime.setAuth(await getToken());
-      lastRefresh = now();
-    } catch (error) {
-      console.error("[signals] could not refresh the token", error);
-    }
-  };
+  // Topics that join together share one refresh.
+  let refreshing: Promise<void> | null = null;
+  const refreshToken = () =>
+    (refreshing ??= (async () => {
+      client ??= makeClient();
+      try {
+        await client.realtime.setAuth(await getToken());
+        lastRefresh = now();
+      } catch (error) {
+        console.error("[signals] could not refresh the token", error);
+      } finally {
+        refreshing = null;
+      }
+    })());
 
   const tick = async () => {
     const at = now();
@@ -46,7 +52,7 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
     lastTick = at;
     if (!slept && at - lastRefresh < TOKEN_REFRESH_MS) return;
     await refreshToken();
-    if (slept) joined.forEach((entry) => entry.onEvent("catch-up"));
+    if (slept) joined.forEach((entry) => entry.onEvent(SIGNAL_EVENTS.catchUp));
   };
 
   const source: SignalSource = (topic, onEvent, onConnected) => {
@@ -61,7 +67,7 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
       const channel = live.channel(topic, { config: { private: true } });
       channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event)).subscribe((status) => {
         onConnected(status === "SUBSCRIBED");
-        if (status === "SUBSCRIBED") onEvent("catch-up");
+        if (status === "SUBSCRIBED") onEvent(SIGNAL_EVENTS.catchUp);
       });
       leave = () => void live.removeChannel(channel);
       if (stopped) leave();

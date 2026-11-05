@@ -3,7 +3,7 @@ import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
-import { hostErrorAction, sessionSignalTopic } from "draft-core/live-sessions";
+import { SIGNAL_EVENTS, hostErrorAction, sessionSignalTopic } from "draft-core/live-sessions";
 import type { ApprovalResponse, LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { realtime } from "../realtime/instance";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
@@ -86,7 +86,7 @@ class SessionRunner {
     if (!this.state.ended) {
       this.stopHeartbeat = startHeartbeat(() => this.sendHeartbeat());
       this.stopSignals = realtime.watch(sessionSignalTopic(this.state.sessionId), (event) => {
-        if (event === "inputs" || event === "catch-up") this.wake();
+        if (event === SIGNAL_EVENTS.inputs || event === SIGNAL_EVENTS.catchUp) this.wake();
       });
       this.driver.start();
     }

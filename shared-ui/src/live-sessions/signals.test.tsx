@@ -69,7 +69,7 @@ describe("useSignals", () => {
     const seen: string[][] = [];
     const view = render(<Probe watch={watch} topic="signals:session:s1" onSignal={(events) => void seen.push([...events])} />);
     send("events");
-    await wait(160);
+    await wait(400);
     expect(seen).toEqual([["events"]]);
     view.unmount();
     expect(stops).toEqual(["signals:session:s1"]);

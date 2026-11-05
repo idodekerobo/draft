@@ -1,23 +1,24 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { workspaceSignalTopic } from "draft-core/live-sessions";
-import { SAFETY_POLL_MS } from "../query/options";
+import { SIGNAL_EVENTS, workspaceSignalTopic } from "draft-core/live-sessions";
 import { queryKeys } from "../query/keys";
 import { useQueryClient } from "../query";
 import type { LiveSessionsApi } from "./types";
 
 export type WatchSignals = NonNullable<LiveSessionsApi["watchSignals"]>;
 
-/** With signals, a poll is only a safety net. Without them, it is how the app learns. */
+/** A fast-streaming session signals many times a second; one fetch per this long is enough. */
+export const SESSION_SIGNAL_DELAY_MS = 250;
+
+/** Polls are only safety nets, in case a signal is missed. */
 export const SESSION_SAFETY_POLL_MS = 60_000;
-export const LIST_SAFETY_POLL_MS = SAFETY_POLL_MS;
 
 /**
  * Runs `run` after a signal, once for a burst of signals. A signal that arrives while `run` is going
  * runs it once more afterwards. `run` gets the names of the events since the last run.
  */
-export function createRefresher(run: (events: Set<string>) => unknown, delayMs = 100) {
+export function createRefresher(run: (events: Set<string>) => unknown, delayMs = SESSION_SIGNAL_DELAY_MS) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let running = false;
   let stopped = false;
@@ -54,10 +55,10 @@ export function createRefresher(run: (events: Set<string>) => unknown, delayMs =
   };
 }
 
-/** Watches one topic while mounted. Does nothing when there is no `watch`. */
 /** A busy workspace signals on every event of every session, so its lists wait this long to gather a burst. */
 export const WORKSPACE_SIGNAL_DELAY_MS = 1_500;
 
+/** Watches one topic while mounted. Does nothing when there is no `watch`. */
 export function useSignals(watch: WatchSignals | undefined, topic: string | null, onSignal: (events: Set<string>) => unknown, delayMs?: number) {
   const latest = useRef(onSignal);
   latest.current = onSignal;
@@ -85,8 +86,8 @@ export function useWorkspaceDataSignals(watch: WatchSignals | undefined, workspa
     async (events) => {
       if (!workspaceId) return;
       const keys = [queryKeys.context(workspaceId), queryKeys.connections(workspaceId), queryKeys.connectedApps(workspaceId), queryKeys.runs(workspaceId)];
-      if (events.has("context")) await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
-      else if (events.has("catch-up")) await Promise.all(keys.map((queryKey) => queryClient.refetchQueries({ queryKey, stale: true })));
+      if (events.has(SIGNAL_EVENTS.context)) await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+      else if (events.has(SIGNAL_EVENTS.catchUp)) await Promise.all(keys.map((queryKey) => queryClient.refetchQueries({ queryKey, stale: true })));
     },
     WORKSPACE_SIGNAL_DELAY_MS,
   );

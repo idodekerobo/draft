@@ -83,8 +83,4 @@ export class RealtimeManager {
   clearWindow(): void {
     this.setWindowTopics([]);
   }
-
-  size(): number {
-    return this.held.size;
-  }
 }

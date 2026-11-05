@@ -1,10 +1,10 @@
 "use client";
 
 import type { QueryClient } from "@tanstack/react-query";
-import { splitAuthor, workspaceSignalTopic } from "draft-core/live-sessions";
+import { SIGNAL_EVENTS, splitAuthor, workspaceSignalTopic } from "draft-core/live-sessions";
 import { useQuery } from "../query";
-import { POLL_MS } from "../query/options";
-import { LIST_SAFETY_POLL_MS, WORKSPACE_SIGNAL_DELAY_MS, useSignals } from "./signals";
+import { POLL_MS, SAFETY_POLL_MS } from "../query/options";
+import { WORKSPACE_SIGNAL_DELAY_MS, useSignals } from "./signals";
 import type { LiveSession, LiveSessionsApi } from "./types";
 
 export const liveSessionsQueryKey = (workspaceId: string) => ["ws", workspaceId, "live-sessions"] as const;
@@ -46,14 +46,14 @@ export function useLiveSessions(api: LiveSessionsApi, workspaceId: string) {
       const fresh = { sessions: await api.listSessions() };
       return keepNewerActivity(client.getQueryData<SessionsListData>(liveSessionsQueryKey(workspaceId)), fresh);
     },
-    refetchInterval: LIST_SAFETY_POLL_MS,
+    refetchInterval: SAFETY_POLL_MS,
     staleTime: POLL_MS,
   });
   useSignals(
     api.watchSignals,
     workspaceSignalTopic(workspaceId),
     async (events) => {
-      if (events.has("sessions") || events.has("catch-up")) await query.refetch({ cancelRefetch: false });
+      if (events.has(SIGNAL_EVENTS.sessions) || events.has(SIGNAL_EVENTS.catchUp)) await query.refetch({ cancelRefetch: false });
     },
     WORKSPACE_SIGNAL_DELAY_MS,
   );

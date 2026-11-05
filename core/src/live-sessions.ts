@@ -108,6 +108,14 @@ export const presenceChannel = (sessionId: string) => `session:${sessionId}`;
 export const sessionSignalTopic = (sessionId: string) => `signals:session:${sessionId}`;
 export const workspaceSignalTopic = (workspaceId: string) => `signals:workspace:${workspaceId}`;
 
+/** Event names of a signal. `catchUp` is never sent by the server: apps make it when a connection joins or returns. */
+export const SIGNAL_EVENTS = {
+  catchUp: "catch-up",
+  inputs: "inputs",
+  sessions: "sessions",
+  context: "context",
+} as const;
+
 /** Names of the other people watching, from a channel's presence state. One name per person, in a steady order. */
 export function presenceNames(state: Record<string, PresenceMeta[]>, selfId: string): string[] {
   const names: string[] = [];
