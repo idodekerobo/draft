@@ -3,8 +3,9 @@ import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
-import { hostErrorAction } from "draft-core/live-sessions";
+import { hostErrorAction, sessionSignalTopic } from "draft-core/live-sessions";
 import type { ApprovalResponse, LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
+import { realtime } from "../realtime/instance";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import type { HostEvent } from "./approvals";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
@@ -12,6 +13,7 @@ import { registrationFor } from "./drivers";
 import { getHostMachineId } from "./machine-id";
 import { gitRemote } from "./git-remote";
 import { startHeartbeat } from "./heartbeat";
+import { InputWake } from "./input-wake";
 import { LaunchError, type HarnessDriver, type HostInput } from "./harness-driver";
 
 const PANE_WATCH_MS = 2_000;
@@ -30,6 +32,9 @@ class SessionRunner {
   private uploadWanted = false;
   private watcher: ReturnType<typeof setTimeout> | null = null;
   private stepping = false;
+  private wakePending = false;
+  private stopSignals: (() => void) | null = null;
+  private readonly inputWake = new InputWake();
   private finished = false;
   private readonly base: string;
 
@@ -80,6 +85,9 @@ class SessionRunner {
   start(): void {
     if (!this.state.ended) {
       this.stopHeartbeat = startHeartbeat(() => this.sendHeartbeat());
+      this.stopSignals = realtime.watch(sessionSignalTopic(this.state.sessionId), (event) => {
+        if (event === "inputs" || event === "catch-up") this.wake();
+      });
       this.driver.start();
     }
     this.scheduleStep();
@@ -89,9 +97,29 @@ class SessionRunner {
   /** The next pass comes after the time the driver asks for, so an active session is picked up faster. */
   private scheduleStep(): void {
     if (this.finished) return;
+    const delay = this.wakePending ? 0 : (this.driver.pollMs?.() ?? PANE_WATCH_MS);
+    this.wakePending = false;
     this.watcher = setTimeout(() => {
       void this.step().finally(() => this.scheduleStep());
-    }, this.driver.pollMs?.() ?? PANE_WATCH_MS);
+    }, delay);
+  }
+
+  /** The server signalled new inputs: run the next pass now, or right after the one that is running. */
+  private wake(): void {
+    if (this.finished) return;
+    this.inputWake.signal();
+    if (this.stepping) {
+      this.wakePending = true;
+      return;
+    }
+    if (this.watcher) clearTimeout(this.watcher);
+    this.wakePending = true;
+    this.scheduleStep();
+  }
+
+  private stopWatching(): void {
+    this.stopSignals?.();
+    this.stopSignals = null;
   }
 
   private modes: { permissionMode?: string | null; approvalMode?: string | null } = {};
@@ -123,6 +151,7 @@ class SessionRunner {
     if (this.finished) return;
     console.warn("[live-session] paused: this login cannot reach session", this.state.sessionId);
     this.finished = true;
+    this.stopWatching();
     this.stopHeartbeat?.();
     this.driver.dispose();
     if (this.watcher) clearTimeout(this.watcher);
@@ -131,6 +160,7 @@ class SessionRunner {
 
   private abandon(): void {
     this.finished = true;
+    this.stopWatching();
     this.stopHeartbeat?.();
     this.driver.dispose();
     if (this.watcher) clearTimeout(this.watcher);
@@ -154,12 +184,17 @@ class SessionRunner {
   }
 
   private async whileAlive(): Promise<void> {
-    let pending: HostInput[];
-    try {
-      pending = await this.fetchInputs();
-    } catch (error) {
-      this.reportInputError("fetching inputs", error);
-      return;
+    let pending: HostInput[] = [];
+    if (this.inputWake.due()) {
+      this.inputWake.asking();
+      try {
+        pending = await this.fetchInputs();
+      } catch (error) {
+        this.inputWake.failed();
+        this.reportInputError("fetching inputs", error);
+        return;
+      }
+      this.inputWake.answered(pending.length);
     }
     await this.driver.serve(pending);
   }
@@ -185,6 +220,7 @@ class SessionRunner {
         if (!(await this.driver.flush())) return;
         if (!(await this.endOnServer())) return;
         this.stopHeartbeat?.();
+        this.stopWatching();
         this.persist({ ended: true });
       }
       if (await this.driver.finalize()) this.abandon();
@@ -213,6 +249,7 @@ class SessionRunner {
     this.endReason = "cleared";
     if (!(await this.endOnServer())) return true;
     this.stopHeartbeat?.();
+    this.stopWatching();
     this.persist({ ended: true });
     saveState(this.successor);
     new SessionRunner(this.successor).start();
