@@ -1,7 +1,7 @@
 // DesktopOnboarding.tsx — sign-in pre-flow, then the shared guided flow by workspace state.
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
-import { workspaceSignalTopic } from "draft-core/live-sessions";
+import { SIGNAL_EVENTS, workspaceSignalTopic } from "draft-core/live-sessions";
 import { watchSignals } from "../../../liveSessionsApi";
 import { useEffect, useState, type ReactNode } from "react";
 import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, useSignals, WORKSPACE_SIGNAL_DELAY_MS, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
@@ -139,7 +139,7 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     reading && files.length === 0 ? watchSignals : undefined,
     identity.workspaceId ? workspaceSignalTopic(identity.workspaceId) : null,
     async (events) => {
-      if (events.has("context") || events.has("catch-up")) await Promise.all([refresh(), reloadFiles()]);
+      if (events.has(SIGNAL_EVENTS.context) || events.has(SIGNAL_EVENTS.catchUp)) await Promise.all([refresh(), reloadFiles()]);
     },
     WORKSPACE_SIGNAL_DELAY_MS,
   );

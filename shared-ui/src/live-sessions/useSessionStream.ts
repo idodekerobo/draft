@@ -7,8 +7,6 @@ import { SESSION_SAFETY_POLL_MS, useSignals } from "./signals";
 import { syncSessionIntoLists } from "./sessions-list";
 import type { LiveSession, LiveSessionEvent, LiveSessionEventsPage, LiveSessionInput, LiveSessionViewer, LiveSessionsApi } from "./types";
 
-export const SESSION_POLL_MS = 2_000;
-
 export interface SessionStreamData {
   session: LiveSession;
   viewer: LiveSessionViewer;
@@ -53,7 +51,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
     },
     structuralSharing: false,
     staleTime: 0,
-    refetchInterval: api.watchSignals ? SESSION_SAFETY_POLL_MS : SESSION_POLL_MS,
+    refetchInterval: SESSION_SAFETY_POLL_MS,
   });
   useSignals(api.watchSignals, sessionSignalTopic(sessionId), async () => void (await refetch({ cancelRefetch: false })));
   return { ...data, refresh: async () => void (await refetch()) };

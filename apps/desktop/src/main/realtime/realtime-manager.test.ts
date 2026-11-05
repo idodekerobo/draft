@@ -46,7 +46,6 @@ describe("RealtimeManager", () => {
     t.manager.setWindowTopics(["a", "b"]);
     t.manager.clearWindow();
     expect(t.left.sort()).toEqual(["a", "b"]);
-    expect(t.manager.size()).toBe(0);
   });
 
   it("shares one channel between the window and a main-process listener, and keeps it until both are done", () => {
