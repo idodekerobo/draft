@@ -51,17 +51,20 @@ export function createRefresher(run: (events: Set<string>) => unknown, delayMs =
 }
 
 /** Watches one topic while mounted. Does nothing when there is no `watch`. */
-export function useSignals(watch: WatchSignals | undefined, topic: string | null, onSignal: (events: Set<string>) => unknown) {
+/** A busy workspace signals on every event of every session, so its lists wait this long to gather a burst. */
+export const WORKSPACE_SIGNAL_DELAY_MS = 1_500;
+
+export function useSignals(watch: WatchSignals | undefined, topic: string | null, onSignal: (events: Set<string>) => unknown, delayMs?: number) {
   const latest = useRef(onSignal);
   latest.current = onSignal;
 
   useEffect(() => {
     if (!watch || !topic) return;
-    const refresher = createRefresher((events) => latest.current(events));
+    const refresher = createRefresher((events) => latest.current(events), delayMs);
     const stop = watch(topic, (event) => refresher.trigger(event));
     return () => {
       stop();
       refresher.stop();
     };
-  }, [watch, topic]);
+  }, [watch, topic, delayMs]);
 }
