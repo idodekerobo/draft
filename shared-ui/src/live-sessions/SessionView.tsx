@@ -25,6 +25,7 @@ import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
 import { prependToDraft } from "./drafts";
 import { useSessionInputs } from "./useSessionInputs";
+import { useConnectionState } from "./useConnectionState";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
@@ -219,6 +220,7 @@ function LoadedSession({
 }: SessionViewProps) {
   const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const watchers = presenceLine(useSessionPresence(api, sessionId, viewer));
+  const connection = useConnectionState(api);
   const viewReported = useRef(false);
   useEffect(() => {
     if (viewReported.current) return;
@@ -418,6 +420,7 @@ function LoadedSession({
             <span className="ui-muted ui-session__meta">
               {readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} />
               {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
+              {connection !== "live" && <> · <span className="ui-session__connection" role="status">{connection === "offline" ? "Offline" : "Reconnecting…"}</span></>}
             </span>
             <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })}</span>
           </div>

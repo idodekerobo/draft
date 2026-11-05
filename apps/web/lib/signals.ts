@@ -4,6 +4,7 @@ type Listener = (event: string) => void;
 interface Entry {
   channel: RealtimeChannel;
   listeners: Set<Listener>;
+  subscribed: boolean;
   leave: () => void;
 }
 
@@ -14,6 +15,9 @@ interface Entry {
  */
 export function createSignalWatcher(getClient: () => Pick<SupabaseClient, "channel" | "removeChannel">) {
   const entries = new Map<string, Entry>();
+  const connectionListeners = new Set<(connected: boolean) => void>();
+  const connected = () => [...entries.values()].every((entry) => entry.subscribed);
+  const reportConnection = () => connectionListeners.forEach((listener) => listener(connected()));
 
   function join(topic: string): Entry {
     const client = getClient();
@@ -24,31 +28,42 @@ export function createSignalWatcher(getClient: () => Pick<SupabaseClient, "chann
     const onVisible = () => {
       if (document.visibilityState === "visible") tell("catch-up");
     };
+    const entry: Entry = { channel, listeners, subscribed: false, leave: () => {} };
     channel.on("broadcast", { event: "*" }, (message) => tell(message.event)).subscribe((status) => {
-      if (status === "SUBSCRIBED") tell("catch-up");
+      entry.subscribed = status === "SUBSCRIBED";
+      reportConnection();
+      if (entry.subscribed) tell("catch-up");
     });
     window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisible);
-    return {
-      channel,
-      listeners,
-      leave: () => {
-        window.removeEventListener("online", onOnline);
-        document.removeEventListener("visibilitychange", onVisible);
-        void client.removeChannel(channel);
-      },
+    entry.leave = () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+      void client.removeChannel(channel);
     };
+    return entry;
   }
 
-  return function watch(topic: string, onSignal: Listener): () => void {
-    const entry = entries.get(topic) ?? join(topic);
+  function watch(topic: string, onSignal: Listener): () => void {
+    const existing = entries.get(topic);
+    const entry = existing ?? join(topic);
     entries.set(topic, entry);
     entry.listeners.add(onSignal);
+    if (!existing) reportConnection();
     return () => {
       entry.listeners.delete(onSignal);
       if (entry.listeners.size > 0) return;
       entries.delete(topic);
       entry.leave();
+      reportConnection();
     };
-  };
+  }
+
+  function watchConnection(onChange: (connected: boolean) => void): () => void {
+    connectionListeners.add(onChange);
+    onChange(connected());
+    return () => void connectionListeners.delete(onChange);
+  }
+
+  return { watch, watchConnection };
 }

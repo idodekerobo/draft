@@ -4,7 +4,8 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { createSignalWatcher } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/client";
 
-export const watchSignals = createSignalWatcher(createClient);
+const signals = createSignalWatcher(createClient);
+export const watchSignals = signals.watch;
 
 async function fetchLive<T>(path: string): Promise<T> {
   try {
@@ -54,6 +55,7 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
       }
     },
     watchSignals,
+    watchConnection: signals.watchConnection,
     watchPresence: (sessionId, viewer, onChange) => {
       const client = createClient();
       const channel = client.channel(presenceChannel(sessionId), { config: { private: true, presence: { key: viewer.id } } });

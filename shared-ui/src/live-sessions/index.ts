@@ -1,6 +1,7 @@
 export * from "./types";
 export { toApprovalResult } from "./approval-result";
 export { useLiveSessions } from "./sessions-list";
+export { useConnectionState, type ConnectionState } from "./useConnectionState";
 export { useWorkspaceDataSignals, useSignals, type WatchSignals } from "./signals";
 export { readRecentFolders, rememberFolder } from "./column-state";
 export { SessionsLayout, ColumnToggleButton } from "./SessionsLayout";

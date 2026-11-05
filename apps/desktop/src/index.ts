@@ -62,9 +62,14 @@ import { realtime, setSignalSender } from "./main/realtime/instance";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 import { logLoginCleared } from "./main/auth/auth-log";
 const presenceHub = new PresenceHub(connectPresence);
-setSignalSender((topic, event) => {
-  try { rpc.send.liveSignal({ topic, event }); } catch {}
-});
+setSignalSender(
+  (topic, event) => {
+    try { rpc.send.liveSignal({ topic, event }); } catch {}
+  },
+  (connected) => {
+    try { rpc.send.liveConnection({ connected }); } catch {}
+  },
+);
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 

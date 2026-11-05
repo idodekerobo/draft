@@ -3,6 +3,7 @@ type Listener = (event: string) => void;
 interface Deps {
   setTopics: (topics: string[]) => unknown;
   onSignal: (handler: (topic: string, event: string) => void) => () => void;
+  onConnection: (handler: (connected: boolean) => void) => () => void;
 }
 
 /**
@@ -11,8 +12,11 @@ interface Deps {
  * each signal from main to the listeners of its topic. A new page sends an empty list first, which drops
  * what main still holds for the page before it.
  */
-export function createWindowSignalWatcher({ setTopics, onSignal }: Deps) {
+export function createWindowSignalWatcher({ setTopics, onSignal, onConnection }: Deps) {
   const listeners = new Map<string, Set<Listener>>();
+  const connectionListeners = new Set<(connected: boolean) => void>();
+  // Main tells the page the state after each list, so until then it assumes the connection is fine.
+  let connected = true;
   let scheduled = false;
 
   const send = () => {
@@ -31,9 +35,19 @@ export function createWindowSignalWatcher({ setTopics, onSignal }: Deps) {
   };
 
   onSignal((topic, event) => listeners.get(topic)?.forEach((listener) => listener(event)));
+  onConnection((next) => {
+    connected = next;
+    connectionListeners.forEach((listener) => listener(next));
+  });
   send();
 
-  return function watch(topic: string, listener: Listener): () => void {
+  function watchConnection(onChange: (connected: boolean) => void): () => void {
+    connectionListeners.add(onChange);
+    onChange(connected);
+    return () => void connectionListeners.delete(onChange);
+  }
+
+  function watch(topic: string, listener: Listener): () => void {
     const set = listeners.get(topic) ?? new Set<Listener>();
     const isNew = !listeners.has(topic);
     set.add(listener);
@@ -46,4 +60,6 @@ export function createWindowSignalWatcher({ setTopics, onSignal }: Deps) {
       schedule();
     };
   };
+
+  return { watch, watchConnection };
 }

@@ -5,16 +5,24 @@ function setup() {
   const joined: string[] = [];
   const left: string[] = [];
   const emit = new Map<string, (event: string) => void>();
+  const status = new Map<string, (connected: boolean) => void>();
   const toWindow: Array<[string, string]> = [];
+  const connection: boolean[] = [];
   const manager = new RealtimeManager(
-    (topic, onEvent) => {
+    (topic, onEvent, onConnected) => {
       joined.push(topic);
       emit.set(topic, onEvent);
+      status.set(topic, onConnected);
       return () => void left.push(topic);
     },
     (topic, event) => void toWindow.push([topic, event]),
+    (connected) => void connection.push(connected),
   );
-  return { manager, joined, left, toWindow, emit: (topic: string, event: string) => emit.get(topic)?.(event) };
+  return {
+    manager, joined, left, toWindow, connection,
+    emit: (topic: string, event: string) => emit.get(topic)?.(event),
+    setConnected: (topic: string, connected: boolean) => status.get(topic)?.(connected),
+  };
 }
 
 describe("RealtimeManager", () => {
@@ -54,5 +62,17 @@ describe("RealtimeManager", () => {
     expect(t.left).toEqual([]);
     stopHost();
     expect(t.left).toEqual(["a"]);
+  });
+
+  it("reports the connection when it changes, and tells a new page the state after each list", () => {
+    const t = setup();
+    t.manager.setWindowTopics(["a", "b"]);
+    expect(t.connection).toEqual([false, false]);
+    t.setConnected("a", true);
+    t.setConnected("b", true);
+    expect(t.connection).toEqual([false, false, true]);
+    t.setConnected("b", false);
+    t.manager.clearWindow();
+    expect(t.connection).toEqual([false, false, true, false, true, true]);
   });
 });

@@ -495,6 +495,9 @@ export type AppRPCType = {
       /** A signal from the server on a topic the window watches. `catch-up` means fetch what may have been missed. */
       liveSignal: { topic: string; event: string };
 
+      /** Whether every signal topic is joined. Sent when that changes and after each topic list. */
+      liveConnection: { connected: boolean };
+
       /** Daemon completed a capture cycle. */
       captureComplete: { source: string };
 

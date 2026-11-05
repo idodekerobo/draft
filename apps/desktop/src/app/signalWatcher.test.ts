@@ -4,14 +4,19 @@ import { createWindowSignalWatcher } from "./signalWatcher";
 function setup() {
   const sent: string[][] = [];
   let push: (topic: string, event: string) => void = () => {};
-  const watch = createWindowSignalWatcher({
+  let pushConnection: (connected: boolean) => void = () => {};
+  const { watch, watchConnection } = createWindowSignalWatcher({
     setTopics: (topics) => void sent.push(topics),
     onSignal: (handler) => {
       push = handler;
       return () => {};
     },
+    onConnection: (handler) => {
+      pushConnection = handler;
+      return () => {};
+    },
   });
-  return { watch, sent, push: (topic: string, event: string) => push(topic, event) };
+  return { watch, watchConnection, sent, push: (topic: string, event: string) => push(topic, event), pushConnection: (connected: boolean) => pushConnection(connected) };
 }
 const tick = () => new Promise((done) => setTimeout(done, 0));
 
@@ -46,5 +51,14 @@ describe("createWindowSignalWatcher", () => {
     stopSecond();
     await tick();
     expect(t.sent).toEqual([[], ["a"], []]);
+  });
+
+  it("assumes the connection is fine until main says otherwise, then follows what main says", () => {
+    const t = setup();
+    const states: boolean[] = [];
+    t.watchConnection((connected) => states.push(connected));
+    t.pushConnection(false);
+    t.pushConnection(true);
+    expect(states).toEqual([true, false, true]);
   });
 });

@@ -4,12 +4,12 @@ import { createSignalWatcher } from "./signals";
 type StatusCallback = (status: string) => void;
 
 function fakeClient() {
-  const channels: Array<{ topic: string; sendBroadcast(event: string): void; subscribed(): void; removed: boolean }> = [];
+  const channels: Array<{ topic: string; sendBroadcast(event: string): void; subscribed(): void; status(status: string): void; removed: boolean }> = [];
   const client = {
     channel(topic: string) {
       let onMessage: (message: { event: string }) => void = () => {};
       let onStatus: StatusCallback = () => {};
-      const record = { topic, removed: false, sendBroadcast: (event: string) => onMessage({ event }), subscribed: () => onStatus("SUBSCRIBED") };
+      const record = { topic, removed: false, sendBroadcast: (event: string) => onMessage({ event }), subscribed: () => onStatus("SUBSCRIBED"), status: (status: string) => onStatus(status) };
       channels.push(record);
       const channel = {
         on: (_type: string, _filter: unknown, callback: typeof onMessage) => {
@@ -47,7 +47,7 @@ describe("createSignalWatcher", () => {
   it("passes server signals to the listener and sends catch-up when the channel joins", () => {
     const { client, channels } = fakeClient();
     const seen: string[] = [];
-    createSignalWatcher(() => client)("signals:session:s1", (event) => seen.push(event));
+    createSignalWatcher(() => client).watch("signals:session:s1", (event) => seen.push(event));
     channels[0].subscribed();
     channels[0].sendBroadcast("events");
     expect(seen).toEqual(["catch-up", "events"]);
@@ -56,7 +56,7 @@ describe("createSignalWatcher", () => {
   it("sends catch-up when a dropped channel rejoins, the browser comes online, and the tab becomes visible", () => {
     const { client, channels } = fakeClient();
     const seen: string[] = [];
-    createSignalWatcher(() => client)("signals:session:s1", (event) => seen.push(event));
+    createSignalWatcher(() => client).watch("signals:session:s1", (event) => seen.push(event));
     channels[0].subscribed();
     channels[0].subscribed();
     fire("online");
@@ -66,7 +66,7 @@ describe("createSignalWatcher", () => {
 
   it("shares one channel between two listeners and removes it with the last one", () => {
     const { client, channels } = fakeClient();
-    const watch = createSignalWatcher(() => client);
+    const { watch } = createSignalWatcher(() => client);
     const first: string[] = [];
     const second: string[] = [];
     const stopFirst = watch("signals:workspace:w1", (event) => first.push(event));
@@ -79,5 +79,20 @@ describe("createSignalWatcher", () => {
     stopSecond();
     expect(channels[0].removed).toBe(true);
     expect(listeners.get("online")?.size).toBe(0);
+  });
+
+  it("reports whether every watched topic is joined, and is connected when it watches nothing", () => {
+    const { client, channels } = fakeClient();
+    const { watch, watchConnection } = createSignalWatcher(() => client);
+    const states: boolean[] = [];
+    watchConnection((connected) => states.push(connected));
+    const stopA = watch("signals:session:s1", () => {});
+    watch("signals:workspace:w1", () => {});
+    channels[0].subscribed();
+    channels[1].subscribed();
+    channels[1].status("CHANNEL_ERROR");
+    channels[1].subscribed();
+    stopA();
+    expect(states).toEqual([true, false, false, false, true, false, true, true]);
   });
 });

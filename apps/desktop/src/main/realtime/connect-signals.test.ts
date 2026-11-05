@@ -46,10 +46,12 @@ describe("createSignalSource", () => {
   it("sets the token before it joins, passes signals on and says catch-up when the channel joins", async () => {
     const t = setup();
     const heard: string[] = [];
-    const leave = t.source("signals:session:s1", (event) => heard.push(event));
+    const connected: boolean[] = [];
+    const leave = t.source("signals:session:s1", (event) => heard.push(event), (ok) => connected.push(ok));
     await flush();
     expect(t.log).toEqual(["auth:t1"]);
     t.channels[0]!.join();
+    expect(connected).toEqual([true]);
     t.channels[0]!.deliver("events");
     expect(heard).toEqual(["catch-up", "events"]);
     leave();
@@ -58,7 +60,7 @@ describe("createSignalSource", () => {
 
   it("uses one client for every topic and refreshes the token only when it is old", async () => {
     const t = setup();
-    const leaves = [t.source("a", () => {}), t.source("b", () => {})];
+    const leaves = [t.source("a", () => {}, () => {}), t.source("b", () => {}, () => {})];
     await flush();
     expect(t.made.count).toBe(1);
     expect(t.log.filter((entry) => entry.startsWith("auth"))).toEqual(["auth:t1"]);
@@ -67,7 +69,7 @@ describe("createSignalSource", () => {
 
   it("refreshes the token every ten minutes", async () => {
     const t = setup();
-    const leave = t.source("a", () => {});
+    const leave = t.source("a", () => {}, () => {});
     await flush();
     for (let step = 0; step < 36; step++) {
       t.advance(15_000);
@@ -85,7 +87,7 @@ describe("createSignalSource", () => {
   it("refreshes the token and says catch-up to every topic after a sleep", async () => {
     const t = setup();
     const heard: string[] = [];
-    const leave = t.source("a", (event) => heard.push(event));
+    const leave = t.source("a", (event) => heard.push(event), () => {});
     await flush();
     t.advance(1_000);
     await t.tick();
@@ -98,7 +100,7 @@ describe("createSignalSource", () => {
 
   it("does not join a topic that was left before the token arrived", async () => {
     const t = setup();
-    t.source("a", () => {})();
+    t.source("a", () => {}, () => {})();
     await flush();
     expect(t.channels).toHaveLength(0);
   });

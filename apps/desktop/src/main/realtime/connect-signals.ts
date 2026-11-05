@@ -49,7 +49,7 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
     if (slept) joined.forEach((entry) => entry.onEvent("catch-up"));
   };
 
-  const source: SignalSource = (topic, onEvent) => {
+  const source: SignalSource = (topic, onEvent, onConnected) => {
     const entry: Joined = { onEvent };
     joined.add(entry);
     let stopped = false;
@@ -60,6 +60,7 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
       const live = client;
       const channel = live.channel(topic, { config: { private: true } });
       channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event)).subscribe((status) => {
+        onConnected(status === "SUBSCRIBED");
         if (status === "SUBSCRIBED") onEvent("catch-up");
       });
       leave = () => void live.removeChannel(channel);

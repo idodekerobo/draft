@@ -18,6 +18,7 @@ type EventMap = {
   authStateChanged: { signedIn: boolean };
   identityRefreshNeeded: Record<string, never>;
   liveSignal: { topic: string; event: string };
+  liveConnection: { connected: boolean };
   captureComplete: { source: string };
   updateCheckStarted: Record<string, never>;
   updateAvailable: { version: string };
@@ -58,6 +59,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
       authStateChanged: (data) => events.emit("authStateChanged", data),
 
       liveSignal: (data) => events.emit("liveSignal", data),
+      liveConnection: (data) => events.emit("liveConnection", data),
       captureComplete: (data) => events.emit("captureComplete", data),
 
       updateCheckStarted: (data) => events.emit("updateCheckStarted", data),

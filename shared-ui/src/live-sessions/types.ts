@@ -188,6 +188,8 @@ export interface LiveSessionsApi {
    * Absent where Realtime is not available; the app then polls faster.
    */
   watchSignals?(topic: string, onSignal: (event: string) => void): () => void;
+  /** Calls `onChange` with whether every watched topic is joined, now and at each change. Returns the stop function. */
+  watchConnection?(onChange: (connected: boolean) => void): () => void;
 }
 
 /** The session does not exist, or the viewer's team cannot see it. The two look the same on purpose. */
