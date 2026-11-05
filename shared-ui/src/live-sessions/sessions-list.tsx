@@ -46,7 +46,7 @@ export function useLiveSessions(api: LiveSessionsApi, workspaceId: string) {
       const fresh = { sessions: await api.listSessions() };
       return keepNewerActivity(client.getQueryData<SessionsListData>(liveSessionsQueryKey(workspaceId)), fresh);
     },
-    refetchInterval: api.watchSignals ? LIST_SAFETY_POLL_MS : POLL_MS,
+    refetchInterval: LIST_SAFETY_POLL_MS,
     staleTime: POLL_MS,
   });
   useSignals(

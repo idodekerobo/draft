@@ -185,7 +185,7 @@ export interface LiveSessionsApi {
   /**
    * Calls `onSignal` with the event name when the server says something changed on a topic. It also calls it with
    * `catch-up` when the connection is joined or comes back, so nothing is missed. Returns the stop function.
-   * Absent where Realtime is not available; the app then polls faster.
+   * Absent where Realtime is not available; the app then relies on its slow safety polls alone.
    */
   watchSignals?(topic: string, onSignal: (event: string) => void): () => void;
   /** Calls `onChange` with whether every watched topic is joined, now and at each change. Returns the stop function. */
