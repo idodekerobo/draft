@@ -1,8 +1,10 @@
 // DesktopOnboarding.tsx — sign-in pre-flow, then the shared guided flow by workspace state.
 // Joiner (context exists): JoinerFlow. First user (empty workspace): FirstUserFlow.
 
+import { workspaceSignalTopic } from "draft-core/live-sessions";
+import { watchSignals } from "../../../liveSessionsApi";
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, useSignals, WORKSPACE_SIGNAL_DELAY_MS, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
@@ -15,7 +17,8 @@ import { CodexConnectRow } from "../../connections/CodexConnectRow";
 import { DesktopToolList, desktopToolStatuses } from "../../connections/DesktopToolList";
 import { AgentsSetup } from "./AgentsSetup";
 
-const READING_POLL_MS = 5_000;
+// The context signal brings the first files at once; this poll only covers a missed signal.
+const READING_POLL_MS = 30_000;
 const READING_POLL_LIMIT_MS = 10 * 60_000;
 
 // Relative to the app's index.html: electrobun.config.ts copies both files next to it.
@@ -131,6 +134,15 @@ export function DesktopOnboarding({ files, loading, reloadFiles, onComplete }: {
     }, READING_POLL_MS);
     return () => clearInterval(timer);
   }, [reading, files.length, refresh, reloadFiles]);
+
+  useSignals(
+    reading && files.length === 0 ? watchSignals : undefined,
+    identity.workspaceId ? workspaceSignalTopic(identity.workspaceId) : null,
+    async (events) => {
+      if (events.has("context") || events.has("catch-up")) await Promise.all([refresh(), reloadFiles()]);
+    },
+    WORKSPACE_SIGNAL_DELAY_MS,
+  );
 
   if (!identity.hydrated) return <FlowShell><p className="ui-muted" role="status">Loading…</p></FlowShell>;
   if (!identity.signedIn) return <SignInScreen />;

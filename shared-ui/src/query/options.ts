@@ -39,5 +39,5 @@ export const routineRunsQueryOptions = (api: Pick<DraftApi, "getRoutineRuns">, w
     queryKey: routineRunsKey(workspaceId, routineId),
     queryFn: () => api.getRoutineRuns(routineId),
     staleTime: ROUTINE_RUN_POLL_MS,
-    refetchInterval: (query) => (anyRunning(query.state.data) ? ROUTINE_RUN_POLL_MS : STALE_MS.runs),
+    refetchInterval: (query) => (anyRunning(query.state.data) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS),
   });
