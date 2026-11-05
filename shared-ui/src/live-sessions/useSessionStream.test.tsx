@@ -15,13 +15,13 @@ const session: LiveSession = {
 const event = (seq: number): LiveSessionEvent => ({ seq, source_id: `s${seq}`, kind: "assistant_text", payload: { text: `m${seq}` }, created_at: "" });
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => event(from + i));
 
-function setup(pages: (after: number) => LiveSessionEvent[]) {
+function setup(pages: (after: number) => LiveSessionEvent[], watchSignals?: LiveSessionsApi["watchSignals"]) {
   const afters: number[] = [];
   const fetchEvents = mock(async (_id: string, after: number) => {
     afters.push(after);
     return { session, viewer: { id: "u9", name: "Dev" }, events: pages(after), inputs: [] };
   });
-  const api = { fetchEvents } as unknown as LiveSessionsApi;
+  const api = { fetchEvents, watchSignals } as unknown as LiveSessionsApi;
   let renders = 0;
   function Probe() {
     const stream = useSessionStream(api, "s1");
@@ -70,5 +70,30 @@ describe("useSessionStream", () => {
     await waitFor(() => expect(t.afters.length).toBe(2));
     await new Promise((done) => setTimeout(done, 30));
     expect(t.renders()).toBe(before);
+  });
+
+  it("fetches new events when the server signals, and again after the connection is rejoined", async () => {
+    let available = 2;
+    let send: (event: string) => void = () => {};
+    const topics: string[] = [];
+    const t = setup(
+      (after) => range(1, available).filter((e) => e.seq > after),
+      (topic, onSignal) => {
+        topics.push(topic);
+        send = onSignal;
+        return () => {};
+      },
+    );
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("2"));
+    expect(topics).toEqual(["signals:session:s1"]);
+
+    available = 3;
+    send("events");
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("3"));
+
+    available = 4;
+    send("catch-up");
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("4"));
+    expect(t.afters).toEqual([0, 2, 3]);
   });
 });

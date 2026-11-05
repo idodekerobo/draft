@@ -104,6 +104,10 @@ export interface PresenceMeta {
 
 export const presenceChannel = (sessionId: string) => `session:${sessionId}`;
 
+/** Topics the database sends signals on. They start with "signals:" because presence owns `session:<id>`. */
+export const sessionSignalTopic = (sessionId: string) => `signals:session:${sessionId}`;
+export const workspaceSignalTopic = (workspaceId: string) => `signals:workspace:${workspaceId}`;
+
 /** Names of the other people watching, from a channel's presence state. One name per person, in a steady order. */
 export function presenceNames(state: Record<string, PresenceMeta[]>, selfId: string): string[] {
   const names: string[] = [];

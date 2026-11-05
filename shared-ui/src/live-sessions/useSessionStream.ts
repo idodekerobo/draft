@@ -1,8 +1,9 @@
 "use client";
 
-import { EVENTS_PAGE_SIZE } from "draft-core/live-sessions";
+import { EVENTS_PAGE_SIZE, sessionSignalTopic } from "draft-core/live-sessions";
 import { useSuspenseQuery } from "../query";
 import { mergeEvents } from "./merge-events";
+import { SESSION_SAFETY_POLL_MS, useSignals } from "./signals";
 import { syncSessionIntoLists } from "./sessions-list";
 import type { LiveSession, LiveSessionEvent, LiveSessionEventsPage, LiveSessionInput, LiveSessionViewer, LiveSessionsApi } from "./types";
 
@@ -25,9 +26,10 @@ export const sessionStreamKey = (sessionId: string) => ["live-session", sessionI
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
- * Reads a session and keeps it fresh. Each poll asks for events above the last seq in the cache and
- * appends them, and a full page is followed at once by the next one. A poll that finds nothing new
- * returns the cached object, so nothing re-renders. Suspends only until the first page arrives.
+ * Reads a session and keeps it fresh. Each fetch asks for events above the last seq in the cache and
+ * appends them, and a full page is followed at once by the next one. A fetch that finds nothing new
+ * returns the cached object, so nothing re-renders. A signal from the server starts a fetch at once;
+ * the poll is the fallback. Suspends only until the first page arrives.
  */
 export function useSessionStream(api: LiveSessionsApi, sessionId: string): SessionStreamState {
   const key = sessionStreamKey(sessionId);
@@ -51,7 +53,8 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
     },
     structuralSharing: false,
     staleTime: 0,
-    refetchInterval: SESSION_POLL_MS,
+    refetchInterval: api.watchSignals ? SESSION_SAFETY_POLL_MS : SESSION_POLL_MS,
   });
+  useSignals(api.watchSignals, sessionSignalTopic(sessionId), async () => void (await refetch({ cancelRefetch: false })));
   return { ...data, refresh: async () => void (await refetch()) };
 }

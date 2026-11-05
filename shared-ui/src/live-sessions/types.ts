@@ -182,6 +182,12 @@ export interface LiveSessionsApi {
   resume?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
   watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
+  /**
+   * Calls `onSignal` with the event name when the server says something changed on a topic. It also calls it with
+   * `catch-up` when the connection is joined or comes back, so nothing is missed. Returns the stop function.
+   * Absent where Realtime is not available; the app then polls faster.
+   */
+  watchSignals?(topic: string, onSignal: (event: string) => void): () => void;
 }
 
 /** The session does not exist, or the viewer's team cannot see it. The two look the same on purpose. */
