@@ -19,3 +19,18 @@ create policy session_presence_insert on realtime.messages
       where 'session:' || s.id::text = (select realtime.topic())
     )
   );
+
+-- Signals (broadcast) on "signals:session:<id>" and "signals:workspace:<id>": allowed when the caller can see that session or workspace.
+create policy session_broadcast_select on realtime.messages
+  for select to authenticated
+  using (
+    realtime.messages.extension = 'broadcast'
+    and exists (select 1 from public.sessions s where s.id = public.realtime_topic_id('signals:session'))
+  );
+
+create policy workspace_broadcast_select on realtime.messages
+  for select to authenticated
+  using (
+    realtime.messages.extension = 'broadcast'
+    and exists (select 1 from public.workspaces w where w.id = public.realtime_topic_id('signals:workspace'))
+  );

@@ -43,3 +43,14 @@ create policy session_inputs_select on session_inputs
 
 grant select on table session_inputs to authenticated;
 grant select, update on table session_inputs to service_role;
+
+-- Signal the session topic (see db/functions/signal_session_inputs.sql).
+create trigger session_inputs_signal_insert
+  after insert on session_inputs
+  referencing new table as new_rows
+  for each statement execute function signal_session_inputs();
+
+create trigger session_inputs_signal_update
+  after update on session_inputs
+  referencing new table as new_rows
+  for each statement execute function signal_session_inputs();

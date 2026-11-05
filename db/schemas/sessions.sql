@@ -66,3 +66,23 @@ create policy sessions_select on sessions
 
 grant select on table sessions to authenticated;
 grant select, insert, update on table sessions to service_role;
+
+-- Signals for changes a viewer can see; heartbeats and appends are left out (see db/functions/signal_session_row.sql).
+create trigger sessions_signal_update
+  after update on sessions
+  for each row
+  when (
+    old.status is distinct from new.status
+    or old.title is distinct from new.title
+    or old.model is distinct from new.model
+    or old.permission_mode is distinct from new.permission_mode
+    or old.approval_mode is distinct from new.approval_mode
+    or old.open_approval_count is distinct from new.open_approval_count
+    or old.end_reason is distinct from new.end_reason
+    or old.host_name is distinct from new.host_name
+  )
+  execute function signal_session_row();
+
+create trigger sessions_signal_insert
+  after insert on sessions
+  for each row execute function signal_session_insert();
