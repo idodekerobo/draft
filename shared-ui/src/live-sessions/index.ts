@@ -1,7 +1,7 @@
 export * from "./types";
 export { toApprovalResult } from "./approval-result";
 export { useLiveSessions } from "./sessions-list";
-export { WORKSPACE_SIGNAL_DELAY_MS, useSignals, type WatchSignals } from "./signals";
+export { useWorkspaceDataSignals, useSignals, type WatchSignals } from "./signals";
 export { readRecentFolders, rememberFolder } from "./column-state";
 export { SessionsLayout, ColumnToggleButton } from "./SessionsLayout";
 export { SessionStartScreen, type HarnessProblem, type StartRequest, type StartResult } from "./SessionStartScreen";

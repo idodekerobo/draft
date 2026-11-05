@@ -5,6 +5,9 @@ import { queryKeys, routineRunsKey } from "./keys";
 
 export const POLL_MS = 30_000;
 
+// With signals from the server, polling is only a net for a missed signal.
+export const SAFETY_POLL_MS = 300_000;
+
 // Freshness: polled data refreshes every 30s; context changes hourly at most.
 export const STALE_MS = { runs: POLL_MS, context: 60_000, connections: 30_000, routines: 30_000 } as const;
 
@@ -17,7 +20,7 @@ export const runsQueryOptions = (api: DraftApi, workspaceId: string) =>
     queryKey: queryKeys.runs(workspaceId),
     queryFn: () => api.getRuns(),
     staleTime: STALE_MS.runs,
-    refetchInterval: POLL_MS,
+    refetchInterval: SAFETY_POLL_MS,
   });
 
 export const routinesQueryOptions = (api: Pick<DraftApi, "getRoutines">, workspaceId: string) =>

@@ -1,8 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { IntegrationActionsProvider, WORKSPACE_SIGNAL_DELAY_MS, queryKeys, useQueryClient, useSignals, type IntegrationActions, type TrackFn } from "draft-shared-ui";
-import { workspaceSignalTopic } from "draft-core/live-sessions";
+import { IntegrationActionsProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type TrackFn } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { watchSignals } from "@/lib/live-sessions-api";
@@ -59,17 +58,7 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
 
   useEffect(() => { syncUser({ ...identity, workspace_id: workspaceId }); }, [identity, workspaceId, syncUser]);
 
-  // A context change reloads the context and the connections. After a dropped connection, only stale data reloads.
-  useSignals(
-    watchSignals,
-    workspaceSignalTopic(workspaceId),
-    async (events) => {
-      const keys = [queryKeys.context(workspaceId), queryKeys.connections(workspaceId)];
-      if (events.has("context")) await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
-      else if (events.has("catch-up")) await Promise.all(keys.map((queryKey) => queryClient.refetchQueries({ queryKey, stale: true })));
-    },
-    WORKSPACE_SIGNAL_DELAY_MS,
-  );
+  useWorkspaceDataSignals(watchSignals, workspaceId);
 
   const updatePrivacy = useCallback(async (patch: { analytics_consent: boolean }) => {
     const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at">>("/me/privacy", {

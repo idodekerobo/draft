@@ -58,9 +58,13 @@ import {
 } from "./main/host/live-session";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
+import { realtime, setSignalSender } from "./main/realtime/instance";
 import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 import { logLoginCleared } from "./main/auth/auth-log";
 const presenceHub = new PresenceHub(connectPresence);
+setSignalSender((topic, event) => {
+  try { rpc.send.liveSignal({ topic, event }); } catch {}
+});
 let browserSignInController: AbortController | null = null;
 let githubInstallController: AbortController | null = null;
 
@@ -779,6 +783,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       startLiveSession: ({ harness, folderPath, model }) => startLiveSession({ harness, folderPath, model }),
 
+      setSignalTopics: ({ topics }) => realtime.setWindowTopics(topics),
+
       pollLiveSessionPresence: ({ sessionId, viewerId, viewerName }) => ({ names: presenceHub.poll(sessionId, { id: viewerId, name: viewerName }) }),
 
       listLiveSessions: () => listLiveSessions(),
@@ -1091,6 +1097,7 @@ function createMainWindow(hidden: boolean) {
   });
   w.setFrame(180, 100, 1150, 820);
   w.on("close", () => {
+    realtime.clearWindow();
     win = createMainWindow(true);
   });
   return w;

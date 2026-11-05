@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { workspaceSignalTopic } from "draft-core/live-sessions";
+import { SAFETY_POLL_MS } from "../query/options";
+import { queryKeys } from "../query/keys";
+import { useQueryClient } from "../query";
 import type { LiveSessionsApi } from "./types";
 
 export type WatchSignals = NonNullable<LiveSessionsApi["watchSignals"]>;
 
 /** With signals, a poll is only a safety net. Without them, it is how the app learns. */
 export const SESSION_SAFETY_POLL_MS = 60_000;
-export const LIST_SAFETY_POLL_MS = 300_000;
+export const LIST_SAFETY_POLL_MS = SAFETY_POLL_MS;
 
 /**
  * Runs `run` after a signal, once for a burst of signals. A signal that arrives while `run` is going
@@ -67,4 +71,23 @@ export function useSignals(watch: WatchSignals | undefined, topic: string | null
       refresher.stop();
     };
   }, [watch, topic, delayMs]);
+}
+
+/**
+ * Keeps the workspace data fresh from the workspace topic. A context change reloads the context, connections,
+ * connected apps and runs. After a dropped connection, only data that has gone stale reloads.
+ */
+export function useWorkspaceDataSignals(watch: WatchSignals | undefined, workspaceId: string | null) {
+  const queryClient = useQueryClient();
+  useSignals(
+    watch,
+    workspaceId ? workspaceSignalTopic(workspaceId) : null,
+    async (events) => {
+      if (!workspaceId) return;
+      const keys = [queryKeys.context(workspaceId), queryKeys.connections(workspaceId), queryKeys.connectedApps(workspaceId), queryKeys.runs(workspaceId)];
+      if (events.has("context")) await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+      else if (events.has("catch-up")) await Promise.all(keys.map((queryKey) => queryClient.refetchQueries({ queryKey, stale: true })));
+    },
+    WORKSPACE_SIGNAL_DELAY_MS,
+  );
 }
