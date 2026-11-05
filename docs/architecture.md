@@ -59,6 +59,14 @@ The Bun backend starts the HTTP API, Slack listeners, and scheduler. Routes cove
 
 The backend uses Supabase for authenticated data access. Provider credentials are stored encrypted and are resolved per workspace when a synthesis run starts.
 
+## Live updates
+
+Apps learn that something changed from Supabase Realtime, not from polling. Database triggers send small signals on two private topics: `signals:session:<id>` (new events, inputs, session changes) and `signals:workspace:<id>` (the sessions list, context changes). A signal carries no content. The app fetches from the endpoint it already uses, so author names, per-viewer inputs and links stay computed by the server. Permissions are row security policies on `realtime.messages`, the same as the session and workspace rows.
+
+The web app joins topics from the browser. On desktop, the main process holds the one connection and the token. The window sends the list of topics it wants and receives signals and the connection state through RPC. The session host in the main process listens on its session topic and runs its next pass when an input arrives.
+
+Signals can be lost, so each client fetches again when a channel joins or rejoins, when the browser comes back online and when the tab becomes visible. Polls remain as slow safety nets: 60 seconds for an open session, 5 minutes for lists and workspace data, 10 seconds for the host's input request.
+
 ## Synthesis
 
 The scheduler claims ready work and prepares a bounded run bundle from source evidence and the current context version. It starts a disposable Fly Machine using the Claude Code sandbox image. The runner receives a callback URL and token, executes the bounded task as an unprivileged user, and returns the result. The backend validates the result before committing a new workspace context version.

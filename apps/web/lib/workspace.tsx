@@ -1,9 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { IntegrationActionsProvider, queryKeys, useQueryClient, type IntegrationActions, type TrackFn } from "draft-shared-ui";
+import { IntegrationActionsProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type TrackFn } from "draft-shared-ui";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
+import { watchSignals } from "@/lib/live-sessions-api";
 import type { Identity } from "@/lib/identity";
 import type { ConnectionsBody } from "@/lib/queries";
 
@@ -56,6 +57,8 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
   }, [seenKey]);
 
   useEffect(() => { syncUser({ ...identity, workspace_id: workspaceId }); }, [identity, workspaceId, syncUser]);
+
+  useWorkspaceDataSignals(watchSignals, workspaceId);
 
   const updatePrivacy = useCallback(async (patch: { analytics_consent: boolean }) => {
     const next = await apiFetch<Pick<Identity, "analytics_consent" | "analytics_consent_at">>("/me/privacy", {

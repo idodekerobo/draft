@@ -42,3 +42,9 @@ create policy workspace_events_select on workspace_events
 
 grant select on table workspace_events to authenticated;
 grant select, insert on table workspace_events to service_role;
+
+-- Signals the workspace topic (see db/functions/signal_workspace_events.sql).
+create trigger workspace_events_signal
+  after insert on workspace_events
+  referencing new table as new_rows
+  for each statement execute function signal_workspace_events();

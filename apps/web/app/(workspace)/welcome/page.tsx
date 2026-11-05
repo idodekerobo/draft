@@ -34,7 +34,8 @@ const WEB_AGENTS_STEP: AgentsStepContent = {
   actions: (onContinue) => <AgentsDownloadActions onContinue={onContinue} />,
 };
 
-const READING_POLL_MS = 5_000;
+// The context signal shows the first context at once; this poll only covers a missed signal.
+const READING_POLL_MS = 30_000;
 const READING_POLL_LIMIT_MS = 10 * 60_000;
 
 function useFinish(destinations: Record<FlowDestination, string>, onChosen?: () => void) {

@@ -1,6 +1,7 @@
-import { DraftQueryProvider, toRoutineError, type DraftApi } from "draft-shared-ui";
+import { DraftQueryProvider, toRoutineError, useWorkspaceDataSignals, type DraftApi } from "draft-shared-ui";
 import { type ReactNode } from "react";
 import { useUserIdentity } from "./identity/UserIdentityContext";
+import { watchSignals } from "./liveSessionsApi";
 import { rpc } from "./rpc";
 
 const api: DraftApi = {
@@ -28,9 +29,16 @@ export function useWorkspaceKey(): string {
   return useUserIdentity().workspaceId ?? "signed-out";
 }
 
+function WorkspaceDataSignals() {
+  const workspaceKey = useWorkspaceKey();
+  useWorkspaceDataSignals(watchSignals, workspaceKey === "signed-out" ? null : workspaceKey);
+  return null;
+}
+
 export function DesktopQueryProvider({ children }: { children: ReactNode }) {
   return (
     <DraftQueryProvider api={api}>
+      <WorkspaceDataSignals />
       {children}
     </DraftQueryProvider>
   );

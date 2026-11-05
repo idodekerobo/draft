@@ -341,6 +341,9 @@ export type AppRPCType = {
       /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
       startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
 
+      /** The whole list of signal topics the window wants. Main joins what is new and leaves what is gone. */
+      setSignalTopics: { params: { topics: string[] }; response: void };
+
       /** The other people watching a live session. Ask every few seconds while the session is open. */
       pollLiveSessionPresence: { params: { sessionId: string; viewerId: string; viewerName: string }; response: { names: string[] } };
 
@@ -488,6 +491,12 @@ export type AppRPCType = {
   webview: RPCSchema<{
     requests: {};
     messages: {
+
+      /** A signal from the server on a topic the window watches. `catch-up` means fetch what may have been missed. */
+      liveSignal: { topic: string; event: string };
+
+      /** Whether every signal topic is joined. Sent when that changes and after each topic list. */
+      liveConnection: { connected: boolean };
 
       /** Daemon completed a capture cycle. */
       captureComplete: { source: string };

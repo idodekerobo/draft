@@ -1,7 +1,11 @@
 import { SessionNotFoundError, toApprovalResult, type ApprovalResponse, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
 import { presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
 import { ApiError, apiFetch } from "@/lib/api";
+import { createSignalWatcher } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/client";
+
+const signals = createSignalWatcher(createClient);
+export const watchSignals = signals.watch;
 
 async function fetchLive<T>(path: string): Promise<T> {
   try {
@@ -50,6 +54,8 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
         throw error;
       }
     },
+    watchSignals,
+    watchConnection: signals.watchConnection,
     watchPresence: (sessionId, viewer, onChange) => {
       const client = createClient();
       const channel = client.channel(presenceChannel(sessionId), { config: { private: true, presence: { key: viewer.id } } });

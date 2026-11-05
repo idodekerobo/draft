@@ -30,3 +30,9 @@ create policy session_events_select on session_events
 
 grant select on table session_events to authenticated;
 grant select on table session_events to service_role;
+
+-- Signals the session and workspace topics (see db/functions/signal_session_events.sql).
+create trigger session_events_signal
+  after insert on session_events
+  referencing new table as new_rows
+  for each statement execute function signal_session_events();

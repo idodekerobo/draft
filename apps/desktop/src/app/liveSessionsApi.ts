@@ -1,10 +1,20 @@
 import { toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
-import { rpc } from "./rpc";
+import { rpc, events } from "./rpc";
+import { createWindowSignalWatcher } from "./signalWatcher";
 
 const PRESENCE_POLL_MS = 5_000;
 const PRESENCE_FIRST_FOLLOW_UP_MS = 1_500;
 
+const signals = createWindowSignalWatcher({
+  setTopics: (topics) => rpc.request.setSignalTopics({ topics }),
+  onSignal: (handler) => events.on("liveSignal", ({ topic, event }) => handler(topic, event)),
+  onConnection: (handler) => events.on("liveConnection", ({ connected }) => handler(connected)),
+});
+export const watchSignals = signals.watch;
+
 export const liveSessionsApi: LiveSessionsApi = {
+  watchSignals,
+  watchConnection: signals.watchConnection,
   listSessions: () => rpc.request.listLiveSessions(),
   fetchEvents: (sessionId, after) => rpc.request.getLiveSessionEvents({ sessionId, after }),
   sendMessage: async (sessionId, text) => {
