@@ -12,9 +12,12 @@ export type GetStartedMedia =
 
 export type GetStartedContent = {
   source: string;
-  primaryCta: "call" | "waitlist";
+  primaryCta: "call" | "waitlist" | "download";
   callLabel: string;
   waitlistLabel: string;
+  downloadLabel?: string;
+  downloadHref?: string;
+  downloadNote?: string;
   title: string;
   heading: string;
   lede: string;
@@ -70,9 +73,12 @@ export const DEFAULT_CONTENT: GetStartedContent = {
 export const MULTIPLAYER_CODING_CONTENT: GetStartedContent = {
   ...DEFAULT_CONTENT,
   source: "getstarted-multiplayer-coding",
-  primaryCta: "waitlist",
+  primaryCta: "download",
   callLabel: "Have Questions? Book a Call",
-  waitlistLabel: "Get Early Access",
+  waitlistLabel: "Join the waitlist for updates",
+  downloadLabel: "Download Early Access",
+  downloadHref: "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg",
+  downloadNote: "Mac with Apple Silicon (M1 or later).",
   title: "Multiplayer Coding Sessions with Draft",
   heading: "Code with your whole team in one agent session.",
   lede: "Invite a teammate into your Claude Code or Codex session. You both prompt the same agent and see the same work. Draft saves what you decide to your company brain.",
