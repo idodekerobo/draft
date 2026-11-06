@@ -32,6 +32,24 @@ function GetStartedOrb({ mobile = false }: { mobile?: boolean }) {
   );
 }
 
+function DownloadLink({
+  primary,
+  label,
+  href,
+  onClick,
+}: {
+  primary: boolean;
+  label: string;
+  href: string;
+  onClick: () => void;
+}) {
+  return (
+    <a href={href} className={primary ? "minimal-button getstarted-primary" : "getstarted-call-link"} onClick={onClick}>
+      {label} <span aria-hidden="true">↗</span>
+    </a>
+  );
+}
+
 function CtaButton({
   primary,
   label,
@@ -131,6 +149,20 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
   };
 
   const waitlistPrimary = content.primaryCta === "waitlist";
+  const downloadPrimary = content.primaryCta === "download";
+
+  const handleDownloadClick = (location: CtaLocation) => {
+    ph?.capture(EVENTS.DOWNLOAD_CLICKED, { source, location });
+  };
+
+  const downloadLink = (primary: boolean, location: CtaLocation) => (
+    <DownloadLink
+      primary={primary}
+      label={content.downloadLabel ?? "Download"}
+      href={content.downloadHref ?? "/download"}
+      onClick={() => handleDownloadClick(location)}
+    />
+  );
 
   const renderActions = (location: Extract<CtaLocation, "hero" | "closing">) => {
     const call = (
@@ -150,6 +182,16 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
         controls="getstarted-waitlist"
       />
     );
+    if (downloadPrimary) {
+      // The call is offered after signup, so only download and waitlist show here.
+      return (
+        <div className="getstarted-actions">
+          {downloadLink(true, location)}
+          {content.downloadNote && <p className="getstarted-download-note">{content.downloadNote}</p>}
+          {waitlist}
+        </div>
+      );
+    }
     return (
       <div className="getstarted-actions">
         {waitlistPrimary ? waitlist : call}
@@ -302,7 +344,9 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
 
       {showStickyBar && (
         <div className="getstarted-sticky">
-          {waitlistPrimary ? (
+          {downloadPrimary ? (
+            downloadLink(true, "sticky_bar")
+          ) : waitlistPrimary ? (
             <CtaButton
               primary
               label={content.waitlistLabel}
