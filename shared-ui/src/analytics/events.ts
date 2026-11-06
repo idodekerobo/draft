@@ -12,7 +12,7 @@ export type SessionEntry = "list" | "direct";
 export type FlowStep = "confirm_join" | "what_draft_knows" | "connect_tools" | "give_source" | "agents" | "routines" | "reading" | "ready" | "first_context";
 
 /** Where a creator came from. Always a coded value, never the raw query string. */
-export type SignupSource = "download" | "join" | "desktop" | "direct";
+export type SignupSource = "download" | "join" | "desktop" | "multiplayer-coding" | "direct";
 
 export type DownloadSurface = "sources_step" | "agents_step" | "reading_step" | "download_page" | "settings";
 

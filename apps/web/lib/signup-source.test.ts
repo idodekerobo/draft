@@ -6,6 +6,7 @@ describe("parseSignupSource", () => {
     expect(parseSignupSource("download")).toBe("download");
     expect(parseSignupSource("join")).toBe("join");
     expect(parseSignupSource("desktop")).toBe("desktop");
+    expect(parseSignupSource("multiplayer-coding")).toBe("multiplayer-coding");
   });
 
   it("maps anything else to direct", () => {

@@ -187,7 +187,6 @@ export default function GetStartedPage({ content = DEFAULT_CONTENT }: { content?
       return (
         <div className="getstarted-actions">
           {downloadLink(true, location)}
-          {content.downloadNote && <p className="getstarted-download-note">{content.downloadNote}</p>}
           {waitlist}
         </div>
       );

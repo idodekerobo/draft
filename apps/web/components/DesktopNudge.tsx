@@ -22,13 +22,13 @@ const COPY: Record<NudgeSurface, { title: string; body: string }> = {
   },
 };
 
-export function DesktopNudge({ surface }: { surface: NudgeSurface }) {
+export function DesktopNudge({ surface, signedIn = true }: { surface: NudgeSurface; signedIn?: boolean }) {
   const { track } = useAnalytics();
   const { title, body } = COPY[surface];
 
   function onClick() {
     track("desktop_download_clicked", { surface });
-    if (surface === "reading_step" || surface === "download_page") track("onboarding_finish_chosen", { choice: "desktop" });
+    if (signedIn && (surface === "reading_step" || surface === "download_page")) track("onboarding_finish_chosen", { choice: "desktop" });
   }
 
   return (

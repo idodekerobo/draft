@@ -288,13 +288,6 @@ body {
   padding: 0.8rem 1.4rem;
 }
 
-.getstarted-download-note {
-  color: var(--getstarted-muted);
-  font-size: 0.8rem;
-  margin: -0.2rem 0 0.3rem;
-  text-align: center;
-}
-
 .getstarted-call-link {
   align-items: center;
   background: none;

@@ -1,3 +1,5 @@
+import { APP_URL } from "@/lib/config";
+
 export type GetStartedMedia =
   | { kind: "image"; src: string; alt: string; width: number; height: number }
   | {
@@ -17,7 +19,6 @@ export type GetStartedContent = {
   waitlistLabel: string;
   downloadLabel?: string;
   downloadHref?: string;
-  downloadNote?: string;
   title: string;
   heading: string;
   lede: string;
@@ -76,9 +77,8 @@ export const MULTIPLAYER_CODING_CONTENT: GetStartedContent = {
   primaryCta: "download",
   callLabel: "Have Questions? Book a Call",
   waitlistLabel: "Join the waitlist for updates",
-  downloadLabel: "Download Early Access",
-  downloadHref: "https://github.com/idodekerobo/draft/releases/latest/download/stable-macos-arm64-Draft.dmg",
-  downloadNote: "Mac with Apple Silicon (M1 or later).",
+  downloadLabel: "Get Early Access",
+  downloadHref: `${APP_URL}/download?src=multiplayer-coding`,
   title: "Multiplayer Coding Sessions with Draft",
   heading: "Code with your whole team in one agent session.",
   lede: "Invite a teammate into your Claude Code or Codex session. You both prompt the same agent and see the same work. Draft saves what you decide to your company brain.",
