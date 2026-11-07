@@ -14,6 +14,9 @@ export interface ContextFileEntry {
 
 const CONTEXT_SKIP_ROOT = new Set(["log", "accepted", "rejected"]);
 const CONTEXT_DIMENSION_ORDER = ["company", "product", "team", "priorities"];
+// Coarse to fine, so a dimension's subfolders read months, then weeks, then days.
+const CONTEXT_SUBFOLDER_ORDER = ["months", "weeks", "days"];
+const DATED_NAME = /^\d{4}-\d{2}(-\d{2})?$/;
 
 function capitalize(str: string): string {
   return str.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -41,6 +44,15 @@ function logEntryLabel(filename: string): string {
     return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
   }
   return slugToLabel(base);
+}
+
+function datedLabel(base: string, subfolder: string): string | null {
+  if (!DATED_NAME.test(base)) return null;
+  const [year, month, day] = base.split("-").map(Number) as [number, number, number?];
+  const date = new Date(year, month - 1, day ?? 1);
+  if (day === undefined) return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(date);
+  const label = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  return subfolder === "weeks" ? `Week of ${label}` : label;
 }
 
 export function toContextFileEntry(relativePath: string, content: string): ContextFileEntry | null {
@@ -86,6 +98,19 @@ export function toContextFileEntry(relativePath: string, content: string): Conte
     };
   }
 
+  if (segments.length === 3 && second && third) {
+    const base = third.replace(/\.md$/, "");
+    return {
+      relativePath,
+      label: datedLabel(base, second) ?? slugToLabel(base),
+      content: split.body,
+      frontmatterRaw: split.frontmatterRaw,
+      kind: "group-child",
+      group,
+      groupLabel: `${slugToLabel(group)} · ${slugToLabel(second)}`,
+    };
+  }
+
   if (segments.length === 2 && second) {
     const base = second.replace(/\.md$/, "");
     return {
@@ -102,6 +127,11 @@ export function toContextFileEntry(relativePath: string, content: string): Conte
   return null;
 }
 
+// Flips each digit so an ascending string sort yields newest-first for date-named files.
+function newestFirst(path: string): string {
+  return path.replace(/\d/g, (d) => String(9 - Number(d)));
+}
+
 export function sortContextFileEntries(entries: ContextFileEntry[]): ContextFileEntry[] {
   return entries.sort((a, b) => {
     function sortKey(e: ContextFileEntry): [number, number, string, string] {
@@ -113,7 +143,10 @@ export function sortContextFileEntries(entries: ContextFileEntry[]): ContextFile
         return [stdIdx !== -1 ? stdIdx : 100 + e.group.charCodeAt(0), 1, e.group, e.relativePath];
       }
       if (e.kind === "standalone") return [200, 0, e.group, ""];
-      return [300, 0, e.group, e.relativePath];
+      const [, subfolder = "", file = ""] = e.relativePath.split("/");
+      const subIdx = CONTEXT_SUBFOLDER_ORDER.indexOf(subfolder);
+      const dated = DATED_NAME.test(file.replace(/\.md$/, ""));
+      return [300, subIdx === -1 ? CONTEXT_SUBFOLDER_ORDER.length : subIdx, `${e.group}/${subfolder}`, dated ? newestFirst(e.relativePath) : e.relativePath];
     }
 
     const ka = sortKey(a);
