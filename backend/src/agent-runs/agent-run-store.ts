@@ -127,6 +127,17 @@ export async function loadAgentRunSpec(client: SupabaseClient, runId: string): P
   return data ? specFromRow(data as AgentRunRow) : null;
 }
 
+const ACTIVE_STATUSES: ReadonlyArray<AgentRunRow["status"]> = ["queued", "preparing", "running", "validating", "committing"];
+
+/** The spec of a run that has not finished. A finished run's token no longer opens the gateway. */
+export async function loadActiveAgentRunSpec(client: SupabaseClient, runId: string): Promise<AgentRunSpec | null> {
+  const { data, error } = await client.from("agent_runs").select("*").eq("id", runId).maybeSingle();
+  if (error) throw error;
+  const row = data as AgentRunRow | null;
+  if (!row || !ACTIVE_STATUSES.includes(row.status)) return null;
+  return specFromRow(row);
+}
+
 export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord) => Promise<void> {
   return async (record) => {
     const { error } = await client.from("agent_run_tool_calls").insert({

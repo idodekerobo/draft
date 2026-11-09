@@ -11,6 +11,7 @@ import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
 import * as organizations from "./organizations";
+import * as runs from "./runs";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
@@ -100,6 +101,10 @@ export const routes = {
   "/link/:code": { GET: links.pollGET },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
+  // Run-scoped: a run proves itself with its own token, not a person's login.
+  "/runs/:runId/tools": { GET: runs.toolsGET },
+  "/runs/:runId/tools/:name": { POST: runs.toolPOST },
+  "/runs/:runId/mcp": { GET: runs.mcpHandler, POST: runs.mcpHandler, DELETE: runs.mcpHandler },
   // Wildcard covers every Better Auth path under its "/api/auth" basePath
   // (oauth2/authorize, oauth2/token, oauth2/consent, our bridge endpoint, etc).
   // Better Auth emits no CORS headers itself, so the browser-called paths

@@ -19,6 +19,7 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
   const rpcCalls: Array<Record<string, unknown>> = [];
   const toolCalls: Array<{ tool_name: string; status: string; agent_run_id: string }> = [];
   const inputRequests: Array<Record<string, unknown>> = [];
+  const agentRuns = new Map<string, Record<string, unknown>>();
   const hooks: { beforeCommit?: () => void } = {};
 
   const addVersion = (documents: ContextDocuments): string => {
@@ -49,7 +50,24 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
           }),
         };
       }
-      if (table === "agent_run_tool_calls") return { select: () => countQuery(() => toolCalls.filter((call) => call.status === "conflict")) };
+      if (table === "agent_runs") {
+        return {
+          insert: async (row: Record<string, unknown>) => {
+            agentRuns.set(row.id as string, { summary: null, ...row });
+            return { error: null };
+          },
+          select: () => ({ eq: (_column: string, id: string) => ({ maybeSingle: async () => ({ data: agentRuns.get(id) ?? null, error: null }) }) }),
+        };
+      }
+      if (table === "agent_run_tool_calls") {
+        return {
+          select: () => countQuery(() => toolCalls.filter((call) => call.status === "conflict")),
+          insert: async (row: { tool_name: string; status: string; agent_run_id: string }) => {
+            toolCalls.push({ tool_name: row.tool_name, status: row.status, agent_run_id: row.agent_run_id });
+            return { error: null };
+          },
+        };
+      }
       if (table === "agent_run_input_requests") {
         return {
           insert: (row: Record<string, unknown>) => {
@@ -79,6 +97,7 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
     toolCalls,
     inputRequests,
     hooks,
+    agentRuns,
     pointer: () => pointer,
     current: () => (pointer ? versions.get(pointer)!.documents_json : {}),
     /** Another writer lands a new version, as a routine would. */
