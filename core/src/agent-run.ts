@@ -106,6 +106,10 @@ export type AgentRunRuntime =
 export const DRAFT_TOOLS = [
   { name: "context.read", access: "read" },
   { name: "context.write", access: "write" },
+  { name: "context.list", access: "read" },
+  { name: "context.export", access: "read" },
+  { name: "sources.search", access: "read" },
+  { name: "sources.read", access: "read" },
   { name: "request_input", access: "write" },
 ] as const;
 export type DraftToolName = (typeof DRAFT_TOOLS)[number]["name"];
@@ -118,6 +122,10 @@ export const isDraftToolName = (name: unknown): name is DraftToolName =>
 export interface DraftToolLimits {
   "context.read": Record<string, never>;
   "context.write": { pathPrefixes?: ReadonlyArray<string> };
+  "context.list": Record<string, never>;
+  "context.export": Record<string, never>;
+  "sources.search": Record<string, never>;
+  "sources.read": Record<string, never>;
   request_input: Record<string, never>;
 }
 
@@ -152,10 +160,13 @@ export interface AgentRunSpec {
   output: AgentRunOutput;
 }
 
+/** Where a person's call came in: an MCP client, the CLI, or Draft's own app. Only the first two are logged as agent queries. */
+export type UserCallSurface = "mcp" | "cli" | "app";
+
 /** Who is calling a tool. Each surface proves this its own way, then hands the gateway this value. */
 export type ToolCaller =
   | { type: "run"; run: AgentRunSpec }
-  | { type: "user"; userId: UserId; workspaceId: WorkspaceId };
+  | { type: "user"; userId: UserId; workspaceId: WorkspaceId; via: UserCallSurface };
 
 /** The permission that lets this run call the tool, or null when it has none. */
 export function findToolPermission(run: AgentRunSpec, tool: DraftToolName): AnyDraftToolPermission | null {

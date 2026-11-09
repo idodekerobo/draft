@@ -9,6 +9,9 @@ interface FakeVersion {
   id: string;
   version_number: number;
   documents_json: ContextDocuments;
+  content_hash: string;
+  creation_reason: string;
+  created_at: string;
 }
 
 /** An in-memory stand-in for the context tables. Its commit_context_write call swaps only if the expected version is current. */
@@ -24,7 +27,7 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
 
   const addVersion = (documents: ContextDocuments): string => {
     const id = `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`;
-    versions.set(id, { id, version_number: counter, documents_json: documents });
+    versions.set(id, { id, version_number: counter, documents_json: documents, content_hash: canonicalDocumentsHash(documents), creation_reason: "seed", created_at: "2026-11-09T00:00:00.000Z" });
     pointer = id;
     return id;
   };
@@ -41,12 +44,16 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
   const client = {
     from: (table: string) => {
       if (table === "workspaces") {
-        return { select: () => ({ eq: () => ({ single: async () => ({ data: { current_context_version_id: pointer }, error: null }) }) }) };
+        return { select: () => ({ eq: () => ({ single: async () => ({ data: { current_context_version_id: pointer, timezone: "UTC" }, error: null }) }) }) };
       }
       if (table === "workspace_context_versions") {
         return {
           select: () => ({
-            eq: (_column: string, id: string) => ({ single: async () => ({ data: versions.get(id) ?? null, error: versions.has(id) ? null : new Error("not found") }) }),
+            eq: (_column: string, id: string) => ({
+              single: async () => ({ data: versions.get(id) ?? null, error: versions.has(id) ? null : new Error("not found") }),
+              // The latest version of a workspace, as the context service asks for it.
+              order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: pointer ? versions.get(pointer)! : null, error: null }) }) }),
+            }),
           }),
         };
       }

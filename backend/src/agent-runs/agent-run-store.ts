@@ -20,6 +20,7 @@ import {
   type AnyDraftToolPermission,
 } from "draft-core/agent-run";
 import { isHarnessId } from "draft-core/harnesses";
+import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
 import type { AgentRunRow } from "../types/tables";
 import type { ToolCallRecord } from "./invoke-tool";
 
@@ -138,11 +139,28 @@ export async function loadActiveAgentRunSpec(client: SupabaseClient, runId: stri
   return specFromRow(row);
 }
 
+/**
+ * Saves the audit row for a call. A run's calls go to agent_run_tool_calls. A person's calls go to the
+ * agent query log, as before, but only when they came in through an agent surface.
+ */
 export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord) => Promise<void> {
   return async (record) => {
+    if (record.caller.type === "user") {
+      if (record.caller.via === "app") return;
+      const command = record.caller.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
+      await recordAgentQueryLog(client, {
+        workspaceId: record.caller.workspaceId,
+        userId: record.caller.userId,
+        command: command as AgentQueryLogCommand,
+        argsJson: record.arguments,
+        resultBytes: record.resultBytes,
+      });
+      return;
+    }
+    const { run } = record.caller;
     const { error } = await client.from("agent_run_tool_calls").insert({
-      workspace_id: record.run.workspaceId,
-      agent_run_id: record.run.id,
+      workspace_id: run.workspaceId,
+      agent_run_id: run.id,
       tool_name: record.toolName,
       arguments: record.arguments,
       status: record.status,

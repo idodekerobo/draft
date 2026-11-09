@@ -6,16 +6,23 @@ export type ToolCallStatus = "ok" | "denied" | "invalid" | "conflict" | "error";
 export type InvokeToolResult =
   | { status: "ok"; output: unknown }
   | { status: "conflict"; output: unknown }
-  | { status: "denied"; code: ToolDenialCode; message: string }
+  | { status: "denied"; code: ToolDenialCode; message: string; detail?: AuthorizationDenial }
   | { status: "invalid"; issues: string[] }
   | { status: "error"; message: string };
 
 export type ToolDenialCode = "unknown_tool" | "not_permitted" | "outside_limits" | "caller_not_authorized";
 
-/** One row of audit for a call a run made. Written for every outcome. */
+/** What an edge may want to tell its client when a person is refused. */
+export interface AuthorizationDenial {
+  status: number;
+  body: unknown;
+}
+
+/** One row of audit for a call, written for every outcome. */
 export interface ToolCallRecord {
-  run: Extract<ToolCaller, { type: "run" }>["run"];
+  caller: ToolCaller;
   toolName: string;
+  resultBytes: number;
   arguments: Record<string, unknown>;
   status: ToolCallStatus;
   resultSummary: string | null;
@@ -27,8 +34,8 @@ export interface InvokeToolDeps {
   registry: ToolRegistry;
   /** Saves the audit row. A failure here is logged and never changes the result of the call. */
   audit: (record: ToolCallRecord) => Promise<void>;
-  /** Decides if a signed-in person may call a tool. Without it, person callers are denied. */
-  authorizeUser?: (caller: Extract<ToolCaller, { type: "user" }>, toolName: string) => Promise<boolean>;
+  /** Decides if a signed-in person may call a tool: null lets the call through, anything else refuses it. Without it, person callers are denied. */
+  authorizeUser?: (caller: Extract<ToolCaller, { type: "user" }>, toolName: string) => Promise<AuthorizationDenial | null>;
   now?: () => number;
 }
 
@@ -57,37 +64,39 @@ export async function invokeTool(
     result: InvokeToolResult,
     audited: { arguments: unknown; summary?: string | null; code?: string | null },
   ): Promise<InvokeToolResult> => {
-    if (caller.type === "run") {
-      try {
-        await deps.audit({
-          run: caller.run,
-          toolName,
-          arguments: auditable(audited.arguments),
-          status: result.status,
-          resultSummary: audited.summary ?? null,
-          errorCode: audited.code ?? null,
-          durationMs: Math.max(0, now() - startedAt),
-        });
-      } catch (error) {
-        console.error(JSON.stringify({ source: "invoke_tool", event: "audit_failed", tool: toolName, runId: caller.run.id, error: String(error) }));
-      }
+    try {
+      await deps.audit({
+        caller,
+        toolName,
+        arguments: auditable(audited.arguments),
+        status: result.status,
+        resultSummary: audited.summary ?? null,
+        errorCode: audited.code ?? null,
+        durationMs: Math.max(0, now() - startedAt),
+        resultBytes: "output" in result ? Buffer.byteLength(JSON.stringify(result.output) ?? "") : 0,
+      });
+    } catch (error) {
+      console.error(JSON.stringify({ source: "invoke_tool", event: "audit_failed", tool: toolName, caller: caller.type, error: String(error) }));
     }
     return result;
   };
 
-  const deny = (code: ToolDenialCode, message: string) =>
-    finish({ status: "denied", code, message }, { arguments: rawArguments, code });
+  const deny = (code: ToolDenialCode, message: string, detail?: AuthorizationDenial) =>
+    finish({ status: "denied", code, message, ...(detail ? { detail } : {}) }, { arguments: rawArguments, code });
 
   const tool = deps.registry.get(toolName);
   if (!tool || !isDraftToolName(toolName)) return deny("unknown_tool", `Unknown tool: ${toolName}`);
+
+  if (!tool.callers.includes(caller.type)) return deny("caller_not_authorized", `${toolName} is not available to this kind of caller`);
 
   let limits: unknown;
   if (caller.type === "run") {
     const permission = findToolPermission(caller.run, toolName);
     if (!permission) return deny("not_permitted", `This run may not call ${toolName}`);
     limits = permission.limits;
-  } else if (!(await deps.authorizeUser?.(caller, toolName))) {
-    return deny("caller_not_authorized", `Not allowed to call ${toolName}`);
+  } else {
+    const refusal = deps.authorizeUser ? await deps.authorizeUser(caller, toolName) : { status: 403, body: { error: "forbidden" } };
+    if (refusal) return deny("caller_not_authorized", `Not allowed to call ${toolName}`, refusal);
   }
 
   const parsed = tool.parse(rawArguments);

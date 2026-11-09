@@ -10,9 +10,9 @@ import {
 } from "draft-core/agent-run";
 import { invokeTool, type ToolCallRecord } from "../../agent-runs/invoke-tool";
 import { MAX_CONFLICTED_WRITES } from "../../agent-runs/tools/context-tools";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
 import { sha256 } from "../../synthesis/context-version-files";
 import { createFakeContextDb } from "./fake-context-db";
+import { createDraftToolRegistry } from "../../agent-runs/tools";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 
@@ -40,28 +40,59 @@ function setup(files: Record<string, string>, permissions: AnyDraftToolPermissio
     registry: createDraftToolRegistry(db.client),
     audit: async (record: ToolCallRecord) => {
       audits.push(record);
-      db.toolCalls.push({ tool_name: record.toolName, status: record.status, agent_run_id: record.run.id });
+      if (record.caller.type === "run") db.toolCalls.push({ tool_name: record.toolName, status: record.status, agent_run_id: record.caller.run.id });
     },
   };
   return { db, caller, deps, audits, call: (name: string, args: unknown) => invokeTool(deps, caller, name, args) };
 }
 
 describe("context.read", () => {
-  it("lists documents with their shas when no paths are given", async () => {
-    const { call } = setup({ "a.md": "A", "b.md": "BB" }, [{ tool: "context.read" }]);
+  it("returns every document with its content and sha when nothing narrows it", async () => {
+    const { call, db } = setup({ "a.md": "A", "b.md": "BB" }, [{ tool: "context.read" }]);
     const result = await call("context.read", {});
-    expect(result).toMatchObject({ status: "ok" });
-    const output = (result as { output: { documents: Array<{ path: string; sha: string; bytes: number }> } }).output;
-    expect(output.documents).toContainEqual({ path: "b.md", sha: sha256("BB"), bytes: 2 });
+    expect(result).toMatchObject({ status: "ok", output: { versionId: db.pointer(), versionNumber: 1 } });
+    const output = (result as { output: { documents: Array<{ path: string; content: string; sha256: string }> } }).output;
+    expect(output.documents).toContainEqual({ path: "b.md", content: "BB", sha256: sha256("BB") });
+    expect(output.documents).toHaveLength(2);
   });
 
-  it("returns content for the requested paths and marks missing ones", async () => {
-    const { call } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+  it("returns only the requested paths and names the ones that do not exist", async () => {
+    const { call } = setup({ "a.md": "A", "b.md": "B" }, [{ tool: "context.read" }]);
     const result = await call("context.read", { paths: ["a.md", "nope.md"] });
-    expect((result as { output: { documents: unknown[] } }).output.documents).toEqual([
-      { path: "a.md", sha: sha256("A"), content: "A" },
-      { path: "nope.md", missing: true },
-    ]);
+    const output = (result as { output: { documents: Array<{ path: string }>; missing: string[] } }).output;
+    expect(output.documents.map((document) => document.path)).toEqual(["a.md"]);
+    expect(output.missing).toEqual(["nope.md"]);
+  });
+
+  it("narrows by dimension, as the person-facing read always has", async () => {
+    const { call } = setup({ "memory/days/2026-11-09.md": "today", "product/index.md": "p" }, [{ tool: "context.read" }]);
+    const result = await call("context.read", { dimensions: ["product"] });
+    expect((result as { output: { documents: Array<{ path: string }> } }).output.documents.map((d) => d.path)).toEqual(["product/index.md"]);
+  });
+
+  it("answers a bad period request in the body, as before", async () => {
+    const { call } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+    const result = await call("context.read", { period: "today" });
+    expect(result).toMatchObject({ status: "ok", output: { error: expect.stringContaining("period requires exactly one dimension") } });
+  });
+});
+
+describe("context.list", () => {
+  it("lists each dimension that has an index document", async () => {
+    const { call } = setup({ "product/index.md": "p", "team/index.md": "t", "notes/x.md": "x" }, [{ tool: "context.list" }]);
+    const result = await call("context.list", {});
+    expect(result).toMatchObject({ status: "ok", output: { dimensions: [{ name: "product", path: "product/index.md" }, { name: "team", path: "team/index.md" }] } });
+  });
+});
+
+describe("tools that need a person", () => {
+  it("are not offered to a run, and are refused if it asks", async () => {
+    const { call, deps, caller } = setup({ "a.md": "A" }, [{ tool: "sources.search" }, { tool: "sources.read" }, { tool: "context.export" }]);
+    if (caller.type !== "run") throw new Error("unreachable");
+    expect(deps.registry.listFor(caller.run)).toEqual([]);
+    for (const name of ["sources.search", "sources.read", "context.export"]) {
+      expect(await call(name, { query: "x", source_item_id: "11111111-1111-4111-8111-111111111111" })).toMatchObject({ status: "denied", code: "caller_not_authorized" });
+    }
   });
 });
 

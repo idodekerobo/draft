@@ -67,7 +67,7 @@ function setup(options: { authorizeUser?: boolean } = {}) {
     audit: async (record: ToolCallRecord) => {
       audits.push(record);
     },
-    authorizeUser: options.authorizeUser === undefined ? undefined : async () => options.authorizeUser!,
+    authorizeUser: options.authorizeUser === undefined ? undefined : async () => (options.authorizeUser ? null : { status: 403, body: { error: "forbidden" } }),
     now: () => 1_000,
   };
   return { deps, calls, audits };
@@ -156,12 +156,50 @@ describe("invokeTool", () => {
       type: "user",
       userId: parseUserId("33333333-3333-4333-8333-333333333333"),
       workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
+      via: "mcp",
     };
     const none = setup();
     expect(await invokeTool(none.deps, user, "context.read", { path: "a.md" })).toMatchObject({ status: "denied", code: "caller_not_authorized" });
     const allowed = setup({ authorizeUser: true });
     expect((await invokeTool(allowed.deps, user, "context.read", { path: "a.md" })).status).toBe("ok");
-    expect(allowed.audits).toHaveLength(0);
+  });
+
+  it("passes the refusal's status and body to the edge, and audits the refused call", async () => {
+    const user: ToolCaller = {
+      type: "user",
+      userId: parseUserId("33333333-3333-4333-8333-333333333333"),
+      workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
+      via: "cli",
+    };
+    const refused = setup({ authorizeUser: false });
+    const result = await invokeTool(refused.deps, user, "context.read", { path: "a.md" });
+    expect(result).toMatchObject({ status: "denied", code: "caller_not_authorized", detail: { status: 403, body: { error: "forbidden" } } });
+    expect(refused.calls).toEqual([]);
+    expect(refused.audits[0]).toMatchObject({ status: "denied", caller: { type: "user", via: "cli" } });
+  });
+
+  it("audits a person's call with the size of what came back", async () => {
+    const user: ToolCaller = {
+      type: "user",
+      userId: parseUserId("33333333-3333-4333-8333-333333333333"),
+      workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
+      via: "mcp",
+    };
+    const allowed = setup({ authorizeUser: true });
+    await invokeTool(allowed.deps, user, "context.read", { path: "a.md" });
+    expect(allowed.audits[0]).toMatchObject({ caller: { type: "user" }, resultBytes: JSON.stringify({ content: "hello" }).length });
+  });
+
+  it("keeps a tool that needs a person away from a run, and away from a run's tool list", async () => {
+    const personOnly = defineTool({ name: "sources.search", description: "s", callers: ["user"], input: z.object({}), handler: async () => ({ status: "ok", output: {} }) });
+    const registry = new ToolRegistry([personOnly]);
+    const run = runWith([{ tool: "sources.search" }]);
+    if (run.type !== "run") throw new Error("unreachable");
+    const audits: ToolCallRecord[] = [];
+    const result = await invokeTool({ registry, audit: async (record) => void audits.push(record) }, run, "sources.search", {});
+    expect(result).toMatchObject({ status: "denied", code: "caller_not_authorized" });
+    expect(registry.listFor(run.run)).toEqual([]);
+    expect(registry.listForUser().map((tool) => tool.name)).toEqual(["sources.search"]);
   });
 });
 

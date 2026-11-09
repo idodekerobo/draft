@@ -22,6 +22,8 @@ export type ToolHandlerResult =
 export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   name: N;
   description: string;
+  /** Who may call it. Omitted means both. A tool that needs a person's identity says "user" only. */
+  callers?: ReadonlyArray<ToolCaller["type"]>;
   input: S;
   /** Returns a reason when the input is outside the run's limits for this tool, or null when it is inside. */
   checkLimits?: (limits: DraftToolLimits[N] | undefined, input: z.output<S>) => string | null;
@@ -35,6 +37,7 @@ export interface RegisteredTool {
   name: DraftToolName;
   access: DraftToolAccess;
   description: string;
+  callers: ReadonlyArray<ToolCaller["type"]>;
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
@@ -51,6 +54,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     name: spec.name,
     access: entry.access,
     description: spec.description,
+    callers: spec.callers ?? ["run", "user"],
     inputSchema: spec.input,
     parse(raw) {
       const result = spec.input.safeParse(raw);
@@ -87,6 +91,11 @@ export class ToolRegistry {
   /** The tools this run may call. A run never sees the others. */
   listFor(run: AgentRunSpec): ReadonlyArray<RegisteredTool> {
     const granted = new Set<string>(run.permissions.map((permission) => permission.tool));
-    return this.list().filter((tool) => granted.has(tool.name));
+    return this.list().filter((tool) => granted.has(tool.name) && tool.callers.includes("run"));
+  }
+
+  /** The tools a signed-in person may call. */
+  listForUser(): ReadonlyArray<RegisteredTool> {
+    return this.list().filter((tool) => tool.callers.includes("user"));
   }
 }

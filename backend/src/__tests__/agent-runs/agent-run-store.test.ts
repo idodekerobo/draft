@@ -5,10 +5,12 @@ import {
   parseIsoTimestamp,
   parseScheduledTaskId,
   parseSourceConnectionId,
+  parseUserId,
   parseWorkspaceId,
   type AgentRunSpec,
 } from "draft-core/agent-run";
-import { createAgentRun, specFromRow } from "../../agent-runs/agent-run-store";
+import { auditToDatabase, createAgentRun, specFromRow } from "../../agent-runs/agent-run-store";
+import type { ToolCallRecord } from "../../agent-runs/invoke-tool";
 import type { AgentRunRow } from "../../types/tables";
 
 const spec: AgentRunSpec = {
@@ -82,5 +84,38 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, permissions: [{ tool: "slack.post_message" }] })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, runtime: { type: "local", hostMachineId: "" } })).toThrow();
+  });
+});
+
+describe("audit rows", () => {
+  const base = { toolName: "context.read", arguments: { dimensions: ["memory"] }, status: "ok" as const, resultSummary: null, errorCode: null, durationMs: 3, resultBytes: 42 };
+  const user = (via: "mcp" | "cli" | "app") => ({
+    type: "user" as const,
+    userId: parseUserId("33333333-3333-4333-8333-333333333333"),
+    workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
+    via,
+  });
+
+  it("writes a person's MCP call to the agent query log under the mcp command name", async () => {
+    const { client, inserts } = fakeClient();
+    await auditToDatabase(client)({ ...base, caller: user("mcp") } as ToolCallRecord);
+    expect(inserts).toEqual([
+      { table: "agent_query_log", row: { workspace_id: "22222222-2222-4222-8222-222222222222", user_id: "33333333-3333-4333-8333-333333333333", command: "mcp.context.read", args_json: { dimensions: ["memory"] }, result_bytes: 42 } },
+    ]);
+  });
+
+  it("uses the plain command name for the CLI and writes nothing for the app", async () => {
+    const cli = fakeClient();
+    await auditToDatabase(cli.client)({ ...base, caller: user("cli") } as ToolCallRecord);
+    expect(cli.inserts[0]!.row.command).toBe("context.read");
+    const app = fakeClient();
+    await auditToDatabase(app.client)({ ...base, caller: user("app") } as ToolCallRecord);
+    expect(app.inserts).toEqual([]);
+  });
+
+  it("writes a run's call to its own table", async () => {
+    const { client, inserts } = fakeClient();
+    await auditToDatabase(client)({ ...base, caller: { type: "run", run: spec } } as ToolCallRecord);
+    expect(inserts[0]).toMatchObject({ table: "agent_run_tool_calls", row: { agent_run_id: spec.id, tool_name: "context.read", status: "ok", duration_ms: 3 } });
   });
 });

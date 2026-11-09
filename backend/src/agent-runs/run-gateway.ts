@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/agent-run";
 import { auditToDatabase, loadActiveAgentRunSpec } from "./agent-run-store";
 import { invokeTool, type InvokeToolDeps, type InvokeToolResult } from "./invoke-tool";
+import { toMcpResult } from "./mcp-result";
 import { AgentRunTokenError, verifyAgentRunToken } from "./run-token";
 import type { ToolRegistry } from "./tool-registry";
 
@@ -30,22 +31,6 @@ function statusFor(result: InvokeToolResult): number {
       return 400;
     case "error":
       return 500;
-  }
-}
-
-/** What an agent reads back from a tool call, as text. */
-function toMcpResult(result: InvokeToolResult) {
-  switch (result.status) {
-    case "ok":
-      return { content: [{ type: "text" as const, text: JSON.stringify(result.output) }] };
-    case "conflict":
-      return { content: [{ type: "text" as const, text: JSON.stringify({ status: "conflict", ...(result.output as object) }) }] };
-    case "denied":
-      return { isError: true, content: [{ type: "text" as const, text: result.message }] };
-    case "invalid":
-      return { isError: true, content: [{ type: "text" as const, text: `Invalid input: ${result.issues.join("; ")}` }] };
-    case "error":
-      return { isError: true, content: [{ type: "text" as const, text: result.message }] };
   }
 }
 

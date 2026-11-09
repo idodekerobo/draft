@@ -11,8 +11,8 @@ import {
 import { createAgentRun } from "../../agent-runs/agent-run-store";
 import { createRunGateway } from "../../agent-runs/run-gateway";
 import { createAgentRunToken } from "../../agent-runs/run-token";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
 import { createFakeContextDb } from "./fake-context-db";
+import { createDraftToolRegistry } from "../../agent-runs/tools";
 
 const SECRET = "test-secret";
 const WS = "11111111-1111-4111-8111-111111111111";

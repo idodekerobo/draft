@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { ToolCaller } from "draft-core/agent-run";
-import { loadCurrentContext, writeContext, type ContextConflict } from "../context-store";
+import { writeContext, type ContextConflict } from "../context-store";
 import { defineTool } from "../tool-registry";
-import { canSeeContextPath, visibleContext } from "../visible-context";
+import { canSeeContextPath } from "../visible-context";
 
 /** After this many conflicted writes in one run, the gateway stops taking more and tells the agent to report instead. */
 export const MAX_CONFLICTED_WRITES = 3;
@@ -16,30 +16,6 @@ function requireRun(caller: ToolCaller, tool: string) {
 }
 
 export function createContextTools(client: SupabaseClient) {
-  const read = defineTool({
-    name: "context.read",
-    description:
-      "Read the company's shared context. With no paths, lists every document with its sha. With paths, returns those documents' content.",
-    input: z.object({ paths: z.array(z.string()).max(50).optional() }),
-    handler: async ({ input, caller }) => {
-      const run = requireRun(caller, "context.read");
-      const current = await loadCurrentContext(client, run.workspaceId);
-      const visible = visibleContext(caller, current.documents);
-      if (!input.paths) {
-        const documents = Object.entries(visible).map(([path, document]) => ({
-          path,
-          sha: document.sha256,
-          bytes: Buffer.byteLength(document.content),
-        }));
-        return { status: "ok", output: { versionId: current.versionId, documents }, summary: `listed ${documents.length} documents` };
-      }
-      const documents = input.paths.map((path) =>
-        path in visible ? { path, sha: visible[path].sha256, content: visible[path].content } : { path, missing: true },
-      );
-      return { status: "ok", output: { versionId: current.versionId, documents }, summary: `read ${input.paths.length} documents` };
-    },
-  });
-
   const write = defineTool({
     name: "context.write",
     description:
@@ -137,5 +113,5 @@ export function createContextTools(client: SupabaseClient) {
     },
   });
 
-  return [read, write, requestInput];
+  return [write, requestInput];
 }
