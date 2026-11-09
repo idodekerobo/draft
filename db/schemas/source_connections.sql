@@ -1,8 +1,10 @@
+-- provider 'mcp' is a remote MCP server a person connected: connection_key is its URL, the bearer token is
+-- the credential, and config_json.tools caches the tool list. connected_by_user_id null means shared.
 create table source_connections (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   provider                 text not null
-                              check (provider in ('fireflies', 'slack', 'granola', 'linear', 'github', 'claude_session', 'codex_session', 'manual_upload')),
+                              check (provider in ('fireflies', 'slack', 'granola', 'linear', 'github', 'claude_session', 'codex_session', 'manual_upload', 'mcp')),
   connection_key           text not null,
   display_name             text,
   external_account_id      text,

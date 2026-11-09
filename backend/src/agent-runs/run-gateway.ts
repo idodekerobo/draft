@@ -5,14 +5,17 @@ import type { AgentRunSpec } from "draft-core/agent-run";
 import { auditToDatabase, loadActiveAgentRunSpec } from "./agent-run-store";
 import { invokeTool, type InvokeToolDeps, type InvokeToolResult } from "./invoke-tool";
 import { toMcpResult } from "./mcp-result";
+import { remoteToolsForRun } from "./remote-mcp";
 import { AgentRunTokenError, verifyAgentRunToken } from "./run-token";
-import type { ToolRegistry } from "./tool-registry";
+import type { RegisteredTool, ToolRegistry } from "./tool-registry";
 
 export interface RunGatewayDeps {
   client: SupabaseClient;
   /** Reads the signing secret when a request arrives, so a missing setting fails the request and not startup. */
   secret: () => string;
   registry: ToolRegistry;
+  /** The tools a run reaches through its connections. They are looked up for each request. */
+  remoteTools?: (run: AgentRunSpec) => Promise<RegisteredTool[]>;
   now?: () => number;
 }
 
@@ -39,7 +42,14 @@ function statusFor(result: InvokeToolResult): number {
  * Everything after that is invokeTool, the same for the MCP route and the HTTP route.
  */
 export function createRunGateway(deps: RunGatewayDeps) {
-  const invokeDeps: InvokeToolDeps = { registry: deps.registry, audit: auditToDatabase(deps.client), now: deps.now };
+  const audit = auditToDatabase(deps.client);
+  const remoteTools = deps.remoteTools ?? ((run: AgentRunSpec) => remoteToolsForRun(deps.client, run));
+
+  /** Draft's tools plus the ones this run reaches through its connections. */
+  async function depsFor(run: AgentRunSpec): Promise<InvokeToolDeps> {
+    const remote = await remoteTools(run);
+    return { registry: remote.length > 0 ? deps.registry.extendedWith(remote) : deps.registry, audit, now: deps.now };
+  }
 
   async function authenticate(request: Request, runId: string): Promise<Authenticated> {
     const header = request.headers.get("authorization") ?? "";
@@ -59,7 +69,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
   async function listTools(request: Request, runId: string): Promise<Response> {
     const auth = await authenticate(request, runId);
     if (!auth.ok) return auth.response;
-    const tools = deps.registry.listFor(auth.run).map((tool) => ({
+    const tools = (await depsFor(auth.run)).registry.listFor(auth.run).map((tool) => ({
       name: tool.name,
       access: tool.access,
       description: tool.description,
@@ -80,7 +90,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
         return Response.json({ status: "invalid", issues: ["body is not valid JSON"] }, { status: 400 });
       }
     }
-    const result = await invokeTool(invokeDeps, { type: "run", run: auth.run }, toolName, args);
+    const result = await invokeTool(await depsFor(auth.run), { type: "run", run: auth.run }, toolName, args);
     return Response.json(result, { status: statusFor(result) });
   }
 
@@ -88,14 +98,15 @@ export function createRunGateway(deps: RunGatewayDeps) {
     const auth = await authenticate(request, runId);
     if (!auth.ok) return auth.response;
     const run = auth.run;
+    const requestDeps = await depsFor(run);
     // Stateless, like the person-facing MCP: a fresh server per request that lists only this run's tools.
     const handler = createMcpHandler(() => {
       const server = new McpServer({ name: "draft", version: "1.0.0" });
-      for (const tool of deps.registry.listFor(run)) {
+      for (const tool of requestDeps.registry.listFor(run)) {
         server.registerTool(
           tool.name,
           { description: tool.description, inputSchema: tool.inputSchema as z.ZodObject },
-          async (args: unknown) => toMcpResult(await invokeTool(invokeDeps, { type: "run", run }, tool.name, args)),
+          async (args: unknown) => toMcpResult(await invokeTool(requestDeps, { type: "run", run }, tool.name, args)),
         );
       }
       return server;

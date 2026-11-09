@@ -1,5 +1,5 @@
-import { findToolPermission, isDraftToolName, type ToolCaller } from "draft-core/agent-run";
-import type { ToolRegistry } from "./tool-registry";
+import type { ToolCaller } from "draft-core/agent-run";
+import { ToolUserError, type ToolRegistry } from "./tool-registry";
 
 export type ToolCallStatus = "ok" | "denied" | "invalid" | "conflict" | "error";
 
@@ -85,13 +85,13 @@ export async function invokeTool(
     finish({ status: "denied", code, message, ...(detail ? { detail } : {}) }, { arguments: rawArguments, code });
 
   const tool = deps.registry.get(toolName);
-  if (!tool || !isDraftToolName(toolName)) return deny("unknown_tool", `Unknown tool: ${toolName}`);
+  if (!tool) return deny("unknown_tool", `Unknown tool: ${toolName}`);
 
   if (!tool.callers.includes(caller.type)) return deny("caller_not_authorized", `${toolName} is not available to this kind of caller`);
 
   let limits: unknown;
   if (caller.type === "run") {
-    const permission = findToolPermission(caller.run, toolName);
+    const permission = tool.permission(caller.run);
     if (!permission) return deny("not_permitted", `This run may not call ${toolName}`);
     limits = permission.limits;
   } else {
@@ -115,9 +115,10 @@ export async function invokeTool(
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    // The agent gets a generic message. The real one stays in the audit row.
+    // The agent gets a generic message unless the tool meant it to see this one. The real one stays in the audit row.
+    const visible = error instanceof ToolUserError ? message : "The tool failed. Try again, or report the problem.";
     return finish(
-      { status: "error", message: "The tool failed. Try again, or report the problem." },
+      { status: "error", message: visible },
       { arguments: tool.auditArguments(parsed.value), summary: message, code: "handler_error" },
     );
   }

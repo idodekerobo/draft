@@ -357,6 +357,16 @@ describe("launchFlySandboxRun routine mode", () => {
     expect(() => verifySandboxCallbackToken(launched!.env!.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 })).toThrow();
   });
 
+  it("tells the runner which built-in tools the run may use, when it says", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    let launched: CreateFlyMachineInput | undefined;
+    await launchFlySandboxRun({
+      bundle: bundle(), prompt: "Go.\n", mode: "routine", claudeCodeOAuthToken: "token", config, nativeTools: ["Read", "Glob", "WebSearch"],
+    }, { flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } }, bundleUploader: uploader });
+    expect(launched!.env!.DRAFT_NATIVE_TOOLS).toBe("Read,Glob,WebSearch");
+  });
+
   it("sets no tool server or run token when the run has no Draft tools", async () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();
@@ -366,6 +376,7 @@ describe("launchFlySandboxRun routine mode", () => {
     }, { flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } }, bundleUploader: uploader });
     expect(launched!.env).not.toHaveProperty("DRAFT_MCP_URL");
     expect(launched!.env).not.toHaveProperty("DRAFT_RUN_TOKEN");
+    expect(launched!.env).not.toHaveProperty("DRAFT_NATIVE_TOOLS");
   });
 
   it("refuses Draft tools outside routine mode", async () => {

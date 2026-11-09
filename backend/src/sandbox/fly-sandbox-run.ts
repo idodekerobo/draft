@@ -60,6 +60,8 @@ export interface LaunchFlySandboxRunInput {
   manifestPath?: string;
   /** Routine mode only: gives the run Draft's tools. The token and the tool server URL go to the runner. */
   agentRun?: { id: AgentRunId; workspaceId: WorkspaceId };
+  /** Routine mode only: the built-in tools of the harness the run may use. Omitted means the runner's defaults. */
+  nativeTools?: ReadonlyArray<string>;
 }
 
 function serializeJsonSchema(schema: Record<string, unknown>): string {
@@ -194,6 +196,7 @@ export async function launchFlySandboxRun(
   if (input.mode === "routine") {
     env.DRAFT_RUN_MODE = "routine";
     if (input.model) env.DRAFT_ROUTINE_MODEL = input.model;
+    if (input.nativeTools) env.DRAFT_NATIVE_TOOLS = input.nativeTools.join(",");
     if (input.agentRun) {
       // Same host as the callback, which the sandbox is already allowed to reach.
       env.DRAFT_MCP_URL = new URL(`/runs/${input.agentRun.id}/mcp`, config.callbackUrl).toString();

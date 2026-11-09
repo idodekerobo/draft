@@ -191,7 +191,29 @@ const CODEX_AUTH_FILE = `${CODEX_HOME}/auth.json`;
 const CODEX_CONFIG_FILE = `${CODEX_HOME}/config.toml`;
 const CODEX_WORK_DIR = "/home/agent/work";
 
+// Must match CLOUD_NATIVE_TOOLS in core. The runner is built apart from the backend, so it keeps its own copy,
+// and a test holds the two together.
+export const RUNNER_NATIVE_TOOLS = {
+  claude: ["Read", "Glob", "Grep", "WebSearch"],
+  codex: ["shell", "web_search"],
+} as const;
+const CLAUDE_READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
+const DEFAULT_CLAUDE_TOOLS = ["Read", "Glob"];
+
+/** The built-in tools a run was given: null when the backend named none, so the defaults apply. Anything outside the list is refused. */
+export function routineNativeTools(value: string | undefined, harness: "claude" | "codex"): string[] | null {
+  if (!value) return null;
+  const tools = value.split(",").map((tool) => tool.trim()).filter(Boolean);
+  if (!tools.every((tool) => (RUNNER_NATIVE_TOOLS[harness] as ReadonlyArray<string>).includes(tool))) throw new Error("DRAFT_NATIVE_TOOLS is invalid");
+  return [...new Set(tools)];
+}
+
 /** Draft's tool server for a Codex run. The bearer token comes from the environment, never from this file. */
+export function codexConfigToml(options: { mcpUrl: string | null; webSearch: boolean }): string {
+  // A top-level key must come before any table.
+  return [...(options.webSearch ? ['web_search = "live"'] : []), ...(options.mcpUrl ? [codexMcpConfigToml(options.mcpUrl)] : [])].join("\n");
+}
+
 export function codexMcpConfigToml(mcpUrl: string): string {
   return [
     "[mcp_servers.draft]",
@@ -242,14 +264,15 @@ export function parseAgentIds(passwd: string): { uid: number; gid: number } | nu
 }
 
 /** Puts the workspace's login where Codex reads it, for the agent user alone. */
-export function prepareCodexHome(authJson: string, mcpUrl: string | null = null): void {
+export function prepareCodexHome(authJson: string, mcpUrl: string | null = null, nativeTools: string[] | null = null): void {
   const { uid, gid } = parseAgentIds(readFileSync("/etc/passwd", "utf8")) ?? { uid: AGENT_UID, gid: AGENT_GID };
   mkdirSync(CODEX_HOME, { recursive: true, mode: 0o700 });
   chownSync(CODEX_HOME, uid, gid);
   writeFileSync(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
   chownSync(CODEX_AUTH_FILE, uid, gid);
-  if (mcpUrl) {
-    writeFileSync(CODEX_CONFIG_FILE, codexMcpConfigToml(mcpUrl), { mode: 0o600 });
+  const webSearch = nativeTools?.includes("web_search") ?? false;
+  if (mcpUrl || webSearch) {
+    writeFileSync(CODEX_CONFIG_FILE, codexConfigToml({ mcpUrl, webSearch }), { mode: 0o600 });
     chownSync(CODEX_CONFIG_FILE, uid, gid);
   }
   mkdirSync(CODEX_WORK_DIR, { recursive: true, mode: 0o700 });
@@ -705,18 +728,22 @@ export type RoutineLine =
   | { file: string; offset: number; raw: string }
   | { file: string; offset: number; oversizeBytes: number };
 
-export function routineCommandArgs(prompt: string, model: string | null, mcpUrl: string | null = null): string[] {
+export function routineCommandArgs(prompt: string, model: string | null, mcpUrl: string | null = null, nativeTools: string[] | null = null): string[] {
   if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
+  const tools = nativeTools ?? DEFAULT_CLAUDE_TOOLS;
+  // Reading is allowed on its own. Any other built-in tool has to be named, or dontAsk refuses it.
+  // Claude Code turns dots in tool names into underscores, so Draft's tools are allowed by server name.
+  const allowed = [...(mcpUrl ? ["mcp__draft"] : []), ...tools.filter((tool) => !CLAUDE_READ_ONLY_TOOLS.includes(tool))];
   return [
     "-p",
     prompt,
     ...(model ? ["--model", model] : []),
     "--tools",
-    "Read,Glob",
+    tools.join(","),
     "--permission-mode",
     "dontAsk",
-    // Claude Code turns dots in tool names into underscores, so the allow rule names the server.
-    ...(mcpUrl ? ["--mcp-config", claudeMcpConfigJson(mcpUrl), "--strict-mcp-config", "--allowedTools", "mcp__draft"] : []),
+    ...(mcpUrl ? ["--mcp-config", claudeMcpConfigJson(mcpUrl), "--strict-mcp-config"] : []),
+    ...(allowed.length > 0 ? ["--allowedTools", ...allowed] : []),
     "--no-session-persistence",
     "--output-format",
     "stream-json",
@@ -803,13 +830,14 @@ export async function runRoutine(
   post: RoutinePost,
   harness: "claude" | "codex" = "claude",
   mcpUrl: string | null = null,
+  nativeTools: string[] | null = null,
 ): Promise<RoutineEnd> {
   const { spawn } = await import("node:child_process");
   const { StringDecoder } = await import("node:string_decoder");
   const codex = harness === "codex";
   const childEnv = codex ? sanitizedCodexEnv(process.env) : sanitizedClaudeEnv(process.env);
   const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
-  const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model, mcpUrl)];
+  const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model, mcpUrl, nativeTools)];
   const child = spawn("gosu", ["agent", "env", "-i", ...envArgs, ...command], {
     cwd: codex ? CODEX_WORK_DIR : "/run",
     detached: true,
@@ -1128,13 +1156,14 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
     const harness = process.env.DRAFT_RUN_HARNESS === "codex" ? "codex" : "claude";
     const mcpUrl = routineMcpUrl(process.env.DRAFT_MCP_URL, callbackUrl);
     if (mcpUrl) required("DRAFT_RUN_TOKEN");
+    const nativeTools = routineNativeTools(process.env.DRAFT_NATIVE_TOOLS, harness);
     if (harness === "codex") {
-      prepareCodexHome(required("CODEX_AUTH_JSON"), mcpUrl);
+      prepareCodexHome(required("CODEX_AUTH_JSON"), mcpUrl, nativeTools);
       delete process.env.CODEX_AUTH_JSON;
     }
     const end = await runRoutine(prompt, process.env.DRAFT_ROUTINE_MODEL || null, timeoutMs, runId, (result) =>
       callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
-    harness, mcpUrl);
+    harness, mcpUrl, nativeTools);
     await callback(callbackUrl, callbackToken, runId, bundleHash, end, undefined);
     runnerLog("final", { run_id: runId, status: end.ok ? "completed" : "failed", failure_code: end.error ?? "none" });
     if (!end.ok) process.exitCode = 1;

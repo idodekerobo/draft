@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import {
   DRAFT_TOOLS,
+  findToolPermission,
   type AgentRunSpec,
   type DraftToolAccess,
   type DraftToolLimits,
@@ -32,15 +33,29 @@ export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   handler: (context: ToolContext<z.output<S>>) => Promise<ToolHandlerResult>;
 }
 
+/** An error whose message is meant for the agent that called the tool, such as a refusal from a remote server. */
+export class ToolUserError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolUserError";
+  }
+}
+
+/** The permission a run holds for a tool, with its limits, or null when it holds none. */
+export type RunPermission = { limits?: unknown } | null;
+
 /** A tool as the registry holds it. Parsing and limit checks are bound to the right types already. */
 export interface RegisteredTool {
-  name: DraftToolName;
+  /** A Draft tool name, or for a remote server's tool a name the gateway made up. */
+  name: string;
   access: DraftToolAccess;
   description: string;
   callers: ReadonlyArray<ToolCaller["type"]>;
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
+  /** How a run comes to hold this tool. Draft's own tools come from the run's permissions. */
+  permission: (run: AgentRunSpec) => RunPermission;
   checkLimits: (limits: unknown, value: unknown) => string | null;
   auditArguments: (value: unknown) => Record<string, unknown>;
   run: (caller: ToolCaller, value: unknown) => Promise<ToolHandlerResult>;
@@ -56,6 +71,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     description: spec.description,
     callers: spec.callers ?? ["run", "user"],
     inputSchema: spec.input,
+    permission: (run) => findToolPermission(run, spec.name),
     parse(raw) {
       const result = spec.input.safeParse(raw);
       if (result.success) return { ok: true, value: result.data };
@@ -90,8 +106,12 @@ export class ToolRegistry {
 
   /** The tools this run may call. A run never sees the others. */
   listFor(run: AgentRunSpec): ReadonlyArray<RegisteredTool> {
-    const granted = new Set<string>(run.permissions.map((permission) => permission.tool));
-    return this.list().filter((tool) => granted.has(tool.name) && tool.callers.includes("run"));
+    return this.list().filter((tool) => tool.callers.includes("run") && tool.permission(run) !== null);
+  }
+
+  /** The same tools plus these. Used per request, for the tools a run reaches through a connection. */
+  extendedWith(extra: ReadonlyArray<RegisteredTool>): ToolRegistry {
+    return new ToolRegistry([...this.list(), ...extra]);
   }
 
   /** The tools a signed-in person may call. */

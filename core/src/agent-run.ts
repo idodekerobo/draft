@@ -85,6 +85,20 @@ export type NativeToolPermission =
   | { harness: "claude"; tool: ClaudeNativeTool }
   | { harness: "codex"; tool: CodexNativeTool };
 
+/**
+ * The built-in tools a cloud run may be given. The rest either run inside the sandbox and widen what
+ * it can do (Bash, Edit, Write, WebFetch), or need a display. The sandbox never holds a secret, so a
+ * tool that needs one is reached through Draft's gateway instead.
+ */
+export const CLOUD_NATIVE_TOOLS = {
+  claude: ["Read", "Glob", "Grep", "WebSearch"],
+  codex: ["shell", "web_search"],
+} as const satisfies { claude: ReadonlyArray<ClaudeNativeTool>; codex: ReadonlyArray<CodexNativeTool> };
+
+export function isCloudNativeTool(permission: NativeToolPermission): boolean {
+  return (CLOUD_NATIVE_TOOLS[permission.harness] as ReadonlyArray<string>).includes(permission.tool);
+}
+
 /** An MCP server the person connected in Draft. Tool names come from the server at run time. */
 export interface McpServerPermission {
   connectionId: SourceConnectionId;

@@ -50,6 +50,7 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
     model: routine.model ?? undefined,
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,
     agentRun: { id: agentRun.id, workspaceId: agentRun.workspaceId },
+    nativeTools: agentRun.runtime.type === "cloud" ? agentRun.runtime.environment.nativeTools.map((permission) => permission.tool) : undefined,
     config,
   };
 

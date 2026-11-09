@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { CLOUD_NATIVE_TOOLS } from "draft-core/agent-run";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import {
   classifyClaudeEnvelopeFailure,
   classifyClaudeFailureChunk,
   claudeMcpConfigJson,
+  codexConfigToml,
   codexMcpConfigToml,
   codexRoutineArgs,
   extractStructuredOutput,
@@ -27,6 +29,8 @@ import {
   reportRunnerFailure,
   routineCommandArgs,
   routineMcpUrl,
+  routineNativeTools,
+  RUNNER_NATIVE_TOOLS,
   routineFailureCode,
   runBatch,
   sanitizeReason,
@@ -593,6 +597,44 @@ describe("Draft tools for a routine run", () => {
     expect(() => routineMcpUrl("https://evil.example.net/runs/x/mcp", callback)).toThrow("callback host");
     expect(() => routineMcpUrl("http://api.example.com/runs/x/mcp", callback)).toThrow("callback host");
     expect(() => routineMcpUrl("https://user:pw@api.example.com/runs/x/mcp", callback)).toThrow("callback host");
+  });
+});
+
+describe("built-in tools of a routine run", () => {
+  test("the runner's allow-list is the one core publishes", () => {
+    expect(RUNNER_NATIVE_TOOLS).toEqual(CLOUD_NATIVE_TOOLS);
+  });
+
+  test("none named means the defaults, so a run from an older backend is unchanged", () => {
+    expect(routineNativeTools(undefined, "claude")).toBeNull();
+    expect(routineNativeTools("", "codex")).toBeNull();
+    expect(routineCommandArgs("Go", null, null, null)).toContain("Read,Glob");
+  });
+
+  test("a tool outside the list for that harness is refused", () => {
+    expect(routineNativeTools("Read,Glob,WebSearch", "claude")).toEqual(["Read", "Glob", "WebSearch"]);
+    expect(() => routineNativeTools("Read,Bash", "claude")).toThrow("DRAFT_NATIVE_TOOLS");
+    expect(() => routineNativeTools("shell,WebSearch", "codex")).toThrow("DRAFT_NATIVE_TOOLS");
+    expect(routineNativeTools("Read,Read", "claude")).toEqual(["Read"]);
+  });
+
+  test("Claude names every tool that is not read-only in its allow rules, and keeps Draft's server", () => {
+    const args = routineCommandArgs("Go", null, "https://api.example.com/runs/x/mcp", ["Read", "Glob", "WebSearch"]);
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,WebSearch");
+    const allowed = args.slice(args.indexOf("--allowedTools") + 1, args.indexOf("--no-session-persistence"));
+    expect(allowed).toEqual(["mcp__draft", "WebSearch"]);
+  });
+
+  test("Claude with only read-only tools and no server has no allow rules at all", () => {
+    expect(routineCommandArgs("Go", null, null, ["Read", "Glob", "Grep"])).not.toContain("--allowedTools");
+  });
+
+  test("Codex turns web search on in its config, ahead of the server table", () => {
+    const toml = codexConfigToml({ mcpUrl: "https://api.example.com/runs/x/mcp", webSearch: true });
+    expect(toml.indexOf('web_search = "live"')).toBeGreaterThanOrEqual(0);
+    expect(toml.indexOf('web_search = "live"')).toBeLessThan(toml.indexOf("[mcp_servers.draft]"));
+    expect(codexConfigToml({ mcpUrl: null, webSearch: true })).toBe('web_search = "live"');
+    expect(codexConfigToml({ mcpUrl: null, webSearch: false })).toBe("");
   });
 });
 
