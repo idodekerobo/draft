@@ -1,4 +1,8 @@
 import type {
+  AgentRunKind,
+  AgentRunStatus,
+} from "draft-core/agent-run";
+import type {
   AgentSessionSummaryStatus,
   ContextVersionCreationReason,
   CredentialProvider,
@@ -379,4 +383,61 @@ export interface SessionInputRow {
   dismissed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentRunRow {
+  id: string;
+  workspace_id: string;
+  kind: AgentRunKind;
+  trigger: unknown;
+  principal: unknown;
+  runtime: unknown;
+  harness: string;
+  model: string | null;
+  instructions: string;
+  base_context_version_id: string;
+  permissions: unknown[];
+  output: unknown;
+  status: AgentRunStatus;
+  attempt: number;
+  retry_of_run_id: string | null;
+  idempotency_key: string;
+  prompt_version: string | null;
+  session_id: string | null;
+  sandbox_machine_id: string | null;
+  summary: string | null;
+  failure_code: string | null;
+  failure_detail: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Immutable audit row: no updated_at.
+export interface AgentRunToolCallRow {
+  id: string;
+  workspace_id: string;
+  agent_run_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  status: "ok" | "denied" | "invalid" | "conflict" | "error";
+  result_summary: string | null;
+  error_code: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface AgentRunInputRequestRow {
+  id: string;
+  workspace_id: string;
+  agent_run_id: string;
+  tool_call_id: string | null;
+  question: string;
+  options: unknown[] | null;
+  status: "open" | "answered" | "dismissed";
+  answer: string | null;
+  answered_by: string | null;
+  answered_at: string | null;
+  created_at: string;
 }
