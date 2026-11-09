@@ -73,6 +73,15 @@ describe("agent run store", () => {
     expect(inserts[0].row.retry_of_run_id).toBe(original);
   });
 
+  it("reads the run a synthesis run was mirrored as, with a system trigger", () => {
+    const mirrored = rowFrom({
+      id: spec.id, workspace_id: spec.workspaceId, kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, principal: spec.principal,
+      runtime: spec.runtime, harness: "claude", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
+      permissions: [], output: { type: "structured", schema: {} }, status: "succeeded", attempt: 1, retry_of_run_id: null, idempotency_key: "k", prompt_version: "synthesis-v1", session_id: null,
+    });
+    expect(specFromRow(mirrored)).toMatchObject({ kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, permissions: [] });
+  });
+
   it("rejects rows that do not match the spec", () => {
     const good = rowFrom({
       id: spec.id, workspace_id: spec.workspaceId, kind: "routine", trigger: spec.trigger, principal: spec.principal,
@@ -83,6 +92,7 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, kind: "mystery" as never })).toThrow("Unknown run kind");
     expect(() => specFromRow({ ...good, permissions: [{ tool: "slack.post_message" }] })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
+    expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
     expect(() => specFromRow({ ...good, runtime: { type: "local", hostMachineId: "" } })).toThrow();
   });
 });

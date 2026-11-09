@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
   AGENT_RUN_KINDS,
+  AGENT_RUN_SYSTEM_REASONS,
   CLAUDE_NATIVE_TOOLS,
   CODEX_NATIVE_TOOLS,
   DRAFT_TOOLS,
@@ -27,6 +28,7 @@ import type { ToolCallRecord } from "./invoke-tool";
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cron"), scheduledTaskId: z.string().transform(parseScheduledTaskId), occurrenceAt: z.string().transform(parseIsoTimestamp) }),
   z.object({ type: z.literal("webhook"), provider: z.enum(["slack", "github", "linear", "fireflies", "granola"]), eventId: z.string().min(1) }),
+  z.object({ type: z.literal("system"), reason: z.enum(AGENT_RUN_SYSTEM_REASONS) }),
   z.object({ type: z.literal("manual"), requestedBy: z.string().transform(parseUserId) }),
   z.object({ type: z.literal("retry"), retryOf: z.string().transform(parseAgentRunId) }),
 ]);

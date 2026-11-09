@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  AGENT_RUN_SYSTEM_REASONS,
   DRAFT_TOOLS,
   findToolPermission,
   isDraftToolName,
@@ -53,6 +54,12 @@ describe("draft tools", () => {
     expect(isDraftToolName("context.write")).toBe(true);
     expect(isDraftToolName("slack.post_message")).toBe(false);
     expect(isDraftToolName(3)).toBe(false);
+  });
+});
+
+describe("system triggers", () => {
+  it("lists the reasons Draft starts a run on its own", () => {
+    expect(AGENT_RUN_SYSTEM_REASONS).toEqual(["manual", "source_threshold", "stale_requeue", "seed_test"]);
   });
 });
 

@@ -65,8 +65,13 @@ export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 /** Providers that can wake a run through a webhook. */
 export type AgentRunWebhookProvider = "slack" | "github" | "linear" | "fireflies" | "granola";
 
+/** Why Draft started a run on its own, when no schedule or person did. */
+export const AGENT_RUN_SYSTEM_REASONS = ["manual", "source_threshold", "stale_requeue", "seed_test"] as const;
+export type AgentRunSystemReason = (typeof AGENT_RUN_SYSTEM_REASONS)[number];
+
 export type AgentRunTrigger =
   | { type: "cron"; scheduledTaskId: ScheduledTaskId; occurrenceAt: IsoTimestamp }
+  | { type: "system"; reason: AgentRunSystemReason }
   | { type: "webhook"; provider: AgentRunWebhookProvider; eventId: string }
   | { type: "manual"; requestedBy: UserId }
   | { type: "retry"; retryOf: AgentRunId };
