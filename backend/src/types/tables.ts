@@ -162,6 +162,7 @@ export interface WorkspaceContextVersionRow {
   creation_reason: ContextVersionCreationReason;
   synthesis_run_id: string | null;
   restored_from_version_id: string | null;
+  agent_run_id: string | null;
   summary: string;
   created_at: string;
 }

@@ -1,6 +1,7 @@
 import { computeBundleHash } from "../sandbox/bundle-hash";
 import { assertSafeDocumentPath } from "../synthesis/context-version-files";
 import type { SandboxRunBundle } from "../sandbox";
+import { visibleContext, type ContextAudience } from "../agent-runs/visible-context";
 import { routineRunId } from "./config";
 
 export interface RoutinePromptContext {
@@ -39,10 +40,11 @@ export function buildRoutineBundle(input: {
   organizationId: string;
   workspaceId: string;
   sessionId: string;
+  audience: ContextAudience;
   documents: Record<string, { content: string }>;
 }): SandboxRunBundle {
   const files: Record<string, { content: string }> = {};
-  for (const [path, document] of Object.entries(input.documents)) {
+  for (const [path, document] of Object.entries(visibleContext(input.audience, input.documents))) {
     try {
       assertSafeDocumentPath(path);
     } catch {

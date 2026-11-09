@@ -117,24 +117,6 @@ function createFakeClient(options: FakeClientOptions = {}) {
             }),
           }),
         }),
-        insert: (payload: Record<string, unknown>) => {
-          calls.order.push(
-            payload.creation_reason === "memory_provision"
-              ? "memory-provision-insert"
-              : "seed-context-version-insert",
-          );
-          calls.contextVersionInserts.push(payload);
-          return {
-            select: () => ({
-              single: async () => {
-                if (options.contextVersionInsertError && payload.creation_reason === "memory_provision") {
-                  return { data: null, error: options.contextVersionInsertError };
-                }
-                return { data: { id: ids.seededVersion }, error: null };
-              },
-            }),
-          };
-        },
       };
     }
 
@@ -218,7 +200,24 @@ function createFakeClient(options: FakeClientOptions = {}) {
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
-  const client = { from } as unknown as SupabaseClient;
+  // The context commit RPC: records the version a writer would create, in the shape the old direct insert had.
+  async function rpc(name: string, args: Record<string, unknown>) {
+    if (name !== "commit_context_write") throw new Error(`Unexpected rpc ${name}`);
+    calls.order.push(args.p_creation_reason === "memory_provision" ? "memory-provision-insert" : "seed-context-version-insert");
+    calls.contextVersionInserts.push({
+      workspace_id: args.p_workspace_id,
+      expected_version_id: args.p_expected_version_id,
+      creation_reason: args.p_creation_reason,
+      content_hash: args.p_content_hash,
+      documents_json: args.p_documents_json,
+    });
+    if (options.contextVersionInsertError && args.p_creation_reason === "memory_provision") {
+      return { data: null, error: options.contextVersionInsertError };
+    }
+    return { data: { status: "committed", new_version_id: ids.seededVersion, version_number: 1 }, error: null };
+  }
+
+  const client = { from, rpc } as unknown as SupabaseClient;
   return { client, calls };
 }
 
@@ -327,17 +326,13 @@ describe("prepareRun", () => {
     expect(calls.contextVersionInserts).toHaveLength(1);
     const seeded = calls.contextVersionInserts[0];
     expect(seeded.workspace_id).toBe(ids.workspace);
-    expect(seeded.version_number).toBe(1);
+    expect(seeded.expected_version_id).toBeNull();
     expect(seeded.creation_reason).toBe("seed");
     expect(typeof seeded.content_hash).toBe("string");
     expect(seeded.content_hash).toMatch(/^[0-9a-f]{64}$/);
     const seededPaths = Object.keys(seeded.documents_json as Record<string, unknown>);
     expect(seededPaths).toContain(MEMORY_INDEX_PATH);
     expect(seededPaths.some((p) => p.startsWith("memory/days/"))).toBe(true);
-
-    const workspacePointerUpdate = calls.updates.find((update) => update.table === "workspaces");
-    expect(workspacePointerUpdate?.payload.current_context_version_id).toBe(ids.seededVersion);
-    expect(workspacePointerUpdate?.id).toBe(ids.workspace);
 
     const runInsert = calls.runInserts[0];
     expect(runInsert.base_context_version_id).toBe(ids.seededVersion);

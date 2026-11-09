@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseWorkspaceId } from "draft-core/agent-run";
 import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
 import { launchFlySandboxRun, type SandboxDeploymentConfig } from "../sandbox";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
@@ -36,7 +37,7 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceI
   const documents = context.ok ? context.snapshot.documents : {};
 
   const run = {
-    bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, documents }),
+    bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, audience: { type: "system", workspaceId: parseWorkspaceId(workspaceId) }, documents }),
     prompt: renderRoutinePrompt(routine.prompt, {
       title: routine.title,
       schedule: schedule.description,

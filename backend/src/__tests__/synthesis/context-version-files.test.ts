@@ -1,3 +1,4 @@
+import { parseWorkspaceId } from "draft-core/agent-run";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "bun:test";
 import {
@@ -36,6 +37,7 @@ function version(documents: ContextDocuments): WorkspaceContextVersionRow {
     creation_reason: "seed",
     synthesis_run_id: null,
     restored_from_version_id: null,
+    agent_run_id: null,
     summary: "test",
     created_at: "2026-08-03T00:00:00.000Z",
   };
@@ -44,6 +46,7 @@ function version(documents: ContextDocuments): WorkspaceContextVersionRow {
 function input(): BuildRunBundleInput {
   const sourceContent = "# Meeting\nDecision made.\n";
   return {
+    audience: { type: "system", workspaceId: parseWorkspaceId(ids.workspace) },
     identity: {
       organizationId: ids.organization,
       teamId: ids.team,

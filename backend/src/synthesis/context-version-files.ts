@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { visibleContext, type ContextAudience } from "../agent-runs/visible-context";
 import { computeBundleHash } from "../sandbox/bundle-hash";
 import type {
   SourceItemRow,
@@ -67,6 +68,8 @@ export interface ValidatedRunBundle {
 
 export interface BuildRunBundleInput {
   identity: RunBundleIdentity;
+  /** Who the bundle is for. It decides which context documents become files. */
+  audience: ContextAudience;
   run: Pick<
     SynthesisRunRow,
     "id" | "workspace_id" | "base_context_version_id" | "prompt_version"
@@ -176,6 +179,7 @@ function addFile(
 }
 
 function runMetadataBytes(input: BuildRunBundleInput, sources: RunBundleSource[]): string {
+  const visibleDocuments = visibleContext(input.audience, input.baseVersion.documents_json);
   const metadata = {
     schema_version: 1,
     organization_id: input.identity.organizationId,
@@ -186,12 +190,12 @@ function runMetadataBytes(input: BuildRunBundleInput, sources: RunBundleSource[]
     base_context_version_number: input.baseVersion.version_number,
     base_context_content_hash: input.baseVersion.content_hash,
     prompt_version: input.run.prompt_version,
-    context_documents: Object.keys(input.baseVersion.documents_json)
+    context_documents: Object.keys(visibleDocuments)
       .sort()
       .map((path) => ({
         logical_path: path,
         read_path: `input/context/${path}`,
-        sha256: input.baseVersion.documents_json[path].sha256,
+        sha256: visibleDocuments[path].sha256,
       })),
     sources: sources.map(({ item, membership }) => ({
       source_item_id: item.id,
@@ -239,9 +243,10 @@ export function buildValidatedRunBundle(
   }
 
   const files: Array<[string, RunBundleFile]> = [];
-  for (const path of Object.keys(documents)) {
+  const visibleDocuments = visibleContext(input.audience, documents);
+  for (const path of Object.keys(visibleDocuments)) {
     assertSafeDocumentPath(path);
-    const document = documents[path];
+    const document = visibleDocuments[path];
     const bytes = utf8Bytes(document.content, path);
     if (sha256(bytes) !== document.sha256) {
       throw new Error(`document sha256 does not match content: ${path}`);

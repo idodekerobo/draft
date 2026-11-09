@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FlySandboxRunReceipt } from "../sandbox";
-import { canonicalDocumentsHash } from "./context-version-files";
+import { commitContextVersion, loadCurrentContext } from "../agent-runs/context-store";
 import { computeMemoryAdditions, ensureMemoryProvisioned } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";
@@ -75,26 +75,21 @@ export async function prepareRun(
     // straight into the seed insert rather than seeding {} and then
     // immediately provisioning a second version on top of it.
     const seedDocuments = computeMemoryAdditions({}, workspace.timezone, options.now);
-    const { data: seededVersion, error: seedError } = await client
-      .from("workspace_context_versions")
-      .insert({
-        workspace_id: options.workspaceId,
-        version_number: 1,
-        documents_json: seedDocuments,
-        content_hash: canonicalDocumentsHash(seedDocuments),
-        creation_reason: "seed",
-        summary: "Empty workspace — no context yet",
-      })
-      .select("id")
-      .single();
-    if (seedError) throw seedError;
-    baseContextVersionId = (seededVersion as { id: string }).id;
-
-    const { error: pointerError } = await client
-      .from("workspaces")
-      .update({ current_context_version_id: baseContextVersionId })
-      .eq("id", options.workspaceId);
-    if (pointerError) throw pointerError;
+    const seeded = await commitContextVersion(client, {
+      workspaceId: options.workspaceId,
+      expectedVersionId: null,
+      documents: seedDocuments,
+      reason: "seed",
+      summary: "Empty workspace — no context yet",
+    });
+    if (seeded.status === "committed") {
+      baseContextVersionId = seeded.versionId;
+    } else {
+      // Another writer created the first version between our read and the seed.
+      const current = await loadCurrentContext(client, options.workspaceId);
+      if (!current.versionId) throw new Error("Workspace has no context version after seeding");
+      baseContextVersionId = current.versionId;
+    }
   } else {
     const { data: versionData, error: versionError } = await client
       .from("workspace_context_versions")
@@ -117,7 +112,6 @@ export async function prepareRun(
         workspaceId: options.workspaceId,
         baseVersionId: baseContextVersionId,
         documents: version.documents_json,
-        versionNumber: version.version_number,
         timezone: workspace.timezone,
         now: options.now,
       });

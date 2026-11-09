@@ -80,7 +80,8 @@ export type ContextVersionCreationReason =
   | "synthesis"
   | "manual_edit"
   | "restore"
-  | "memory_provision";
+  | "memory_provision"
+  | "agent_write";
 
 export type ScheduledTaskType =
   | "ingest_source"
