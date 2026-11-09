@@ -18,10 +18,46 @@ describe("writeContext", () => {
   it("writes a changed document and keeps the others", async () => {
     const { db, write } = setup({ "a.md": "A", "b.md": "B" });
     const result = await write([{ path: "a.md", content: "A2" }]);
-    expect(result).toMatchObject({ status: "committed", changedPaths: ["a.md"] });
+    expect(result).toMatchObject({ status: "committed", written: ["a.md"], conflicts: [] });
     expect(db.current()["a.md"].content).toBe("A2");
     expect(db.current()["b.md"].content).toBe("B");
     expect(db.rpcCalls[0]).toMatchObject({ p_creation_reason: "agent_write", p_agent_run_id: RUN });
+  });
+
+  it("writes the documents that do not conflict and returns the ones that do, in one version", async () => {
+    const { db, write } = setup({ "a.md": "A", "b.md": "B", "c.md": "C" });
+    db.writeBehindTheScenes({ "b.md": "B by someone else" });
+    const versionsBefore = db.versionCount();
+    const result = await write([
+      { path: "a.md", content: "A2" },
+      { path: "b.md", content: "B2" },
+      { path: "new.md", content: "new", baseSha: null },
+    ]);
+    if (result.status !== "committed") throw new Error("expected committed");
+    expect(result.written).toEqual(["a.md", "new.md"]);
+    expect(result.conflicts.map((conflict) => conflict.path)).toEqual(["b.md"]);
+    expect(result.conflicts[0]!.currentContent).toBe("B by someone else");
+    expect(db.versionCount()).toBe(versionsBefore + 1);
+    expect(db.current()["a.md"].content).toBe("A2");
+    expect(db.current()["new.md"].content).toBe("new");
+    expect(db.current()["b.md"].content).toBe("B by someone else");
+  });
+
+  it("takes any number of documents, within the size caps", async () => {
+    const { db, write } = setup({ "a.md": "A" });
+    const changes = Array.from({ length: 60 }, (_, i) => ({ path: `many/${i}.md`, content: `doc ${i}`, baseSha: null }));
+    const result = await write(changes);
+    expect(result).toMatchObject({ status: "committed" });
+    expect(Object.keys(db.current())).toHaveLength(61);
+    const big = "x".repeat(199_000);
+    await expect(write(Array.from({ length: 21 }, (_, i) => ({ path: `big/${i}.md`, content: big, baseSha: null })))).rejects.toThrow("at most");
+    await expect(write([{ path: "huge.md", content: "x".repeat(200_001), baseSha: null }])).rejects.toThrow("too large");
+  });
+
+  it("uses the reason it is given for the version", async () => {
+    const { db } = setup({ "a.md": "A" });
+    await writeContext(db.client, { workspaceId: WS, agentRunId: RUN, baseVersionId: db.pointer()!, changes: [{ path: "a.md", content: "A2" }], summary: "s", reason: "synthesis" });
+    expect(db.rpcCalls.at(-1)).toMatchObject({ p_creation_reason: "synthesis" });
   });
 
   it("defaults each change's base sha to the sha in the run's base version", async () => {
@@ -100,12 +136,13 @@ describe("writeContext", () => {
     expect(db.versionCount()).toBe(1);
   });
 
-  it("is all or nothing across the documents of one write", async () => {
+  it("conflicts, and writes nothing, when every document conflicts", async () => {
     const { db, write } = setup({ "a.md": "A", "b.md": "B" });
-    db.writeBehindTheScenes({ "b.md": "B changed" });
+    db.writeBehindTheScenes({ "a.md": "A changed", "b.md": "B changed" });
+    const versionsBefore = db.versionCount();
     const result = await write([{ path: "a.md", content: "A2" }, { path: "b.md", content: "B2" }]);
     expect(result.status).toBe("conflict");
-    expect(db.current()["a.md"].content).toBe("A");
+    expect(db.versionCount()).toBe(versionsBefore);
   });
 
   it("rejects unsafe paths, duplicate paths and oversized documents", async () => {

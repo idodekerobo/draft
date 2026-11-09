@@ -6,7 +6,7 @@ import { defineTool } from "../tool-registry";
 import { canSeeContextPath } from "../visible-context";
 
 /** After this many conflicted writes in one run, the gateway stops taking more and tells the agent to report instead. */
-export const MAX_CONFLICTED_WRITES = 3;
+export const MAX_CONFLICTED_WRITES = 5;
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -20,7 +20,7 @@ export function createContextTools(client: SupabaseClient) {
     name: "context.write",
     description:
       "Write Markdown documents to the company's shared context. Each change is checked against that document only. " +
-      "If it changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, or drop it.",
+      "Changes that do not conflict are written. For each one that changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, or drop it.",
     input: z.object({
       summary: z.string().min(1).max(500),
       changes: z
@@ -67,28 +67,26 @@ export function createContextTools(client: SupabaseClient) {
         baseVersionId: run.inputs.contextVersionId,
         changes: input.changes,
         summary: input.summary,
+        reason: run.kind === "synthesis" ? "synthesis" : "agent_write",
       });
 
-      if (result.status === "committed") {
-        return {
-          status: "ok",
-          output: { versionId: result.versionId, versionNumber: result.versionNumber, changedPaths: result.changedPaths },
-          summary: `wrote ${result.changedPaths.join(", ")}`,
-        };
-      }
       if (result.status === "unchanged") return { status: "ok", output: { unchanged: true }, summary: "no change" };
 
       const conflicts = result.conflicts.map((conflict: ContextConflict) =>
         canSeeContextPath(caller, conflict.path) ? conflict : { ...conflict, currentContent: null },
       );
+      const written = result.status === "committed" ? result.written : [];
+      const conflictSummary = `conflict on ${conflicts.map((conflict) => conflict.path).join(", ")}`;
+      const output = {
+        ...(result.status === "committed" ? { versionId: result.versionId, versionNumber: result.versionNumber } : {}),
+        written,
+        ...(conflicts.length > 0 ? { conflicts, retryable: true, retriesLeft: MAX_CONFLICTED_WRITES - (count ?? 0) - 1 } : {}),
+      };
+      if (conflicts.length === 0) return { status: "ok", output, summary: `wrote ${written.join(", ")}` };
       return {
         status: "conflict",
-        output: {
-          retryable: true,
-          retriesLeft: MAX_CONFLICTED_WRITES - (count ?? 0) - 1,
-          conflicts,
-        },
-        summary: `conflict on ${conflicts.map((conflict) => conflict.path).join(", ")}`,
+        output,
+        summary: written.length > 0 ? `wrote ${written.join(", ")}; ${conflictSummary}` : conflictSummary,
       };
     },
   });

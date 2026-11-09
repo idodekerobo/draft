@@ -100,7 +100,7 @@ describe("context.write", () => {
   it("writes through the gateway and audits the paths, not the content", async () => {
     const { call, db, audits } = setup({ "a.md": "A" }, [{ tool: "context.write" }]);
     const result = await call("context.write", { summary: "update a", changes: [{ path: "a.md", content: "A2 body" }] });
-    expect(result).toMatchObject({ status: "ok", output: { changedPaths: ["a.md"] } });
+    expect(result).toMatchObject({ status: "ok", output: { written: ["a.md"] } });
     expect(db.current()["a.md"].content).toBe("A2 body");
     expect(JSON.stringify(audits[0].arguments)).not.toContain("A2 body");
     expect(audits[0].arguments).toMatchObject({ summary: "update a", changes: [{ path: "a.md", bytes: 7 }] });
@@ -114,6 +114,17 @@ describe("context.write", () => {
       status: "conflict",
       output: { retryable: true, retriesLeft: MAX_CONFLICTED_WRITES - 1, conflicts: [{ path: "a.md", currentContent: "theirs", currentSha: sha256("theirs") }] },
     });
+  });
+
+  it("reports what landed and what conflicted from one call", async () => {
+    const { call, db } = setup({ "a.md": "A", "b.md": "B" }, [{ tool: "context.write" }]);
+    db.writeBehindTheScenes({ "b.md": "theirs" });
+    const result = await call("context.write", { summary: "s", changes: [{ path: "a.md", content: "A2" }, { path: "b.md", content: "B2" }] });
+    expect(result).toMatchObject({
+      status: "conflict",
+      output: { written: ["a.md"], retryable: true, conflicts: [{ path: "b.md", currentContent: "theirs" }] },
+    });
+    expect(db.current()["a.md"].content).toBe("A2");
   });
 
   it("stops taking writes after the conflict cap and tells the agent to report", async () => {

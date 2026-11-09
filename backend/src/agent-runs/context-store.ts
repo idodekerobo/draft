@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertSafeDocumentPath, canonicalDocumentsHash, sha256, type ContextDocuments } from "../synthesis/context-version-files";
 import type { WorkspaceContextVersionRow } from "../types/tables";
 
-export type ContextCreationReason = "seed" | "memory_provision" | "agent_write";
+export type ContextCreationReason = "seed" | "memory_provision" | "agent_write" | "synthesis";
 
 export interface CommitContextVersionInput {
   workspaceId: string;
@@ -65,8 +65,8 @@ export async function loadCurrentContext(client: SupabaseClient, workspaceId: st
   return { versionId, versionNumber: Number(row.version_number), documents: row.documents_json };
 }
 
-export const MAX_WRITE_DOCUMENTS = 20;
 export const MAX_WRITE_DOCUMENT_BYTES = 200_000;
+export const MAX_WRITE_TOTAL_BYTES = 4_000_000;
 const MAX_STALE_RETRIES = 5;
 
 export interface ContextChange {
@@ -88,7 +88,8 @@ export interface ContextConflict {
 }
 
 export type WriteContextResult =
-  | { status: "committed"; versionId: string; versionNumber: number; changedPaths: string[] }
+  /** Some or all changes landed in one version. `conflicts` holds the ones that did not. */
+  | { status: "committed"; versionId: string; versionNumber: number; written: string[]; conflicts: ContextConflict[] }
   | { status: "unchanged" }
   | { status: "conflict"; currentVersionId: string | null; conflicts: ContextConflict[] };
 
@@ -99,22 +100,27 @@ export interface WriteContextInput {
   baseVersionId: string;
   changes: ReadonlyArray<ContextChange>;
   summary: string;
+  reason?: ContextCreationReason;
 }
 
 /**
  * Checks each changed document against what is current now, not the whole version.
- * A write to one document never fails because another document changed.
+ * A write to one document never fails because another document changed. Changes that do not
+ * conflict land together in one version; the ones that conflict come back with the current content.
  */
 export async function writeContext(client: SupabaseClient, input: WriteContextInput): Promise<WriteContextResult> {
   if (input.changes.length === 0) throw new Error("writeContext: no changes");
-  if (input.changes.length > MAX_WRITE_DOCUMENTS) throw new Error(`writeContext: at most ${MAX_WRITE_DOCUMENTS} documents per write`);
   const paths = new Set<string>();
+  let totalBytes = 0;
   for (const change of input.changes) {
     assertSafeDocumentPath(change.path);
     if (paths.has(change.path)) throw new Error(`writeContext: duplicate path ${change.path}`);
     paths.add(change.path);
-    if (Buffer.byteLength(change.content) > MAX_WRITE_DOCUMENT_BYTES) throw new Error(`writeContext: ${change.path} is too large`);
+    const bytes = Buffer.byteLength(change.content);
+    if (bytes > MAX_WRITE_DOCUMENT_BYTES) throw new Error(`writeContext: ${change.path} is too large`);
+    totalBytes += bytes;
   }
+  if (totalBytes > MAX_WRITE_TOTAL_BYTES) throw new Error(`writeContext: a write may hold at most ${MAX_WRITE_TOTAL_BYTES} bytes in all`);
 
   const baseDocuments = await loadVersionDocuments(client, input.baseVersionId);
 
@@ -122,18 +128,22 @@ export async function writeContext(client: SupabaseClient, input: WriteContextIn
     const current = await loadCurrentContext(client, input.workspaceId);
 
     const conflicts: ContextConflict[] = [];
+    const clean: ContextChange[] = [];
     for (const change of input.changes) {
       const yourBaseSha = change.baseSha !== undefined ? change.baseSha : (baseDocuments[change.path]?.sha256 ?? null);
       const currentDocument = current.documents[change.path];
       const currentSha = currentDocument?.sha256 ?? null;
       if (yourBaseSha !== currentSha) {
         conflicts.push({ path: change.path, currentSha, currentContent: currentDocument?.content ?? null, yourBaseSha });
+      } else {
+        clean.push(change);
       }
     }
-    if (conflicts.length > 0) return { status: "conflict", currentVersionId: current.versionId, conflicts };
 
-    const changed = input.changes.filter((change) => current.documents[change.path]?.content !== change.content);
-    if (changed.length === 0) return { status: "unchanged" };
+    const changed = clean.filter((change) => current.documents[change.path]?.content !== change.content);
+    if (changed.length === 0) {
+      return conflicts.length > 0 ? { status: "conflict", currentVersionId: current.versionId, conflicts } : { status: "unchanged" };
+    }
 
     const documents: ContextDocuments = { ...current.documents };
     for (const change of changed) documents[change.path] = { content: change.content, sha256: sha256(change.content) };
@@ -142,12 +152,12 @@ export async function writeContext(client: SupabaseClient, input: WriteContextIn
       workspaceId: input.workspaceId,
       expectedVersionId: current.versionId,
       documents,
-      reason: "agent_write",
+      reason: input.reason ?? "agent_write",
       summary: input.summary,
       agentRunId: input.agentRunId,
     });
     if (result.status === "committed") {
-      return { status: "committed", versionId: result.versionId, versionNumber: result.versionNumber, changedPaths: changed.map((change) => change.path) };
+      return { status: "committed", versionId: result.versionId, versionNumber: result.versionNumber, written: changed.map((change) => change.path), conflicts };
     }
   }
   throw new Error("writeContext: the workspace context kept changing; try again");
