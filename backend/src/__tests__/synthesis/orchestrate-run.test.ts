@@ -15,8 +15,9 @@ const claims = { runId, bundleHash, expiresAt: Date.now() + 60_000, nonce: "nonc
 interface FakeClientOptions {
   transcriptUpdateResult?: { error: Error | null };
   transcriptUpdateThrows?: boolean;
-  rpcResult?: { status: "committed" | "stale"; new_version_id: string | null };
   rpcThrows?: boolean;
+  /** Versions this run wrote through context.write, newest first. */
+  landedVersions?: Array<{ content_hash: string; version_number: number }>;
 }
 
 /**
@@ -24,7 +25,7 @@ interface FakeClientOptions {
  * completeSynthesisRunCallback's path exercises: the header-based workspace
  * lookup (kept empty so recordError takes its no-DB fallback branch and this
  * fake doesn't need an "errors" table), the new transcript_json update, and
- * the real validateSynthesisResult/commitSynthesisResult reads/RPC.
+ * the real finalizeSynthesisResult read of the versions the run wrote and its RPC.
  */
 function createFakeClient(options: FakeClientOptions = {}) {
   const calls: {
@@ -35,7 +36,6 @@ function createFakeClient(options: FakeClientOptions = {}) {
   } = { transcriptUpdates: [], rpcCalls: [], failedUpdates: [], errorInserts: [] };
 
   const runRow = { id: runId, workspace_id: workspaceId, base_context_version_id: baseVersionId };
-  const baseDocuments = { "company/index.md": { content: "base content", sha256: "b".repeat(64) } };
 
   function from(table: string) {
     if (table === "synthesis_runs") {
@@ -88,7 +88,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
       return {
         select: () => ({
           eq: () => ({
-            single: async () => ({ data: { documents_json: baseDocuments }, error: null }),
+            order: async () => ({ data: options.landedVersions ?? [], error: null }),
           }),
         }),
       };
@@ -99,7 +99,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
   async function rpc(fn: string, args: Record<string, unknown>) {
     calls.rpcCalls.push({ fn, args });
     if (options.rpcThrows) throw new Error("commit exploded");
-    return { data: options.rpcResult ?? { status: "committed", new_version_id: "66666666-6666-4666-8666-666666666666" }, error: null };
+    return { data: { status: "succeeded" }, error: null };
   }
 
   const client = { from, rpc } as unknown as SupabaseClient;
@@ -140,6 +140,7 @@ describe("completeSynthesisRunCallback transcript persistence", () => {
     expect(response.status).toBe(204);
     expect(calls.transcriptUpdates).toEqual([{ payload: { transcript_json: transcript }, id: runId }]);
     expect(calls.rpcCalls).toHaveLength(1);
+    expect(calls.rpcCalls[0]).toMatchObject({ fn: "finalize_synthesis_run" });
   });
 
   it("writes transcript_json even when the runner reports a failure (claude_error)", async () => {
@@ -218,6 +219,33 @@ describe("completeSynthesisRunCallback transcript persistence", () => {
   });
 });
 
+describe("completeSynthesisRunCallback finishes from what the run wrote", () => {
+  const post = (client: SupabaseClient, result: unknown) =>
+    completeSynthesisRunCallback(callbackRequest({ run_id: runId, bundle_hash: bundleHash, result }), secret, client);
+
+  it("records changed, with the hash of the newest version the run wrote", async () => {
+    const { client, calls } = createFakeClient({
+      landedVersions: [{ content_hash: "h2", version_number: 5 }, { content_hash: "h1", version_number: 4 }],
+    });
+    await post(client, { outcome: "changed", summary: "updated product", needs_input: [] });
+    expect(calls.rpcCalls).toEqual([
+      { fn: "finalize_synthesis_run", args: { p_run_id: runId, p_outcome: "changed", p_summary: "updated product", p_result_hash: "h2", p_needs_input_json: [] } },
+    ]);
+  });
+
+  it("counts a run that wrote documents as changed even when the agent said no_change", async () => {
+    const { client, calls } = createFakeClient({ landedVersions: [{ content_hash: "h1", version_number: 4 }] });
+    await post(client, { outcome: "no_change", summary: "nothing" });
+    expect(calls.rpcCalls[0]!.args).toMatchObject({ p_outcome: "changed", p_result_hash: "h1" });
+  });
+
+  it("records no_change with no hash when nothing was written", async () => {
+    const { client, calls } = createFakeClient({ landedVersions: [] });
+    await post(client, { outcome: "no_change", summary: "nothing new" });
+    expect(calls.rpcCalls[0]!.args).toMatchObject({ p_outcome: "no_change", p_result_hash: null, p_needs_input_json: null });
+  });
+});
+
 describe("completeSynthesisRunCallback failure handling", () => {
   it("fails the run once and answers 204 for a runner-reported failure", async () => {
     const { client, calls } = createFakeClient();
@@ -247,15 +275,11 @@ describe("completeSynthesisRunCallback failure handling", () => {
     expect(calls.rpcCalls).toHaveLength(0);
   });
 
-  it("fails the run and answers 204 when the result fails validation", async () => {
-    const { client, calls } = createFakeClient();
+  it("fails the run and answers 204 when the agent says changed but wrote nothing", async () => {
+    const { client, calls } = createFakeClient({ landedVersions: [] });
 
     const response = await completeSynthesisRunCallback(
-      callbackRequest({
-        run_id: runId,
-        bundle_hash: bundleHash,
-        result: { outcome: "changed", summary: "x", documents: { "not-in-allowlist.md": "y" } },
-      }),
+      callbackRequest({ run_id: runId, bundle_hash: bundleHash, result: { outcome: "changed", summary: "x" } }),
       secret,
       client,
     );
@@ -265,6 +289,19 @@ describe("completeSynthesisRunCallback failure handling", () => {
     expect(calls.errorInserts).toHaveLength(1);
     expect(calls.errorInserts[0]).toMatchObject({ operation: "validation" });
     expect(calls.errorInserts[0].detail_json).toMatchObject({ code: "synthesis_result_invalid" });
+    expect(calls.rpcCalls).toHaveLength(0);
+  });
+
+  it("fails the run and answers 204 when the result is not the expected shape", async () => {
+    const { client, calls } = createFakeClient();
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({ run_id: runId, bundle_hash: bundleHash, result: { outcome: "maybe", summary: "x" } }),
+      secret,
+      client,
+    );
+    expect(response.status).toBe(204);
+    expect(calls.failedUpdates).toHaveLength(1);
+    expect(calls.rpcCalls).toHaveLength(0);
   });
 
   it("still throws on a commit failure so the runner retries the callback", async () => {

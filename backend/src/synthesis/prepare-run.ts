@@ -14,7 +14,7 @@ import type {
 
 // Bumped whenever the rendered prompt/schema contract (task #4) changes in a
 // way that should be distinguishable in synthesis_runs.prompt_version history.
-const PROMPT_VERSION = "synthesis-v1";
+const PROMPT_VERSION = "synthesis-v2";
 
 // Postgres unique_violation, raised here by synthesis_runs_one_active_writer
 // or synthesis_runs_workspace_id_idempotency_key_key.

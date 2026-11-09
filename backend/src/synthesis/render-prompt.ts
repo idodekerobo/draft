@@ -3,7 +3,6 @@ import type { DimensionHint } from "./types";
 
 const CONTEXT_PREFIX = "input/context/";
 const SOURCES_PREFIX = "input/sources/";
-const OUTPUT_PATH = "output/result.json";
 
 interface ContextFileEntry {
   logicalPath: string;
@@ -78,7 +77,7 @@ shipped the OAuth redirect fix"); do not split entries into separate files.
 
 The current day/week/month files are mutable, not frozen. When new evidence
 changes what happened today, and that also changes what's true of this week
-or this month, update all of the relevant period files in the same response
+or this month, update all of the relevant period files in the same context.write call
 -- there is no separate rollup pass. Each period file starts with a
 frontmatter block (period/start/end); preserve those fields exactly, never
 invent or shift the date range.
@@ -140,15 +139,21 @@ Read each source file, then read the existing context files above before decidin
 - Do not invent information not present in the source material.
 - Do not copy raw source text verbatim into context; write synthesized insights.
 
-## Output contract
-Write exactly one JSON document to ${OUTPUT_PATH}. No other output, no commentary.
+## Writing documents
+Write documents with the \`context.write\` tool of the "draft" tool server, not to disk. Do not modify the files under input/.
+- One call can write one document or many. You may call it more than once.
+- Send the COMPLETE new content of each file, never a diff. Send only files that changed.
+- You may create a new document at any path (a safe relative Markdown path such as "product/index.md") or rewrite an existing one.
+- For an existing file pass its sha256 from the list above as \`baseSha\`. For a new file pass \`baseSha: null\`.
+- The files that do not conflict are written. For each file that someone else changed since you read it, the reply holds \`currentContent\` and \`currentSha\`. Merge your change into \`currentContent\`, compare it with your own copy under input/context/, and write again with \`baseSha\` set to \`currentSha\`. Drop the change if it no longer applies.
+- When a reply says \`retryable\` is false, stop retrying. Report what you could not write in your summary.
+
+## Final answer
+When you are done writing, reply with this JSON and nothing else:
 
 {
   "outcome": "changed" | "no_change",
   "summary": "one-line description of what changed, or why nothing did",
-  "documents": {
-    "<path>": "<complete replacement Markdown content for that file>"
-  },
   "needs_input": [
     {
       "question": "...",
@@ -161,16 +166,12 @@ Write exactly one JSON document to ${OUTPUT_PATH}. No other output, no commentar
 }
 
 Rules:
-- "documents" is required when outcome is "changed", and must be omitted (or empty) when outcome is "no_change".
-- Each key in "documents" must be one of the bare paths listed under "Existing context" above (e.g. "product/index.md") -- exactly as written there, never the "read from" filesystem path, and never invented.
-- Each value is the COMPLETE replacement content for that file, not a diff or patch.
-- Only include a file in "documents" if it actually changed. Files you don't include are carried forward unchanged.
+- Use "changed" only if a \`context.write\` call succeeded. If you wrote nothing, use "no_change".
 - "needs_input" is optional and independent of "outcome" -- a run can be "changed" and still raise a question.
-- Write nothing else to disk. Do not modify the files under input/.
 `;
 }
 
-function buildJsonSchema(allowedDocumentPaths: string[]): Record<string, unknown> {
+function buildJsonSchema(): Record<string, unknown> {
   const needsInputItemSchema = {
     type: "object",
     additionalProperties: false,
@@ -195,20 +196,6 @@ function buildJsonSchema(allowedDocumentPaths: string[]): Record<string, unknown
     },
   };
 
-  // Constrain "documents" keys to the bundle's known logical paths, mirroring
-  // the prompt's own rule mechanically.
-  const documentsSchema =
-    allowedDocumentPaths.length > 0
-      ? {
-          type: "object",
-          propertyNames: { enum: allowedDocumentPaths },
-          additionalProperties: { type: "string" },
-        }
-      : {
-          type: "object",
-          additionalProperties: { type: "string" },
-        };
-
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
@@ -217,7 +204,6 @@ function buildJsonSchema(allowedDocumentPaths: string[]): Record<string, unknown
     properties: {
       outcome: { type: "string", enum: ["changed", "no_change"] },
       summary: { type: "string", minLength: 1 },
-      documents: documentsSchema,
       needs_input: {
         type: "array",
         items: needsInputItemSchema,
@@ -233,6 +219,6 @@ export async function renderSynthesisPrompt(
   const contextFiles = collectContextFiles(bundle);
   const sourceFiles = collectSourceFiles(bundle);
   const prompt = buildPrompt(contextFiles, sourceFiles, dimensions);
-  const jsonSchema = buildJsonSchema(contextFiles.map((f) => f.logicalPath));
+  const jsonSchema = buildJsonSchema();
   return { prompt, jsonSchema };
 }

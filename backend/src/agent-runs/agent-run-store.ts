@@ -104,6 +104,25 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
   if (error) throw error;
 }
 
+/**
+ * Saves the parts of a spec a run's creator did not know yet. A synthesis run's row is made by a trigger
+ * when the run is prepared; the launcher then says what the run may use and what it must return.
+ */
+export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpec): Promise<void> {
+  const { error } = await client
+    .from("agent_runs")
+    .update({
+      runtime: spec.runtime,
+      harness: spec.harness,
+      model: spec.model,
+      instructions: spec.instructions,
+      permissions: spec.permissions,
+      output: spec.output,
+    })
+    .eq("id", spec.id);
+  if (error) throw error;
+}
+
 /** Turns a saved row back into the spec. Throws if the row holds something the spec does not allow. */
 export function specFromRow(row: AgentRunRow): AgentRunSpec {
   if (!(AGENT_RUN_KINDS as ReadonlyArray<string>).includes(row.kind)) throw new Error(`Unknown run kind: ${row.kind}`);

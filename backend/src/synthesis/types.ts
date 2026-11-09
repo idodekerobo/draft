@@ -10,17 +10,11 @@ export interface SynthesisResultNeedsInputItem {
   evidence: Array<{ source_item_id: string; excerpt: string }>;
 }
 
-export interface SynthesisResultPayload {
+/** What the agent reports when it is done. The documents themselves were written with context.write. */
+export interface SynthesisFinalResult {
   outcome: "changed" | "no_change";
   summary: string;
-  documents: Record<string, string>;
   needs_input?: SynthesisResultNeedsInputItem[];
-}
-
-export interface ValidatedSynthesisResult {
-  runId: string;
-  bundleHash: string;
-  payload: SynthesisResultPayload;
 }
 
 export interface DimensionHint {

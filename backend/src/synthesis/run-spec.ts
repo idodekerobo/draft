@@ -13,6 +13,9 @@ import {
 } from "draft-core/agent-run";
 import type { SynthesisRunTriggerType } from "../types/enums";
 
+/** What a synthesis run may do with Draft's tools: read any context and write any document. */
+export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
+
 export interface SynthesisRunSpecInput {
   runId: string;
   workspaceId: string;

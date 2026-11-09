@@ -5,7 +5,7 @@ import {
   launchFlySandboxRun,
 } from "../sandbox";
 import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
-import { commitSynthesisResult } from "./commit-result";
+import { finalizeSynthesisResult, InvalidSynthesisResultError } from "./finalize-result";
 import { failSynthesisRun } from "./handle-run-failure";
 import {
   markRunLaunched,
@@ -13,14 +13,10 @@ import {
   prepareRun,
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
-import { buildSynthesisRunSpec } from "./run-spec";
+import { buildSynthesisRunSpec, SYNTHESIS_PERMISSIONS } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
-import type {
-  LaunchSynthesisRunOptions,
-  LaunchSynthesisRunResult,
-  ValidatedSynthesisResult,
-} from "./types";
-import { validateSynthesisResult } from "./validate-result";
+import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
+import { saveAgentRunSpec } from "../agent-runs/agent-run-store";
 import { recordError } from "../errors/record-error";
 
 /**
@@ -78,7 +74,9 @@ export async function launchSynthesisRun(
       retryOfRunId: options.retryOfRunId,
       contextVersionId: bundle.baseContextVersionId,
       resultSchema: jsonSchema,
+      permissions: SYNTHESIS_PERMISSIONS,
     });
+    await saveAgentRunSpec(client, spec);
     const receipt = await launchFlySandboxRun({
       spec,
       bundle,
@@ -126,8 +124,8 @@ export async function launchSynthesisRun(
 }
 
 /**
- * Callback half of the loop: authenticate the sandbox's HTTP callback, validate
- * its result, and commit it. Intended to be called directly from the Bun route
+ * Callback half of the loop: authenticate the sandbox's HTTP callback and finish the run
+ * from its final result and what it wrote. Intended to be called directly from the Bun route
  * handler that owns the /sandbox/callback route.
  */
 export async function completeSynthesisRunCallback(
@@ -191,10 +189,10 @@ export async function completeSynthesisRunCallback(
     }
 
     stage = "validation";
-    let validated: ValidatedSynthesisResult;
     try {
-      validated = await validateSynthesisResult(runId, authenticated.result, client);
+      await finalizeSynthesisResult(runId, authenticated.result, resolvedClient);
     } catch (validationError) {
+      if (!(validationError instanceof InvalidSynthesisResultError)) throw validationError;
       await failSynthesisRun({
         client: resolvedClient,
         runId,
@@ -205,14 +203,6 @@ export async function completeSynthesisRunCallback(
       });
       return new Response(null, { status: 204 });
     }
-    // validateSynthesisResult's frozen signature (runId, rawResult, client?) has
-    // no way to receive the bundle hash, so it returns a placeholder. The real
-    // value is only available here, from the authenticated callback request —
-    // fill it in before commit-result.ts (or anything else) relies on it.
-    validated.bundleHash = authenticated.bundleHash;
-
-    stage = "commit";
-    await commitSynthesisResult(validated, client);
 
     return new Response(null, { status: 204 });
   } catch (error) {
@@ -220,7 +210,7 @@ export async function completeSynthesisRunCallback(
       client: resolvedClient,
       workspaceId,
       synthesisRunId: runId,
-      operation: stage === "validation" ? "validation" : stage === "commit" ? "commit" : "auth",
+      operation: stage === "validation" ? "validation" : "auth",
       message: `Synthesis callback failed during ${stage}`,
       code: `synthesis_${stage}_failed`,
       detail: { stage },
