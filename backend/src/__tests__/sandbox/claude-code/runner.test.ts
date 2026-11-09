@@ -13,9 +13,9 @@ import {
   claudeMcpConfigJson,
   codexConfigToml,
   codexMcpConfigToml,
-  codexRoutineArgs,
+  codexArgs,
   extractStructuredOutput,
-  claudeCommandArgs,
+  claudeArgs,
   fetchAndWriteBundle,
   parseBatchManifest,
   parseAgentIds,
@@ -27,9 +27,13 @@ import {
   parseTimeoutSeconds,
   recomputeBundleHash,
   reportRunnerFailure,
-  routineCommandArgs,
+  harnessCommand,
+  loadRunnerManifest,
+  manifestFromLegacyEnv,
+  parseRunnerManifest,
+  validateRunnerManifest,
+  type RunnerManifest,
   routineMcpUrl,
-  routineNativeTools,
   RUNNER_NATIVE_TOOLS,
   routineFailureCode,
   runBatch,
@@ -40,9 +44,27 @@ import {
   StreamLineReader,
 } from "../../../sandbox/claude-code/runner";
 
+const CALLBACK = "https://api.example.com/sandbox/callback";
+const MCP_URL = "https://api.example.com/runs/11111111-1111-4111-8111-111111111111/mcp";
+
+function manifestOf(overrides: Partial<RunnerManifest> = {}): RunnerManifest {
+  return {
+    version: 1,
+    harness: "claude",
+    model: null,
+    prompt: { kind: "file", path: "/run/input/prompt.md" },
+    tools: { native: ["Read", "Glob"], draftMcpUrl: null },
+    output: { kind: "stream" },
+    timeoutSeconds: 900,
+    ...overrides,
+  };
+}
+
+const structured: RunnerManifest["output"] = { kind: "structured", schemaPath: "/run/input/output-schema.json" };
+
 test("Claude command is read-only, noninteractive, ephemeral, streamed, and schema-constrained", () => {
   const schema = '{"type":"object","required":["outcome"]}';
-  expect(claudeCommandArgs("inspect the input", schema)).toEqual([
+  expect(claudeArgs(manifestOf({ output: structured }), "inspect the input", schema)).toEqual([
     "-p",
     "inspect the input",
     "--tools",
@@ -56,6 +78,10 @@ test("Claude command is read-only, noninteractive, ephemeral, streamed, and sche
     "--json-schema",
     schema,
   ]);
+});
+
+test("structured output cannot start without a schema", () => {
+  expect(() => claudeArgs(manifestOf({ output: structured }), "go", null)).toThrow("needs a schema");
 });
 
 describe("parseStreamJsonTranscript", () => {
@@ -504,6 +530,7 @@ describe("runBatch", () => {
     try {
       await runBatch(
         {
+          manifest: manifestOf({ output: structured, prompt: { kind: "items", manifestPath } }),
           runId: "run-1",
           bundleHash: "c".repeat(64),
           manifestPath,
@@ -515,7 +542,7 @@ describe("runBatch", () => {
           callbackToken: "tok",
         },
         {
-          runClaudeOnce: (async () => {
+          runStructured: (async () => {
             call += 1;
             if (call === 1) throw new Error("spawn gosu ENOENT");
             return { success: true, finalResult: { who: "ido" } };
@@ -543,23 +570,20 @@ describe("runBatch", () => {
 });
 
 test("routine command streams stream-json, stays read-only, and sets no JSON schema", () => {
-  const args = routineCommandArgs("Summarize", "haiku");
+  const args = claudeArgs(manifestOf({ model: "haiku" }), "Summarize", null);
   expect(args).toEqual([
     "-p", "Summarize", "--model", "haiku", "--tools", "Read,Glob", "--permission-mode", "dontAsk",
     "--no-session-persistence", "--output-format", "stream-json", "--verbose",
   ]);
   expect(args).not.toContain("--json-schema");
-  expect(routineCommandArgs("Summarize", null)).not.toContain("--model");
-  expect(() => routineCommandArgs("Summarize", "bad model; rm")).toThrow("DRAFT_ROUTINE_MODEL");
+  expect(claudeArgs(manifestOf(), "Summarize", null)).not.toContain("--model");
 });
 
-describe("Draft tools for a routine run", () => {
-  const mcpUrl = "https://api.example.com/runs/11111111-1111-4111-8111-111111111111/mcp";
-
+describe("Draft tools for a run", () => {
   test("Claude gets only Draft's server, allowed by server name, with the token read from the environment", () => {
-    const args = routineCommandArgs("Summarize", null, mcpUrl);
+    const args = claudeArgs(manifestOf({ tools: { native: ["Read", "Glob"], draftMcpUrl: MCP_URL } }), "Summarize", null);
     const config = JSON.parse(args[args.indexOf("--mcp-config") + 1]!);
-    expect(config).toEqual({ mcpServers: { draft: { type: "http", url: mcpUrl, headers: { Authorization: "Bearer ${DRAFT_RUN_TOKEN}" } } } });
+    expect(config).toEqual({ mcpServers: { draft: { type: "http", url: MCP_URL, headers: { Authorization: "Bearer ${DRAFT_RUN_TOKEN}" } } } });
     expect(args).toContain("--strict-mcp-config");
     expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "mcp__draft"]);
     expect(args.slice(0, 2)).toEqual(["-p", "Summarize"]);
@@ -567,16 +591,21 @@ describe("Draft tools for a routine run", () => {
     expect(JSON.stringify(args)).not.toMatch(/Bearer [A-Za-z0-9]/);
   });
 
-  test("without a tool server the Claude command is unchanged", () => {
-    expect(routineCommandArgs("Summarize", null)).toEqual(routineCommandArgs("Summarize", null, null));
-    expect(routineCommandArgs("Summarize", null)).not.toContain("--mcp-config");
-    expect(claudeMcpConfigJson(mcpUrl)).toContain("${DRAFT_RUN_TOKEN}");
+  test("without a tool server the Claude command has no tool-server flags", () => {
+    expect(claudeArgs(manifestOf(), "Summarize", null)).not.toContain("--mcp-config");
+    expect(claudeMcpConfigJson(MCP_URL)).toContain("${DRAFT_RUN_TOKEN}");
+  });
+
+  test("a structured run can use the tool server too", () => {
+    const args = claudeArgs(manifestOf({ output: structured, tools: { native: ["Read", "Glob"], draftMcpUrl: MCP_URL } }), "Go", '{"type":"object"}');
+    expect(args).toContain("--mcp-config");
+    expect(args.slice(-2)).toEqual(["--json-schema", '{"type":"object"}']);
   });
 
   test("Codex config names the server, takes the token from the environment and needs no approval", () => {
-    const toml = codexMcpConfigToml(mcpUrl);
+    const toml = codexMcpConfigToml(MCP_URL);
     expect(toml).toContain("[mcp_servers.draft]");
-    expect(toml).toContain(`url = "${mcpUrl}"`);
+    expect(toml).toContain(`url = "${MCP_URL}"`);
     expect(toml).toContain('bearer_token_env_var = "DRAFT_RUN_TOKEN"');
     expect(toml).toContain("required = true");
     expect(toml).toContain('default_tools_approval_mode = "approve"');
@@ -591,50 +620,147 @@ describe("Draft tools for a routine run", () => {
   });
 
   test("the tool server URL must be HTTPS on the callback host, and is optional", () => {
-    const callback = "https://api.example.com/sandbox/callback";
-    expect(routineMcpUrl(undefined, callback)).toBeNull();
-    expect(routineMcpUrl(mcpUrl, callback)).toBe(mcpUrl);
-    expect(() => routineMcpUrl("https://evil.example.net/runs/x/mcp", callback)).toThrow("callback host");
-    expect(() => routineMcpUrl("http://api.example.com/runs/x/mcp", callback)).toThrow("callback host");
-    expect(() => routineMcpUrl("https://user:pw@api.example.com/runs/x/mcp", callback)).toThrow("callback host");
+    expect(routineMcpUrl(undefined, CALLBACK)).toBeNull();
+    expect(routineMcpUrl(MCP_URL, CALLBACK)).toBe(MCP_URL);
+    expect(() => routineMcpUrl("https://evil.example.net/runs/x/mcp", CALLBACK)).toThrow("callback host");
+    expect(() => routineMcpUrl("http://api.example.com/runs/x/mcp", CALLBACK)).toThrow("callback host");
+    expect(() => routineMcpUrl("https://user:pw@api.example.com/runs/x/mcp", CALLBACK)).toThrow("callback host");
   });
 });
 
-describe("built-in tools of a routine run", () => {
+describe("built-in tools of a run", () => {
   test("the runner's allow-list is the one core publishes", () => {
     expect(RUNNER_NATIVE_TOOLS).toEqual(CLOUD_NATIVE_TOOLS);
   });
 
-  test("none named means the defaults, so a run from an older backend is unchanged", () => {
-    expect(routineNativeTools(undefined, "claude")).toBeNull();
-    expect(routineNativeTools("", "codex")).toBeNull();
-    expect(routineCommandArgs("Go", null, null, null)).toContain("Read,Glob");
-  });
-
   test("a tool outside the list for that harness is refused", () => {
-    expect(routineNativeTools("Read,Glob,WebSearch", "claude")).toEqual(["Read", "Glob", "WebSearch"]);
-    expect(() => routineNativeTools("Read,Bash", "claude")).toThrow("DRAFT_NATIVE_TOOLS");
-    expect(() => routineNativeTools("shell,WebSearch", "codex")).toThrow("DRAFT_NATIVE_TOOLS");
-    expect(routineNativeTools("Read,Read", "claude")).toEqual(["Read"]);
+    const withTools = (harness: "claude" | "codex", native: string[]) => validateRunnerManifest({ ...manifestOf({ harness }), tools: { native, draftMcpUrl: null } }, CALLBACK);
+    expect(withTools("claude", ["Read", "Glob", "WebSearch"]).tools.native).toEqual(["Read", "Glob", "WebSearch"]);
+    expect(() => withTools("claude", ["Read", "Bash"])).toThrow("may not use");
+    expect(() => withTools("codex", ["shell", "WebSearch"])).toThrow("may not use");
+    expect(withTools("claude", ["Read", "Read"]).tools.native).toEqual(["Read"]);
   });
 
   test("Claude names every tool that is not read-only in its allow rules, and keeps Draft's server", () => {
-    const args = routineCommandArgs("Go", null, "https://api.example.com/runs/x/mcp", ["Read", "Glob", "WebSearch"]);
+    const args = claudeArgs(manifestOf({ tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }), "Go", null);
     expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,WebSearch");
     const allowed = args.slice(args.indexOf("--allowedTools") + 1, args.indexOf("--no-session-persistence"));
     expect(allowed).toEqual(["mcp__draft", "WebSearch"]);
   });
 
   test("Claude with only read-only tools and no server has no allow rules at all", () => {
-    expect(routineCommandArgs("Go", null, null, ["Read", "Glob", "Grep"])).not.toContain("--allowedTools");
+    expect(claudeArgs(manifestOf({ tools: { native: ["Read", "Glob", "Grep"], draftMcpUrl: null } }), "Go", null)).not.toContain("--allowedTools");
   });
 
   test("Codex turns web search on in its config, ahead of the server table", () => {
-    const toml = codexConfigToml({ mcpUrl: "https://api.example.com/runs/x/mcp", webSearch: true });
+    const toml = codexConfigToml({ mcpUrl: MCP_URL, webSearch: true });
     expect(toml.indexOf('web_search = "live"')).toBeGreaterThanOrEqual(0);
     expect(toml.indexOf('web_search = "live"')).toBeLessThan(toml.indexOf("[mcp_servers.draft]"));
     expect(codexConfigToml({ mcpUrl: null, webSearch: true })).toBe('web_search = "live"');
     expect(codexConfigToml({ mcpUrl: null, webSearch: false })).toBe("");
+  });
+});
+
+describe("the run manifest", () => {
+  const good = manifestOf();
+  const parse = (value: unknown) => validateRunnerManifest(value, CALLBACK);
+
+  test("accepts a complete manifest, from JSON text too", () => {
+    expect(parse(good)).toEqual(good);
+    expect(parseRunnerManifest(JSON.stringify(good), CALLBACK)).toEqual(good);
+  });
+
+  test("refuses text that is not JSON", () => {
+    expect(() => parseRunnerManifest("{nope", CALLBACK)).toThrow("valid JSON");
+  });
+
+  test("refuses a key it does not know, at any level", () => {
+    expect(() => parse({ ...good, extra: 1 })).toThrow("unknown key in manifest: extra");
+    expect(() => parse({ ...good, tools: { ...good.tools, shell: true } })).toThrow("unknown key in tools");
+    expect(() => parse({ ...good, prompt: { kind: "file", path: "/run/input/prompt.md", more: 1 } })).toThrow("unknown key in prompt");
+    expect(() => parse({ ...good, output: { kind: "stream", flag: 1 } })).toThrow("unknown key in output");
+  });
+
+  test("refuses a bad version, harness, model and timeout", () => {
+    expect(() => parse({ ...good, version: 2 })).toThrow("version");
+    expect(() => parse({ ...good, harness: "gemini" })).toThrow("harness");
+    expect(() => parse({ ...good, model: "bad model; rm -rf" })).toThrow("model");
+    expect(() => parse({ ...good, timeoutSeconds: 0 })).toThrow("timeoutSeconds");
+    expect(() => parse({ ...good, timeoutSeconds: 4000 })).toThrow("timeoutSeconds");
+    expect(() => parse({ ...good, timeoutSeconds: 1.5 })).toThrow("timeoutSeconds");
+  });
+
+  test("refuses a file outside the input folder", () => {
+    expect(() => parse({ ...good, prompt: { kind: "file", path: "/etc/passwd" } })).toThrow("must be a file under");
+    expect(() => parse({ ...good, prompt: { kind: "file", path: "/run/input/../../etc/passwd" } })).toThrow("must be a file under");
+    expect(() => parse({ ...good, output: { kind: "structured", schemaPath: "/tmp/schema.json" } })).toThrow("must be a file under");
+  });
+
+  test("refuses a tool server that is not HTTPS on the callback host", () => {
+    expect(() => parse({ ...good, tools: { native: ["Read"], draftMcpUrl: "https://evil.example.net/mcp" } })).toThrow("callback host");
+    expect(parse({ ...good, tools: { native: ["Read"], draftMcpUrl: MCP_URL } }).tools.draftMcpUrl).toBe(MCP_URL);
+  });
+
+  test("keeps Codex to one streamed prompt", () => {
+    expect(() => parse({ ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, output: structured })).toThrow("codex runs stream");
+    expect(() => parse({ ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } })).toThrow("codex runs stream");
+  });
+});
+
+describe("a manifest from the older environment variables", () => {
+  const base = { DRAFT_TIMEOUT_SECONDS: "1200" };
+
+  test("synthesis: one prompt, a structured result, Read and Glob", () => {
+    expect(manifestFromLegacyEnv(base, CALLBACK)).toEqual(
+      manifestOf({ timeoutSeconds: 1200, output: structured }),
+    );
+  });
+
+  test("summarization: a file of items, a structured result", () => {
+    expect(manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json" }, CALLBACK)).toEqual(
+      manifestOf({ timeoutSeconds: 1200, output: structured, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } }),
+    );
+    expect(() => manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "batch" }, CALLBACK)).toThrow("DRAFT_MANIFEST_PATH is required");
+  });
+
+  test("a Claude routine with a model, web search and Draft's tools", () => {
+    expect(
+      manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku", DRAFT_NATIVE_TOOLS: "Read,Glob,WebSearch", DRAFT_MCP_URL: MCP_URL }, CALLBACK),
+    ).toEqual(manifestOf({ timeoutSeconds: 1200, model: "haiku", tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }));
+  });
+
+  test("a Codex routine", () => {
+    expect(manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "routine", DRAFT_RUN_HARNESS: "codex", DRAFT_NATIVE_TOOLS: "shell,web_search" }, CALLBACK)).toEqual(
+      manifestOf({ timeoutSeconds: 1200, harness: "codex", tools: { native: ["shell", "web_search"], draftMcpUrl: null } }),
+    );
+  });
+
+  test("a manifest in the environment wins over the older variables", () => {
+    const chosen = manifestOf({ model: "sonnet", timeoutSeconds: 60 });
+    expect(loadRunnerManifest({ DRAFT_RUN_MANIFEST: JSON.stringify(chosen), DRAFT_RUN_MODE: "batch", DRAFT_ROUTINE_MODEL: "haiku" }, CALLBACK)).toEqual(chosen);
+    expect(loadRunnerManifest({ ...base }, CALLBACK).output.kind).toBe("structured");
+  });
+});
+
+describe("the command for a harness", () => {
+  const env = { CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_TOKEN: "run" };
+
+  test("Claude takes the prompt as an argument, runs in /run and has no stdin", () => {
+    const command = harnessCommand(manifestOf(), "PROMPT", null, env);
+    expect(command.argv[0]).toBe("claude");
+    expect(command.argv.slice(1, 3)).toEqual(["-p", "PROMPT"]);
+    expect(command.stdin).toBeNull();
+    expect(command.cwd).toBe("/run");
+    expect(command.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("login");
+  });
+
+  test("Codex takes the prompt on stdin and runs in its work folder", () => {
+    const command = harnessCommand(manifestOf({ harness: "codex", tools: { native: ["shell"], draftMcpUrl: null } }), "PROMPT", null, env);
+    expect(command.argv).toEqual(["codex", ...codexArgs(manifestOf({ harness: "codex", tools: { native: ["shell"], draftMcpUrl: null } }))]);
+    expect(command.stdin).toBe("PROMPT");
+    expect(command.cwd).toBe("/home/agent/work");
+    expect(command.env.CODEX_HOME).toBe("/home/agent/.codex");
+    expect(command.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
   });
 });
 
@@ -671,9 +797,9 @@ test("a routine failure is named by the first cause that applies", () => {
 
 describe("Codex routine run", () => {
   test("the command reads the prompt from stdin, may write only in its work folder and keeps nothing on disk", () => {
-    expect(codexRoutineArgs("gpt-6-luna")).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
-    expect(codexRoutineArgs(null)).not.toContain("-m");
-    expect(() => codexRoutineArgs("bad model; rm")).toThrow("DRAFT_ROUTINE_MODEL");
+    const codex = (model: string | null) => manifestOf({ harness: "codex", model, tools: { native: ["shell"], draftMcpUrl: null } });
+    expect(codexArgs(codex("gpt-6-luna"))).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
+    expect(codexArgs(codex(null))).not.toContain("-m");
   });
 
   test("the child gets its own home and no token of ours", () => {

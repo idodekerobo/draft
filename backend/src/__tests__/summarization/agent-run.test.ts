@@ -51,7 +51,7 @@ describe("summarization run spec", () => {
 describe("startSummarizationRun", () => {
   it("creates a preparing run and links exactly the sessions it claimed to it", async () => {
     const db = newDb();
-    const runId = await startSummarizationRun({ workspaceId: WS, schedule, client: fakeClient(db) }, ["s1", "s2"], summarizationJsonSchema());
+    const { agentRunId: runId } = await startSummarizationRun({ workspaceId: WS, schedule, client: fakeClient(db) }, ["s1", "s2"], summarizationJsonSchema());
 
     expect(db.tables.agent_runs).toHaveLength(1);
     expect(db.tables.agent_runs![0]).toMatchObject({ id: runId, kind: "summarization", status: "preparing", workspace_id: WS, base_context_version_id: VERSION });

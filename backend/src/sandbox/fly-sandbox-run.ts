@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentRunId, WorkspaceId } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/agent-run";
 import { createAgentRunToken } from "../agent-runs/run-token";
 import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
@@ -15,6 +15,7 @@ import {
   type SandboxDeploymentConfig,
   validateSandboxDeploymentConfig,
 } from "./config";
+import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer, type PromptSource } from "./run-manifest";
 
 const PROMPT_PATH = "input/prompt.md";
 const OUTPUT_SCHEMA_PATH = "input/output-schema.json";
@@ -37,31 +38,19 @@ export interface SandboxRunBundle {
   files: Record<string, { content: string }>;
 }
 
+/** The secret the harness signs in with. It goes to the machine in its own variable and never into the manifest. */
+export type SandboxCredentials = { claudeCodeOAuthToken: string } | { codexAuthJson: string };
+
 export interface LaunchFlySandboxRunInput {
+  /** What the run is. The harness, model, tools and output kind all come from it. A sandbox run is a cloud run. */
+  spec: AgentRunSpec;
   bundle: SandboxRunBundle;
-  /** Required unless mode is "batch" -- batch runs carry per-session prompts in the bundle instead. */
-  prompt?: string;
-  /** Required unless mode is "routine" -- a routine streams free text instead of a structured result. */
-  jsonSchema?: Record<string, unknown>;
-  /** Which CLI the runner starts. Omitted means Claude Code. */
-  harness?: "claude" | "codex";
-  /** The secret for a Claude Code run. */
-  claudeCodeOAuthToken?: string;
-  /** The contents of `auth.json` for a Codex run. Codex runs are routines only. */
-  codexAuthJson?: string;
+  /** One prompt for the run, or a bundle file that lists a prompt file per item. */
+  prompt: PromptSource;
+  credentials: SandboxCredentials;
   config: SandboxDeploymentConfig;
-  /** Additive: omitted preserves today's single-prompt runner behavior. */
-  mode?: "single" | "batch" | "routine";
-  /** Routine mode only: the model the harness runs with. Omitted means the harness default. */
-  model?: string;
   /** Runner wall-clock limit. Defaults to the shared sandbox timeout. */
   timeoutSeconds?: number;
-  /** Bundle-relative manifest path, required when mode is "batch". */
-  manifestPath?: string;
-  /** Routine mode only: gives the run Draft's tools. The token and the tool server URL go to the runner. */
-  agentRun?: { id: AgentRunId; workspaceId: WorkspaceId };
-  /** Routine mode only: the built-in tools of the harness the run may use. Omitted means the runner's defaults. */
-  nativeTools?: ReadonlyArray<string>;
 }
 
 function serializeJsonSchema(schema: Record<string, unknown>): string {
@@ -121,26 +110,22 @@ export async function launchFlySandboxRun(
   input: LaunchFlySandboxRunInput,
   dependencies: LaunchFlySandboxRunDependencies = {},
 ): Promise<FlySandboxRunReceipt> {
-  if (input.agentRun && input.mode !== "routine") throw new Error("agentRun is supported only when mode is \"routine\"");
-  if (input.mode !== "batch") assertNonEmpty(input.prompt ?? "", "prompt");
-  const harness = input.harness ?? "claude";
-  if (harness === "codex") {
-    if (input.mode !== "routine") throw new Error("codex runs support only mode \"routine\"");
-    assertNonEmpty(input.codexAuthJson ?? "", "codexAuthJson");
-  } else {
-    assertNonEmpty(input.claudeCodeOAuthToken ?? "", "claudeCodeOAuthToken");
-  }
+  const { spec } = input;
+  if (input.prompt.kind === "text") assertNonEmpty(input.prompt.text, "prompt");
+  const claudeToken = "claudeCodeOAuthToken" in input.credentials ? input.credentials.claudeCodeOAuthToken : undefined;
+  const codexAuthJson = "codexAuthJson" in input.credentials ? input.credentials.codexAuthJson : undefined;
+  if (spec.harness === "codex") assertNonEmpty(codexAuthJson ?? "", "codexAuthJson");
+  else assertNonEmpty(claudeToken ?? "", "claudeCodeOAuthToken");
   const config = validateSandboxDeploymentConfig(input.config);
 
   if (Object.hasOwn(input.bundle.files, PROMPT_PATH)) {
     throw new Error(`Run bundle already contains reserved prompt path: ${PROMPT_PATH}`);
   }
-  const hasSchema = input.mode !== "routine";
-  if (hasSchema && Object.hasOwn(input.bundle.files, OUTPUT_SCHEMA_PATH)) {
+  const structured = spec.output.type === "structured";
+  if (structured && Object.hasOwn(input.bundle.files, OUTPUT_SCHEMA_PATH)) {
     throw new Error(`Run bundle already contains reserved output schema path: ${OUTPUT_SCHEMA_PATH}`);
   }
-  if (hasSchema && !input.jsonSchema) throw new Error("jsonSchema is required unless mode is \"routine\"");
-  const serializedSchema = hasSchema ? serializeJsonSchema(input.jsonSchema!) : null;
+  const serializedSchema = spec.output.type === "structured" ? serializeJsonSchema(spec.output.schema as Record<string, unknown>) : null;
 
   const now = dependencies.now ?? Date.now;
   const nonce = dependencies.nonce ?? randomUUID;
@@ -155,10 +140,19 @@ export async function launchFlySandboxRun(
     config.callbackSecret,
   );
 
+  // Same host as the callback, which the sandbox is already allowed to reach.
+  const draftMcpUrl = needsDraftToolServer(spec) ? new URL(`/runs/${spec.id}/mcp`, config.callbackUrl).toString() : null;
+  const manifest = buildRunnerManifest({
+    spec,
+    prompt: input.prompt,
+    timeoutSeconds: input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS,
+    draftMcpUrl,
+  });
+
   const filesForUpload = Object.fromEntries(
     Object.entries(input.bundle.files).map(([path, file]) => [path, file.content]),
   );
-  if (input.prompt !== undefined) filesForUpload[PROMPT_PATH] = input.prompt;
+  if (input.prompt.kind === "text") filesForUpload[PROMPT_PATH] = input.prompt.text;
   if (serializedSchema !== null) filesForUpload[OUTPUT_SCHEMA_PATH] = `${serializedSchema}\n`;
 
   const bundleUploader = dependencies.bundleUploader ?? uploadRunBundle;
@@ -184,34 +178,17 @@ export async function launchFlySandboxRun(
     DRAFT_CALLBACK_URL: config.callbackUrl,
     DRAFT_CALLBACK_TOKEN: callbackToken,
     DRAFT_PROMPT_PATH: `/run/${PROMPT_PATH}`,
-    DRAFT_TIMEOUT_SECONDS: String(input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS),
+    DRAFT_TIMEOUT_SECONDS: String(manifest.timeoutSeconds),
+    DRAFT_RUN_MANIFEST: JSON.stringify(manifest),
+    ...legacyRunnerEnv(manifest),
   };
-  if (harness === "codex") {
-    env.DRAFT_RUN_HARNESS = "codex";
-    env.CODEX_AUTH_JSON = input.codexAuthJson!;
-  } else {
-    env.CLAUDE_CODE_OAUTH_TOKEN = input.claudeCodeOAuthToken!;
-  }
-  if (serializedSchema !== null) env.DRAFT_OUTPUT_SCHEMA_PATH = `/run/${OUTPUT_SCHEMA_PATH}`;
-  if (input.mode === "routine") {
-    env.DRAFT_RUN_MODE = "routine";
-    if (input.model) env.DRAFT_ROUTINE_MODEL = input.model;
-    if (input.nativeTools) env.DRAFT_NATIVE_TOOLS = input.nativeTools.join(",");
-    if (input.agentRun) {
-      // Same host as the callback, which the sandbox is already allowed to reach.
-      env.DRAFT_MCP_URL = new URL(`/runs/${input.agentRun.id}/mcp`, config.callbackUrl).toString();
-      env.DRAFT_RUN_TOKEN = createAgentRunToken(
-        { runId: input.agentRun.id, workspaceId: input.agentRun.workspaceId, expiresAt: callbackExpiresAt, nonce: nonce() },
-        config.callbackSecret,
-      );
-    }
-  }
-  if (input.mode === "batch") {
-    if (!input.manifestPath) {
-      throw new Error("manifestPath is required when mode is \"batch\"");
-    }
-    env.DRAFT_RUN_MODE = "batch";
-    env.DRAFT_MANIFEST_PATH = `/run/${input.manifestPath}`;
+  if (spec.harness === "codex") env.CODEX_AUTH_JSON = codexAuthJson!;
+  else env.CLAUDE_CODE_OAUTH_TOKEN = claudeToken!;
+  if (draftMcpUrl) {
+    env.DRAFT_RUN_TOKEN = createAgentRunToken(
+      { runId: spec.id, workspaceId: spec.workspaceId, expiresAt: callbackExpiresAt, nonce: nonce() },
+      config.callbackSecret,
+    );
   }
   const created = await client.create({
     image: config.flySandboxImage,

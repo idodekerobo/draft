@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { AgentRunSpec } from "draft-core/agent-run";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../agent-runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../agent-runs/base-context";
@@ -43,11 +44,10 @@ export async function launchSummarizationBatch(
   );
   if (sessions.length === 0) return null;
 
-  const resultSchema = summarizationJsonSchema();
-  const agentRunId = await startSummarizationRun(options, sessions.map((session) => session.id), resultSchema);
+  const { agentRunId, spec } = await startSummarizationRun(options, sessions.map((session) => session.id), summarizationJsonSchema());
 
   try {
-    return await launchBatch(options, sessions, agentRunId, resultSchema);
+    return await launchBatch(options, sessions, spec);
   } catch (error) {
     await finishAgentRun(options.client, agentRunId, {
       status: "failed",
@@ -66,21 +66,18 @@ export async function startSummarizationRun(
   options: Pick<LaunchSummarizationBatchOptions, "workspaceId" | "schedule" | "client">,
   sessionIds: string[],
   resultSchema: ReturnType<typeof summarizationJsonSchema>,
-): Promise<string> {
+): Promise<{ agentRunId: string; spec: AgentRunSpec }> {
   const agentRunId = randomUUID();
   const contextVersionId = await resolveBaseContextVersionId(options.client, options.workspaceId);
-  await createAgentRun(options.client, {
-    spec: buildSummarizationRunSpec({
-      id: agentRunId,
-      workspaceId: options.workspaceId,
-      scheduledTaskId: options.schedule.scheduledTaskId,
-      occurrenceAt: options.schedule.occurrenceAt,
-      contextVersionId,
-      resultSchema,
-    }),
-    idempotencyKey: `summarize:${agentRunId}`,
-    status: "preparing",
+  const spec = buildSummarizationRunSpec({
+    id: agentRunId,
+    workspaceId: options.workspaceId,
+    scheduledTaskId: options.schedule.scheduledTaskId,
+    occurrenceAt: options.schedule.occurrenceAt,
+    contextVersionId,
+    resultSchema,
   });
+  await createAgentRun(options.client, { spec, idempotencyKey: `summarize:${agentRunId}`, status: "preparing" });
   const { error: linkError } = await options.client
     .from("agent_sessions")
     .update({ summary_agent_run_id: agentRunId })
@@ -90,15 +87,15 @@ export async function startSummarizationRun(
     await finishAgentRun(options.client, agentRunId, { status: "failed", failureCode: "summarization_launch_failed", failureDetail: linkError.message });
     throw linkError;
   }
-  return agentRunId;
+  return { agentRunId, spec };
 }
 
 async function launchBatch(
   options: LaunchSummarizationBatchOptions,
   sessions: Awaited<ReturnType<typeof claimPendingSummarySessions>>,
-  agentRunId: string,
-  resultSchema: ReturnType<typeof summarizationJsonSchema>,
+  spec: AgentRunSpec,
 ): Promise<LaunchSummarizationBatchResult> {
+  const agentRunId = spec.id;
   const { data: workspaceData, error: workspaceError } = await options.client
     .from("workspaces")
     .select("organization_id")
@@ -124,12 +121,11 @@ async function launchBatch(
   const claudeCodeOAuthToken = await resolveInferenceCredential(options.workspaceId, options.client);
 
   const receipt = await launchFlySandboxRun({
+    spec,
     bundle,
-    jsonSchema: resultSchema,
-    claudeCodeOAuthToken,
+    prompt: { kind: "items", manifestPath: bundle.manifestPath },
+    credentials: { claudeCodeOAuthToken },
     config: options.config,
-    mode: "batch",
-    manifestPath: bundle.manifestPath,
   });
 
   await markAgentRunRunning(options.client, agentRunId, receipt.machineId);

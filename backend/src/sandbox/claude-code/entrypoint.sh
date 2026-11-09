@@ -21,8 +21,15 @@ callback_host="$({ node -e '
   exit 1
 }
 
+# The harness comes from the run manifest, or from the older variable when there is no manifest.
+harness="$({ node -e '
+  const raw = process.env.DRAFT_RUN_MANIFEST;
+  const harness = raw ? JSON.parse(raw).harness : process.env.DRAFT_RUN_HARNESS;
+  process.stdout.write(harness === "codex" ? "codex" : "claude");
+'; } 2>/dev/null)" || harness="claude"
+
 # A run reaches only its own model provider, the callback and the bundle storage.
-if [ "${DRAFT_RUN_HARNESS:-claude}" = "codex" ]; then
+if [ "$harness" = "codex" ]; then
   model_hosts="chatgpt.com auth.openai.com api.openai.com"
   export DRAFT_EGRESS_REQUIRED_HOST="chatgpt.com"
 else

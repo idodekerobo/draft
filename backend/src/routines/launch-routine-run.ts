@@ -3,6 +3,7 @@ import type { AgentRunSpec } from "draft-core/agent-run";
 import { loadVersionDocuments } from "../agent-runs/context-store";
 import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
 import { launchFlySandboxRun, type SandboxDeploymentConfig } from "../sandbox";
+import { needsDraftToolServer } from "../sandbox/run-manifest";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
 import { buildRoutineBundle, renderRoutinePrompt } from "./build-bundle";
 import { ROUTINE_RUN_TIMEOUT_SECONDS, type AgentRoutineConfig } from "./config";
@@ -37,32 +38,32 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
   // The run's own base version, not the latest: the default sha of a write is read from this same version.
   const documents = await loadVersionDocuments(client, agentRun.inputs.contextVersionId);
 
-  const run = {
+  const launch = {
+    spec: agentRun,
     bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, audience: { type: "run", run: agentRun }, documents }),
-    prompt: renderRoutinePrompt(routine.prompt, {
-      title: routine.title,
-      schedule: schedule.description,
-      timezone: schedule.timezone,
-      startedAt: new Date(),
-      hasDraftTools: agentRun.permissions.length > 0,
-    }),
-    mode: "routine" as const,
-    model: routine.model ?? undefined,
+    prompt: {
+      kind: "text" as const,
+      text: renderRoutinePrompt(routine.prompt, {
+        title: routine.title,
+        schedule: schedule.description,
+        timezone: schedule.timezone,
+        startedAt: new Date(),
+        hasDraftTools: needsDraftToolServer(agentRun),
+      }),
+    },
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,
-    agentRun: { id: agentRun.id, workspaceId: agentRun.workspaceId },
-    nativeTools: agentRun.runtime.type === "cloud" ? agentRun.runtime.environment.nativeTools.map((permission) => permission.tool) : undefined,
     config,
   };
 
   if (routine.harness !== "codex") {
-    const receipt = await launchFlySandboxRun({ ...run, claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) });
+    const receipt = await launchFlySandboxRun({ ...launch, credentials: { claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) } });
     return { machineId: receipt.machineId };
   }
 
   const { credentialId, authJson } = await resolveCodexCredential(client, workspaceId);
   if (!(await acquireCodexLease(client, credentialId, workspaceId, sessionId))) throw new RoutineLeaseBusyError();
   try {
-    const receipt = await launchFlySandboxRun({ ...run, harness: "codex", codexAuthJson: authJson });
+    const receipt = await launchFlySandboxRun({ ...launch, credentials: { codexAuthJson: authJson } });
     return { machineId: receipt.machineId };
   } catch (launchError) {
     await releaseCodexLease(client, credentialId, sessionId).catch(() => undefined);

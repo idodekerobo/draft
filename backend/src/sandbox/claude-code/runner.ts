@@ -200,14 +200,6 @@ export const RUNNER_NATIVE_TOOLS = {
 const CLAUDE_READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
 const DEFAULT_CLAUDE_TOOLS = ["Read", "Glob"];
 
-/** The built-in tools a run was given: null when the backend named none, so the defaults apply. Anything outside the list is refused. */
-export function routineNativeTools(value: string | undefined, harness: "claude" | "codex"): string[] | null {
-  if (!value) return null;
-  const tools = value.split(",").map((tool) => tool.trim()).filter(Boolean);
-  if (!tools.every((tool) => (RUNNER_NATIVE_TOOLS[harness] as ReadonlyArray<string>).includes(tool))) throw new Error("DRAFT_NATIVE_TOOLS is invalid");
-  return [...new Set(tools)];
-}
-
 /** Draft's tool server for a Codex run. The bearer token comes from the environment, never from this file. */
 export function codexConfigToml(options: { mcpUrl: string | null; webSearch: boolean }): string {
   // A top-level key must come before any table.
@@ -301,23 +293,6 @@ export function parseTimeoutSeconds(raw: string | undefined): number {
 
 export function shouldRetryCallback(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
-}
-
-export function claudeCommandArgs(prompt: string, serializedSchema: string): string[] {
-  return [
-    "-p",
-    prompt,
-    "--tools",
-    "Read,Glob",
-    "--permission-mode",
-    "dontAsk",
-    "--no-session-persistence",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--json-schema",
-    serializedSchema,
-  ];
 }
 
 // Every line of stream-json output is its own JSON message (system init,
@@ -598,7 +573,235 @@ export async function fetchAndWriteBundle(
   }
 }
 
-export interface RunClaudeOnceResult {
+// ---- The run manifest ------------------------------------------------------------------------------
+// What this run must do: which harness, which tools, what kind of output. The backend builds it from the
+// run's spec (backend/src/sandbox/run-manifest.ts) and it holds no secret. The runner is built apart from the
+// backend, so it keeps its own parser, and a test holds the two together.
+
+export interface RunnerManifest {
+  version: 1;
+  harness: "claude" | "codex";
+  model: string | null;
+  prompt: { kind: "file"; path: string } | { kind: "items"; manifestPath: string };
+  tools: { native: string[]; draftMcpUrl: string | null };
+  output: { kind: "stream" } | { kind: "structured"; schemaPath: string };
+  timeoutSeconds: number;
+}
+
+function onlyKeys(value: unknown, keys: string[], label: string): Record<string, unknown> {
+  if (!isObject(value)) throw new Error(`run manifest: ${label} must be an object`);
+  const extra = Object.keys(value).find((key) => !keys.includes(key));
+  if (extra !== undefined) throw new Error(`run manifest: unknown key in ${label}: ${extra}`);
+  return value;
+}
+
+function pathUnder(path: unknown, label: string, inputRoot: string): string {
+  if (typeof path !== "string" || !resolve(path).startsWith(`${resolve(inputRoot)}/`)) {
+    throw new Error(`run manifest: ${label} must be a file under ${inputRoot}`);
+  }
+  return path;
+}
+
+/** Checks a manifest strictly. Anything the runner does not know is refused, because these values reach a command line. */
+export function validateRunnerManifest(value: unknown, callbackUrl: string, inputRoot = "/run/input"): RunnerManifest {
+  const top = onlyKeys(value, ["version", "harness", "model", "prompt", "tools", "output", "timeoutSeconds"], "manifest");
+  if (top.version !== 1) throw new Error("run manifest: version must be 1");
+  if (top.harness !== "claude" && top.harness !== "codex") throw new Error("run manifest: harness must be claude or codex");
+  const harness = top.harness;
+  if (top.model !== null && (typeof top.model !== "string" || !MODEL_PATTERN.test(top.model))) throw new Error("run manifest: model is invalid");
+  if (typeof top.timeoutSeconds !== "number" || !Number.isSafeInteger(top.timeoutSeconds) || top.timeoutSeconds < 1 || top.timeoutSeconds > 3600) {
+    throw new Error("run manifest: timeoutSeconds must be between 1 and 3600");
+  }
+
+  const promptValue = isObject(top.prompt) ? top.prompt : null;
+  let prompt: RunnerManifest["prompt"];
+  if (promptValue?.kind === "file") {
+    prompt = { kind: "file", path: pathUnder(onlyKeys(promptValue, ["kind", "path"], "prompt").path, "prompt.path", inputRoot) };
+  } else if (promptValue?.kind === "items") {
+    prompt = { kind: "items", manifestPath: pathUnder(onlyKeys(promptValue, ["kind", "manifestPath"], "prompt").manifestPath, "prompt.manifestPath", inputRoot) };
+  } else {
+    throw new Error("run manifest: prompt.kind must be file or items");
+  }
+
+  const toolsValue = onlyKeys(top.tools, ["native", "draftMcpUrl"], "tools");
+  const allowedNative = RUNNER_NATIVE_TOOLS[harness] as ReadonlyArray<string>;
+  if (!Array.isArray(toolsValue.native) || !toolsValue.native.every((tool) => typeof tool === "string" && allowedNative.includes(tool))) {
+    throw new Error("run manifest: tools.native has a tool this harness may not use");
+  }
+  if (toolsValue.draftMcpUrl !== null && typeof toolsValue.draftMcpUrl !== "string") throw new Error("run manifest: tools.draftMcpUrl must be a string or null");
+  const tools = {
+    native: [...new Set(toolsValue.native as string[])],
+    draftMcpUrl: toolsValue.draftMcpUrl === null ? null : routineMcpUrl(toolsValue.draftMcpUrl as string, callbackUrl),
+  };
+
+  const outputValue = isObject(top.output) ? top.output : null;
+  let output: RunnerManifest["output"];
+  if (outputValue?.kind === "stream") {
+    onlyKeys(outputValue, ["kind"], "output");
+    output = { kind: "stream" };
+  } else if (outputValue?.kind === "structured") {
+    output = { kind: "structured", schemaPath: pathUnder(onlyKeys(outputValue, ["kind", "schemaPath"], "output").schemaPath, "output.schemaPath", inputRoot) };
+  } else {
+    throw new Error("run manifest: output.kind must be stream or structured");
+  }
+
+  if (harness === "codex" && (output.kind === "structured" || prompt.kind === "items")) {
+    throw new Error("run manifest: codex runs stream a single prompt");
+  }
+  return { version: 1, harness, model: top.model as string | null, prompt, tools, output, timeoutSeconds: top.timeoutSeconds };
+}
+
+export function parseRunnerManifest(raw: string, callbackUrl: string, inputRoot = "/run/input"): RunnerManifest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("run manifest: DRAFT_RUN_MANIFEST must contain valid JSON");
+  }
+  return validateRunnerManifest(parsed, callbackUrl, inputRoot);
+}
+
+/** The manifest an older backend implies through its environment variables. Kept until every environment sends a manifest. */
+export function manifestFromLegacyEnv(env: NodeJS.ProcessEnv, callbackUrl: string, inputRoot = "/run/input"): RunnerManifest {
+  const harness = env.DRAFT_RUN_HARNESS === "codex" ? "codex" : "claude";
+  const mode = env.DRAFT_RUN_MODE === "batch" || env.DRAFT_RUN_MODE === "routine" ? env.DRAFT_RUN_MODE : "single";
+  const nativeNamed = mode === "routine" && env.DRAFT_NATIVE_TOOLS ? env.DRAFT_NATIVE_TOOLS.split(",").map((tool) => tool.trim()).filter(Boolean) : null;
+  if (mode === "batch" && !env.DRAFT_MANIFEST_PATH) throw new Error("DRAFT_MANIFEST_PATH is required");
+  return validateRunnerManifest(
+    {
+      version: 1,
+      harness,
+      model: mode === "routine" ? env.DRAFT_ROUTINE_MODEL || null : null,
+      prompt: mode === "batch" ? { kind: "items", manifestPath: env.DRAFT_MANIFEST_PATH } : { kind: "file", path: env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH },
+      tools: {
+        native: nativeNamed ?? (harness === "claude" ? [...DEFAULT_CLAUDE_TOOLS] : ["shell"]),
+        draftMcpUrl: mode === "routine" && env.DRAFT_MCP_URL ? env.DRAFT_MCP_URL : null,
+      },
+      output: mode === "routine" ? { kind: "stream" } : { kind: "structured", schemaPath: env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH },
+      timeoutSeconds: parseTimeoutSeconds(env.DRAFT_TIMEOUT_SECONDS),
+    },
+    callbackUrl,
+    inputRoot,
+  );
+}
+
+export function loadRunnerManifest(env: NodeJS.ProcessEnv, callbackUrl: string): RunnerManifest {
+  return env.DRAFT_RUN_MANIFEST ? parseRunnerManifest(env.DRAFT_RUN_MANIFEST, callbackUrl) : manifestFromLegacyEnv(env, callbackUrl);
+}
+
+// ---- One command builder per harness ---------------------------------------------------------------
+
+/** Claude Code's command. Reading is allowed on its own; any other built-in tool has to be named, or dontAsk refuses it. */
+export function claudeArgs(manifest: RunnerManifest, prompt: string, schemaText: string | null): string[] {
+  if (manifest.harness !== "claude") throw new Error("claudeArgs needs a Claude manifest");
+  if (manifest.output.kind === "structured" && schemaText === null) throw new Error("structured output needs a schema");
+  const { model } = manifest;
+  const { native, draftMcpUrl } = manifest.tools;
+  // Claude Code turns dots in tool names into underscores, so Draft's tools are allowed by server name.
+  const allowed = [...(draftMcpUrl ? ["mcp__draft"] : []), ...native.filter((tool) => !CLAUDE_READ_ONLY_TOOLS.includes(tool))];
+  return [
+    "-p",
+    prompt,
+    ...(model ? ["--model", model] : []),
+    "--tools",
+    native.join(","),
+    "--permission-mode",
+    "dontAsk",
+    ...(draftMcpUrl ? ["--mcp-config", claudeMcpConfigJson(draftMcpUrl), "--strict-mcp-config"] : []),
+    ...(allowed.length > 0 ? ["--allowedTools", ...allowed] : []),
+    "--no-session-persistence",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    ...(manifest.output.kind === "structured" ? ["--json-schema", schemaText!] : []),
+  ];
+}
+
+/** Codex reads the prompt from stdin. It may write inside its work folder only, and keeps no session on disk. */
+export function codexArgs(manifest: RunnerManifest): string[] {
+  if (manifest.harness !== "codex") throw new Error("codexArgs needs a Codex manifest");
+  return ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", ...(manifest.model ? ["-m", manifest.model] : []), "-"];
+}
+
+export interface HarnessCommand {
+  argv: string[];
+  stdin: string | null;
+  cwd: string;
+  env: Record<string, string>;
+}
+
+export function harnessCommand(manifest: RunnerManifest, prompt: string, schemaText: string | null, env: NodeJS.ProcessEnv): HarnessCommand {
+  if (manifest.harness === "codex") {
+    return { argv: ["codex", ...codexArgs(manifest)], stdin: prompt, cwd: CODEX_WORK_DIR, env: sanitizedCodexEnv(env) };
+  }
+  return { argv: ["claude", ...claudeArgs(manifest, prompt, schemaText)], stdin: null, cwd: "/run", env: sanitizedClaudeEnv(env) };
+}
+
+/** Anything the harness needs on disk before it starts. For Codex that is its home: the login and its config. */
+export function prepareHarness(manifest: RunnerManifest, env: NodeJS.ProcessEnv): void {
+  if (manifest.harness !== "codex") return;
+  if (!env.CODEX_AUTH_JSON) throw new Error("CODEX_AUTH_JSON is required");
+  prepareCodexHome(env.CODEX_AUTH_JSON, manifest.tools.draftMcpUrl, manifest.tools.native);
+}
+
+// ---- Running a harness -----------------------------------------------------------------------------
+
+interface HarnessRun {
+  manifest: RunnerManifest;
+  prompt: string;
+  schemaText: string | null;
+  runId: string;
+  timeoutMs: number;
+  onStdout: (chunk: Buffer, stop: () => void) => void;
+  onStderr: (text: string) => void;
+  /** Runs every `everyMs` while the harness runs. */
+  tick?: { everyMs: number; run: () => void };
+}
+
+/** Starts the harness as the agent user, hands its output to the caller, and stops it on the timeout. */
+async function runHarness(input: HarnessRun): Promise<{ exit: { code: number | null; signal: NodeJS.Signals | null }; timedOut: boolean }> {
+  const { spawn } = await import("node:child_process");
+  const command = harnessCommand(input.manifest, input.prompt, input.schemaText, process.env);
+  const envArgs = Object.entries(command.env).map(([key, value]) => `${key}=${value}`);
+  const [program, ...args] = command.argv;
+  const child = spawn("gosu", ["agent", "env", "-i", ...envArgs, program!, ...args], {
+    cwd: command.cwd,
+    detached: true,
+    stdio: [command.stdin !== null ? "pipe" : "ignore", "pipe", "pipe"],
+  });
+  if (command.stdin !== null) {
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(command.stdin);
+  }
+  const codex = input.manifest.harness === "codex";
+  runnerLog(codex ? "codex_started" : "claude_started", {
+    run_id: input.runId,
+    ...(codex ? { sandbox: "workspace-write" } : { tools: input.manifest.tools.native.join(","), permission_mode: "dontAsk" }),
+    draft_tools: input.manifest.tools.draftMcpUrl !== null,
+    output: input.manifest.output.kind,
+    timeout_ms: input.timeoutMs,
+  });
+
+  child.stdout?.on("data", (chunk: Buffer) => input.onStdout(chunk, () => void stopChild(child)));
+  child.stderr?.on("data", (chunk: Buffer) => input.onStderr(chunk.toString("utf8")));
+  const ticker = input.tick ? setInterval(input.tick.run, input.tick.everyMs) : null;
+
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    void stopChild(child);
+  }, input.timeoutMs);
+  const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, rejectExit) => {
+    child.once("error", rejectExit);
+    child.once("exit", (code, signal) => resolveExit({ code, signal }));
+  });
+  clearTimeout(timeout);
+  if (ticker) clearInterval(ticker);
+  await stopChild(child);
+  return { exit, timedOut };
+}
+
+export interface StructuredRunResult {
   success: boolean;
   finalResult: unknown;
   failureCode: RunnerFailureCode | "none";
@@ -608,30 +811,16 @@ export interface RunClaudeOnceResult {
 
 // scratchStdoutPath must be unique per invocation within a run -- it's
 // opened with the "wx" flag (fails if it already exists).
-export async function runClaudeOnce(
+/** One harness run that ends in one structured result, which the caller sends back in a single callback. */
+export async function runStructured(
+  manifest: RunnerManifest,
   prompt: string,
-  serializedSchema: string,
+  schemaText: string,
   timeoutMs: number,
   runId: string,
   scratchStdoutPath: string = SCRATCH_STDOUT_PATH,
-): Promise<RunClaudeOnceResult> {
-  const { spawn } = await import("node:child_process");
-  const childEnv = sanitizedClaudeEnv(process.env);
-  const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
-  const child = spawn(
-    "gosu",
-    ["agent", "env", "-i", ...envArgs, "claude", ...claudeCommandArgs(prompt, serializedSchema)],
-    { cwd: "/run", detached: true, stdio: ["ignore", "pipe", "pipe"] },
-  );
-
+): Promise<StructuredRunResult> {
   const startedAt = Date.now();
-  runnerLog("claude_started", {
-    run_id: runId,
-    tools: "Read,Glob",
-    permission_mode: "dontAsk",
-    timeout_ms: timeoutMs,
-  });
-
   const stdoutFile = createWriteStream(scratchStdoutPath, { flags: "wx", mode: 0o600 });
   let stdout = "";
   let stderr = "";
@@ -640,33 +829,28 @@ export async function runClaudeOnce(
   let overflow = false;
   let completed: ClaudeEnvelope | null = null;
   let failureCategory: ClaudeFailureCategory = "none";
-  child.stdout?.on("data", (chunk: Buffer) => {
-    stdoutBytes += chunk.length;
-    stdoutFile.write(chunk);
-    if (Buffer.byteLength(stdout) + chunk.length <= MAX_CAPTURE_BYTES) stdout += chunk.toString("utf8");
-    else overflow = true;
-    completed = parseCompletedClaudeEnvelope(stdout);
-    if (completed) void stopChild(child);
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderrBytes += chunk.length;
-    const text = chunk.toString("utf8");
-    stderr += text;
-    failureCategory = classifyClaudeFailureChunk(text, failureCategory);
-  });
 
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    void stopChild(child);
-  }, timeoutMs);
-  const childExit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, rejectExit) => {
-    child.once("error", rejectExit);
-    child.once("exit", (code, signal) => resolveExit({ code, signal }));
+  const { exit: childExit, timedOut } = await runHarness({
+    manifest,
+    prompt,
+    schemaText,
+    runId,
+    timeoutMs,
+    onStdout: (chunk, stop) => {
+      stdoutBytes += chunk.length;
+      stdoutFile.write(chunk);
+      if (Buffer.byteLength(stdout) + chunk.length <= MAX_CAPTURE_BYTES) stdout += chunk.toString("utf8");
+      else overflow = true;
+      completed = parseCompletedClaudeEnvelope(stdout);
+      if (completed) stop();
+    },
+    onStderr: (text) => {
+      stderrBytes += Buffer.byteLength(text);
+      stderr += text;
+      failureCategory = classifyClaudeFailureChunk(text, failureCategory);
+    },
   });
-  clearTimeout(timeout);
   stdoutFile.end();
-  await stopChild(child);
 
   const envelope = completed || parseCompletedClaudeEnvelope(stdout);
   const payload = extractStructuredOutput(envelope);
@@ -727,35 +911,6 @@ const MODEL_PATTERN = /^[A-Za-z0-9._:\-\[\]]{1,100}$/;
 export type RoutineLine =
   | { file: string; offset: number; raw: string }
   | { file: string; offset: number; oversizeBytes: number };
-
-export function routineCommandArgs(prompt: string, model: string | null, mcpUrl: string | null = null, nativeTools: string[] | null = null): string[] {
-  if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
-  const tools = nativeTools ?? DEFAULT_CLAUDE_TOOLS;
-  // Reading is allowed on its own. Any other built-in tool has to be named, or dontAsk refuses it.
-  // Claude Code turns dots in tool names into underscores, so Draft's tools are allowed by server name.
-  const allowed = [...(mcpUrl ? ["mcp__draft"] : []), ...tools.filter((tool) => !CLAUDE_READ_ONLY_TOOLS.includes(tool))];
-  return [
-    "-p",
-    prompt,
-    ...(model ? ["--model", model] : []),
-    "--tools",
-    tools.join(","),
-    "--permission-mode",
-    "dontAsk",
-    ...(mcpUrl ? ["--mcp-config", claudeMcpConfigJson(mcpUrl), "--strict-mcp-config"] : []),
-    ...(allowed.length > 0 ? ["--allowedTools", ...allowed] : []),
-    "--no-session-persistence",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-  ];
-}
-
-/** Codex reads the prompt from stdin. It may write inside its work folder only, and keeps no session on disk. */
-export function codexRoutineArgs(model: string | null): string[] {
-  if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
-  return ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", ...(model ? ["-m", model] : []), "-"];
-}
 
 /** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */
 export function parseCodexResultLine(raw: string): { is_error: boolean; subtype: string } | null {
@@ -822,35 +977,16 @@ export function routineFailureCode(input: { timedOut: boolean; resultIsError: bo
   return "incomplete_result";
 }
 
-export async function runRoutine(
+/** One harness run whose every output line is sent to the backend as it appears, so the session view fills in live. */
+export async function runStream(
+  manifest: RunnerManifest,
   prompt: string,
-  model: string | null,
   timeoutMs: number,
   runId: string,
   post: RoutinePost,
-  harness: "claude" | "codex" = "claude",
-  mcpUrl: string | null = null,
-  nativeTools: string[] | null = null,
 ): Promise<RoutineEnd> {
-  const { spawn } = await import("node:child_process");
   const { StringDecoder } = await import("node:string_decoder");
-  const codex = harness === "codex";
-  const childEnv = codex ? sanitizedCodexEnv(process.env) : sanitizedClaudeEnv(process.env);
-  const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
-  const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model, mcpUrl, nativeTools)];
-  const child = spawn("gosu", ["agent", "env", "-i", ...envArgs, ...command], {
-    cwd: codex ? CODEX_WORK_DIR : "/run",
-    detached: true,
-    stdio: [codex ? "pipe" : "ignore", "pipe", "pipe"],
-  });
-  if (codex) {
-    child.stdin?.on("error", () => undefined);
-    child.stdin?.end(prompt);
-  }
-  runnerLog(codex ? "codex_started" : "claude_started", codex
-    ? { run_id: runId, sandbox: "workspace-write", timeout_ms: timeoutMs, mode: "routine" }
-    : { run_id: runId, tools: "Read,Glob", permission_mode: "dontAsk", timeout_ms: timeoutMs, mode: "routine" });
-
+  const codex = manifest.harness === "codex";
   const reader = new StreamLineReader();
   const decoder = new StringDecoder("utf8");
   let queue: RoutineLine[] = [];
@@ -891,26 +1027,19 @@ export async function runRoutine(
     if (queuedBytes >= ROUTINE_FLUSH_BYTES) flush();
   };
 
-  child.stdout?.on("data", (chunk: Buffer) => enqueue(reader.push(decoder.write(chunk))));
-  child.stderr?.on("data", (chunk: Buffer) => {
-    const text = chunk.toString("utf8");
-    if (stderr.length < 2_000) stderr += text;
-    failureCategory = classifyClaudeFailureChunk(text, failureCategory);
+  const { exit: childExit, timedOut } = await runHarness({
+    manifest,
+    prompt,
+    schemaText: null,
+    runId,
+    timeoutMs,
+    onStdout: (chunk) => enqueue(reader.push(decoder.write(chunk))),
+    onStderr: (text) => {
+      if (stderr.length < 2_000) stderr += text;
+      failureCategory = classifyClaudeFailureChunk(text, failureCategory);
+    },
+    tick: { everyMs: ROUTINE_FLUSH_INTERVAL_MS, run: flush },
   });
-  const ticker = setInterval(flush, ROUTINE_FLUSH_INTERVAL_MS);
-
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    void stopChild(child);
-  }, timeoutMs);
-  const childExit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, rejectExit) => {
-    child.once("error", rejectExit);
-    child.once("exit", (code, signal) => resolveExit({ code, signal }));
-  });
-  clearTimeout(timeout);
-  clearInterval(ticker);
-  await stopChild(child);
   enqueue(reader.push(decoder.end()));
   enqueue(reader.finish());
   flush();
@@ -918,7 +1047,7 @@ export async function runRoutine(
 
   const finished = resultLine as { is_error?: boolean; subtype?: string } | null;
   const ok = !timedOut && finished !== null && finished.is_error !== true && childExit.code === 0;
-  const error = ok ? undefined : routineFailureCode({ timedOut, resultIsError: finished?.is_error === true, exitCode: childExit.code, signal: childExit.signal, harness });
+  const error = ok ? undefined : routineFailureCode({ timedOut, resultIsError: finished?.is_error === true, exitCode: childExit.code, signal: childExit.signal, harness: manifest.harness });
   const authJson = codex ? readCodexAuth() : undefined;
   runnerLog(codex ? "codex_finished" : "claude_finished", {
     run_id: runId,
@@ -987,6 +1116,7 @@ export function parseBatchManifest(raw: string): BatchManifestEntry[] {
 }
 
 export interface RunBatchInput {
+  manifest: RunnerManifest;
   runId: string;
   bundleHash: string;
   manifestPath: string;
@@ -1000,8 +1130,8 @@ export interface RunBatchInput {
 
 export async function runBatch(
   input: RunBatchInput,
-  deps: { runClaudeOnce: typeof runClaudeOnce; reportAndExit: typeof reportAndExit } = {
-    runClaudeOnce,
+  deps: { runStructured: typeof runStructured; reportAndExit: typeof reportAndExit } = {
+    runStructured,
     reportAndExit,
   },
 ): Promise<void> {
@@ -1029,7 +1159,8 @@ export async function runBatch(
       const prompt = readFileSync(promptTarget, "utf8");
 
       const scratchStdoutPath = `/run/scratch/claude.stdout.${index}.json`;
-      const result = await deps.runClaudeOnce(
+      const result = await deps.runStructured(
+        input.manifest,
         prompt,
         input.serializedSchema,
         input.timeoutMs,
@@ -1091,24 +1222,19 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   const { runId, bundleHash, callbackUrl, callbackToken } = ctx;
   const bundleUrl = required("DRAFT_BUNDLE_URL");
   new URL(bundleUrl);
-  const promptPath = process.env.DRAFT_PROMPT_PATH || DEFAULT_PROMPT_PATH;
-  const outputSchemaPath = process.env.DRAFT_OUTPUT_SCHEMA_PATH || DEFAULT_OUTPUT_SCHEMA_PATH;
-  const timeoutMs = parseTimeoutSeconds(process.env.DRAFT_TIMEOUT_SECONDS) * 1_000;
-  const requestedMode = process.env.DRAFT_RUN_MODE;
-  const runMode = requestedMode === "batch" || requestedMode === "routine" ? requestedMode : "single";
+  new URL(callbackUrl);
+  const manifest = loadRunnerManifest(process.env, callbackUrl);
+  const timeoutMs = manifest.timeoutSeconds * 1_000;
   const inputRoot = "/run/input";
   // Bundle file keys (e.g. "input/prompt.md", "input/sources/x.md") already
   // carry the "input/" segment, so they're relative to /run, one level above
   // inputRoot — not to inputRoot itself.
   const bundleRoot = dirname(inputRoot);
-  const reservedPaths = new Set([
-    promptPath.startsWith(`${bundleRoot}/`) ? promptPath.slice(bundleRoot.length + 1) : "input/prompt.md",
-    outputSchemaPath.startsWith(`${bundleRoot}/`)
-      ? outputSchemaPath.slice(bundleRoot.length + 1)
-      : "input/output-schema.json",
-  ]);
+  // The prompt and the schema are added to the upload after its hash is computed, so they are not part of it.
+  const reservedPaths = new Set(["input/prompt.md", "input/output-schema.json"]);
+  if (manifest.prompt.kind === "file" && manifest.prompt.path.startsWith(`${bundleRoot}/`)) reservedPaths.add(manifest.prompt.path.slice(bundleRoot.length + 1));
+  if (manifest.output.kind === "structured" && manifest.output.schemaPath.startsWith(`${bundleRoot}/`)) reservedPaths.add(manifest.output.schemaPath.slice(bundleRoot.length + 1));
 
-  new URL(callbackUrl);
   mkdirSync("/run/output", { recursive: true });
   mkdirSync("/run/scratch", { recursive: true });
   mkdirSync(inputRoot, { recursive: true });
@@ -1130,12 +1256,12 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   }
   const inputStats = secureInputTree(inputRoot);
 
-  // Batch mode carries a per-session prompt file per manifest entry instead
-  // of one shared prompt at promptPath -- see runBatch.
+  // Items carry a prompt file each, read by runBatch. Otherwise there is one prompt.
   let prompt = "";
-  if (runMode !== "batch") {
+  if (manifest.prompt.kind === "file") {
+    const promptPath = manifest.prompt.path;
     if (!existsSync(promptPath) || !resolve(promptPath).startsWith(`${inputRoot}/`)) {
-      throw new Error("DRAFT_PROMPT_PATH must name a file beneath /run/input");
+      throw new Error("the prompt must be a file beneath /run/input");
     }
     prompt = readFileSync(promptPath, "utf8");
     if (!prompt.trim()) throw new Error("prompt is empty");
@@ -1152,32 +1278,28 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   chownSync("/run/scratch", AGENT_UID, AGENT_GID);
   chmodSync("/run/scratch", 0o700);
 
-  if (runMode === "routine") {
-    const harness = process.env.DRAFT_RUN_HARNESS === "codex" ? "codex" : "claude";
-    const mcpUrl = routineMcpUrl(process.env.DRAFT_MCP_URL, callbackUrl);
-    if (mcpUrl) required("DRAFT_RUN_TOKEN");
-    const nativeTools = routineNativeTools(process.env.DRAFT_NATIVE_TOOLS, harness);
-    if (harness === "codex") {
-      prepareCodexHome(required("CODEX_AUTH_JSON"), mcpUrl, nativeTools);
-      delete process.env.CODEX_AUTH_JSON;
-    }
-    const end = await runRoutine(prompt, process.env.DRAFT_ROUTINE_MODEL || null, timeoutMs, runId, (result) =>
+  if (manifest.tools.draftMcpUrl) required("DRAFT_RUN_TOKEN");
+
+  if (manifest.output.kind === "stream") {
+    prepareHarness(manifest, process.env);
+    delete process.env.CODEX_AUTH_JSON;
+    const end = await runStream(manifest, prompt, timeoutMs, runId, (result) =>
       callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
-    harness, mcpUrl, nativeTools);
+    );
     await callback(callbackUrl, callbackToken, runId, bundleHash, end, undefined);
     runnerLog("final", { run_id: runId, status: end.ok ? "completed" : "failed", failure_code: end.error ?? "none" });
     if (!end.ok) process.exitCode = 1;
     return;
   }
 
-  const serializedSchema = readOutputSchema(outputSchemaPath, inputRoot);
+  const serializedSchema = readOutputSchema(manifest.output.schemaPath, inputRoot);
 
-  if (runMode === "batch") {
-    const manifestPath = required("DRAFT_MANIFEST_PATH");
+  if (manifest.prompt.kind === "items") {
     await runBatch({
+      manifest,
       runId,
       bundleHash,
-      manifestPath,
+      manifestPath: manifest.prompt.manifestPath,
       serializedSchema,
       inputRoot,
       bundleRoot,
@@ -1188,7 +1310,7 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
     return;
   }
 
-  const result = await runClaudeOnce(prompt, serializedSchema, timeoutMs, runId);
+  const result = await runStructured(manifest, prompt, serializedSchema, timeoutMs, runId);
 
   await reportAndExit({
     finalResult: result.finalResult,

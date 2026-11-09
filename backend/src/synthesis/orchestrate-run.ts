@@ -13,6 +13,7 @@ import {
   prepareRun,
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
+import { buildSynthesisRunSpec } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type {
   LaunchSynthesisRunOptions,
@@ -68,11 +69,21 @@ export async function launchSynthesisRun(
     const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions);
 
     stage = "sandbox";
+    const spec = buildSynthesisRunSpec({
+      runId,
+      workspaceId: options.workspaceId,
+      triggerType: options.triggerType,
+      scheduledTaskId: options.scheduledTaskId,
+      occurrenceAt: options.occurrenceAt,
+      retryOfRunId: options.retryOfRunId,
+      contextVersionId: bundle.baseContextVersionId,
+      resultSchema: jsonSchema,
+    });
     const receipt = await launchFlySandboxRun({
+      spec,
       bundle,
-      prompt,
-      jsonSchema,
-      claudeCodeOAuthToken,
+      prompt: { kind: "text", text: prompt },
+      credentials: { claudeCodeOAuthToken },
       config: options.config,
     });
 

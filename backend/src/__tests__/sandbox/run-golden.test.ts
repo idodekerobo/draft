@@ -1,23 +1,40 @@
 // Pins what every kind of sandbox run is started with: the environment the launcher sets and the
 // command the runner builds. These values are the contract with the image already deployed.
+// The expected values were recorded from the code before the runner read a manifest, and have not changed.
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseWorkspaceId } from "draft-core/agent-run";
 import { launchFlySandboxRun } from "../../sandbox/fly-sandbox-run";
 import {
-  claudeCommandArgs,
+  claudeArgs,
+  codexArgs,
   codexConfigToml,
-  codexRoutineArgs,
-  routineCommandArgs,
   sanitizedClaudeEnv,
   sanitizedCodexEnv,
+  type RunnerManifest,
 } from "../../sandbox/claude-code/runner";
+import { buildRoutineRunSpec } from "../../routines/run-spec";
+import { buildSummarizationRunSpec } from "../../summarization/run-spec";
+import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 
 const MCP_URL = "https://api.example.test/runs/11111111-1111-4111-8111-111111111111/mcp";
 const SCHEMA = '{"type":"object","required":["outcome"]}';
+const STRUCTURED: RunnerManifest["output"] = { kind: "structured", schemaPath: "/run/input/output-schema.json" };
+
+function manifestOf(overrides: Partial<RunnerManifest> = {}): RunnerManifest {
+  return {
+    version: 1,
+    harness: "claude",
+    model: null,
+    prompt: { kind: "file", path: "/run/input/prompt.md" },
+    tools: { native: ["Read", "Glob"], draftMcpUrl: null },
+    output: { kind: "stream" },
+    timeoutSeconds: 900,
+    ...overrides,
+  };
+}
 
 describe("commands the runner builds", () => {
   it("synthesis and each summarization item: structured result, Read and Glob only", () => {
-    expect(claudeCommandArgs("PROMPT", SCHEMA)).toEqual([
+    expect(claudeArgs(manifestOf({ output: STRUCTURED }), "PROMPT", SCHEMA)).toEqual([
       "-p", "PROMPT",
       "--tools", "Read,Glob",
       "--permission-mode", "dontAsk",
@@ -29,7 +46,7 @@ describe("commands the runner builds", () => {
   });
 
   it("a Claude routine with no extras", () => {
-    expect(routineCommandArgs("PROMPT", null)).toEqual([
+    expect(claudeArgs(manifestOf(), "PROMPT", null)).toEqual([
       "-p", "PROMPT",
       "--tools", "Read,Glob",
       "--permission-mode", "dontAsk",
@@ -40,7 +57,7 @@ describe("commands the runner builds", () => {
   });
 
   it("a Claude routine with a model", () => {
-    expect(routineCommandArgs("PROMPT", "haiku")).toEqual([
+    expect(claudeArgs(manifestOf({ model: "haiku" }), "PROMPT", null)).toEqual([
       "-p", "PROMPT",
       "--model", "haiku",
       "--tools", "Read,Glob",
@@ -52,7 +69,7 @@ describe("commands the runner builds", () => {
   });
 
   it("a Claude routine with Draft's tool server and web search", () => {
-    const args = routineCommandArgs("PROMPT", null, MCP_URL, ["Read", "Glob", "WebSearch"]);
+    const args = claudeArgs(manifestOf({ tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }), "PROMPT", null);
     expect(args).toEqual([
       "-p", "PROMPT",
       "--tools", "Read,Glob,WebSearch",
@@ -67,8 +84,9 @@ describe("commands the runner builds", () => {
   });
 
   it("a Codex routine", () => {
-    expect(codexRoutineArgs(null)).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-"]);
-    expect(codexRoutineArgs("gpt-6-luna")).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
+    const codex = (model: string | null) => manifestOf({ harness: "codex", model, tools: { native: ["shell"], draftMcpUrl: null } });
+    expect(codexArgs(codex(null))).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-"]);
+    expect(codexArgs(codex("gpt-6-luna"))).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
   });
 
   it("the Codex config: web search first, then Draft's server", () => {
@@ -125,11 +143,17 @@ const config = {
   supabaseUrl: "https://project.supabase.co",
 };
 
+const WS = "22222222-2222-4222-8222-222222222222";
+const VERSION = "44444444-4444-4444-8444-444444444444";
+const TASK = "55555555-5555-4555-8555-555555555555";
+const RUN = "11111111-1111-4111-8111-111111111111";
+const OBJECT_SCHEMA = { type: "object" };
+
 async function launched(input: Record<string, unknown>) {
   let env: Record<string, string> = {};
   const uploaded: string[] = [];
   await launchFlySandboxRun(
-    { bundle: { organizationId: "org", workspaceId: "ws", runId: "RUN-ID", bundleHash: "b".repeat(64), files: { "input/context/a.md": { content: "A" } } }, config, ...input } as never,
+    { bundle: { organizationId: "org", workspaceId: WS, runId: "RUN-ID", bundleHash: "b".repeat(64), files: { "input/context/a.md": { content: "A" } } }, config, ...input } as never,
     {
       flyClient: {
         create: async (machine) => {
@@ -152,7 +176,6 @@ async function launched(input: Record<string, unknown>) {
   return { env: redacted, uploaded: uploaded.sort() };
 }
 
-const RUN_FIELDS = { agentRun: { id: parseAgentRunId("11111111-1111-4111-8111-111111111111"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") } };
 const BASE_ENV = {
   DRAFT_RUN_ID: "RUN-ID",
   DRAFT_BUNDLE_HASH: "b".repeat(64),
@@ -163,36 +186,76 @@ const BASE_ENV = {
   DRAFT_PROMPT_PATH: "/run/input/prompt.md",
 };
 
+const synthesisSpec = () =>
+  buildSynthesisRunSpec({ runId: RUN, workspaceId: WS, triggerType: "manual", contextVersionId: VERSION, resultSchema: OBJECT_SCHEMA });
+const summarizationSpec = () =>
+  buildSummarizationRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T03:00:00.000Z", contextVersionId: VERSION, resultSchema: OBJECT_SCHEMA });
+const routineSpec = (routine: { harness: "claude" | "codex"; model: string | null; environment?: { nativeTools: string[]; mcpServers: [] } }) =>
+  buildRoutineRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T09:00:00.000Z", routine: { title: "t", prompt: "p", ...routine }, contextVersionId: VERSION });
+
+// The older variables, unchanged, plus the manifest. An image that has not been replaced reads the older ones.
+const withManifest = (env: Record<string, string>, manifest: RunnerManifest) => ({ ...env, DRAFT_RUN_MANIFEST: JSON.stringify(manifest) });
+
 describe("environments the launcher gives the machine", () => {
   it("synthesis", async () => {
-    const result = await launched({ prompt: "PROMPT", jsonSchema: { type: "object" }, claudeCodeOAuthToken: "login" });
-    expect(result.env).toEqual({ ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json" });
+    const result = await launched({ spec: synthesisSpec(), prompt: { kind: "text", text: "PROMPT" }, credentials: { claudeCodeOAuthToken: "login" } });
+    expect(result.env).toEqual(
+      withManifest(
+        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json" },
+        manifestOf({ timeoutSeconds: 1200, output: STRUCTURED }),
+      ),
+    );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/output-schema.json", "input/prompt.md"]);
   });
 
   it("summarization batch", async () => {
-    const result = await launched({ mode: "batch", manifestPath: "input/manifest.json", jsonSchema: { type: "object" }, claudeCodeOAuthToken: "login" });
-    expect(result.env).toEqual({
-      ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login",
-      DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json", DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json",
-    });
+    const result = await launched({ spec: summarizationSpec(), prompt: { kind: "items", manifestPath: "input/manifest.json" }, credentials: { claudeCodeOAuthToken: "login" } });
+    expect(result.env).toEqual(
+      withManifest(
+        {
+          ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login",
+          DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json", DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json",
+        },
+        manifestOf({ timeoutSeconds: 1200, output: STRUCTURED, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } }),
+      ),
+    );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/output-schema.json"]);
   });
 
   it("Claude routine with Draft's tools", async () => {
-    const result = await launched({ mode: "routine", prompt: "PROMPT", model: "haiku", timeoutSeconds: 900, claudeCodeOAuthToken: "login", nativeTools: ["Read", "Glob", "WebSearch"], ...RUN_FIELDS });
-    expect(result.env).toEqual({
-      ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku",
-      DRAFT_NATIVE_TOOLS: "Read,Glob,WebSearch", DRAFT_MCP_URL: MCP_URL, DRAFT_RUN_TOKEN: "<token>",
+    const result = await launched({
+      spec: routineSpec({ harness: "claude", model: "haiku", environment: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      prompt: { kind: "text", text: "PROMPT" },
+      timeoutSeconds: 900,
+      credentials: { claudeCodeOAuthToken: "login" },
     });
+    expect(result.env).toEqual(
+      withManifest(
+        {
+          ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku",
+          DRAFT_NATIVE_TOOLS: "Read,Glob,WebSearch", DRAFT_MCP_URL: MCP_URL, DRAFT_RUN_TOKEN: "<token>",
+        },
+        manifestOf({ model: "haiku", tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }),
+      ),
+    );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/prompt.md"]);
   });
 
   it("Codex routine", async () => {
-    const result = await launched({ mode: "routine", prompt: "PROMPT", harness: "codex", codexAuthJson: "{}", timeoutSeconds: 900, nativeTools: ["shell", "web_search"], ...RUN_FIELDS });
-    expect(result.env).toEqual({
-      ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{}", DRAFT_RUN_MODE: "routine",
-      DRAFT_NATIVE_TOOLS: "shell,web_search", DRAFT_MCP_URL: MCP_URL, DRAFT_RUN_TOKEN: "<token>",
+    const result = await launched({
+      spec: routineSpec({ harness: "codex", model: null, environment: { nativeTools: ["web_search"], mcpServers: [] } }),
+      prompt: { kind: "text", text: "PROMPT" },
+      timeoutSeconds: 900,
+      credentials: { codexAuthJson: "{}" },
     });
+    expect(result.env).toEqual(
+      withManifest(
+        {
+          ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{}", DRAFT_RUN_MODE: "routine",
+          DRAFT_NATIVE_TOOLS: "shell,web_search", DRAFT_MCP_URL: MCP_URL, DRAFT_RUN_TOKEN: "<token>",
+        },
+        manifestOf({ harness: "codex", tools: { native: ["shell", "web_search"], draftMcpUrl: MCP_URL } }),
+      ),
+    );
   });
 });

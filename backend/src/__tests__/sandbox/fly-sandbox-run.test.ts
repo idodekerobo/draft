@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import type { ValidatedRunBundle } from "../../synthesis/context-version-files";
-import { parseAgentRunId, parseWorkspaceId } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/agent-run";
 import { verifyAgentRunToken } from "../../agent-runs/run-token";
+import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { verifySandboxCallbackToken } from "../../sandbox/callback-token";
 import {
   FlyMachineWaitTimeoutError,
@@ -12,6 +13,9 @@ import {
   launchFlySandboxRun,
   type FlySandboxRunClient,
 } from "../../sandbox/fly-sandbox-run";
+import { runnerManifestSchema } from "../../sandbox/run-manifest";
+import { buildSummarizationRunSpec } from "../../summarization/run-spec";
+import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 
 const bundleHash = "b".repeat(64);
 const image = `registry.fly.io/draft@sha256:${"a".repeat(64)}`;
@@ -30,6 +34,30 @@ const jsonSchema = {
   additionalProperties: false,
   type: "object",
 };
+
+const WS = "22222222-2222-4222-8222-222222222222";
+const RUN = "11111111-1111-4111-8111-111111111111";
+const TASK = "55555555-5555-4555-8555-555555555555";
+const VERSION = "44444444-4444-4444-8444-444444444444";
+
+const synthesisSpec = (): AgentRunSpec =>
+  buildSynthesisRunSpec({ runId: RUN, workspaceId: WS, triggerType: "manual", contextVersionId: VERSION, resultSchema: jsonSchema });
+const batchSpec = (): AgentRunSpec =>
+  buildSummarizationRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T03:00:00.000Z", contextVersionId: VERSION, resultSchema: jsonSchema });
+const routineSpec = (
+  routine: { harness?: "claude" | "codex"; model?: string | null; environment?: { nativeTools: string[]; mcpServers: [] } } = {},
+): AgentRunSpec =>
+  buildRoutineRunSpec({
+    id: RUN,
+    workspaceId: WS,
+    scheduledTaskId: TASK,
+    occurrenceAt: "2026-11-09T09:00:00.000Z",
+    routine: { title: "t", prompt: "p", harness: "claude", model: null, ...routine },
+    contextVersionId: VERSION,
+  });
+
+const claudeLogin = { claudeCodeOAuthToken: "token" };
+const text = (value: string) => ({ kind: "text" as const, text: value });
 
 function bundle(files?: ValidatedRunBundle["files"]): ValidatedRunBundle {
   return {
@@ -88,6 +116,19 @@ function fakeBundleUploader(signedUrl = "https://storage.example.test/signed") {
   return { uploader, calls };
 }
 
+/** Launches with fakes and returns what the machine was created with and what was uploaded. */
+async function launch(input: Record<string, unknown>) {
+  const { client } = fakeFlyClient();
+  const { uploader, calls } = fakeBundleUploader();
+  let launched: CreateFlyMachineInput | undefined;
+  await launchFlySandboxRun({ bundle: bundle(), config, ...input } as never, {
+    flyClient: { ...client, create: async (machine) => { launched = machine; return client.create(machine); } },
+    bundleUploader: uploader,
+    now: () => 1_000,
+  });
+  return { env: launched!.env!, uploads: calls[0]!.files };
+}
+
 describe("launchFlySandboxRun", () => {
   it("uploads the bundle instead of embedding it, and maps sandbox policy without leaking secrets", async () => {
     const { client } = fakeFlyClient();
@@ -102,10 +143,10 @@ describe("launchFlySandboxRun", () => {
     };
 
     const receipt = await launchFlySandboxRun({
+      spec: synthesisSpec(),
       bundle: bundle(),
-      prompt: "Synthesize this workspace.\n",
-      jsonSchema,
-      claudeCodeOAuthToken: "claude-oauth-secret",
+      prompt: text("Synthesize this workspace.\n"),
+      credentials: { claudeCodeOAuthToken: "claude-oauth-secret" },
       config,
     }, {
       flyClient: wrappedClient,
@@ -153,6 +194,7 @@ describe("launchFlySandboxRun", () => {
       "DRAFT_OUTPUT_SCHEMA_PATH",
       "DRAFT_PROMPT_PATH",
       "DRAFT_RUN_ID",
+      "DRAFT_RUN_MANIFEST",
       "DRAFT_TIMEOUT_SECONDS",
     ]);
     expect(launched!.env).toMatchObject({
@@ -168,6 +210,7 @@ describe("launchFlySandboxRun", () => {
     });
     expect(JSON.stringify(launched)).not.toContain(config.flyApiToken);
     expect(JSON.stringify(launched)).not.toContain(config.callbackSecret);
+    expect(launched!.env!.DRAFT_RUN_MANIFEST).not.toContain("claude-oauth-secret");
     expect(verifySandboxCallbackToken(
       launched!.env!.DRAFT_CALLBACK_TOKEN,
       config.callbackSecret,
@@ -191,7 +234,7 @@ describe("launchFlySandboxRun", () => {
     const { uploader } = fakeBundleUploader();
 
     const receipt = await launchFlySandboxRun({
-      bundle: bundle(), prompt: "prompt", jsonSchema, claudeCodeOAuthToken: "token", config,
+      spec: synthesisSpec(), bundle: bundle(), prompt: text("prompt"), credentials: claudeLogin, config,
     }, { flyClient: client, bundleUploader: uploader });
 
     expect(waited).toBe("machine-1");
@@ -213,7 +256,7 @@ describe("launchFlySandboxRun", () => {
     const { uploader } = fakeBundleUploader();
 
     await expect(launchFlySandboxRun({
-      bundle: bundle(), prompt: "prompt", jsonSchema, claudeCodeOAuthToken: "token", config,
+      spec: synthesisSpec(), bundle: bundle(), prompt: text("prompt"), credentials: claudeLogin, config,
     }, { flyClient: client, bundleUploader: uploader })).rejects.toBe(timeoutError);
 
     expect(forceDeleted).toEqual(["machine-1"]);
@@ -231,10 +274,10 @@ describe("launchFlySandboxRun", () => {
     };
     const { uploader } = fakeBundleUploader();
     await expect(launchFlySandboxRun({
-      bundle: bundle(), prompt: " ", jsonSchema, claudeCodeOAuthToken: "token", config,
+      spec: synthesisSpec(), bundle: bundle(), prompt: text(" "), credentials: claudeLogin, config,
     }, { flyClient, bundleUploader: uploader })).rejects.toThrow("prompt must not be empty");
     await expect(launchFlySandboxRun({
-      bundle: bundle(), prompt: "prompt", jsonSchema, claudeCodeOAuthToken: " ", config,
+      spec: synthesisSpec(), bundle: bundle(), prompt: text("prompt"), credentials: { claudeCodeOAuthToken: " " }, config,
     }, { flyClient, bundleUploader: uploader })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
     expect(launches).toBe(0);
   });
@@ -243,12 +286,12 @@ describe("launchFlySandboxRun", () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();
     await expect(launchFlySandboxRun({
+      spec: synthesisSpec(),
       bundle: bundle({
         "input/prompt.md": { content: "forged", sha256: "3".repeat(64), bytes: 6 },
       }),
-      prompt: "real prompt",
-      jsonSchema,
-      claudeCodeOAuthToken: "token",
+      prompt: text("real prompt"),
+      credentials: claudeLogin,
       config,
     }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("reserved prompt path");
   });
@@ -257,6 +300,7 @@ describe("launchFlySandboxRun", () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();
     await expect(launchFlySandboxRun({
+      spec: synthesisSpec(),
       bundle: bundle({
         "input/output-schema.json": {
           content: "{}",
@@ -264,160 +308,135 @@ describe("launchFlySandboxRun", () => {
           bytes: 2,
         },
       }),
-      prompt: "real prompt",
-      jsonSchema,
-      claudeCodeOAuthToken: "token",
+      prompt: text("real prompt"),
+      credentials: claudeLogin,
       config,
     }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("reserved output schema path");
   });
 
-  it("launches in batch mode without a top-level prompt, wiring DRAFT_RUN_MODE/DRAFT_MANIFEST_PATH", async () => {
-    const { client } = fakeFlyClient();
-    let launched: CreateFlyMachineInput | undefined;
-    const wrappedClient: FlySandboxRunClient = {
-      ...client,
-      create: async (input) => {
-        launched = input;
-        return client.create(input);
-      },
-    };
-    const { uploader, calls } = fakeBundleUploader();
-
-    await launchFlySandboxRun({
-      bundle: bundle(),
-      jsonSchema,
-      claudeCodeOAuthToken: "claude-oauth-secret",
-      config,
-      mode: "batch",
-      manifestPath: "input/manifest.json",
-    }, { flyClient: wrappedClient, bundleUploader: uploader });
-
-    expect(calls[0].files["input/prompt.md"]).toBeUndefined();
-    expect(launched!.env).toMatchObject({
-      DRAFT_RUN_MODE: "batch",
-      DRAFT_MANIFEST_PATH: "/run/input/manifest.json",
+  it("launches a batch without a top-level prompt, naming the items file", async () => {
+    const { env, uploads } = await launch({
+      spec: batchSpec(),
+      prompt: { kind: "items", manifestPath: "input/manifest.json" },
+      credentials: { claudeCodeOAuthToken: "claude-oauth-secret" },
     });
-  });
 
-  it("requires manifestPath when mode is batch", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader } = fakeBundleUploader();
-    await expect(launchFlySandboxRun({
-      bundle: bundle(), jsonSchema, claudeCodeOAuthToken: "token", config, mode: "batch",
-    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow('manifestPath is required when mode is "batch"');
+    expect(uploads["input/prompt.md"]).toBeUndefined();
+    expect(env).toMatchObject({ DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json" });
+    expect(runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!)).prompt).toEqual({ kind: "items", manifestPath: "/run/input/manifest.json" });
   });
 });
 
-describe("launchFlySandboxRun routine mode", () => {
-  it("runs without an output schema and tells the runner the mode, model and timeout", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader, calls } = fakeBundleUploader();
-    let launched: CreateFlyMachineInput | undefined;
-
-    await launchFlySandboxRun({
-      bundle: bundle(),
-      prompt: "Summarize the week.\n",
-      mode: "routine",
-      model: "haiku",
+describe("the run manifest the launcher sends", () => {
+  it("is valid, holds no secret, and says what the spec says", async () => {
+    const { env } = await launch({
+      spec: routineSpec({ model: "haiku", environment: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      prompt: text("Go.\n"),
       timeoutSeconds: 900,
-      claudeCodeOAuthToken: "token",
-      config,
-    }, {
-      flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } },
-      bundleUploader: uploader,
+      credentials: { claudeCodeOAuthToken: "login-secret" },
+    });
+    const manifest = runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!));
+    expect(manifest).toEqual({
+      version: 1,
+      harness: "claude",
+      model: "haiku",
+      prompt: { kind: "file", path: "/run/input/prompt.md" },
+      tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: `https://api.example.test/runs/${RUN}/mcp` },
+      output: { kind: "stream" },
+      timeoutSeconds: 900,
+    });
+    expect(env.DRAFT_RUN_MANIFEST).not.toContain("login-secret");
+    expect(env.DRAFT_RUN_MANIFEST).not.toContain(env.DRAFT_RUN_TOKEN!);
+  });
+
+  it("changes with the spec: a structured run has a schema path and a Codex run is Codex", async () => {
+    const synthesis = runnerManifestSchema.parse(JSON.parse((await launch({ spec: synthesisSpec(), prompt: text("p"), credentials: claudeLogin })).env.DRAFT_RUN_MANIFEST!));
+    expect(synthesis.output).toEqual({ kind: "structured", schemaPath: "/run/input/output-schema.json" });
+    const codex = runnerManifestSchema.parse(JSON.parse((await launch({ spec: routineSpec({ harness: "codex" }), prompt: text("p"), credentials: { codexAuthJson: "{}" } })).env.DRAFT_RUN_MANIFEST!));
+    expect(codex.harness).toBe("codex");
+    expect(codex.tools.native).toEqual(["shell"]);
+  });
+});
+
+describe("launchFlySandboxRun routine runs", () => {
+  it("runs without an output schema and tells the runner the mode, model and timeout", async () => {
+    const { env, uploads } = await launch({
+      spec: routineSpec({ model: "haiku" }),
+      prompt: text("Summarize the week.\n"),
+      timeoutSeconds: 900,
+      credentials: claudeLogin,
     });
 
-    expect(Object.keys(calls[0]!.files)).not.toContain("input/output-schema.json");
-    expect(calls[0]!.files["input/prompt.md"]).toBe("Summarize the week.\n");
-    expect(launched!.env).toMatchObject({
-      DRAFT_RUN_MODE: "routine",
-      DRAFT_ROUTINE_MODEL: "haiku",
-      DRAFT_TIMEOUT_SECONDS: "900",
-    });
-    expect(launched!.env).not.toHaveProperty("DRAFT_OUTPUT_SCHEMA_PATH");
+    expect(Object.keys(uploads)).not.toContain("input/output-schema.json");
+    expect(uploads["input/prompt.md"]).toBe("Summarize the week.\n");
+    expect(env).toMatchObject({ DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku", DRAFT_TIMEOUT_SECONDS: "900" });
+    expect(env).not.toHaveProperty("DRAFT_OUTPUT_SCHEMA_PATH");
   });
 
   it("gives a run Draft's tools: a tool server URL on the callback host and a run token", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader } = fakeBundleUploader();
-    let launched: CreateFlyMachineInput | undefined;
-    const agentRun = { id: parseAgentRunId("11111111-1111-4111-8111-111111111111"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") };
+    const { env } = await launch({ spec: routineSpec(), prompt: text("Go.\n"), credentials: claudeLogin });
 
-    await launchFlySandboxRun({
-      bundle: bundle(), prompt: "Go.\n", mode: "routine", claudeCodeOAuthToken: "token", config, agentRun,
-    }, {
-      flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } },
-      bundleUploader: uploader,
-      now: () => 1_000,
-    });
-
-    expect(launched!.env!.DRAFT_MCP_URL).toBe(`https://api.example.test/runs/${agentRun.id}/mcp`);
-    const claims = verifyAgentRunToken(launched!.env!.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 });
-    expect(claims).toMatchObject({ runId: agentRun.id, workspaceId: agentRun.workspaceId });
-    expect(() => verifySandboxCallbackToken(launched!.env!.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 })).toThrow();
+    expect(env.DRAFT_MCP_URL).toBe(`https://api.example.test/runs/${RUN}/mcp`);
+    const claims = verifyAgentRunToken(env.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 });
+    expect(claims).toMatchObject({ runId: RUN, workspaceId: WS });
+    expect(() => verifySandboxCallbackToken(env.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 })).toThrow();
   });
 
-  it("tells the runner which built-in tools the run may use, when it says", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader } = fakeBundleUploader();
-    let launched: CreateFlyMachineInput | undefined;
-    await launchFlySandboxRun({
-      bundle: bundle(), prompt: "Go.\n", mode: "routine", claudeCodeOAuthToken: "token", config, nativeTools: ["Read", "Glob", "WebSearch"],
-    }, { flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } }, bundleUploader: uploader });
-    expect(launched!.env!.DRAFT_NATIVE_TOOLS).toBe("Read,Glob,WebSearch");
+  it("tells the runner which built-in tools the run may use", async () => {
+    const { env } = await launch({
+      spec: routineSpec({ environment: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      prompt: text("Go.\n"),
+      credentials: claudeLogin,
+    });
+    expect(env.DRAFT_NATIVE_TOOLS).toBe("Read,Glob,WebSearch");
   });
 
   it("sets no tool server or run token when the run has no Draft tools", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader } = fakeBundleUploader();
-    let launched: CreateFlyMachineInput | undefined;
-    await launchFlySandboxRun({
-      bundle: bundle(), prompt: "Go.\n", mode: "routine", claudeCodeOAuthToken: "token", config,
-    }, { flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } }, bundleUploader: uploader });
-    expect(launched!.env).not.toHaveProperty("DRAFT_MCP_URL");
-    expect(launched!.env).not.toHaveProperty("DRAFT_RUN_TOKEN");
-    expect(launched!.env).not.toHaveProperty("DRAFT_NATIVE_TOOLS");
+    const { env } = await launch({ spec: { ...routineSpec(), permissions: [] }, prompt: text("Go.\n"), credentials: claudeLogin });
+    expect(env).not.toHaveProperty("DRAFT_MCP_URL");
+    expect(env).not.toHaveProperty("DRAFT_RUN_TOKEN");
+    expect(runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBeNull();
   });
 
-  it("refuses Draft tools outside routine mode", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader } = fakeBundleUploader();
-    const agentRun = { id: parseAgentRunId("11111111-1111-4111-8111-111111111111"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") };
-    await expect(launchFlySandboxRun({
-      bundle: bundle(), jsonSchema: { type: "object" }, claudeCodeOAuthToken: "token", config, agentRun,
-    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("agentRun is supported only");
+  it("gives a structured run Draft's tools too, when its spec holds them", async () => {
+    const { env } = await launch({
+      spec: buildSynthesisRunSpec({ runId: RUN, workspaceId: WS, triggerType: "manual", contextVersionId: VERSION, resultSchema: jsonSchema, permissions: [{ tool: "context.write" }] }),
+      prompt: text("Go.\n"),
+      credentials: claudeLogin,
+    });
+    expect(env.DRAFT_RUN_TOKEN).toBeTruthy();
+    expect(runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBe(`https://api.example.test/runs/${RUN}/mcp`);
   });
 
   it("hands a Codex run its auth file and no Claude token", async () => {
-    const { client } = fakeFlyClient();
-    const { uploader } = fakeBundleUploader();
-    let launched: CreateFlyMachineInput | undefined;
-
-    await launchFlySandboxRun({
-      bundle: bundle(), prompt: "Summarize the week.\n", mode: "routine", harness: "codex", codexAuthJson: "{\"auth_mode\":\"chatgpt\"}", config,
-    }, {
-      flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } },
-      bundleUploader: uploader,
+    const { env } = await launch({
+      spec: routineSpec({ harness: "codex" }),
+      prompt: text("Summarize the week.\n"),
+      credentials: { codexAuthJson: "{\"auth_mode\":\"chatgpt\"}" },
     });
 
-    expect(launched!.env).toMatchObject({ DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{\"auth_mode\":\"chatgpt\"}", DRAFT_RUN_MODE: "routine" });
-    expect(launched!.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(env).toMatchObject({ DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{\"auth_mode\":\"chatgpt\"}", DRAFT_RUN_MODE: "routine" });
+    expect(env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
   });
 
-  it("refuses a Codex run that is not a routine or has no auth file, and a Claude run with no token", async () => {
+  it("refuses a run with the wrong or empty credentials for its harness", async () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();
-    const run = (input: object) => launchFlySandboxRun({ bundle: bundle(), prompt: "p", jsonSchema, config, ...input }, { flyClient: client, bundleUploader: uploader });
-    await expect(run({ harness: "codex", codexAuthJson: "{}" })).rejects.toThrow("only mode \"routine\"");
-    await expect(run({ harness: "codex", mode: "routine" })).rejects.toThrow("codexAuthJson must not be empty");
-    await expect(run({ mode: "routine" })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
+    const run = (spec: AgentRunSpec, credentials: object) =>
+      launchFlySandboxRun({ spec, bundle: bundle(), prompt: text("p"), credentials: credentials as never, config }, { flyClient: client, bundleUploader: uploader });
+    await expect(run(routineSpec({ harness: "codex" }), { codexAuthJson: " " })).rejects.toThrow("codexAuthJson must not be empty");
+    await expect(run(routineSpec({ harness: "codex" }), claudeLogin)).rejects.toThrow("codexAuthJson must not be empty");
+    await expect(run(routineSpec(), { codexAuthJson: "{}" })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
   });
 
-  it("still requires a schema outside routine mode", async () => {
+  it("refuses a run the sandbox cannot do: Codex with a structured result, a local run, no output", async () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();
-    await expect(launchFlySandboxRun({
-      bundle: bundle(), prompt: "prompt", claudeCodeOAuthToken: "token", config,
-    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("jsonSchema is required");
+    const run = (spec: AgentRunSpec, prompt: object = text("p")) =>
+      launchFlySandboxRun({ spec, bundle: bundle(), prompt: prompt as never, credentials: { claudeCodeOAuthToken: "t", codexAuthJson: "{}" }, config }, { flyClient: client, bundleUploader: uploader });
+    await expect(run({ ...routineSpec({ harness: "codex" }), output: { type: "structured", schema: jsonSchema } })).rejects.toThrow("Codex run streams text");
+    await expect(run({ ...routineSpec({ harness: "codex" }) }, { kind: "items", manifestPath: "input/manifest.json" })).rejects.toThrow("Codex run streams text");
+    await expect(run({ ...routineSpec(), runtime: { type: "local", hostMachineId: "mac" as never } })).rejects.toThrow("cloud runtime");
+    await expect(run({ ...routineSpec(), output: { type: "none" } })).rejects.toThrow("text or structured output");
   });
 });
