@@ -6,15 +6,32 @@ import { RoutineLeaseBusyError, type LaunchRoutineRun } from "../../routines/lau
 import type { ScheduledTaskRow } from "../../types/tables";
 import { fakeClient, fakeDb } from "./fake-client";
 
+const WS_ID = "11111111-1111-4111-8111-111111111111";
+const TASK_ID = "55555555-5555-4555-8555-555555555555";
+const VERSION_ID = "44444444-4444-4444-8444-444444444444";
+
 const task = {
-  id: "task-1",
-  workspace_id: "ws-1",
+  id: TASK_ID,
+  workspace_id: WS_ID,
   task_type: "agent_routine",
   created_by_user_id: "user-1",
   config_json: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" },
 } as unknown as ScheduledTaskRow;
 
-const newDb = () => fakeDb({ sessions: [], errors: [] }, { unique: { sessions: [["workspace_id", "idempotency_key"]] } });
+const newDb = (workspace: Record<string, unknown> | null = { id: WS_ID, timezone: "UTC", current_context_version_id: VERSION_ID }) =>
+  fakeDb(
+    {
+      sessions: [],
+      errors: [],
+      agent_runs: [],
+      workspaces: workspace ? [workspace] : [],
+      workspace_context_versions: [{ id: VERSION_ID, version_number: 1, documents_json: { "a.md": { content: "A", sha256: "a".repeat(64) } } }],
+    },
+    {
+      unique: { sessions: [["workspace_id", "idempotency_key"]], agent_runs: [["workspace_id", "idempotency_key"]] },
+      rpcs: { commit_context_write: () => ({ data: { status: "committed", new_version_id: "99999999-9999-4999-8999-999999999999", version_number: 1 } }) },
+    },
+  );
 const sandboxConfig = {} as never;
 const okLaunch = () => mock<LaunchRoutineRun>(async () => {});
 
@@ -33,11 +50,11 @@ describe("dispatchAgentRoutine", () => {
     expect(db.tables.sessions![0]).toMatchObject({
       session_type: "routine",
       owner_user_id: "user-1",
-      scheduled_task_id: "task-1",
+      scheduled_task_id: TASK_ID,
       status: "starting",
       title: "Weekly digest",
       model: "haiku",
-      idempotency_key: "task-1:2026-10-27T09:00:00.000Z",
+      idempotency_key: `${TASK_ID}:2026-10-27T09:00:00.000Z`,
     });
     expect(db.tables.sessions![0]!.host_machine_id).toBe(`fly:${db.tables.sessions![0]!.id}`);
   });
@@ -82,7 +99,80 @@ describe("dispatchAgentRoutine", () => {
     expect(launch).toHaveBeenCalledTimes(1);
     expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed" });
     expect(db.tables.errors).toHaveLength(1);
-    expect(db.tables.errors![0]).toMatchObject({ operation: "session", scheduled_task_id: "task-1", session_id: db.tables.sessions![0]!.id });
+    expect(db.tables.errors![0]).toMatchObject({ operation: "session", scheduled_task_id: TASK_ID, session_id: db.tables.sessions![0]!.id });
+  });
+
+  it("records the run with its typed spec, tied to the session, and marks it running once launched", async () => {
+    const db = newDb();
+    const launch = mock<LaunchRoutineRun>(async () => ({ machineId: "machine-9" }));
+    await dispatch(db, launch);
+
+    expect(db.tables.agent_runs).toHaveLength(1);
+    const run = db.tables.agent_runs![0]!;
+    expect(run).toMatchObject({
+      workspace_id: WS_ID,
+      kind: "routine",
+      harness: "claude",
+      model: "haiku",
+      instructions: "Summarize the week.",
+      base_context_version_id: VERSION_ID,
+      session_id: db.tables.sessions![0]!.id,
+      idempotency_key: `${TASK_ID}:2026-10-27T09:00:00.000Z`,
+      status: "running",
+      sandbox_machine_id: "machine-9",
+      trigger: { type: "cron", scheduledTaskId: TASK_ID, occurrenceAt: "2026-10-27T09:00:00.000Z" },
+      principal: { type: "workspace" },
+      output: { type: "text" },
+    });
+    expect(run.permissions).toEqual([{ tool: "context.read" }, { tool: "request_input" }]);
+    expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }] } });
+    expect(run.started_at).toBeTruthy();
+    const launchInput = launch.mock.calls[0]![0];
+    expect(launchInput.run.id).toBe(run.id as never);
+    expect(launchInput.run.inputs.contextVersionId).toBe(VERSION_ID as never);
+  });
+
+  it("gives a Codex routine a Codex environment", async () => {
+    const db = newDb();
+    await dispatch(db, okLaunch(), undefined, { config_json: { title: "t", prompt: "p", harness: "codex", model: null } });
+    expect(db.tables.agent_runs![0]).toMatchObject({ harness: "codex", model: null });
+    expect(db.tables.agent_runs![0]!.runtime).toMatchObject({ environment: { nativeTools: [{ harness: "codex", tool: "shell" }] } });
+  });
+
+  it("seeds a workspace with no context so the run has a base version", async () => {
+    const db = newDb({ id: WS_ID, timezone: "UTC", current_context_version_id: null });
+    await dispatch(db, okLaunch());
+    expect(db.rpcCalls.map((call) => call.name)).toContain("commit_context_write");
+    expect(db.rpcCalls[0]!.args).toMatchObject({ p_creation_reason: "seed", p_expected_version_id: null });
+    expect(db.tables.agent_runs).toHaveLength(1);
+  });
+
+  it("dispatches a duplicate occurrence to one run record", async () => {
+    const db = newDb();
+    await dispatch(db, okLaunch());
+    db.tables.sessions![0]!.status = "ended";
+    await dispatch(db, okLaunch());
+    expect(db.tables.agent_runs).toHaveLength(1);
+  });
+
+  it("ends the run as failed with the code when the launch fails", async () => {
+    const db = newDb();
+    await dispatch(db, mock<LaunchRoutineRun>(async () => { throw new Error("fly is down"); }));
+    expect(db.tables.agent_runs![0]).toMatchObject({ status: "failed", failure_code: "routine_launch_failed" });
+    expect(db.tables.agent_runs![0]!.completed_at).toBeTruthy();
+  });
+
+  it("cancels the run when it was skipped because another Codex run held the login", async () => {
+    const db = newDb();
+    await dispatch(db, mock<LaunchRoutineRun>(async () => { throw new RoutineLeaseBusyError(); }), undefined, { config_json: { title: "t", prompt: "p", harness: "codex", model: null } });
+    expect(db.tables.agent_runs![0]).toMatchObject({ status: "cancelled", failure_code: "routine_run_skipped" });
+  });
+
+  it("ends the session as failed, and records nothing as running, when the run record cannot be made", async () => {
+    const db = newDb(null);
+    await dispatch(db, okLaunch());
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed" });
+    expect(db.tables.agent_runs).toHaveLength(0);
   });
 
   it("throws for a routine with no creator or an invalid config, without starting a session", async () => {
@@ -96,7 +186,7 @@ describe("dispatchAgentRoutine", () => {
 describe("failStaleRoutineSessions", () => {
   const now = new Date("2026-10-27T12:00:00.000Z");
   const session = (id: string, startedAt: string, extra: Record<string, unknown> = {}) => ({
-    id, workspace_id: "ws-1", session_type: "routine", status: "starting", scheduled_task_id: "task-1",
+    id, workspace_id: "ws-1", session_type: "routine", status: "starting", scheduled_task_id: TASK_ID,
     host_machine_id: `fly:${id}`, started_at: startedAt, ...extra,
   });
 
@@ -157,10 +247,9 @@ describe("dispatchAgentRoutine on Codex", () => {
   });
 
   it("frees the login's lease when a Codex session ends, and only for the run that holds it", async () => {
-    const db = fakeDb(
-      { sessions: [], errors: [], credentials: [{ id: "cred-1", workspace_id: "ws-1", provider: "codex_chatgpt_auth" }] },
-      { unique: { sessions: [["workspace_id", "idempotency_key"]] }, rpcs: { release_credential_lease: () => ({ data: true }) } },
-    );
+    const db = newDb();
+    db.tables.credentials = [{ id: "cred-1", workspace_id: WS_ID, provider: "codex_chatgpt_auth" }];
+    db.rpcs.release_credential_lease = () => ({ data: true });
     await dispatch(db, rejecting(new Error("fly down")), "2026-10-27T09:00:00.000Z", codexTask);
 
     const release = db.rpcCalls.find((c) => c.name === "release_credential_lease")!;

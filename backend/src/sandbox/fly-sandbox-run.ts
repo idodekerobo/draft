@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { AgentRunId, WorkspaceId } from "draft-core/agent-run";
+import { createAgentRunToken } from "../agent-runs/run-token";
 import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import {
@@ -56,6 +58,8 @@ export interface LaunchFlySandboxRunInput {
   timeoutSeconds?: number;
   /** Bundle-relative manifest path, required when mode is "batch". */
   manifestPath?: string;
+  /** Routine mode only: gives the run Draft's tools. The token and the tool server URL go to the runner. */
+  agentRun?: { id: AgentRunId; workspaceId: WorkspaceId };
 }
 
 function serializeJsonSchema(schema: Record<string, unknown>): string {
@@ -115,6 +119,7 @@ export async function launchFlySandboxRun(
   input: LaunchFlySandboxRunInput,
   dependencies: LaunchFlySandboxRunDependencies = {},
 ): Promise<FlySandboxRunReceipt> {
+  if (input.agentRun && input.mode !== "routine") throw new Error("agentRun is supported only when mode is \"routine\"");
   if (input.mode !== "batch") assertNonEmpty(input.prompt ?? "", "prompt");
   const harness = input.harness ?? "claude";
   if (harness === "codex") {
@@ -189,6 +194,14 @@ export async function launchFlySandboxRun(
   if (input.mode === "routine") {
     env.DRAFT_RUN_MODE = "routine";
     if (input.model) env.DRAFT_ROUTINE_MODEL = input.model;
+    if (input.agentRun) {
+      // Same host as the callback, which the sandbox is already allowed to reach.
+      env.DRAFT_MCP_URL = new URL(`/runs/${input.agentRun.id}/mcp`, config.callbackUrl).toString();
+      env.DRAFT_RUN_TOKEN = createAgentRunToken(
+        { runId: input.agentRun.id, workspaceId: input.agentRun.workspaceId, expiresAt: callbackExpiresAt, nonce: nonce() },
+        config.callbackSecret,
+      );
+    }
   }
   if (input.mode === "batch") {
     if (!input.manifestPath) {

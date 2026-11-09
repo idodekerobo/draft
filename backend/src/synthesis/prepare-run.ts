@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FlySandboxRunReceipt } from "../sandbox";
-import { commitContextVersion, loadCurrentContext } from "../agent-runs/context-store";
-import { computeMemoryAdditions, ensureMemoryProvisioned } from "./provision-memory";
+import { ensureMemoryProvisioned, seedEmptyWorkspace } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";
 import { getLatestSynthesisRun } from "./latest-run";
@@ -74,22 +73,7 @@ export async function prepareRun(
     // infrastructure, not an opt-in dimension, so its stubs are folded
     // straight into the seed insert rather than seeding {} and then
     // immediately provisioning a second version on top of it.
-    const seedDocuments = computeMemoryAdditions({}, workspace.timezone, options.now);
-    const seeded = await commitContextVersion(client, {
-      workspaceId: options.workspaceId,
-      expectedVersionId: null,
-      documents: seedDocuments,
-      reason: "seed",
-      summary: "Empty workspace — no context yet",
-    });
-    if (seeded.status === "committed") {
-      baseContextVersionId = seeded.versionId;
-    } else {
-      // Another writer created the first version between our read and the seed.
-      const current = await loadCurrentContext(client, options.workspaceId);
-      if (!current.versionId) throw new Error("Workspace has no context version after seeding");
-      baseContextVersionId = current.versionId;
-    }
+    baseContextVersionId = await seedEmptyWorkspace(client, options.workspaceId, workspace.timezone, options.now);
   } else {
     const { data: versionData, error: versionError } = await client
       .from("workspace_context_versions")

@@ -9,6 +9,8 @@ import {
   callback,
   classifyClaudeEnvelopeFailure,
   classifyClaudeFailureChunk,
+  claudeMcpConfigJson,
+  codexMcpConfigToml,
   codexRoutineArgs,
   extractStructuredOutput,
   claudeCommandArgs,
@@ -24,6 +26,7 @@ import {
   recomputeBundleHash,
   reportRunnerFailure,
   routineCommandArgs,
+  routineMcpUrl,
   routineFailureCode,
   runBatch,
   sanitizeReason,
@@ -544,6 +547,53 @@ test("routine command streams stream-json, stays read-only, and sets no JSON sch
   expect(args).not.toContain("--json-schema");
   expect(routineCommandArgs("Summarize", null)).not.toContain("--model");
   expect(() => routineCommandArgs("Summarize", "bad model; rm")).toThrow("DRAFT_ROUTINE_MODEL");
+});
+
+describe("Draft tools for a routine run", () => {
+  const mcpUrl = "https://api.example.com/runs/11111111-1111-4111-8111-111111111111/mcp";
+
+  test("Claude gets only Draft's server, allowed by server name, with the token read from the environment", () => {
+    const args = routineCommandArgs("Summarize", null, mcpUrl);
+    const config = JSON.parse(args[args.indexOf("--mcp-config") + 1]!);
+    expect(config).toEqual({ mcpServers: { draft: { type: "http", url: mcpUrl, headers: { Authorization: "Bearer ${DRAFT_RUN_TOKEN}" } } } });
+    expect(args).toContain("--strict-mcp-config");
+    expect(args.slice(args.indexOf("--allowedTools"), args.indexOf("--allowedTools") + 2)).toEqual(["--allowedTools", "mcp__draft"]);
+    expect(args.slice(0, 2)).toEqual(["-p", "Summarize"]);
+    expect(args).toContain("Read,Glob");
+    expect(JSON.stringify(args)).not.toMatch(/Bearer [A-Za-z0-9]/);
+  });
+
+  test("without a tool server the Claude command is unchanged", () => {
+    expect(routineCommandArgs("Summarize", null)).toEqual(routineCommandArgs("Summarize", null, null));
+    expect(routineCommandArgs("Summarize", null)).not.toContain("--mcp-config");
+    expect(claudeMcpConfigJson(mcpUrl)).toContain("${DRAFT_RUN_TOKEN}");
+  });
+
+  test("Codex config names the server, takes the token from the environment and needs no approval", () => {
+    const toml = codexMcpConfigToml(mcpUrl);
+    expect(toml).toContain("[mcp_servers.draft]");
+    expect(toml).toContain(`url = "${mcpUrl}"`);
+    expect(toml).toContain('bearer_token_env_var = "DRAFT_RUN_TOKEN"');
+    expect(toml).toContain("required = true");
+    expect(toml).toContain('default_tools_approval_mode = "approve"');
+  });
+
+  test("the child gets the run token and nothing else of ours", () => {
+    expect(sanitizedClaudeEnv({ CLAUDE_CODE_OAUTH_TOKEN: "t", DRAFT_RUN_TOKEN: "run-token", DRAFT_CALLBACK_TOKEN: "cb" }).DRAFT_RUN_TOKEN).toBe("run-token");
+    expect(sanitizedClaudeEnv({ CLAUDE_CODE_OAUTH_TOKEN: "t" })).not.toHaveProperty("DRAFT_RUN_TOKEN");
+    const codex = sanitizedCodexEnv({ DRAFT_RUN_TOKEN: "run-token", DRAFT_CALLBACK_TOKEN: "cb" });
+    expect(codex.DRAFT_RUN_TOKEN).toBe("run-token");
+    expect(JSON.stringify(codex)).not.toContain("cb");
+  });
+
+  test("the tool server URL must be HTTPS on the callback host, and is optional", () => {
+    const callback = "https://api.example.com/sandbox/callback";
+    expect(routineMcpUrl(undefined, callback)).toBeNull();
+    expect(routineMcpUrl(mcpUrl, callback)).toBe(mcpUrl);
+    expect(() => routineMcpUrl("https://evil.example.net/runs/x/mcp", callback)).toThrow("callback host");
+    expect(() => routineMcpUrl("http://api.example.com/runs/x/mcp", callback)).toThrow("callback host");
+    expect(() => routineMcpUrl("https://user:pw@api.example.com/runs/x/mcp", callback)).toThrow("callback host");
+  });
 });
 
 describe("StreamLineReader", () => {

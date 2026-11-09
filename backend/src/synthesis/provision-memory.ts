@@ -26,6 +26,29 @@ Read a specific period with \`draft context read --dimension memory --period <to
 
 const MAX_STALE_RETRIES = 3;
 
+/**
+ * Gives a workspace with no context its first version, with memory's stubs already in it.
+ * If another writer created the first version meanwhile, that one is used.
+ */
+export async function seedEmptyWorkspace(
+  client: SupabaseClient,
+  workspaceId: string,
+  timezone: string,
+  now?: Date,
+): Promise<string> {
+  const seeded = await commitContextVersion(client, {
+    workspaceId,
+    expectedVersionId: null,
+    documents: computeMemoryAdditions({}, timezone, now),
+    reason: "seed",
+    summary: "Empty workspace — no context yet",
+  });
+  if (seeded.status === "committed") return seeded.versionId;
+  const current = await loadCurrentContext(client, workspaceId);
+  if (!current.versionId) throw new Error("Workspace has no context version after seeding");
+  return current.versionId;
+}
+
 export interface EnsureMemoryProvisionedInput {
   client: SupabaseClient;
   workspaceId: string;

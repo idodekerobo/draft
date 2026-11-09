@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ValidatedRunBundle } from "../../synthesis/context-version-files";
+import { parseAgentRunId, parseWorkspaceId } from "draft-core/agent-run";
+import { verifyAgentRunToken } from "../../agent-runs/run-token";
 import { verifySandboxCallbackToken } from "../../sandbox/callback-token";
 import {
   FlyMachineWaitTimeoutError,
@@ -333,6 +335,46 @@ describe("launchFlySandboxRun routine mode", () => {
       DRAFT_TIMEOUT_SECONDS: "900",
     });
     expect(launched!.env).not.toHaveProperty("DRAFT_OUTPUT_SCHEMA_PATH");
+  });
+
+  it("gives a run Draft's tools: a tool server URL on the callback host and a run token", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    let launched: CreateFlyMachineInput | undefined;
+    const agentRun = { id: parseAgentRunId("11111111-1111-4111-8111-111111111111"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") };
+
+    await launchFlySandboxRun({
+      bundle: bundle(), prompt: "Go.\n", mode: "routine", claudeCodeOAuthToken: "token", config, agentRun,
+    }, {
+      flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } },
+      bundleUploader: uploader,
+      now: () => 1_000,
+    });
+
+    expect(launched!.env!.DRAFT_MCP_URL).toBe(`https://api.example.test/runs/${agentRun.id}/mcp`);
+    const claims = verifyAgentRunToken(launched!.env!.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 });
+    expect(claims).toMatchObject({ runId: agentRun.id, workspaceId: agentRun.workspaceId });
+    expect(() => verifySandboxCallbackToken(launched!.env!.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 })).toThrow();
+  });
+
+  it("sets no tool server or run token when the run has no Draft tools", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    let launched: CreateFlyMachineInput | undefined;
+    await launchFlySandboxRun({
+      bundle: bundle(), prompt: "Go.\n", mode: "routine", claudeCodeOAuthToken: "token", config,
+    }, { flyClient: { ...client, create: async (input) => { launched = input; return client.create(input); } }, bundleUploader: uploader });
+    expect(launched!.env).not.toHaveProperty("DRAFT_MCP_URL");
+    expect(launched!.env).not.toHaveProperty("DRAFT_RUN_TOKEN");
+  });
+
+  it("refuses Draft tools outside routine mode", async () => {
+    const { client } = fakeFlyClient();
+    const { uploader } = fakeBundleUploader();
+    const agentRun = { id: parseAgentRunId("11111111-1111-4111-8111-111111111111"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") };
+    await expect(launchFlySandboxRun({
+      bundle: bundle(), jsonSchema: { type: "object" }, claudeCodeOAuthToken: "token", config, agentRun,
+    }, { flyClient: client, bundleUploader: uploader })).rejects.toThrow("agentRun is supported only");
   });
 
   it("hands a Codex run its auth file and no Claude token", async () => {

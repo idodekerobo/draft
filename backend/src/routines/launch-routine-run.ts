@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { parseWorkspaceId } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/agent-run";
+import { loadVersionDocuments } from "../agent-runs/context-store";
 import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
 import { launchFlySandboxRun, type SandboxDeploymentConfig } from "../sandbox";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
@@ -8,6 +9,8 @@ import { ROUTINE_RUN_TIMEOUT_SECONDS, type AgentRoutineConfig } from "./config";
 
 export interface LaunchRoutineRunInput {
   sessionId: string;
+  /** The run this launch carries out. Its base version is the one the bundle is built from. */
+  run: AgentRunSpec;
   workspaceId: string;
   routine: AgentRoutineConfig;
   /** When the routine runs, so the agent can know its own cadence. */
@@ -16,7 +19,7 @@ export interface LaunchRoutineRunInput {
   client: SupabaseClient;
 }
 
-export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<void>;
+export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<{ machineId: string } | void>;
 
 /** Another run holds the workspace's Codex login, and two runs at once would break its refresh token. */
 export class RoutineLeaseBusyError extends Error {
@@ -26,39 +29,40 @@ export class RoutineLeaseBusyError extends Error {
   }
 }
 
-export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, workspaceId, routine, schedule, config, client }) => {
+export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, schedule, config, client }) => {
   const { data, error } = await client.from("workspaces").select("organization_id").eq("id", workspaceId).single();
   if (error) throw error;
   const organizationId = (data as { organization_id: string }).organization_id;
 
-  const { getWorkspaceContext } = await import("../services/workspace-context");
-  const context = await getWorkspaceContext(workspaceId);
-  // A workspace with no brain yet still runs; the prompt may not need it.
-  const documents = context.ok ? context.snapshot.documents : {};
+  // The run's own base version, not the latest: the default sha of a write is read from this same version.
+  const documents = await loadVersionDocuments(client, agentRun.inputs.contextVersionId);
 
   const run = {
-    bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, audience: { type: "system", workspaceId: parseWorkspaceId(workspaceId) }, documents }),
+    bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, audience: { type: "run", run: agentRun }, documents }),
     prompt: renderRoutinePrompt(routine.prompt, {
       title: routine.title,
       schedule: schedule.description,
       timezone: schedule.timezone,
       startedAt: new Date(),
+      hasDraftTools: agentRun.permissions.length > 0,
     }),
     mode: "routine" as const,
     model: routine.model ?? undefined,
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,
+    agentRun: { id: agentRun.id, workspaceId: agentRun.workspaceId },
     config,
   };
 
   if (routine.harness !== "codex") {
-    await launchFlySandboxRun({ ...run, claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) });
-    return;
+    const receipt = await launchFlySandboxRun({ ...run, claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) });
+    return { machineId: receipt.machineId };
   }
 
   const { credentialId, authJson } = await resolveCodexCredential(client, workspaceId);
   if (!(await acquireCodexLease(client, credentialId, workspaceId, sessionId))) throw new RoutineLeaseBusyError();
   try {
-    await launchFlySandboxRun({ ...run, harness: "codex", codexAuthJson: authJson });
+    const receipt = await launchFlySandboxRun({ ...run, harness: "codex", codexAuthJson: authJson });
+    return { machineId: receipt.machineId };
   } catch (launchError) {
     await releaseCodexLease(client, credentialId, sessionId).catch(() => undefined);
     throw launchError;

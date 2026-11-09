@@ -10,6 +10,8 @@ export interface RoutinePromptContext {
   schedule: string;
   timezone: string;
   startedAt: Date;
+  /** True when the run has Draft's tool server, so the prompt can say so. */
+  hasDraftTools?: boolean;
 }
 
 function startedAtIn(timezone: string, startedAt: Date): string {
@@ -30,6 +32,7 @@ export function renderRoutinePrompt(prompt: string, context: RoutinePromptContex
     `This run started: ${startedAtIn(context.timezone, context.startedAt)}`,
     "",
     "The company's shared knowledge is in Markdown files under /run/input/context. Read them as needed. They are read-only.",
+    ...(context.hasDraftTools ? ["Draft's own tools are in the \"draft\" tool server. Use them for what they list, such as asking a person a question."] : []),
     "Answer the request below. Your reply is saved as the result of this run.",
   ].join("\n");
   return `${preamble}\n\n---\n\n${prompt.trim()}\n`;

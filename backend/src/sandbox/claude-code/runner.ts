@@ -182,12 +182,42 @@ export function sanitizedClaudeEnv(env: NodeJS.ProcessEnv): Record<string, strin
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
   };
   if (env.TZ) allowed.TZ = env.TZ;
+  if (env.DRAFT_RUN_TOKEN) allowed.DRAFT_RUN_TOKEN = env.DRAFT_RUN_TOKEN;
   return allowed;
 }
 
 const CODEX_HOME = "/home/agent/.codex";
 const CODEX_AUTH_FILE = `${CODEX_HOME}/auth.json`;
+const CODEX_CONFIG_FILE = `${CODEX_HOME}/config.toml`;
 const CODEX_WORK_DIR = "/home/agent/work";
+
+/** Draft's tool server for a Codex run. The bearer token comes from the environment, never from this file. */
+export function codexMcpConfigToml(mcpUrl: string): string {
+  return [
+    "[mcp_servers.draft]",
+    `url = ${JSON.stringify(mcpUrl)}`,
+    'bearer_token_env_var = "DRAFT_RUN_TOKEN"',
+    "required = true",
+    'default_tools_approval_mode = "approve"',
+    "",
+  ].join("\n");
+}
+
+/** Draft's tool server for a Claude Code run. The header reads the token from the environment. */
+export function claudeMcpConfigJson(mcpUrl: string): string {
+  return JSON.stringify({ mcpServers: { draft: { type: "http", url: mcpUrl, headers: { Authorization: "Bearer ${DRAFT_RUN_TOKEN}" } } } });
+}
+
+/** The tool server URL of a run: unset means the run has no Draft tools. It must be HTTPS on the callback's host. */
+export function routineMcpUrl(value: string | undefined, callbackUrl: string): string | null {
+  if (!value) return null;
+  const url = new URL(value);
+  const callback = new URL(callbackUrl);
+  if (url.protocol !== "https:" || url.username || url.password || url.host !== callback.host) {
+    throw new Error("DRAFT_MCP_URL must be an HTTPS URL on the callback host");
+  }
+  return url.toString();
+}
 
 export function sanitizedCodexEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const allowed: Record<string, string> = {
@@ -199,6 +229,7 @@ export function sanitizedCodexEnv(env: NodeJS.ProcessEnv): Record<string, string
     CODEX_HOME,
   };
   if (env.TZ) allowed.TZ = env.TZ;
+  if (env.DRAFT_RUN_TOKEN) allowed.DRAFT_RUN_TOKEN = env.DRAFT_RUN_TOKEN;
   return allowed;
 }
 
@@ -211,12 +242,16 @@ export function parseAgentIds(passwd: string): { uid: number; gid: number } | nu
 }
 
 /** Puts the workspace's login where Codex reads it, for the agent user alone. */
-export function prepareCodexHome(authJson: string): void {
+export function prepareCodexHome(authJson: string, mcpUrl: string | null = null): void {
   const { uid, gid } = parseAgentIds(readFileSync("/etc/passwd", "utf8")) ?? { uid: AGENT_UID, gid: AGENT_GID };
   mkdirSync(CODEX_HOME, { recursive: true, mode: 0o700 });
   chownSync(CODEX_HOME, uid, gid);
   writeFileSync(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
   chownSync(CODEX_AUTH_FILE, uid, gid);
+  if (mcpUrl) {
+    writeFileSync(CODEX_CONFIG_FILE, codexMcpConfigToml(mcpUrl), { mode: 0o600 });
+    chownSync(CODEX_CONFIG_FILE, uid, gid);
+  }
   mkdirSync(CODEX_WORK_DIR, { recursive: true, mode: 0o700 });
   chownSync(CODEX_WORK_DIR, uid, gid);
 }
@@ -670,7 +705,7 @@ export type RoutineLine =
   | { file: string; offset: number; raw: string }
   | { file: string; offset: number; oversizeBytes: number };
 
-export function routineCommandArgs(prompt: string, model: string | null): string[] {
+export function routineCommandArgs(prompt: string, model: string | null, mcpUrl: string | null = null): string[] {
   if (model !== null && !MODEL_PATTERN.test(model)) throw new Error("DRAFT_ROUTINE_MODEL is invalid");
   return [
     "-p",
@@ -680,6 +715,8 @@ export function routineCommandArgs(prompt: string, model: string | null): string
     "Read,Glob",
     "--permission-mode",
     "dontAsk",
+    // Claude Code turns dots in tool names into underscores, so the allow rule names the server.
+    ...(mcpUrl ? ["--mcp-config", claudeMcpConfigJson(mcpUrl), "--strict-mcp-config", "--allowedTools", "mcp__draft"] : []),
     "--no-session-persistence",
     "--output-format",
     "stream-json",
@@ -765,13 +802,14 @@ export async function runRoutine(
   runId: string,
   post: RoutinePost,
   harness: "claude" | "codex" = "claude",
+  mcpUrl: string | null = null,
 ): Promise<RoutineEnd> {
   const { spawn } = await import("node:child_process");
   const { StringDecoder } = await import("node:string_decoder");
   const codex = harness === "codex";
   const childEnv = codex ? sanitizedCodexEnv(process.env) : sanitizedClaudeEnv(process.env);
   const envArgs = Object.entries(childEnv).map(([key, value]) => `${key}=${value}`);
-  const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model)];
+  const command = codex ? ["codex", ...codexRoutineArgs(model)] : ["claude", ...routineCommandArgs(prompt, model, mcpUrl)];
   const child = spawn("gosu", ["agent", "env", "-i", ...envArgs, ...command], {
     cwd: codex ? CODEX_WORK_DIR : "/run",
     detached: true,
@@ -1088,13 +1126,15 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
 
   if (runMode === "routine") {
     const harness = process.env.DRAFT_RUN_HARNESS === "codex" ? "codex" : "claude";
+    const mcpUrl = routineMcpUrl(process.env.DRAFT_MCP_URL, callbackUrl);
+    if (mcpUrl) required("DRAFT_RUN_TOKEN");
     if (harness === "codex") {
-      prepareCodexHome(required("CODEX_AUTH_JSON"));
+      prepareCodexHome(required("CODEX_AUTH_JSON"), mcpUrl);
       delete process.env.CODEX_AUTH_JSON;
     }
     const end = await runRoutine(prompt, process.env.DRAFT_ROUTINE_MODEL || null, timeoutMs, runId, (result) =>
       callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
-    harness);
+    harness, mcpUrl);
     await callback(callbackUrl, callbackToken, runId, bundleHash, end, undefined);
     runnerLog("final", { run_id: runId, status: end.ok ? "completed" : "failed", failure_code: end.error ?? "none" });
     if (!end.ok) process.exitCode = 1;

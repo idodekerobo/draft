@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { finishAgentRunForSession, type AgentRunOutcome } from "../agent-runs/lifecycle";
 import { releaseCodexLeaseForRun } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";
@@ -21,6 +22,7 @@ export async function endRoutineSession(
   client: SupabaseClient,
   session: Pick<RoutineSessionRef, "id" | "workspace_id">,
   endReason: "completed" | "failed",
+  failure?: { code: string; detail?: string; cancelled?: boolean },
 ): Promise<boolean> {
   const { data, error } = await client
     .from("sessions")
@@ -33,6 +35,13 @@ export async function endRoutineSession(
   const ended = (data as Array<{ harness: string }> | null)?.[0];
   // A Codex run holds its workspace's login until it ends, however it ends.
   if (ended?.harness === "codex") await releaseCodexLeaseForRun(client, session.workspace_id, session.id).catch(() => undefined);
+  if (ended) {
+    const outcome: AgentRunOutcome =
+      endReason === "completed"
+        ? { status: "succeeded" }
+        : { status: failure?.cancelled ? "cancelled" : "failed", failureCode: failure?.code, failureDetail: failure?.detail };
+    await finishAgentRunForSession(client, session.id, outcome);
+  }
   return !!ended;
 }
 
@@ -57,7 +66,7 @@ export async function failRoutineSession(
     })
     .then(() => undefined, () => undefined);
 
-  if (!(await endRoutineSession(client, session, "failed"))) return false;
+  if (!(await endRoutineSession(client, session, "failed", { code: failure.code, detail: failure.message, cancelled: failure.silent }))) return false;
   if (failure.silent) return true;
 
   await recordError({

@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAgentRun } from "../agent-runs/agent-run-store";
+import { resolveBaseContextVersionId } from "../agent-runs/base-context";
+import { markAgentRunRunning } from "../agent-runs/lifecycle";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId } from "./config";
@@ -7,6 +10,7 @@ import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-sessi
 import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
+import { buildRoutineRunSpec } from "./run-spec";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -66,14 +70,27 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
   const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
 
   try {
-    await (options.launch ?? launchRoutineRun)({
+    const contextVersionId = await resolveBaseContextVersionId(client, task.workspace_id);
+    const run = buildRoutineRunSpec({
+      id: randomUUID(),
+      workspaceId: task.workspace_id,
+      scheduledTaskId: task.id,
+      occurrenceAt,
+      routine,
+      contextVersionId,
+    });
+    await createAgentRun(client, { spec: run, idempotencyKey: `${task.id}:${occurrenceAt}`, status: "preparing", sessionId });
+
+    const launched = await (options.launch ?? launchRoutineRun)({
       sessionId,
+      run,
       workspaceId: task.workspace_id,
       routine,
       schedule: { description: describeTaskSchedule(task), timezone: task.timezone },
       config,
       client,
     });
+    await markAgentRunRunning(client, run.id, launched?.machineId);
   } catch (error) {
     if (error instanceof RoutineLeaseBusyError) {
       await failRoutineSession(client, session, {
