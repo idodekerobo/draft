@@ -170,9 +170,11 @@ async function dispatchSummarizeSessions(
   config: SandboxDeploymentConfig,
   client: SupabaseClient,
   deps: DispatchDependencies,
+  occurrenceAt: string,
 ): Promise<void> {
   await deps.launchSummarizationBatch({
     workspaceId: task.workspace_id,
+    schedule: { scheduledTaskId: task.id, occurrenceAt },
     config,
     client,
   });
@@ -210,7 +212,7 @@ export async function dispatchScheduledTask(
     return fresh;
   }
   if (fresh.task_type === "summarize_sessions") {
-    await dispatchSummarizeSessions(fresh, options.config, options.client, deps);
+    await dispatchSummarizeSessions(fresh, options.config, options.client, deps, options.occurrenceAt);
     return fresh;
   }
   if (fresh.task_type === "slack_backfill") {

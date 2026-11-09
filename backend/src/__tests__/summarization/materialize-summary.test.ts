@@ -20,6 +20,7 @@ function baseSession(overrides: Partial<AgentSessionRow> = {}): AgentSessionRow 
     summary_attempts: 1,
     summary_lease_until: "2026-08-01T01:30:00.000Z",
     summary_last_error: null,
+    summary_agent_run_id: null,
     created_at: "2026-08-01T00:00:00.000Z",
     updated_at: "2026-08-01T00:00:00.000Z",
     ...overrides,

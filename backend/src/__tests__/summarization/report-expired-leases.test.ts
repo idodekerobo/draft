@@ -8,6 +8,7 @@ interface FakeSession {
   summary_status: string;
   summary_attempts: number;
   summary_lease_until: string | null;
+  summary_agent_run_id?: string | null;
 }
 
 type Filter =
@@ -24,6 +25,7 @@ function matches(row: FakeSession, filters: Filter[]): boolean {
 
 function createFakeClient(rows: FakeSession[], selectError?: Error) {
   const errorInserts: Record<string, unknown>[] = [];
+  const runUpdates: Array<{ id: string; values: Record<string, unknown> }> = [];
 
   function from(table: string) {
     if (table === "agent_sessions") {
@@ -50,6 +52,18 @@ function createFakeClient(rows: FakeSession[], selectError?: Error) {
         },
       };
     }
+    if (table === "agent_runs") {
+      return {
+        update: (values: Record<string, unknown>) => ({
+          eq: (_column: string, id: string) => ({
+            in: async () => {
+              runUpdates.push({ id, values });
+              return { error: null };
+            },
+          }),
+        }),
+      };
+    }
     if (table === "errors") {
       return {
         insert: async (payload: Record<string, unknown>) => {
@@ -61,7 +75,7 @@ function createFakeClient(rows: FakeSession[], selectError?: Error) {
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
-  return { client: { from } as unknown as SupabaseClient, errorInserts };
+  return { client: { from } as unknown as SupabaseClient, errorInserts, runUpdates };
 }
 
 const WORKSPACE = "workspace-1";
@@ -98,6 +112,21 @@ describe("reportExpiredSummaryLeases", () => {
       max_attempts: 3,
       at_cap_count: 1,
     });
+  });
+
+  it("ends the run behind each expired lease once, as failed", async () => {
+    const { client, runUpdates } = createFakeClient([
+      session({ id: "a", summary_agent_run_id: "run-1" }),
+      session({ id: "b", summary_agent_run_id: "run-1" }),
+      session({ id: "c", summary_agent_run_id: "run-2" }),
+      session({ id: "d", summary_agent_run_id: null }),
+    ]);
+
+    await reportExpiredSummaryLeases(WORKSPACE, client);
+
+    expect(runUpdates.map((update) => update.id)).toEqual(["run-1", "run-2"]);
+    expect(runUpdates[0]!.values).toMatchObject({ status: "failed", failure_code: "summarization_lease_expired" });
+    expect(runUpdates[0]!.values.completed_at).toBeTruthy();
   });
 
   it("ignores live leases, other statuses, and other workspaces", async () => {

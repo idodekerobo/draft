@@ -6,6 +6,8 @@ export interface AgentRunOutcome {
   status: "succeeded" | "failed" | "cancelled";
   failureCode?: string;
   failureDetail?: string;
+  /** A short account of what the run did, such as how many items it handled. */
+  summary?: string;
 }
 
 // A bookkeeping failure must not change what happened to the run, so these log instead of throwing.
@@ -28,6 +30,7 @@ function outcomeColumns(outcome: AgentRunOutcome) {
     completed_at: new Date().toISOString(),
     failure_code: outcome.failureCode ?? null,
     failure_detail: outcome.failureDetail ?? null,
+    ...(outcome.summary !== undefined ? { summary: outcome.summary } : {}),
   };
 }
 

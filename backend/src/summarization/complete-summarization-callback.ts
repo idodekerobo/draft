@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { finishAgentRun } from "../agent-runs/lifecycle";
 import { authenticateSandboxCallbackRequest } from "../sandbox";
 import { validateSummarizationResult } from "./validate-result";
 import { materializeSessionSummary } from "./materialize-summary";
@@ -10,6 +11,20 @@ export const SUMMARIZATION_RUN_ID_PREFIX = "summarize:";
 // Run IDs are minted as summarize:<workspaceId>:<uuid> (run-summarization-batch.ts,
 // via buildSummarizationBundle) specifically so the callback route can branch
 // on this prefix and recover the workspace without a tracking table.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The id the sandbox reports under: the workspace, then the agent run that owns the batch. */
+export function summarizationRunId(workspaceId: string, agentRunId: string): string {
+  return `${SUMMARIZATION_RUN_ID_PREFIX}${workspaceId}:${agentRunId}`;
+}
+
+/** The agent run behind a summarization run id, or null for an id that does not end in one. */
+export function parseAgentRunIdFromSummarizationRunId(runId: string): string | null {
+  if (!parseWorkspaceIdFromSummarizationRunId(runId)) return null;
+  const last = runId.slice(runId.lastIndexOf(":") + 1);
+  return UUID_PATTERN.test(last) ? last : null;
+}
+
 export function parseWorkspaceIdFromSummarizationRunId(runId: string): string | null {
   if (!runId.startsWith(SUMMARIZATION_RUN_ID_PREFIX)) return null;
   const rest = runId.slice(SUMMARIZATION_RUN_ID_PREFIX.length);
@@ -34,11 +49,13 @@ export async function completeSummarizationRunCallback(
   let stage = "callback_auth";
   let runId: string | undefined;
   let workspaceId: string | null = null;
+  let agentRunId: string | null = null;
   try {
     const authenticated = await authenticateSandboxCallbackRequest(request, callbackSecret);
     runId = authenticated.runId;
     workspaceId = parseWorkspaceIdFromSummarizationRunId(authenticated.runId);
     if (!workspaceId) throw new Error(`Cannot recover workspace from run id: ${authenticated.runId}`);
+    agentRunId = parseAgentRunIdFromSummarizationRunId(authenticated.runId);
 
     // The runner reports setup failures (e.g. bundle fetch) as {error, diagnostics}
     // instead of {items}. Record the real reason and ack so it doesn't retry.
@@ -53,6 +70,7 @@ export async function completeSummarizationRunCallback(
         detail: { run_id: runId, diagnostics: runnerFailure.diagnostics },
         error: new Error(`summarization runner reported ${runnerFailure.error}`),
       });
+      if (agentRunId) await finishAgentRun(resolvedClient, agentRunId, { status: "failed", failureCode: "summarization_runner_failed", failureDetail: runnerFailure.error });
       return new Response(null, { status: 204 });
     }
 
@@ -81,8 +99,13 @@ export async function completeSummarizationRunCallback(
       }
     }
 
+    if (agentRunId) {
+      const summarized = items.filter((item) => item.ok).length;
+      await finishAgentRun(resolvedClient, agentRunId, { status: "succeeded", summary: `${summarized} of ${items.length} sessions summarized` });
+    }
     return new Response(null, { status: 204 });
   } catch (error) {
+    if (agentRunId) await finishAgentRun(resolvedClient, agentRunId, { status: "failed", failureCode: `summarization_${stage}_failed`, failureDetail: error instanceof Error ? error.message : String(error) });
     await recordError({
       client: resolvedClient,
       workspaceId,

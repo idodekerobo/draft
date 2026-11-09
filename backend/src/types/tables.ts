@@ -285,6 +285,7 @@ export interface AgentSessionRow {
   summary_attempts: number;
   summary_lease_until: string | null;
   summary_last_error: string | null;
+  summary_agent_run_id: string | null;
   created_at: string;
   updated_at: string;
 }
