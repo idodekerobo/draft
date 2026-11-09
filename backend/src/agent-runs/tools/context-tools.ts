@@ -20,7 +20,7 @@ export function createContextTools(client: SupabaseClient) {
     name: "context.write",
     description:
       "Write Markdown documents to the company's shared context. Each change is checked against that document only. " +
-      "If it changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, drop it, or report it with request_input.",
+      "If it changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, or drop it.",
     input: z.object({
       summary: z.string().min(1).max(500),
       changes: z
@@ -56,7 +56,7 @@ export function createContextTools(client: SupabaseClient) {
       if ((count ?? 0) >= MAX_CONFLICTED_WRITES) {
         return {
           status: "conflict",
-          output: { retryable: false, message: "Too many conflicted writes in this run. Stop retrying. Drop the change or report it with request_input." },
+          output: { retryable: false, message: "Too many conflicted writes in this run. Stop retrying. Drop the change." },
           summary: "retry cap reached",
         };
       }
@@ -93,25 +93,5 @@ export function createContextTools(client: SupabaseClient) {
     },
   });
 
-  const requestInput = defineTool({
-    name: "request_input",
-    description:
-      "Ask a person a question you cannot answer yourself. The run does not wait: continue without the answer if you can. The answer is used later.",
-    input: z.object({
-      question: z.string().min(1).max(2000),
-      options: z.array(z.string().min(1).max(200)).max(10).optional(),
-    }),
-    handler: async ({ input, caller }) => {
-      const run = requireRun(caller, "request_input");
-      const { data, error } = await client
-        .from("agent_run_input_requests")
-        .insert({ workspace_id: run.workspaceId, agent_run_id: run.id, question: input.question, options: input.options ?? null })
-        .select("id")
-        .single();
-      if (error) throw error;
-      return { status: "ok", output: { requestId: (data as { id: string }).id, status: "open" }, summary: input.question.slice(0, 200) };
-    },
-  });
-
-  return [write, requestInput];
+  return [write];
 }

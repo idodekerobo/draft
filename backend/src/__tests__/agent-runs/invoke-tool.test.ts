@@ -212,7 +212,7 @@ describe("ToolRegistry", () => {
   });
 
   it("refuses to register one tool twice", () => {
-    const tool = defineTool({ name: "request_input", description: "", input: z.object({}), handler: async () => ({ status: "ok", output: {} }) });
+    const tool = defineTool({ name: "context.list", description: "", input: z.object({}), handler: async () => ({ status: "ok", output: {} }) });
     expect(() => new ToolRegistry([tool, tool])).toThrow("registered twice");
   });
 });

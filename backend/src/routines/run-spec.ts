@@ -15,11 +15,8 @@ import {
 } from "draft-core/agent-run";
 import type { AgentRoutineConfig } from "./config";
 
-/**
- * What a routine may call through Draft today. It reads context and can ask a person a question.
- * context.write is not granted yet: a write during a synthesis run would make that run stale.
- */
-export const ROUTINE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "request_input" }];
+/** What a routine may call through Draft today. It reads context. */
+export const ROUTINE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }];
 
 /** The built-in tools the runner starts each harness with. They match runner.ts. */
 const DEFAULT_NATIVE_TOOLS: Record<HarnessId, ReadonlyArray<NativeToolPermission>> = {

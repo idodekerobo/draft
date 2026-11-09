@@ -124,7 +124,7 @@ describe("dispatchAgentRoutine", () => {
       principal: { type: "workspace" },
       output: { type: "text" },
     });
-    expect(run.permissions).toEqual([{ tool: "context.read" }, { tool: "request_input" }]);
+    expect(run.permissions).toEqual([{ tool: "context.read" }]);
     expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }] } });
     expect(run.started_at).toBeTruthy();
     const launchInput = launch.mock.calls[0]![0];

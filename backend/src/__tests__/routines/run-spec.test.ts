@@ -27,9 +27,9 @@ describe("buildRoutineRunSpec", () => {
     expect(spec.runtime.type).toBe("cloud");
   });
 
-  it("grants reading and asking, and no write to the shared context yet", () => {
+  it("grants reading, and no write to the shared context yet", () => {
     const tools = ROUTINE_PERMISSIONS.map((permission) => permission.tool);
-    expect(tools).toEqual(["context.read", "request_input"]);
+    expect(tools).toEqual(["context.read"]);
     expect(tools).not.toContain("context.write");
   });
 

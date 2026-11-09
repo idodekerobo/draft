@@ -149,12 +149,3 @@ describe("context.write", () => {
     expect(db.versionCount()).toBe(1);
   });
 });
-
-describe("request_input", () => {
-  it("saves an open question for the run", async () => {
-    const { call, db } = setup({ "a.md": "A" }, [{ tool: "request_input" }]);
-    const result = await call("request_input", { question: "Which channel?", options: ["#a", "#b"] });
-    expect(result).toMatchObject({ status: "ok", output: { status: "open" } });
-    expect(db.inputRequests[0]).toMatchObject({ question: "Which channel?", options: ["#a", "#b"], agent_run_id: "22222222-2222-4222-8222-222222222222" });
-  });
-});

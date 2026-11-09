@@ -32,7 +32,7 @@ export function renderRoutinePrompt(prompt: string, context: RoutinePromptContex
     `This run started: ${startedAtIn(context.timezone, context.startedAt)}`,
     "",
     "The company's shared knowledge is in Markdown files under /run/input/context. Read them as needed. They are read-only.",
-    ...(context.hasDraftTools ? ["Draft's own tools are in the \"draft\" tool server. Use them for what they list, such as asking a person a question."] : []),
+    ...(context.hasDraftTools ? ["Draft's own tools are in the \"draft\" tool server. Use them for what they list, such as reading the company context."] : []),
     "Answer the request below. Your reply is saved as the result of this run.",
   ].join("\n");
   return `${preamble}\n\n---\n\n${prompt.trim()}\n`;

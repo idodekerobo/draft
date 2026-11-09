@@ -21,7 +21,6 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
   let counter = 0;
   const rpcCalls: Array<Record<string, unknown>> = [];
   const toolCalls: Array<{ tool_name: string; status: string; agent_run_id: string }> = [];
-  const inputRequests: Array<Record<string, unknown>> = [];
   const agentRuns = new Map<string, Record<string, unknown>>();
   const hooks: { beforeCommit?: () => void } = {};
 
@@ -75,14 +74,6 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
           },
         };
       }
-      if (table === "agent_run_input_requests") {
-        return {
-          insert: (row: Record<string, unknown>) => {
-            inputRequests.push(row);
-            return { select: () => ({ single: async () => ({ data: { id: "99999999-9999-4999-8999-999999999999" }, error: null }) }) };
-          },
-        };
-      }
       throw new Error(`Unexpected table ${table}`);
     },
     rpc: async (name: string, args: Record<string, unknown>) => {
@@ -102,7 +93,6 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
     client: client as unknown as SupabaseClient,
     rpcCalls,
     toolCalls,
-    inputRequests,
     hooks,
     agentRuns,
     pointer: () => pointer,

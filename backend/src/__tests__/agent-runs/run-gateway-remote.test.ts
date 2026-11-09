@@ -56,7 +56,7 @@ async function setup(options: { named?: boolean } = {}) {
     model: null,
     instructions: "",
     inputs: { contextVersionId: parseContextVersionId(db.pointer()!) },
-    permissions: [{ tool: "request_input" }],
+    permissions: [{ tool: "context.read" }],
     output: { type: "text" },
   };
   await createAgentRun(db.client, { spec, idempotencyKey: "k", status: "running" });
@@ -87,7 +87,7 @@ describe("a run's remote tools through the gateway", () => {
   it("lists them next to Draft's own, with the server's argument schema", async () => {
     const { gateway, request } = await setup();
     const body = (await (await gateway.listTools(request("/x"), RUN_ID)).json()) as { tools: Array<{ name: string; access: string; inputSchema: { required?: string[] } }> };
-    expect(body.tools.map((tool) => tool.name).sort()).toEqual(["mcp.linear.search_issues", "request_input"]);
+    expect(body.tools.map((tool) => tool.name).sort()).toEqual(["context.read", "mcp.linear.search_issues"]);
     const remote = body.tools.find((tool) => tool.name === "mcp.linear.search_issues")!;
     expect(remote.access).toBe("write");
     expect(remote.inputSchema.required).toEqual(["query"]);
@@ -118,7 +118,7 @@ describe("a run's remote tools through the gateway", () => {
   it("does not offer or run them for a run whose environment names no connection", async () => {
     const { gateway, request, calls } = await setup({ named: false });
     const body = (await (await gateway.listTools(request("/x"), RUN_ID)).json()) as { tools: Array<{ name: string }> };
-    expect(body.tools.map((tool) => tool.name)).toEqual(["request_input"]);
+    expect(body.tools.map((tool) => tool.name)).toEqual(["context.read"]);
     const response = await gateway.callTool(request("/x", { query: "bug" }), RUN_ID, "mcp.linear.search_issues");
     expect(response.status).toBe(403);
     expect(calls).toEqual([]);
