@@ -6,8 +6,8 @@ RUN bun build --target=node --outfile=runner.mjs runner.ts
 
 FROM node:22-bookworm-slim
 
-ARG CLAUDE_CODE_VERSION=2.1.220
-ARG CODEX_VERSION=0.165.0
+ARG CLAUDE_CODE_VERSION=2.1.321
+ARG CODEX_VERSION=0.166.0
 
 # Use a runtime supported by the pinned Claude Code release. The image uses
 # Debian packages available to Fly's remote builder and does not rely on a
