@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
-import { loadRunnerManifest, validateRunnerManifest } from "../../sandbox/runner";
-import { validateRunnerManifest as validateShared } from "draft-core/run-manifest";
+import { loadRunnerManifest } from "../../sandbox/runner/manifest";
+import { validateRunnerManifest } from "draft-core/run-manifest";
 import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer } from "../../sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
@@ -29,12 +29,11 @@ const cases = [
   { name: "Codex routine", spec: routine("codex", ["web_search"]), prompt: { kind: "text" as const, text: "p" } },
 ];
 
-describe("the backend's manifest and the runner's parser agree", () => {
+describe("the manifest the backend builds, for every kind of run", () => {
   for (const { name, spec, prompt } of cases) {
-    it(`${name}: the runner accepts what the backend builds`, () => {
+    it(`${name}: passes the shared validator after a JSON round trip`, () => {
       const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
-      expect(validateRunnerManifest(JSON.parse(JSON.stringify(manifest)), CALLBACK)).toEqual(manifest);
-      expect(validateShared(manifest, { callbackUrl: CALLBACK })).toEqual(manifest);
+      expect(validateRunnerManifest(JSON.parse(JSON.stringify(manifest)), { callbackUrl: CALLBACK })).toEqual(manifest);
     });
 
     it(`${name}: the older environment variables give the same manifest`, () => {

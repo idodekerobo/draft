@@ -4,45 +4,18 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  assertWithinInputRoot,
-  buildFailureDiagnostics,
-  callback,
-  classifyClaudeEnvelopeFailure,
-  classifyClaudeFailureChunk,
-  claudeMcpConfigJson,
-  codexConfigToml,
-  codexMcpConfigToml,
-  codexArgs,
-  extractStructuredOutput,
-  claudeArgs,
-  fetchAndWriteBundle,
-  parseBatchManifest,
-  parseAgentIds,
-  parseCodexResultLine,
-  parseCompletedClaudeEnvelope,
-  parseResultPayload,
-  parseStreamJsonTranscript,
-  readOutputSchema,
-  parseTimeoutSeconds,
-  recomputeBundleHash,
-  reportRunnerFailure,
-  harnessCommand,
-  loadRunnerManifest,
-  manifestFromLegacyEnv,
-  parseRunnerManifest,
-  validateRunnerManifest,
-  type RunnerManifest,
-  routineMcpUrl,
-  RUNNER_NATIVE_TOOLS,
-  routineFailureCode,
-  runBatch,
-  sanitizeReason,
-  sanitizedClaudeEnv,
-  sanitizedCodexEnv,
-  shouldRetryCallback,
-  StreamLineReader,
-} from "../../sandbox/runner";
+import { assertWithinInputRoot, fetchAndWriteBundle, readOutputSchema, recomputeBundleHash } from "../../sandbox/runner/bundle";
+import { buildFailureDiagnostics } from "../../sandbox/runner/failure";
+import { callback, reportRunnerFailure, shouldRetryCallback } from "../../sandbox/runner/callback";
+import { classifyClaudeEnvelopeFailure, claudeMcpConfigJson, extractStructuredOutput, claudeArgs, parseCompletedClaudeEnvelope, parseResultPayload, parseStreamJsonTranscript, sanitizedClaudeEnv } from "draft-core/harnesses/claude/runner";
+import { classifyFailureChunk } from "draft-core/harnesses/failure";
+import { codexConfigToml, codexMcpConfigToml, codexArgs, parseAgentIds, parseCodexResultLine, sanitizedCodexEnv } from "draft-core/harnesses/codex/runner";
+import { parseBatchManifest, runBatch } from "../../sandbox/runner/batch";
+import { parseTimeoutSeconds, loadRunnerManifest, manifestFromLegacyEnv } from "../../sandbox/runner/manifest";
+import { harnessCommand } from "../../sandbox/runner/process";
+import { parseRunnerManifest, validateRunnerManifest, type RunnerManifest } from "draft-core/run-manifest";
+import { routineFailureCode, StreamLineReader } from "../../sandbox/runner/stream";
+import { sanitizeReason } from "../../sandbox/runner/log";
 
 const CALLBACK = "https://api.example.com/sandbox/callback";
 const MCP_URL = "https://api.example.com/runs/11111111-1111-4111-8111-111111111111/mcp";
@@ -183,12 +156,12 @@ test("timeout bounds and callback retry policy are conservative", () => {
 
 describe("safe Claude diagnostics", () => {
   test("classifies stderr using fixed categories without returning source text", () => {
-    expect(classifyClaudeFailureChunk("OAuth token rejected: secret-value")).toBe("auth");
-    expect(classifyClaudeFailureChunk("HTTP 429 from service")).toBe("rate_limit");
-    expect(classifyClaudeFailureChunk("EACCES permission denied")).toBe("permission");
-    expect(classifyClaudeFailureChunk("socket ECONNRESET")).toBe("network");
-    expect(classifyClaudeFailureChunk("unexpected internal detail")).toBe("other");
-    expect(classifyClaudeFailureChunk("")).toBe("none");
+    expect(classifyFailureChunk("OAuth token rejected: secret-value")).toBe("auth");
+    expect(classifyFailureChunk("HTTP 429 from service")).toBe("rate_limit");
+    expect(classifyFailureChunk("EACCES permission denied")).toBe("permission");
+    expect(classifyFailureChunk("socket ECONNRESET")).toBe("network");
+    expect(classifyFailureChunk("unexpected internal detail")).toBe("other");
+    expect(classifyFailureChunk("")).toBe("none");
   });
 
   test("classifies an authentication failure carried only by an error envelope", () => {
@@ -618,23 +591,11 @@ describe("Draft tools for a run", () => {
     expect(codex.DRAFT_RUN_TOKEN).toBe("run-token");
     expect(JSON.stringify(codex)).not.toContain("cb");
   });
-
-  test("the tool server URL must be HTTPS on the callback host, and is optional", () => {
-    expect(routineMcpUrl(undefined, CALLBACK)).toBeNull();
-    expect(routineMcpUrl(MCP_URL, CALLBACK)).toBe(MCP_URL);
-    expect(() => routineMcpUrl("https://evil.example.net/runs/x/mcp", CALLBACK)).toThrow("callback host");
-    expect(() => routineMcpUrl("http://api.example.com/runs/x/mcp", CALLBACK)).toThrow("callback host");
-    expect(() => routineMcpUrl("https://user:pw@api.example.com/runs/x/mcp", CALLBACK)).toThrow("callback host");
-  });
 });
 
 describe("built-in tools of a run", () => {
-  test("the runner's allow-list is the one core publishes", () => {
-    expect(RUNNER_NATIVE_TOOLS).toEqual(CLOUD_NATIVE_TOOLS);
-  });
-
   test("a tool outside the list for that harness is refused", () => {
-    const withTools = (harness: "claude" | "codex", native: string[]) => validateRunnerManifest({ ...manifestOf({ harness }), tools: { native, draftMcpUrl: null } }, CALLBACK);
+    const withTools = (harness: "claude" | "codex", native: string[]) => validateRunnerManifest({ ...manifestOf({ harness }), tools: { native, draftMcpUrl: null } }, { callbackUrl: CALLBACK });
     expect(withTools("claude", ["Read", "Glob", "WebSearch"]).tools.native).toEqual(["Read", "Glob", "WebSearch"]);
     expect(() => withTools("claude", ["Read", "Bash"])).toThrow("may not use");
     expect(() => withTools("codex", ["shell", "WebSearch"])).toThrow("may not use");
@@ -658,52 +619,6 @@ describe("built-in tools of a run", () => {
     expect(toml.indexOf('web_search = "live"')).toBeLessThan(toml.indexOf("[mcp_servers.draft]"));
     expect(codexConfigToml({ mcpUrl: null, webSearch: true })).toBe('web_search = "live"');
     expect(codexConfigToml({ mcpUrl: null, webSearch: false })).toBe("");
-  });
-});
-
-describe("the run manifest", () => {
-  const good = manifestOf();
-  const parse = (value: unknown) => validateRunnerManifest(value, CALLBACK);
-
-  test("accepts a complete manifest, from JSON text too", () => {
-    expect(parse(good)).toEqual(good);
-    expect(parseRunnerManifest(JSON.stringify(good), CALLBACK)).toEqual(good);
-  });
-
-  test("refuses text that is not JSON", () => {
-    expect(() => parseRunnerManifest("{nope", CALLBACK)).toThrow("valid JSON");
-  });
-
-  test("refuses a key it does not know, at any level", () => {
-    expect(() => parse({ ...good, extra: 1 })).toThrow("unknown key in manifest: extra");
-    expect(() => parse({ ...good, tools: { ...good.tools, shell: true } })).toThrow("unknown key in tools");
-    expect(() => parse({ ...good, prompt: { kind: "file", path: "/run/input/prompt.md", more: 1 } })).toThrow("unknown key in prompt");
-    expect(() => parse({ ...good, output: { kind: "stream", flag: 1 } })).toThrow("unknown key in output");
-  });
-
-  test("refuses a bad version, harness, model and timeout", () => {
-    expect(() => parse({ ...good, version: 2 })).toThrow("version");
-    expect(() => parse({ ...good, harness: "gemini" })).toThrow("harness");
-    expect(() => parse({ ...good, model: "bad model; rm -rf" })).toThrow("model");
-    expect(() => parse({ ...good, timeoutSeconds: 0 })).toThrow("timeoutSeconds");
-    expect(() => parse({ ...good, timeoutSeconds: 4000 })).toThrow("timeoutSeconds");
-    expect(() => parse({ ...good, timeoutSeconds: 1.5 })).toThrow("timeoutSeconds");
-  });
-
-  test("refuses a file outside the input folder", () => {
-    expect(() => parse({ ...good, prompt: { kind: "file", path: "/etc/passwd" } })).toThrow("must be a file under");
-    expect(() => parse({ ...good, prompt: { kind: "file", path: "/run/input/../../etc/passwd" } })).toThrow("must be a file under");
-    expect(() => parse({ ...good, output: { kind: "structured", schemaPath: "/tmp/schema.json" } })).toThrow("must be a file under");
-  });
-
-  test("refuses a tool server that is not HTTPS on the callback host", () => {
-    expect(() => parse({ ...good, tools: { native: ["Read"], draftMcpUrl: "https://evil.example.net/mcp" } })).toThrow("callback host");
-    expect(parse({ ...good, tools: { native: ["Read"], draftMcpUrl: MCP_URL } }).tools.draftMcpUrl).toBe(MCP_URL);
-  });
-
-  test("keeps Codex to one streamed prompt", () => {
-    expect(() => parse({ ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, output: structured })).toThrow("codex runs stream");
-    expect(() => parse({ ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } })).toThrow("codex runs stream");
   });
 });
 

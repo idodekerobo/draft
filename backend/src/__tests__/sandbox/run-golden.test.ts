@@ -3,14 +3,9 @@
 // The expected values were recorded from the code before the runner read a manifest, and have not changed.
 import { describe, expect, it } from "bun:test";
 import { launchFlySandboxRun } from "../../sandbox/fly-sandbox-run";
-import {
-  claudeArgs,
-  codexArgs,
-  codexConfigToml,
-  sanitizedClaudeEnv,
-  sanitizedCodexEnv,
-  type RunnerManifest,
-} from "../../sandbox/runner";
+import { claudeArgs, sanitizedClaudeEnv } from "draft-core/harnesses/claude/runner";
+import { codexArgs, codexConfigToml, sanitizedCodexEnv } from "draft-core/harnesses/codex/runner";
+import { type RunnerManifest } from "draft-core/run-manifest";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
