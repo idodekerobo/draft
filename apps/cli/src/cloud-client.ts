@@ -197,46 +197,44 @@ export type ContextFetchResult =
         | "invalid_period";
     };
 
+const CONTEXT_PASS_THROUGH: ReadonlyArray<string> = ["not_authenticated", "auth_busy", "session_refresh_transient", "whoami_failed", "no_workspace"];
+const EMPTY_SNAPSHOT: WorkspaceContextSnapshot = { versionId: "", versionNumber: 0, contentHash: "", creationReason: "", createdAt: "", documents: {} };
+
 export async function fetchWorkspaceContext(
   filter?: WorkspaceContextFetchFilter,
 ): Promise<ContextFetchResult> {
-  const resolved = await resolveAuthedWorkspace();
-  if (!resolved.ok) return resolved;
-  if (!resolved.workspaceId) return { ok: false, code: "no_workspace" };
-
-  const config = getCliRuntimeConfig();
-  const query = new URLSearchParams();
-  if (filter?.dimension) query.set("dimension", filter.dimension);
-  if (filter?.period) query.set("period", filter.period);
-  const qs = query.toString();
-
-  let response: Response;
-  try {
-    response = await fetch(
-      `${config.apiBaseUrl}/workspaces/${encodeURIComponent(resolved.workspaceId)}/context${qs ? `?${qs}` : ""}`,
-      { headers: { Authorization: `Bearer ${resolved.token}` } },
-    );
-  } catch {
-    return { ok: false, code: "session_refresh_transient" };
+  const call = await callToolRaw("context.read", {
+    dimensions: filter?.dimension ? [filter.dimension] : undefined,
+    period: filter?.period,
+  });
+  if (!call.ok) {
+    return { ok: false, code: (CONTEXT_PASS_THROUGH.includes(call.code) ? call.code : "context_fetch_failed") as Extract<ContextFetchResult, { ok: false }>["code"] };
   }
-  if (response.status === 404) {
-    const errorBody = await response.json().catch(() => null) as { error?: string } | null;
-    if (errorBody?.error === "period_not_found") return { ok: false, code: "period_not_found" };
-    return { ok: true, snapshot: { versionId: "", versionNumber: 0, contentHash: "", creationReason: "", createdAt: "", documents: {} } };
-  }
-  if (response.status === 400 && filter?.period) return { ok: false, code: "invalid_period" };
-  if (!response.ok) return { ok: false, code: "context_fetch_failed" };
 
-  const body = await response.json() as Partial<WorkspaceContextSnapshot>;
+  const body = recordValue(call.output);
+  if (typeof body?.error === "string") {
+    if (body.error === "no_context_yet") return { ok: true, snapshot: EMPTY_SNAPSHOT };
+    if (body.error === "period_not_found") return { ok: false, code: "period_not_found" };
+    return { ok: false, code: filter?.period ? "invalid_period" : "context_fetch_failed" };
+  }
+  if (!body || !Array.isArray(body.documents)) return { ok: false, code: "context_fetch_failed" };
+
+  const documents: Record<string, WorkspaceDocument> = {};
+  for (const entry of body.documents) {
+    const doc = recordValue(entry);
+    if (doc && typeof doc.path === "string" && typeof doc.content === "string") {
+      documents[doc.path] = { content: doc.content, ...(typeof doc.sha256 === "string" ? { sha256: doc.sha256 } : {}) };
+    }
+  }
   return {
     ok: true,
     snapshot: {
-      versionId: body.versionId ?? "",
-      versionNumber: body.versionNumber ?? 0,
-      contentHash: body.contentHash ?? "",
-      creationReason: body.creationReason ?? "",
-      createdAt: body.createdAt ?? "",
-      documents: body.documents ?? {},
+      versionId: typeof body.versionId === "string" ? body.versionId : "",
+      versionNumber: typeof body.versionNumber === "number" ? body.versionNumber : 0,
+      contentHash: typeof body.contentHash === "string" ? body.contentHash : "",
+      creationReason: typeof body.creationReason === "string" ? body.creationReason : "",
+      createdAt: typeof body.createdAt === "string" ? body.createdAt : "",
+      documents,
     },
   };
 }
@@ -246,21 +244,21 @@ export type ContextExportFetchResult =
   | { ok: false; code: Extract<ContextFetchResult, { ok: false }>["code"] | "no_context" };
 
 export async function fetchContextExport(): Promise<ContextExportFetchResult> {
-  const resolved = await resolveAuthedWorkspace();
-  if (!resolved.ok) return resolved;
-  if (!resolved.workspaceId) return { ok: false, code: "no_workspace" };
+  const call = await callToolRaw("context.export", {});
+  if (!call.ok) {
+    return { ok: false, code: (CONTEXT_PASS_THROUGH.includes(call.code) ? call.code : "context_fetch_failed") as Extract<ContextFetchResult, { ok: false }>["code"] };
+  }
+  const body = recordValue(call.output);
+  if (body?.error === "no_context_yet") return { ok: false, code: "no_context" };
+  if (typeof body?.url !== "string") return { ok: false, code: "context_fetch_failed" };
 
-  const config = getCliRuntimeConfig();
+  // The link is the credential: it carries its own signed token, so no Authorization header goes with it.
   let response: Response;
   try {
-    response = await fetch(
-      `${config.apiBaseUrl}/workspaces/${encodeURIComponent(resolved.workspaceId)}/context/export`,
-      { headers: { Authorization: `Bearer ${resolved.token}` } },
-    );
+    response = await fetch(body.url);
   } catch {
     return { ok: false, code: "session_refresh_transient" };
   }
-  if (response.status === 404) return { ok: false, code: "no_context" };
   if (!response.ok) return { ok: false, code: "context_fetch_failed" };
   return { ok: true, bytes: new Uint8Array(await response.arrayBuffer()) };
 }
@@ -467,6 +465,38 @@ async function requestValue<T>(
   return decoded === null
     ? { ok: false, code: "malformed_response" }
     : { ok: true, value: decoded };
+}
+
+type ToolCallResult = { ok: true; output: unknown } | { ok: false; code: FetchErrorCode };
+
+/** Calls one of Draft's tools as the signed-in person. The answer is the tool's output, or why the call did not run. */
+async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult> {
+  const result = await authedFetch(`/tools/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input ?? {}),
+  });
+  if (!result.ok) return result;
+
+  let value: unknown;
+  try {
+    value = await result.response.json();
+  } catch {
+    return { ok: false, code: result.response.ok ? "malformed_response" : "request_failed" };
+  }
+  if (!result.response.ok) return { ok: false, code: safeBackendError(value) ?? "request_failed" };
+  const envelope = recordValue(value);
+  return envelope?.status === "ok" ? { ok: true, output: envelope.output } : { ok: false, code: "request_failed" };
+}
+
+/** A tool refuses in its output as `{ error }`. A safe code is passed on; anything else is a failed request. */
+async function callTool<T>(name: string, input: unknown, decode: (output: unknown) => T | null): Promise<FetchResult<T>> {
+  const call = await callToolRaw(name, input);
+  if (!call.ok) return call;
+  const refusal = recordValue(call.output)?.error;
+  if (refusal !== undefined) return { ok: false, code: safeBackendError({ error: refusal }) ?? "request_failed" };
+  const decoded = decode(call.output);
+  return decoded === null ? { ok: false, code: "malformed_response" } : { ok: true, value: decoded };
 }
 
 function decodeConnection(value: unknown): HostedConnectionTransport | null {
@@ -812,7 +842,7 @@ export interface RoutineSummary {
 }
 
 export async function fetchRoutines(): Promise<FetchResult<RoutineSummary[]>> {
-  return requestValue("/schedules", undefined, (value) => {
+  return callTool("routines.list", {}, (value) => {
     const routines = recordValue(value)?.routines;
     return Array.isArray(routines) ? routines as RoutineSummary[] : null;
   });
@@ -884,11 +914,7 @@ export async function fetchSessionsSearch(filters: SearchSessionsFilters): Promi
 }
 
 export function fetchSourcesSearch(input: SourceSearchInput): Promise<FetchResult<SourceSearchResponse>> {
-  return requestValue("/sources/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  }, (value) => {
+  return callTool("sources.search", input, (value) => {
     const body = recordValue(value);
     return body && Array.isArray(body.results) && typeof body.consistency === "string"
       ? body as unknown as SourceSearchResponse
@@ -897,14 +923,11 @@ export function fetchSourcesSearch(input: SourceSearchInput): Promise<FetchResul
 }
 
 export function fetchSourceRead(input: SourceReadInput): Promise<FetchResult<SourceReadResponse>> {
-  return requestValue(`/sources/${encodeURIComponent(input.source_item_id)}/read`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      representation: input.representation,
-      max_bytes: input.max_bytes,
-      cursor: input.cursor,
-    }),
+  return callTool("sources.read", {
+    source_item_id: input.source_item_id,
+    representation: input.representation,
+    max_bytes: input.max_bytes,
+    cursor: input.cursor,
   }, (value) => {
     const body = recordValue(value);
     return body && typeof body.content === "string" && typeof body.representation === "string"
@@ -995,7 +1018,7 @@ function decodeSkillDetail(value: unknown): SkillDetail | null {
 }
 
 export function listSkills(): Promise<FetchResult<{ skills: SkillSummary[] }>> {
-  return requestValue("/skills", undefined, (value) => {
+  return callTool("skills.list", {}, (value) => {
     const body = recordValue(value);
     if (!body || !Array.isArray(body.skills)) return null;
     const skills: SkillSummary[] = [];
@@ -1009,25 +1032,17 @@ export function listSkills(): Promise<FetchResult<{ skills: SkillSummary[] }>> {
 }
 
 export function readSkill(name: string): Promise<FetchResult<SkillDetail>> {
-  return requestValue(`/skills/${encodeURIComponent(name)}`, undefined, decodeSkillDetail);
+  return callTool("skills.read", { name }, decodeSkillDetail);
 }
 
 export function addSkill(body: AddOrUpdateSkillBody): Promise<FetchResult<SkillDetail>> {
-  return requestValue("/skills", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }, decodeSkillDetail);
+  return callTool("skills.add", body, decodeSkillDetail);
 }
 
 export function updateSkill(name: string, body: AddOrUpdateSkillBody): Promise<FetchResult<SkillDetail>> {
-  return requestValue(`/skills/${encodeURIComponent(name)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }, decodeSkillDetail);
+  return callTool("skills.update", { ...body, name }, decodeSkillDetail);
 }
 
 export function removeSkill(name: string): Promise<FetchResult<{ ok: true }>> {
-  return requestValue(`/skills/${encodeURIComponent(name)}`, { method: "DELETE" }, decodeOk);
+  return callTool("skills.delete", { name }, decodeOk);
 }

@@ -63,7 +63,7 @@ describe("MCP tools that go through the gateway", () => {
     expect(result.isError).toBeUndefined();
     const body = JSON.parse(result.content[0]!.text);
     expect(body).toMatchObject({ versionNumber: 1, documents: [{ path: "memory/days/2026-11-09.md", content: "today", sha256: sha256("today") }] });
-    expect(Object.keys(body).sort()).toEqual(["contentHash", "createdAt", "documents", "versionId", "versionNumber"]);
+    expect(Object.keys(body).sort()).toEqual(["contentHash", "createdAt", "creationReason", "documents", "versionId", "versionNumber"]);
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({
       toolName: "context.read",

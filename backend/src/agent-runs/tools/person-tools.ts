@@ -72,6 +72,7 @@ export function createPersonTools(client: SupabaseClient) {
           versionId: result.snapshot.versionId,
           versionNumber: result.snapshot.versionNumber,
           contentHash: result.snapshot.contentHash,
+          creationReason: result.snapshot.creationReason,
           createdAt: result.snapshot.createdAt,
           documents,
           ...(missing?.length ? { missing } : {}),
