@@ -3,7 +3,7 @@ import type { AgentRunSpec } from "draft-core/agent-run";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../agent-runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../agent-runs/base-context";
-import { finishAgentRun, markAgentRunRunning } from "../agent-runs/lifecycle";
+import { describeError, finishAgentRun, markAgentRunRunning } from "../agent-runs/lifecycle";
 import { claimPendingSummarySessions } from "./claim-sessions";
 import { reportExpiredSummaryLeases } from "./report-expired-leases";
 import { renderSessionTranscript } from "./render-transcript";
@@ -52,7 +52,7 @@ export async function launchSummarizationBatch(
     await finishAgentRun(options.client, agentRunId, {
       status: "failed",
       failureCode: "summarization_launch_failed",
-      failureDetail: error instanceof Error ? error.message : String(error),
+      failureDetail: describeError(error),
     });
     throw error;
   }

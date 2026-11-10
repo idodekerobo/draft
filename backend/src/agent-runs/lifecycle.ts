@@ -2,6 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ACTIVE_STATUSES = ["queued", "preparing", "running", "validating", "committing"];
 
+/** A message for a failure. Supabase errors are plain objects with a message, not Error instances. */
+export function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: unknown }).message);
+  return String(error);
+}
+
 export interface AgentRunOutcome {
   status: "succeeded" | "failed" | "cancelled";
   failureCode?: string;

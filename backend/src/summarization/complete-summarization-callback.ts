@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { finishAgentRun } from "../agent-runs/lifecycle";
+import { describeError, finishAgentRun } from "../agent-runs/lifecycle";
 import { authenticateSandboxCallbackRequest } from "../sandbox";
 import { validateSummarizationResult } from "./validate-result";
 import { materializeSessionSummary } from "./materialize-summary";
@@ -105,7 +105,7 @@ export async function completeSummarizationRunCallback(
     }
     return new Response(null, { status: 204 });
   } catch (error) {
-    if (agentRunId) await finishAgentRun(resolvedClient, agentRunId, { status: "failed", failureCode: `summarization_${stage}_failed`, failureDetail: error instanceof Error ? error.message : String(error) });
+    if (agentRunId) await finishAgentRun(resolvedClient, agentRunId, { status: "failed", failureCode: `summarization_${stage}_failed`, failureDetail: describeError(error) });
     await recordError({
       client: resolvedClient,
       workspaceId,
