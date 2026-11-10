@@ -1,8 +1,8 @@
 import { queryKeys, queryOptions, STALE_MS, type TeamSessionRepo } from "draft-shared-ui";
 import { ApiError } from "@/lib/api-error";
+import { callTool, type Fetcher } from "@/lib/tools";
 
-/** Browser code passes apiFetch; server layouts pass a token-based fetcher. */
-export type Fetcher = <T>(path: string) => Promise<T>;
+export type { Fetcher };
 
 export interface ContextSnapshot {
   versionNumber: number;
@@ -21,7 +21,12 @@ export const contextQueryOptions = (workspaceId: string, fetcher: Fetcher) =>
     queryKey: queryKeys.context(workspaceId),
     queryFn: async (): Promise<ContextSnapshot | null> => {
       try {
-        return await fetcher<ContextSnapshot>(`/workspaces/${workspaceId}/context`);
+        const read = await callTool<{ versionNumber: number; createdAt: string; documents: Array<{ path: string; content: string }> }>(fetcher, workspaceId, "context.read");
+        return {
+          versionNumber: read.versionNumber,
+          createdAt: read.createdAt,
+          documents: Object.fromEntries(read.documents.map((document) => [document.path, { content: document.content }])),
+        };
       } catch (error) {
         if (error instanceof ApiError && error.code === "no_context_yet") return null;
         throw error;

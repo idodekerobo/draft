@@ -1,5 +1,15 @@
 /** What the backend, the desktop host and the apps agree on for live sessions. */
 
+export type SessionEventKind =
+  | "user_message"
+  | "assistant_text"
+  | "tool_use"
+  | "tool_result"
+  | "thinking"
+  | "session_note"
+  | "permission_request"
+  | "permission_resolved";
+
 export const MAX_INPUT_CHARS = 10_000;
 
 /** Events in one page of `/events`. A full page means more may follow. */

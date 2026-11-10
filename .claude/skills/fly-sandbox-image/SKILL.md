@@ -19,17 +19,25 @@ Covers:
 
 ## When to invoke
 
-- Any edit under `backend/src/sandbox/claude-code/` (`Dockerfile`,
-  `entrypoint.sh`, `configure-egress.sh`, `runner.ts`).
-- Bumping `CLAUDE_CODE_VERSION` in the Dockerfile.
+- Any edit to what goes into the image. The runner is bundled into
+  `runner.mjs`, so a change to any file the bundle holds needs a new image:
+  - `backend/src/sandbox/runner.ts` and `backend/src/sandbox/runner/*`
+  - `core/src/harnesses/*/runner.ts` and `core/src/harnesses/failure.ts`
+  - `core/src/run-manifest.ts` and `core/src/run-spec.ts`
+  - `backend/src/sandbox/image/*` (`Dockerfile`, `entrypoint.sh`,
+    `configure-egress.sh`)
+- Bumping `CLAUDE_CODE_VERSION` or `CODEX_VERSION` in the Dockerfile.
 - Any change to what the backend sends to the runner or expects back: env vars
-  in `fly-sandbox-run.ts`, bundle layout, callback body shape.
+  or the manifest in `backend/src/sandbox/launch.ts` and
+  `backend/src/sandbox/run-manifest.ts`, bundle layout, callback body shape.
+  A test builds the bundle and fails if a backend-only module gets into it
+  (`backend/src/__tests__/sandbox/runner-bundle.test.ts`).
 - Standing up a new deployment target (staging, a second prod region, a
   customer-dedicated environment) that needs its own Fly app.
 
 ## Why this is required every time
 
-`backend/src/sandbox/config.ts` validates `FLY_SANDBOX_IMAGE` against:
+`backend/src/sandbox/providers/fly/config.ts` validates `FLY_SANDBOX_IMAGE` against:
 
 ```
 registry.fly.io/<app>@sha256:<64-hex-digest>
@@ -64,8 +72,21 @@ New environment: pick a name and confirm it with the user before
 
 ```bash
 cd backend && bun test src/__tests__/sandbox src/__tests__/summarization src/__tests__/synthesis
-sh -n src/sandbox/claude-code/entrypoint.sh src/sandbox/claude-code/configure-egress.sh
+sh -n src/sandbox/image/entrypoint.sh src/sandbox/image/configure-egress.sh
 ```
+
+### 1b. Build the runner bundle
+
+The Dockerfile only copies `runner.mjs`. It does not build it, and the file is
+not in git. Build it fresh every time, from the code you are about to ship:
+
+```bash
+cd backend && bun run build:runner
+```
+
+This writes `backend/src/sandbox/image/runner.mjs`. If you skip this step, the
+build fails (no file) or ships an old runner (a stale file from an earlier
+build).
 
 ### 2. (New app only) Create the Fly app
 
@@ -85,7 +106,7 @@ EOF
 
 fly deploy --build-only --push --app <app-name> \
   --config /tmp/<app-name>-build.toml \
-  backend/src/sandbox/claude-code
+  backend/src/sandbox/image
 
 rm -f /tmp/<app-name>-build.toml
 ```

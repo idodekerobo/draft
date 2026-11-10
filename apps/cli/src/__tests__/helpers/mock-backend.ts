@@ -1,6 +1,11 @@
 // Minimal in-process mock of the hosted control-plane API + Supabase auth
 // endpoints the CLI talks to. Started on an ephemeral port per test.
 
+/** A tool hook returns this to answer with the tool's own "no" instead of an output. */
+export function refusal(code: string, message: string = code) {
+  return { __refusal: { code, message } };
+}
+
 export interface CapturedRequest {
   method: string;
   url: string;
@@ -40,6 +45,8 @@ export interface MockBackendState {
   skillsAddResponse: (workspaceId: string, body: unknown) => Response | Promise<Response>;
   skillsUpdateResponse: (workspaceId: string, name: string, body: unknown) => Response | Promise<Response>;
   skillsRemoveResponse: (workspaceId: string, name: string) => Response | Promise<Response>;
+  /** Answers a tool directly, with its output. Takes precedence over the route fixtures above. */
+  toolOutputs: Record<string, (input: Record<string, unknown>) => unknown>;
 }
 
 export function defaultWhoami(overrides: Partial<{ organization_id: string | null; primary_team_id: string | null; workspace_id: string | null; onboarding_completed_at: string | null }> = {}) {
@@ -97,7 +104,64 @@ export function createMockBackend() {
     }, { status: 201 }),
     skillsUpdateResponse: () => Response.json({ error: "skill_not_found" }, { status: 404 }),
     skillsRemoveResponse: () => Response.json({ error: "skill_not_found" }, { status: 404 }),
+    toolOutputs: {},
   };
+
+
+  // The CLI now calls Draft's tools at POST /workspaces/:id/tools/:name. Each tool is answered from the same
+  // fixtures the tests set for the old routes, in the shape the backend gives: { status, output }, with a
+  // refusal as { error } in the output and context documents as an array.
+  let pendingExport: Response | null = null;
+
+  async function toolOutput(response: Response): Promise<{ output: unknown } | Response> {
+    const body = await response.json().catch(() => null);
+    if (response.ok) return { output: body };
+    if (response.status >= 500) return response;
+    const code = (body as { error?: unknown } | null)?.error;
+    const refusalCode = typeof code === "string" ? code : "request_failed";
+    return Response.json({ status: "refused", code: refusalCode, message: refusalCode });
+  }
+
+  async function answerTool(workspaceId: string, name: string, input: Record<string, unknown>, origin: string): Promise<Response> {
+    const direct = state.toolOutputs[name];
+    if (direct) {
+      const answer = direct(input) as { __refusal?: { code: string; message: string } } | null;
+      return answer?.__refusal ? Response.json({ status: "refused", ...answer.__refusal }) : Response.json({ status: "ok", output: answer });
+    }
+    const asEnvelope = (result: { output: unknown } | Response) => (result instanceof Response ? result : Response.json({ status: "ok", output: result.output }));
+
+    if (name === "context.read") {
+      const query = new URLSearchParams();
+      const dimensions = input.dimensions as string[] | undefined;
+      if (dimensions?.[0]) query.set("dimension", dimensions[0]);
+      if (typeof input.period === "string") query.set("period", input.period);
+      const response = await state.contextResponse(workspaceId, new URL(`${origin}/workspaces/${workspaceId}/context?${query}`));
+      if (response.status === 400) return Response.json({ status: "refused", code: "invalid_period", message: "invalid period" });
+      const result = await toolOutput(response);
+      if (result instanceof Response) return result;
+      const output = result.output as Record<string, unknown>;
+      if (output.documents && !Array.isArray(output.documents)) {
+        output.documents = Object.entries(output.documents as Record<string, object>).map(([path, doc]) => ({ path, ...doc }));
+      }
+      return asEnvelope(result);
+    }
+    if (name === "context.export") {
+      const response = await state.contextExportResponse(workspaceId);
+      if (!response.ok) return asEnvelope(await toolOutput(response));
+      pendingExport = response;
+      return Response.json({ status: "ok", output: { url: `${origin}/context-exports/test-token`, expiresAt: "2099-01-01T00:00:00.000Z", fileName: "draft-context.zip" } });
+    }
+    if (name === "routines.list") return asEnvelope(await toolOutput(await state.routinesResponse(workspaceId)));
+    if (name === "skills.list") return asEnvelope(await toolOutput(await state.skillsListResponse(workspaceId)));
+    if (name === "skills.read") return asEnvelope(await toolOutput(await state.skillsReadResponse(workspaceId, String(input.name))));
+    if (name === "skills.add") return asEnvelope(await toolOutput(await state.skillsAddResponse(workspaceId, input)));
+    if (name === "skills.update") {
+      const { name: skillName, ...body } = input;
+      return asEnvelope(await toolOutput(await state.skillsUpdateResponse(workspaceId, String(skillName), body)));
+    }
+    if (name === "skills.delete") return asEnvelope(await toolOutput(await state.skillsRemoveResponse(workspaceId, String(input.name))));
+    return Response.json({ status: "denied", code: "unknown_tool", message: `Unknown tool: ${name}` }, { status: 403 });
+  }
 
   const server = Bun.serve({
     port: 0,
@@ -117,6 +181,14 @@ export function createMockBackend() {
         return next ? next() : new Response(null, { status: 204 });
       }
       if (req.method === "GET" && url.pathname === "/whoami") return state.whoamiResponse();
+      if (req.method === "POST" && /^\/workspaces\/[^/]+\/tools\/[^/]+$/.test(url.pathname)) {
+        const parts = url.pathname.split("/");
+        const input = (await req.clone().json().catch(() => ({}))) as Record<string, unknown>;
+        return answerTool(parts[2]!, decodeURIComponent(parts[4]!), input, url.origin);
+      }
+      if (req.method === "GET" && /^\/context-exports\/[^/]+$/.test(url.pathname)) {
+        return pendingExport ? pendingExport.clone() : new Response("not found", { status: 404 });
+      }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/context$/.test(url.pathname)) {
         const workspaceId = url.pathname.split("/")[2];
         return state.contextResponse(workspaceId, url);

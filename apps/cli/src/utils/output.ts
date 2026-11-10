@@ -49,6 +49,8 @@ export function printHelp(): void {
     ["skills add [<name>] --description \"<text>\"", "Save a new company skill (see skills --help)"],
     ["skills update <name>",       "Replace a skill's content/description"],
     ["skills remove <name>",       "Soft-delete a skill"],
+    ["tools list",                 "List the tools this agent run may call (inside a run)"],
+    ["tools call <name> --args '<json>'", "Call one of those tools (inside a run)"],
     ["update",                     "Update the draft CLI to the latest release"],
     ["update --check",             "Check for an update without installing it"],
     ["uninstall",                  "Remove the draft CLI (keeps ~/.draft data)"],

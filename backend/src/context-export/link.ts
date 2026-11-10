@@ -1,5 +1,5 @@
 import { contextExportSettings } from "../config";
-import { serviceClient } from "../db/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordRouteError } from "../errors/route-error";
 import { exportFileName } from "../services/context-export";
 import { CONTEXT_EXPORT_TTL_MS, createContextExportToken } from "./token";
@@ -19,9 +19,11 @@ export async function createContextExportLink(
   workspaceId: string,
   userId: string,
   now = Date.now(),
+  clientOverride?: SupabaseClient,
 ): Promise<CreateContextExportLinkResult> {
+  const client = clientOverride ?? (await import("../db/client")).serviceClient;
   // Only the version number is needed for the file name; skip reading every document.
-  const { data: version, error } = await serviceClient
+  const { data: version, error } = await client
     .from("workspace_context_versions")
     .select("version_number")
     .eq("workspace_id", workspaceId)

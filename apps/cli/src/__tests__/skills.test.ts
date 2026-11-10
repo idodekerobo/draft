@@ -112,6 +112,43 @@ describe("draft skills add", () => {
     expect((captured as { content: string }).content).toContain("body text");
   });
 
+  test("takes name and description from the content's frontmatter when no flag gives them", async () => {
+    let captured: unknown;
+    backend.state.skillsAddResponse = (_ws, body) => {
+      captured = body;
+      return Response.json(skillDetail(), { status: 201 });
+    };
+    const content = "---\nname: from-frontmatter\ndescription: parsed description\n---\nbody text";
+    const result = await runCli(["skills", "add", "--content", content], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(captured).toEqual({ name: "from-frontmatter", description: "parsed description", content });
+  });
+
+  test("a name argument and --description win over the frontmatter", async () => {
+    let captured: unknown;
+    backend.state.skillsAddResponse = (_ws, body) => {
+      captured = body;
+      return Response.json(skillDetail(), { status: 201 });
+    };
+    const content = "---\nname: frontmatter-name\ndescription: frontmatter description\n---\nbody";
+    await runCli(["skills", "add", "explicit-name", "--description", "explicit description", "--content", content], { home, apiUrl: backend.url });
+    expect(captured).toMatchObject({ name: "explicit-name", description: "explicit description" });
+  });
+
+  test("malformed frontmatter and a missing name or description fail without calling the backend", async () => {
+    let calls = 0;
+    backend.state.skillsAddResponse = () => { calls += 1; return Response.json(skillDetail(), { status: 201 }); };
+
+    const malformed = await runCli(["skills", "add", "x", "--description", "d", "--content", "---\nname: [unterminated\n---\nbody"], { home, apiUrl: backend.url });
+    expect(malformed.exitCode).toBe(1);
+    expect(malformed.stderr).toContain("frontmatter");
+
+    const missing = await runCli(["skills", "add", "--content", "just body text"], { home, apiUrl: backend.url });
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain("name and description required");
+    expect(calls).toBe(0);
+  });
+
   test("--file and --content together is a usage error", async () => {
     const result = await runCli(
       ["skills", "add", "x", "--description", "d", "--file", "/tmp/does-not-matter.md", "--content", "text"],

@@ -4,7 +4,7 @@ import { join } from "path";
 import type { AuthState } from "draft-core/auth-state";
 import { normalizeHostedConnections } from "draft-core/integrations/hosted-connections";
 import { makeHome, seedCliAuth } from "./helpers/cli-runner.ts";
-import { createMockBackend, defaultWhoami } from "./helpers/mock-backend.ts";
+import { createMockBackend, defaultWhoami, refusal } from "./helpers/mock-backend.ts";
 
 const CLOUD_CLIENT = join(import.meta.dir, "..", "cloud-client.ts");
 const PROVIDER_PATH = /^\/workspaces\/[^/]+\/(connections|github\/install-sessions)/;
@@ -200,15 +200,41 @@ describe("hosted provider wrappers", () => {
     )).toHaveLength(1);
     const protectedRequests = backend.state.requests.filter((request) => {
       const path = new URL(request.url).pathname;
-      return path === "/whoami" || path.endsWith("/context");
+      return path === "/whoami" || path.endsWith("/tools/context.read");
     });
     expect(protectedRequests.map((request) => new URL(request.url).pathname)).toEqual([
       "/whoami",
-      "/workspaces/current-workspace/context",
+      "/workspaces/current-workspace/tools/context.read",
     ]);
     expect(protectedRequests.every((request) =>
       request.headers.authorization === "Bearer context-refreshed-at"
     )).toBe(true);
+  });
+
+  it("searches and reads sources by calling the tools with the input as given", async () => {
+    const seen: Array<{ tool: string; input: Record<string, unknown> }> = [];
+    backend.state.toolOutputs["sources.search"] = (input) => {
+      seen.push({ tool: "sources.search", input });
+      return { results: [], consistency: "current" };
+    };
+    backend.state.toolOutputs["sources.read"] = (input) => {
+      seen.push({ tool: "sources.read", input });
+      return { content: "text", representation: "default" };
+    };
+
+    expect(await invoke("fetchSourcesSearch", [{ query: "pricing", limit: 5 }])).toMatchObject({ ok: true, value: { consistency: "current" } });
+    expect(await invoke("fetchSourceRead", [{ source_item_id: "11111111-1111-4111-8111-111111111111", max_bytes: 2048 }])).toMatchObject({ ok: true, value: { content: "text" } });
+    expect(seen).toEqual([
+      { tool: "sources.search", input: { query: "pricing", limit: 5 } },
+      { tool: "sources.read", input: { source_item_id: "11111111-1111-4111-8111-111111111111", max_bytes: 2048 } },
+    ]);
+  });
+
+  it("answers a tool's refusal as a failed request, and a safe code as itself", async () => {
+    backend.state.toolOutputs["sources.search"] = () => refusal("invalid_query", "bad");
+    expect(await invoke("fetchSourcesSearch", [{ query: "x" }])).toEqual({ ok: false, code: "request_failed" });
+    backend.state.toolOutputs["skills.read"] = () => refusal("skill_not_found");
+    expect(await invoke("readSkill", ["missing"])).toEqual({ ok: false, code: "skill_not_found" });
   });
 
   it("persists a validated hydrated identity", async () => {

@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAgentRun } from "../metaharness/runs/agent-run-store";
+import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
+import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
+import { usableMcpConnections } from "../metaharness/tools/remote-mcp";
+import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId } from "./config";
@@ -7,6 +12,7 @@ import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-sessi
 import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
+import { buildRoutineRunSpec } from "./run-spec";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -16,6 +22,30 @@ export interface DispatchAgentRoutineOptions {
   config: SandboxDeploymentConfig;
   client: SupabaseClient;
   launch?: LaunchRoutineRun;
+}
+
+/**
+ * The connections a routine chose that its owner may use now. One that was revoked, or that belongs to
+ * someone else, is left out and reported once, so the run goes ahead with the tools it can have.
+ */
+async function usableMcpServersFor(client: SupabaseClient, task: ScheduledTaskRow, routine: NonNullable<ReturnType<typeof parseAgentRoutineConfig>>) {
+  const chosen = routine.environment?.mcpServers ?? [];
+  if (chosen.length === 0) return [];
+  const usable = await usableMcpConnections(client, task.workspace_id, task.created_by_user_id, chosen.map((server) => server.connectionId));
+  const usableIds = new Set(usable.map((connection) => connection.id));
+  const skipped = chosen.filter((server) => !usableIds.has(server.connectionId));
+  if (skipped.length > 0) {
+    await recordError({
+      client,
+      workspaceId: task.workspace_id,
+      scheduledTaskId: task.id,
+      operation: "execution",
+      message: "A routine's remote tool connection was not available, so the run went ahead without it",
+      code: "routine_mcp_connection_unavailable",
+      detail: { connection_ids: skipped.map((server) => server.connectionId) },
+    });
+  }
+  return chosen.filter((server) => usableIds.has(server.connectionId));
 }
 
 /**
@@ -66,14 +96,29 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
   const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
 
   try {
-    await (options.launch ?? launchRoutineRun)({
+    const contextVersionId = await resolveBaseContextVersionId(client, task.workspace_id);
+    const mcpServers = await usableMcpServersFor(client, task, routine);
+    const run = buildRoutineRunSpec({
+      mcpServers,
+      id: randomUUID(),
+      workspaceId: task.workspace_id,
+      scheduledTaskId: task.id,
+      occurrenceAt,
+      routine,
+      contextVersionId,
+    });
+    await createAgentRun(client, { spec: run, idempotencyKey: `${task.id}:${occurrenceAt}`, status: "preparing", sessionId });
+
+    const launched = await (options.launch ?? launchRoutineRun)({
       sessionId,
+      run,
       workspaceId: task.workspace_id,
       routine,
       schedule: { description: describeTaskSchedule(task), timezone: task.timezone },
       config,
       client,
     });
+    await markAgentRunRunning(client, run.id, launched?.machineId);
   } catch (error) {
     if (error instanceof RoutineLeaseBusyError) {
       await failRoutineSession(client, session, {

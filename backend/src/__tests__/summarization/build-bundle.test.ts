@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildSummarizationBundle } from "../../summarization/build-bundle";
-import { recomputeBundleHash } from "../../sandbox/claude-code/runner";
+import { recomputeBundleHash } from "../../sandbox/runner/bundle";
 
 describe("buildSummarizationBundle", () => {
   test("assembles a manifest and one rendered prompt file per session", () => {

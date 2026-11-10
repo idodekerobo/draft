@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CredentialError, decryptCredentialPayload } from "../credentials/crypto";
+import { CredentialError } from "../credentials/crypto";
+import { secretFromRow } from "../credentials/harness-credential";
 import type { CredentialErrorReason } from "../credentials/crypto";
 
 export { encryptCredentialPayload } from "../credentials/crypto";
@@ -61,22 +62,5 @@ export async function resolveInferenceCredential(
     );
   }
 
-  if (row.status === "revoked") {
-    throw new CredentialError(`Credential ${credentialId} has been revoked`, "revoked");
-  }
-
-  const isExpiredByTimestamp =
-    row.expires_at !== null && new Date(row.expires_at).getTime() <= Date.now();
-  if (row.status === "expired" || isExpiredByTimestamp) {
-    throw new CredentialError(`Credential ${credentialId} has expired`, "expired");
-  }
-
-  if (row.status !== "active") {
-    throw new CredentialError(
-      `Credential ${credentialId} has unexpected status "${row.status}"`,
-      "missing",
-    );
-  }
-
-  return decryptCredentialPayload(row.encrypted_payload, row.encryption_key_version);
+  return secretFromRow(row, "Credential");
 }

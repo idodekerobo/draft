@@ -75,3 +75,6 @@ backend/scripts/
 # Copied from assets/ by the web app's predev and prebuild scripts.
 apps/web/public/multiplayer-coding-demo.mp4
 apps/web/public/multiplayer-coding-demo-poster.jpg
+
+# Built by `bun run build:runner` in backend
+backend/src/sandbox/image/runner.mjs

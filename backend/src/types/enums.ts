@@ -28,7 +28,8 @@ export type CredentialProvider =
   | "claude_code"
   | "claude_session_ingest"
   | "agent_session_ingest"
-  | "codex_chatgpt_auth";
+  | "codex_chatgpt_auth"
+  | "mcp";
 
 export type CredentialStatus = "active" | "revoked" | "expired";
 
@@ -45,7 +46,8 @@ export type SourceConnectionProvider =
   | "github"
   | "claude_session"
   | "codex_session"
-  | "manual_upload";
+  | "manual_upload"
+  | "mcp";
 
 export type SourceConnectionStatus =
   | "pending"
@@ -80,7 +82,8 @@ export type ContextVersionCreationReason =
   | "synthesis"
   | "manual_edit"
   | "restore"
-  | "memory_provision";
+  | "memory_provision"
+  | "agent_write";
 
 export type ScheduledTaskType =
   | "ingest_source"

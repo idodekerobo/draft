@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { FlySandboxRunReceipt } from "../sandbox";
-import { canonicalDocumentsHash } from "./context-version-files";
-import { computeMemoryAdditions, ensureMemoryProvisioned } from "./provision-memory";
+import type { SandboxRunReceipt } from "../sandbox";
+import { ensureMemoryProvisioned, seedEmptyWorkspace } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";
 import { getLatestSynthesisRun } from "./latest-run";
@@ -15,7 +14,7 @@ import type {
 
 // Bumped whenever the rendered prompt/schema contract (task #4) changes in a
 // way that should be distinguishable in synthesis_runs.prompt_version history.
-const PROMPT_VERSION = "synthesis-v1";
+const PROMPT_VERSION = "synthesis-v2";
 
 // Postgres unique_violation, raised here by synthesis_runs_one_active_writer
 // or synthesis_runs_workspace_id_idempotency_key_key.
@@ -74,27 +73,7 @@ export async function prepareRun(
     // infrastructure, not an opt-in dimension, so its stubs are folded
     // straight into the seed insert rather than seeding {} and then
     // immediately provisioning a second version on top of it.
-    const seedDocuments = computeMemoryAdditions({}, workspace.timezone, options.now);
-    const { data: seededVersion, error: seedError } = await client
-      .from("workspace_context_versions")
-      .insert({
-        workspace_id: options.workspaceId,
-        version_number: 1,
-        documents_json: seedDocuments,
-        content_hash: canonicalDocumentsHash(seedDocuments),
-        creation_reason: "seed",
-        summary: "Empty workspace — no context yet",
-      })
-      .select("id")
-      .single();
-    if (seedError) throw seedError;
-    baseContextVersionId = (seededVersion as { id: string }).id;
-
-    const { error: pointerError } = await client
-      .from("workspaces")
-      .update({ current_context_version_id: baseContextVersionId })
-      .eq("id", options.workspaceId);
-    if (pointerError) throw pointerError;
+    baseContextVersionId = await seedEmptyWorkspace(client, options.workspaceId, workspace.timezone, options.now);
   } else {
     const { data: versionData, error: versionError } = await client
       .from("workspace_context_versions")
@@ -117,7 +96,6 @@ export async function prepareRun(
         workspaceId: options.workspaceId,
         baseVersionId: baseContextVersionId,
         documents: version.documents_json,
-        versionNumber: version.version_number,
         timezone: workspace.timezone,
         now: options.now,
       });
@@ -255,7 +233,7 @@ export async function prepareRun(
 
 export async function markRunLaunched(
   runId: string,
-  receipt: FlySandboxRunReceipt,
+  receipt: SandboxRunReceipt,
   client?: SupabaseClient,
 ): Promise<void> {
   const resolvedClient =

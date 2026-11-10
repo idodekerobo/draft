@@ -23,6 +23,8 @@ create table agent_sessions (
   summary_attempts      int not null default 0,
   summary_lease_until   timestamptz,
   summary_last_error    text,
+  -- The agent run that holds this session's summary lease, and so made its summary.
+  summary_agent_run_id  uuid,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
 
@@ -31,9 +33,14 @@ create table agent_sessions (
     references session_contributors(id, workspace_id) on delete restrict,
   foreign key (session_project_id, workspace_id)
     references session_projects(id, workspace_id),
+  foreign key (summary_agent_run_id, workspace_id)
+    references agent_runs(id, workspace_id) on delete set null (summary_agent_run_id),
   unique (workspace_id, provider, external_session_id),
   unique (id, workspace_id)
 );
+
+create index agent_sessions_summary_agent_run_idx
+  on agent_sessions (summary_agent_run_id) where summary_agent_run_id is not null;
 
 create trigger agent_sessions_set_updated_at
   before update on agent_sessions

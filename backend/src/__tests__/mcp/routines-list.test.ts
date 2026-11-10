@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import * as queryLog from "../../observability/record-query-log";
 
 let primaryTeamId: string | null = "team-1";
 let accessResult: Response | null = null;
 const logged: Array<{ command: string; argsJson: Record<string, unknown> }> = [];
 const tasks = [
   {
-    id: "task-1", workspace_id: "ws-1", source_connection_id: null, task_type: "summarize_sessions",
+    id: "task-1", workspace_id: "22222222-2222-4222-8222-222222222222", source_connection_id: null, task_type: "summarize_sessions",
     schedule_kind: "cron", cron_expression: "0 3 * * *", interval_seconds: null, timezone: "UTC",
     enabled: true, next_due_at: "2026-10-06T03:00:00.000Z", last_enqueued_at: null,
     created_at: "2026-01-01T00:00:00.000Z", updated_by_user_id: null, created_by_user_id: null,
@@ -22,7 +23,7 @@ function queryBuilder(table: string) {
     limit: () => builder,
     async maybeSingle() {
       if (table === "users") return { data: { primary_team_id: primaryTeamId }, error: null };
-      return { data: { id: "ws-1" }, error: null };
+      return { data: { id: "22222222-2222-4222-8222-222222222222" }, error: null };
     },
     then(resolve: (value: unknown) => unknown) {
       return resolve({ data: table === "scheduled_tasks" ? tasks : [], error: null });
@@ -33,17 +34,18 @@ function queryBuilder(table: string) {
 
 mock.module("../../db/client", () => ({ serviceClient: { from: (table: string) => queryBuilder(table) } }));
 mock.module("../../auth/workspace-access", () => ({ assertWorkspaceAccess: async () => accessResult }));
-mock.module("../../observability/record-query-log", () => ({
-  recordAgentQueryLog: async (_client: unknown, input: { command: string; argsJson: Record<string, unknown> }) => {
+const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
+  async (_client: unknown, input: { command: string; argsJson: Record<string, unknown> }) => {
     logged.push(input);
   },
-}));
+);
+afterAll(() => queryLogSpy.mockRestore());
 
 const { createMcpHandler } = await import("@modelcontextprotocol/server");
 const { buildMcpServer } = await import("../../mcp/tools");
 
 async function callRoutinesList() {
-  const handler = createMcpHandler(() => buildMcpServer("user-1", ["read"]));
+  const handler = createMcpHandler(() => buildMcpServer("11111111-1111-4111-8111-111111111111", ["read"]));
   const response = await handler.fetch(
     new Request("http://internal.test/mcp", {
       method: "POST",

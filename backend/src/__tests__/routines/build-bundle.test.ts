@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { parseWorkspaceId } from "draft-core/run-spec";
 import { buildRoutineBundle, renderRoutinePrompt } from "../../routines/build-bundle";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const audience = { type: "system", workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") } as const;
 
 it("puts the brain under input/context, keyed to the session's run id", () => {
   const bundle = buildRoutineBundle({
-    organizationId: "org", workspaceId: "ws", sessionId: SESSION_ID,
+    organizationId: "org", workspaceId: "ws", sessionId: SESSION_ID, audience,
     documents: { "product/index.md": { content: "# Product\n" }, "memory/2026-10.md": { content: "notes" } },
   });
   expect(bundle.runId).toBe(`routine:${SESSION_ID}`);
@@ -15,14 +17,14 @@ it("puts the brain under input/context, keyed to the session's run id", () => {
 
 it("drops paths that could leave the context folder", () => {
   const bundle = buildRoutineBundle({
-    organizationId: "org", workspaceId: "ws", sessionId: SESSION_ID,
+    organizationId: "org", workspaceId: "ws", sessionId: SESSION_ID, audience,
     documents: { "../escape.md": { content: "x" }, "/abs.md": { content: "x" }, "a/../b.md": { content: "x" }, "ok.md": { content: "ok" } },
   });
   expect(Object.keys(bundle.files)).toEqual(["input/context/ok.md"]);
 });
 
 it("still builds a bundle for a workspace with no brain yet", () => {
-  const bundle = buildRoutineBundle({ organizationId: "org", workspaceId: "ws", sessionId: SESSION_ID, documents: {} });
+  const bundle = buildRoutineBundle({ organizationId: "org", workspaceId: "ws", sessionId: SESSION_ID, audience, documents: {} });
   expect(Object.keys(bundle.files)).toEqual(["input/context/README.md"]);
 });
 

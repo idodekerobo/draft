@@ -1,3 +1,4 @@
+import { parseWorkspaceId } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildValidatedRunBundle,
@@ -116,6 +117,7 @@ export async function loadValidatedRunBundle(
   });
 
   return buildValidatedRunBundle({
+    audience: { type: "system", workspaceId: parseWorkspaceId(workspace.id) },
     identity: {
       organizationId: workspace.organization_id,
       teamId: workspace.team_id,

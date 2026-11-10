@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { AppearanceRow, ContextExport, InviteLinkRow, type InviteLink, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
-import { apiFetch, apiFetchBlob } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { callTool } from "@/lib/tools";
 import { DOWNLOAD_URL } from "@/lib/config";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
@@ -25,15 +26,14 @@ function useThemePreference(): [ThemePreference, (next: ThemePreference) => void
 }
 
 async function downloadExport(workspaceId: string): Promise<void> {
-  const { blob, fileName } = await apiFetchBlob(`/workspaces/${workspaceId}/context/export`);
-  const url = URL.createObjectURL(blob);
+  // The tool returns a short-lived signed link. Following it downloads the zip, so no token or CORS read is needed.
+  const { url } = await callTool<{ url: string }>(apiFetch, workspaceId, "context.export");
   const link = document.createElement("a");
   link.href = url;
-  link.download = fileName ?? "draft-context.zip";
+  link.download = "draft-context.zip";
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
 }
 
 const loadInvite = (createIfMissing: boolean) => apiFetch<InviteLink>(`/invites/mine${createIfMissing ? "" : "?create=false"}`);

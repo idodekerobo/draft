@@ -1,6 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
-import { codexCredentialStatus, parseCodexAuthJson, saveCodexCredential } from "../credentials/codex-credential";
+import { parseCodexAuthJson } from "draft-core/harnesses/codex/credential";
+import { codexCredentialStatus, saveCodexCredential } from "../credentials/codex-credential";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 

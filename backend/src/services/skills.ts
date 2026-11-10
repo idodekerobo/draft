@@ -1,7 +1,12 @@
 import yaml from "js-yaml";
-import { serviceClient } from "../db/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SkillRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
+
+/** The client a caller passes, or the service one, loaded on first use so code that passes its own never needs it. */
+async function dbFor(client?: SupabaseClient): Promise<SupabaseClient> {
+  return client ?? (await import("../db/client")).serviceClient;
+}
 
 export function serializeSkill(row: SkillRow) {
   return {
@@ -26,8 +31,9 @@ export type ListSkillsResult =
   | { ok: false; status: number; error: string };
 
 /** Caller must already have run assertWorkspaceAccess — this trusts workspaceId. */
-export async function listSkills(workspaceId: string): Promise<ListSkillsResult> {
-  const { data, error } = await serviceClient
+export async function listSkills(workspaceId: string, client?: SupabaseClient): Promise<ListSkillsResult> {
+  const db = await dbFor(client);
+  const { data, error } = await db
     .from("skills")
     .select("name, description")
     .eq("workspace_id", workspaceId)
@@ -42,8 +48,9 @@ export async function listSkills(workspaceId: string): Promise<ListSkillsResult>
   return { ok: true, skills: rows.map((row) => ({ name: row.name, description: row.description })) };
 }
 
-export async function loadActiveSkill(workspaceId: string, name: string): Promise<SkillRow | null> {
-  const { data } = await serviceClient
+export async function loadActiveSkill(workspaceId: string, name: string, client?: SupabaseClient): Promise<SkillRow | null> {
+  const db = await dbFor(client);
+  const { data } = await db
     .from("skills")
     .select("*")
     .eq("workspace_id", workspaceId)
@@ -57,8 +64,8 @@ export type ReadSkillResult =
   | { ok: true; skill: ReturnType<typeof serializeSkill> }
   | { ok: false; status: number; error: string };
 
-export async function readSkill(workspaceId: string, name: string): Promise<ReadSkillResult> {
-  const skill = await loadActiveSkill(workspaceId, name);
+export async function readSkill(workspaceId: string, name: string, client?: SupabaseClient): Promise<ReadSkillResult> {
+  const skill = await loadActiveSkill(workspaceId, name, client);
   if (!skill) return { ok: false, status: 404, error: "skill_not_found" };
   return { ok: true, skill: serializeSkill(skill) };
 }
@@ -173,17 +180,77 @@ export function resolveFields(body: AddOrUpdateBody): ResolveResult {
   };
 }
 
+export type UpdateSkillResult =
+  | { ok: true; skill: ReturnType<typeof serializeSkill> }
+  | { ok: false; status: number; error: string };
+
+/** Replaces a skill's content and fields. Caller must already have run assertWorkspaceAccess. */
+export async function updateSkill(workspaceId: string, userId: string, name: string, body: AddOrUpdateBody, client?: SupabaseClient): Promise<UpdateSkillResult> {
+  const resolved = resolveFields({ ...body, name });
+  if (!resolved.ok) return resolved;
+  const fields = resolved.fields;
+
+  const db = await dbFor(client);
+  const { data, error } = await db
+    .from("skills")
+    .update({
+      description: fields.description,
+      license: fields.license,
+      compatibility: fields.compatibility,
+      metadata: fields.metadata,
+      allowed_tools: fields.allowedTools,
+      content: fields.content,
+      updated_at: new Date().toISOString(),
+      updated_by: userId,
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("name", name)
+    .is("removed_at", null)
+    .select("*")
+    .maybeSingle<SkillRow>();
+
+  if (error) {
+    recordRouteError({ workspaceId, operation: "commit", errorCode: "skills_update_failed", error });
+    return { ok: false, status: 500, error: "skills_update_failed" };
+  }
+  if (!data) return { ok: false, status: 404, error: "skill_not_found" };
+  return { ok: true, skill: serializeSkill(data) };
+}
+
+export type RemoveSkillResult = { ok: true } | { ok: false; status: number; error: string };
+
+/** Marks a skill removed; its row stays. Caller must already have run assertWorkspaceAccess. */
+export async function removeSkill(workspaceId: string, name: string, client?: SupabaseClient): Promise<RemoveSkillResult> {
+  const db = await dbFor(client);
+  const { data, error } = await db
+    .from("skills")
+    .update({ removed_at: new Date().toISOString() })
+    .eq("workspace_id", workspaceId)
+    .eq("name", name)
+    .is("removed_at", null)
+    .select("id")
+    .maybeSingle<Pick<SkillRow, "id">>();
+
+  if (error) {
+    recordRouteError({ workspaceId, operation: "commit", errorCode: "skills_remove_failed", error });
+    return { ok: false, status: 500, error: "skills_remove_failed" };
+  }
+  if (!data) return { ok: false, status: 404, error: "skill_not_found" };
+  return { ok: true };
+}
+
 export type AddSkillResult =
   | { ok: true; skill: ReturnType<typeof serializeSkill> }
   | { ok: false; status: number; error: string };
 
 /** Caller must already have run assertWorkspaceAccess — this trusts workspaceId. */
-export async function addSkill(workspaceId: string, userId: string, body: AddOrUpdateBody): Promise<AddSkillResult> {
+export async function addSkill(workspaceId: string, userId: string, body: AddOrUpdateBody, client?: SupabaseClient): Promise<AddSkillResult> {
   const resolved = resolveFields(body);
   if (!resolved.ok) return resolved;
   const fields = resolved.fields;
 
-  const { data, error } = await serviceClient
+  const db = await dbFor(client);
+  const { data, error } = await db
     .from("skills")
     .insert({
       workspace_id: workspaceId,

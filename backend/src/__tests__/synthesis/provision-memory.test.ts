@@ -1,11 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeMemoryAdditions, ensureMemoryProvisioned } from "../../synthesis/provision-memory";
 import { MEMORY_INDEX_PATH } from "../../synthesis/memory-period";
+import { createFakeContextDb, docs } from "../metaharness/context/fake-context-db";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
-const baseVersionId = "22222222-2222-4222-8222-222222222222";
-const newVersionId = "33333333-3333-4333-8333-333333333333";
 
 // 2026-09-25 is a Thursday.
 const NOW = new Date("2026-09-25T18:00:00.000Z");
@@ -27,113 +25,71 @@ describe("computeMemoryAdditions", () => {
   });
 });
 
-function createFakeClient() {
-  const inserted: Record<string, unknown>[] = [];
-  const pointerUpdates: { workspaceId: string; versionId: string }[] = [];
-  const client = {
-    from: (table: string) => {
-      if (table === "workspace_context_versions") {
-        return {
-          insert: (payload: Record<string, unknown>) => {
-            inserted.push(payload);
-            return {
-              select: () => ({
-                single: () => Promise.resolve({ data: { id: newVersionId }, error: null }),
-              }),
-            };
-          },
-        };
-      }
-      if (table === "workspaces") {
-        return {
-          update: (payload: { current_context_version_id: string }) => ({
-            eq: (_col: string, id: string) => {
-              pointerUpdates.push({ workspaceId: id, versionId: payload.current_context_version_id });
-              return Promise.resolve({ error: null });
-            },
-          }),
-        };
-      }
-      throw new Error(`Unexpected table ${table}`);
-    },
-  } as unknown as SupabaseClient;
-  return { client, inserted, pointerUpdates };
+const ALL_PATHS = [
+  "memory/days/2026-09-25.md",
+  MEMORY_INDEX_PATH,
+  "memory/months/2026-09.md",
+  "memory/weeks/2026-09-21.md",
+];
+
+function provision(db: ReturnType<typeof createFakeContextDb>) {
+  return ensureMemoryProvisioned({
+    client: db.client,
+    workspaceId,
+    baseVersionId: db.pointer()!,
+    documents: db.current(),
+    timezone: "UTC",
+    now: NOW,
+  });
 }
 
 describe("ensureMemoryProvisioned", () => {
   it("provisions index + today/this-week/this-month when nothing exists yet", async () => {
-    const { client, inserted, pointerUpdates } = createFakeClient();
+    const db = createFakeContextDb({});
+    const before = db.pointer();
 
-    const result = await ensureMemoryProvisioned({
-      client,
-      workspaceId,
-      baseVersionId,
-      documents: {},
-      versionNumber: 1,
-      timezone: "UTC",
-      now: NOW,
-    });
+    const result = await provision(db);
 
-    expect(result.baseContextVersionId).toBe(newVersionId);
-    expect(inserted).toHaveLength(1);
-    const payload = inserted[0] as { documents_json: Record<string, unknown>; version_number: number; creation_reason: string };
-    expect(payload.version_number).toBe(2);
-    expect(payload.creation_reason).toBe("memory_provision");
-    expect(Object.keys(payload.documents_json).sort()).toEqual([
-      "memory/days/2026-09-25.md",
-      MEMORY_INDEX_PATH,
-      "memory/months/2026-09.md",
-      "memory/weeks/2026-09-21.md",
-    ]);
-    expect(pointerUpdates).toEqual([{ workspaceId, versionId: newVersionId }]);
+    expect(result.baseContextVersionId).toBe(db.pointer()!);
+    expect(result.baseContextVersionId).not.toBe(before);
+    expect(db.rpcCalls).toHaveLength(1);
+    expect(db.rpcCalls[0]).toMatchObject({ p_creation_reason: "memory_provision", p_expected_version_id: before, p_agent_run_id: null });
+    expect(Object.keys(db.current()).sort()).toEqual(ALL_PATHS);
   });
 
   it("is a no-op once the current period documents already exist", async () => {
-    const { client, inserted } = createFakeClient();
-    const documents = {
-      [MEMORY_INDEX_PATH]: { content: "x", sha256: "a".repeat(64) },
-      "memory/days/2026-09-25.md": { content: "x", sha256: "a".repeat(64) },
-      "memory/weeks/2026-09-21.md": { content: "x", sha256: "a".repeat(64) },
-      "memory/months/2026-09.md": { content: "x", sha256: "a".repeat(64) },
-    };
+    const db = createFakeContextDb(Object.fromEntries(ALL_PATHS.map((path) => [path, "x"])));
+    const before = db.pointer();
 
-    const result = await ensureMemoryProvisioned({
-      client,
-      workspaceId,
-      baseVersionId,
-      documents,
-      versionNumber: 5,
-      timezone: "UTC",
-      now: NOW,
-    });
+    const result = await provision(db);
 
-    expect(result.baseContextVersionId).toBe(baseVersionId);
-    expect(inserted).toHaveLength(0);
+    expect(result.baseContextVersionId).toBe(before!);
+    expect(db.rpcCalls).toHaveLength(0);
   });
 
-  it("only provisions the missing pieces when some periods already exist", async () => {
-    const { client, inserted } = createFakeClient();
-    const documents = {
-      [MEMORY_INDEX_PATH]: { content: "x", sha256: "a".repeat(64) },
-      "memory/days/2026-09-25.md": { content: "x", sha256: "a".repeat(64) },
+  it("only adds the missing pieces and keeps existing documents untouched", async () => {
+    const db = createFakeContextDb({ [MEMORY_INDEX_PATH]: "keep me", "memory/days/2026-09-25.md": "keep me too" });
+
+    await provision(db);
+
+    expect(Object.keys(db.current()).sort()).toEqual(ALL_PATHS);
+    expect(db.current()[MEMORY_INDEX_PATH].content).toBe("keep me");
+    expect(db.current()["memory/days/2026-09-25.md"].content).toBe("keep me too");
+  });
+
+  it("keeps a write that lands first instead of overwriting it", async () => {
+    const db = createFakeContextDb({});
+    db.hooks.beforeCommit = () => {
+      db.writeBehindTheScenes({ "company/about.md": "written by a routine" });
     };
 
-    await ensureMemoryProvisioned({
-      client,
-      workspaceId,
-      baseVersionId,
-      documents,
-      versionNumber: 5,
-      timezone: "UTC",
-      now: NOW,
-    });
+    const result = await provision(db);
 
-    const payload = inserted[0] as { documents_json: Record<string, unknown> };
-    expect(Object.keys(payload.documents_json).sort()).toEqual([
-      "memory/days/2026-09-25.md",
-      MEMORY_INDEX_PATH,
-      "memory/months/2026-09.md",
-      "memory/weeks/2026-09-21.md",
-    ]);
+    expect(db.rpcCalls).toHaveLength(2);
+    expect(result.baseContextVersionId).toBe(db.pointer()!);
+    expect(db.current()["company/about.md"].content).toBe("written by a routine");
+    expect(Object.keys(db.current())).toEqual(expect.arrayContaining(ALL_PATHS));
   });
 });
+
+void docs;

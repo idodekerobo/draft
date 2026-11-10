@@ -18,13 +18,10 @@ const environment = {
 describe("sandbox deployment config", () => {
   it("loads an isolated deployment config from an injected environment", () => {
     expect(loadSandboxDeploymentConfig(environment)).toEqual({
-      flyApiToken: "fly-token",
-      flyAppName: "draft-sandbox",
-      flySandboxImage: digest,
-      flyRegion: "iad",
       callbackUrl: "https://api.example.test/sandbox/callback",
       callbackSecret: "signing-secret",
       supabaseUrl: "https://project.supabase.co",
+      provider: { kind: "fly", apiToken: "fly-token", appName: "draft-sandbox", image: digest, region: "iad" },
     });
   });
 
@@ -50,7 +47,7 @@ describe("sandbox deployment config", () => {
   });
 
   it("rejects mutable, malformed, and uppercase image digests", () => {
-    for (const flySandboxImage of [
+    for (const image of [
       "registry.fly.io/draft:latest",
       "registry.fly.io/draft:LATEST",
       "registry.fly.io/draft:version-1",
@@ -62,9 +59,10 @@ describe("sandbox deployment config", () => {
       `registry.fly.io/draft@sha256:${"A".repeat(64)}`,
       `${digest}:latest`,
     ]) {
+      const loaded = loadSandboxDeploymentConfig(environment);
       expect(() => validateSandboxDeploymentConfig({
-        ...loadSandboxDeploymentConfig(environment),
-        flySandboxImage,
+        ...loaded,
+        provider: { ...loaded.provider, image },
       })).toThrow("immutable registry.fly.io image reference");
     }
   });
@@ -73,9 +71,10 @@ describe("sandbox deployment config", () => {
     const rejectedReference = "registry.fly.io/draft:secret-deployment-label";
     let validationError: unknown;
     try {
+      const loaded = loadSandboxDeploymentConfig(environment);
       validateSandboxDeploymentConfig({
-        ...loadSandboxDeploymentConfig(environment),
-        flySandboxImage: rejectedReference,
+        ...loaded,
+        provider: { ...loaded.provider, image: rejectedReference },
       });
     } catch (error) {
       validationError = error;

@@ -1,4 +1,4 @@
-import { serviceClient } from "../db/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkspaceContextVersionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 import { resolveMemoryPeriod, type ResolvedMemoryPeriod } from "../synthesis/memory-period";
@@ -37,11 +37,14 @@ export type GetWorkspaceContextResult =
 export async function getWorkspaceContext(
   workspaceId: string,
   filter?: WorkspaceContextFilter,
+  clientOverride?: SupabaseClient,
 ): Promise<GetWorkspaceContextResult> {
+  // Loaded on first use, so code that passes its own client never needs the service one.
+  const client = clientOverride ?? (await import("../db/client")).serviceClient;
   // The version and (when a period is requested) timezone lookups are
   // independent of each other -- fire both at once instead of paying two
   // sequential round trips.
-  const versionQuery = serviceClient
+  const versionQuery = client
     .from("workspace_context_versions")
     .select("*")
     .eq("workspace_id", workspaceId)
@@ -49,7 +52,7 @@ export async function getWorkspaceContext(
     .limit(1)
     .maybeSingle<WorkspaceContextVersionRow>();
   const timezoneQuery = filter?.period
-    ? serviceClient.from("workspaces").select("timezone").eq("id", workspaceId).single<{ timezone: string }>()
+    ? client.from("workspaces").select("timezone").eq("id", workspaceId).single<{ timezone: string }>()
     : null;
 
   const [{ data: version, error }, timezoneResult] = await Promise.all([versionQuery, timezoneQuery]);

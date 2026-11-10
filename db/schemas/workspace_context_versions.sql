@@ -9,9 +9,11 @@ create table workspace_context_versions (
                                  check (jsonb_typeof(documents_json) = 'object'),
   content_hash                 text not null check (content_hash ~ '^[0-9a-f]{64}$'),
   creation_reason               text not null
-                                 check (creation_reason in ('seed', 'synthesis', 'manual_edit', 'restore', 'memory_provision')),
+                                 check (creation_reason in ('seed', 'synthesis', 'manual_edit', 'restore', 'memory_provision', 'agent_write')),
   synthesis_run_id             uuid,
   restored_from_version_id     uuid,
+  -- The agent run that wrote this version, when an agent wrote it.
+  agent_run_id                 uuid,
   summary                      text not null,
   created_at                   timestamptz not null default now(),
 
@@ -22,12 +24,17 @@ create table workspace_context_versions (
   foreign key (restored_from_version_id, workspace_id)
     references workspace_context_versions(id, workspace_id) on delete restrict,
   foreign key (synthesis_run_id, workspace_id)
-    references synthesis_runs(id, workspace_id) on delete restrict
+    references synthesis_runs(id, workspace_id) on delete restrict,
+  foreign key (agent_run_id, workspace_id)
+    references agent_runs(id, workspace_id) on delete set null (agent_run_id)
 );
 
 create unique index workspace_context_versions_one_per_run
   on workspace_context_versions (synthesis_run_id)
   where synthesis_run_id is not null;
+
+create index workspace_context_versions_agent_run_idx
+  on workspace_context_versions (agent_run_id) where agent_run_id is not null;
 
 alter table workspace_context_versions enable row level security;
 

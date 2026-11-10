@@ -1,3 +1,4 @@
+import { parseWorkspaceId } from "draft-core/run-spec";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "bun:test";
 import {
@@ -7,7 +8,7 @@ import {
   type ContextDocuments,
 } from "../../synthesis/context-version-files";
 import { renderSynthesisPrompt } from "../../synthesis/render-prompt";
-import type { SynthesisResultPayload } from "../../synthesis/types";
+import type { SynthesisFinalResult } from "../../synthesis/types";
 import type { WorkspaceContextVersionRow } from "../../types/tables";
 
 const ids = {
@@ -39,6 +40,7 @@ function version(documents: ContextDocuments): WorkspaceContextVersionRow {
     creation_reason: "seed",
     synthesis_run_id: null,
     restored_from_version_id: null,
+    agent_run_id: null,
     summary: "test",
     created_at: "2026-08-03T00:00:00.000Z",
   };
@@ -48,6 +50,7 @@ function bundleInput(): BuildRunBundleInput {
   const source1Content = "# Meeting\nDecision made.\n";
   const source2Content = "# Follow-up\nAnother decision.\n";
   return {
+    audience: { type: "system", workspaceId: parseWorkspaceId(ids.workspace) },
     identity: {
       organizationId: ids.organization,
       teamId: ids.team,
@@ -105,7 +108,7 @@ function bundleInput(): BuildRunBundleInput {
 }
 
 describe("renderSynthesisPrompt", () => {
-  it("lists exactly the bundle's context paths as valid documents keys", async () => {
+  it("lists the bundle's context paths with their read paths", async () => {
     const bundle = buildValidatedRunBundle(bundleInput());
     const { prompt } = await renderSynthesisPrompt(bundle);
 
@@ -149,16 +152,13 @@ describe("renderSynthesisPrompt", () => {
     expect(prompt).toContain(`sha256: ${expectedHash}`);
   });
 
-  it("produces a JSON schema that a valid SynthesisResultPayload satisfies structurally", async () => {
+  it("produces a JSON schema that a valid final result satisfies structurally", async () => {
     const bundle = buildValidatedRunBundle(bundleInput());
     const { jsonSchema } = await renderSynthesisPrompt(bundle);
 
-    const examplePayload: SynthesisResultPayload = {
+    const examplePayload: SynthesisFinalResult = {
       outcome: "changed",
       summary: "Updated product direction based on the July call.",
-      documents: {
-        "product/index.md": "# Product\nNew direction.\n",
-      },
       needs_input: [
         {
           question: "Is pricing seats or usage-based?",
@@ -172,10 +172,7 @@ describe("renderSynthesisPrompt", () => {
 
     const schema = jsonSchema as {
       required: string[];
-      properties: {
-        outcome: { enum: string[] };
-        documents: { propertyNames?: { enum: string[] } };
-      };
+      properties: { outcome: { enum: string[] } };
     };
 
     // Required top-level fields present.
@@ -184,11 +181,8 @@ describe("renderSynthesisPrompt", () => {
     }
     // Outcome enum matches.
     expect(schema.properties.outcome.enum).toContain(examplePayload.outcome);
-    // Documents keys are all within the schema's allowed logical paths.
-    const allowedPaths = schema.properties.documents.propertyNames?.enum ?? [];
-    for (const path of Object.keys(examplePayload.documents)) {
-      expect(allowedPaths).toContain(path);
-    }
+    // The documents travel through context.write, so the final result has no documents key.
+    expect(Object.keys((jsonSchema as { properties: object }).properties)).toEqual(["outcome", "summary", "needs_input"]);
     // needs_input items have all required fields per the schema.
     const needsInputItemSchema = (
       jsonSchema as {
@@ -200,6 +194,18 @@ describe("renderSynthesisPrompt", () => {
         expect(Object.hasOwn(item, key)).toBe(true);
       }
     }
+  });
+
+  it("tells the agent to write with context.write, rebase on a conflict and report only a landed change", async () => {
+    const bundle = buildValidatedRunBundle(bundleInput());
+    const { prompt } = await renderSynthesisPrompt(bundle);
+    expect(prompt).toContain("context.write");
+    expect(prompt).toContain("`baseSha: null`");
+    expect(prompt).toContain("currentSha");
+    expect(prompt).toContain("`retryable` is false");
+    expect(prompt).toContain('Use "changed" only if a `context.write` call succeeded');
+    expect(prompt).not.toContain("output/result.json");
+    expect(prompt).not.toContain('"documents"');
   });
 
   it("handles a bundle with no source files", async () => {

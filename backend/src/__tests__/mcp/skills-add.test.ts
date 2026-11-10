@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import * as queryLog from "../../observability/record-query-log";
 
 let insertError: { code: string; message: string } | null = null;
 const insertedRows: Array<Record<string, unknown>> = [];
@@ -6,7 +7,7 @@ const logged: Array<{ command: string; argsJson: Record<string, unknown> }> = []
 
 function maybeSingleFor(table: string) {
   if (table === "users") return { primary_team_id: "team-1" };
-  if (table === "workspaces") return { id: "ws-1" };
+  if (table === "workspaces") return { id: "22222222-2222-4222-8222-222222222222" };
   throw new Error(`unexpected table: ${table}`);
 }
 
@@ -34,17 +35,18 @@ function queryBuilder(table: string) {
 
 mock.module("../../db/client", () => ({ serviceClient: { from: (table: string) => queryBuilder(table) } }));
 mock.module("../../auth/workspace-access", () => ({ assertWorkspaceAccess: async () => null }));
-mock.module("../../observability/record-query-log", () => ({
-  recordAgentQueryLog: async (_client: unknown, input: { command: string; argsJson: Record<string, unknown> }) => {
+const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
+  async (_client: unknown, input: { command: string; argsJson: Record<string, unknown> }) => {
     logged.push(input);
   },
-}));
+);
+afterAll(() => queryLogSpy.mockRestore());
 
 const { createMcpHandler } = await import("@modelcontextprotocol/server");
 const { buildMcpServer } = await import("../../mcp/tools");
 
 async function callSkillsAdd(scopes: string[], args: Record<string, unknown>) {
-  const handler = createMcpHandler(() => buildMcpServer("user-1", scopes));
+  const handler = createMcpHandler(() => buildMcpServer("11111111-1111-4111-8111-111111111111", scopes));
   const response = await handler.fetch(
     new Request("http://internal.test/mcp", {
       method: "POST",
@@ -82,7 +84,7 @@ describe("mcp skills.add", () => {
     const result = await callSkillsAdd(["read", "write"], validArgs);
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(result.content[0]!.text).name).toBe("weekly-recap");
-    expect(insertedRows[0]).toMatchObject({ workspace_id: "ws-1", created_by: "user-1" });
+    expect(insertedRows[0]).toMatchObject({ workspace_id: "22222222-2222-4222-8222-222222222222", created_by: "11111111-1111-4111-8111-111111111111" });
   });
 
   it("logs the name and size, not the skill content", async () => {
@@ -94,6 +96,7 @@ describe("mcp skills.add", () => {
   it("returns duplicate_name when the name exists", async () => {
     insertError = { code: "23505", message: "duplicate key" };
     const result = await callSkillsAdd(["write"], validArgs);
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ error: "duplicate_name" });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ error: "duplicate_name", message: expect.stringContaining("already exists") });
   });
 });

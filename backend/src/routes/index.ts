@@ -11,6 +11,8 @@ import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
 import * as organizations from "./organizations";
+import * as personTools from "./person-tools";
+import * as runs from "./runs";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
@@ -24,13 +26,10 @@ import * as sessionTokensRotate from "./session-tokens-rotate";
 import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
 import * as schedules from "./schedules";
-import * as skills from "./skills";
 import * as sourceItems from "./source-items";
-import * as sources from "./sources";
 import * as synthesisRuns from "./synthesis-runs";
 import * as whoami from "./whoami";
 import * as waitlist from "./waitlist";
-import * as workspaceContext from "./workspace-context";
 import * as workspaceContextExport from "./workspace-context-export";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
@@ -47,9 +46,8 @@ export const routes = {
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
   "/organizations": { POST: withCors(organizations.POST), OPTIONS },
   "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
-  "/workspaces/:id/context": { GET: withCors(workspaceContext.contextGET), OPTIONS },
-  "/workspaces/:id/context/export": { GET: withCors(workspaceContextExport.exportGET), OPTIONS },
-  "/workspaces/:id/context/export-links": { POST: withCors(workspaceContextExport.exportLinkPOST), OPTIONS },
+  "/workspaces/:id/tools": { GET: withCors(personTools.toolsGET), OPTIONS },
+  "/workspaces/:id/tools/:name": { POST: withCors(personTools.toolPOST), OPTIONS },
   "/context-exports/:token": { GET: workspaceContextExport.redeemGET },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
@@ -60,8 +58,6 @@ export const routes = {
   "/workspaces/:id/schedules/:taskId": { PATCH: withCors(schedules.PATCH), DELETE: withCors(schedules.DELETE), OPTIONS },
   "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(schedules.RUNS), OPTIONS },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
-  "/workspaces/:id/sources/search": { POST: sources.searchPOST },
-  "/workspaces/:id/sources/:sourceItemId/read": { POST: sources.readPOST },
   "/workspaces/:id/github/install-sessions": { POST: withCors(githubInstall.createPOST), OPTIONS },
   "/workspaces/:id/github/install-sessions/:code": { GET: withCors(githubInstall.pollGET), OPTIONS },
   "/workspaces/github/callback": { GET: githubCallback.GET },
@@ -87,8 +83,6 @@ export const routes = {
   "/workspaces/:id/live-sessions/:sessionId/stop": { POST: withCors(sessionsLiveApprovals.STOP), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/mode": { POST: withCors(sessionsLiveApprovals.MODE), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/host-events": { POST: withCors(sessionsLiveApprovals.HOST_EVENTS), OPTIONS },
-  "/workspaces/:id/skills": { GET: skills.skillsGET, POST: skills.skillsPOST },
-  "/workspaces/:id/skills/:name": { GET: skills.skillsREAD, PATCH: skills.skillsPATCH, DELETE: skills.skillsDELETE },
   "/sessions/ingest": { POST: sessionsIngest.POST },
   "/sessions/ingest-errors": { POST: sessionsIngestErrors.POST },
   "/sessions/tokens/rotate": { POST: sessionTokensRotate.POST },
@@ -100,6 +94,10 @@ export const routes = {
   "/link/:code": { GET: links.pollGET },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
+  // Run-scoped: a run proves itself with its own token, not a person's login.
+  "/runs/:runId/tools": { GET: runs.toolsGET },
+  "/runs/:runId/tools/:name": { POST: runs.toolPOST },
+  "/runs/:runId/mcp": { GET: runs.mcpHandler, POST: runs.mcpHandler, DELETE: runs.mcpHandler },
   // Wildcard covers every Better Auth path under its "/api/auth" basePath
   // (oauth2/authorize, oauth2/token, oauth2/consent, our bridge endpoint, etc).
   // Better Auth emits no CORS headers itself, so the browser-called paths

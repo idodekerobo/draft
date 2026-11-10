@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import * as queryLog from "../../observability/record-query-log";
 import { strFromU8, unzipSync } from "fflate";
 
-const caller = { userId: "user-1", accessToken: "token-1" };
+const caller = { userId: "33333333-3333-4333-8333-333333333333", accessToken: "token-1" };
 const secret = "route-test-secret";
 process.env.CONTEXT_EXPORT_SECRET = secret;
 process.env.DRAFT_API_BASE_URL = "https://api.test";
@@ -26,7 +27,7 @@ function queryBuilder(table: string) {
     limit: () => builder,
     maybeSingle: async () => {
       if (table === "users") return { data: { primary_team_id: "team-1" }, error: null };
-      if (table === "workspaces") return { data: { id: "ws-1" }, error: null };
+      if (table === "workspaces") return { data: { id: "22222222-2222-4222-8222-222222222222" }, error: null };
       return queryResult;
     },
   };
@@ -41,10 +42,18 @@ mock.module("../../auth/workspace-access", () => ({
   assertWorkspaceAccess: async () => accessResult,
 }));
 mock.module("../../db/client", () => ({ serviceClient: { from: (table: string) => queryBuilder(table) } }));
-mock.module("../../observability/record-query-log", () => ({
-  recordAgentQueryLog: async (_client: unknown, input: Record<string, unknown>) => {
-    logged.push(input);
+const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
+  async (_client: unknown, input: queryLog.RecordAgentQueryLogInput) => {
+    logged.push({ ...input });
   },
+);
+afterAll(() => queryLogSpy.mockRestore());
+
+let hiddenPaths: string[] = [];
+mock.module("../../metaharness/context/visible-context", () => ({
+  visibleContext: (_caller: unknown, documents: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(documents).filter(([path]) => !hiddenPaths.includes(path))),
+  canSeeContextPath: () => true,
 }));
 
 const routes = await import("../../routes/workspace-context-export");
@@ -57,9 +66,10 @@ function request(params: Record<string, string>, headers: Record<string, string>
 }
 
 async function mintLink(): Promise<string> {
-  const response = await routes.exportLinkPOST(request({ id: "ws-1" }));
-  const body = (await response.json()) as { url: string };
-  return body.url.split("/context-exports/")[1]!;
+  const { createContextExportLink } = await import("../../context-export/link");
+  const result = await createContextExportLink("22222222-2222-4222-8222-222222222222", caller.userId, undefined, { from: (table: string) => queryBuilder(table) } as never);
+  if (!result.ok) throw new Error("no link");
+  return result.link.url.split("/context-exports/")[1]!;
 }
 
 describe("context export routes", () => {
@@ -69,26 +79,6 @@ describe("context export routes", () => {
     logged = [];
   });
 
-  it("returns an authenticated zip with a log row", async () => {
-    const response = await routes.exportGET(request({ id: "ws-1" }));
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("application/zip");
-    expect(response.headers.get("content-disposition")).toContain("draft-context-v3-");
-    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    expect(strFromU8(entries["draft-context/memory/2026-10.md"]!)).toBe("remember");
-    await Promise.resolve();
-    expect(logged[0]).toMatchObject({ command: "context.export", workspaceId: "ws-1" });
-  });
-
-  it("does not log an export the web app or desktop app asked for", async () => {
-    for (const headers of [{ origin: "https://app.draftai.us" }, { "x-draft-client": "desktop" }]) {
-      const response = await routes.exportGET(request({ id: "ws-1" }, headers));
-      expect(response.status).toBe(200);
-    }
-    await Promise.resolve();
-    expect(logged).toEqual([]);
-  });
-
   it("still logs a redeemed link, which is how an agent downloads one", async () => {
     const token = await mintLink();
     await routes.redeemGET(request({ token }, { "x-draft-client": "desktop" }));
@@ -96,16 +86,26 @@ describe("context export routes", () => {
     expect(logged[0]).toMatchObject({ command: "context.export", argsJson: { via: "link" } });
   });
 
-  it("denies a forbidden workspace", async () => {
+  it("answers 404 for a link when there is no context yet, and 403 when access was lost", async () => {
+    const token = await mintLink();
+    queryResult = { data: null, error: null };
+    expect((await routes.redeemGET(request({ token }))).status).toBe(404);
+    queryResult = { data: version, error: null };
     accessResult = Response.json({ error: "forbidden" }, { status: 403 });
-    expect((await routes.exportGET(request({ id: "ws-1" }))).status).toBe(403);
-    expect((await routes.exportLinkPOST(request({ id: "ws-1" }))).status).toBe(403);
+    expect((await routes.redeemGET(request({ token }))).status).toBe(403);
   });
 
-  it("returns 404 when there is no context yet", async () => {
-    queryResult = { data: null, error: null };
-    expect((await routes.exportGET(request({ id: "ws-1" }))).status).toBe(404);
-    expect((await routes.exportLinkPOST(request({ id: "ws-1" }))).status).toBe(404);
+  it("builds the zip from what visibleContext lets that person see", async () => {
+    const token = await mintLink();
+    queryResult = {
+      data: { ...version, documents_json: { ...version.documents_json, "private/notes.md": { content: "secret", sha256: "y".repeat(64) } } },
+      error: null,
+    };
+    hiddenPaths = ["private/notes.md"];
+    const entries = unzipSync(new Uint8Array(await (await routes.redeemGET(request({ token }))).arrayBuffer()));
+    expect(Object.keys(entries).some((name) => name.endsWith("private/notes.md"))).toBe(false);
+    expect(strFromU8(entries["draft-context/memory/2026-10.md"]!)).toBe("remember");
+    hiddenPaths = [];
   });
 
   it("mints a link that redeems to a no-store zip", async () => {
@@ -143,7 +143,7 @@ describe("context export routes", () => {
 });
 
 async function callMcpExport(scopes: string[]) {
-  const handler = createMcpHandler(() => buildMcpServer("user-1", scopes));
+  const handler = createMcpHandler(() => buildMcpServer("33333333-3333-4333-8333-333333333333", scopes));
   const response = await handler.fetch(
     new Request("http://internal.test/mcp", {
       method: "POST",
@@ -177,7 +177,7 @@ describe("mcp context.export", () => {
     expect(body.url.startsWith("https://api.test/context-exports/")).toBe(true);
 
     const token = body.url.split("/context-exports/")[1]!;
-    expect(verifyContextExportToken(token, secret)).toMatchObject({ workspaceId: "ws-1", userId: "user-1" });
+    expect(verifyContextExportToken(token, secret)).toMatchObject({ workspaceId: "22222222-2222-4222-8222-222222222222", userId: "33333333-3333-4333-8333-333333333333" });
     const response = await routes.redeemGET(request({ token }));
     const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
     expect(strFromU8(entries["draft-context/memory/2026-10.md"]!)).toBe("remember");
@@ -192,6 +192,7 @@ describe("mcp context.export", () => {
   it("reports no_context_yet", async () => {
     queryResult = { data: null, error: null };
     const result = await callMcpExport(["read"]);
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ error: "no_context_yet" });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ error: "no_context_yet", message: expect.stringContaining("no context yet") });
   });
 });

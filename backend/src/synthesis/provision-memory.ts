@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canonicalDocumentsHash, sha256 } from "./context-version-files";
+import { commitContextVersion, loadCurrentContext } from "../metaharness/context/context-store";
+import { sha256 } from "./context-version-files";
 import {
   MEMORY_INDEX_PATH,
   resolveMemoryPeriod,
@@ -23,12 +24,36 @@ Read a specific period with \`draft context read --dimension memory --period <to
 - memory/months/<YYYY-MM>.md -- one calendar month
 `;
 
+const MAX_STALE_RETRIES = 3;
+
+/**
+ * Gives a workspace with no context its first version, with memory's stubs already in it.
+ * If another writer created the first version meanwhile, that one is used.
+ */
+export async function seedEmptyWorkspace(
+  client: SupabaseClient,
+  workspaceId: string,
+  timezone: string,
+  now?: Date,
+): Promise<string> {
+  const seeded = await commitContextVersion(client, {
+    workspaceId,
+    expectedVersionId: null,
+    documents: computeMemoryAdditions({}, timezone, now),
+    reason: "seed",
+    summary: "Empty workspace — no context yet",
+  });
+  if (seeded.status === "committed") return seeded.versionId;
+  const current = await loadCurrentContext(client, workspaceId);
+  if (!current.versionId) throw new Error("Workspace has no context version after seeding");
+  return current.versionId;
+}
+
 export interface EnsureMemoryProvisionedInput {
   client: SupabaseClient;
   workspaceId: string;
   baseVersionId: string;
   documents: WorkspaceContextVersionRow["documents_json"];
-  versionNumber: number;
   timezone: string;
   now?: Date;
 }
@@ -84,35 +109,27 @@ export function computeMemoryAdditions(
 export async function ensureMemoryProvisioned(
   input: EnsureMemoryProvisionedInput,
 ): Promise<EnsureMemoryProvisionedResult> {
-  const additions = computeMemoryAdditions(input.documents, input.timezone, input.now ?? new Date());
-  if (Object.keys(additions).length === 0) {
-    return { baseContextVersionId: input.baseVersionId };
-  }
+  let baseVersionId = input.baseVersionId;
+  let documents = input.documents;
 
-  const documents = { ...input.documents, ...additions };
-  const contentHash = canonicalDocumentsHash(documents);
+  for (let attempt = 0; attempt <= MAX_STALE_RETRIES; attempt++) {
+    const additions = computeMemoryAdditions(documents, input.timezone, input.now ?? new Date());
+    if (Object.keys(additions).length === 0) return { baseContextVersionId: baseVersionId };
 
-  const { data, error } = await input.client
-    .from("workspace_context_versions")
-    .insert({
-      workspace_id: input.workspaceId,
-      version_number: input.versionNumber + 1,
-      previous_version_id: input.baseVersionId,
-      documents_json: documents,
-      content_hash: contentHash,
-      creation_reason: "memory_provision",
+    const result = await commitContextVersion(input.client, {
+      workspaceId: input.workspaceId,
+      expectedVersionId: baseVersionId,
+      documents: { ...documents, ...additions },
+      reason: "memory_provision",
       summary: `Provisioned ${Object.keys(additions).length} memory document(s)`,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  const newVersionId = (data as { id: string }).id;
+    });
+    if (result.status === "committed") return { baseContextVersionId: result.versionId };
 
-  const { error: pointerError } = await input.client
-    .from("workspaces")
-    .update({ current_context_version_id: newVersionId })
-    .eq("id", input.workspaceId);
-  if (pointerError) throw pointerError;
-
-  return { baseContextVersionId: newVersionId };
+    // Another write landed first. Read what is current and work out the stubs again.
+    const current = await loadCurrentContext(input.client, input.workspaceId);
+    if (!current.versionId) throw new Error("Workspace lost its context version while provisioning memory");
+    baseVersionId = current.versionId;
+    documents = current.documents;
+  }
+  throw new Error("Workspace context kept changing while provisioning memory");
 }

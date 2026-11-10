@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HARNESSES, getHarness, harnessInstallUrl, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
+import { HARNESSES, cloudEnvironmentFor, getHarness, harnessInstallUrl, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
 
 describe("harness registry", () => {
   it("has unique ids and a default model first for every harness", () => {
@@ -47,5 +47,17 @@ describe("harness registry", () => {
     expect(modelLabel("claude", null)).toBe("Default");
     expect(modelLabel("claude", "opus")).toBe("Opus");
     expect(modelLabel("claude", "retired")).toBe("retired");
+  });
+});
+
+describe("cloudEnvironmentFor", () => {
+  it("is the starting tools for a run that chose nothing", () => {
+    expect(cloudEnvironmentFor("claude")).toMatchObject({ nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }], mcpServers: [] });
+    expect(cloudEnvironmentFor("codex").nativeTools).toEqual([{ harness: "codex", tool: "shell" }]);
+  });
+
+  it("adds what was chosen once, and never a tool outside the cloud list", () => {
+    const environment = cloudEnvironmentFor("claude", { nativeTools: ["WebSearch", "Read", "Bash"] });
+    expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
   });
 });

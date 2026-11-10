@@ -3,7 +3,7 @@ import { publishableClient, serviceClient } from "../db/client";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { resolveIngestCredentialScope } from "../credentials/session-ingest-token";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
-import { parseClaudeCodeJsonl } from "../ingestion/claude-code/parse-transcript";
+import { parseClaudeCodeJsonl } from "draft-core/harnesses/claude/parse-transcript";
 import { persistAgentSession } from "../ingestion/agent-sessions/persist-session";
 import { recordRouteError } from "../errors/route-error";
 

@@ -16,7 +16,7 @@ Key routing rules:
 - Design system, brand → invoke design-consultation
 - Visual audit, design polish → invoke design-review
 - Architecture review → invoke plan-eng-review
-- Fly sandbox image/Dockerfile/entrypoint/runner changes, new Fly sandbox environment → invoke fly-sandbox-image
+- Fly sandbox image/Dockerfile/entrypoint/runner changes (including `core/src/harnesses/*/runner.ts` and the run manifest), new Fly sandbox environment → invoke fly-sandbox-image
 - Seeding/demo data, testing a migration, running against staging, switching Supabase env → invoke staging-env
 
 ## Writing Code
@@ -79,10 +79,19 @@ for the exact commands.
 
 A backend deploy does not rebuild the Fly sandbox image. Each environment keeps
 running the image its config points to, so old runner code can outlive a deploy.
-Invoke the `fly-sandbox-image` skill when you change `backend/src/sandbox/claude-code/`
-or what the backend sends to or expects from the runner. The change is not done
-until the skill's steps are complete. Switching an environment to a new image
-needs my explicit approval.
+The runner is bundled into the image (`bun run build:runner` in `backend`), so
+any file in that bundle is part of the image. Invoke the `fly-sandbox-image`
+skill when you change any of these, or what the backend sends to or expects
+from the runner:
+
+- `backend/src/sandbox/runner.ts` and `backend/src/sandbox/runner/*`
+- `backend/src/sandbox/image/*` (Dockerfile, entrypoint, egress script)
+- `core/src/harnesses/*/runner.ts`, `core/src/harnesses/failure.ts`
+- `core/src/run-manifest.ts` and `core/src/run-spec.ts`
+- the manifest or environment in `backend/src/sandbox/launch.ts` and `run-manifest.ts`
+
+The change is not done until the skill's steps are complete. Switching an
+environment to a new image needs my explicit approval.
 
 <!-- draft:begin (managed by Draft — do not edit this block) -->
 ## Draft context

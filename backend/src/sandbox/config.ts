@@ -1,15 +1,13 @@
-const FLY_IMAGE_DIGEST_PATTERN =
-  /^registry\.fly\.io\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?@sha256:[0-9a-f]{64}$/;
+import { loadProviderConfig, validateProviderConfig, type SandboxProviderConfig } from "./providers";
+
 const CALLBACK_PATH = "/sandbox/callback";
 
 export interface SandboxDeploymentConfig {
-  flyApiToken: string;
-  flyAppName: string;
-  flySandboxImage: string;
-  flyRegion: string;
   callbackUrl: string;
   callbackSecret: string;
   supabaseUrl: string;
+  /** Where sandboxes run. The settings that belong to one provider live under it. */
+  provider: SandboxProviderConfig;
 }
 
 export type SandboxEnvironment = Readonly<Record<string, string | undefined>>;
@@ -25,7 +23,7 @@ function required(env: SandboxEnvironment, name: string): string {
 export function validateSandboxDeploymentConfig(
   config: SandboxDeploymentConfig,
 ): SandboxDeploymentConfig {
-  for (const [name, value] of Object.entries(config)) {
+  for (const [name, value] of Object.entries({ callbackUrl: config.callbackUrl, callbackSecret: config.callbackSecret, supabaseUrl: config.supabaseUrl })) {
     if (value.trim().length === 0) {
       throw new Error(`${name} must not be empty`);
     }
@@ -40,11 +38,7 @@ export function validateSandboxDeploymentConfig(
   if (callbackUrl.protocol !== "https:") {
     throw new Error("DRAFT_API_BASE_URL must be a valid HTTPS URL");
   }
-  if (!FLY_IMAGE_DIGEST_PATTERN.test(config.flySandboxImage)) {
-    throw new Error(
-      "FLY_SANDBOX_IMAGE must be an immutable registry.fly.io image reference with a lowercase SHA-256 digest",
-    );
-  }
+  const provider = validateProviderConfig(config.provider);
 
   let supabaseUrl: URL;
   try {
@@ -56,10 +50,10 @@ export function validateSandboxDeploymentConfig(
     throw new Error("SUPABASE_URL must be a valid HTTPS URL");
   }
 
-  return { ...config };
+  return { ...config, provider };
 }
 
-/** Load only the configuration needed by the Fly sandbox deployment boundary. */
+/** Load only the configuration needed by the sandbox deployment boundary. */
 export function loadSandboxDeploymentConfig(
   env: SandboxEnvironment = process.env,
 ): SandboxDeploymentConfig {
@@ -72,12 +66,9 @@ export function loadSandboxDeploymentConfig(
   }
 
   return validateSandboxDeploymentConfig({
-    flyApiToken: required(env, "FLY_API_TOKEN"),
-    flyAppName: required(env, "FLY_APP_NAME"),
-    flySandboxImage: required(env, "FLY_SANDBOX_IMAGE"),
-    flyRegion: required(env, "FLY_REGION"),
     callbackUrl,
     callbackSecret: required(env, "SANDBOX_CALLBACK_SECRET"),
     supabaseUrl: required(env, "SUPABASE_URL"),
+    provider: loadProviderConfig(env),
   });
 }
