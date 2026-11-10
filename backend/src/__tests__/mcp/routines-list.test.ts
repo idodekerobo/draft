@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import * as queryLog from "../../observability/record-query-log";
 
 let primaryTeamId: string | null = "team-1";
 let accessResult: Response | null = null;
@@ -33,11 +34,12 @@ function queryBuilder(table: string) {
 
 mock.module("../../db/client", () => ({ serviceClient: { from: (table: string) => queryBuilder(table) } }));
 mock.module("../../auth/workspace-access", () => ({ assertWorkspaceAccess: async () => accessResult }));
-mock.module("../../observability/record-query-log", () => ({
-  recordAgentQueryLog: async (_client: unknown, input: { command: string; argsJson: Record<string, unknown> }) => {
+const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
+  async (_client: unknown, input: { command: string; argsJson: Record<string, unknown> }) => {
     logged.push(input);
   },
-}));
+);
+afterAll(() => queryLogSpy.mockRestore());
 
 const { createMcpHandler } = await import("@modelcontextprotocol/server");
 const { buildMcpServer } = await import("../../mcp/tools");

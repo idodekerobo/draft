@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { finishAgentRun, markAgentRunRunning } from "../../agent-runs/lifecycle";
+import { finishAgentRun, markAgentRunRunning } from "../../metaharness/runs/lifecycle";
 import { endRoutineSession, failRoutineSession } from "../../routines/fail-routine-session";
 import { fakeClient, fakeDb } from "./fake-client";
 

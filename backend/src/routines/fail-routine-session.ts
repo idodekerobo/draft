@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { finishAgentRunForSession, type AgentRunOutcome } from "../agent-runs/lifecycle";
+import { finishAgentRunForSession, type AgentRunOutcome } from "../metaharness/runs/lifecycle";
 import { releaseCodexLeaseForRun } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";

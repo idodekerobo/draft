@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { ToolCaller } from "draft-core/agent-run";
-import { createContextExportLink, exportInstructions } from "../../context-export/link";
-import { getWorkspaceContext } from "../../services/workspace-context";
-import { readSource, searchSources } from "../../services/sources";
+import { createContextExportLink, exportInstructions } from "../../../context-export/link";
+import { getWorkspaceContext } from "../../../services/workspace-context";
+import { readSource, searchSources } from "../../../services/sources";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { visibleContext } from "../visible-context";
+import { visibleContext } from "../../context/visible-context";
 
 function callerWorkspaceId(caller: ToolCaller): string {
   return caller.type === "run" ? caller.run.workspaceId : caller.workspaceId;

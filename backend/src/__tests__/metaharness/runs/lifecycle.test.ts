@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { describeError } from "../../errors/describe-error";
+import { describeError } from "../../../errors/describe-error";
 
 describe("describeError", () => {
   it("uses the message of an Error", () => {

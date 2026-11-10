@@ -9,9 +9,9 @@ import {
   parseWorkspaceId,
   type AgentRunSpec,
 } from "draft-core/agent-run";
-import { auditToDatabase, createAgentRun, specFromRow } from "../../agent-runs/agent-run-store";
-import type { ToolCallRecord } from "../../agent-runs/invoke-tool";
-import type { AgentRunRow } from "../../types/tables";
+import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
+import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
+import type { AgentRunRow } from "../../../types/tables";
 
 const spec: AgentRunSpec = {
   id: parseAgentRunId("11111111-1111-4111-8111-111111111111"),

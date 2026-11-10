@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
-import type { AuthorizationDenial, ToolCallRecord } from "../../agent-runs/invoke-tool";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
+import type { AuthorizationDenial, ToolCallRecord } from "../../metaharness/tools/invoke-tool";
+import { createDraftToolRegistry } from "../../metaharness/tools/definitions";
 import { registerGatewayTools, type McpGateway } from "../../mcp/gateway-tools";
-import { createFakeContextDb } from "../agent-runs/fake-context-db";
+import { createFakeContextDb } from "../metaharness/context/fake-context-db";
 import { sha256 } from "../../synthesis/context-version-files";
 
 const USER_ID = "33333333-3333-4333-8333-333333333333";

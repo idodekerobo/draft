@@ -10,10 +10,10 @@ import {
   type AnyDraftToolPermission,
   type ToolCaller,
 } from "draft-core/agent-run";
-import { invokeTool, type ToolCallRecord } from "../../agent-runs/invoke-tool";
-import { toHttpResponse } from "../../agent-runs/http-result";
-import { toMcpResult } from "../../agent-runs/mcp-result";
-import { defineTool, refuse, ToolRegistry } from "../../agent-runs/tool-registry";
+import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
+import { toHttpResponse } from "../../../metaharness/tools/http-result";
+import { toMcpResult } from "../../../metaharness/tools/mcp-result";
+import { defineTool, refuse, ToolRegistry } from "../../../metaharness/tools/tool-registry";
 
 function runWith(permissions: AnyDraftToolPermission[]): ToolCaller {
   const run: AgentRunSpec = {

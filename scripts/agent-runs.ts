@@ -7,7 +7,7 @@
 // It writes data, so it refuses to run against the production project.
 
 import { serviceClient as db } from "../backend/src/db/client";
-import { createMcpConnection } from "../backend/src/agent-runs/remote-mcp";
+import { createMcpConnection } from "../backend/src/metaharness/tools/remote-mcp";
 import { parseAgentRoutineConfig, validateAgentRoutineConfig } from "../backend/src/routines/config";
 
 const PRODUCTION_PROJECT_REF = "rffmhfqlkzkgkkzkxlly";

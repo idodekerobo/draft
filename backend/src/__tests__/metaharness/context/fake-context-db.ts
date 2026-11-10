@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canonicalDocumentsHash, sha256, type ContextDocuments } from "../../synthesis/context-version-files";
+import { canonicalDocumentsHash, sha256, type ContextDocuments } from "../../../synthesis/context-version-files";
 
 export function docs(files: Record<string, string>): ContextDocuments {
   return Object.fromEntries(Object.entries(files).map(([path, content]) => [path, { content, sha256: sha256(content) }]));

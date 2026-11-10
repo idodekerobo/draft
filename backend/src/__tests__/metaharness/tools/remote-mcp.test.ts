@@ -7,7 +7,7 @@ import {
   parseWorkspaceId,
   type AgentRunSpec,
 } from "draft-core/agent-run";
-import { invokeTool, type ToolCallRecord } from "../../agent-runs/invoke-tool";
+import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import {
   assertSafeMcpUrl,
   createMcpConnection,
@@ -16,9 +16,9 @@ import {
   usableMcpConnections,
   type ConnectRemoteMcp,
   type RemoteMcpSession,
-} from "../../agent-runs/remote-mcp";
-import { ToolRegistry } from "../../agent-runs/tool-registry";
-import { fakeClient, fakeDb } from "../routines/fake-client";
+} from "../../../metaharness/tools/remote-mcp";
+import { ToolRegistry } from "../../../metaharness/tools/tool-registry";
+import { fakeClient, fakeDb } from "../../routines/fake-client";
 
 process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64");
 

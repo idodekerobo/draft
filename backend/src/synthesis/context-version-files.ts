@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { visibleContext, type ContextAudience } from "../agent-runs/visible-context";
+import { visibleContext, type ContextAudience } from "../metaharness/context/visible-context";
 import { computeBundleHash } from "../sandbox/bundle-hash";
 import type {
   SourceItemRow,

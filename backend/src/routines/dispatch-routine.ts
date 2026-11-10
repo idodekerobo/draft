@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAgentRun } from "../agent-runs/agent-run-store";
-import { resolveBaseContextVersionId } from "../agent-runs/base-context";
-import { markAgentRunRunning } from "../agent-runs/lifecycle";
-import { usableMcpConnections } from "../agent-runs/remote-mcp";
+import { createAgentRun } from "../metaharness/runs/agent-run-store";
+import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
+import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
+import { usableMcpConnections } from "../metaharness/tools/remote-mcp";
 import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";

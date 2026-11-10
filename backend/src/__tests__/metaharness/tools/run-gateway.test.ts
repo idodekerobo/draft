@@ -8,11 +8,11 @@ import {
   type AgentRunSpec,
   type AnyDraftToolPermission,
 } from "draft-core/agent-run";
-import { createAgentRun } from "../../agent-runs/agent-run-store";
-import { createRunGateway } from "../../agent-runs/run-gateway";
-import { createAgentRunToken } from "../../agent-runs/run-token";
-import { createFakeContextDb } from "./fake-context-db";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
+import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
+import { createRunGateway } from "../../../metaharness/tools/run-gateway";
+import { createAgentRunToken } from "../../../metaharness/runs/run-token";
+import { createFakeContextDb } from "../context/fake-context-db";
+import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
 
 const SECRET = "test-secret";
 const WS = "11111111-1111-4111-8111-111111111111";

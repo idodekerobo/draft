@@ -22,10 +22,10 @@ import {
   type AnyDraftToolPermission,
 } from "draft-core/agent-run";
 import { isHarnessId } from "draft-core/harnesses";
-import { isLoggedCommand } from "../observability/logged-commands";
-import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
-import type { AgentRunRow } from "../types/tables";
-import type { ToolCallRecord } from "./invoke-tool";
+import { isLoggedCommand } from "../../observability/logged-commands";
+import { recordAgentQueryLog, type AgentQueryLogCommand } from "../../observability/record-query-log";
+import type { AgentRunRow } from "../../types/tables";
+import type { ToolCallRecord } from "../tools/invoke-tool";
 
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cron"), scheduledTaskId: z.string().transform(parseScheduledTaskId), occurrenceAt: z.string().transform(parseIsoTimestamp) }),

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunSpec } from "draft-core/agent-run";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAgentRun } from "../agent-runs/agent-run-store";
-import { resolveBaseContextVersionId } from "../agent-runs/base-context";
-import { finishAgentRun, markAgentRunRunning } from "../agent-runs/lifecycle";
+import { createAgentRun } from "../metaharness/runs/agent-run-store";
+import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
+import { finishAgentRun, markAgentRunRunning } from "../metaharness/runs/lifecycle";
 import { describeError } from "../errors/describe-error";
 import { claimPendingSummarySessions } from "./claim-sessions";
 import { reportExpiredSummaryLeases } from "./report-expired-leases";

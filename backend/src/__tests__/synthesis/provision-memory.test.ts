@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { computeMemoryAdditions, ensureMemoryProvisioned } from "../../synthesis/provision-memory";
 import { MEMORY_INDEX_PATH } from "../../synthesis/memory-period";
-import { createFakeContextDb, docs } from "../agent-runs/fake-context-db";
+import { createFakeContextDb, docs } from "../metaharness/context/fake-context-db";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 

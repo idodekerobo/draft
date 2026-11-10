@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { auditToDatabase } from "../../agent-runs/agent-run-store";
-import type { ToolCallRecord } from "../../agent-runs/invoke-tool";
-import { isLoggedCommand } from "../../observability/logged-commands";
+import { auditToDatabase } from "../../../metaharness/runs/agent-run-store";
+import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
+import { isLoggedCommand } from "../../../observability/logged-commands";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const WS = "22222222-2222-4222-8222-222222222222";

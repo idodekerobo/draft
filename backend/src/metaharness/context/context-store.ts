@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertSafeDocumentPath, canonicalDocumentsHash, sha256, type ContextDocuments } from "../synthesis/context-version-files";
-import type { WorkspaceContextVersionRow } from "../types/tables";
+import { assertSafeDocumentPath, canonicalDocumentsHash, sha256, type ContextDocuments } from "../../synthesis/context-version-files";
+import type { WorkspaceContextVersionRow } from "../../types/tables";
 
 export type ContextCreationReason = "seed" | "memory_provision" | "agent_write" | "synthesis";
 

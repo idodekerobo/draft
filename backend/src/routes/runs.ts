@@ -1,6 +1,6 @@
-import { createRunGateway } from "../agent-runs/run-gateway";
-import { runTokenSecret } from "../agent-runs/run-token-secret";
-import { createDraftToolRegistry } from "../agent-runs/tools";
+import { createRunGateway } from "../metaharness/tools/run-gateway";
+import { runTokenSecret } from "../metaharness/runs/run-token-secret";
+import { createDraftToolRegistry } from "../metaharness/tools/definitions";
 import { serviceClient } from "../db/client";
 
 // Built on first use so a backend without the secret still starts.

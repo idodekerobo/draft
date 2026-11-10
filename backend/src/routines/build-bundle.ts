@@ -1,7 +1,7 @@
 import { computeBundleHash } from "../sandbox/bundle-hash";
 import { assertSafeDocumentPath } from "../synthesis/context-version-files";
 import type { SandboxRunBundle } from "../sandbox";
-import { visibleContext, type ContextAudience } from "../agent-runs/visible-context";
+import { visibleContext, type ContextAudience } from "../metaharness/context/visible-context";
 import { routineRunId } from "./config";
 
 export interface RoutinePromptContext {

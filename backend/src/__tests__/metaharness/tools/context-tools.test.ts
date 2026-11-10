@@ -8,11 +8,11 @@ import {
   type AnyDraftToolPermission,
   type ToolCaller,
 } from "draft-core/agent-run";
-import { invokeTool, type ToolCallRecord } from "../../agent-runs/invoke-tool";
-import { MAX_CONFLICTED_WRITES } from "../../agent-runs/tools/context-tools";
-import { sha256 } from "../../synthesis/context-version-files";
-import { createFakeContextDb } from "./fake-context-db";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
+import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
+import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context-tools";
+import { sha256 } from "../../../synthesis/context-version-files";
+import { createFakeContextDb } from "../context/fake-context-db";
+import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 

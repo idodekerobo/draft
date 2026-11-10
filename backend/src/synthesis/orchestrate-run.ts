@@ -17,7 +17,7 @@ import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/agent-run";
 import { buildSynthesisRunSpec } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
-import { saveAgentRunSpec } from "../agent-runs/agent-run-store";
+import { saveAgentRunSpec } from "../metaharness/runs/agent-run-store";
 import { recordError } from "../errors/record-error";
 
 /**

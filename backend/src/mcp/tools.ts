@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
-import { createDraftToolRegistry } from "../agent-runs/tools";
-import { userInvokeDeps } from "../agent-runs/user-gateway";
+import { createDraftToolRegistry } from "../metaharness/tools/definitions";
+import { userInvokeDeps } from "../metaharness/tools/user-gateway";
 import { registerGatewayTools, type McpGateway } from "./gateway-tools";
 import { serviceClient } from "../db/client";
 

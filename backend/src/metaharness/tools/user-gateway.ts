@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertWorkspaceAccess } from "../auth/workspace-access";
-import { auditToDatabase } from "./agent-run-store";
+import { assertWorkspaceAccess } from "../../auth/workspace-access";
+import { auditToDatabase } from "../runs/agent-run-store";
 import type { AuthorizationDenial, InvokeToolDeps } from "./invoke-tool";
 import type { ToolRegistry } from "./tool-registry";
 

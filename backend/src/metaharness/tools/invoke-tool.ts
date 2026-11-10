@@ -1,5 +1,5 @@
 import type { ToolCaller } from "draft-core/agent-run";
-import { describeError } from "../errors/describe-error";
+import { describeError } from "../../errors/describe-error";
 import { ToolUserError, type ToolRegistry } from "./tool-registry";
 
 export type InvokeToolResult =

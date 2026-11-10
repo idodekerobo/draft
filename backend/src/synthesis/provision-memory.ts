@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { commitContextVersion, loadCurrentContext } from "../agent-runs/context-store";
+import { commitContextVersion, loadCurrentContext } from "../metaharness/context/context-store";
 import { sha256 } from "./context-version-files";
 import {
   MEMORY_INDEX_PATH,

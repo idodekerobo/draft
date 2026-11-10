@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import * as queryLog from "../../observability/record-query-log";
 import { strFromU8, unzipSync } from "fflate";
 
 const caller = { userId: "33333333-3333-4333-8333-333333333333", accessToken: "token-1" };
@@ -41,14 +42,15 @@ mock.module("../../auth/workspace-access", () => ({
   assertWorkspaceAccess: async () => accessResult,
 }));
 mock.module("../../db/client", () => ({ serviceClient: { from: (table: string) => queryBuilder(table) } }));
-mock.module("../../observability/record-query-log", () => ({
-  recordAgentQueryLog: async (_client: unknown, input: Record<string, unknown>) => {
-    logged.push(input);
+const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
+  async (_client: unknown, input: queryLog.RecordAgentQueryLogInput) => {
+    logged.push({ ...input });
   },
-}));
+);
+afterAll(() => queryLogSpy.mockRestore());
 
 let hiddenPaths: string[] = [];
-mock.module("../../agent-runs/visible-context", () => ({
+mock.module("../../metaharness/context/visible-context", () => ({
   visibleContext: (_caller: unknown, documents: Record<string, unknown>) =>
     Object.fromEntries(Object.entries(documents).filter(([path]) => !hiddenPaths.includes(path))),
   canSeeContextPath: () => true,

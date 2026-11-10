@@ -1,5 +1,5 @@
 import { parseUserId, parseWorkspaceId } from "draft-core/agent-run";
-import { visibleContext } from "../agent-runs/visible-context";
+import { visibleContext } from "../metaharness/context/visible-context";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { contextExportSettings } from "../config";
 import { ContextExportTokenError, verifyContextExportToken } from "../context-export/token";

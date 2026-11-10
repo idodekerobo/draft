@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunSpec } from "draft-core/agent-run";
-import { loadVersionDocuments } from "../agent-runs/context-store";
+import { loadVersionDocuments } from "../metaharness/context/context-store";
 import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
 import { launchFlySandboxRun, type SandboxDeploymentConfig } from "../sandbox";
 import { needsDraftToolServer } from "../sandbox/run-manifest";

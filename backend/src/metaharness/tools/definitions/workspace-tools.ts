@@ -4,8 +4,8 @@ import type { ToolCaller } from "draft-core/agent-run";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 
 // Loaded on first use: these services open the service database client, which a registry built for a test must not need.
-const skillsService = () => import("../../services/skills");
-const scheduleService = () => import("../../schedules/service");
+const skillsService = () => import("../../../services/skills");
+const scheduleService = () => import("../../../schedules/service");
 
 function requireUser(caller: ToolCaller, tool: string) {
   if (caller.type !== "user") throw new Error(`${tool} needs a signed-in person`);

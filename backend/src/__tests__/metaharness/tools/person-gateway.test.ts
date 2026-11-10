@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { callPersonTool, listPersonTools } from "../../agent-runs/person-gateway";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
+import { callPersonTool, listPersonTools } from "../../../metaharness/tools/person-gateway";
+import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const WS = "22222222-2222-4222-8222-222222222222";

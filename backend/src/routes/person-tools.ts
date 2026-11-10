@@ -1,7 +1,7 @@
-import { callPersonTool, listPersonTools } from "../agent-runs/person-gateway";
-import type { InvokeToolDeps } from "../agent-runs/invoke-tool";
-import { createDraftToolRegistry } from "../agent-runs/tools";
-import { userInvokeDeps } from "../agent-runs/user-gateway";
+import { callPersonTool, listPersonTools } from "../metaharness/tools/person-gateway";
+import type { InvokeToolDeps } from "../metaharness/tools/invoke-tool";
+import { createDraftToolRegistry } from "../metaharness/tools/definitions";
+import { userInvokeDeps } from "../metaharness/tools/user-gateway";
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";

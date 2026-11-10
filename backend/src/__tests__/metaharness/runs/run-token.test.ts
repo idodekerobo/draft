@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseWorkspaceId } from "draft-core/agent-run";
-import { createSandboxCallbackToken } from "../../sandbox/callback-token";
-import { createAgentRunToken, verifyAgentRunToken } from "../../agent-runs/run-token";
+import { createSandboxCallbackToken } from "../../../sandbox/callback-token";
+import { createAgentRunToken, verifyAgentRunToken } from "../../../metaharness/runs/run-token";
 
 const claims = {
   runId: parseAgentRunId("11111111-1111-4111-8111-111111111111"),

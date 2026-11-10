@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parseWorkspaceId } from "draft-core/agent-run";
-import { buildRoutineBundle } from "../../routines/build-bundle";
-import { canSeeContextPath, visibleContext } from "../../agent-runs/visible-context";
+import { buildRoutineBundle } from "../../../routines/build-bundle";
+import { canSeeContextPath, visibleContext } from "../../../metaharness/context/visible-context";
 
 const audience = { type: "system", workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") } as const;
 

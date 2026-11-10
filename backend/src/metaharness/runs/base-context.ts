@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { seedEmptyWorkspace } from "../synthesis/provision-memory";
+import { seedEmptyWorkspace } from "../../synthesis/provision-memory";
 
 /** The context version a new run starts from: the current one, or a seed if the workspace has none yet. */
 export async function resolveBaseContextVersionId(client: SupabaseClient, workspaceId: string): Promise<string> {

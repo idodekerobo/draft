@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { z } from "zod";
 import { parseUserId, parseWorkspaceId } from "draft-core/agent-run";
-import { invokeTool, type InvokeToolDeps } from "../agent-runs/invoke-tool";
-import { toMcpResult } from "../agent-runs/mcp-result";
+import { invokeTool, type InvokeToolDeps } from "../metaharness/tools/invoke-tool";
+import { toMcpResult } from "../metaharness/tools/mcp-result";
 
 /** What this surface needs from the gateway. Tests pass their own. */
 export interface McpGateway {

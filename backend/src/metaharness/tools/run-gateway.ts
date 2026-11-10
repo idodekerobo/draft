@@ -2,12 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/agent-run";
-import { auditToDatabase, loadActiveAgentRunSpec } from "./agent-run-store";
+import { auditToDatabase, loadActiveAgentRunSpec } from "../runs/agent-run-store";
 import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
 import { toMcpResult } from "./mcp-result";
 import { remoteToolsForRun } from "./remote-mcp";
-import { AgentRunTokenError, verifyAgentRunToken } from "./run-token";
+import { AgentRunTokenError, verifyAgentRunToken } from "../runs/run-token";
 import { describeTools, type RegisteredTool, type ToolRegistry } from "./tool-registry";
 
 export interface RunGatewayDeps {

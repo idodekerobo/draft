@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { ToolCaller } from "draft-core/agent-run";
-import { writeContext, type ContextConflict } from "../context-store";
+import { writeContext, type ContextConflict } from "../../context/context-store";
 import { defineTool } from "../tool-registry";
-import { canSeeContextPath } from "../visible-context";
+import { canSeeContextPath } from "../../context/visible-context";
 
 /** After this many conflicted writes in one run, the gateway stops taking more and tells the agent to report instead. */
 export const MAX_CONFLICTED_WRITES = 5;

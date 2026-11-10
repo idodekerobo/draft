@@ -7,13 +7,13 @@ import {
   parseWorkspaceId,
   type AgentRunSpec,
 } from "draft-core/agent-run";
-import { createAgentRun } from "../../agent-runs/agent-run-store";
-import { createMcpConnection, remoteToolsForRun, type ConnectRemoteMcp } from "../../agent-runs/remote-mcp";
-import { createRunGateway } from "../../agent-runs/run-gateway";
-import { createAgentRunToken } from "../../agent-runs/run-token";
-import { createDraftToolRegistry } from "../../agent-runs/tools";
-import { fakeClient, fakeDb } from "../routines/fake-client";
-import { createFakeContextDb } from "./fake-context-db";
+import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
+import { createMcpConnection, remoteToolsForRun, type ConnectRemoteMcp } from "../../../metaharness/tools/remote-mcp";
+import { createRunGateway } from "../../../metaharness/tools/run-gateway";
+import { createAgentRunToken } from "../../../metaharness/runs/run-token";
+import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
+import { fakeClient, fakeDb } from "../../routines/fake-client";
+import { createFakeContextDb } from "../context/fake-context-db";
 
 process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64");
 

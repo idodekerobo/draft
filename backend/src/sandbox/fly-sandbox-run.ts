@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunSpec } from "draft-core/agent-run";
-import { createAgentRunToken } from "../agent-runs/run-token";
+import { createAgentRunToken } from "../metaharness/runs/run-token";
 import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import {

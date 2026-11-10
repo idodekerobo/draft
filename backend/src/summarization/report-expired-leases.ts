@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { finishAgentRun } from "../agent-runs/lifecycle";
+import { finishAgentRun } from "../metaharness/runs/lifecycle";
 import { recordError } from "../errors/record-error";
 
 const MAX_ATTEMPTS = 3;
