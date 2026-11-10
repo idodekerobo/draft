@@ -31,6 +31,7 @@ const answer = <R extends { ok: boolean }>(result: R, pick: (ok: Extract<R, { ok
 export function createWorkspaceTools(client: SupabaseClient) {
   const list = defineTool({
     name: "skills.list",
+    mcp: true,
     description: "List the skills (reusable playbooks/templates) available in the caller's workspace.",
     callers: ["user"],
     input: z.object({}),
@@ -43,6 +44,7 @@ export function createWorkspaceTools(client: SupabaseClient) {
 
   const read = defineTool({
     name: "skills.read",
+    mcp: true,
     description: "Read one skill's full content by name.",
     callers: ["user"],
     input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list.") }),
@@ -55,6 +57,7 @@ export function createWorkspaceTools(client: SupabaseClient) {
 
   const add = defineTool({
     name: "skills.add",
+    mcp: true,
     description:
       "Create a new shared skill for the whole team. Use only when the user asks to save a skill. Write the description for a teammate who was not in this session. Fails with duplicate_name if the name exists; it cannot overwrite a skill.",
     callers: ["user"],
@@ -99,6 +102,7 @@ export function createWorkspaceTools(client: SupabaseClient) {
 
   const routines = defineTool({
     name: "routines.list",
+    mcp: true,
     description: "List the routines (scheduled background tasks) in the caller's workspace, with schedule, cron expression, enabled state, and next run.",
     callers: ["user"],
     input: z.object({}),

@@ -7,6 +7,7 @@ import {
   type AgentRunSpec,
   type JsonSchema,
 } from "draft-core/agent-run";
+import { routineEnvironment } from "../routines/run-spec";
 
 export interface SummarizationRunSpecInput {
   id: string;
@@ -30,18 +31,7 @@ export function buildSummarizationRunSpec(input: SummarizationRunSpecInput): Age
       occurrenceAt: parseIsoTimestamp(input.occurrenceAt),
     },
     principal: { type: "workspace" },
-    runtime: {
-      type: "cloud",
-      environment: {
-        nativeTools: [
-          { harness: "claude", tool: "Read" },
-          { harness: "claude", tool: "Glob" },
-        ],
-        mcpServers: [],
-        skills: [],
-        instructions: [],
-      },
-    },
+    runtime: { type: "cloud", environment: routineEnvironment("claude") },
     harness: "claude",
     model: null,
     instructions: "",

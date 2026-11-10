@@ -1,13 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-const ACTIVE_STATUSES = ["queued", "preparing", "running", "validating", "committing"];
-
-/** A message for a failure. Supabase errors are plain objects with a message, not Error instances. */
-export function describeError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) return String((error as { message: unknown }).message);
-  return String(error);
-}
+import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/agent-run";
 
 export interface AgentRunOutcome {
   status: "succeeded" | "failed" | "cancelled";
@@ -27,7 +19,7 @@ export async function markAgentRunRunning(client: SupabaseClient, runId: string,
     .from("agent_runs")
     .update({ status: "running", started_at: new Date().toISOString(), ...(sandboxMachineId ? { sandbox_machine_id: sandboxMachineId } : {}) })
     .eq("id", runId)
-    .in("status", ACTIVE_STATUSES);
+    .in("status", ACTIVE_AGENT_RUN_STATUSES);
   if (error) logLifecycleFailure("mark_running_failed", error);
 }
 
@@ -43,12 +35,12 @@ function outcomeColumns(outcome: AgentRunOutcome) {
 
 /** Ends a run that has not ended yet. A second call changes nothing. */
 export async function finishAgentRun(client: SupabaseClient, runId: string, outcome: AgentRunOutcome): Promise<void> {
-  const { error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("id", runId).in("status", ACTIVE_STATUSES);
+  const { error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("id", runId).in("status", ACTIVE_AGENT_RUN_STATUSES);
   if (error) logLifecycleFailure("finish_failed", error);
 }
 
 /** Ends the active run that streams to this session, if there is one. */
 export async function finishAgentRunForSession(client: SupabaseClient, sessionId: string, outcome: AgentRunOutcome): Promise<void> {
-  const { error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("session_id", sessionId).in("status", ACTIVE_STATUSES);
+  const { error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("session_id", sessionId).in("status", ACTIVE_AGENT_RUN_STATUSES);
   if (error) logLifecycleFailure("finish_for_session_failed", error);
 }

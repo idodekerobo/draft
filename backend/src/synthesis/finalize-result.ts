@@ -4,7 +4,7 @@ import type { SynthesisFinalResult } from "./types";
 /** The agent's answer cannot be accepted. Final: the run fails. Any other error is a database problem and may be retried. */
 export class InvalidSynthesisResultError extends Error {}
 
-export function parseFinalResult(raw: unknown): SynthesisFinalResult {
+function parseFinalResult(raw: unknown): SynthesisFinalResult {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new InvalidSynthesisResultError("synthesis result must be a JSON object");
   }
@@ -33,10 +33,9 @@ export function parseFinalResult(raw: unknown): SynthesisFinalResult {
 export async function finalizeSynthesisResult(
   runId: string,
   rawResult: unknown,
-  client?: SupabaseClient,
+  db: SupabaseClient,
 ): Promise<{ outcome: "changed" | "no_change" }> {
   const result = parseFinalResult(rawResult);
-  const db = client ?? (await import("../db/client")).serviceClient;
 
   const { data, error } = await db
     .from("workspace_context_versions")

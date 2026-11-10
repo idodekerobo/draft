@@ -3,12 +3,12 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/agent-run";
 import { auditToDatabase, loadActiveAgentRunSpec } from "./agent-run-store";
-import { toHttpResponse } from "./http-result";
+import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
 import { toMcpResult } from "./mcp-result";
 import { remoteToolsForRun } from "./remote-mcp";
 import { AgentRunTokenError, verifyAgentRunToken } from "./run-token";
-import type { RegisteredTool, ToolRegistry } from "./tool-registry";
+import { describeTools, type RegisteredTool, type ToolRegistry } from "./tool-registry";
 
 export interface RunGatewayDeps {
   client: SupabaseClient;
@@ -56,28 +56,16 @@ export function createRunGateway(deps: RunGatewayDeps) {
   async function listTools(request: Request, runId: string): Promise<Response> {
     const auth = await authenticate(request, runId);
     if (!auth.ok) return auth.response;
-    const tools = (await depsFor(auth.run)).registry.listFor(auth.run).map((tool) => ({
-      name: tool.name,
-      access: tool.access,
-      description: tool.description,
-      inputSchema: z.toJSONSchema(tool.inputSchema),
-    }));
+    const tools = describeTools((await depsFor(auth.run)).registry.listFor(auth.run));
     return Response.json({ tools });
   }
 
   async function callTool(request: Request, runId: string, toolName: string): Promise<Response> {
     const auth = await authenticate(request, runId);
     if (!auth.ok) return auth.response;
-    let args: unknown = {};
-    const text = await request.text();
-    if (text.trim()) {
-      try {
-        args = JSON.parse(text);
-      } catch {
-        return Response.json({ status: "invalid", issues: ["body is not valid JSON"] }, { status: 400 });
-      }
-    }
-    const result = await invokeTool(await depsFor(auth.run), { type: "run", run: auth.run }, toolName, args);
+    const body = parseToolArgs(await request.text());
+    if (!body.ok) return body.response;
+    const result = await invokeTool(await depsFor(auth.run), { type: "run", run: auth.run }, toolName, body.args);
     return toHttpResponse(result);
   }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { saveAgentRunSpec, specFromRow } from "../../agent-runs/agent-run-store";
-import { buildSynthesisRunSpec, SYNTHESIS_PERMISSIONS, synthesisTrigger } from "../../synthesis/run-spec";
+import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/agent-run";
+import { buildSynthesisRunSpec, synthesisTrigger } from "../../synthesis/run-spec";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "22222222-2222-4222-8222-222222222222";
@@ -32,7 +33,7 @@ describe("how a synthesis run started", () => {
 
 describe("the synthesis run spec", () => {
   const spec = buildSynthesisRunSpec({
-    runId: RUN, workspaceId: WS, triggerType: "manual", contextVersionId: VERSION, resultSchema: { type: "object" }, permissions: SYNTHESIS_PERMISSIONS,
+    runId: RUN, workspaceId: WS, triggerType: "manual", contextVersionId: VERSION, resultSchema: { type: "object" }, permissions: CONTEXT_READ_WRITE_PERMISSIONS,
   });
 
   it("may read and write context, with Read and Glob in the sandbox, and returns a structured result", () => {

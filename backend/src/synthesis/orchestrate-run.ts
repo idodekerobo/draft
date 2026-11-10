@@ -13,7 +13,8 @@ import {
   prepareRun,
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
-import { buildSynthesisRunSpec, SYNTHESIS_PERMISSIONS } from "./run-spec";
+import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/agent-run";
+import { buildSynthesisRunSpec } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
 import { saveAgentRunSpec } from "../agent-runs/agent-run-store";
@@ -74,7 +75,7 @@ export async function launchSynthesisRun(
       retryOfRunId: options.retryOfRunId,
       contextVersionId: bundle.baseContextVersionId,
       resultSchema: jsonSchema,
-      permissions: SYNTHESIS_PERMISSIONS,
+      permissions: CONTEXT_READ_WRITE_PERMISSIONS,
     });
     await saveAgentRunSpec(client, spec);
     const receipt = await launchFlySandboxRun({

@@ -1,5 +1,6 @@
 import type { HarnessId } from "draft-core/harnesses";
 import {
+  CONTEXT_READ_WRITE_PERMISSIONS,
   parseAgentRunId,
   parseContextVersionId,
   parseIsoTimestamp,
@@ -16,7 +17,7 @@ import {
 import type { AgentRoutineConfig } from "./config";
 
 /** What a routine may call through Draft today. It reads and writes context. */
-export const ROUTINE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
+export const ROUTINE_PERMISSIONS = CONTEXT_READ_WRITE_PERMISSIONS;
 
 /** The built-in tools the runner starts each harness with. They match runner.ts. */
 const DEFAULT_NATIVE_TOOLS: Record<HarnessId, ReadonlyArray<NativeToolPermission>> = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { describeError } from "../../agent-runs/lifecycle";
+import { describeError } from "../../errors/describe-error";
 
 describe("describeError", () => {
   it("uses the message of an Error", () => {

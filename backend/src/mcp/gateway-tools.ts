@@ -10,19 +10,6 @@ export interface McpGateway {
   resolveWorkspaceId: (userId: string) => Promise<string | null>;
 }
 
-/** The tools of this surface that already run through the gateway. */
-export const MCP_GATEWAY_TOOLS = new Set([
-  "context.list",
-  "context.read",
-  "context.export",
-  "sources.search",
-  "sources.read",
-  "skills.list",
-  "skills.read",
-  "skills.add",
-  "routines.list",
-]);
-
 const READ_ONLY_CONNECTION = "insufficient_scope: this connection only has read access. Re-authorize the Draft connection and approve write access.";
 
 /**
@@ -30,7 +17,7 @@ const READ_ONLY_CONNECTION = "insufficient_scope: this connection only has read 
  * finds their workspace and passes the call on; access, audit and what the caller may see are decided there.
  */
 export function registerGatewayTools(server: McpServer, userId: string, gateway: McpGateway, scopes: string[] = []): void {
-  for (const tool of gateway.deps.registry.listForUser().filter((candidate) => MCP_GATEWAY_TOOLS.has(candidate.name))) {
+  for (const tool of gateway.deps.registry.listForUser().filter((candidate) => candidate.mcp)) {
     server.registerTool(
       tool.name,
       { description: tool.description, inputSchema: tool.inputSchema as z.ZodObject },

@@ -60,15 +60,11 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
-  const harnessId = definition?.id as HarnessId;
   if (!definition || definition.routineModes.length === 0) return { ok: false, field: "harness" };
+  const harnessId = definition.id as HarnessId;
   if (model !== null && (typeof model !== "string" || !isKnownModel(definition.id, model))) return { ok: false, field: "model" };
-  let validEnvironment: RoutineEnvironmentConfig | undefined;
-  if (environment !== undefined && environment !== null) {
-    const checked = validateRoutineEnvironment(environment, harnessId);
-    if (!checked) return { ok: false, field: "environment" };
-    validEnvironment = checked;
-  }
+  const validEnvironment = environment == null ? undefined : validateRoutineEnvironment(environment, harnessId);
+  if (environment != null && !validEnvironment) return { ok: false, field: "environment" };
   return { ok: true, config: { title: title.trim(), prompt, harness: harnessId, model, ...(validEnvironment ? { environment: validEnvironment } : {}) } };
 }
 

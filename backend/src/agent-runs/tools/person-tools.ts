@@ -7,7 +7,7 @@ import { readSource, searchSources } from "../../services/sources";
 import { defineTool } from "../tool-registry";
 import { visibleContext } from "../visible-context";
 
-export function callerWorkspaceId(caller: ToolCaller): string {
+function callerWorkspaceId(caller: ToolCaller): string {
   return caller.type === "run" ? caller.run.workspaceId : caller.workspaceId;
 }
 
@@ -22,6 +22,7 @@ const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : un
 export function createPersonTools(client: SupabaseClient) {
   const list = defineTool({
     name: "context.list",
+    mcp: true,
     description:
       "List dimensions in Draft's maintained business map. Use context for orientation; use sources.search when you need cross-provider evidence beyond the synthesized map.",
     input: z.object({}),
@@ -38,6 +39,7 @@ export function createPersonTools(client: SupabaseClient) {
 
   const read = defineTool({
     name: "context.read",
+    mcp: true,
     description:
       "Read the latest memory or the stable business map. For the latest information, pass dimensions: [\"memory\"] and a period: memory is a chronological log of daily, weekly, and monthly summaries, and the freshest source. Without period, memory returns the whole accumulated log. Other dimensions are current-state background. For direct evidence, search sources and then read the selected source; the calling agent owns investigation and answer generation. A run can also pass paths to read exact documents.",
     input: z.object({
@@ -84,6 +86,7 @@ export function createPersonTools(client: SupabaseClient) {
 
   const exportContext = defineTool({
     name: "context.export",
+    mcp: true,
     description:
       "Get a short-lived download link to the full context as a zip of markdown files (all dimensions, including memory). Prefer this over context.read when the user wants the files on disk; the bytes skip your context window. Follow the returned instructions to fetch and unzip.",
     callers: ["user"],
@@ -108,6 +111,7 @@ export function createPersonTools(client: SupabaseClient) {
   });
   const search = defineTool({
     name: "sources.search",
+    mcp: true,
     description:
       "Search current cross-provider source evidence using PostgreSQL keyword search. Search covers each source's stored default representation, which may be a summary, rendered source, or mixed content; original transcripts are not universally searchable.",
     callers: ["user"],
@@ -128,6 +132,7 @@ export function createPersonTools(client: SupabaseClient) {
   });
   const readSourceTool = defineTool({
     name: "sources.read",
+    mcp: true,
     description:
       "Read one authorized source by source_item_id. Default returns stored searchable content; request transcript, messages, or structured only when search reports that representation as available. Reads are bounded and version-bound.",
     callers: ["user"],

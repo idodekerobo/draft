@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
+  ACTIVE_AGENT_RUN_STATUSES,
   AGENT_RUN_KINDS,
   AGENT_RUN_SYSTEM_REASONS,
   CLAUDE_NATIVE_TOOLS,
@@ -79,7 +80,7 @@ export interface NewAgentRun {
   sessionId?: string;
 }
 
-/** Saves the run and its spec. The spec is read back from this row by `loadAgentRunSpec`. */
+/** Saves the run and its spec. The spec is read back from this row by `loadActiveAgentRunSpec`. */
 export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): Promise<void> {
   const { spec } = run;
   const { error } = await client.from("agent_runs").insert({
@@ -144,20 +145,12 @@ export function specFromRow(row: AgentRunRow): AgentRunSpec {
   };
 }
 
-export async function loadAgentRunSpec(client: SupabaseClient, runId: string): Promise<AgentRunSpec | null> {
-  const { data, error } = await client.from("agent_runs").select("*").eq("id", runId).maybeSingle();
-  if (error) throw error;
-  return data ? specFromRow(data as AgentRunRow) : null;
-}
-
-const ACTIVE_STATUSES: ReadonlyArray<AgentRunRow["status"]> = ["queued", "preparing", "running", "validating", "committing"];
-
 /** The spec of a run that has not finished. A finished run's token no longer opens the gateway. */
 export async function loadActiveAgentRunSpec(client: SupabaseClient, runId: string): Promise<AgentRunSpec | null> {
   const { data, error } = await client.from("agent_runs").select("*").eq("id", runId).maybeSingle();
   if (error) throw error;
   const row = data as AgentRunRow | null;
-  if (!row || !ACTIVE_STATUSES.includes(row.status)) return null;
+  if (!row || !(ACTIVE_AGENT_RUN_STATUSES as ReadonlyArray<string>).includes(row.status)) return null;
   return specFromRow(row);
 }
 

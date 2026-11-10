@@ -5,7 +5,7 @@ import type { AuthorizationDenial, InvokeToolDeps } from "./invoke-tool";
 import type { ToolRegistry } from "./tool-registry";
 
 /** A signed-in person may call a tool only if they belong to the workspace's team. This is the one place that rule is applied. */
-export async function authorizeWorkspaceMember(caller: { userId: string; workspaceId: string }): Promise<AuthorizationDenial | null> {
+async function authorizeWorkspaceMember(caller: { userId: string; workspaceId: string }): Promise<AuthorizationDenial | null> {
   const denied = await assertWorkspaceAccess(caller.workspaceId, caller.userId);
   if (!denied) return null;
   return { status: denied.status, body: await denied.json().catch(() => null) };

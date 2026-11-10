@@ -11,10 +11,8 @@ import {
   type AnyDraftToolPermission,
   type JsonSchema,
 } from "draft-core/agent-run";
+import { routineEnvironment } from "../routines/run-spec";
 import type { SynthesisRunTriggerType } from "../types/enums";
-
-/** What a synthesis run may do with Draft's tools: read any context and write any document. */
-export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
 
 export interface SynthesisRunSpecInput {
   runId: string;
@@ -50,18 +48,7 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
     principal: { type: "workspace" },
-    runtime: {
-      type: "cloud",
-      environment: {
-        nativeTools: [
-          { harness: "claude", tool: "Read" },
-          { harness: "claude", tool: "Glob" },
-        ],
-        mcpServers: [],
-        skills: [],
-        instructions: [],
-      },
-    },
+    runtime: { type: "cloud", environment: routineEnvironment("claude") },
     harness: "claude",
     model: null,
     instructions: "",

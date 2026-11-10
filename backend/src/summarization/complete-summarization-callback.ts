@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { describeError, finishAgentRun } from "../agent-runs/lifecycle";
+import { finishAgentRun } from "../agent-runs/lifecycle";
+import { describeError } from "../errors/describe-error";
 import { authenticateSandboxCallbackRequest } from "../sandbox";
 import { validateSummarizationResult } from "./validate-result";
 import { materializeSessionSummary } from "./materialize-summary";

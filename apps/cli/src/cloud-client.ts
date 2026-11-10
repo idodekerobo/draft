@@ -198,6 +198,13 @@ export type ContextFetchResult =
     };
 
 const CONTEXT_PASS_THROUGH: ReadonlyArray<string> = ["not_authenticated", "auth_busy", "session_refresh_transient", "whoami_failed", "no_workspace"];
+type ContextFailureCode = Extract<ContextFetchResult, { ok: false }>["code"];
+
+/** A sign-in or workspace failure is passed on as it is; any other failure of the call is a failed fetch. */
+function contextFailure(code: FetchErrorCode): ContextFailureCode {
+  return CONTEXT_PASS_THROUGH.includes(code) ? (code as ContextFailureCode) : "context_fetch_failed";
+}
+
 const EMPTY_SNAPSHOT: WorkspaceContextSnapshot = { versionId: "", versionNumber: 0, contentHash: "", creationReason: "", createdAt: "", documents: {} };
 
 export async function fetchWorkspaceContext(
@@ -208,7 +215,7 @@ export async function fetchWorkspaceContext(
     period: filter?.period,
   });
   if (!call.ok) {
-    return { ok: false, code: (CONTEXT_PASS_THROUGH.includes(call.code) ? call.code : "context_fetch_failed") as Extract<ContextFetchResult, { ok: false }>["code"] };
+    return { ok: false, code: contextFailure(call.code) };
   }
 
   const body = recordValue(call.output);
@@ -246,7 +253,7 @@ export type ContextExportFetchResult =
 export async function fetchContextExport(): Promise<ContextExportFetchResult> {
   const call = await callToolRaw("context.export", {});
   if (!call.ok) {
-    return { ok: false, code: (CONTEXT_PASS_THROUGH.includes(call.code) ? call.code : "context_fetch_failed") as Extract<ContextFetchResult, { ok: false }>["code"] };
+    return { ok: false, code: contextFailure(call.code) };
   }
   const body = recordValue(call.output);
   if (body?.error === "no_context_yet") return { ok: false, code: "no_context" };

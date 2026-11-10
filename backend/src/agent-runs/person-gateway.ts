@@ -1,17 +1,11 @@
-import { z } from "zod";
 import { parseUserId, parseWorkspaceId, type UserCallSurface } from "draft-core/agent-run";
-import { toHttpResponse } from "./http-result";
+import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
+import { describeTools } from "./tool-registry";
 
 /** The tools a person may call, with the JSON schema of each input. */
 export function listPersonTools(deps: InvokeToolDeps): Response {
-  const tools = deps.registry.listForUser().map((tool) => ({
-    name: tool.name,
-    access: tool.access,
-    description: tool.description,
-    inputSchema: z.toJSONSchema(tool.inputSchema),
-  }));
-  return Response.json({ tools });
+  return Response.json({ tools: describeTools(deps.registry.listForUser()) });
 }
 
 export interface PersonToolCall {
@@ -25,14 +19,8 @@ export interface PersonToolCall {
 
 /** Calls one tool for a signed-in person and answers as the run endpoint does. */
 export async function callPersonTool(deps: InvokeToolDeps, call: PersonToolCall): Promise<Response> {
-  let args: unknown = {};
-  if (call.bodyText.trim()) {
-    try {
-      args = JSON.parse(call.bodyText);
-    } catch {
-      return Response.json({ status: "invalid", issues: ["body is not valid JSON"] }, { status: 400 });
-    }
-  }
+  const body = parseToolArgs(call.bodyText);
+  if (!body.ok) return body.response;
 
   let caller;
   try {
@@ -40,5 +28,5 @@ export async function callPersonTool(deps: InvokeToolDeps, call: PersonToolCall)
   } catch {
     return Response.json({ error: "workspace_not_found" }, { status: 404 });
   }
-  return toHttpResponse(await invokeTool(deps, caller, call.toolName, args));
+  return toHttpResponse(await invokeTool(deps, caller, call.toolName, body.args));
 }

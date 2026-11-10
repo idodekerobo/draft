@@ -62,6 +62,9 @@ export const AGENT_RUN_STATUSES = [
 ] as const;
 export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 
+/** A run in one of these is still going. Anything else has finished. */
+export const ACTIVE_AGENT_RUN_STATUSES = ["queued", "preparing", "running", "validating", "committing"] as const satisfies ReadonlyArray<AgentRunStatus>;
+
 /** Providers that can wake a run through a webhook. */
 export type AgentRunWebhookProvider = "slack" | "github" | "linear" | "fireflies" | "granola";
 
@@ -165,6 +168,9 @@ export interface DraftToolPermission<T extends DraftToolName = DraftToolName> {
 
 /** A person-approved rule, saved on the run when it starts, that lets the run call one Draft tool. */
 export type AnyDraftToolPermission = { [T in DraftToolName]: DraftToolPermission<T> }[DraftToolName];
+
+/** What a routine and a synthesis run may do with Draft's tools today: read any context and write any document. */
+export const CONTEXT_READ_WRITE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 

@@ -1,7 +1,6 @@
 import type { ToolCaller } from "draft-core/agent-run";
+import { describeError } from "../errors/describe-error";
 import { ToolUserError, type ToolRegistry } from "./tool-registry";
-
-export type ToolCallStatus = "ok" | "denied" | "invalid" | "conflict" | "error";
 
 export type InvokeToolResult =
   | { status: "ok"; output: unknown }
@@ -9,6 +8,8 @@ export type InvokeToolResult =
   | { status: "denied"; code: ToolDenialCode; message: string; detail?: AuthorizationDenial }
   | { status: "invalid"; issues: string[] }
   | { status: "error"; message: string };
+
+export type ToolCallStatus = InvokeToolResult["status"];
 
 export type ToolDenialCode = "unknown_tool" | "not_permitted" | "outside_limits" | "caller_not_authorized";
 
@@ -114,7 +115,7 @@ export async function invokeTool(
       { arguments: tool.auditArguments(parsed.value), summary: result.summary ?? null },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = describeError(error);
     // The agent gets a generic message unless the tool meant it to see this one. The real one stays in the audit row.
     const visible = error instanceof ToolUserError ? message : "The tool failed. Try again, or report the problem.";
     return finish(

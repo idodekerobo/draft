@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import {
   DRAFT_TOOLS,
   findToolPermission,
@@ -25,6 +25,8 @@ export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   description: string;
   /** Who may call it. Omitted means both. A tool that needs a person's identity says "user" only. */
   callers?: ReadonlyArray<ToolCaller["type"]>;
+  /** True when the person-facing MCP server offers this tool. */
+  mcp?: boolean;
   input: S;
   /** Returns a reason when the input is outside the run's limits for this tool, or null when it is inside. */
   checkLimits?: (limits: DraftToolLimits[N] | undefined, input: z.output<S>) => string | null;
@@ -51,6 +53,8 @@ export interface RegisteredTool {
   access: DraftToolAccess;
   description: string;
   callers: ReadonlyArray<ToolCaller["type"]>;
+  /** True when the person-facing MCP server offers this tool. */
+  mcp: boolean;
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
@@ -70,6 +74,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     access: entry.access,
     description: spec.description,
     callers: spec.callers ?? ["run", "user"],
+    mcp: spec.mcp ?? false,
     inputSchema: spec.input,
     permission: (run) => findToolPermission(run, spec.name),
     parse(raw) {
@@ -84,6 +89,16 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
       spec.auditArguments ? spec.auditArguments(value as z.output<S>) : (value as Record<string, unknown>),
     run: (caller, value) => spec.handler({ input: value as z.output<S>, caller }),
   };
+}
+
+/** What a client is told about each tool: its name, access, description and the JSON schema of its input. */
+export function describeTools(tools: ReadonlyArray<RegisteredTool>) {
+  return tools.map((tool) => ({
+    name: tool.name,
+    access: tool.access,
+    description: tool.description,
+    inputSchema: z.toJSONSchema(tool.inputSchema),
+  }));
 }
 
 export class ToolRegistry {

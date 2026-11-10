@@ -14,6 +14,16 @@ function statusFor(result: InvokeToolResult): number {
   }
 }
 
+/** The tool input from a request body: none means `{}`. A body that is not JSON is answered 400. */
+export function parseToolArgs(bodyText: string): { ok: true; args: unknown } | { ok: false; response: Response } {
+  if (!bodyText.trim()) return { ok: true, args: {} };
+  try {
+    return { ok: true, args: JSON.parse(bodyText) };
+  } catch {
+    return { ok: false, response: Response.json({ status: "invalid", issues: ["body is not valid JSON"] }, { status: 400 }) };
+  }
+}
+
 /**
  * The answer every HTTP edge gives for a tool call: the result itself, `{ status, output | message | issues }`.
  * A person refused by the workspace check gets that check's own answer, so a non-member sees what they always saw.

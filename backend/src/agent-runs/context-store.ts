@@ -122,7 +122,9 @@ export async function writeContext(client: SupabaseClient, input: WriteContextIn
   }
   if (totalBytes > MAX_WRITE_TOTAL_BYTES) throw new Error(`writeContext: a write may hold at most ${MAX_WRITE_TOTAL_BYTES} bytes in all`);
 
-  const baseDocuments = await loadVersionDocuments(client, input.baseVersionId);
+  // The base version only supplies the default sha of a change that names none.
+  const needsBase = input.changes.some((change) => change.baseSha === undefined);
+  const baseDocuments = needsBase ? await loadVersionDocuments(client, input.baseVersionId) : {};
 
   for (let attempt = 0; attempt <= MAX_STALE_RETRIES; attempt++) {
     const current = await loadCurrentContext(client, input.workspaceId);
