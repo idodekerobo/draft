@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { loadRunnerManifest, validateRunnerManifest } from "../../sandbox/claude-code/runner";
-import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer, runnerManifestSchema } from "../../sandbox/run-manifest";
+import { validateRunnerManifest as validateShared } from "draft-core/run-manifest";
+import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer } from "../../sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 
@@ -31,13 +32,13 @@ const cases = [
 describe("the backend's manifest and the runner's parser agree", () => {
   for (const { name, spec, prompt } of cases) {
     it(`${name}: the runner accepts what the backend builds`, () => {
-      const manifest = buildRunnerManifest({ spec, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
+      const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
       expect(validateRunnerManifest(JSON.parse(JSON.stringify(manifest)), CALLBACK)).toEqual(manifest);
-      expect(runnerManifestSchema.parse(manifest)).toEqual(manifest);
+      expect(validateShared(manifest, { callbackUrl: CALLBACK })).toEqual(manifest);
     });
 
     it(`${name}: the older environment variables give the same manifest`, () => {
-      const manifest = buildRunnerManifest({ spec, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
+      const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
       const fromLegacy = loadRunnerManifest({ ...legacyRunnerEnv(manifest), DRAFT_TIMEOUT_SECONDS: "900" }, CALLBACK);
       expect(fromLegacy).toEqual(manifest);
     });

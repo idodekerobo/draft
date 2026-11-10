@@ -13,10 +13,11 @@ import {
   launchFlySandboxRun,
   type FlySandboxRunClient,
 } from "../../sandbox/fly-sandbox-run";
-import { runnerManifestSchema } from "../../sandbox/run-manifest";
+import { validateRunnerManifest } from "draft-core/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 
+const parseManifest = (value: unknown) => validateRunnerManifest(value, { callbackUrl: "https://api.example.test/sandbox/callback" });
 const bundleHash = "b".repeat(64);
 const image = `registry.fly.io/draft@sha256:${"a".repeat(64)}`;
 const config = {
@@ -323,7 +324,7 @@ describe("launchFlySandboxRun", () => {
 
     expect(uploads["input/prompt.md"]).toBeUndefined();
     expect(env).toMatchObject({ DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json" });
-    expect(runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!)).prompt).toEqual({ kind: "items", manifestPath: "/run/input/manifest.json" });
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).prompt).toEqual({ kind: "items", manifestPath: "/run/input/manifest.json" });
   });
 });
 
@@ -335,7 +336,7 @@ describe("the run manifest the launcher sends", () => {
       timeoutSeconds: 900,
       credentials: { claudeCodeOAuthToken: "login-secret" },
     });
-    const manifest = runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!));
+    const manifest = parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!));
     expect(manifest).toEqual({
       version: 1,
       harness: "claude",
@@ -350,9 +351,9 @@ describe("the run manifest the launcher sends", () => {
   });
 
   it("changes with the spec: a structured run has a schema path and a Codex run is Codex", async () => {
-    const synthesis = runnerManifestSchema.parse(JSON.parse((await launch({ spec: synthesisSpec(), prompt: text("p"), credentials: claudeLogin })).env.DRAFT_RUN_MANIFEST!));
+    const synthesis = parseManifest(JSON.parse((await launch({ spec: synthesisSpec(), prompt: text("p"), credentials: claudeLogin })).env.DRAFT_RUN_MANIFEST!));
     expect(synthesis.output).toEqual({ kind: "structured", schemaPath: "/run/input/output-schema.json" });
-    const codex = runnerManifestSchema.parse(JSON.parse((await launch({ spec: routineSpec({ harness: "codex" }), prompt: text("p"), credentials: { codexAuthJson: "{}" } })).env.DRAFT_RUN_MANIFEST!));
+    const codex = parseManifest(JSON.parse((await launch({ spec: routineSpec({ harness: "codex" }), prompt: text("p"), credentials: { codexAuthJson: "{}" } })).env.DRAFT_RUN_MANIFEST!));
     expect(codex.harness).toBe("codex");
     expect(codex.tools.native).toEqual(["shell"]);
   });
@@ -395,7 +396,7 @@ describe("launchFlySandboxRun routine runs", () => {
     const { env } = await launch({ spec: { ...routineSpec(), permissions: [] }, prompt: text("Go.\n"), credentials: claudeLogin });
     expect(env).not.toHaveProperty("DRAFT_MCP_URL");
     expect(env).not.toHaveProperty("DRAFT_RUN_TOKEN");
-    expect(runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBeNull();
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBeNull();
   });
 
   it("gives a structured run Draft's tools too, when its spec holds them", async () => {
@@ -405,7 +406,7 @@ describe("launchFlySandboxRun routine runs", () => {
       credentials: claudeLogin,
     });
     expect(env.DRAFT_RUN_TOKEN).toBeTruthy();
-    expect(runnerManifestSchema.parse(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBe(`https://api.example.test/runs/${RUN}/mcp`);
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBe(`https://api.example.test/runs/${RUN}/mcp`);
   });
 
   it("hands a Codex run its auth file and no Claude token", async () => {

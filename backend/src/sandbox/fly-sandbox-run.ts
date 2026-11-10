@@ -144,6 +144,7 @@ export async function launchFlySandboxRun(
   const draftMcpUrl = needsDraftToolServer(spec) ? new URL(`/runs/${spec.id}/mcp`, config.callbackUrl).toString() : null;
   const manifest = buildRunnerManifest({
     spec,
+    callbackUrl: config.callbackUrl,
     prompt: input.prompt,
     timeoutSeconds: input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS,
     draftMcpUrl,

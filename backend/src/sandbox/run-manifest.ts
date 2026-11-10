@@ -1,42 +1,12 @@
-import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
-
-/**
- * What the sandbox runner must do for one run. The backend derives it from the AgentRunSpec in
- * buildRunnerManifest, and the runner builds the harness command from it. It holds no secret.
- * The runner is built apart from the backend and keeps its own parser for this shape;
- * a test holds the two together.
- */
-export const RUNNER_INPUT_ROOT = "/run/input";
-export const PROMPT_FILE = `${RUNNER_INPUT_ROOT}/prompt.md`;
-export const OUTPUT_SCHEMA_FILE = `${RUNNER_INPUT_ROOT}/output-schema.json`;
-
-const underInput = z.string().refine((path) => path.startsWith(`${RUNNER_INPUT_ROOT}/`) && !path.includes(".."), "must be a file under /run/input");
-
-export const runnerManifestSchema = z
-  .object({
-    version: z.literal(1),
-    harness: z.enum(["claude", "codex"]),
-    model: z.string().regex(/^[A-Za-z0-9._:\-\[\]]{1,100}$/).nullable(),
-    prompt: z.discriminatedUnion("kind", [
-      z.object({ kind: z.literal("file"), path: underInput }).strict(),
-      z.object({ kind: z.literal("items"), manifestPath: underInput }).strict(),
-    ]),
-    tools: z.object({ native: z.array(z.string()), draftMcpUrl: z.string().url().nullable() }).strict(),
-    output: z.discriminatedUnion("kind", [
-      z.object({ kind: z.literal("stream") }).strict(),
-      z.object({ kind: z.literal("structured"), schemaPath: underInput }).strict(),
-    ]),
-    timeoutSeconds: z.number().int().min(1).max(3600),
-  })
-  .strict();
-
-export type RunnerManifest = z.infer<typeof runnerManifestSchema>;
+import { OUTPUT_SCHEMA_FILE, PROMPT_FILE, validateRunnerManifest, type RunnerManifest } from "draft-core/run-manifest";
 
 export type PromptSource = { kind: "text"; text: string } | { kind: "items"; manifestPath: string };
 
 export interface BuildRunnerManifestInput {
   spec: AgentRunSpec;
+  /** The URL the runner posts back to. The tool server must sit on its host. */
+  callbackUrl: string;
   prompt: PromptSource;
   timeoutSeconds: number;
   /** The tool server's URL, or null for a run with no Draft tools. */
@@ -69,7 +39,7 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
     output: spec.output.type === "text" ? { kind: "stream" } : { kind: "structured", schemaPath: OUTPUT_SCHEMA_FILE },
     timeoutSeconds: input.timeoutSeconds,
   };
-  return runnerManifestSchema.parse(manifest);
+  return validateRunnerManifest(manifest, { callbackUrl: input.callbackUrl });
 }
 
 /**
