@@ -1,9 +1,3 @@
-FROM oven/bun:1.3.11-slim AS runner-build
-
-WORKDIR /build
-COPY runner.ts ./runner.ts
-RUN bun build --target=node --outfile=runner.mjs runner.ts
-
 FROM node:22-bookworm-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.321
@@ -22,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && npm cache clean --force \
   && useradd --create-home --shell /bin/bash agent
 
-COPY --from=runner-build /build/runner.mjs /opt/draft/runner.mjs
+# runner.mjs is not in git. `bun run build:runner` (from backend) writes it into this folder.
+COPY runner.mjs /opt/draft/runner.mjs
 COPY configure-egress.sh /usr/local/sbin/configure-egress.sh
 COPY entrypoint.sh /usr/local/bin/draft-entrypoint
 RUN chmod 0755 \

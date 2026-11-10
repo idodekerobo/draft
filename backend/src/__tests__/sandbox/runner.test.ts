@@ -42,7 +42,7 @@ import {
   sanitizedCodexEnv,
   shouldRetryCallback,
   StreamLineReader,
-} from "../../../sandbox/claude-code/runner";
+} from "../../sandbox/runner";
 
 const CALLBACK = "https://api.example.com/sandbox/callback";
 const MCP_URL = "https://api.example.com/runs/11111111-1111-4111-8111-111111111111/mcp";

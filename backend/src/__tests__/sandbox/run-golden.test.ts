@@ -10,7 +10,7 @@ import {
   sanitizedClaudeEnv,
   sanitizedCodexEnv,
   type RunnerManifest,
-} from "../../sandbox/claude-code/runner";
+} from "../../sandbox/runner";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";

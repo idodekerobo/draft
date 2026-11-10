@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { eventsFor } from "draft-core/harnesses/claude/live-lines";
-import { StreamLineReader } from "../../sandbox/claude-code/runner";
+import { StreamLineReader } from "../../sandbox/runner";
 
 // The shape `claude -p --output-format stream-json --verbose` prints, one JSON object per line.
 const STREAM = [

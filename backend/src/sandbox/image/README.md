@@ -1,4 +1,4 @@
-# Claude Code sandbox image
+# Sandbox image
 
 Production-shaped one-shot runner for Fly Machines. Root configures IPv4 and
 IPv6 default-deny egress, then the trusted runner invokes Claude as the
@@ -27,14 +27,16 @@ callback as `{ error: "runner_error", diagnostics: { reason } }` and logged
 with the same reason. A single session that throws becomes an `ok: false`
 item; the rest of the batch still reports.
 
-Build from this directory with Fly's remote builder. Run one-shot Machines
+Build the runner first with `bun run build:runner` (from `backend`). It writes `runner.mjs` into this
+folder, and the Dockerfile only copies it. Then build from this directory with Fly's remote builder. Run one-shot Machines
 with `--rm`; the spike found Fly's default restart policy inappropriate for
 jobs.
 
 Local validation (from `backend`):
 
 ```sh
-bun test src/__tests__/sandbox/claude-code/runner.test.ts
-sh -n src/sandbox/claude-code/entrypoint.sh src/sandbox/claude-code/configure-egress.sh
-docker build src/sandbox/claude-code
+bun test src/__tests__/sandbox/runner.test.ts
+bun run build:runner
+sh -n src/sandbox/image/entrypoint.sh src/sandbox/image/configure-egress.sh
+docker build src/sandbox/image
 ```

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
-import { loadRunnerManifest, validateRunnerManifest } from "../../sandbox/claude-code/runner";
+import { loadRunnerManifest, validateRunnerManifest } from "../../sandbox/runner";
 import { validateRunnerManifest as validateShared } from "draft-core/run-manifest";
 import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer } from "../../sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";

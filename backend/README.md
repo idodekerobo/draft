@@ -63,7 +63,7 @@ CONTEXT_EXPORT_SECRET=
 INFERENCE_CREDENTIAL_KEK_V1=
 ~~~
 
-APP_URL is the browser origin allowed by CORS. DRAFT_API_BASE_URL is the externally reachable API URL used for callbacks, webhooks, and client configuration. FLY_SANDBOX_IMAGE identifies the Claude Code sandbox image built from src/sandbox/claude-code/.
+APP_URL is the browser origin allowed by CORS. DRAFT_API_BASE_URL is the externally reachable API URL used for callbacks, webhooks, and client configuration. FLY_SANDBOX_IMAGE identifies the Claude Code sandbox image built from src/sandbox/image/ (run `bun run build:runner` first).
 
 The backend resolves each workspace's inference credential from the encrypted credentials table and injects it into the disposable sandbox. CLAUDE_CODE_OAUTH_TOKEN is not the deployed server's credential mechanism; it is used only by local spike scripts.
 
