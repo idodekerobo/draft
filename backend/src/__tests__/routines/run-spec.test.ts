@@ -27,10 +27,8 @@ describe("buildRoutineRunSpec", () => {
     expect(spec.runtime.type).toBe("cloud");
   });
 
-  it("grants reading, and no write to the shared context yet", () => {
-    const tools = ROUTINE_PERMISSIONS.map((permission) => permission.tool);
-    expect(tools).toEqual(["context.read"]);
-    expect(tools).not.toContain("context.write");
+  it("grants reading and writing the shared context, with no path limit", () => {
+    expect(ROUTINE_PERMISSIONS).toEqual([{ tool: "context.read" }, { tool: "context.write" }]);
   });
 
   it("rejects ids that are not UUIDs", () => {
@@ -49,7 +47,11 @@ describe("renderRoutinePrompt", () => {
   const context = { title: "Digest", schedule: "Daily", timezone: "UTC", startedAt: new Date("2026-11-09T09:00:00Z") };
 
   it("mentions Draft's tool server only when the run has one", () => {
-    expect(renderRoutinePrompt("Go", { ...context, hasDraftTools: true })).toContain('"draft" tool server');
+    const withTools = renderRoutinePrompt("Go", { ...context, hasDraftTools: true });
+    expect(withTools).toContain('"draft" tool server');
+    expect(withTools).toContain("context.write");
+    expect(withTools).toContain("baseSha");
+    expect(renderRoutinePrompt("Go", context)).not.toContain("context.write");
     expect(renderRoutinePrompt("Go", context)).not.toContain("tool server");
   });
 });

@@ -32,7 +32,14 @@ export function renderRoutinePrompt(prompt: string, context: RoutinePromptContex
     `This run started: ${startedAtIn(context.timezone, context.startedAt)}`,
     "",
     "The company's shared knowledge is in Markdown files under /run/input/context. Read them as needed. They are read-only.",
-    ...(context.hasDraftTools ? ["Draft's own tools are in the \"draft\" tool server. Use them for what they list, such as reading the company context."] : []),
+    ...(context.hasDraftTools
+      ? [
+          "Draft's own tools are in the \"draft\" tool server. Use them for what they list, such as reading the company context.",
+          "To change the company context, call its context.write tool with the COMPLETE new content of each changed Markdown file. Write only when the request below asks for it. " +
+            "Leave baseSha out for a file you read from /run/input/context, and send baseSha null for a new file. " +
+            "If the reply lists conflicts, someone changed that file since you read it: merge your change into its currentContent and write again with baseSha set to its currentSha, or drop the change. Stop when retryable is false.",
+        ]
+      : []),
     "Answer the request below. Your reply is saved as the result of this run.",
   ].join("\n");
   return `${preamble}\n\n---\n\n${prompt.trim()}\n`;
