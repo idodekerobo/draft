@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { loadVersionDocuments } from "../metaharness/context/context-store";
 import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
-import { launchFlySandboxRun, type SandboxDeploymentConfig } from "../sandbox";
+import { launchSandboxRun, type SandboxDeploymentConfig } from "../sandbox";
 import { needsDraftToolServer } from "../sandbox/run-manifest";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
 import { buildRoutineBundle, renderRoutinePrompt } from "./build-bundle";
@@ -56,14 +56,14 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
   };
 
   if (routine.harness !== "codex") {
-    const receipt = await launchFlySandboxRun({ ...launch, credentials: { claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) } });
+    const receipt = await launchSandboxRun({ ...launch, credentials: { claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) } });
     return { machineId: receipt.machineId };
   }
 
   const { credentialId, authJson } = await resolveCodexCredential(client, workspaceId);
   if (!(await acquireCodexLease(client, credentialId, workspaceId, sessionId))) throw new RoutineLeaseBusyError();
   try {
-    const receipt = await launchFlySandboxRun({ ...launch, credentials: { codexAuthJson: authJson } });
+    const receipt = await launchSandboxRun({ ...launch, credentials: { codexAuthJson: authJson } });
     return { machineId: receipt.machineId };
   } catch (launchError) {
     await releaseCodexLease(client, credentialId, sessionId).catch(() => undefined);

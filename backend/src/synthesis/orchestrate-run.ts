@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
 import {
   authenticateSandboxCallbackRequest,
-  launchFlySandboxRun,
+  launchSandboxRun,
 } from "../sandbox";
 import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
 import { finalizeSynthesisResult, InvalidSynthesisResultError } from "./finalize-result";
@@ -78,7 +78,7 @@ export async function launchSynthesisRun(
       permissions: CONTEXT_READ_WRITE_PERMISSIONS,
     });
     await saveAgentRunSpec(client, spec);
-    const receipt = await launchFlySandboxRun({
+    const receipt = await launchSandboxRun({
       spec,
       bundle,
       prompt: { kind: "text", text: prompt },

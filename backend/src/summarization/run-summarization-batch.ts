@@ -13,7 +13,7 @@ import { summarizationRunId } from "./complete-summarization-callback";
 import { buildSummarizationRunSpec } from "./run-spec";
 import { summarizationJsonSchema } from "./render-prompt";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
-import { launchFlySandboxRun, type SandboxDeploymentConfig } from "../sandbox";
+import { launchSandboxRun, type SandboxDeploymentConfig } from "../sandbox";
 
 const MAX_SESSIONS_PER_BATCH = 25;
 
@@ -121,7 +121,7 @@ async function launchBatch(
 
   const claudeCodeOAuthToken = await resolveInferenceCredential(options.workspaceId, options.client);
 
-  const receipt = await launchFlySandboxRun({
+  const receipt = await launchSandboxRun({
     spec,
     bundle,
     prompt: { kind: "items", manifestPath: bundle.manifestPath },

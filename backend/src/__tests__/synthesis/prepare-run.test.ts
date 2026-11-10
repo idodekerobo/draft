@@ -6,7 +6,7 @@ import {
   WorkspaceRunAlreadyActiveError,
 } from "../../synthesis/prepare-run";
 import { MEMORY_INDEX_PATH, resolveMemoryPeriod } from "../../synthesis/memory-period";
-import type { FlySandboxRunReceipt } from "../../sandbox";
+import type { SandboxRunReceipt } from "../../sandbox";
 
 // Matches whatever "today" the suite actually runs on, so the default fake
 // existing version already has this run's memory documents provisioned --
@@ -221,7 +221,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
   return { client, calls };
 }
 
-function fakeReceipt(): FlySandboxRunReceipt {
+function fakeReceipt(): SandboxRunReceipt {
   return {
     machineId: "machine-1",
     state: "started",

@@ -2,7 +2,8 @@
 // command the runner builds. These values are the contract with the image already deployed.
 // The expected values were recorded from the code before the runner read a manifest, and have not changed.
 import { describe, expect, it } from "bun:test";
-import { launchFlySandboxRun } from "../../sandbox/fly-sandbox-run";
+import { launchSandboxRun } from "../../sandbox/launch";
+import { createFlyProvider } from "../../sandbox/providers/fly/provider";
 import { claudeArgs, sanitizedClaudeEnv } from "draft-core/harnesses/claude/runner";
 import { codexArgs, codexConfigToml, sanitizedCodexEnv } from "draft-core/harnesses/codex/runner";
 import { type RunnerManifest } from "draft-core/run-manifest";
@@ -129,13 +130,16 @@ describe("environments the runner gives the harness", () => {
 });
 
 const config = {
-  flyApiToken: "fly-token",
-  flyAppName: "draft-sandbox-test",
-  flySandboxImage: `registry.fly.io/draft-sandbox-test@sha256:${"a".repeat(64)}`,
-  flyRegion: "iad",
   callbackUrl: "https://api.example.test/sandbox/callback",
   callbackSecret: "callback-signing-secret",
   supabaseUrl: "https://project.supabase.co",
+  provider: {
+    kind: "fly" as const,
+    apiToken: "fly-token",
+    appName: "draft-sandbox-test",
+    image: `registry.fly.io/draft-sandbox-test@sha256:${"a".repeat(64)}`,
+    region: "iad",
+  },
 };
 
 const WS = "22222222-2222-4222-8222-222222222222";
@@ -147,17 +151,17 @@ const OBJECT_SCHEMA = { type: "object" };
 async function launched(input: Record<string, unknown>) {
   let env: Record<string, string> = {};
   const uploaded: string[] = [];
-  await launchFlySandboxRun(
+  await launchSandboxRun(
     { bundle: { organizationId: "org", workspaceId: WS, runId: "RUN-ID", bundleHash: "b".repeat(64), files: { "input/context/a.md": { content: "A" } } }, config, ...input } as never,
     {
-      flyClient: {
+      provider: createFlyProvider(config.provider, {
         create: async (machine) => {
           env = machine.env ?? {};
           return { id: "m1", state: "created" } as never;
         },
         waitForState: async () => ({ id: "m1", state: "started" }) as never,
         forceDelete: async () => undefined,
-      },
+      }),
       bundleUploader: async (upload) => {
         uploaded.push(...Object.keys(upload.files));
         return { signedUrl: "https://storage.example.test/bundle?sig=secret" } as never;

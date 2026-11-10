@@ -3,30 +3,14 @@ import type { AgentRunSpec } from "draft-core/run-spec";
 import { createAgentRunToken } from "../metaharness/runs/run-token";
 import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
-import {
-  FlyMachinesClient,
-  FlyMachineWaitTimeoutError,
-  type CreateFlyMachineInput,
-  type FlyMachine,
-  type FlyMachineState,
-  type WaitForStateOptions,
-} from "./fly-machines";
-import {
-  type SandboxDeploymentConfig,
-  validateSandboxDeploymentConfig,
-} from "./config";
+import { type SandboxDeploymentConfig, validateSandboxDeploymentConfig } from "./config";
+import { providerFor, type SandboxPlan, type SandboxProvider } from "./providers";
 import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer, type PromptSource } from "./run-manifest";
 
 const PROMPT_PATH = "input/prompt.md";
 const OUTPUT_SCHEMA_PATH = "input/output-schema.json";
 const SANDBOX_TIMEOUT_SECONDS = 20 * 60;
 const CALLBACK_TOKEN_TTL_MS = 30 * 60 * 1_000;
-const BOOT_TIMEOUT_MS = 60_000;
-const SANDBOX_GUEST = {
-  cpu_kind: "shared" as const,
-  cpus: 1,
-  memory_mb: 1024,
-};
 
 // Narrowed subset of ValidatedRunBundle so non-synthesis callers (e.g.
 // summarization) don't depend on synthesis's bundle-building internals.
@@ -41,7 +25,7 @@ export interface SandboxRunBundle {
 /** The secret the harness signs in with. It goes to the machine in its own variable and never into the manifest. */
 export type SandboxCredentials = { claudeCodeOAuthToken: string } | { codexAuthJson: string };
 
-export interface LaunchFlySandboxRunInput {
+export interface LaunchSandboxRunInput {
   /** What the run is. The harness, model, tools and output kind all come from it. A sandbox run is a cloud run. */
   spec: AgentRunSpec;
   bundle: SandboxRunBundle;
@@ -66,16 +50,6 @@ function serializeJsonSchema(schema: Record<string, unknown>): string {
   return serialized;
 }
 
-export interface FlySandboxRunClient {
-  create(input: CreateFlyMachineInput): Promise<FlyMachine>;
-  waitForState(
-    machineId: string,
-    desiredState: FlyMachineState,
-    options?: WaitForStateOptions,
-  ): Promise<FlyMachine>;
-  forceDelete(machineId: string): Promise<void>;
-}
-
 export type BundleUploader = (input: {
   organizationId: string;
   workspaceId: string;
@@ -83,14 +57,15 @@ export type BundleUploader = (input: {
   files: Record<string, string>;
 }) => Promise<UploadedBundle>;
 
-export interface LaunchFlySandboxRunDependencies {
-  flyClient?: FlySandboxRunClient;
+export interface LaunchSandboxRunDependencies {
+  /** Defaults to the provider the deployment config names. */
+  provider?: SandboxProvider;
   bundleUploader?: BundleUploader;
   now?: () => number;
   nonce?: () => string;
 }
 
-export interface FlySandboxRunReceipt {
+export interface SandboxRunReceipt {
   machineId: string;
   state: string;
   runId: string;
@@ -103,13 +78,13 @@ function assertNonEmpty(value: string, label: string): void {
 }
 
 /**
- * Launch one isolated, one-shot Fly Machine for a previously validated bundle.
- * Persistence and run state transitions deliberately live outside this boundary.
+ * Everything a provider needs to start the run: the bundle is uploaded, the tokens are minted, and the
+ * environment is built. Nothing here knows which provider will run it.
  */
-export async function launchFlySandboxRun(
-  input: LaunchFlySandboxRunInput,
-  dependencies: LaunchFlySandboxRunDependencies = {},
-): Promise<FlySandboxRunReceipt> {
+export async function buildSandboxPlan(
+  input: LaunchSandboxRunInput,
+  dependencies: Omit<LaunchSandboxRunDependencies, "provider"> = {},
+): Promise<{ plan: SandboxPlan; callbackExpiresAt: number }> {
   const { spec } = input;
   if (input.prompt.kind === "text") assertNonEmpty(input.prompt.text, "prompt");
   const claudeToken = "claudeCodeOAuthToken" in input.credentials ? input.credentials.claudeCodeOAuthToken : undefined;
@@ -165,12 +140,6 @@ export async function launchFlySandboxRun(
   });
   const storageHost = new URL(config.supabaseUrl).hostname;
 
-  const client: FlySandboxRunClient =
-    dependencies.flyClient ??
-    new FlyMachinesClient({
-      app: config.flyAppName,
-      token: config.flyApiToken,
-    });
   const env: Record<string, string> = {
     DRAFT_RUN_ID: input.bundle.runId,
     DRAFT_BUNDLE_HASH: input.bundle.bundleHash,
@@ -191,35 +160,34 @@ export async function launchFlySandboxRun(
       config.callbackSecret,
     );
   }
-  const created = await client.create({
-    image: config.flySandboxImage,
-    files: {},
-    region: config.flyRegion,
-    guest: SANDBOX_GUEST,
-    metadata: {
-      run_id: input.bundle.runId,
-      bundle_hash: input.bundle.bundleHash,
-    },
-    env,
-  });
-
-  let machine: FlyMachine;
-  try {
-    machine = await client.waitForState(created.id, "started", {
-      timeoutMs: BOOT_TIMEOUT_MS,
-    });
-  } catch (error) {
-    if (error instanceof FlyMachineWaitTimeoutError) {
-      await client.forceDelete(created.id).catch(() => undefined);
-    }
-    throw error;
-  }
 
   return {
-    machineId: machine.id,
-    state: machine.state,
-    runId: input.bundle.runId,
-    bundleHash: input.bundle.bundleHash,
+    plan: {
+      runId: input.bundle.runId,
+      bundleHash: input.bundle.bundleHash,
+      env,
+      metadata: { run_id: input.bundle.runId, bundle_hash: input.bundle.bundleHash },
+    },
+    callbackExpiresAt,
+  };
+}
+
+/**
+ * Launch one isolated, one-shot sandbox for a previously validated bundle.
+ * Persistence and run state transitions deliberately live outside this boundary.
+ */
+export async function launchSandboxRun(
+  input: LaunchSandboxRunInput,
+  dependencies: LaunchSandboxRunDependencies = {},
+): Promise<SandboxRunReceipt> {
+  const { plan, callbackExpiresAt } = await buildSandboxPlan(input, dependencies);
+  const provider = dependencies.provider ?? providerFor(validateSandboxDeploymentConfig(input.config).provider);
+  const started = await provider.start(plan);
+  return {
+    machineId: started.machineId,
+    state: started.state,
+    runId: plan.runId,
+    bundleHash: plan.bundleHash,
     callbackExpiresAt,
   };
 }

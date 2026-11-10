@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { FlySandboxRunReceipt } from "../sandbox";
+import type { SandboxRunReceipt } from "../sandbox";
 import { ensureMemoryProvisioned, seedEmptyWorkspace } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";
@@ -233,7 +233,7 @@ export async function prepareRun(
 
 export async function markRunLaunched(
   runId: string,
-  receipt: FlySandboxRunReceipt,
+  receipt: SandboxRunReceipt,
   client?: SupabaseClient,
 ): Promise<void> {
   const resolvedClient =
