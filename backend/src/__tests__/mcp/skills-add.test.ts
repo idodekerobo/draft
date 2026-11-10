@@ -94,6 +94,7 @@ describe("mcp skills.add", () => {
   it("returns duplicate_name when the name exists", async () => {
     insertError = { code: "23505", message: "duplicate key" };
     const result = await callSkillsAdd(["write"], validArgs);
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ error: "duplicate_name" });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ error: "duplicate_name", message: expect.stringContaining("already exists") });
   });
 });

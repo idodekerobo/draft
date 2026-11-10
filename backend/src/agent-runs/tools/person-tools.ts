@@ -4,7 +4,7 @@ import type { ToolCaller } from "draft-core/agent-run";
 import { createContextExportLink, exportInstructions } from "../../context-export/link";
 import { getWorkspaceContext } from "../../services/workspace-context";
 import { readSource, searchSources } from "../../services/sources";
-import { defineTool } from "../tool-registry";
+import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { visibleContext } from "../visible-context";
 
 function callerWorkspaceId(caller: ToolCaller): string {
@@ -14,6 +14,24 @@ function callerWorkspaceId(caller: ToolCaller): string {
 function requireUser(caller: ToolCaller, tool: string) {
   if (caller.type !== "user") throw new Error(`${tool} needs a signed-in person`);
   return caller;
+}
+
+const CONTEXT_MESSAGES: Record<string, string> = {
+  no_context_yet: "This workspace has no context yet.",
+  period_not_found: "No memory document exists for that period.",
+};
+
+/** A context lookup that failed: a missing thing or a bad period is a refusal, a database failure is not. */
+function contextRefusal(result: { status: number; error: string }): ToolHandlerResult {
+  if (result.status === 404) return refuse(result.error, CONTEXT_MESSAGES[result.error] ?? result.error);
+  if (result.status === 400) return refuse("invalid_period", result.error);
+  throw new Error(result.error);
+}
+
+/** The sources service names its own failures; a search or read that broke inside is not a refusal. */
+function sourceRefusal(error: { code: string; message: string }): ToolHandlerResult {
+  if (error.code === "search_failed" || error.code === "read_failed") throw new Error(error.message);
+  return refuse(error.code, error.message);
 }
 
 const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : undefined);
@@ -52,10 +70,10 @@ export function createPersonTools(client: SupabaseClient) {
     }),
     handler: async ({ input, caller }) => {
       if (input.period && input.dimensions?.length !== 1) {
-        return { status: "ok", output: { error: "period requires exactly one dimension, e.g. dimensions: [\"memory\"]" } };
+        return refuse("invalid_period", "period requires exactly one dimension, e.g. dimensions: [\"memory\"]");
       }
       const result = await getWorkspaceContext(callerWorkspaceId(caller), { dimension: input.dimensions?.[0], period: input.period }, client);
-      if (!result.ok) return { status: "ok", output: { error: result.error } };
+      if (!result.ok) return contextRefusal(result);
       const wanted = input.dimensions?.length ? new Set(input.dimensions) : null;
       const requested = input.paths ? new Set(input.paths) : null;
       const visible = visibleContext(caller, result.snapshot.documents);
@@ -94,7 +112,7 @@ export function createPersonTools(client: SupabaseClient) {
     handler: async ({ caller }) => {
       const user = requireUser(caller, "context.export");
       const result = await createContextExportLink(user.workspaceId, user.userId, undefined, client);
-      if (!result.ok) return { status: "ok", output: { error: result.error } };
+      if (!result.ok) return contextRefusal(result);
       return { status: "ok", output: { ...result.link, instructions: exportInstructions(result.link) } };
     },
   });
@@ -120,7 +138,7 @@ export function createPersonTools(client: SupabaseClient) {
     handler: async ({ input, caller }) => {
       const user = requireUser(caller, "sources.search");
       const result = await searchSources(client, user.workspaceId, user.userId, input);
-      return { status: "ok", output: result.ok ? result.value : { error: result.error } };
+      return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
     },
   });
 
@@ -141,7 +159,7 @@ export function createPersonTools(client: SupabaseClient) {
     handler: async ({ input, caller }) => {
       const user = requireUser(caller, "sources.read");
       const result = await readSource(client, user.workspaceId, user.userId, input);
-      return { status: "ok", output: result.ok ? result.value : { error: result.error } };
+      return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
     },
   });
 

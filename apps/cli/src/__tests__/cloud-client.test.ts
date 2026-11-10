@@ -4,7 +4,7 @@ import { join } from "path";
 import type { AuthState } from "draft-core/auth-state";
 import { normalizeHostedConnections } from "draft-core/integrations/hosted-connections";
 import { makeHome, seedCliAuth } from "./helpers/cli-runner.ts";
-import { createMockBackend, defaultWhoami } from "./helpers/mock-backend.ts";
+import { createMockBackend, defaultWhoami, refusal } from "./helpers/mock-backend.ts";
 
 const CLOUD_CLIENT = join(import.meta.dir, "..", "cloud-client.ts");
 const PROVIDER_PATH = /^\/workspaces\/[^/]+\/(connections|github\/install-sessions)/;
@@ -231,9 +231,9 @@ describe("hosted provider wrappers", () => {
   });
 
   it("answers a tool's refusal as a failed request, and a safe code as itself", async () => {
-    backend.state.toolOutputs["sources.search"] = () => ({ error: { code: "invalid_query", message: "bad" } });
+    backend.state.toolOutputs["sources.search"] = () => refusal("invalid_query", "bad");
     expect(await invoke("fetchSourcesSearch", [{ query: "x" }])).toEqual({ ok: false, code: "request_failed" });
-    backend.state.toolOutputs["skills.read"] = () => ({ error: "skill_not_found" });
+    backend.state.toolOutputs["skills.read"] = () => refusal("skill_not_found");
     expect(await invoke("readSkill", ["missing"])).toEqual({ ok: false, code: "skill_not_found" });
   });
 

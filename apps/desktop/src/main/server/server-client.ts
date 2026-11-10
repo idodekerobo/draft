@@ -1,3 +1,4 @@
+import { decodeToolEnvelope } from "draft-core/tool-envelope";
 import { AuthRefreshError, getFreshAccessToken } from "draft-core/auth-state";
 
 export const apiUrl = process.env.DRAFT_API_BASE_URL ?? "https://api.draftai.us";
@@ -99,17 +100,17 @@ type FetchJson = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 /**
  * Calls one of Draft's tools as the signed-in person and returns its output.
- * A tool refuses in its output as `{ error }`; that is thrown as a ServerError with the same code.
+ * A tool's own refusal, or any other failed outcome, is thrown as a ServerError with its code.
  */
 export async function callTool<T>(fetchJson: FetchJson, workspaceId: string, name: string, input: unknown = {}): Promise<T> {
-  const envelope = await fetchJson<{ output: unknown }>(`workspaces/${workspaceId}/tools/${name}`, {
+  const envelope = await fetchJson<unknown>(`workspaces/${workspaceId}/tools/${name}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const refusal = (envelope.output as { error?: unknown } | null)?.error;
-  if (typeof refusal === "string") throw new ServerError(refusal);
-  return envelope.output as T;
+  const outcome = decodeToolEnvelope(envelope);
+  if (!outcome.ok) throw new ServerError(outcome.code);
+  return outcome.output as T;
 }
 
 export const callServerTool = <T>(workspaceId: string, name: string, input?: unknown) => callTool<T>(fetchServerJSON, workspaceId, name, input);

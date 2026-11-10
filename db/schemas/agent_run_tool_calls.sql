@@ -6,7 +6,7 @@ create table agent_run_tool_calls (
   tool_name      text not null,
   arguments      jsonb not null default '{}',
   status         text not null
-                   check (status in ('ok', 'denied', 'invalid', 'conflict', 'error')),
+                   check (status in ('ok', 'refused', 'denied', 'invalid', 'conflict', 'error')),
   result_summary text,
   error_code     text,
   duration_ms    integer check (duration_ms is null or duration_ms >= 0),

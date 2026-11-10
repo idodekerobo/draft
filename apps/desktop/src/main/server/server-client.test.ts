@@ -103,8 +103,8 @@ describe("callTool", () => {
     expect(seen[0]!.init).toMatchObject({ method: "POST", body: JSON.stringify({ paths: ["a.md"] }) });
   });
 
-  test("throws a ServerError with the tool's code when its output is a refusal", async () => {
-    const error = await callTool((async () => ({ status: "ok", output: { error: "no_context_yet" } })) as never, "ws-1", "context.read").catch((caught) => caught);
+  test("throws a ServerError with the tool's code when the tool refuses", async () => {
+    const error = await callTool((async () => ({ status: "refused", code: "no_context_yet", message: "none" })) as never, "ws-1", "context.read").catch((caught) => caught);
     expect(error).toBeInstanceOf(ServerError);
     expect(error).toMatchObject({ code: "no_context_yet" });
   });

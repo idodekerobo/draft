@@ -5,6 +5,7 @@ import { ToolUserError, type ToolRegistry } from "./tool-registry";
 export type InvokeToolResult =
   | { status: "ok"; output: unknown }
   | { status: "conflict"; output: unknown }
+  | { status: "refused"; code: string; message: string }
   | { status: "denied"; code: ToolDenialCode; message: string; detail?: AuthorizationDenial }
   | { status: "invalid"; issues: string[] }
   | { status: "error"; message: string };
@@ -110,6 +111,9 @@ export async function invokeTool(
 
   try {
     const result = await tool.run(caller, parsed.value);
+    if (result.status === "refused") {
+      return finish({ status: "refused", code: result.code, message: result.message }, { arguments: tool.auditArguments(parsed.value), summary: result.message, code: result.code });
+    }
     return finish(
       { status: result.status, output: result.output },
       { arguments: tool.auditArguments(parsed.value), summary: result.summary ?? null },

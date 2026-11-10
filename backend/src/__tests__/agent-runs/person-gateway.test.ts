@@ -102,7 +102,7 @@ const deps = {
 
 async function call(toolName: string, input?: unknown, workspaceId: string = WS) {
   const response = await callPersonTool(deps, { userId: USER, workspaceId, via: "cli", toolName, bodyText: input === undefined ? "" : JSON.stringify(input) });
-  return { status: response.status, body: (await response.json()) as { status?: string; output?: any; issues?: string[]; error?: string } };
+  return { status: response.status, body: (await response.json()) as { status?: string; output?: any; issues?: string[]; error?: string; code?: string; message?: string } };
 }
 
 describe("person tool endpoint: skills", () => {
@@ -144,15 +144,22 @@ describe("person tool endpoint: skills", () => {
   });
 
   it("answers with an error code for each way an add can be refused", async () => {
-    expect((await call("skills.add", { name: "ok-name", description: "d", content: "---\nname: [unterminated\n---\nbody" })).body.output).toEqual({ error: "malformed_frontmatter" });
-    expect((await call("skills.add", { name: "Bad_Name", description: "d", content: "c" })).body.output).toEqual({ error: "invalid_name" });
-    expect((await call("skills.add", { name: "big", description: "d", content: "x".repeat(100 * 1024 + 1) })).body.output).toEqual({ error: "content_too_large" });
+    expect((await call("skills.add", { name: "ok-name", description: "d", content: "---\nname: [unterminated\n---\nbody" })).body).toMatchObject({ status: "refused", code: "malformed_frontmatter" });
+    expect((await call("skills.add", { name: "Bad_Name", description: "d", content: "c" })).body).toMatchObject({ status: "refused", code: "invalid_name" });
+    expect((await call("skills.add", { name: "big", description: "d", content: "x".repeat(100 * 1024 + 1) })).body).toMatchObject({ status: "refused", code: "content_too_large" });
     insertError = { code: "23505", message: "duplicate key" };
-    expect((await call("skills.add", { name: "dup", description: "d", content: "c" })).body.output).toEqual({ error: "duplicate_name" });
+    expect((await call("skills.add", { name: "dup", description: "d", content: "c" })).body).toMatchObject({ status: "refused", code: "duplicate_name" });
+  });
+
+  it("a refusal carries a code and a message the caller can show", async () => {
+    const { status, body } = await call("skills.read", { name: "nope" });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ status: "refused", code: "skill_not_found" });
+    expect(body.message).toContain("No skill with that name");
   });
 
   it("read answers skill_not_found for an unknown skill", async () => {
-    expect((await call("skills.read", { name: "nope" })).body.output).toEqual({ error: "skill_not_found" });
+    expect((await call("skills.read", { name: "nope" })).body).toMatchObject({ status: "refused", code: "skill_not_found" });
   });
 
   it("update replaces content and sets updated_by, then delete soft-removes it", async () => {
@@ -163,7 +170,7 @@ describe("person tool endpoint: skills", () => {
     expect(updated.updatedBy).toBe(USER);
 
     expect((await call("skills.delete", { name: "s" })).body.output).toEqual({ ok: true });
-    expect((await call("skills.read", { name: "s" })).body.output).toEqual({ error: "skill_not_found" });
+    expect((await call("skills.read", { name: "s" })).body).toMatchObject({ status: "refused", code: "skill_not_found" });
   });
 
   it("update requires a description too", async () => {
@@ -173,8 +180,8 @@ describe("person tool endpoint: skills", () => {
   });
 
   it("update and delete on an unknown name answer skill_not_found", async () => {
-    expect((await call("skills.update", { name: "missing", description: "d", content: "x" })).body.output).toEqual({ error: "skill_not_found" });
-    expect((await call("skills.delete", { name: "missing" })).body.output).toEqual({ error: "skill_not_found" });
+    expect((await call("skills.update", { name: "missing", description: "d", content: "x" })).body).toMatchObject({ status: "refused", code: "skill_not_found" });
+    expect((await call("skills.delete", { name: "missing" })).body).toMatchObject({ status: "refused", code: "skill_not_found" });
   });
 
   it("returns the workspace check's own refusal without touching skills", async () => {

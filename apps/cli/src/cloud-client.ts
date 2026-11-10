@@ -16,6 +16,7 @@ import {
   type AuthState,
 } from "draft-core/auth-state";
 import { getCliRuntimeConfig } from "./runtime-config.ts";
+import { decodeToolEnvelope } from "draft-core/tool-envelope";
 import type { SourceReadInput, SourceReadResponse, SourceSearchInput, SourceSearchResponse } from "draft-core/sources";
 import { normalizeBackfillSummary, type HostedConnectionBackfillSummary } from "draft-core/integrations/hosted-connections";
 
@@ -215,15 +216,12 @@ export async function fetchWorkspaceContext(
     period: filter?.period,
   });
   if (!call.ok) {
+    if (call.refusal === "no_context_yet") return { ok: true, snapshot: EMPTY_SNAPSHOT };
+    if (call.refusal === "period_not_found" || call.refusal === "invalid_period") return { ok: false, code: call.refusal };
     return { ok: false, code: contextFailure(call.code) };
   }
 
   const body = recordValue(call.output);
-  if (typeof body?.error === "string") {
-    if (body.error === "no_context_yet") return { ok: true, snapshot: EMPTY_SNAPSHOT };
-    if (body.error === "period_not_found") return { ok: false, code: "period_not_found" };
-    return { ok: false, code: filter?.period ? "invalid_period" : "context_fetch_failed" };
-  }
   if (!body || !Array.isArray(body.documents)) return { ok: false, code: "context_fetch_failed" };
 
   const documents: Record<string, WorkspaceDocument> = {};
@@ -253,10 +251,10 @@ export type ContextExportFetchResult =
 export async function fetchContextExport(): Promise<ContextExportFetchResult> {
   const call = await callToolRaw("context.export", {});
   if (!call.ok) {
+    if (call.refusal === "no_context_yet") return { ok: false, code: "no_context" };
     return { ok: false, code: contextFailure(call.code) };
   }
   const body = recordValue(call.output);
-  if (body?.error === "no_context_yet") return { ok: false, code: "no_context" };
   if (typeof body?.url !== "string") return { ok: false, code: "context_fetch_failed" };
 
   // The link is the credential: it carries its own signed token, so no Authorization header goes with it.
@@ -474,9 +472,10 @@ async function requestValue<T>(
     : { ok: true, value: decoded };
 }
 
-type ToolCallResult = { ok: true; output: unknown } | { ok: false; code: FetchErrorCode };
+/** `refusal` is the code of the tool's own "no", when that is why the call failed. */
+type ToolCallResult = { ok: true; output: unknown } | { ok: false; code: FetchErrorCode; refusal?: string };
 
-/** Calls one of Draft's tools as the signed-in person. The answer is the tool's output, or why the call did not run. */
+/** Calls one of Draft's tools as the signed-in person. The answer is the tool's output, or why the call did not work. */
 async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult> {
   const result = await authedFetch(`/tools/${encodeURIComponent(name)}`, {
     method: "POST",
@@ -492,16 +491,16 @@ async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult
     return { ok: false, code: result.response.ok ? "malformed_response" : "request_failed" };
   }
   if (!result.response.ok) return { ok: false, code: safeBackendError(value) ?? "request_failed" };
-  const envelope = recordValue(value);
-  return envelope?.status === "ok" ? { ok: true, output: envelope.output } : { ok: false, code: "request_failed" };
+
+  const outcome = decodeToolEnvelope(value);
+  if (outcome.ok) return { ok: true, output: outcome.output };
+  if (outcome.status !== "refused") return { ok: false, code: "request_failed" };
+  return { ok: false, code: safeBackendError({ error: outcome.code }) ?? "request_failed", refusal: outcome.code };
 }
 
-/** A tool refuses in its output as `{ error }`. A safe code is passed on; anything else is a failed request. */
 async function callTool<T>(name: string, input: unknown, decode: (output: unknown) => T | null): Promise<FetchResult<T>> {
   const call = await callToolRaw(name, input);
-  if (!call.ok) return call;
-  const refusal = recordValue(call.output)?.error;
-  if (refusal !== undefined) return { ok: false, code: safeBackendError({ error: refusal }) ?? "request_failed" };
+  if (!call.ok) return { ok: false, code: call.code };
   const decoded = decode(call.output);
   return decoded === null ? { ok: false, code: "malformed_response" } : { ok: true, value: decoded };
 }

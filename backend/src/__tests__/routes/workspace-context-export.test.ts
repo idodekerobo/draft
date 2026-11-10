@@ -190,6 +190,7 @@ describe("mcp context.export", () => {
   it("reports no_context_yet", async () => {
     queryResult = { data: null, error: null };
     const result = await callMcpExport(["read"]);
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ error: "no_context_yet" });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ error: "no_context_yet", message: expect.stringContaining("no context yet") });
   });
 });

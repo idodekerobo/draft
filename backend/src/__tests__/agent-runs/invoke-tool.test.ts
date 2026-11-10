@@ -11,7 +11,9 @@ import {
   type ToolCaller,
 } from "draft-core/agent-run";
 import { invokeTool, type ToolCallRecord } from "../../agent-runs/invoke-tool";
-import { defineTool, ToolRegistry } from "../../agent-runs/tool-registry";
+import { toHttpResponse } from "../../agent-runs/http-result";
+import { toMcpResult } from "../../agent-runs/mcp-result";
+import { defineTool, refuse, ToolRegistry } from "../../agent-runs/tool-registry";
 
 function runWith(permissions: AnyDraftToolPermission[]): ToolCaller {
   const run: AgentRunSpec = {
@@ -42,6 +44,7 @@ function setup(options: { authorizeUser?: boolean } = {}) {
       handler: async ({ input }) => {
         calls.push(`read:${input.path}`);
         if (input.path === "boom") throw new Error("database exploded");
+        if (input.path === "missing") return refuse("not_found", "No such path.");
         return { status: "ok", output: { content: "hello" }, summary: `read ${input.path}` };
       },
     }),
@@ -136,6 +139,21 @@ describe("invokeTool", () => {
     expect(result).toMatchObject({ status: "error" });
     expect(JSON.stringify(result)).not.toContain("exploded");
     expect(audits[0]).toMatchObject({ status: "error", resultSummary: "database exploded", errorCode: "handler_error" });
+  });
+
+  it("returns a tool's own refusal with its code, and audits it as refused, not as a failure of the tool", async () => {
+    const { deps, audits } = setup();
+    const result = await invokeTool(deps, runWith([{ tool: "context.read" }]), "context.read", { path: "missing" });
+    expect(result).toEqual({ status: "refused", code: "not_found", message: "No such path." });
+    expect(audits[0]).toMatchObject({ status: "refused", errorCode: "not_found", resultSummary: "No such path." });
+
+    const http = toHttpResponse(result);
+    expect(http.status).toBe(200);
+    expect(await http.json()).toEqual({ status: "refused", code: "not_found", message: "No such path." });
+
+    const mcp = toMcpResult(result);
+    expect(mcp.isError).toBe(true);
+    expect(JSON.parse(mcp.content[0]!.text)).toEqual({ error: "not_found", message: "No such path." });
   });
 
   it("still returns the result when the audit write fails", async () => {

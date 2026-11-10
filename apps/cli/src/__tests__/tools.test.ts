@@ -76,6 +76,13 @@ describe("draft tools", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "conflict" });
   });
 
+  test("a tool's own refusal exits 1 and prints its code and message", async () => {
+    respond = () => Response.json({ status: "refused", code: "no_context_yet", message: "This workspace has no context yet." });
+    const result = await run(["tools", "call", "context.read", "--args", "{}"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("no_context_yet");
+  });
+
   test("a denied or invalid call exits 1 and still prints the answer", async () => {
     respond = () => Response.json({ status: "denied", code: "not_permitted", message: "no" }, { status: 403 });
     const result = await run(["tools", "call", "slack.post", "--args", "{}"]);

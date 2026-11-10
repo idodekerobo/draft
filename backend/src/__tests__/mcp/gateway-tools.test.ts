@@ -95,10 +95,11 @@ describe("MCP tools that go through the gateway", () => {
     expect(audits[0]).toMatchObject({ status: "denied", errorCode: "caller_not_authorized" });
   });
 
-  it("sources.search keeps a service error in the body and redacts the cursor in the audit", async () => {
+  it("sources.search refuses with the service's code, flags the call as failed, audits it as refused and redacts the cursor", async () => {
     const result = await call("sources.search", { query: " ", cursor: "opaque-cursor" });
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ error: { code: "invalid_query" } });
-    expect(audits[0]).toMatchObject({ toolName: "sources.search", arguments: { query: " ", cursor: "[redacted]" } });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ error: "invalid_query" });
+    expect(audits[0]).toMatchObject({ toolName: "sources.search", status: "refused", errorCode: "invalid_query", arguments: { query: " ", cursor: "[redacted]" } });
     expect(JSON.stringify(audits[0])).not.toContain("opaque-cursor");
   });
 

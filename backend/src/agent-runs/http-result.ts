@@ -4,6 +4,7 @@ function statusFor(result: InvokeToolResult): number {
   switch (result.status) {
     case "ok":
     case "conflict":
+    case "refused":
       return 200;
     case "denied":
       return 403;

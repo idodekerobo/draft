@@ -14,10 +14,16 @@ export interface ToolContext<I> {
   caller: ToolCaller;
 }
 
-/** A handler returns "conflict" when the caller must change its request and try again. */
+/**
+ * A handler returns "conflict" when the caller must change its request and try again, and "refused" when the
+ * call ran and the answer is no (no context yet, a name already taken). A refusal has a stable code and a message.
+ */
 export type ToolHandlerResult =
   | { status: "ok"; output: unknown; summary?: string }
-  | { status: "conflict"; output: unknown; summary?: string };
+  | { status: "conflict"; output: unknown; summary?: string }
+  | { status: "refused"; code: string; message: string };
+
+export const refuse = (code: string, message: string): ToolHandlerResult => ({ status: "refused", code, message });
 
 /** What a tool author writes. The handler sees its input already parsed. */
 export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {

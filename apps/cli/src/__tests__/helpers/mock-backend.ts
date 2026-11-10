@@ -1,6 +1,11 @@
 // Minimal in-process mock of the hosted control-plane API + Supabase auth
 // endpoints the CLI talks to. Started on an ephemeral port per test.
 
+/** A tool hook returns this to answer with the tool's own "no" instead of an output. */
+export function refusal(code: string, message: string = code) {
+  return { __refusal: { code, message } };
+}
+
 export interface CapturedRequest {
   method: string;
   url: string;
@@ -113,12 +118,16 @@ export function createMockBackend() {
     if (response.ok) return { output: body };
     if (response.status >= 500) return response;
     const code = (body as { error?: unknown } | null)?.error;
-    return { output: { error: typeof code === "string" ? code : "request_failed" } };
+    const refusalCode = typeof code === "string" ? code : "request_failed";
+    return Response.json({ status: "refused", code: refusalCode, message: refusalCode });
   }
 
   async function answerTool(workspaceId: string, name: string, input: Record<string, unknown>, origin: string): Promise<Response> {
     const direct = state.toolOutputs[name];
-    if (direct) return Response.json({ status: "ok", output: direct(input) });
+    if (direct) {
+      const answer = direct(input) as { __refusal?: { code: string; message: string } } | null;
+      return answer?.__refusal ? Response.json({ status: "refused", ...answer.__refusal }) : Response.json({ status: "ok", output: answer });
+    }
     const asEnvelope = (result: { output: unknown } | Response) => (result instanceof Response ? result : Response.json({ status: "ok", output: result.output }));
 
     if (name === "context.read") {
@@ -127,7 +136,7 @@ export function createMockBackend() {
       if (dimensions?.[0]) query.set("dimension", dimensions[0]);
       if (typeof input.period === "string") query.set("period", input.period);
       const response = await state.contextResponse(workspaceId, new URL(`${origin}/workspaces/${workspaceId}/context?${query}`));
-      if (response.status === 400) return Response.json({ status: "ok", output: { error: "invalid period" } });
+      if (response.status === 400) return Response.json({ status: "refused", code: "invalid_period", message: "invalid period" });
       const result = await toolOutput(response);
       if (result instanceof Response) return result;
       const output = result.output as Record<string, unknown>;

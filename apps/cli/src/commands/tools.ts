@@ -3,6 +3,7 @@
 // The run-scoped tool surface for an agent that has a shell but no MCP. A run proves itself
 // with the token Draft gave it (DRAFT_RUN_ID + DRAFT_RUN_TOKEN), not with a person's login.
 
+import { decodeToolEnvelope } from "draft-core/tool-envelope";
 import { readFileSync } from "fs";
 import { getCliRuntimeConfig } from "../runtime-config.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
@@ -98,12 +99,12 @@ export async function runTools(args: string[]): Promise<number> {
       body,
     });
     if (response.status === 401) return fail(wantsJson, "unauthorized", "The run token was refused. The run may have finished.", EXIT_OPERATIONAL_ERROR);
-    const result = (await response.json().catch(() => null)) as { status?: string } | null;
+    const result = await response.json().catch(() => null);
     if (!result) return fail(wantsJson, "request_failed", `The tools API answered ${response.status} with no result.`, EXIT_OPERATIONAL_ERROR);
     if (wantsJson) printJsonLine(result);
     else console.log(JSON.stringify(result, null, 2));
-    // A conflict is an answer the agent acts on, so it is not a failure of the command.
-    return result.status === "ok" || result.status === "conflict" ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
+    // A conflict is an answer the agent acts on, so it is not a failure of the command. A refusal, a denial and an error are.
+    return decodeToolEnvelope(result).ok ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
   } catch (error) {
     return fail(wantsJson, "request_failed", `Could not reach Draft: ${error instanceof Error ? error.message : String(error)}`, EXIT_OPERATIONAL_ERROR);
   }

@@ -70,10 +70,10 @@ describe("context.read", () => {
     expect((result as { output: { documents: Array<{ path: string }> } }).output.documents.map((d) => d.path)).toEqual(["product/index.md"]);
   });
 
-  it("answers a bad period request in the body, as before", async () => {
+  it("refuses a bad period request with a code", async () => {
     const { call } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
     const result = await call("context.read", { period: "today" });
-    expect(result).toMatchObject({ status: "ok", output: { error: expect.stringContaining("period requires exactly one dimension") } });
+    expect(result).toMatchObject({ status: "refused", code: "invalid_period", message: expect.stringContaining("period requires exactly one dimension") });
   });
 });
 
