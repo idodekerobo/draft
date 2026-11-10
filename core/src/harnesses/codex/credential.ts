@@ -1,3 +1,5 @@
+import type { CredentialRules } from "../types";
+
 const AUTH_JSON_MAX_BYTES = 64 * 1024;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -32,3 +34,12 @@ export function authJsonChanged(before: string, after: string): boolean {
     return false;
   }
 }
+
+/** A refresh token must not be used by two runs at once, so a run holds the login's lease. */
+export const codexCredentialRules: CredentialRules = {
+  provider: "codex_chatgpt_auth",
+  label: "Codex login",
+  validate: parseCodexAuthJson,
+  changedDuringRun: authJsonChanged,
+  lease: { ttl: "20 minutes" },
+};

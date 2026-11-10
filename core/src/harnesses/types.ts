@@ -34,3 +34,20 @@ export interface HarnessDefinition {
   /** Where a person installs the harness's CLI. */
   installUrl?: string;
 }
+
+/**
+ * What the backend needs to know about one harness's login, as plain data and pure functions.
+ * The backend does the database and key work; it never learns a harness's file format.
+ */
+export interface CredentialRules {
+  /** The `credentials.provider` value the login is stored under. */
+  provider: string;
+  /** What the login is called in errors, for example "Codex login". */
+  label: string;
+  /** The text to store for a login a person or a run sent in, or null when it cannot run a routine. */
+  validate(value: unknown): string | null;
+  /** Whether the harness changed the login during a run, so the new copy must be kept. */
+  changedDuringRun(before: string, after: string): boolean;
+  /** Set when two runs must not use the login at once. */
+  lease: { ttl: string } | null;
+}
