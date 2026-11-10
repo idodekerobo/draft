@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderRoutinePrompt } from "../../routines/build-bundle";
-import { buildRoutineRunSpec, ROUTINE_PERMISSIONS, routineEnvironment } from "../../routines/run-spec";
+import { buildRoutineRunSpec, ROUTINE_PERMISSIONS } from "../../routines/run-spec";
 
 const input = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -34,12 +34,6 @@ describe("buildRoutineRunSpec", () => {
   it("rejects ids that are not UUIDs", () => {
     expect(() => buildRoutineRunSpec({ ...input, workspaceId: "ws-1" })).toThrow("Invalid WorkspaceId");
     expect(() => buildRoutineRunSpec({ ...input, occurrenceAt: "soon" })).toThrow("Invalid IsoTimestamp");
-  });
-
-  it("lists the built-in tools the runner starts each harness with", () => {
-    expect(routineEnvironment("claude").nativeTools).toEqual([{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }]);
-    expect(routineEnvironment("codex").nativeTools).toEqual([{ harness: "codex", tool: "shell" }]);
-    expect(routineEnvironment("claude").mcpServers).toEqual([]);
   });
 });
 

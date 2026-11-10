@@ -1,6 +1,6 @@
-import { AGENT_RUN_SYSTEM_REASONS, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
+import { AGENT_RUN_SYSTEM_REASONS, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
 import { type AnyDraftToolPermission } from "draft-core/tools";
-import { routineEnvironment } from "../routines/run-spec";
+import { cloudEnvironmentFor } from "draft-core/harnesses";
 import type { SynthesisRunTriggerType } from "../types/enums";
 
 export interface SynthesisRunSpecInput {
@@ -22,7 +22,7 @@ export interface SynthesisRunSpecInput {
  */
 export function synthesisTrigger(input: Pick<SynthesisRunSpecInput, "triggerType" | "scheduledTaskId" | "occurrenceAt" | "retryOfRunId">): AgentRunTrigger {
   if (input.triggerType === "schedule" && input.scheduledTaskId && input.occurrenceAt) {
-    return { type: "cron", scheduledTaskId: parseScheduledTaskId(input.scheduledTaskId), occurrenceAt: parseIsoTimestamp(input.occurrenceAt) };
+    return cronTrigger(input.scheduledTaskId, input.occurrenceAt);
   }
   if (input.triggerType === "retry" && input.retryOfRunId) return { type: "retry", retryOf: parseAgentRunId(input.retryOfRunId) };
   const reason = (AGENT_RUN_SYSTEM_REASONS as ReadonlyArray<string>).includes(input.triggerType) ? (input.triggerType as AgentRunSystemReason) : "manual";
@@ -37,7 +37,7 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
     principal: { type: "workspace" },
-    runtime: { type: "cloud", environment: routineEnvironment("claude") },
+    runtime: { type: "cloud", environment: cloudEnvironmentFor("claude") },
     harness: "claude",
     model: null,
     instructions: "",

@@ -81,6 +81,11 @@ export type AgentRunTrigger =
   | { type: "manual"; requestedBy: UserId }
   | { type: "retry"; retryOf: AgentRunId };
 
+/** The trigger of a run that a schedule started. Both values come from the database and are checked here. */
+export function cronTrigger(scheduledTaskId: string, occurrenceAt: string): AgentRunTrigger {
+  return { type: "cron", scheduledTaskId: parseScheduledTaskId(scheduledTaskId), occurrenceAt: parseIsoTimestamp(occurrenceAt) };
+}
+
 /** Who the run acts for. Only the workspace exists today. Identity work adds a user case. */
 export type AgentRunPrincipal = { type: "workspace" };
 

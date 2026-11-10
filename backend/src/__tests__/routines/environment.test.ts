@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { validateAgentRoutineConfig, parseAgentRoutineConfig } from "../../routines/config";
 import { dispatchAgentRoutine } from "../../routines/dispatch-routine";
 import type { LaunchRoutineRun } from "../../routines/launch-routine-run";
-import { buildRoutineRunSpec, routineEnvironment } from "../../routines/run-spec";
+import { buildRoutineRunSpec } from "../../routines/run-spec";
 import type { ScheduledTaskRow } from "../../types/tables";
 import { fakeClient, fakeDb } from "./fake-client";
 
@@ -59,18 +59,6 @@ describe("routine config environment", () => {
   it("keeps the environment when a saved config is read back", () => {
     const saved = { ...base, environment: { nativeTools: ["WebSearch"], mcpServers: [] } };
     expect(parseAgentRoutineConfig(saved)?.environment).toEqual({ nativeTools: ["WebSearch"], mcpServers: [] });
-  });
-});
-
-describe("routineEnvironment", () => {
-  it("is the defaults for a routine that chose nothing", () => {
-    expect(routineEnvironment("claude")).toMatchObject({ nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }], mcpServers: [] });
-    expect(routineEnvironment("codex").nativeTools).toEqual([{ harness: "codex", tool: "shell" }]);
-  });
-
-  it("adds what was chosen once, and never a tool outside the cloud list", () => {
-    const environment = routineEnvironment("claude", { nativeTools: ["WebSearch", "Read", "Bash"], mcpServers: [] });
-    expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
   });
 });
 

@@ -1,6 +1,7 @@
 /** The coding agents Draft can run for a session or a routine. The apps and the backend read only this list. */
 import { claudeDefinition } from "./claude/definition";
 import { codexDefinition } from "./codex/definition";
+import { isCloudNativeTool, type AgentRunEnvironment, type McpServerPermission, type NativeToolPermission } from "../run-spec";
 import type { HarnessDefinition, HarnessModel, HarnessModes } from "./types";
 
 export type { HarnessDefinition, HarnessModel, HarnessModeOption, HarnessModes } from "./types";
@@ -68,4 +69,21 @@ export function isTestedVersion(harnessId: string, version: string | null | unde
 export function testedVersionLabel(harnessId: string): string | null {
   const tested = getHarness(harnessId)?.testedVersion;
   return tested ? `${tested.major}.${tested.minor}.x` : null;
+}
+
+/**
+ * What a cloud run may use: the harness's starting tools, the built-in tools a person added, and the
+ * connections they chose. A tool outside the cloud list is dropped, even if it was saved earlier.
+ */
+export function cloudEnvironmentFor(
+  harness: HarnessId,
+  chosen?: { nativeTools?: ReadonlyArray<string>; mcpServers?: ReadonlyArray<McpServerPermission> },
+): AgentRunEnvironment {
+  const definition = HARNESSES.find((entry) => entry.id === harness)!;
+  const nativeTools = definition.cloudStartingTools.map((tool) => ({ harness, tool }) as NativeToolPermission);
+  for (const tool of chosen?.nativeTools ?? []) {
+    const permission = { harness, tool } as NativeToolPermission;
+    if (isCloudNativeTool(permission) && !nativeTools.some((existing) => existing.tool === permission.tool)) nativeTools.push(permission);
+  }
+  return { nativeTools, mcpServers: [...(chosen?.mcpServers ?? [])], skills: [], instructions: [] };
 }

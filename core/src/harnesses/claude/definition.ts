@@ -21,5 +21,6 @@ export const claudeDefinition = {
     approval: [],
   },
   testedVersion: { major: 2, minor: 1 },
+  cloudStartingTools: ["Read", "Glob"],
   routineModes: ["print"],
 } as const satisfies HarnessDefinition;

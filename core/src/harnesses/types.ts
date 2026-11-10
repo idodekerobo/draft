@@ -27,6 +27,8 @@ export interface HarnessDefinition {
   modes: HarnessModes;
   /** The CLI release the host was tested with: this major and minor. */
   testedVersion: { major: number; minor: number };
+  /** The built-in tools a cloud run starts with, before a person adds any. */
+  cloudStartingTools: ReadonlyArray<string>;
   /** How a cloud routine runs this harness. Empty when routines do not support it yet. */
   routineModes: ReadonlyArray<"print" | "exec">;
   /** Where a person installs the harness's CLI. */
