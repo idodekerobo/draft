@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { z } from "zod";
-import { parseUserId, parseWorkspaceId } from "draft-core/agent-run";
+import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
 import { invokeTool, type InvokeToolDeps } from "../metaharness/tools/invoke-tool";
 import { toMcpResult } from "../metaharness/tools/mcp-result";
 

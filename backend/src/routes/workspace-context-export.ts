@@ -1,4 +1,4 @@
-import { parseUserId, parseWorkspaceId } from "draft-core/agent-run";
+import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
 import { visibleContext } from "../metaharness/context/visible-context";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { contextExportSettings } from "../config";

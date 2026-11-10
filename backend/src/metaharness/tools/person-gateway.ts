@@ -1,4 +1,5 @@
-import { parseUserId, parseWorkspaceId, type UserCallSurface } from "draft-core/agent-run";
+import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
+import { type UserCallSurface } from "draft-core/tools";
 import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
 import { describeTools } from "./tool-registry";

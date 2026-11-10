@@ -13,7 +13,7 @@ import {
   prepareRun,
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
-import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/agent-run";
+import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/tools";
 import { buildSynthesisRunSpec } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";

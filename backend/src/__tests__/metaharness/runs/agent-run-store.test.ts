@@ -1,14 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  parseAgentRunId,
-  parseContextVersionId,
-  parseIsoTimestamp,
-  parseScheduledTaskId,
-  parseSourceConnectionId,
-  parseUserId,
-  parseWorkspaceId,
-  type AgentRunSpec,
-} from "draft-core/agent-run";
+import { parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import type { AgentRunRow } from "../../../types/tables";

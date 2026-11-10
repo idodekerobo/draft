@@ -1,4 +1,4 @@
-import type { ToolCaller } from "draft-core/agent-run";
+import type { ToolCaller } from "draft-core/tools";
 import { describeError } from "../../errors/describe-error";
 import { ToolUserError, type ToolRegistry } from "./tool-registry";
 

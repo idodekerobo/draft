@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseWorkspaceId } from "draft-core/agent-run";
+import { parseWorkspaceId } from "draft-core/run-spec";
 import { buildRoutineBundle } from "../../../routines/build-bundle";
 import { canSeeContextPath, visibleContext } from "../../../metaharness/context/visible-context";
 

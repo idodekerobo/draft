@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseWorkspaceId } from "draft-core/agent-run";
+import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
 import { createSandboxCallbackToken } from "../../../sandbox/callback-token";
 import { createAgentRunToken, verifyAgentRunToken } from "../../../metaharness/runs/run-token";
 

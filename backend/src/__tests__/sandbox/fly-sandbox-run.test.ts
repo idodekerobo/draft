@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { ValidatedRunBundle } from "../../synthesis/context-version-files";
-import type { AgentRunSpec } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/run-spec";
 import { verifyAgentRunToken } from "../../metaharness/runs/run-token";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { verifySandboxCallbackToken } from "../../sandbox/callback-token";

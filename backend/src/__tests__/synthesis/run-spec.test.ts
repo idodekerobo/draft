@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { saveAgentRunSpec, specFromRow } from "../../metaharness/runs/agent-run-store";
-import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/agent-run";
+import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/tools";
 import { buildSynthesisRunSpec, synthesisTrigger } from "../../synthesis/run-spec";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 

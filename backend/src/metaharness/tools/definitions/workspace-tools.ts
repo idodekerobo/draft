@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ToolCaller } from "draft-core/agent-run";
+import type { ToolCaller } from "draft-core/tools";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 
 // Loaded on first use: these services open the service database client, which a registry built for a test must not need.

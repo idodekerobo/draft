@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentRunSpec } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";

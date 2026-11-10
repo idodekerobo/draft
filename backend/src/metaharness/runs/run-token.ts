@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { parseAgentRunId, parseWorkspaceId, type AgentRunId, type WorkspaceId } from "draft-core/agent-run";
+import { parseAgentRunId, parseWorkspaceId, type AgentRunId, type WorkspaceId } from "draft-core/run-spec";
 
 /** expiresAt is a Unix timestamp in milliseconds. */
 export interface AgentRunTokenClaims {

@@ -1,16 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import {
-  AGENT_RUN_SYSTEM_REASONS,
-  DRAFT_TOOLS,
-  findToolPermission,
-  isDraftToolName,
-  parseAgentRunId,
-  parseContextVersionId,
-  parseHostMachineId,
-  parseIsoTimestamp,
-  parseWorkspaceId,
-  type AgentRunSpec,
-} from "../agent-run";
+import { AGENT_RUN_SYSTEM_REASONS, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseIsoTimestamp, parseWorkspaceId, type AgentRunSpec } from "../run-spec";
+import { DRAFT_TOOLS, findToolPermission, isDraftToolName } from "../tools";
 
 const UUID_A = "11111111-1111-4111-8111-111111111111";
 const UUID_B = "22222222-2222-4222-8222-222222222222";

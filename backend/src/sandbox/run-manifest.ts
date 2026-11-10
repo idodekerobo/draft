@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentRunSpec } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/run-spec";
 
 /**
  * What the sandbox runner must do for one run. The backend derives it from the AgentRunSpec in

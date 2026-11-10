@@ -1,4 +1,4 @@
-import { parseWorkspaceId } from "draft-core/agent-run";
+import { parseWorkspaceId } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildValidatedRunBundle,

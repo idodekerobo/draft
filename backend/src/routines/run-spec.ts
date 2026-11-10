@@ -1,19 +1,6 @@
 import type { HarnessId } from "draft-core/harnesses";
-import {
-  CONTEXT_READ_WRITE_PERMISSIONS,
-  parseAgentRunId,
-  parseContextVersionId,
-  parseIsoTimestamp,
-  parseScheduledTaskId,
-  parseWorkspaceId,
-  isCloudNativeTool,
-  parseSourceConnectionId,
-  type AgentRunEnvironment,
-  type AgentRunSpec,
-  type AnyDraftToolPermission,
-  type McpServerPermission,
-  type NativeToolPermission,
-} from "draft-core/agent-run";
+import { parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseWorkspaceId, isCloudNativeTool, parseSourceConnectionId, type AgentRunEnvironment, type AgentRunSpec, type McpServerPermission, type NativeToolPermission } from "draft-core/run-spec";
+import { CONTEXT_READ_WRITE_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
 import type { AgentRoutineConfig } from "./config";
 
 /** What a routine may call through Draft today. It reads and writes context. */

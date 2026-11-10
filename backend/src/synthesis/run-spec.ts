@@ -1,16 +1,5 @@
-import {
-  AGENT_RUN_SYSTEM_REASONS,
-  parseAgentRunId,
-  parseContextVersionId,
-  parseIsoTimestamp,
-  parseScheduledTaskId,
-  parseWorkspaceId,
-  type AgentRunSpec,
-  type AgentRunSystemReason,
-  type AgentRunTrigger,
-  type AnyDraftToolPermission,
-  type JsonSchema,
-} from "draft-core/agent-run";
+import { AGENT_RUN_SYSTEM_REASONS, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
+import { type AnyDraftToolPermission } from "draft-core/tools";
 import { routineEnvironment } from "../routines/run-spec";
 import type { SynthesisRunTriggerType } from "../types/enums";
 

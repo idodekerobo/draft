@@ -1,13 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import {
-  parseAgentRunId,
-  parseContextVersionId,
-  parseHostMachineId,
-  parseUserId,
-  parseWorkspaceId,
-  type AgentRunSpec,
-  type AnyDraftToolPermission,
-} from "draft-core/agent-run";
+import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { type AnyDraftToolPermission } from "draft-core/tools";
 import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
 import { createRunGateway } from "../../../metaharness/tools/run-gateway";
 import { createAgentRunToken } from "../../../metaharness/runs/run-token";

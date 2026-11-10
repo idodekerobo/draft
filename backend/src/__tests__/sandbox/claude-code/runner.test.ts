@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { CLOUD_NATIVE_TOOLS } from "draft-core/agent-run";
+import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

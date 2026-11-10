@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/agent-run";
+import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 
 export interface AgentRunOutcome {
   status: "succeeded" | "failed" | "cancelled";

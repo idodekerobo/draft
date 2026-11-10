@@ -1,15 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
-import {
-  parseAgentRunId,
-  parseContextVersionId,
-  parseHostMachineId,
-  parseUserId,
-  parseWorkspaceId,
-  type AgentRunSpec,
-  type AnyDraftToolPermission,
-  type ToolCaller,
-} from "draft-core/agent-run";
+import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { toHttpResponse } from "../../../metaharness/tools/http-result";
 import { toMcpResult } from "../../../metaharness/tools/mcp-result";

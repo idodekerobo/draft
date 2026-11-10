@@ -1,4 +1,4 @@
-import { parseWorkspaceId } from "draft-core/agent-run";
+import { parseWorkspaceId } from "draft-core/run-spec";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "bun:test";
 import {

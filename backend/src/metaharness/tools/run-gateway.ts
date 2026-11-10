@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import type { AgentRunSpec } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/run-spec";
 import { auditToDatabase, loadActiveAgentRunSpec } from "../runs/agent-run-store";
 import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";

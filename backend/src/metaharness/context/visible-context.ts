@@ -1,4 +1,5 @@
-import type { ToolCaller, WorkspaceId } from "draft-core/agent-run";
+import type { WorkspaceId } from "draft-core/run-spec";
+import type { ToolCaller } from "draft-core/tools";
 
 /** Who is reading context. `system` is Draft's own code, such as the synthesis bundle builder. */
 export type ContextAudience = ToolCaller | { type: "system"; workspaceId: WorkspaceId };

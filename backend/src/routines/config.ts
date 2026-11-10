@@ -1,4 +1,4 @@
-import { CLOUD_NATIVE_TOOLS } from "draft-core/agent-run";
+import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
 import { getHarness, isKnownModel, type HarnessId } from "draft-core/harnesses";
 
 export const ROUTINE_RUN_ID_PREFIX = "routine:";

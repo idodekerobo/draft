@@ -1,12 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  parseAgentRunId,
-  parseContextVersionId,
-  parseSourceConnectionId,
-  parseUserId,
-  parseWorkspaceId,
-  type AgentRunSpec,
-} from "draft-core/agent-run";
+import { parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
 import { createMcpConnection, remoteToolsForRun, type ConnectRemoteMcp } from "../../../metaharness/tools/remote-mcp";
 import { createRunGateway } from "../../../metaharness/tools/run-gateway";

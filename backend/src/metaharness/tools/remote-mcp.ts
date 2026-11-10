@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
-import type { AgentRunSpec } from "draft-core/agent-run";
+import type { AgentRunSpec } from "draft-core/run-spec";
 import { CURRENT_CREDENTIAL_KEY_VERSION, encryptCredentialPayload } from "../../credentials/crypto";
 import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 import { ToolUserError, type RegisteredTool } from "./tool-registry";

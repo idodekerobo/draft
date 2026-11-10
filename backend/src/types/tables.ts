@@ -1,7 +1,4 @@
-import type {
-  AgentRunKind,
-  AgentRunStatus,
-} from "draft-core/agent-run";
+import type { AgentRunKind, AgentRunStatus } from "draft-core/run-spec";
 import type {
   AgentSessionSummaryStatus,
   ContextVersionCreationReason,

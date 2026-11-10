@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ToolCaller } from "draft-core/agent-run";
+import type { ToolCaller } from "draft-core/tools";
 import { writeContext, type ContextConflict } from "../../context/context-store";
 import { defineTool } from "../tool-registry";
 import { canSeeContextPath } from "../../context/visible-context";

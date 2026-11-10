@@ -1,26 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import {
-  ACTIVE_AGENT_RUN_STATUSES,
-  AGENT_RUN_KINDS,
-  AGENT_RUN_SYSTEM_REASONS,
-  CLAUDE_NATIVE_TOOLS,
-  CODEX_NATIVE_TOOLS,
-  DRAFT_TOOLS,
-  parseAgentRunId,
-  parseContextVersionId,
-  parseHostMachineId,
-  parseInstructionFileId,
-  parseIsoTimestamp,
-  parseScheduledTaskId,
-  parseSkillId,
-  parseSourceConnectionId,
-  parseUserId,
-  parseWorkspaceId,
-  type AgentRunKind,
-  type AgentRunSpec,
-  type AnyDraftToolPermission,
-} from "draft-core/agent-run";
+import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isHarnessId } from "draft-core/harnesses";
 import { isLoggedCommand } from "../../observability/logged-commands";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../../observability/record-query-log";

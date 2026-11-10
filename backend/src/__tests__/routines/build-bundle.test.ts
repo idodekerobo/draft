@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseWorkspaceId } from "draft-core/agent-run";
+import { parseWorkspaceId } from "draft-core/run-spec";
 import { buildRoutineBundle, renderRoutinePrompt } from "../../routines/build-bundle";
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";

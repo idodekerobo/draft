@@ -1,12 +1,4 @@
-import {
-  parseAgentRunId,
-  parseContextVersionId,
-  parseIsoTimestamp,
-  parseScheduledTaskId,
-  parseWorkspaceId,
-  type AgentRunSpec,
-  type JsonSchema,
-} from "draft-core/agent-run";
+import { parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseWorkspaceId, type AgentRunSpec, type JsonSchema } from "draft-core/run-spec";
 import { routineEnvironment } from "../routines/run-spec";
 
 export interface SummarizationRunSpecInput {

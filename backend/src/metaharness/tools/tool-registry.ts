@@ -1,13 +1,6 @@
 import { z } from "zod";
-import {
-  DRAFT_TOOLS,
-  findToolPermission,
-  type AgentRunSpec,
-  type DraftToolAccess,
-  type DraftToolLimits,
-  type DraftToolName,
-  type ToolCaller,
-} from "draft-core/agent-run";
+import { type AgentRunSpec } from "draft-core/run-spec";
+import { DRAFT_TOOLS, findToolPermission, type DraftToolAccess, type DraftToolLimits, type DraftToolName, type ToolCaller } from "draft-core/tools";
 
 export interface ToolContext<I> {
   input: I;

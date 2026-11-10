@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ToolCaller } from "draft-core/agent-run";
+import type { ToolCaller } from "draft-core/tools";
 import { createContextExportLink, exportInstructions } from "../../../context-export/link";
 import { getWorkspaceContext } from "../../../services/workspace-context";
 import { readSource, searchSources } from "../../../services/sources";
