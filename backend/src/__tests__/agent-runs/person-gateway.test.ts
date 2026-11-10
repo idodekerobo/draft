@@ -126,24 +126,26 @@ describe("person tool endpoint: skills", () => {
     expect(body.output.content).toBe("body");
   });
 
-  it("add parses name/description from YAML frontmatter when they are omitted", async () => {
-    const content = "---\nname: from-frontmatter\ndescription: parsed desc\n---\nbody text";
-    const { body } = await call("skills.add", { content });
-    expect(body.output.name).toBe("from-frontmatter");
-    expect(body.output.description).toBe("parsed desc");
+  it("add requires a name and a description, and refuses input without them as invalid", async () => {
+    for (const input of [{ content: "body" }, { name: "x", content: "body" }, { description: "d", content: "body" }]) {
+      const result = await call("skills.add", input);
+      expect(result.status).toBe(400);
+      expect(result.body.status).toBe("invalid");
+    }
+    expect(rows).toHaveLength(0);
   });
 
-  it("explicit fields override frontmatter values", async () => {
-    const content = "---\nname: frontmatter-name\ndescription: frontmatter-desc\n---\nbody";
-    const { body } = await call("skills.add", { name: "explicit-name", content });
+  it("explicit fields override the content's own frontmatter", async () => {
+    const content = "---\nname: frontmatter-name\ndescription: frontmatter-desc\nlicense: MIT\n---\nbody";
+    const { body } = await call("skills.add", { name: "explicit-name", description: "explicit desc", content });
     expect(body.output.name).toBe("explicit-name");
-    expect(body.output.description).toBe("frontmatter-desc");
+    expect(body.output.description).toBe("explicit desc");
+    expect(body.output.license).toBe("MIT");
   });
 
   it("answers with an error code for each way an add can be refused", async () => {
-    expect((await call("skills.add", { content: "---\nname: [unterminated\n---\nbody" })).body.output).toEqual({ error: "malformed_frontmatter" });
+    expect((await call("skills.add", { name: "ok-name", description: "d", content: "---\nname: [unterminated\n---\nbody" })).body.output).toEqual({ error: "malformed_frontmatter" });
     expect((await call("skills.add", { name: "Bad_Name", description: "d", content: "c" })).body.output).toEqual({ error: "invalid_name" });
-    expect((await call("skills.add", { content: "just body text" })).body.output).toEqual({ error: "missing_required_fields" });
     expect((await call("skills.add", { name: "big", description: "d", content: "x".repeat(100 * 1024 + 1) })).body.output).toEqual({ error: "content_too_large" });
     insertError = { code: "23505", message: "duplicate key" };
     expect((await call("skills.add", { name: "dup", description: "d", content: "c" })).body.output).toEqual({ error: "duplicate_name" });
@@ -162,6 +164,12 @@ describe("person tool endpoint: skills", () => {
 
     expect((await call("skills.delete", { name: "s" })).body.output).toEqual({ ok: true });
     expect((await call("skills.read", { name: "s" })).body.output).toEqual({ error: "skill_not_found" });
+  });
+
+  it("update requires a description too", async () => {
+    const result = await call("skills.update", { name: "s", content: "v2" });
+    expect(result.status).toBe(400);
+    expect(result.body.status).toBe("invalid");
   });
 
   it("update and delete on an unknown name answer skill_not_found", async () => {

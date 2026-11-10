@@ -19,9 +19,9 @@ const skillFields = {
   metadata: z.record(z.string(), z.unknown()).optional(),
   allowed_tools: z.string().optional(),
 };
-const descriptionField = z.string().min(1).describe("One or two sentences on what the skill does and when to use it. May come from the content's frontmatter.");
+const descriptionField = z.string().min(1).describe("One or two sentences on what the skill does and when to use it.");
 
-const skillAudit = (input: { name?: string; content: string }) => ({ name: input.name, contentBytes: Buffer.byteLength(input.content, "utf8") });
+const skillAudit = (input: { name: string; content: string }) => ({ name: input.name, contentBytes: Buffer.byteLength(input.content, "utf8") });
 
 /** A failed lookup or write is an answer for the caller, not a crash: it comes back as `{ error }`, as these tools always did. */
 const answer = <R extends { ok: boolean }>(result: R, pick: (ok: Extract<R, { ok: true }>) => unknown) =>
@@ -59,8 +59,8 @@ export function createWorkspaceTools(client: SupabaseClient) {
       "Create a new shared skill for the whole team. Use only when the user asks to save a skill. Write the description for a teammate who was not in this session. Fails with duplicate_name if the name exists; it cannot overwrite a skill.",
     callers: ["user"],
     input: z.object({
-      name: z.string().optional().describe("Lowercase words joined by hyphens, e.g. weekly-customer-recap. Max 64 characters. May come from the content's frontmatter."),
-      description: descriptionField.optional(),
+      name: z.string().describe("Lowercase words joined by hyphens, e.g. weekly-customer-recap. Max 64 characters."),
+      description: descriptionField,
       ...skillFields,
     }),
     auditArguments: skillAudit,
@@ -75,7 +75,7 @@ export function createWorkspaceTools(client: SupabaseClient) {
     name: "skills.update",
     description: "Replace an existing skill's content and fields. Fails with skill_not_found if the name does not exist.",
     callers: ["user"],
-    input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list."), description: descriptionField.optional(), ...skillFields }),
+    input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list."), description: descriptionField, ...skillFields }),
     auditArguments: skillAudit,
     handler: async ({ input, caller }) => {
       const user = requireUser(caller, "skills.update");

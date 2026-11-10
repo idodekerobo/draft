@@ -18,6 +18,7 @@ import {
 } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { bold, dim, red } from "../utils/output.ts";
+import { readSkillFrontmatter } from "../utils/skill-frontmatter.ts";
 
 function fetchErrorPayload(code: FetchErrorCode) {
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
@@ -221,11 +222,21 @@ export async function runSkillsRead(args: string[]): Promise<number> {
   return EXIT_SUCCESS;
 }
 
-function buildSkillBody(parsed: ParsedWriteArgs, content: string): AddOrUpdateSkillBody {
-  const body: AddOrUpdateSkillBody = { content };
-  if (parsed.name !== undefined) body.name = parsed.name;
-  if (parsed.description !== undefined) body.description = parsed.description;
-  return body;
+/**
+ * The tool needs a name and a description. A flag wins; otherwise the content's own frontmatter supplies it.
+ * Malformed frontmatter is refused here, as the service always did, even when both are given.
+ */
+async function resolveSkillBody(
+  parsed: ParsedWriteArgs,
+  content: string,
+  name: string | undefined,
+): Promise<{ ok: true; body: AddOrUpdateSkillBody & { name: string; description: string } } | { ok: false; code: FetchErrorCode }> {
+  const frontmatter = await readSkillFrontmatter(content);
+  if (!frontmatter.ok) return { ok: false, code: "malformed_frontmatter" };
+  const resolvedName = name ?? frontmatter.name;
+  const description = parsed.description ?? frontmatter.description;
+  if (!resolvedName || !description) return { ok: false, code: "missing_required_fields" };
+  return { ok: true, body: { name: resolvedName, description, content } };
 }
 
 export async function runSkillsAdd(args: string[]): Promise<number> {
@@ -243,7 +254,13 @@ export async function runSkillsAdd(args: string[]): Promise<number> {
     return EXIT_USAGE_ERROR;
   }
 
-  const result = await addSkill(buildSkillBody(parsed, contentResult.content));
+  const resolved = await resolveSkillBody(parsed, contentResult.content, parsed.name);
+  if (!resolved.ok) {
+    printFetchError("draft skills add", resolved.code, parsed.json);
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  const result = await addSkill(resolved.body);
   if (!result.ok) {
     printFetchError("draft skills add", result.code, parsed.json);
     return EXIT_OPERATIONAL_ERROR;
@@ -272,7 +289,13 @@ export async function runSkillsUpdate(args: string[]): Promise<number> {
     return EXIT_USAGE_ERROR;
   }
 
-  const result = await updateSkill(parsed.name!, buildSkillBody(parsed, contentResult.content));
+  const resolved = await resolveSkillBody(parsed, contentResult.content, parsed.name);
+  if (!resolved.ok) {
+    printFetchError("draft skills update", resolved.code, parsed.json);
+    return EXIT_OPERATIONAL_ERROR;
+  }
+
+  const result = await updateSkill(parsed.name!, resolved.body);
   if (!result.ok) {
     printFetchError("draft skills update", result.code, parsed.json);
     return EXIT_OPERATIONAL_ERROR;
