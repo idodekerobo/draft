@@ -1,4 +1,4 @@
-import { normalizeInputText } from "draft-core/live-sessions";
+import { normalizeInputText } from "../../live-sessions";
 
 export function cleanInputText(text: string): string {
   return normalizeInputText(text).trim();

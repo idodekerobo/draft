@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { agentIdFromFile, parseLiveLine } from "../../../ingestion/claude-code/parse-live-line";
+import { agentIdFromFile, parseLiveLine } from "../../../harnesses/claude/parse-live-line";
 
 function parse(record: Record<string, unknown>, offset = 0, file = "root.jsonl") {
   return parseLiveLine({ file, offset, raw: JSON.stringify(record) });

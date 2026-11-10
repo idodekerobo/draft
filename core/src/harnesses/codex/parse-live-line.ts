@@ -1,6 +1,6 @@
-import { stripPasteWrapper } from "draft-core/live-sessions";
-import type { IncomingLine } from "../claude-code/live-lines";
-import type { LiveLineInput, ParsedLiveEvent } from "../claude-code/parse-live-line";
+import { stripPasteWrapper } from "../../live-sessions";
+import type { IncomingLine } from "../claude/live-lines";
+import type { LiveLineInput, ParsedLiveEvent } from "../claude/parse-live-line";
 
 const TEXT_MAX_CHARS = 100_000;
 const TOOL_FIELD_MAX_CHARS = 20_000;

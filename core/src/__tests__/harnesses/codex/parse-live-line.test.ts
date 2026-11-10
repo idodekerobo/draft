@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { codexEventsFor, parseCodexLine } from "../../../ingestion/codex/parse-live-line";
-import { eventsForHarness } from "../../../ingestion/harness-lines";
+import { codexEventsFor, parseCodexLine } from "../../../harnesses/codex/parse-live-line";
 import turn from "./turn-with-command.json";
 
 const lines = turn.map((note, offset) => ({ file: "thread", offset, raw: JSON.stringify(note) }));
@@ -41,9 +40,8 @@ describe("parseCodexLine", () => {
   });
 });
 
-describe("codex line dispatch", () => {
-  it("is picked by the session's harness, and notes an oversize line", () => {
-    expect(eventsForHarness("codex", lines[0]!)[0]!.kind).toBe("user_message");
+describe("codex line parser", () => {
+  it("notes an oversize line", () => {
     expect(codexEventsFor({ file: "thread", offset: 2, oversizeBytes: 5 })[0]).toMatchObject({ kind: "session_note" });
   });
 });

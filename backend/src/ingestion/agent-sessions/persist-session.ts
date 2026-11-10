@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ParsedMessage } from "../claude-code/parse-transcript";
+import type { ParsedMessage } from "draft-core/harnesses/claude/parse-transcript";
 
 export interface PersistAgentSessionInput {
   workspace_id: string;

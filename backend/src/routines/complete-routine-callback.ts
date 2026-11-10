@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { authenticateSandboxCallbackRequest } from "../sandbox";
-import { isIncomingLine, type IncomingLine } from "../ingestion/claude-code/live-lines";
+import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { routineEventsForHarness } from "../ingestion/harness-lines";
-import { parseLiveLine } from "../ingestion/claude-code/parse-live-line";
+import { parseLiveLine } from "draft-core/harnesses/claude/parse-live-line";
 import { saveRefreshedCodexLogin } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";

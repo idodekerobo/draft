@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { codexExecEventsFor, parseCodexExecLine } from "../../../ingestion/codex/parse-exec-line";
-import { routineEventsForHarness } from "../../../ingestion/harness-lines";
+import { codexExecEventsFor, parseCodexExecLine } from "../../../harnesses/codex/parse-exec-line";
 
 const recorded = readFileSync(new URL("./exec-run.jsonl", import.meta.url), "utf8").trim().split("\n");
 const lines = recorded.map((raw, offset) => ({ file: "exec.jsonl", offset, raw }));
@@ -43,10 +42,7 @@ describe("parseCodexExecLine", () => {
     expect(parseCodexExecLine({ file: "exec.jsonl", offset: 9, raw: "not json" })).toEqual([]);
   });
 
-  it("notes a skipped oversize line, and a routine run picks this parser for Codex only", () => {
+  it("notes a skipped oversize line", () => {
     expect(codexExecEventsFor({ file: "exec.jsonl", offset: 3, oversizeBytes: 9_000_000 })[0]).toMatchObject({ kind: "session_note", payload: { reason: "too_large" } });
-    expect(routineEventsForHarness("codex", lines[4]!).map((e) => e.kind)).toEqual(["assistant_text"]);
-    const claudeLine = { file: "root.jsonl", offset: 0, raw: JSON.stringify({ type: "assistant", uuid: "u1", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } }) };
-    expect(routineEventsForHarness("claude", claudeLine).map((e) => e.kind)).toEqual(["assistant_text"]);
   });
 });

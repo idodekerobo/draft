@@ -1,5 +1,5 @@
-import type { IncomingLine } from "../claude-code/live-lines";
-import type { LiveLineInput, ParsedLiveEvent } from "../claude-code/parse-live-line";
+import type { IncomingLine } from "../claude/live-lines";
+import type { LiveLineInput, ParsedLiveEvent } from "../claude/parse-live-line";
 import { itemEvents, type CodexItem, type Pending } from "./parse-live-line";
 
 /** One item in the JSONL that `codex exec --json` prints. Same things as an app-server item, in snake_case. */

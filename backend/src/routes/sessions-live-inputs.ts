@@ -3,7 +3,7 @@ import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { getHarness } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
-import { cleanInputText, sameText } from "../ingestion/claude-code/live-input-text";
+import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
 import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 

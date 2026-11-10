@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { latestNativeTitle } from "../../../ingestion/claude-code/native-title";
+import { latestNativeTitle } from "../../../harnesses/claude/native-title";
 
 const line = (record: object, file = "root.jsonl") => ({ file, offset: 0, raw: JSON.stringify(record) });
 const ai = (aiTitle: string) => line({ type: "ai-title", aiTitle });

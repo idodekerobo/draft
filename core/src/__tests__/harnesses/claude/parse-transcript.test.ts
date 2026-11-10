@@ -1,7 +1,7 @@
 // Ported from flooently-brain/backend/src/ingest/claude-code.test.ts.
 
 import { describe, expect, test } from "bun:test";
-import { parseClaudeCodeJsonl } from "../../../ingestion/claude-code/parse-transcript";
+import { parseClaudeCodeJsonl } from "../../../harnesses/claude/parse-transcript";
 
 describe("parseClaudeCodeJsonl", () => {
   test("parses string user turns and assistant text blocks", () => {

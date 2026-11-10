@@ -1,5 +1,4 @@
-import { stripPasteWrapper } from "draft-core/live-sessions";
-import type { SessionEventKind } from "../../types/tables";
+import { stripPasteWrapper, type SessionEventKind } from "../../live-sessions";
 
 export interface LiveLineInput {
   file: string;

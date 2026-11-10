@@ -314,15 +314,8 @@ export interface ErrorRow {
 }
 
 export type SessionStatus = "starting" | "live" | "host_offline" | "ended";
-export type SessionEventKind =
-  | "user_message"
-  | "assistant_text"
-  | "tool_use"
-  | "tool_result"
-  | "thinking"
-  | "session_note"
-  | "permission_request"
-  | "permission_resolved";
+export type { SessionEventKind } from "draft-core/live-sessions";
+import type { SessionEventKind } from "draft-core/live-sessions";
 
 export interface SessionRow {
   id: string;

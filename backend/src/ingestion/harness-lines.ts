@@ -1,7 +1,7 @@
-import { codexExecEventsFor } from "./codex/parse-exec-line";
-import { codexEventsFor } from "./codex/parse-live-line";
-import { eventsFor as claudeEventsFor, type IncomingLine } from "./claude-code/live-lines";
-import type { ParsedLiveEvent } from "./claude-code/parse-live-line";
+import { codexExecEventsFor } from "draft-core/harnesses/codex/parse-exec-line";
+import { codexEventsFor } from "draft-core/harnesses/codex/parse-live-line";
+import { eventsFor as claudeEventsFor, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
+import type { ParsedLiveEvent } from "draft-core/harnesses/claude/parse-live-line";
 
 const MAPPERS: Record<string, (line: IncomingLine) => ParsedLiveEvent[]> = {
   claude: claudeEventsFor,
