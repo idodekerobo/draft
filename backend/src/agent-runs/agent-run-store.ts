@@ -21,6 +21,7 @@ import {
   type AnyDraftToolPermission,
 } from "draft-core/agent-run";
 import { isHarnessId } from "draft-core/harnesses";
+import { isLoggedCommand } from "../observability/logged-commands";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../observability/record-query-log";
 import type { AgentRunRow } from "../types/tables";
 import type { ToolCallRecord } from "./invoke-tool";
@@ -169,6 +170,7 @@ export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord
     if (record.caller.type === "user") {
       if (record.caller.via === "app") return;
       const command = record.caller.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
+      if (!isLoggedCommand(command)) return;
       await recordAgentQueryLog(client, {
         workspaceId: record.caller.workspaceId,
         userId: record.caller.userId,

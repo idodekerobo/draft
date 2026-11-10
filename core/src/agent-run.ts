@@ -129,6 +129,12 @@ export const DRAFT_TOOLS = [
   { name: "context.export", access: "read" },
   { name: "sources.search", access: "read" },
   { name: "sources.read", access: "read" },
+  { name: "skills.list", access: "read" },
+  { name: "skills.read", access: "read" },
+  { name: "skills.add", access: "write" },
+  { name: "skills.update", access: "write" },
+  { name: "skills.delete", access: "write" },
+  { name: "routines.list", access: "read" },
 ] as const;
 export type DraftToolName = (typeof DRAFT_TOOLS)[number]["name"];
 export type DraftToolAccess = (typeof DRAFT_TOOLS)[number]["access"];
@@ -144,6 +150,12 @@ export interface DraftToolLimits {
   "context.export": Record<string, never>;
   "sources.search": Record<string, never>;
   "sources.read": Record<string, never>;
+  "skills.list": Record<string, never>;
+  "skills.read": Record<string, never>;
+  "skills.add": Record<string, never>;
+  "skills.update": Record<string, never>;
+  "skills.delete": Record<string, never>;
+  "routines.list": Record<string, never>;
 }
 
 export interface DraftToolPermission<T extends DraftToolName = DraftToolName> {

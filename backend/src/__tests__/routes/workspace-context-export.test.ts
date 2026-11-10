@@ -47,6 +47,13 @@ mock.module("../../observability/record-query-log", () => ({
   },
 }));
 
+let hiddenPaths: string[] = [];
+mock.module("../../agent-runs/visible-context", () => ({
+  visibleContext: (_caller: unknown, documents: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(documents).filter(([path]) => !hiddenPaths.includes(path))),
+  canSeeContextPath: () => true,
+}));
+
 const routes = await import("../../routes/workspace-context-export");
 const { createMcpHandler } = await import("@modelcontextprotocol/server");
 const { buildMcpServer } = await import("../../mcp/tools");
@@ -57,9 +64,10 @@ function request(params: Record<string, string>, headers: Record<string, string>
 }
 
 async function mintLink(): Promise<string> {
-  const response = await routes.exportLinkPOST(request({ id: "22222222-2222-4222-8222-222222222222" }));
-  const body = (await response.json()) as { url: string };
-  return body.url.split("/context-exports/")[1]!;
+  const { createContextExportLink } = await import("../../context-export/link");
+  const result = await createContextExportLink("22222222-2222-4222-8222-222222222222", caller.userId, undefined, { from: (table: string) => queryBuilder(table) } as never);
+  if (!result.ok) throw new Error("no link");
+  return result.link.url.split("/context-exports/")[1]!;
 }
 
 describe("context export routes", () => {
@@ -69,26 +77,6 @@ describe("context export routes", () => {
     logged = [];
   });
 
-  it("returns an authenticated zip with a log row", async () => {
-    const response = await routes.exportGET(request({ id: "22222222-2222-4222-8222-222222222222" }));
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("application/zip");
-    expect(response.headers.get("content-disposition")).toContain("draft-context-v3-");
-    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    expect(strFromU8(entries["draft-context/memory/2026-10.md"]!)).toBe("remember");
-    await Promise.resolve();
-    expect(logged[0]).toMatchObject({ command: "context.export", workspaceId: "22222222-2222-4222-8222-222222222222" });
-  });
-
-  it("does not log an export the web app or desktop app asked for", async () => {
-    for (const headers of [{ origin: "https://app.draftai.us" }, { "x-draft-client": "desktop" }]) {
-      const response = await routes.exportGET(request({ id: "22222222-2222-4222-8222-222222222222" }, headers));
-      expect(response.status).toBe(200);
-    }
-    await Promise.resolve();
-    expect(logged).toEqual([]);
-  });
-
   it("still logs a redeemed link, which is how an agent downloads one", async () => {
     const token = await mintLink();
     await routes.redeemGET(request({ token }, { "x-draft-client": "desktop" }));
@@ -96,16 +84,26 @@ describe("context export routes", () => {
     expect(logged[0]).toMatchObject({ command: "context.export", argsJson: { via: "link" } });
   });
 
-  it("denies a forbidden workspace", async () => {
+  it("answers 404 for a link when there is no context yet, and 403 when access was lost", async () => {
+    const token = await mintLink();
+    queryResult = { data: null, error: null };
+    expect((await routes.redeemGET(request({ token }))).status).toBe(404);
+    queryResult = { data: version, error: null };
     accessResult = Response.json({ error: "forbidden" }, { status: 403 });
-    expect((await routes.exportGET(request({ id: "22222222-2222-4222-8222-222222222222" }))).status).toBe(403);
-    expect((await routes.exportLinkPOST(request({ id: "22222222-2222-4222-8222-222222222222" }))).status).toBe(403);
+    expect((await routes.redeemGET(request({ token }))).status).toBe(403);
   });
 
-  it("returns 404 when there is no context yet", async () => {
-    queryResult = { data: null, error: null };
-    expect((await routes.exportGET(request({ id: "22222222-2222-4222-8222-222222222222" }))).status).toBe(404);
-    expect((await routes.exportLinkPOST(request({ id: "22222222-2222-4222-8222-222222222222" }))).status).toBe(404);
+  it("builds the zip from what visibleContext lets that person see", async () => {
+    const token = await mintLink();
+    queryResult = {
+      data: { ...version, documents_json: { ...version.documents_json, "private/notes.md": { content: "secret", sha256: "y".repeat(64) } } },
+      error: null,
+    };
+    hiddenPaths = ["private/notes.md"];
+    const entries = unzipSync(new Uint8Array(await (await routes.redeemGET(request({ token }))).arrayBuffer()));
+    expect(Object.keys(entries).some((name) => name.endsWith("private/notes.md"))).toBe(false);
+    expect(strFromU8(entries["draft-context/memory/2026-10.md"]!)).toBe("remember");
+    hiddenPaths = [];
   });
 
   it("mints a link that redeems to a no-store zip", async () => {

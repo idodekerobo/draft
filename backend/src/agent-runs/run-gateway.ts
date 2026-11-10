@@ -3,7 +3,8 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/agent-run";
 import { auditToDatabase, loadActiveAgentRunSpec } from "./agent-run-store";
-import { invokeTool, type InvokeToolDeps, type InvokeToolResult } from "./invoke-tool";
+import { toHttpResponse } from "./http-result";
+import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
 import { toMcpResult } from "./mcp-result";
 import { remoteToolsForRun } from "./remote-mcp";
 import { AgentRunTokenError, verifyAgentRunToken } from "./run-token";
@@ -22,20 +23,6 @@ export interface RunGatewayDeps {
 type Authenticated = { ok: true; run: AgentRunSpec } | { ok: false; response: Response };
 
 const unauthorized = (): Authenticated => ({ ok: false, response: new Response(null, { status: 401 }) });
-
-function statusFor(result: InvokeToolResult): number {
-  switch (result.status) {
-    case "ok":
-    case "conflict":
-      return 200;
-    case "denied":
-      return 403;
-    case "invalid":
-      return 400;
-    case "error":
-      return 500;
-  }
-}
 
 /**
  * The run-scoped edge. A run proves itself with its token, and the gateway builds the ToolCaller.
@@ -91,7 +78,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
       }
     }
     const result = await invokeTool(await depsFor(auth.run), { type: "run", run: auth.run }, toolName, args);
-    return Response.json(result, { status: statusFor(result) });
+    return toHttpResponse(result);
   }
 
   async function mcp(request: Request, runId: string): Promise<Response> {

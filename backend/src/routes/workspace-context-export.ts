@@ -1,16 +1,13 @@
-import { withAuth } from "../auth/withAuth";
+import { parseUserId, parseWorkspaceId } from "draft-core/agent-run";
+import { visibleContext } from "../agent-runs/visible-context";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { contextExportSettings } from "../config";
-import { createContextExportLink } from "../context-export/link";
 import { ContextExportTokenError, verifyContextExportToken } from "../context-export/token";
 import { serviceClient } from "../db/client";
-import { isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { buildContextExport } from "../services/context-export";
 import { getWorkspaceContext } from "../services/workspace-context";
 
-type ExportRequest = Bun.BunRequest<"/workspaces/:id/context/export">;
-type ExportLinkRequest = Bun.BunRequest<"/workspaces/:id/context/export-links">;
 type RedeemRequest = Bun.BunRequest<"/context-exports/:token">;
 
 async function zipResponse(workspaceId: string, userId: string, via: string, logAsAgent: boolean): Promise<Response> {
@@ -19,7 +16,9 @@ async function zipResponse(workspaceId: string, userId: string, via: string, log
 
   let exported: ReturnType<typeof buildContextExport>;
   try {
-    exported = buildContextExport(result.snapshot);
+    // The link is a person's access in an agent's hands, so it shows what that person may see.
+    const caller = { type: "user" as const, userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "cli" as const };
+    exported = buildContextExport({ ...result.snapshot, documents: visibleContext(caller, result.snapshot.documents) });
   } catch (error) {
     console.error("context export: build failed", error);
     return Response.json({ error: "export_failed" }, { status: 500 });
@@ -42,21 +41,6 @@ async function zipResponse(workspaceId: string, userId: string, via: string, log
     },
   });
 }
-
-export const exportGET = withAuth<ExportRequest>(async (req, caller) => {
-  const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
-  if (denied) return denied;
-  return zipResponse(req.params.id, caller.userId, "authenticated", isAgentRequest(req));
-});
-
-export const exportLinkPOST = withAuth<ExportLinkRequest>(async (req, caller) => {
-  const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
-  if (denied) return denied;
-
-  const result = await createContextExportLink(req.params.id, caller.userId);
-  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
-  return Response.json(result.link);
-});
 
 // No auth header: the signed token is the capability. Access is re-checked
 // for the signed user so a removed member's links stop working.

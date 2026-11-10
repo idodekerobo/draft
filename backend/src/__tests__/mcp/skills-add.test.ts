@@ -6,7 +6,7 @@ const logged: Array<{ command: string; argsJson: Record<string, unknown> }> = []
 
 function maybeSingleFor(table: string) {
   if (table === "users") return { primary_team_id: "team-1" };
-  if (table === "workspaces") return { id: "ws-1" };
+  if (table === "workspaces") return { id: "22222222-2222-4222-8222-222222222222" };
   throw new Error(`unexpected table: ${table}`);
 }
 
@@ -44,7 +44,7 @@ const { createMcpHandler } = await import("@modelcontextprotocol/server");
 const { buildMcpServer } = await import("../../mcp/tools");
 
 async function callSkillsAdd(scopes: string[], args: Record<string, unknown>) {
-  const handler = createMcpHandler(() => buildMcpServer("user-1", scopes));
+  const handler = createMcpHandler(() => buildMcpServer("11111111-1111-4111-8111-111111111111", scopes));
   const response = await handler.fetch(
     new Request("http://internal.test/mcp", {
       method: "POST",
@@ -82,7 +82,7 @@ describe("mcp skills.add", () => {
     const result = await callSkillsAdd(["read", "write"], validArgs);
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(result.content[0]!.text).name).toBe("weekly-recap");
-    expect(insertedRows[0]).toMatchObject({ workspace_id: "ws-1", created_by: "user-1" });
+    expect(insertedRows[0]).toMatchObject({ workspace_id: "22222222-2222-4222-8222-222222222222", created_by: "11111111-1111-4111-8111-111111111111" });
   });
 
   it("logs the name and size, not the skill content", async () => {

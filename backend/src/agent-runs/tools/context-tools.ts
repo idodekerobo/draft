@@ -18,6 +18,7 @@ function requireRun(caller: ToolCaller, tool: string) {
 export function createContextTools(client: SupabaseClient) {
   const write = defineTool({
     name: "context.write",
+    callers: ["run"],
     description:
       "Write Markdown documents to the company's shared context. Each change is checked against that document only. " +
       "Changes that do not conflict are written. For each one that changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, or drop it.",
