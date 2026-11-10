@@ -59,7 +59,7 @@ import {
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
 import { realtime, setSignalSender } from "./main/realtime/instance";
-import { ServerError, apiUrl, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
+import { ServerError, apiUrl, callServerTool, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 import { logLoginCleared } from "./main/auth/auth-log";
 const presenceHub = new PresenceHub(connectPresence);
 setSignalSender(
@@ -295,11 +295,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // This RPC always reads the current cloud snapshot. The renderer owns
           // the session-lifetime snapshot used to survive Context tab remounts;
           // a persistent local cache/mirror remains deferred.
-          const context = await fetchServerJSON<{
-            documents: Record<string, { content: string; sha256: string }>;
-          }>(`workspaces/${workspaceId}/context`);
+          const context = await callServerTool<{
+            documents: Array<{ path: string; content: string; sha256: string }>;
+          }>(workspaceId, "context.read");
 
-          return documentsToEntries(context.documents);
+          return documentsToEntries(Object.fromEntries(context.documents.map(({ path, ...document }) => [path, document])));
         } catch {
           return [];
         }
@@ -663,7 +663,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           });
           if (!folderPath) return { ok: false, canceled: true };
 
-          const response = await fetchServer(`workspaces/${workspaceId}/context/export`);
+          // The tool returns a short-lived signed link; the link is the credential, so it is fetched without a token.
+          const { url } = await callServerTool<{ url: string }>(workspaceId, "context.export");
+          const response = await fetch(url);
+          if (!response.ok) throw new Error("Export failed.");
           const fileName = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "draft-context.zip";
           const target = join(folderPath, basename(fileName));
           writeFileSync(target, new Uint8Array(await response.arrayBuffer()));
@@ -855,7 +858,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { hasContext: false };
         try {
-          await fetchServerJSON(`workspaces/${workspaceId}/context`);
+          // Asks for no document: it only answers whether a version exists, and refuses with no_context_yet when none does.
+          await callServerTool(workspaceId, "context.read", { paths: [] });
           return { hasContext: true };
         } catch {
           // Covers both the expected "no_context_yet" 404 and any other failure

@@ -94,3 +94,22 @@ export async function fetchServerJSON<T>(path: string, init?: RequestInit): Prom
   const response = await fetchServer(path, init);
   return response.json() as Promise<T>;
 }
+
+type FetchJson = <T>(path: string, init?: RequestInit) => Promise<T>;
+
+/**
+ * Calls one of Draft's tools as the signed-in person and returns its output.
+ * A tool refuses in its output as `{ error }`; that is thrown as a ServerError with the same code.
+ */
+export async function callTool<T>(fetchJson: FetchJson, workspaceId: string, name: string, input: unknown = {}): Promise<T> {
+  const envelope = await fetchJson<{ output: unknown }>(`workspaces/${workspaceId}/tools/${name}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const refusal = (envelope.output as { error?: unknown } | null)?.error;
+  if (typeof refusal === "string") throw new ServerError(refusal);
+  return envelope.output as T;
+}
+
+export const callServerTool = <T>(workspaceId: string, name: string, input?: unknown) => callTool<T>(fetchServerJSON, workspaceId, name, input);

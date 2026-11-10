@@ -32,18 +32,3 @@ export async function requestApi<T>(path: string, token: string, init: RequestIn
   if (!response.ok) throw toApiError(response, body);
   return body as T;
 }
-
-/** Like requestApi, for endpoints that return a file. fileName comes from Content-Disposition. */
-export async function requestApiBlob(
-  path: string,
-  token: string,
-  init: RequestInit = {},
-): Promise<{ blob: Blob; fileName: string | null }> {
-  const response = await send(path, token, init);
-  if (!response.ok) {
-    throw toApiError(response, await response.json().catch(() => null));
-  }
-  const disposition = response.headers.get("content-disposition") ?? "";
-  const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? null;
-  return { blob: await response.blob(), fileName };
-}

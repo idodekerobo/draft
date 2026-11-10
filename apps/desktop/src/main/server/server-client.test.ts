@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { AuthRefreshError } from "draft-core/auth-state";
-import { createServerFetch, ServerError, SessionExpiredError, setSessionExpiredHandler, type ServerFetchDeps, type SessionExpiredCause } from "./server-client";
+import { callTool, createServerFetch, ServerError, SessionExpiredError, setSessionExpiredHandler, type ServerFetchDeps, type SessionExpiredCause } from "./server-client";
 
 function setup(statuses: number[], token: ServerFetchDeps["token"] = async (force) => (force ? "fresh" : "old")) {
   const requests: string[] = [];
@@ -86,5 +86,26 @@ describe("fetchServer session expiry", () => {
     const t = setup([], async () => { throw new AuthRefreshError("transient"); });
     await expect(t.fetchServer("x")).rejects.toBeInstanceOf(AuthRefreshError);
     expect(t.expired()).toBe(0);
+  });
+});
+
+describe("callTool", () => {
+  test("posts the input to the tool's path and returns its output", async () => {
+    const seen: Array<{ path: string; init?: RequestInit }> = [];
+    const output = await callTool<{ n: number }>(
+      (async (path: string, init?: RequestInit) => (seen.push({ path, init }), { status: "ok", output: { n: 1 } })) as never,
+      "ws-1",
+      "context.read",
+      { paths: ["a.md"] },
+    );
+    expect(output).toEqual({ n: 1 });
+    expect(seen[0]!.path).toBe("workspaces/ws-1/tools/context.read");
+    expect(seen[0]!.init).toMatchObject({ method: "POST", body: JSON.stringify({ paths: ["a.md"] }) });
+  });
+
+  test("throws a ServerError with the tool's code when its output is a refusal", async () => {
+    const error = await callTool((async () => ({ status: "ok", output: { error: "no_context_yet" } })) as never, "ws-1", "context.read").catch((caught) => caught);
+    expect(error).toBeInstanceOf(ServerError);
+    expect(error).toMatchObject({ code: "no_context_yet" });
   });
 });
