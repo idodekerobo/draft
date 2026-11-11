@@ -246,6 +246,7 @@ export interface WorkspaceEventRow {
   sequence_number: number;
   event_type: WorkspaceEventType;
   synthesis_run_id: string | null;
+  agent_run_id: string | null;
   source_connection_id: string | null;
   context_version_id: string | null;
   summary: string;
@@ -305,6 +306,7 @@ export interface ErrorRow {
   source_connection_id: string | null;
   scheduled_task_id: string | null;
   synthesis_run_id: string | null;
+  agent_run_id: string | null;
   session_id: string | null;
   operation: ErrorOperation;
   message: string;
@@ -400,10 +402,29 @@ export interface AgentRunRow {
   summary: string | null;
   failure_code: string | null;
   failure_detail: string | null;
+  outcome: SynthesisRunOutcome | null;
+  result_hash: string | null;
+  needs_input_json: unknown[] | null;
+  needs_input_resolution: string | null;
+  needs_input_resolved_at: string | null;
+  needs_input_resolved_by: string | null;
+  transcript_json: unknown[] | null;
+  scheduled_task_id: string | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Immutable membership row: no updated_at.
+export interface AgentRunSourceItemRow {
+  workspace_id: string;
+  agent_run_id: string;
+  source_item_id: string;
+  position: number;
+  source_item_version: string;
+  content_hash: string;
+  created_at: string;
 }
 
 // Immutable audit row: no updated_at.

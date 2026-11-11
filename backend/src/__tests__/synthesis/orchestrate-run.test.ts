@@ -38,20 +38,23 @@ function createFakeClient(options: FakeClientOptions = {}) {
   const runRow = { id: runId, workspace_id: workspaceId, base_context_version_id: baseVersionId };
 
   function from(table: string) {
-    if (table === "synthesis_runs") {
+    if (table === "agent_runs") {
       return {
-        select: () => ({
-          eq: () => ({
+        select: () => {
+          const lookup = {
+            eq: () => lookup,
             single: async () => ({ data: runRow, error: null }),
             // Header-based workspace lookup: always "not found" so recordError
             // takes its no-DB console fallback path in every test here.
             maybeSingle: async () => ({ data: null, error: null }),
-          }),
-        }),
+          };
+          return lookup;
+        },
         update: (payload: Record<string, unknown>) => ({
           eq: (_column: string, id: string) => {
             // failSynthesisRun's conditional update: .eq().in().select()
-            const failure = {
+            const failure: Record<string, unknown> = {
+              eq: () => failure,
               in: () => ({
                 select: async () => {
                   calls.failedUpdates.push(payload);
@@ -264,7 +267,7 @@ describe("completeSynthesisRunCallback failure handling", () => {
     expect(calls.failedUpdates).toHaveLength(1);
     expect(calls.failedUpdates[0]).toMatchObject({ status: "failed", outcome: "failure" });
     expect(calls.errorInserts).toHaveLength(1);
-    expect(calls.errorInserts[0]).toMatchObject({ synthesis_run_id: runId, operation: "execution" });
+    expect(calls.errorInserts[0]).toMatchObject({ agent_run_id: runId, operation: "execution" });
     expect(calls.errorInserts[0].detail_json).toMatchObject({
       code: "synthesis_runner_failed",
       runner_failure_code: "claude_exit",

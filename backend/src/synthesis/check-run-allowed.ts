@@ -36,7 +36,7 @@ export async function checkRunAllowed(
   }
 
   // Fail fast here rather than deep inside resolveInferenceCredential,
-  // after prepareRun has already created a synthesis_runs row.
+  // after prepareRun has already created the run row.
   if (!workspace.inference_credential_id) {
     return { ok: false, reason: "no inference credential configured for this workspace" };
   }
@@ -47,8 +47,9 @@ export async function checkRunAllowed(
     startOfUtcDay.setUTCHours(0, 0, 0, 0);
 
     const { count, error: countError } = await client
-      .from("synthesis_runs")
+      .from("agent_runs")
       .select("id", { count: "exact", head: true })
+      .eq("kind", "synthesis")
       .eq("workspace_id", workspaceId)
       .gte("created_at", startOfUtcDay.toISOString());
     if (countError) throw countError;

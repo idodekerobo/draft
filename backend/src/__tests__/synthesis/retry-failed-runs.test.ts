@@ -9,7 +9,7 @@ const minutesAgo = (minutes: number) => new Date(now.getTime() - minutes * 60_00
 
 function setup(runs: FakeRunRow[], options: { pending?: string[]; launch?: (...args: never[]) => unknown } = {}) {
   const { client } = createFakeRunsClient({
-    synthesis_runs: runs,
+    agent_runs: runs,
     workspaces: [
       { id: "workspace-a", runs_enabled: true, max_runs_per_day: null, inference_credential_id: "cred" },
     ],

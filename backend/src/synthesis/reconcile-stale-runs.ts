@@ -29,8 +29,9 @@ export async function sweepStaleSynthesisRuns(
   // A separate read, since UPDATE ... RETURNING would only give us the
   // post-update ("failed") status, not the original one.
   let selectQuery = client
-    .from("synthesis_runs")
+    .from("agent_runs")
     .select("id, workspace_id, status")
+    .eq("kind", "synthesis")
     .in("status", ACTIVE_WRITER_STATUSES)
     .lt("created_at", cutoffIso);
   if (options.workspaceId) {

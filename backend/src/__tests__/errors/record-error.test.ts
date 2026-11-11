@@ -28,7 +28,7 @@ describe("recordError", () => {
       workspaceId: "ws-1",
       sourceConnectionId: "conn-1",
       scheduledTaskId: "task-1",
-      synthesisRunId: "run-1",
+      agentRunId: "run-1",
       operation: "execution",
       message: "failed https://example.test/cb?token=secret&ok=1 and https://storage.test/file?X-Goog-Credential=user&X-Goog-Signature=signed&X-Goog-Expires=60",
       code: "sandbox_launch_failed",
@@ -57,7 +57,7 @@ describe("recordError", () => {
       workspace_id: "ws-1",
       source_connection_id: "conn-1",
       scheduled_task_id: "task-1",
-      synthesis_run_id: "run-1",
+      agent_run_id: "run-1",
       operation: "execution",
       message: "failed https://example.test/cb?token=[REDACTED]&ok=1 and https://storage.test/file?X-Goog-Credential=[REDACTED]&X-Goog-Signature=[REDACTED]&X-Goog-Expires=[REDACTED]",
       detail_json: {
@@ -138,7 +138,7 @@ describe("recordError", () => {
       allowUnattributed: true,
       sourceConnectionId: "conn-1",
       scheduledTaskId: "task-1",
-      synthesisRunId: "run-1",
+      agentRunId: "run-1",
       operation: "ingestion",
       message: "hook failed",
       code: "upload-failed",
@@ -148,7 +148,7 @@ describe("recordError", () => {
       workspace_id: null,
       source_connection_id: null,
       scheduled_task_id: null,
-      synthesis_run_id: null,
+      agent_run_id: null,
       operation: "ingestion",
     });
   });

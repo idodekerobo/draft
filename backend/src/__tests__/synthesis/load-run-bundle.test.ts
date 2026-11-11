@@ -46,9 +46,10 @@ function createFakeClient() {
   ];
 
   function from(table: string) {
-    if (table === "synthesis_runs") {
+    if (table === "agent_runs") {
       return {
         select: () => ({
+          eq: () => ({
           order: () => ({
             eq: () => ({
               limit: () => ({
@@ -63,6 +64,7 @@ function createFakeClient() {
                 }),
               }),
             }),
+          }),
           }),
         }),
       };
@@ -96,7 +98,7 @@ function createFakeClient() {
         }),
       };
     }
-    if (table === "synthesis_run_source_items") {
+    if (table === "agent_run_source_items") {
       return {
         select: () => ({
           eq: () => ({
@@ -104,7 +106,7 @@ function createFakeClient() {
               data: [
                 {
                   workspace_id: ids.workspace,
-                  synthesis_run_id: ids.run,
+                  agent_run_id: ids.run,
                   source_item_id: ids.sourceA,
                   source_item_version: "ext-a",
                   content_hash: sha256(contentA),

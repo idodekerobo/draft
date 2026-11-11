@@ -28,6 +28,16 @@ create table agent_runs (
   summary                  text,
   failure_code             text,
   failure_detail           text,
+  -- How a synthesis run ended, and what synthesis keeps on its run.
+  outcome                  text check (outcome in ('changed', 'no_change', 'failure', 'stale')),
+  result_hash              text check (result_hash is null or result_hash ~ '^[0-9a-f]{64}$'),
+  needs_input_json         jsonb,
+  needs_input_resolution   text,
+  needs_input_resolved_at  timestamptz,
+  needs_input_resolved_by  uuid references users(id) on delete set null,
+  -- The full stream-json transcript of a run that does not stream to a session.
+  transcript_json          jsonb,
+  scheduled_task_id        uuid,
   started_at               timestamptz,
   completed_at             timestamptz,
   created_at               timestamptz not null default now(),
@@ -40,7 +50,9 @@ create table agent_runs (
   foreign key (retry_of_run_id, workspace_id)
     references agent_runs(id, workspace_id) on delete restrict,
   foreign key (session_id, workspace_id)
-    references sessions(id, workspace_id) on delete set null (session_id)
+    references sessions(id, workspace_id) on delete set null (session_id),
+  foreign key (scheduled_task_id, workspace_id)
+    references scheduled_tasks(id, workspace_id) on delete restrict
 );
 
 create index agent_runs_workspace_created_idx on agent_runs (workspace_id, created_at desc);

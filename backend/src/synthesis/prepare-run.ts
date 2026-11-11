@@ -5,6 +5,8 @@ import { ensureMemoryProvisioned, seedEmptyWorkspace } from "./provision-memory"
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";
 import { getLatestSynthesisRun } from "./latest-run";
+import { buildSynthesisRunSpec } from "./run-spec";
+import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type {
   SourceItemRow,
@@ -13,11 +15,11 @@ import type {
 } from "../types/tables";
 
 // Bumped whenever the rendered prompt/schema contract (task #4) changes in a
-// way that should be distinguishable in synthesis_runs.prompt_version history.
+// way that should be distinguishable in agent_runs.prompt_version history.
 const PROMPT_VERSION = "synthesis-v2";
 
-// Postgres unique_violation, raised here by synthesis_runs_one_active_writer
-// or synthesis_runs_workspace_id_idempotency_key_key.
+// Postgres unique_violation, raised here by agent_runs_one_active_synthesis
+// or agent_runs_workspace_id_idempotency_key_key.
 const UNIQUE_VIOLATION = "23505";
 
 // Thrown when a workspace already has a run in preparing/running/validating/
@@ -36,6 +38,15 @@ export class OccurrenceAlreadyDispatchedError extends Error {
   constructor(public readonly workspaceId: string, public readonly idempotencyKey: string) {
     super(`Occurrence ${idempotencyKey} for workspace ${workspaceId} was already dispatched`);
     this.name = "OccurrenceAlreadyDispatchedError";
+  }
+}
+
+// Thrown when the run row exists but preparation failed after it was created, so the caller can fail that
+// row instead of leaving it active until the stale sweep.
+export class RunPreparationFailedError extends Error {
+  constructor(public readonly runId: string, public readonly cause: unknown) {
+    super(`Preparing run ${runId} failed after its row was created`);
+    this.name = "RunPreparationFailedError";
   }
 }
 
@@ -170,38 +181,44 @@ export async function prepareRun(
   const latestRun = await getLatestSynthesisRun(client, options.workspaceId);
   const attempt = latestRun?.status === "failed" ? latestRun.attempt + 1 : 1;
 
-  // "preparing", not "queued": synthesis_runs_one_active_writer only guards
+  // "preparing", not "queued": agent_runs_one_active_synthesis only guards
   // preparing/running/validating/committing, so the row is protected from
   // the moment it's created rather than only once markRunLaunched promotes it.
-  const { data: runData, error: runError } = await client
-    .from("synthesis_runs")
-    .insert({
-      workspace_id: options.workspaceId,
-      scheduled_task_id: options.scheduledTaskId ?? null,
-      idempotency_key: idempotencyKey,
+  // The launcher fills in the tools and the result schema once it knows them.
+  const runId = randomUUID();
+  const placeholder = buildSynthesisRunSpec({
+    runId,
+    workspaceId: options.workspaceId,
+    triggerType: options.triggerType,
+    scheduledTaskId: options.scheduledTaskId,
+    occurrenceAt: options.occurrenceAt,
+    retryOfRunId: options.retryOfRunId,
+    contextVersionId: baseContextVersionId,
+    resultSchema: {},
+  });
+  try {
+    await createAgentRun(client, {
+      spec: placeholder,
       status: "preparing",
-      trigger_type: options.triggerType,
-      base_context_version_id: baseContextVersionId,
       attempt,
-      retry_of_run_id: options.retryOfRunId ?? null,
-      prompt_version: PROMPT_VERSION,
-    })
-    .select("id")
-    .single();
-  if (runError) {
+      idempotencyKey,
+      promptVersion: PROMPT_VERSION,
+      scheduledTaskId: options.scheduledTaskId,
+    });
+  } catch (runError) {
     // Checked by message, not just the 23505 code: the two constraints this
     // table can violate mean different things to the caller.
-    if (runError.code === UNIQUE_VIOLATION) {
-      if (runError.message.includes("synthesis_runs_one_active_writer")) {
+    const failure = runError as { code?: string; message?: string };
+    if (failure.code === UNIQUE_VIOLATION) {
+      if (failure.message?.includes("agent_runs_one_active_synthesis")) {
         throw new WorkspaceRunAlreadyActiveError(options.workspaceId);
       }
-      if (runError.message.includes("synthesis_runs_workspace_id_idempotency_key_key")) {
+      if (failure.message?.includes("agent_runs_workspace_id_idempotency_key_key")) {
         throw new OccurrenceAlreadyDispatchedError(options.workspaceId, idempotencyKey);
       }
     }
     throw runError;
   }
-  const runId = (runData as { id: string }).id;
 
   if (options.sourceItemIds.length > 0) {
     const sourceItemsById = new Map(
@@ -214,7 +231,7 @@ export async function prepareRun(
       if (!sourceItem) throw new Error(`Missing source item ${sourceItemId}`);
       return {
         workspace_id: options.workspaceId,
-        synthesis_run_id: runId,
+        agent_run_id: runId,
         source_item_id: sourceItemId,
         position,
         source_item_version: sourceItem.external_version,
@@ -223,9 +240,9 @@ export async function prepareRun(
     });
 
     const { error: membershipError } = await client
-      .from("synthesis_run_source_items")
+      .from("agent_run_source_items")
       .insert(membershipRows);
-    if (membershipError) throw membershipError;
+    if (membershipError) throw new RunPreparationFailedError(runId, membershipError);
   }
 
   return runId;
@@ -240,7 +257,7 @@ export async function markRunLaunched(
     client ?? (await import("../db/client")).serviceClient;
 
   const { error } = await resolvedClient
-    .from("synthesis_runs")
+    .from("agent_runs")
     .update({
       status: "running",
       started_at: new Date().toISOString(),

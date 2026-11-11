@@ -6,7 +6,7 @@ import { MAX_FAST_RETRIES, retryPlan } from "./handle-run-failure";
 import { getLatestSynthesisRun } from "./latest-run";
 import { launchSynthesisRun } from "./orchestrate-run";
 import { OccurrenceAlreadyDispatchedError, WorkspaceRunAlreadyActiveError } from "./prepare-run";
-import type { SynthesisRunRow } from "../types/tables";
+import type { AgentRunRow } from "../types/tables";
 
 // Older failures are left to the normal cron.
 const RETRY_WINDOW_MS = 2 * 60 * 60_000;
@@ -21,7 +21,7 @@ export interface RetryFailedRunsOptions {
 }
 
 type FailedRun = Pick<
-  SynthesisRunRow,
+  AgentRunRow,
   "id" | "workspace_id" | "scheduled_task_id" | "attempt" | "completed_at"
 >;
 
@@ -36,8 +36,9 @@ export async function retryFailedSynthesisRuns(
   const getPending = options.getPendingSourceItemIds ?? getPendingSynthesisSourceItemIds;
 
   const { data, error } = await client
-    .from("synthesis_runs")
+    .from("agent_runs")
     .select("id, workspace_id, scheduled_task_id, attempt, completed_at")
+    .eq("kind", "synthesis")
     .eq("status", "failed")
     .lte("attempt", MAX_FAST_RETRIES)
     .gte("completed_at", new Date(now.getTime() - RETRY_WINDOW_MS).toISOString());

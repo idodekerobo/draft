@@ -73,7 +73,7 @@ function input(): BuildRunBundleInput {
         },
         membership: {
           workspace_id: ids.workspace,
-          synthesis_run_id: ids.run,
+          agent_run_id: ids.run,
           source_item_id: ids.source,
           source_item_version: "1",
           content_hash: hash(sourceContent),
@@ -194,7 +194,7 @@ describe("validated run bundle", () => {
     );
 
     const wrongRun = input();
-    wrongRun.sources[0].membership.synthesis_run_id =
+    wrongRun.sources[0].membership.agent_run_id =
       "77777777-7777-4777-8777-777777777777";
     expect(() => buildValidatedRunBundle(wrongRun)).toThrow(
       "source membership run does not match",

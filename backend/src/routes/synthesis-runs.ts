@@ -8,15 +8,16 @@ import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
 import { recordRouteError } from "../errors/route-error";
-import type { SynthesisRunRow } from "../types/tables";
+import type { AgentRunRow } from "../types/tables";
+import { synthesisTriggerType } from "../synthesis/run-spec";
 
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
 
 const RUNS_LIST_LIMIT = 50;
 
 type SynthesisRunListRow = Pick<
-  SynthesisRunRow,
-  "id" | "status" | "outcome" | "trigger_type" | "result_summary" | "started_at" | "completed_at" | "created_at"
+  AgentRunRow,
+  "id" | "status" | "outcome" | "trigger" | "summary" | "started_at" | "completed_at" | "created_at"
 >;
 
 export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
@@ -24,8 +25,9 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
   if (denied) return denied;
 
   const { data, error } = await serviceClient
-    .from("synthesis_runs")
-    .select("id, status, outcome, trigger_type, result_summary, started_at, completed_at, created_at")
+    .from("agent_runs")
+    .select("id, status, outcome, trigger, summary, started_at, completed_at, created_at")
+    .eq("kind", "synthesis")
     .eq("workspace_id", req.params.id)
     .order("created_at", { ascending: false })
     .limit(RUNS_LIST_LIMIT)
@@ -41,8 +43,8 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
       id: run.id,
       status: run.status,
       outcome: run.outcome,
-      triggerType: run.trigger_type,
-      resultSummary: run.result_summary,
+      triggerType: synthesisTriggerType(run.trigger),
+      resultSummary: run.summary,
       startedAt: run.started_at,
       completedAt: run.completed_at,
       createdAt: run.created_at,

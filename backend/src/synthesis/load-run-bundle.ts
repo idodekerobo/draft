@@ -7,9 +7,9 @@ import {
   type ValidatedRunBundle,
 } from "./context-version-files";
 import type {
+  AgentRunRow,
+  AgentRunSourceItemRow,
   SourceItemRow,
-  SynthesisRunRow,
-  SynthesisRunSourceItemRow,
   WorkspaceContextVersionRow,
 } from "../types/tables";
 
@@ -26,14 +26,14 @@ export interface LoadRunBundleOptions {
 }
 
 type SelectedRun = Pick<
-  SynthesisRunRow,
+  AgentRunRow,
   "id" | "workspace_id" | "base_context_version_id" | "prompt_version"
 >;
 
 type Membership = Pick<
-  SynthesisRunSourceItemRow,
+  AgentRunSourceItemRow,
   | "workspace_id"
-  | "synthesis_run_id"
+  | "agent_run_id"
   | "source_item_id"
   | "source_item_version"
   | "content_hash"
@@ -55,8 +55,9 @@ export async function loadValidatedRunBundle(
   const client =
     options.client ?? (await import("../db/client")).serviceClient;
   let runQuery = client
-    .from("synthesis_runs")
+    .from("agent_runs")
     .select("id, workspace_id, base_context_version_id, prompt_version")
+    .eq("kind", "synthesis")
     .order("created_at", { ascending: false });
   if (options.runId !== undefined) runQuery = runQuery.eq("id", options.runId);
 
@@ -76,11 +77,11 @@ export async function loadValidatedRunBundle(
       .eq("id", run.base_context_version_id)
       .single(),
     client
-      .from("synthesis_run_source_items")
+      .from("agent_run_source_items")
       .select(
-        "workspace_id, synthesis_run_id, source_item_id, source_item_version, content_hash, position",
+        "workspace_id, agent_run_id, source_item_id, source_item_version, content_hash, position",
       )
-      .eq("synthesis_run_id", run.id)
+      .eq("agent_run_id", run.id)
       .order("position", { ascending: true }),
   ]);
   if (workspaceResult.error) throw workspaceResult.error;

@@ -4,7 +4,7 @@ import { createFakeRunsClient, fakeRun } from "./fake-runs-client";
 
 function createFakeClient(initialRuns: Array<{ id: string; workspace_id: string; status: string; created_at: string }>) {
   const { client, runs, errorInserts } = createFakeRunsClient({
-    synthesis_runs: initialRuns.map((run) => fakeRun(run)),
+    agent_runs: initialRuns.map((run) => fakeRun(run)),
   });
   return { client, rows: runs, errorInserts };
 }
@@ -31,7 +31,7 @@ describe("sweepStaleSynthesisRuns", () => {
     expect(errorInserts).toHaveLength(1);
     expect(errorInserts[0]).toMatchObject({
       workspace_id: "workspace-a",
-      synthesis_run_id: "run-1",
+      agent_run_id: "run-1",
       operation: "execution",
     });
   });

@@ -59,6 +59,7 @@ export interface NewAgentRun {
   attempt?: number;
   promptVersion?: string;
   sessionId?: string;
+  scheduledTaskId?: string;
 }
 
 /** Saves the run and its spec. The spec is read back from this row by `loadActiveAgentRunSpec`. */
@@ -83,13 +84,14 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
     idempotency_key: run.idempotencyKey,
     prompt_version: run.promptVersion ?? null,
     session_id: run.sessionId ?? null,
+    scheduled_task_id: run.scheduledTaskId ?? null,
   });
   if (error) throw error;
 }
 
 /**
- * Saves the parts of a spec a run's creator did not know yet. A synthesis run's row is made by a trigger
- * when the run is prepared; the launcher then says what the run may use and what it must return.
+ * Saves the parts of a spec a run's creator did not know yet. A synthesis run's row is made when the run
+ * is prepared; the launcher then says what the run may use and what it must return.
  */
 export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpec): Promise<void> {
   const { error } = await client

@@ -78,7 +78,7 @@ function bundleInput(): BuildRunBundleInput {
         },
         membership: {
           workspace_id: ids.workspace,
-          synthesis_run_id: ids.run,
+          agent_run_id: ids.run,
           source_item_id: ids.source1,
           source_item_version: "1",
           content_hash: hash(source1Content),
@@ -95,7 +95,7 @@ function bundleInput(): BuildRunBundleInput {
         },
         membership: {
           workspace_id: ids.workspace,
-          synthesis_run_id: ids.run,
+          agent_run_id: ids.run,
           source_item_id: ids.source2,
           source_item_version: "1",
           content_hash: hash(source2Content),
