@@ -128,6 +128,7 @@ describe("dispatchAgentRoutine", () => {
       sandbox_machine_id: "machine-9",
       trigger: { type: "cron", scheduledTaskId: TASK_ID, occurrenceAt: "2026-10-27T09:00:00.000Z" },
       on_behalf_of_user_id: OWNER_ID,
+      scheduled_task_id: TASK_ID,
       output: { type: "text" },
     });
     expect(run.permissions).toEqual([{ tool: "context.read" }, { tool: "context.write" }]);

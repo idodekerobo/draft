@@ -10,6 +10,12 @@ async function userName(client: SupabaseClient, userId: string): Promise<string>
   return clean(row?.display_name?.trim() || row?.email?.split("@")[0] || "a teammate");
 }
 
+async function taskOfRun(client: SupabaseClient, runId: string): Promise<string | null> {
+  const { data, error } = await client.from("agent_runs").select("scheduled_task_id").eq("id", runId).maybeSingle();
+  if (error) throw error;
+  return (data as { scheduled_task_id: string | null } | null)?.scheduled_task_id ?? null;
+}
+
 async function routineTitle(client: SupabaseClient, workspaceId: string, scheduledTaskId: string): Promise<string | null> {
   const { data, error } = await client.from("scheduled_tasks").select("config_json").eq("id", scheduledTaskId).eq("workspace_id", workspaceId).maybeSingle();
   if (error) throw error;
@@ -27,7 +33,9 @@ export async function attributionLine(client: SupabaseClient, caller: ToolCaller
   const { run } = caller;
   const owner = run.onBehalfOf ? await userName(client, run.onBehalfOf) : null;
   if (run.kind === "routine" && owner) {
-    const title = run.trigger.type === "cron" ? await routineTitle(client, run.workspaceId, run.trigger.scheduledTaskId) : null;
+    // A scheduled run names its task in the trigger. An event run is tied to its task through the run's own row.
+    const taskId = run.trigger.type === "cron" ? run.trigger.scheduledTaskId : await taskOfRun(client, run.id);
+    const title = taskId ? await routineTitle(client, run.workspaceId, taskId) : null;
     return title ? `🤖 Draft agent · running ${owner}'s "${title}" routine` : `🤖 Draft agent · running a routine for ${owner}`;
   }
   return owner ? `🤖 Draft agent · working for ${owner}` : `🤖 Draft agent · ${run.kind} run`;

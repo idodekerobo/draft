@@ -42,6 +42,7 @@ const newDb = () =>
       source_items: [],
       scheduled_tasks: [{ id: TASK, workspace_id: WS, config_json: { title: "Meeting follow-up" } }],
       agent_run_tool_calls: [],
+      agent_runs: [{ id: RUN, workspace_id: WS, scheduled_task_id: TASK }],
     },
     { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] }, uuidTables: ["people"] },
   );
@@ -107,6 +108,13 @@ describe("people.notify", () => {
     const { call, sent } = setup();
     await call(asUser(OWNER), "people.notify", { personId: IZA, text: "hello" });
     expect(sent[0]!.message.text).toBe("Sent by Uzo through Draft\nhello");
+  });
+
+  it("names the routine for a run an event started, whose trigger does not carry the task", async () => {
+    const { call, sent } = setup();
+    const eventRun: ToolCaller = { type: "run", run: { ...runSpec(toMembers), trigger: { type: "webhook", provider: "fireflies", eventId: "meeting-1" } } };
+    await call(eventRun, "people.notify", { personId: IZA, text: "Your items." });
+    expect(sent[0]!.message.text).toBe(`${LINE}\nYour items.`);
   });
 
   it("says a run with no routine title, or no owner, is still an agent", async () => {

@@ -119,7 +119,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       contextVersionId,
     });
     await assertPrincipalActive(client, run);
-    await createAgentRun(client, { spec: run, idempotencyKey, status: "preparing", sessionId });
+    await createAgentRun(client, { spec: run, idempotencyKey, status: "preparing", sessionId, scheduledTaskId: task.id });
 
     const launched = await (options.launch ?? launchRoutineRun)({
       sessionId,
