@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId } from "draft-core/run-spec";
 import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
-import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context-tools";
+import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context";
 import { sha256 } from "../../../synthesis/context-version-files";
 import { createFakeContextDb } from "../context/fake-context-db";
 import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";

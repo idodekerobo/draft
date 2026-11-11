@@ -1,16 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ToolCaller } from "draft-core/tools";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
+import { requireUser } from "./shared";
 
-// Loaded on first use: these services open the service database client, which a registry built for a test must not need.
+// Loaded on first use: the service opens the service database client, which a registry built for a test must not need.
 const skillsService = () => import("../../../services/skills");
-const scheduleService = () => import("../../../schedules/service");
-
-function requireUser(caller: ToolCaller, tool: string) {
-  if (caller.type !== "user") throw new Error(`${tool} needs a signed-in person`);
-  return caller;
-}
 
 const skillFields = {
   content: z.string().min(1).describe("The full skill in markdown. May start with YAML frontmatter."),
@@ -39,8 +33,8 @@ function skillRefusal(result: { status: number; error: string }): ToolHandlerRes
   return refuse(result.error, SKILL_MESSAGES[result.error] ?? result.error);
 }
 
-/** The skill and routine tools. They need a person: a run has no workspace member to act for. */
-export function createWorkspaceTools(client: SupabaseClient) {
+/** The skill tools. They need a person: a run has no workspace member to act for. */
+export function createSkillTools(client: SupabaseClient) {
   const list = defineTool({
     name: "skills.list",
     mcp: true,
@@ -112,17 +106,5 @@ export function createWorkspaceTools(client: SupabaseClient) {
     },
   });
 
-  const routines = defineTool({
-    name: "routines.list",
-    mcp: true,
-    description: "List the routines (scheduled background tasks) in the caller's workspace, with schedule, cron expression, enabled state, and next run.",
-    callers: ["user"],
-    input: z.object({}),
-    handler: async ({ caller }) => {
-      const user = requireUser(caller, "routines.list");
-      return { status: "ok", output: { routines: await (await scheduleService()).listRoutines(user.workspaceId) } };
-    },
-  });
-
-  return [list, read, add, update, remove, routines];
+  return [list, read, add, update, remove];
 }

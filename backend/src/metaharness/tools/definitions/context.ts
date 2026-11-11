@@ -1,20 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { ToolCaller } from "draft-core/tools";
 import { createContextExportLink, exportInstructions } from "../../../context-export/link";
 import { getWorkspaceContext } from "../../../services/workspace-context";
-import { readSource, searchSources } from "../../../services/sources";
+import { writeContext, type ContextConflict } from "../../context/context-store";
+import { canSeeContextPath, visibleContext } from "../../context/visible-context";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { visibleContext } from "../../context/visible-context";
+import { callerWorkspaceId, requireRun, requireUser } from "./shared";
 
-function callerWorkspaceId(caller: ToolCaller): string {
-  return caller.type === "run" ? caller.run.workspaceId : caller.workspaceId;
-}
+/** After this many conflicted writes in one run, the gateway stops taking more and tells the agent to report instead. */
+export const MAX_CONFLICTED_WRITES = 5;
 
-function requireUser(caller: ToolCaller, tool: string) {
-  if (caller.type !== "user") throw new Error(`${tool} needs a signed-in person`);
-  return caller;
-}
+const SHA256 = /^[0-9a-f]{64}$/;
 
 const CONTEXT_MESSAGES: Record<string, string> = {
   no_context_yet: "This workspace has no context yet.",
@@ -34,10 +30,8 @@ function sourceRefusal(error: { code: string; message: string }): ToolHandlerRes
   return refuse(error.code, error.message);
 }
 
-const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : undefined);
-
-/** The context and source tools both an MCP client and a run may use. Their output is what the MCP surface has always returned. */
-export function createPersonTools(client: SupabaseClient) {
+/** The context tools: read, list and export for a person or a run, and write for a run. */
+export function createContextTools(client: SupabaseClient) {
   const list = defineTool({
     name: "context.list",
     mcp: true,
@@ -117,51 +111,81 @@ export function createPersonTools(client: SupabaseClient) {
     },
   });
 
-  const searchInput = z.object({
-    query: z.string().min(1).max(512),
-    provider: z.string().optional(),
-    type: z.array(z.string()).optional(),
-    since: z.string().optional().describe("Inclusive UTC date or timestamp."),
-    until: z.string().optional().describe("Exclusive UTC date or timestamp."),
-    limit: z.number().int().min(1).max(100).optional(),
-    max_bytes: z.number().int().min(1024).max(262144).optional(),
-    cursor: z.string().optional(),
-  });
-  const search = defineTool({
-    name: "sources.search",
-    mcp: true,
+  const write = defineTool({
+    name: "context.write",
+    callers: ["run"],
     description:
-      "Search current cross-provider source evidence using PostgreSQL keyword search. Search covers each source's stored default representation, which may be a summary, rendered source, or mixed content; original transcripts are not universally searchable.",
-    callers: ["user"],
-    input: searchInput,
-    auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
+      "Write Markdown documents to the company's shared context. Each change is checked against that document only. " +
+      "Changes that do not conflict are written. For each one that changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, or drop it.",
+    input: z.object({
+      summary: z.string().min(1).max(500),
+      changes: z
+        .array(
+          z.object({
+            path: z.string().min(1),
+            content: z.string(),
+            baseSha: z.string().regex(SHA256).nullable().optional(),
+          }),
+        )
+        .min(1),
+    }),
+    checkLimits: (limits, input) => {
+      const prefixes = limits?.pathPrefixes;
+      if (!prefixes) return null;
+      const outside = input.changes.find((change) => !prefixes.some((prefix) => change.path.startsWith(prefix)));
+      return outside ? `${outside.path} is outside the paths this run may write` : null;
+    },
+    auditArguments: (input) => ({
+      summary: input.summary,
+      changes: input.changes.map((change) => ({ path: change.path, bytes: Buffer.byteLength(change.content), baseSha: change.baseSha })),
+    }),
     handler: async ({ input, caller }) => {
-      const user = requireUser(caller, "sources.search");
-      const result = await searchSources(client, user.workspaceId, user.userId, input);
-      return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
+      const run = requireRun(caller, "context.write");
+
+      const { count, error } = await client
+        .from("agent_run_tool_calls")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_run_id", run.id)
+        .eq("tool_name", "context.write")
+        .eq("status", "conflict");
+      if (error) throw error;
+      if ((count ?? 0) >= MAX_CONFLICTED_WRITES) {
+        return {
+          status: "conflict",
+          output: { retryable: false, message: "Too many conflicted writes in this run. Stop retrying. Drop the change." },
+          summary: "retry cap reached",
+        };
+      }
+
+      const result = await writeContext(client, {
+        workspaceId: run.workspaceId,
+        agentRunId: run.id,
+        baseVersionId: run.inputs.contextVersionId,
+        changes: input.changes,
+        summary: input.summary,
+        reason: run.kind === "synthesis" ? "synthesis" : "agent_write",
+      });
+
+      if (result.status === "unchanged") return { status: "ok", output: { unchanged: true }, summary: "no change" };
+
+      const conflicts = result.conflicts.map((conflict: ContextConflict) =>
+        canSeeContextPath(caller, conflict.path) ? conflict : { ...conflict, currentContent: null },
+      );
+      const written = result.status === "committed" ? result.written : [];
+      const conflictSummary = `conflict on ${conflicts.map((conflict) => conflict.path).join(", ")}`;
+      const output = {
+        ...(result.status === "committed" ? { versionId: result.versionId, versionNumber: result.versionNumber } : {}),
+        written,
+        ...(conflicts.length > 0 ? { conflicts, retryable: true, retriesLeft: MAX_CONFLICTED_WRITES - (count ?? 0) - 1 } : {}),
+      };
+      if (conflicts.length === 0) return { status: "ok", output, summary: `wrote ${written.join(", ")}` };
+      return {
+        status: "conflict",
+        output,
+        summary: written.length > 0 ? `wrote ${written.join(", ")}; ${conflictSummary}` : conflictSummary,
+      };
     },
   });
 
-  const readInput = z.object({
-    source_item_id: z.string().uuid(),
-    representation: z.enum(["default", "transcript", "messages", "structured"]).optional(),
-    max_bytes: z.number().int().min(1024).max(262144).optional(),
-    cursor: z.string().optional(),
-  });
-  const readSourceTool = defineTool({
-    name: "sources.read",
-    mcp: true,
-    description:
-      "Read one authorized source by source_item_id. Default returns stored searchable content; request transcript, messages, or structured only when search reports that representation as available. Reads are bounded and version-bound.",
-    callers: ["user"],
-    input: readInput,
-    auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
-    handler: async ({ input, caller }) => {
-      const user = requireUser(caller, "sources.read");
-      const result = await readSource(client, user.workspaceId, user.userId, input);
-      return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
-    },
-  });
-
-  return [list, read, exportContext, search, readSourceTool];
+  return [list, read, exportContext, write];
 }
