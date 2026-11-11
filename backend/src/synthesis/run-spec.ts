@@ -29,6 +29,15 @@ export function synthesisTrigger(input: Pick<SynthesisRunSpecInput, "triggerType
   return { type: "system", reason };
 }
 
+/** The trigger type a person sees for a saved run. The inverse of synthesisTrigger. */
+export function synthesisTriggerType(trigger: unknown): SynthesisRunTriggerType {
+  const saved = trigger as { type?: string; reason?: string } | null;
+  if (saved?.type === "cron") return "schedule";
+  if (saved?.type === "retry") return "retry";
+  const reasons: ReadonlyArray<string> = ["source_threshold", "manual", "stale_requeue", "seed_test"];
+  return saved?.type === "system" && saved.reason && reasons.includes(saved.reason) ? (saved.reason as SynthesisRunTriggerType) : "manual";
+}
+
 /** The run behind a nightly or on-demand synthesis, as the foundation sees it. */
 export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpec {
   return {

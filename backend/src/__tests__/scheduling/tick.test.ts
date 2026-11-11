@@ -32,7 +32,7 @@ function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?:
   const rpcCalls: string[] = [];
   const updates: { table: string; payload: Record<string, unknown>; id: string }[] = [];
   const errorInserts: Record<string, unknown>[] = [];
-  const runsClient = createFakeRunsClient({ synthesis_runs: [] }).client;
+  const runsClient = createFakeRunsClient({ agent_runs: [] }).client;
 
   const client = {
     rpc: async (name: string) => {
@@ -57,7 +57,7 @@ function fakeClient(dueTasks: ScheduledTaskRow[], options: { failSynthesisRuns?:
           }),
         };
       }
-      if (table === "synthesis_runs") {
+      if (table === "agent_runs") {
         if (options.failSynthesisRuns) throw new Error("db down");
         return runsClient.from(table);
       }
@@ -183,7 +183,7 @@ describe("runSchedulingTick", () => {
   it("sweeps stale runs from the tick, with no workspace filter", async () => {
     const dispatch = mock(async () => null);
     const { client: runsClient, runs } = createFakeRunsClient({
-      synthesis_runs: [
+      agent_runs: [
         fakeRun({
           id: "stuck",
           workspace_id: "workspace-z",
@@ -195,7 +195,7 @@ describe("runSchedulingTick", () => {
     const { client } = fakeClient([]);
     const wrapped = {
       rpc: client.rpc,
-      from: (table: string) => (table === "synthesis_runs" ? runsClient.from(table) : client.from(table)),
+      from: (table: string) => (table === "agent_runs" ? runsClient.from(table) : client.from(table)),
     } as unknown as SupabaseClient;
 
     await runSchedulingTick({ client: wrapped, config: fakeConfig, now: new Date(), dispatch });

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordError } from "../errors/record-error";
 import type { ErrorOperation, SynthesisRunStatus } from "../types/enums";
-import type { SynthesisRunRow } from "../types/tables";
+import type { AgentRunRow } from "../types/tables";
 
 // A run stuck in any of these forever (crashed sandbox, dead tunnel) blocks
 // every future run for its workspace until failed.
@@ -43,7 +43,7 @@ export interface FailSynthesisRunInput {
 }
 
 type FailedRunRow = Pick<
-  SynthesisRunRow,
+  AgentRunRow,
   "workspace_id" | "scheduled_task_id" | "attempt" | "retry_of_run_id" | "sandbox_machine_id"
 >;
 
@@ -55,14 +55,16 @@ export async function failSynthesisRun(input: FailSynthesisRunInput): Promise<bo
   const completedAt = new Date();
 
   const { data, error } = await client
-    .from("synthesis_runs")
+    .from("agent_runs")
     .update({
       status: "failed",
       outcome: "failure",
-      result_summary: input.reason,
+      summary: input.reason,
+      failure_code: input.failureCode,
       completed_at: completedAt.toISOString(),
     })
     .eq("id", runId)
+    .eq("kind", "synthesis")
     .in("status", ACTIVE_WRITER_STATUSES)
     .select("workspace_id, scheduled_task_id, attempt, retry_of_run_id, sandbox_machine_id");
   if (error) throw error;
@@ -74,7 +76,7 @@ export async function failSynthesisRun(input: FailSynthesisRunInput): Promise<bo
     client,
     workspaceId: run.workspace_id,
     scheduledTaskId: run.scheduled_task_id,
-    synthesisRunId: runId,
+    agentRunId: runId,
     operation: input.operation,
     message: input.reason,
     code: input.failureCode,
@@ -97,7 +99,7 @@ export async function failSynthesisRun(input: FailSynthesisRunInput): Promise<bo
       client,
       workspaceId: run.workspace_id,
       scheduledTaskId: run.scheduled_task_id,
-      synthesisRunId: runId,
+      agentRunId: runId,
       operation: "execution",
       message: `Synthesis failed ${run.attempt} times in a row; fast retries are used up`,
       code: "synthesis_retries_exhausted",

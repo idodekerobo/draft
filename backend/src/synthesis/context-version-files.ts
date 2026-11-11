@@ -3,8 +3,8 @@ import { visibleContext, type ContextAudience } from "../metaharness/context/vis
 import { computeBundleHash } from "../sandbox/bundle-hash";
 import type {
   SourceItemRow,
-  SynthesisRunRow,
-  SynthesisRunSourceItemRow,
+  AgentRunRow,
+  AgentRunSourceItemRow,
   WorkspaceContextVersionRow,
 } from "../types/tables";
 
@@ -37,9 +37,9 @@ export interface RunBundleSource {
     | "content_hash"
   >;
   membership: Pick<
-    SynthesisRunSourceItemRow,
+    AgentRunSourceItemRow,
     | "workspace_id"
-    | "synthesis_run_id"
+    | "agent_run_id"
     | "source_item_id"
     | "source_item_version"
     | "content_hash"
@@ -71,7 +71,7 @@ export interface BuildRunBundleInput {
   /** Who the bundle is for. It decides which context documents become files. */
   audience: ContextAudience;
   run: Pick<
-    SynthesisRunRow,
+    AgentRunRow,
     "id" | "workspace_id" | "base_context_version_id" | "prompt_version"
   >;
   baseVersion: WorkspaceContextVersionRow;
@@ -274,7 +274,7 @@ export function buildValidatedRunBundle(
     ) {
       throw new Error(`source item workspace does not match bundle: ${item.id}`);
     }
-    if (membership.synthesis_run_id !== run.id) {
+    if (membership.agent_run_id !== run.id) {
       throw new Error(`source membership run does not match bundle: ${item.id}`);
     }
     if (membership.source_item_id !== item.id) {

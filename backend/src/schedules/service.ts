@@ -22,14 +22,14 @@ import {
   type RoutineDefinition,
   type RoutineEditability,
 } from "../scheduling/routine-registry";
-import type { ScheduledTaskRow, SessionRow, SourceConnectionRow, SynthesisRunRow } from "../types/tables";
+import type { AgentRunRow, ScheduledTaskRow, SessionRow, SourceConnectionRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
 
 const LIVE_CONNECTION_STATUSES = new Set(["active", "degraded"]);
 
 export interface RoutineLastRun {
-  status: SynthesisRunRow["status"];
-  outcome: SynthesisRunRow["outcome"];
+  status: AgentRunRow["status"];
+  outcome: AgentRunRow["outcome"];
   completedAt: string | null;
 }
 
@@ -73,7 +73,7 @@ export interface Routine {
 }
 
 type ConnectionInfo = Pick<SourceConnectionRow, "id" | "provider" | "status">;
-type RunInfo = Pick<SynthesisRunRow, "status" | "outcome" | "completed_at">;
+type RunInfo = Pick<AgentRunRow, "status" | "outcome" | "completed_at">;
 
 export class ScheduleServiceError extends Error {
   constructor(
@@ -169,8 +169,9 @@ async function loadConnections(workspaceId: string, ids: string[]): Promise<Map<
 // A failed lookup only hides the result; the rest of the list still loads.
 async function loadLastSynthesisRun(workspaceId: string): Promise<RunInfo | null> {
   const { data, error } = await serviceClient
-    .from("synthesis_runs")
+    .from("agent_runs")
     .select("status, outcome, completed_at")
+    .eq("kind", "synthesis")
     .eq("workspace_id", workspaceId)
     .in("status", ["succeeded", "failed"])
     .order("completed_at", { ascending: false })

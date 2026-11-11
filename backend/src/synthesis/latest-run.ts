@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SynthesisRunRow } from "../types/tables";
+import type { AgentRunRow } from "../types/tables";
 
 export type LatestSynthesisRun = Pick<
-  SynthesisRunRow,
+  AgentRunRow,
   "id" | "status" | "attempt" | "completed_at" | "scheduled_task_id"
 >;
 
@@ -11,8 +11,9 @@ export async function getLatestSynthesisRun(
   workspaceId: string,
 ): Promise<LatestSynthesisRun | null> {
   const { data, error } = await client
-    .from("synthesis_runs")
+    .from("agent_runs")
     .select("id, status, attempt, completed_at, scheduled_task_id")
+    .eq("kind", "synthesis")
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: false })
     .limit(1);

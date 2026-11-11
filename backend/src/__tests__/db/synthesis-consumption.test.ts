@@ -66,11 +66,13 @@ async function createSynthesisRun(
 ): Promise<string> {
   const { status = "succeeded", outcome = "changed" } = options;
   const [row] = await db()<[{ id: string }]>`
-    insert into synthesis_runs (
-      workspace_id, idempotency_key, trigger_type, base_context_version_id,
+    insert into agent_runs (
+      workspace_id, kind, trigger, runtime, harness, idempotency_key, base_context_version_id,
       prompt_version, status, outcome
     ) values (
-      ${workspaceId}, ${randomUUID()}, 'manual', ${baseContextVersionId},
+      ${workspaceId}, 'synthesis', '{"type": "system", "reason": "manual"}'::jsonb,
+      '{"type": "cloud", "environment": {"nativeTools": [], "mcpServers": [], "skills": [], "instructions": []}}'::jsonb,
+      'claude', ${randomUUID()}, ${baseContextVersionId},
       'v1', ${status}, ${outcome}
     )
     returning id
@@ -87,8 +89,8 @@ async function addRunMembership(
   position = 0,
 ): Promise<void> {
   await db()`
-    insert into synthesis_run_source_items (
-      workspace_id, synthesis_run_id, source_item_id, position, source_item_version, content_hash
+    insert into agent_run_source_items (
+      workspace_id, agent_run_id, source_item_id, position, source_item_version, content_hash
     ) values (
       ${workspaceId}, ${runId}, ${sourceItemId}, ${position}, ${sourceItemVersion}, ${contentHash}
     )
@@ -250,19 +252,20 @@ describeWithDatabase("synthesis consumption migration", () => {
     const [plan] = await db()<[{ "QUERY PLAN": unknown }]>`
       explain (format json)
       select 1
-      from synthesis_run_source_items srsi
-      join synthesis_runs sr
-        on sr.id = srsi.synthesis_run_id and sr.workspace_id = srsi.workspace_id
+      from agent_run_source_items srsi
+      join agent_runs sr
+        on sr.id = srsi.agent_run_id and sr.workspace_id = srsi.workspace_id
       where srsi.workspace_id = ${workspaceId}
         and srsi.source_item_id = ${targetItemId}
         and srsi.source_item_version = 'v0'
         and srsi.content_hash = ${"0".repeat(64)}
+        and sr.kind = 'synthesis'
         and sr.status = 'succeeded'
         and sr.outcome in ('changed', 'no_change')
     `;
     const planJson = plan["QUERY PLAN"] as Array<{ Plan: Record<string, unknown> }>;
     const planText = JSON.stringify(planJson);
-    expect(planText).toContain("synthesis_run_source_items_source_item_idx");
+    expect(planText).toContain("agent_run_source_items_source_item_idx");
     expect(planText).not.toContain("Seq Scan");
   });
 });

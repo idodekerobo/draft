@@ -149,43 +149,36 @@ function createFakeClient(options: FakeClientOptions = {}) {
       };
     }
 
-    if (table === "synthesis_runs") {
+    if (table === "agent_runs") {
       return {
-        select: () => ({
-          in: () => {
-            calls.order.push("sweep-select");
-            return { lt: () => emptySweepSelectResult() };
-          },
-          eq: () => ({
-            order: () => ({
-              limit: async () => ({ data: options.latestRun ? [options.latestRun] : [], error: null }),
-            }),
-          }),
-        }),
-        insert: (payload: Record<string, unknown>) => {
+        select: () => {
+          const query: Record<string, unknown> = {
+            eq: () => query,
+            in: () => {
+              calls.order.push("sweep-select");
+              return query;
+            },
+            lt: () => emptySweepSelectResult(),
+            order: () => query,
+            limit: async () => ({ data: options.latestRun ? [options.latestRun] : [], error: null }),
+          };
+          return query;
+        },
+        insert: async (payload: Record<string, unknown>) => {
           calls.order.push("run-insert");
           calls.runInserts.push(payload);
-          return {
-            select: () => ({
-              single: async () => {
-                if (options.runInsertError) {
-                  return { data: null, error: options.runInsertError };
-                }
-                return { data: { id: ids.run }, error: null };
-              },
-            }),
-          };
+          return { data: null, error: options.runInsertError ?? null };
         },
         update: (payload: Record<string, unknown>) => ({
           eq: async (_column: string, id: string) => {
-            calls.updates.push({ table: "synthesis_runs", payload, id });
+            calls.updates.push({ table: "agent_runs", payload, id });
             return { data: null, error: null };
           },
         }),
       };
     }
 
-    if (table === "synthesis_run_source_items") {
+    if (table === "agent_run_source_items") {
       return {
         insert: async (payload: Record<string, unknown>[]) => {
           calls.membershipInserts.push(...payload);
@@ -319,7 +312,7 @@ describe("prepareRun", () => {
       client,
     });
 
-    expect(runId).toBe(ids.run);
+    expect(runId).toBe((calls.runInserts[0] as { id: string }).id);
     // A single insert seeds the version with memory's stubs already folded
     // in -- no separate memory-provision insert right on top of it (memory
     // is auto-provisioned unconditionally -- see prepare-run.ts).
@@ -395,11 +388,11 @@ describe("prepareRun", () => {
       client,
     });
 
-    expect(runId).toBe(ids.run);
+    expect(runId).toBe((calls.runInserts[0] as { id: string }).id);
     expect(calls.membershipInserts).toHaveLength(2);
     expect(calls.membershipInserts[0]).toMatchObject({
       workspace_id: ids.workspace,
-      synthesis_run_id: ids.run,
+      agent_run_id: expect.any(String),
       source_item_id: ids.sourceB,
       position: 0,
       source_item_version: "7",
@@ -407,7 +400,7 @@ describe("prepareRun", () => {
     });
     expect(calls.membershipInserts[1]).toMatchObject({
       workspace_id: ids.workspace,
-      synthesis_run_id: ids.run,
+      agent_run_id: expect.any(String),
       source_item_id: ids.sourceA,
       position: 1,
       source_item_version: "3",
@@ -533,7 +526,7 @@ describe("prepareRun", () => {
       sourceItems: [],
       runInsertError: {
         message:
-          'duplicate key value violates unique constraint "synthesis_runs_one_active_writer"',
+          'duplicate key value violates unique constraint "agent_runs_one_active_synthesis"',
         code: "23505",
       },
     });
@@ -553,7 +546,7 @@ describe("prepareRun", () => {
       sourceItems: [],
       runInsertError: {
         message:
-          'duplicate key value violates unique constraint "synthesis_runs_workspace_id_idempotency_key_key"',
+          'duplicate key value violates unique constraint "agent_runs_workspace_id_idempotency_key_key"',
         code: "23505",
       },
     });
@@ -589,21 +582,21 @@ describe("prepareRun attempt tracking", () => {
   });
 
   it("links a retry to its failed run with a one-per-failure idempotency key", async () => {
-    const { client, calls } = createFakeClient({ latestRun: { id: "failed-1", status: "failed", attempt: 1 } });
+    const { client, calls } = createFakeClient({ latestRun: { id: "12121212-1212-4212-8212-121212121212", status: "failed", attempt: 1 } });
 
     await prepareRun({
       ...base,
       triggerType: "retry",
-      retryOfRunId: "failed-1",
+      retryOfRunId: "12121212-1212-4212-8212-121212121212",
       scheduledTaskId: ids.scheduledTask,
       client,
     });
 
     expect(calls.runInserts[0]).toMatchObject({
       attempt: 2,
-      retry_of_run_id: "failed-1",
-      idempotency_key: "retry:failed-1",
-      trigger_type: "retry",
+      retry_of_run_id: "12121212-1212-4212-8212-121212121212",
+      idempotency_key: "retry:12121212-1212-4212-8212-121212121212",
+      trigger: { type: "retry", retryOf: "12121212-1212-4212-8212-121212121212" },
     });
   });
 });
@@ -616,7 +609,7 @@ describe("markRunLaunched", () => {
 
     expect(calls.updates).toHaveLength(1);
     const update = calls.updates[0];
-    expect(update.table).toBe("synthesis_runs");
+    expect(update.table).toBe("agent_runs");
     expect(update.id).toBe(ids.run);
     expect(update.payload.status).toBe("running");
     expect(update.payload.sandbox_machine_id).toBe("machine-1");

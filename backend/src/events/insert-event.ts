@@ -10,7 +10,7 @@ export async function insertEvent(
   fields: {
     event_type: WorkspaceEventType;
     summary: string;
-    synthesis_run_id?: string | null;
+    agent_run_id?: string | null;
     source_connection_id?: string | null;
     context_version_id?: string | null;
     payload_json?: Record<string, unknown>;
@@ -29,7 +29,7 @@ export async function insertEvent(
     workspace_id: workspaceId,
     sequence_number: nextSequence,
     event_type: fields.event_type,
-    synthesis_run_id: fields.synthesis_run_id ?? null,
+    agent_run_id: fields.agent_run_id ?? null,
     source_connection_id: fields.source_connection_id ?? null,
     context_version_id: fields.context_version_id ?? null,
     summary: fields.summary,

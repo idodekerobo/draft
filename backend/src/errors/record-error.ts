@@ -19,7 +19,7 @@ export interface RecordErrorInput {
   detail?: Record<string, unknown>;
   sourceConnectionId?: string | null;
   scheduledTaskId?: string | null;
-  synthesisRunId?: string | null;
+  agentRunId?: string | null;
   sessionId?: string | null;
   // Insert a workspace-less row instead of falling back to stderr.
   allowUnattributed?: boolean;
@@ -98,7 +98,7 @@ function fallback(input: RecordErrorInput, reason: unknown): void {
     code: input.code ?? null,
     source_connection_id: input.sourceConnectionId ?? null,
     scheduled_task_id: input.scheduledTaskId ?? null,
-    synthesis_run_id: input.synthesisRunId ?? null,
+    agent_run_id: input.agentRunId ?? null,
     session_id: input.sessionId ?? null,
     message: redactString(input.message),
     detail: sanitize(input.detail ?? {}),
@@ -124,7 +124,7 @@ export async function recordError(input: RecordErrorInput): Promise<void> {
       workspace_id: input.workspaceId,
       source_connection_id: input.workspaceId ? input.sourceConnectionId ?? null : null,
       scheduled_task_id: input.workspaceId ? input.scheduledTaskId ?? null : null,
-      synthesis_run_id: input.workspaceId ? input.synthesisRunId ?? null : null,
+      agent_run_id: input.workspaceId ? input.agentRunId ?? null : null,
       session_id: input.workspaceId ? input.sessionId ?? null : null,
       operation: input.operation,
       message: redactString(input.message),

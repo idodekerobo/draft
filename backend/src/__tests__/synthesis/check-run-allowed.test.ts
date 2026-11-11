@@ -29,11 +29,13 @@ function createFakeClient(workspace: FakeWorkspace, runCountToday: number) {
           }),
         };
       }
-      if (table === "synthesis_runs") {
+      if (table === "agent_runs") {
         return {
           select: (_columns: string, _opts: { count: string; head: boolean }) => ({
             eq: () => ({
-              gte: async () => ({ count: runCountToday, error: null }),
+              eq: () => ({
+                gte: async () => ({ count: runCountToday, error: null }),
+              }),
             }),
           }),
         };

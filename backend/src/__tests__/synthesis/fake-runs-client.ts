@@ -17,6 +17,7 @@ export interface FakeRunRow extends FakeRow {
 export function fakeRun(overrides: Partial<FakeRunRow> & { id: string }): FakeRunRow {
   return {
     workspace_id: "workspace-a",
+    kind: "synthesis",
     status: "failed",
     created_at: new Date().toISOString(),
     attempt: 1,
@@ -66,15 +67,15 @@ function query(rows: FakeRow[], op: "select" | "update", payload?: FakeRow) {
  * methods really filter, so tests assert on resulting state, not call shapes.
  */
 export function createFakeRunsClient(tables: {
-  synthesis_runs?: FakeRow[];
+  agent_runs?: FakeRow[];
   workspaces?: FakeRow[];
 }) {
-  const runs = tables.synthesis_runs ?? [];
+  const runs = tables.agent_runs ?? [];
   const workspaces = tables.workspaces ?? [];
   const errorInserts: FakeRow[] = [];
 
   function from(table: string) {
-    if (table === "synthesis_runs") {
+    if (table === "agent_runs") {
       return {
         select: () => query(runs, "select"),
         update: (payload: FakeRow) => query(runs, "update", payload),

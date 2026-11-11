@@ -61,7 +61,7 @@ function queryBuilder(table: string) {
       return { data: matches()[0] ?? null, error: null };
     },
     then(resolve: (value: unknown) => unknown) {
-      if (table === "synthesis_runs" && runsError) return resolve({ data: null, error: runsError });
+      if (table === "agent_runs" && runsError) return resolve({ data: null, error: runsError });
       if (table === "users" && usersError) return resolve({ data: null, error: usersError });
       return resolve({ data: matches(), error: null });
     },
@@ -169,9 +169,10 @@ describe("schedules routes", () => {
       source_connections: [
         { id: "conn-1", workspace_id: "ws-1", provider: "slack", status: "active", display_name: "Acme Slack" },
       ],
-      synthesis_runs: [
+      agent_runs: [
         {
           workspace_id: "ws-1",
+          kind: "synthesis",
           status: "succeeded",
           outcome: "changed",
           completed_at: "2026-10-04T08:05:00.000Z",

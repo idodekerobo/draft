@@ -142,9 +142,10 @@ export async function completeSynthesisRunCallback(
     const headerRunId = request.headers.get("x-draft-run-id");
     if (headerRunId) {
       const { data: run } = await resolvedClient
-        .from("synthesis_runs")
+        .from("agent_runs")
         .select("workspace_id")
         .eq("id", headerRunId)
+        .eq("kind", "synthesis")
         .maybeSingle<{ workspace_id: string }>();
       workspaceId = run?.workspace_id ?? null;
       runId = headerRunId;
@@ -160,7 +161,7 @@ export async function completeSynthesisRunCallback(
     if (authenticated.transcript !== undefined) {
       try {
         const { error: transcriptError } = await resolvedClient
-          .from("synthesis_runs")
+          .from("agent_runs")
           .update({ transcript_json: authenticated.transcript })
           .eq("id", runId);
         if (transcriptError) {
@@ -210,7 +211,7 @@ export async function completeSynthesisRunCallback(
     await recordError({
       client: resolvedClient,
       workspaceId,
-      synthesisRunId: runId,
+      agentRunId: runId,
       operation: stage === "validation" ? "validation" : "auth",
       message: `Synthesis callback failed during ${stage}`,
       code: `synthesis_${stage}_failed`,
