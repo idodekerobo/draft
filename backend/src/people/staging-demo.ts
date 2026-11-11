@@ -124,12 +124,21 @@ async function seed(workspaceId: string, args: Args) {
 }
 
 async function meeting(workspaceId: string, args: Args) {
-  const { data: people } = await db.from("people").select("display_name").eq("workspace_id", workspaceId).eq("status", "active").eq("affiliation", "member").order("display_name").limit(3);
-  const names = ((people ?? []) as Array<{ display_name: string }>).map((person) => person.display_name);
+  const { data: people } = await db.from("people").select("id, display_name").eq("workspace_id", workspaceId).eq("status", "active").eq("affiliation", "member").order("display_name");
+  const everyone = (people ?? []) as Array<{ id: string; display_name: string }>;
+  const names = everyone.slice(0, 3).map((person) => person.display_name);
   const items = args.as.length
     ? args.as.map((entry) => entry.split(/:(.*)/s, 2) as [string, string])
     : names.map((name, index) => [name, ["send the pricing draft by Friday", "book the customer interviews", "review the launch email tomorrow"][index] ?? "follow up"] as [string, string]);
   if (!items.length) throw new Error("No active people to give action items to. Run seed first.");
+
+  // Like a real Fireflies meeting, the attendees' emails go in the metadata: that is how a search by person finds it.
+  const { data: emailRows } = await db.from("person_identities").select("person_id, external_id").eq("workspace_id", workspaceId).eq("provider", "email");
+  const emailOf = (name: string) => {
+    const person = everyone.find((candidate) => candidate.display_name.toLowerCase() === name.trim().toLowerCase());
+    return ((emailRows ?? []) as Array<{ person_id: string; external_id: string }>).find((row) => row.person_id === person?.id)?.external_id;
+  };
+  const attendeeEmails = items.map(([name]) => emailOf(name)).filter((email): email is string => !!email);
 
   const stamp = new Date().toISOString();
   const content = `# Demo standup\n\n**Date:** ${stamp}\n**Attendees:** ${items.map(([name]) => name).join(", ")}\n\n## Action Items\n\n${items.map(([name, task]) => `- **${name.trim()}**: ${task.trim()}`).join("\n")}\n`;
@@ -138,7 +147,7 @@ async function meeting(workspaceId: string, args: Args) {
   const { item } = await upsertSourceItem(db, {
     workspace_id: workspaceId, source_connection_id: connection.id, item_type: "meeting_transcript", external_id: `demo-${Date.now()}`, external_version: hash,
     occurred_at: stamp, content_markdown: content, content_hash: hash, representation_kind: "summary", time_basis: "source_event",
-    metadata_json: { title: "Demo standup", demo: true, attendees: items.map(([name]) => name) }, visibility: "shared", owner_user_id: null,
+    metadata_json: { title: "Demo standup", demo: true, attendees: items.map(([name]) => name), attendee_emails: attendeeEmails }, visibility: "shared", owner_user_id: null,
   });
   log(`Stored the demo meeting ${item.id}`);
   log(content);
