@@ -30,7 +30,7 @@ _draft_completion() {
   local cur prev commands
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context routines sources sessions skills integrations update uninstall completion"
+  commands="add auth context people routines sources sessions skills integrations update uninstall completion"
 
   case "\$prev" in
     draft)
@@ -47,6 +47,10 @@ _draft_completion() {
       ;;
     context)
       COMPREPLY=( $(compgen -W "list read export" -- "\$cur") )
+      return 0
+      ;;
+    people)
+      COMPREPLY=( $(compgen -W "find create pending approve reject notify" -- "\$cur") )
       return 0
       ;;
     routines)
@@ -114,6 +118,7 @@ _draft() {
         'add:Add Draft to a CLI tool'
         'auth:Authenticate with the Draft control plane'
         'context:Read workspace context'
+        'people:Find, add and message the people in the workspace'
         'routines:Read scheduled routines'
         'sources:Search and read cross-provider source evidence'
         'sessions:Manage coding session capture'
@@ -137,6 +142,10 @@ _draft() {
           ;;
         context)
           local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions' 'export:Export the full context as markdown files')
+          _describe 'subcommand' subcmds
+          ;;
+        people)
+          local subcmds=('find:Find people' 'create:Add a teammate' 'pending:List people waiting for approval' 'approve:Approve a pending person' 'reject:Reject a pending person' 'notify:Send a message to a person')
           _describe 'subcommand' subcmds
           ;;
         routines)
