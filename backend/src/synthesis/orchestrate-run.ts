@@ -11,6 +11,7 @@ import {
   markRunLaunched,
   OccurrenceAlreadyDispatchedError,
   prepareRun,
+  RunPreparationFailedError,
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
 import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/tools";
@@ -19,6 +20,38 @@ import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
 import { saveAgentRunSpec } from "../metaharness/runs/agent-run-store";
 import { recordError } from "../errors/record-error";
+
+/**
+ * Records why a launch failed. A launch that got as far as creating its run fails that run, which also
+ * writes the error row with the run's id. One that did not has only the error row.
+ */
+export async function recordLaunchFailure(input: {
+  client: SupabaseClient;
+  runId?: string;
+  stage: string;
+  options: Pick<LaunchSynthesisRunOptions, "workspaceId" | "scheduledTaskId" | "triggerType">;
+  error: unknown;
+}): Promise<void> {
+  const { client, runId, stage, options, error } = input;
+  const operation = stage === "preparation" || stage === "bundle" ? "queue" : "execution";
+  const message = `Synthesis launch failed during ${stage}`;
+  const code = `synthesis_launch_${stage}_failed`;
+  const detail = { stage, trigger_type: options.triggerType };
+  if (runId) {
+    await failSynthesisRun({ client, runId, failureCode: code, operation, reason: message, error, detail });
+  } else {
+    await recordError({
+      client,
+      workspaceId: options.workspaceId,
+      scheduledTaskId: options.scheduledTaskId,
+      operation,
+      message,
+      code,
+      detail,
+      error,
+    });
+  }
+}
 
 /**
  * Launch half of the loop: prepare the run row, load + validate its bundle from
@@ -90,36 +123,14 @@ export async function launchSynthesisRun(
     await markRunLaunched(runId, receipt, options.client);
 
     return { runId, machineId: receipt.machineId, bundleHash: receipt.bundleHash };
-  } catch (error) {
+  } catch (caught) {
     // Not a failure -- another dispatch already claimed this occurrence.
-    if (error instanceof OccurrenceAlreadyDispatchedError) throw error;
+    if (caught instanceof OccurrenceAlreadyDispatchedError) throw caught;
 
-    const operation = stage === "preparation" || stage === "bundle" ? "queue" : "execution";
-    const message = `Synthesis launch failed during ${stage}`;
-    const code = `synthesis_launch_${stage}_failed`;
-    const detail = { stage, trigger_type: options.triggerType };
-    if (runId) {
-      await failSynthesisRun({
-        client,
-        runId,
-        failureCode: code,
-        operation,
-        reason: message,
-        error,
-        detail,
-      });
-    } else {
-      await recordError({
-        client,
-        workspaceId: options.workspaceId,
-        scheduledTaskId: options.scheduledTaskId,
-        operation,
-        message,
-        code,
-        detail,
-        error,
-      });
-    }
+    // Preparation can fail after the run row exists. Then the row is the one to fail.
+    const error = caught instanceof RunPreparationFailedError ? caught.cause : caught;
+    runId = runId ?? (caught instanceof RunPreparationFailedError ? caught.runId : undefined);
+    await recordLaunchFailure({ client, runId, stage, options, error });
     throw error;
   }
 }

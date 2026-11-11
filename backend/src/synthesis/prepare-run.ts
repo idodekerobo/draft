@@ -41,6 +41,15 @@ export class OccurrenceAlreadyDispatchedError extends Error {
   }
 }
 
+// Thrown when the run row exists but preparation failed after it was created, so the caller can fail that
+// row instead of leaving it active until the stale sweep.
+export class RunPreparationFailedError extends Error {
+  constructor(public readonly runId: string, public readonly cause: unknown) {
+    super(`Preparing run ${runId} failed after its row was created`);
+    this.name = "RunPreparationFailedError";
+  }
+}
+
 export async function prepareRun(
   options: Pick<
     LaunchSynthesisRunOptions,
@@ -233,7 +242,7 @@ export async function prepareRun(
     const { error: membershipError } = await client
       .from("agent_run_source_items")
       .insert(membershipRows);
-    if (membershipError) throw membershipError;
+    if (membershipError) throw new RunPreparationFailedError(runId, membershipError);
   }
 
   return runId;
