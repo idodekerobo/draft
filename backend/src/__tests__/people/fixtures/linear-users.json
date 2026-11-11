@@ -1,0 +1,13 @@
+{
+  "data": {
+    "users": {
+      "nodes": [
+        { "id": "lin-1", "name": "Uzo A", "displayName": "uzo", "email": "uzo@example.com", "active": true, "guest": false },
+        { "id": "lin-2", "name": "Iza C", "displayName": "iza", "email": "iza@example.com", "active": true, "guest": false },
+        { "id": "lin-3", "name": "Former", "displayName": "former", "email": "former@example.com", "active": false, "guest": false },
+        { "id": "lin-4", "name": "Contractor", "displayName": "contractor", "email": "contractor@acme.com", "active": true, "guest": true }
+      ],
+      "pageInfo": { "hasNextPage": false, "endCursor": null }
+    }
+  }
+}

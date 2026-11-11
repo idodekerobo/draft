@@ -11,6 +11,7 @@ import { resolveProviderCredential, resolveProviderCredentialById } from "../cre
 import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
+import { syncPeopleInBackground } from "../people/sync";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
 import { initializeSlackBackfillForConnection, registerSlackBackfillTask } from "../ingestion/slack/backfill";
 import {
@@ -742,6 +743,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       }
     }
 
+    syncPeopleInBackground(serviceClient, req.params.id);
     return Response.json({
       ok: true,
       ...(cleanupPending.length > 0 || cleanupStateFailed ? { cleanup_pending: true as const } : {}),
@@ -1090,6 +1092,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     } satisfies FirefliesConnectResponse);
   }
   if (isSlack) {
+    syncPeopleInBackground(serviceClient, req.params.id);
     return Response.json({ ok: true } satisfies SlackConnectResponse);
   }
   return errorResponse("unsupported_provider", 400);

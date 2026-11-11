@@ -250,6 +250,7 @@ describe("ingestFirefliesMeeting", () => {
       title: "Weekly Sync",
       occurredAt: new Date(1735689600000).toISOString(),
       attendees: ["Alice"],
+      attendeeEmails: ["a@example.com"],
       shortSummary: "Quick sync.",
       overview: "Roadmap discussion.",
       actionItems: "- Follow up with design.",
@@ -259,6 +260,7 @@ describe("ingestFirefliesMeeting", () => {
         { speakerName: "Bob", text: "Sounds good." },
       ],
     });
+    expect(state.upsertedItem?.metadata_json).toMatchObject({ attendee_emails: ["a@example.com"] });
 
     expect(state.eventInsertPayload?.event_type).toBe("source_items_added");
     expect(state.eventInsertPayload?.source_connection_id).toBe(ids.connection);

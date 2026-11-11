@@ -9,6 +9,8 @@ import { retryPlan } from "../synthesis/handle-run-failure";
 import { getLatestSynthesisRun } from "../synthesis/latest-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
 import { dispatchAgentRoutine } from "../routines/dispatch-routine";
+import { allowOncePer } from "../errors/throttle";
+import { syncPeopleInBackground } from "../people/sync";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 
@@ -73,6 +75,8 @@ async function dispatchIngestSource(
   }
 }
 
+const PEOPLE_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 // Fast retries of a failed run belong to retryFailedSynthesisRuns; this slot
 // only steps aside while a retry is waiting out its backoff.
 async function dispatchSynthesizeWorkspace(
@@ -82,6 +86,9 @@ async function dispatchSynthesizeWorkspace(
   client: SupabaseClient,
   deps: DispatchDependencies,
 ): Promise<void> {
+  // People are refreshed on the synthesis schedule, at most once a day per workspace, so synthesis can name owners.
+  if (allowOncePer(`people-sync:${task.workspace_id}`, PEOPLE_SYNC_INTERVAL_MS)) syncPeopleInBackground(client, task.workspace_id);
+
   const latestRun = await deps.getLatestSynthesisRun(client, task.workspace_id);
   if (latestRun?.status === "failed" && latestRun.completed_at) {
     const { nextRetryAt } = retryPlan(latestRun.attempt, new Date(latestRun.completed_at));
