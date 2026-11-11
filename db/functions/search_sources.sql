@@ -1,7 +1,7 @@
 create or replace function search_sources(
   p_workspace_id uuid,
   p_caller_user_id uuid,
-  p_query text,
+  p_query text default null,
   p_provider text default null,
   p_types text[] default null,
   p_since timestamptz default null,
@@ -9,7 +9,8 @@ create or replace function search_sources(
   p_after_rank real default null,
   p_after_occurred_at timestamptz default null,
   p_after_id uuid default null,
-  p_limit int default 11
+  p_limit int default 11,
+  p_person_terms text[] default null
 )
 returns table (
   source_item_id uuid,
@@ -53,10 +54,10 @@ as $$
       si.content_markdown,
       si.sanitized_raw_json,
       si.agent_session_id,
-      ts_rank_cd(
+      (case when p_query is null then 0 else ts_rank_cd(
         to_tsvector('english', coalesce(si.content_markdown, '')),
         websearch_to_tsquery('english', p_query)
-      )::real as rank
+      ) end)::real as rank
     from source_items si
     join source_connections sc
       on sc.id = si.source_connection_id
@@ -68,8 +69,15 @@ as $$
       and (p_types is null or si.item_type = any(p_types))
       and (p_since is null or coalesce(si.source_time_end, si.source_time_start, si.occurred_at) >= p_since)
       and (p_until is null or coalesce(si.source_time_start, si.source_time_end, si.occurred_at) < p_until)
-      and to_tsvector('english', coalesce(si.content_markdown, ''))
-        @@ websearch_to_tsquery('english', p_query)
+      and (p_query is null or to_tsvector('english', coalesce(si.content_markdown, ''))
+        @@ websearch_to_tsquery('english', p_query))
+      -- A person's identity ids (email, Slack, Linear...) as whole words in the text or the metadata.
+      and (p_person_terms is null or exists (
+        select 1
+        from unnest(p_person_terms) as term
+        where coalesce(si.content_markdown, '') || ' ' || si.metadata_json::text
+          ~* ('\m' || regexp_replace(term, '([\\.^$|()\[\]{}*+?])', '\\\1', 'g') || '\M')
+      ))
   ),
   paged as (
     select r.*
@@ -95,14 +103,14 @@ as $$
     p.content_markdown,
     p.sanitized_raw_json,
     p.agent_session_id,
-    ts_headline(
+    (case when p_query is null then left(coalesce(p.content_markdown, ''), 400) else ts_headline(
       'english', coalesce(p.content_markdown, ''), websearch_to_tsquery('english', p_query),
       'MaxFragments=2, MaxWords=35, MinWords=15, StartSel=**, StopSel=**'
-    ) as excerpt,
+    ) end) as excerpt,
     p.rank
   from paged p
   order by p.rank desc, p.occurred_at desc, p.id asc;
 $$;
 
-revoke all on function search_sources(uuid, uuid, text, text, text[], timestamptz, timestamptz, real, timestamptz, uuid, int) from public;
-grant execute on function search_sources(uuid, uuid, text, text, text[], timestamptz, timestamptz, real, timestamptz, uuid, int) to service_role;
+revoke all on function search_sources(uuid, uuid, text, text, text[], timestamptz, timestamptz, real, timestamptz, uuid, int, text[]) from public;
+grant execute on function search_sources(uuid, uuid, text, text, text[], timestamptz, timestamptz, real, timestamptz, uuid, int, text[]) to service_role;

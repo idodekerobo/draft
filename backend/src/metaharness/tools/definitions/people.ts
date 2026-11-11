@@ -55,7 +55,8 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     description:
       "Find people in the workspace: teammates and others Draft has noted. Filter by name, email, or a provider id; pass me: true for yourself (the person you are working for). " +
       "Returns id, name, status, whether they have an account, and whether Slack can reach them. It never returns emails or ids. " +
-      "Call this before people.create, and before people.notify to turn a name into an id. A pending person can be named but not messaged.",
+      "Call this before people.create, and before people.notify to turn a name into an id. A pending person can be named but not messaged. " +
+      "To answer \"what do I have to do today?\": call this with me: true, read the memory with context.read, then search sources with sources.search and person: \"me\", and list only that person's open items.",
     input: z.object({
       me: z.boolean().optional().describe("The person you act for."),
       name: z.string().min(1).optional().describe("Part of a name, any case."),

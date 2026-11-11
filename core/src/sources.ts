@@ -56,7 +56,10 @@ export interface SourceDescriptor {
 }
 
 export interface SourceSearchInput {
-  query: string;
+  /** Required unless `person` is set. With a person and no query, results are newest first. */
+  query?: string;
+  /** A person id, or "me". Only sources that mention one of their trusted identity ids. */
+  person?: string;
   provider?: string;
   type?: string[];
   since?: string;

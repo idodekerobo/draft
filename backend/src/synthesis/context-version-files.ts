@@ -66,6 +66,13 @@ export interface ValidatedRunBundle {
   outputPath: "output/result.json";
 }
 
+/** One line of the people roster a synthesis run reads. No contact data: only what is needed to name an owner. */
+export interface RosterEntry {
+  id: string;
+  name: string;
+  status: "pending" | "active" | "rejected";
+}
+
 export interface BuildRunBundleInput {
   identity: RunBundleIdentity;
   /** Who the bundle is for. It decides which context documents become files. */
@@ -76,6 +83,8 @@ export interface BuildRunBundleInput {
   >;
   baseVersion: WorkspaceContextVersionRow;
   sources: RunBundleSource[];
+  /** The workspace's people. Becomes input/people.json when there are any. */
+  people?: ReadonlyArray<RosterEntry>;
   limits: RunBundleLimits;
 }
 
@@ -301,6 +310,12 @@ export function buildValidatedRunBundle(
     );
   }
 
+  if (input.people?.length) {
+    const roster = [...input.people]
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+      .map(({ id, name, status }) => ({ id, name, status }));
+    addFile(files, "input/people.json", `${JSON.stringify({ people: roster }, null, 2)}\n`, limits);
+  }
   addFile(files, "input/run.json", runMetadataBytes(input, sources), limits);
   files.sort(([left], [right]) => left.localeCompare(right));
   const fileMap = Object.fromEntries(files);

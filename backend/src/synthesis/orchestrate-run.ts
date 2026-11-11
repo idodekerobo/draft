@@ -15,6 +15,7 @@ import {
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
+import { syncMembers } from "../people/sync-members";
 import { buildSynthesisRunSpec } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
@@ -82,6 +83,11 @@ export async function launchSynthesisRun(
   let runId: string | undefined;
   try {
     runId = await prepareRun(options);
+
+    // Make sure every member is a person, so the roster the run reads can name them.
+    await syncMembers(client, options.workspaceId).catch((error) =>
+      recordError({ client, workspaceId: options.workspaceId, operation: "ingestion", message: "People sync failed before synthesis", code: "people_sync_failed", error }),
+    );
 
     stage = "bundle";
     const bundle = await loadValidatedRunBundle({

@@ -88,6 +88,7 @@ function buildPrompt(
   contextFiles: ContextFileEntry[],
   sourceFiles: SourceFileEntry[],
   dimensions?: DimensionHint[],
+  hasRoster = false,
 ): string {
   const contextList =
     contextFiles
@@ -104,6 +105,9 @@ function buildPrompt(
       ? `\n${buildBootstrapSection(dimensions)}\n`
       : "";
   const memorySection = buildMemoryGuidanceSection(contextFiles);
+  const peopleRosterLine = hasRoster
+    ? "- The people Draft knows, with their ids and status, are in input/people.json. A rejected person is one an admin turned away: do not add them again.\n"
+    : "- Draft has no people on its roster yet.\n";
 
   return `# Draft Synthesis Task
 
@@ -154,6 +158,12 @@ When the sources name a teammate Draft may not know, for example someone new in 
 - Call \`people.find\` first. Never add someone Draft already knows or whose name is close to a known person.
 - Give the exact quote that shows who they are as \`evidence\`. Use an email address as an identity only when the source states it.
 - A person you add waits for an admin to approve. You cannot approve or message anyone.
+${peopleRosterLine}
+## Action items
+When you write an action item into context:
+- Name the owner as a link, \`[Name](person:<id>)\`, using the id from the people roster. If the owner is not on the roster, write their name as plain text.
+- Say in plain words whether the item is open or done, and its due date when one was said.
+- When a later source shows an item is done, mark it done in the document that holds it.
 
 ## Final answer
 When you are done writing, reply with this JSON and nothing else:
@@ -225,7 +235,7 @@ export async function renderSynthesisPrompt(
 ): Promise<{ prompt: string; jsonSchema: Record<string, unknown> }> {
   const contextFiles = collectContextFiles(bundle);
   const sourceFiles = collectSourceFiles(bundle);
-  const prompt = buildPrompt(contextFiles, sourceFiles, dimensions);
+  const prompt = buildPrompt(contextFiles, sourceFiles, dimensions, "input/people.json" in bundle.files);
   const jsonSchema = buildJsonSchema();
   return { prompt, jsonSchema };
 }
