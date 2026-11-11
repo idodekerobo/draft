@@ -40,7 +40,7 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
 
   const launch = {
     spec: agentRun,
-    bundle: buildRoutineBundle({ organizationId, workspaceId, sessionId, audience: { type: "run", run: agentRun }, documents }),
+    bundle: buildRoutineBundle({ organizationId, workspaceId, agentRunId: agentRun.id, audience: { type: "run", run: agentRun }, documents }),
     prompt: {
       kind: "text" as const,
       text: renderRoutinePrompt(routine.prompt, {

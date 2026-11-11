@@ -1,17 +1,13 @@
 import { SandboxCallbackRequestError } from "../sandbox/callback-request";
 import { loadSandboxDeploymentConfig } from "../sandbox/config";
 import { completeSynthesisRunCallback } from "../synthesis/orchestrate-run";
-import {
-  completeSummarizationRunCallback,
-  SUMMARIZATION_RUN_ID_PREFIX,
-} from "../summarization/complete-summarization-callback";
+import { completeSummarizationRunCallback } from "../summarization/complete-summarization-callback";
 import { completeRoutineRunCallback } from "../routines/complete-routine-callback";
-import { ROUTINE_RUN_ID_PREFIX } from "../routines/config";
 import { recordError } from "../errors/record-error";
+import { callbackKind } from "./callback-kind";
 
-// Routes by the x-draft-run-id header's prefix instead of a second HTTP
-// route -- avoids adding another callback URL/secret to deployment config.
-// Synthesis run IDs are bare UUIDs, so these prefixes can never collide.
+// One callback URL for every kind of run. The x-draft-run-id header is the agent run's id, and the run's
+// kind picks the handler. The URL and the secret stay the same.
 export async function POST(request: Request): Promise<Response> {
   let callbackSecret: string;
   try {
@@ -28,14 +24,13 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const runIdHeader = request.headers.get("x-draft-run-id") ?? "";
-  const isSummarization = runIdHeader.startsWith(SUMMARIZATION_RUN_ID_PREFIX);
-  const isRoutine = runIdHeader.startsWith(ROUTINE_RUN_ID_PREFIX);
 
   try {
-    if (isRoutine) return await completeRoutineRunCallback(request, callbackSecret);
-    return isSummarization
-      ? await completeSummarizationRunCallback(request, callbackSecret)
-      : await completeSynthesisRunCallback(request, callbackSecret);
+    const { serviceClient } = await import("../db/client");
+    const kind = await callbackKind(runIdHeader, serviceClient);
+    if (kind === "routine") return await completeRoutineRunCallback(request, callbackSecret);
+    if (kind === "summarization") return await completeSummarizationRunCallback(request, callbackSecret);
+    return await completeSynthesisRunCallback(request, callbackSecret);
   } catch (error) {
     if (error instanceof SandboxCallbackRequestError) {
       return new Response(null, { status: 401 });

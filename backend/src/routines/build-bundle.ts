@@ -2,7 +2,6 @@ import { computeBundleHash } from "../sandbox/bundle-hash";
 import { assertSafeDocumentPath } from "../synthesis/context-version-files";
 import type { SandboxRunBundle } from "../sandbox";
 import { visibleContext, type ContextAudience } from "../metaharness/context/visible-context";
-import { routineRunId } from "./config";
 
 export interface RoutinePromptContext {
   title: string;
@@ -49,7 +48,8 @@ export function renderRoutinePrompt(prompt: string, context: RoutinePromptContex
 export function buildRoutineBundle(input: {
   organizationId: string;
   workspaceId: string;
-  sessionId: string;
+  /** The agent run's id. The sandbox reports under it. */
+  agentRunId: string;
   audience: ContextAudience;
   documents: Record<string, { content: string }>;
 }): SandboxRunBundle {
@@ -67,7 +67,7 @@ export function buildRoutineBundle(input: {
   return {
     organizationId: input.organizationId,
     workspaceId: input.workspaceId,
-    runId: routineRunId(input.sessionId),
+    runId: input.agentRunId,
     bundleHash: computeBundleHash(Object.fromEntries(Object.entries(files).map(([path, file]) => [path, file.content]))),
     files,
   };
