@@ -7,6 +7,7 @@ import { needsDraftToolServer } from "../sandbox/run-manifest";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
 import { buildRoutineBundle, renderRoutinePrompt } from "./build-bundle";
 import { ROUTINE_RUN_TIMEOUT_SECONDS, type AgentRoutineConfig } from "./config";
+import type { RoutineEventPayload } from "./event";
 
 export interface LaunchRoutineRunInput {
   sessionId: string;
@@ -18,6 +19,8 @@ export interface LaunchRoutineRunInput {
   schedule: { description: string; timezone: string };
   config: SandboxDeploymentConfig;
   client: SupabaseClient;
+  /** What started this run, when it was an event. */
+  event?: RoutineEventPayload;
 }
 
 export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<{ machineId: string } | void>;
@@ -30,7 +33,7 @@ export class RoutineLeaseBusyError extends Error {
   }
 }
 
-export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, schedule, config, client }) => {
+export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, schedule, config, client, event }) => {
   const { data, error } = await client.from("workspaces").select("organization_id").eq("id", workspaceId).single();
   if (error) throw error;
   const organizationId = (data as { organization_id: string }).organization_id;
@@ -49,6 +52,7 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
         timezone: schedule.timezone,
         startedAt: new Date(),
         hasDraftTools: needsDraftToolServer(agentRun),
+        ...(event ? { event: { description: event.description, title: event.title, text: event.text } } : {}),
       }),
     },
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,

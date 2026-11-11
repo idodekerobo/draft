@@ -24,6 +24,10 @@ function bunRequest(connectionKey: string): Bun.BunRequest<"/webhooks/fireflies/
 const realRequestAuthModule = await import("../../../webhooks/fireflies/request-auth");
 const realNormalizeModule = await import("../../../ingestion/fireflies/normalize");
 const realDbClientModule = await import("../../../db/client");
+const realSandboxModule = await import("../../../sandbox");
+const realLoadSandboxDeploymentConfig = realSandboxModule.loadSandboxDeploymentConfig;
+const realStartEventRoutinesModule = await import("../../../routines/start-event-routines");
+const realStartEventRoutines = realStartEventRoutinesModule.startEventRoutines;
 const RealFirefliesWebhookAuthError = realRequestAuthModule.FirefliesWebhookAuthError;
 const realAuthenticateFirefliesWebhookRequest = realRequestAuthModule.authenticateFirefliesWebhookRequest;
 const realIngestFirefliesMeeting = realNormalizeModule.ingestFirefliesMeeting;
@@ -75,6 +79,8 @@ function restoreRealModules() {
     ingestFirefliesMeeting: realIngestFirefliesMeeting,
   }));
   mock.module("../../../db/client", () => ({ serviceClient: realServiceClient }));
+  mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: realStartEventRoutines }));
+  mock.module("../../../sandbox", () => ({ ...realSandboxModule, loadSandboxDeploymentConfig: realLoadSandboxDeploymentConfig }));
 }
 
 describe("POST /webhooks/fireflies/:connectionKey", () => {
@@ -144,6 +150,55 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
         p_credential_id: "credential-1",
       },
     });
+  });
+
+  function summarizedEvent(event: string) {
+    mockEvidenceClient("active");
+    // The test environment has no Fly settings, so the sandbox config loader is replaced for these tests only.
+    mock.module("../../../sandbox", () => ({ ...realSandboxModule, loadSandboxDeploymentConfig: () => ({}) }));
+    mock.module("../../../webhooks/fireflies/request-auth", () => ({
+      FirefliesWebhookAuthError: RealFirefliesWebhookAuthError,
+      authenticateFirefliesWebhookRequest: async () => ({
+        connection: { id: "conn-1", workspace_id: "ws-1" },
+        credentialId: "credential-1",
+        event,
+        meetingId: "meeting-123",
+      }),
+    }));
+    mock.module("../../../ingestion/fireflies/normalize", () => ({ ingestFirefliesMeeting: async () => ({ sourceItemId: "item-1" }) }));
+  }
+
+  it("starts the routines that listen for a summarized meeting, after the meeting is stored", async () => {
+    summarizedEvent("meeting.summarized");
+    const started: unknown[][] = [];
+    mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: async (...args: unknown[]) => { started.push(args); return 1; } }));
+
+    const { POST } = await import("../../../webhooks/fireflies/route");
+    expect((await POST(bunRequest("acme-fireflies"))).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(started).toHaveLength(1);
+    expect(started[0]![2]).toEqual({ workspaceId: "ws-1", name: "fireflies.meeting_summarized", eventId: "meeting-123", sourceItemId: "item-1" });
+  });
+
+  it("starts no routine for a transcribed meeting", async () => {
+    summarizedEvent("meeting.transcribed");
+    const started: unknown[][] = [];
+    mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: async (...args: unknown[]) => { started.push(args); return 1; } }));
+
+    const { POST } = await import("../../../webhooks/fireflies/route");
+    expect((await POST(bunRequest("acme-fireflies"))).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toHaveLength(0);
+  });
+
+  it("still answers 200 when starting a routine fails", async () => {
+    summarizedEvent("meeting.summarized");
+    mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: async () => { throw new Error("fly is down"); } }));
+
+    const { POST } = await import("../../../webhooks/fireflies/route");
+    expect((await POST(bunRequest("acme-fireflies"))).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it("advances readiness on an authenticated unrecognized-event no-op", async () => {

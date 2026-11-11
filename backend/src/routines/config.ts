@@ -11,6 +11,10 @@ const TITLE_MAX_CHARS = 120;
 const PROMPT_MAX_CHARS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Events that can start a routine, besides its schedule. One per provider event Draft listens for. */
+export const ROUTINE_EVENTS = ["fireflies.meeting_summarized"] as const;
+export type RoutineEventName = (typeof ROUTINE_EVENTS)[number];
+
 /** What a person lets a routine use beyond its defaults. */
 export interface RoutineEnvironmentConfig {
   /** Built-in tools of the routine's harness, from the cloud list. */
@@ -26,9 +30,13 @@ export interface AgentRoutineConfig {
   harness: HarnessId;
   model: string | null;
   environment?: RoutineEnvironmentConfig;
+  /** Also start a run when one of these happens. Not settable through the public routines API. */
+  events?: RoutineEventName[];
+  /** Lets the run find people and message teammates. Fixed when the routine is saved, never by the model. Not settable through the public routines API. */
+  canNotify?: boolean;
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "environment" | "body" };
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "environment" | "events" | "canNotify" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
@@ -56,7 +64,7 @@ export function validateRoutineEnvironment(value: unknown, harness: HarnessId): 
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, environment } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, environment, events, canNotify } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
@@ -65,7 +73,20 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   if (model !== null && (typeof model !== "string" || !isKnownModel(definition.id, model))) return { ok: false, field: "model" };
   const validEnvironment = environment == null ? undefined : validateRoutineEnvironment(environment, harnessId);
   if (environment != null && !validEnvironment) return { ok: false, field: "environment" };
-  return { ok: true, config: { title: title.trim(), prompt, harness: harnessId, model, ...(validEnvironment ? { environment: validEnvironment } : {}) } };
+  if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
+  if (canNotify !== undefined && typeof canNotify !== "boolean") return { ok: false, field: "canNotify" };
+  return {
+    ok: true,
+    config: {
+      title: title.trim(),
+      prompt,
+      harness: harnessId,
+      model,
+      ...(validEnvironment ? { environment: validEnvironment } : {}),
+      ...(events && (events as string[]).length ? { events: [...new Set(events as RoutineEventName[])] } : {}),
+      ...(canNotify ? { canNotify: true } : {}),
+    },
+  };
 }
 
 export function parseAgentRoutineConfig(value: unknown): AgentRoutineConfig | null {
