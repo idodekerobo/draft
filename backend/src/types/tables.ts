@@ -470,8 +470,12 @@ export interface PeopleRow {
   affiliation: PersonAffiliation;
   notify_channels: string[];
   created_by: PersonCreatedBy;
+  /** The actor when an agent added the person. */
   created_by_run_id: string | null;
+  /** The actor when a person added them. Null for an agent or a connection. */
   created_by_user_id: string | null;
+  /** The user whose permissions the agent used. Null unless an agent added the person. */
+  on_behalf_of_user_id: string | null;
   evidence: { sourceItemId?: string; quote?: string };
   decided_by_user_id: string | null;
   decided_at: string | null;

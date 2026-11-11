@@ -10,9 +10,12 @@ create table people (
   -- Channels used when a notify call names none. The code checks the values, so a new channel needs no migration.
   notify_channels    text[] not null default '{slack}',
   created_by         text not null check (created_by in ('connection', 'agent', 'user')),
-  -- agent_runs.id when created_by = 'agent'.
+  -- Who added the person. A human actor sets created_by_user_id. An agent actor sets created_by_run_id
+  -- (the actor) and on_behalf_of_user_id (the user whose permissions it used). Never both, so a row
+  -- always shows whether a person or an agent did it. Both ids can become null later when a user or run is deleted.
   created_by_run_id  uuid,
   created_by_user_id uuid references users(id) on delete set null,
+  on_behalf_of_user_id uuid references users(id) on delete set null,
   -- { sourceItemId, quote }: why the person was added.
   evidence           jsonb not null default '{}',
   decided_by_user_id uuid references users(id) on delete set null,
@@ -22,6 +25,11 @@ create table people (
 
   unique (id, workspace_id),
   unique (workspace_id, user_id),
+  check (
+    (created_by = 'user'       and on_behalf_of_user_id is null and created_by_run_id is null)
+    or (created_by = 'agent'      and created_by_user_id is null)
+    or (created_by = 'connection' and created_by_user_id is null and on_behalf_of_user_id is null and created_by_run_id is null)
+  ),
   -- "set null (column)" keeps workspace_id, which is part of this key.
   foreign key (created_by_run_id, workspace_id)
     references agent_runs(id, workspace_id) on delete set null (created_by_run_id)
