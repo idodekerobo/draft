@@ -15,7 +15,7 @@ security definer
 set search_path = public
 as $$
 declare
-  v_run synthesis_runs%rowtype;
+  v_run agent_runs%rowtype;
   v_next_sequence bigint;
   v_now timestamptz := now();
 begin
@@ -24,8 +24,8 @@ begin
   end if;
 
   select * into v_run
-  from synthesis_runs
-  where id = p_run_id
+  from agent_runs
+  where id = p_run_id and kind = 'synthesis'
   for update;
 
   if not found then
@@ -46,7 +46,7 @@ begin
     where workspace_id = v_run.workspace_id;
 
     insert into workspace_events (
-      workspace_id, sequence_number, event_type, synthesis_run_id,
+      workspace_id, sequence_number, event_type, agent_run_id,
       context_version_id, summary, occurred_at
     ) values (
       v_run.workspace_id, v_next_sequence, 'no_change', p_run_id,
@@ -54,6 +54,16 @@ begin
     );
   end if;
 
+  update agent_runs
+  set status = 'succeeded',
+      outcome = p_outcome,
+      summary = p_summary,
+      result_hash = p_result_hash,
+      needs_input_json = p_needs_input_json,
+      completed_at = v_now
+  where id = p_run_id;
+
+  -- A run the old backend started is also in synthesis_runs. Keep that copy in step until it is dropped.
   update synthesis_runs
   set status = 'succeeded',
       outcome = p_outcome,

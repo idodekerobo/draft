@@ -3,8 +3,7 @@
 -- changed document against the current content and computed the hash, so a
 -- 'stale' answer only means another write landed first: read again and retry.
 -- A synthesis run writes through here too. Its versions carry the reason 'synthesis'
--- and each adds a context_updated event tied to the run. synthesis_run_id on the
--- version stays unset: that column is unique per run and a run may write more than once.
+-- and each adds a context_updated event tied to the run (agent_run_id), like any agent's write.
 create or replace function commit_context_write(
   p_workspace_id uuid,
   p_expected_version_id uuid,
@@ -70,10 +69,10 @@ begin
     where workspace_id = p_workspace_id;
 
     insert into workspace_events (
-      workspace_id, sequence_number, event_type, synthesis_run_id, context_version_id, summary, payload_json, occurred_at
+      workspace_id, sequence_number, event_type, agent_run_id, context_version_id, summary, payload_json, occurred_at
     ) values (
       p_workspace_id, v_next_sequence, 'context_updated',
-      case when p_creation_reason = 'synthesis' then p_agent_run_id end,
+      p_agent_run_id,
       v_new_version_id, p_summary,
       jsonb_build_object('agent_run_id', p_agent_run_id), v_now
     );

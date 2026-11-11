@@ -16,14 +16,15 @@ as $$
       p_reprocess
       or not exists (
         select 1
-        from synthesis_run_source_items srsi
-        join synthesis_runs sr
-          on sr.id = srsi.synthesis_run_id
+        from agent_run_source_items srsi
+        join agent_runs sr
+          on sr.id = srsi.agent_run_id
          and sr.workspace_id = srsi.workspace_id
         where srsi.workspace_id = si.workspace_id
           and srsi.source_item_id = si.id
           and srsi.source_item_version = si.external_version
           and srsi.content_hash = si.content_hash
+          and sr.kind = 'synthesis'
           and sr.status = 'succeeded'
           and sr.outcome in ('changed', 'no_change')
       )
