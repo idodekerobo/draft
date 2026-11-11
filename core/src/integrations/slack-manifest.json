@@ -1,7 +1,7 @@
 {
   "display_information": {
     "name": "Draft Context",
-    "description": "Passive listener — captures team context for AI sessions",
+    "description": "Captures team context for AI sessions and sends people their own action items",
     "background_color": "#e39a12"
   },
   "features": {
@@ -13,14 +13,17 @@
   "oauth_config": {
     "scopes": {
       "bot": [
+        "chat:write",
         "channels:history",
         "channels:join",
         "channels:read",
         "groups:history",
         "groups:read",
         "im:read",
+        "im:write",
         "mpim:read",
         "users:read",
+        "users:read.email",
         "reactions:read",
         "files:read"
       ]
