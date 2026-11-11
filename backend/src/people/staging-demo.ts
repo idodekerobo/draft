@@ -7,6 +7,7 @@
  *   seed --owner <email>            sync people, save the "Meeting follow-up" routine for that user
  *        [--sync]                   also read Slack and Linear directories now
  *        [--slack email=U123 ...]   confirm a Slack member id for a person (staging shortcut for a real Slack sync)
+ *   people --owner <email>         add demo teammates (two active, one pending, one external client) on that person's plus-addresses
  *   meeting [--as "Name: task" ...] store a shared demo meeting that gives people action items
  *   fire --source <id> [--wait]     start the routine for that meeting, as the Fireflies webhook would
  *   cleanup                         remove the demo meetings, the demo routine and the confirmed ids this tool added
@@ -123,6 +124,37 @@ async function seed(workspaceId: string, args: Args) {
   log("It can message teammates and starts when a Fireflies meeting is summarized.");
 }
 
+/** Demo teammates for testing. Each is tagged evidence.demo, so cleanup removes exactly these. */
+const DEMO_TEAMMATES = [
+  { name: "Iza Demo", alias: "iza", status: "active", affiliation: "member" },
+  { name: "Sam Rivera", alias: "sam", status: "active", affiliation: "member" },
+  { name: "Dana Okafor", alias: "dana", status: "pending", affiliation: "member" },
+  { name: "Priya Client", alias: "priya", status: "active", affiliation: "external" },
+] as const;
+
+async function demoPeople(workspaceId: string, args: Args) {
+  if (!args.owner) throw new Error("Pass --owner <email>: the person these demo teammates are added by");
+  const { data: owner } = await db.from("users").select("id, email").eq("email", args.owner.toLowerCase()).maybeSingle();
+  if (!owner) throw new Error(`No user with the email ${args.owner}`);
+  const [local, domain] = (owner as { email: string }).email.split("@") as [string, string];
+
+  for (const mate of DEMO_TEAMMATES) {
+    const email = `${local}+${mate.alias}@${domain}`.toLowerCase();
+    let { data: existing } = await db.from("people").select("id").eq("workspace_id", workspaceId).eq("display_name", mate.name).maybeSingle();
+    if (!existing) {
+      const { data, error } = await db.from("people").insert({
+        workspace_id: workspaceId, display_name: mate.name, status: mate.status, affiliation: mate.affiliation, created_by: "user",
+        created_by_user_id: (owner as { id: string }).id, evidence: { demo: true, quote: "Demo teammate added for testing" },
+      }).select("id").single();
+      if (error) throw error;
+      existing = data;
+    }
+    await addIdentity(db, workspaceId, (existing as { id: string }).id, { provider: "email", externalId: email, handle: email, status: "confirmed", evidence: { demo: true } });
+    log(`${mate.name.padEnd(14)} ${mate.status.padEnd(8)} ${mate.affiliation.padEnd(9)} ${email}`);
+  }
+  log("\nThey have no Slack ids yet. To make one reachable: seed --owner <email> --slack <their email above>=<Slack member id>");
+}
+
 async function meeting(workspaceId: string, args: Args) {
   const { data: people } = await db.from("people").select("id, display_name").eq("workspace_id", workspaceId).eq("status", "active").eq("affiliation", "member").order("display_name");
   const everyone = (people ?? []) as Array<{ id: string; display_name: string }>;
@@ -187,9 +219,11 @@ async function cleanup(workspaceId: string) {
     const { error } = await db.from("source_items").delete().eq("workspace_id", workspaceId).eq("source_connection_id", (connection as { id: string }).id);
     if (error) throw error;
   }
+  const { error: peopleError } = await db.from("people").delete().eq("workspace_id", workspaceId).eq("evidence->>demo", "true");
+  if (peopleError) throw peopleError;
   const { error: identityError } = await db.from("person_identities").delete().eq("workspace_id", workspaceId).eq("evidence->>demo", "true");
   if (identityError) throw identityError;
-  log("Removed the demo routine, the demo meetings and the Slack ids this tool confirmed.");
+  log("Removed the demo routine, the demo meetings, the demo teammates and the Slack ids this tool confirmed.");
 }
 
 assertNotProduction(process.env.SUPABASE_URL, readProductionEnvText(import.meta.dir), { what: "The people demo only runs on staging." });
@@ -199,8 +233,9 @@ log(`Workspace: ${workspace.slug} (staging)\n`);
 switch (args.command) {
   case "status": await status(workspace.id); break;
   case "seed": await seed(workspace.id, args); break;
+  case "people": await demoPeople(workspace.id, args); break;
   case "meeting": await meeting(workspace.id, args); break;
   case "fire": await fire(workspace.id, args); break;
   case "cleanup": await cleanup(workspace.id); break;
-  default: throw new Error("Commands: status, seed, meeting, fire, cleanup. See the top of this file.");
+  default: throw new Error("Commands: status, seed, people, meeting, fire, cleanup. See the top of this file.");
 }
