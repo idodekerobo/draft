@@ -55,7 +55,7 @@ describe("MCP tools that go through the gateway", () => {
   it("registers the tools that run through the gateway, and no run-only tool", async () => {
     const result = await rpc("tools/list");
     const names = result.tools!.map((tool) => tool.name).sort();
-    expect(names).toEqual(["context.export", "context.list", "context.read", "routines.list", "skills.add", "skills.list", "skills.read", "sources.read", "sources.search"]);
+    expect(names).toEqual(["context.export", "context.list", "context.read", "people.add_identity", "people.approve", "people.create", "people.find", "people.reject", "routines.list", "skills.add", "skills.list", "skills.read", "sources.read", "sources.search"]);
   });
 
   it("context.read returns the shape clients already read, and audits it as an MCP call by this person", async () => {

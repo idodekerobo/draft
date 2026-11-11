@@ -148,6 +148,13 @@ Write documents with the \`context.write\` tool of the "draft" tool server, not 
 - The files that do not conflict are written. For each file that someone else changed since you read it, the reply holds \`currentContent\` and \`currentSha\`. Merge your change into \`currentContent\`, compare it with your own copy under input/context/, and write again with \`baseSha\` set to \`currentSha\`. Drop the change if it no longer applies.
 - When a reply says \`retryable\` is false, stop retrying. Report what you could not write in your summary.
 
+## People
+When the sources name a teammate Draft may not know, for example someone new in a meeting, you may add them with the \`people\` tools of the "draft" tool server.
+- Add teammates only. Do not add clients, guests, vendors, candidates, or people who are only mentioned.
+- Call \`people.find\` first. Never add someone Draft already knows or whose name is close to a known person.
+- Give the exact quote that shows who they are as \`evidence\`. Use an email address as an identity only when the source states it.
+- A person you add waits for an admin to approve. You cannot approve or message anyone.
+
 ## Final answer
 When you are done writing, reply with this JSON and nothing else:
 

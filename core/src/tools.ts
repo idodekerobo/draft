@@ -64,6 +64,14 @@ export type AnyDraftToolPermission = { [T in DraftToolName]: DraftToolPermission
 /** What a routine and a synthesis run may do with Draft's tools today: read any context and write any document. */
 export const CONTEXT_READ_WRITE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
 
+/** What a synthesis run may do: read and write context, and note new teammates. It can never message anyone. */
+export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
+  ...CONTEXT_READ_WRITE_PERMISSIONS,
+  { tool: "people.find" },
+  { tool: "people.create", limits: { maxPerRun: 5 } },
+  { tool: "people.add_identity", limits: { maxPerRun: 10 } },
+];
+
 /** Where a person's call came in: an MCP client, the CLI, or Draft's own app. Only the first two are logged as agent queries. */
 export type UserCallSurface = "mcp" | "cli" | "app";
 

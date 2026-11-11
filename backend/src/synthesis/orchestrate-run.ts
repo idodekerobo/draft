@@ -14,7 +14,7 @@ import {
   RunPreparationFailedError,
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
-import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/tools";
+import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
 import { buildSynthesisRunSpec } from "./run-spec";
 import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
@@ -108,7 +108,7 @@ export async function launchSynthesisRun(
       retryOfRunId: options.retryOfRunId,
       contextVersionId: bundle.baseContextVersionId,
       resultSchema: jsonSchema,
-      permissions: CONTEXT_READ_WRITE_PERMISSIONS,
+      permissions: SYNTHESIS_PERMISSIONS,
     });
     await saveAgentRunSpec(client, spec);
     const receipt = await launchSandboxRun({
