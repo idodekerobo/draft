@@ -5,12 +5,14 @@
  *
  *   status                          people, identities, admins, Slack, and the demo routine
  *   seed --owner <email>            sync people, save the "Meeting follow-up" routine for that user
+ *        [--harness claude|codex]   default: the one the workspace has an inference login for
  *        [--sync]                   also read Slack and Linear directories now
  *        [--slack email=U123 ...]   confirm a Slack member id for a person (staging shortcut for a real Slack sync)
  *   people --owner <email>         add demo teammates (two active, one pending, one external client) on that person's plus-addresses
  *   meeting [--as "Name: task" ...] store a shared demo meeting that gives people action items
  *   fire --source <id> [--wait]     start the routine for that meeting, as the Fireflies webhook would
- *   cleanup                         remove the demo meetings, the demo routine and the confirmed ids this tool added
+ *   cleanup [--keep-people]         remove the demo meetings, the demo routine and the confirmed ids this tool added
+ *                                   (and the demo teammates, unless --keep-people)
  */
 import { createHash } from "node:crypto";
 import { serviceClient } from "../db/client";
@@ -34,16 +36,20 @@ interface Args {
   source?: string;
   sync: boolean;
   wait: boolean;
+  keepPeople: boolean;
+  harness?: string;
   slack: string[];
   as: string[];
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { command: argv[0] ?? "", sync: false, wait: false, slack: [], as: [] };
+  const args: Args = { command: argv[0] ?? "", sync: false, wait: false, keepPeople: false, slack: [], as: [] };
   for (let i = 1; i < argv.length; i++) {
     const flag = argv[i]!;
     if (flag === "--sync") args.sync = true;
     else if (flag === "--wait") args.wait = true;
+    else if (flag === "--keep-people") args.keepPeople = true;
+    else if (flag === "--harness") args.harness = argv[++i];
     else if (flag === "--workspace") args.workspace = argv[++i];
     else if (flag === "--owner") args.owner = argv[++i];
     else if (flag === "--source") args.source = argv[++i];
@@ -72,6 +78,9 @@ async function status(workspaceId: string) {
   const { data: slack } = await db.from("source_connections").select("status").eq("workspace_id", workspaceId).eq("provider", "slack").maybeSingle();
   const { data: tasks } = await db.from("scheduled_tasks").select("id, enabled, config_json, created_by_user_id").eq("workspace_id", workspaceId).eq("task_type", "agent_routine").is("deleted_at", null);
 
+  const { data: logins } = await db.from("credentials").select("provider").eq("workspace_id", workspaceId).eq("status", "active");
+  const providers = ((logins ?? []) as Array<{ provider: string }>).map((login) => login.provider);
+  log(`Inference login for routines: ${[providers.includes("claude_code") ? "claude" : null, providers.includes("codex_chatgpt_auth") ? "codex" : null].filter(Boolean).join(", ") || "none (a routine run cannot start)"}`);
   log(`Slack: ${slack ? (slack as { status: string }).status : "not connected"}`);
   log(`Admins: ${(admins ?? []).map((a: { email: string }) => a.email).join(", ") || "none"}`);
   log("");
@@ -105,7 +114,14 @@ async function seed(workspaceId: string, args: Args) {
 
   const { data: owner } = await db.from("users").select("id").eq("email", args.owner.toLowerCase()).maybeSingle();
   if (!owner) throw new Error(`No user with the email ${args.owner}`);
-  const config = meetingFollowUpRoutine();
+  // A routine runs on one harness, and a workspace may have a login for only one of them.
+  const { data: logins } = await db.from("credentials").select("provider").eq("workspace_id", workspaceId).eq("status", "active");
+  const providers = ((logins ?? []) as Array<{ provider: string }>).map((login) => login.provider);
+  const harness = (args.harness ?? (providers.includes("claude_code") ? "claude" : providers.includes("codex_chatgpt_auth") ? "codex" : "claude")) as "claude" | "codex";
+  if (harness !== "claude" && harness !== "codex") throw new Error("--harness must be claude or codex");
+  const haveLogin = harness === "claude" ? providers.includes("claude_code") : providers.includes("codex_chatgpt_auth");
+  log(`Harness: ${harness}${haveLogin ? "" : "  (WARNING: this workspace has no login for it, so a run will fail to start)"}`);
+  const config = meetingFollowUpRoutine(harness);
   const { data: existing } = await db.from("scheduled_tasks").select("id").eq("workspace_id", workspaceId).eq("task_type", "agent_routine").eq("task_key", DEMO_TASK_KEY).maybeSingle();
   if (existing) {
     const { error } = await db.from("scheduled_tasks").update({ config_json: config, created_by_user_id: (owner as { id: string }).id, enabled: true, deleted_at: null }).eq("id", (existing as { id: string }).id);
@@ -208,7 +224,7 @@ async function fire(workspaceId: string, args: Args) {
   log("Still running. Check the run in the app, or run status again later.");
 }
 
-async function cleanup(workspaceId: string) {
+async function cleanup(workspaceId: string, args: Args) {
   const { data: tasks } = await db.from("scheduled_tasks").select("id").eq("workspace_id", workspaceId).eq("task_key", DEMO_TASK_KEY);
   for (const task of (tasks ?? []) as Array<{ id: string }>) {
     const { error } = await db.from("scheduled_tasks").update({ enabled: false, deleted_at: new Date().toISOString() }).eq("id", task.id);
@@ -219,11 +235,11 @@ async function cleanup(workspaceId: string) {
     const { error } = await db.from("source_items").delete().eq("workspace_id", workspaceId).eq("source_connection_id", (connection as { id: string }).id);
     if (error) throw error;
   }
-  const { error: peopleError } = await db.from("people").delete().eq("workspace_id", workspaceId).eq("evidence->>demo", "true");
+  const { error: peopleError } = args.keepPeople ? { error: null } : await db.from("people").delete().eq("workspace_id", workspaceId).eq("evidence->>demo", "true");
   if (peopleError) throw peopleError;
   const { error: identityError } = await db.from("person_identities").delete().eq("workspace_id", workspaceId).eq("evidence->>demo", "true");
   if (identityError) throw identityError;
-  log("Removed the demo routine, the demo meetings, the demo teammates and the Slack ids this tool confirmed.");
+  log(`Removed the demo routine, the demo meetings${args.keepPeople ? "" : ", the demo teammates"} and the Slack ids this tool confirmed.`);
 }
 
 assertNotProduction(process.env.SUPABASE_URL, readProductionEnvText(import.meta.dir), { what: "The people demo only runs on staging." });
@@ -236,6 +252,6 @@ switch (args.command) {
   case "people": await demoPeople(workspace.id, args); break;
   case "meeting": await meeting(workspace.id, args); break;
   case "fire": await fire(workspace.id, args); break;
-  case "cleanup": await cleanup(workspace.id); break;
+  case "cleanup": await cleanup(workspace.id, args); break;
   default: throw new Error("Commands: status, seed, people, meeting, fire, cleanup. See the top of this file.");
 }
