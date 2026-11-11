@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createSandboxCallbackToken } from "../../sandbox/callback-token";
 import { completeRoutineRunCallback } from "../../routines/complete-routine-callback";
 import { encryptCredentialPayload } from "../../credentials/crypto";
-import { routineHostMachineId, routineRunId } from "../../routines/config";
+import { routineHostMachineId } from "../../routines/config";
 import { fakeClient, fakeDb, type FakeDb } from "./fake-client";
 
 process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64");
@@ -21,6 +21,9 @@ function seed(overrides: Record<string, unknown> = {}): FakeDb {
     errors: [],
   });
 }
+
+// The id a routine reported under before kind routing. Still accepted for a run that started before the change.
+const routineRunId = (sessionId: string): string => `routine:${sessionId}`;
 
 function post(result: unknown, runId = routineRunId(SESSION_ID)): Request {
   const token = createSandboxCallbackToken({ runId, bundleHash: BUNDLE_HASH, expiresAt: Date.now() + 60_000, nonce: "n" }, SECRET);
@@ -42,6 +45,23 @@ function post(result: unknown, runId = routineRunId(SESSION_ID)): Request {
 const assistantLine = { file: "root.jsonl", offset: 0, raw: JSON.stringify({ type: "assistant", uuid: "a1", message: { role: "assistant", content: [{ type: "text", text: "Here is the digest." }] } }) };
 
 describe("completeRoutineRunCallback", () => {
+  it("finds the session from the agent run's id", async () => {
+    const AGENT_RUN = "99999999-9999-4999-8999-999999999999";
+    const db = seed();
+    db.tables.agent_runs = [{ id: AGENT_RUN, kind: "routine", session_id: SESSION_ID }];
+    const response = await completeRoutineRunCallback(post({ kind: "lines", lines: [assistantLine] }, AGENT_RUN), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    expect(db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_host_machine_id).toBe(routineHostMachineId(SESSION_ID));
+  });
+
+  it("answers 404 for an id that is not a routine run", async () => {
+    const db = seed();
+    db.tables.agent_runs = [{ id: "99999999-9999-4999-8999-999999999999", kind: "synthesis", session_id: null }];
+    const response = await completeRoutineRunCallback(post({ kind: "lines", lines: [assistantLine] }, "99999999-9999-4999-8999-999999999999"), SECRET, fakeClient(db));
+    expect(response.status).toBe(404);
+  });
+
   it("appends the prompt first, then the agent's lines, as the session's own host", async () => {
     const db = seed();
     const response = await completeRoutineRunCallback(post({ kind: "lines", lines: [assistantLine] }), SECRET, fakeClient(db));

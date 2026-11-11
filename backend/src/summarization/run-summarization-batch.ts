@@ -9,7 +9,6 @@ import { claimPendingSummarySessions } from "./claim-sessions";
 import { reportExpiredSummaryLeases } from "./report-expired-leases";
 import { renderSessionTranscript } from "./render-transcript";
 import { buildSummarizationBundle } from "./build-bundle";
-import { summarizationRunId } from "./complete-summarization-callback";
 import { buildSummarizationRunSpec } from "./run-spec";
 import { summarizationJsonSchema } from "./render-prompt";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
@@ -116,7 +115,7 @@ async function launchBatch(
     organizationId,
     workspaceId: options.workspaceId,
     sessions: sessionInputs,
-    runId: summarizationRunId(options.workspaceId, agentRunId),
+    runId: agentRunId,
   });
 
   const claudeCodeOAuthToken = await resolveInferenceCredential(options.workspaceId, options.client);

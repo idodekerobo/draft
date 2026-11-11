@@ -73,9 +73,10 @@ export function parseAgentRoutineConfig(value: unknown): AgentRoutineConfig | nu
   return result.ok ? result.config : null;
 }
 
-export const routineRunId = (sessionId: string): string => `${ROUTINE_RUN_ID_PREFIX}${sessionId}`;
 export const routineHostMachineId = (sessionId: string): string => `${ROUTINE_HOST_PREFIX}${sessionId}`;
 
+// Routine runs reported as routine:<session id> before kind routing. Still read so a run started before the
+// change can finish. TODO: remove with the prefix once no such run can be in flight.
 export function parseRoutineSessionId(runId: string): string | null {
   if (!runId.startsWith(ROUTINE_RUN_ID_PREFIX)) return null;
   const id = runId.slice(ROUTINE_RUN_ID_PREFIX.length);

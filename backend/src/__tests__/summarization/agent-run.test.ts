@@ -3,7 +3,6 @@ import { createSandboxCallbackToken } from "../../sandbox/callback-token";
 import {
   completeSummarizationRunCallback,
   parseAgentRunIdFromSummarizationRunId,
-  summarizationRunId,
 } from "../../summarization/complete-summarization-callback";
 import { startSummarizationRun } from "../../summarization/run-summarization-batch";
 import { summarizationJsonSchema } from "../../summarization/render-prompt";
@@ -61,6 +60,9 @@ describe("startSummarizationRun", () => {
   });
 });
 
+// The id a batch reported under before kind routing. Still accepted for a batch that started before the change.
+const summarizationRunId = (workspaceId: string, agentRunId: string): string => `summarize:${workspaceId}:${agentRunId}`;
+
 describe("summarization run ids", () => {
   it("carry the workspace and the agent run, and the run is recovered from them", () => {
     const id = summarizationRunId(WS, RUN);
@@ -104,6 +106,13 @@ describe("the summarization callback ends the agent run", () => {
     expect(response.status).toBe(204);
     expect(db.tables.agent_runs![0]).toMatchObject({ status: "succeeded", summary: "0 of 0 sessions summarized", failure_code: null });
     expect(db.tables.agent_runs![0]!.completed_at).toBeTruthy();
+  });
+
+  it("finishes a batch that reports under the agent run's own id", async () => {
+    const db = runningDb();
+    const response = await completeSummarizationRunCallback(post({ items: [] }, RUN), SECRET, fakeClient(db));
+    expect(response.status).toBe(204);
+    expect(db.tables.agent_runs![0]).toMatchObject({ status: "succeeded", summary: "0 of 0 sessions summarized" });
   });
 
   it("fails with the runner's own reason when the runner reports a setup failure", async () => {

@@ -76,6 +76,13 @@ async function finishRun(client: SupabaseClient, session: RoutineSession, result
   });
 }
 
+/** The session a routine's agent run streams to, or null when the id is not a routine run. */
+async function sessionOfAgentRun(db: SupabaseClient, runId: string): Promise<string | null> {
+  const { data, error } = await db.from("agent_runs").select("session_id").eq("id", runId).eq("kind", "routine").maybeSingle();
+  if (error) throw error;
+  return (data as { session_id: string | null } | null)?.session_id ?? null;
+}
+
 /**
  * Receives what a routine runner sends: batches of stream-json lines while it runs,
  * then one final message. The token proves the sender is the machine for this one session.
@@ -87,7 +94,7 @@ export async function completeRoutineRunCallback(
 ): Promise<Response> {
   const db = client ?? (await import("../db/client")).serviceClient;
   const authenticated = await authenticateSandboxCallbackRequest(request, callbackSecret);
-  const sessionId = parseRoutineSessionId(authenticated.runId);
+  const sessionId = parseRoutineSessionId(authenticated.runId) ?? (await sessionOfAgentRun(db, authenticated.runId));
   if (!sessionId) return new Response(null, { status: 404 });
 
   const { data, error } = await db.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).maybeSingle();
