@@ -9,6 +9,7 @@ create table errors (
   source_connection_id     uuid,
   scheduled_task_id        uuid,
   synthesis_run_id         uuid,
+  agent_run_id             uuid,
   session_id               uuid,
   operation                text not null
                               check (operation in ('ingestion', 'scheduling', 'queue', 'execution',
@@ -22,7 +23,8 @@ create table errors (
   -- workspace_id is null, so a workspace-less row must carry no links.
   constraint errors_unattributed_has_no_links check (
     workspace_id is not null
-    or (source_connection_id is null and scheduled_task_id is null and synthesis_run_id is null and session_id is null)
+    or (source_connection_id is null and scheduled_task_id is null and synthesis_run_id is null
+      and agent_run_id is null and session_id is null)
   ),
 
   foreign key (source_connection_id, workspace_id)
@@ -31,9 +33,17 @@ create table errors (
     references scheduled_tasks(id, workspace_id) on delete restrict,
   foreign key (synthesis_run_id, workspace_id)
     references synthesis_runs(id, workspace_id) on delete restrict,
+  foreign key (agent_run_id, workspace_id)
+    references agent_runs(id, workspace_id) on delete restrict,
   foreign key (session_id, workspace_id)
     references sessions(id, workspace_id) on delete cascade
 );
+
+create index errors_agent_run_idx on errors (agent_run_id) where agent_run_id is not null;
+
+-- Copies a synthesis_run_id to agent_run_id while both tables exist.
+create trigger errors_copy_run_id before insert on errors
+  for each row execute function copy_synthesis_run_id_to_agent_run_id();
 
 alter table errors enable row level security;
 

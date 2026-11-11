@@ -29,7 +29,9 @@ begin
     id, workspace_id, kind, trigger, principal, runtime, harness, model, instructions,
     base_context_version_id, permissions, output, status, attempt, retry_of_run_id,
     idempotency_key, prompt_version, sandbox_machine_id, summary, failure_code,
-    started_at, completed_at, created_at, updated_at
+    started_at, completed_at, created_at, updated_at,
+    needs_input_json, needs_input_resolution, needs_input_resolved_at, needs_input_resolved_by,
+    result_hash, outcome, transcript_json, scheduled_task_id
   ) values (
     p_run.id, p_run.workspace_id, 'synthesis', v_trigger,
     '{"type": "workspace"}'::jsonb,
@@ -39,7 +41,9 @@ begin
     p_run.status, p_run.attempt, v_retry_of,
     p_run.idempotency_key, p_run.prompt_version, p_run.sandbox_machine_id, p_run.result_summary,
     case when p_run.status in ('failed', 'stale') then coalesce(p_run.outcome, p_run.status) end,
-    p_run.started_at, p_run.completed_at, p_run.created_at, p_run.updated_at
+    p_run.started_at, p_run.completed_at, p_run.created_at, p_run.updated_at,
+    p_run.needs_input_json, p_run.needs_input_resolution, p_run.needs_input_resolved_at, p_run.needs_input_resolved_by,
+    p_run.result_hash, p_run.outcome, p_run.transcript_json, p_run.scheduled_task_id
   )
   on conflict (id) do update set
     status = excluded.status,
@@ -48,7 +52,15 @@ begin
     summary = excluded.summary,
     failure_code = excluded.failure_code,
     started_at = excluded.started_at,
-    completed_at = excluded.completed_at;
+    completed_at = excluded.completed_at,
+    needs_input_json = excluded.needs_input_json,
+    needs_input_resolution = excluded.needs_input_resolution,
+    needs_input_resolved_at = excluded.needs_input_resolved_at,
+    needs_input_resolved_by = excluded.needs_input_resolved_by,
+    result_hash = excluded.result_hash,
+    outcome = excluded.outcome,
+    transcript_json = excluded.transcript_json,
+    scheduled_task_id = excluded.scheduled_task_id;
 end;
 $$;
 
