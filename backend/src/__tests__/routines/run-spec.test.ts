@@ -6,17 +6,19 @@ const input = {
   id: "11111111-1111-4111-8111-111111111111",
   workspaceId: "22222222-2222-4222-8222-222222222222",
   scheduledTaskId: "55555555-5555-4555-8555-555555555555",
+  ownerUserId: "66666666-6666-4666-8666-666666666666",
   occurrenceAt: "2026-11-09T09:00:00.000Z",
   routine: { title: "Digest", prompt: "Summarize.", harness: "claude" as const, model: null },
   contextVersionId: "44444444-4444-4444-8444-444444444444",
 };
 
 describe("buildRoutineRunSpec", () => {
-  it("builds a cloud routine spec for the workspace, from its schedule", () => {
+  it("builds a cloud routine spec that acts as its owner, from its schedule", () => {
     const spec = buildRoutineRunSpec(input);
     expect(spec).toMatchObject({
       kind: "routine",
-      principal: { type: "workspace" },
+      actor: { type: "agent", runId: input.id },
+      onBehalfOf: input.ownerUserId,
       harness: "claude",
       model: null,
       instructions: "Summarize.",

@@ -190,7 +190,7 @@ const synthesisSpec = () =>
 const summarizationSpec = () =>
   buildSummarizationRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T03:00:00.000Z", contextVersionId: VERSION, resultSchema: OBJECT_SCHEMA });
 const routineSpec = (routine: { harness: "claude" | "codex"; model: string | null; environment?: { nativeTools: string[]; mcpServers: [] } }) =>
-  buildRoutineRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T09:00:00.000Z", routine: { title: "t", prompt: "p", ...routine }, contextVersionId: VERSION });
+  buildRoutineRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: "2026-11-09T09:00:00.000Z", routine: { title: "t", prompt: "p", ...routine }, contextVersionId: VERSION });
 
 // The older variables, unchanged, plus the manifest. An image that has not been replaced reads the older ones.
 const withManifest = (env: Record<string, string>, manifest: RunnerManifest) => ({ ...env, DRAFT_RUN_MANIFEST: JSON.stringify(manifest) });

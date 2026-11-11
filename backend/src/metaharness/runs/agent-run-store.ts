@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { ACTIVE_AGENT_RUN_STATUSES, agentActor, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isHarnessId } from "draft-core/harnesses";
 import { isLoggedCommand } from "../../observability/logged-commands";
@@ -15,8 +15,6 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("manual"), requestedBy: z.string().transform(parseUserId) }),
   z.object({ type: z.literal("retry"), retryOf: z.string().transform(parseAgentRunId) }),
 ]);
-
-const principalSchema = z.object({ type: z.literal("workspace") });
 
 const nativeToolSchema = z.discriminatedUnion("harness", [
   z.object({ harness: z.literal("claude"), tool: z.enum(CLAUDE_NATIVE_TOOLS) }),
@@ -70,7 +68,7 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
     workspace_id: spec.workspaceId,
     kind: spec.kind,
     trigger: spec.trigger,
-    principal: spec.principal,
+    on_behalf_of_user_id: spec.onBehalfOf,
     runtime: spec.runtime,
     harness: spec.harness,
     model: spec.model,
@@ -117,7 +115,8 @@ export function specFromRow(row: AgentRunRow): AgentRunSpec {
     kind: row.kind as AgentRunKind,
     workspaceId: parseWorkspaceId(row.workspace_id),
     trigger: triggerSchema.parse(row.trigger),
-    principal: principalSchema.parse(row.principal),
+    actor: agentActor(parseAgentRunId(row.id)),
+    onBehalfOf: row.on_behalf_of_user_id ? parseUserId(row.on_behalf_of_user_id) : null,
     runtime: runtimeSchema.parse(row.runtime),
     harness: row.harness,
     model: row.model,

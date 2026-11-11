@@ -1,5 +1,5 @@
 import { cloudEnvironmentFor } from "draft-core/harnesses";
-import { cronTrigger, parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { agentActor, cronTrigger, parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { CONTEXT_READ_WRITE_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
 import type { AgentRoutineConfig } from "./config";
 
@@ -10,6 +10,8 @@ export interface RoutineRunSpecInput {
   id: string;
   workspaceId: string;
   scheduledTaskId: string;
+  /** The routine's owner. The run acts as this user. */
+  ownerUserId: string;
   occurrenceAt: string;
   routine: AgentRoutineConfig;
   /** The context version the run's files come from. */
@@ -24,7 +26,8 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
     kind: "routine",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: cronTrigger(input.scheduledTaskId, input.occurrenceAt),
-    principal: { type: "workspace" },
+    actor: agentActor(parseAgentRunId(input.id)),
+    onBehalfOf: parseUserId(input.ownerUserId),
     runtime: {
       type: "cloud",
       environment: cloudEnvironmentFor(input.routine.harness, {

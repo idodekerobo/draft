@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
 import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
+import { PrincipalInactiveError, assertPrincipalActive } from "../metaharness/runs/principal";
 import { usableMcpConnections } from "../metaharness/tools/remote-mcp";
 import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
@@ -103,10 +104,12 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       id: randomUUID(),
       workspaceId: task.workspace_id,
       scheduledTaskId: task.id,
+      ownerUserId: task.created_by_user_id,
       occurrenceAt,
       routine,
       contextVersionId,
     });
+    await assertPrincipalActive(client, run);
     await createAgentRun(client, { spec: run, idempotencyKey: `${task.id}:${occurrenceAt}`, status: "preparing", sessionId });
 
     const launched = await (options.launch ?? launchRoutineRun)({
@@ -126,6 +129,15 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
         note: "Another Codex routine was still running, so this run was skipped.",
         message: `Routine ${task.id} was skipped while another Codex run held the login`,
         silent: true,
+      });
+      return;
+    }
+    if (error instanceof PrincipalInactiveError) {
+      await failRoutineSession(client, session, {
+        code: error.code,
+        note: "The routine's owner is no longer an active member of this workspace, so the run did not start.",
+        message: `Routine ${task.id} was not started: its owner is not an active member`,
+        detail: { user_id: task.created_by_user_id },
       });
       return;
     }

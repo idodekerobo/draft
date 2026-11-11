@@ -83,7 +83,7 @@ function runWith(connectionId: string, toolsAllowed: "all" | string[] = "all"): 
     kind: "routine",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
-    principal: { type: "workspace" },
+    actor: { type: "agent", runId: parseAgentRunId("22222222-2222-4222-8222-222222222222") }, onBehalfOf: null,
     runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [{ connectionId: parseSourceConnectionId(connectionId), tools: toolsAllowed }], skills: [], instructions: [] } },
     harness: "claude",
     model: null,

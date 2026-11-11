@@ -48,6 +48,7 @@ const routineSpec = (
     id: RUN,
     workspaceId: WS,
     scheduledTaskId: TASK,
+    ownerUserId: "66666666-6666-4666-8666-666666666666",
     occurrenceAt: "2026-11-09T09:00:00.000Z",
     routine: { title: "t", prompt: "p", harness: "claude", model: null, ...routine },
     contextVersionId: VERSION,

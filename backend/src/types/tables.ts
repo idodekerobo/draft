@@ -384,7 +384,9 @@ export interface AgentRunRow {
   workspace_id: string;
   kind: AgentRunKind;
   trigger: unknown;
+  /** Replaced by on_behalf_of_user_id. Nothing writes it now; a later migration drops it. */
   principal: unknown;
+  on_behalf_of_user_id: string | null;
   runtime: unknown;
   harness: string;
   model: string | null;
@@ -453,4 +455,43 @@ export interface AgentRunInputRequestRow {
   answered_by: string | null;
   answered_at: string | null;
   created_at: string;
+}
+
+export type PersonStatus = "pending" | "active" | "rejected";
+export type PersonAffiliation = "member" | "external";
+export type PersonCreatedBy = "connection" | "agent" | "user";
+
+export interface PeopleRow {
+  id: string;
+  workspace_id: string;
+  display_name: string;
+  user_id: string | null;
+  status: PersonStatus;
+  affiliation: PersonAffiliation;
+  notify_channels: string[];
+  created_by: PersonCreatedBy;
+  created_by_run_id: string | null;
+  created_by_user_id: string | null;
+  evidence: { sourceItemId?: string; quote?: string };
+  decided_by_user_id: string | null;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PersonIdentityProvider = "email" | "slack" | "linear" | "github" | "whatsapp";
+export type PersonIdentityStatus = "confirmed" | "from_connection" | "inferred";
+
+export interface PersonIdentityRow {
+  id: string;
+  workspace_id: string;
+  person_id: string;
+  provider: PersonIdentityProvider;
+  external_id: string;
+  handle: string | null;
+  status: PersonIdentityStatus;
+  source_connection_id: string | null;
+  evidence: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
