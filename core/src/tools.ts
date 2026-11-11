@@ -1,7 +1,7 @@
 /**
  * The tools Draft's gateway serves, what a person may limit on them, and who may call them.
  */
-import type { AgentRunSpec, UserId, WorkspaceId } from "./run-spec";
+import type { AgentRunSpec, PersonId, UserId, WorkspaceId } from "./run-spec";
 
 /** Every tool the Draft gateway can serve. Adding a tool starts here. */
 export const DRAFT_TOOLS = [
@@ -17,6 +17,12 @@ export const DRAFT_TOOLS = [
   { name: "skills.update", access: "write" },
   { name: "skills.delete", access: "write" },
   { name: "routines.list", access: "read" },
+  { name: "people.find", access: "read" },
+  { name: "people.create", access: "write" },
+  { name: "people.add_identity", access: "write" },
+  { name: "people.notify", access: "write" },
+  { name: "people.approve", access: "write" },
+  { name: "people.reject", access: "write" },
 ] as const;
 export type DraftToolName = (typeof DRAFT_TOOLS)[number]["name"];
 export type DraftToolAccess = (typeof DRAFT_TOOLS)[number]["access"];
@@ -38,6 +44,13 @@ export interface DraftToolLimits {
   "skills.update": Record<string, never>;
   "skills.delete": Record<string, never>;
   "routines.list": Record<string, never>;
+  "people.find": Record<string, never>;
+  "people.create": { maxPerRun?: number };
+  "people.add_identity": { maxPerRun?: number };
+  /** `recipients` is who the run may message: its own user, any member, or these people. */
+  "people.notify": { recipients?: "self" | "members" | ReadonlyArray<PersonId>; maxPerRun?: number };
+  "people.approve": Record<string, never>;
+  "people.reject": Record<string, never>;
 }
 
 export interface DraftToolPermission<T extends DraftToolName = DraftToolName> {
@@ -50,6 +63,14 @@ export type AnyDraftToolPermission = { [T in DraftToolName]: DraftToolPermission
 
 /** What a routine and a synthesis run may do with Draft's tools today: read any context and write any document. */
 export const CONTEXT_READ_WRITE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
+
+/** What a synthesis run may do: read and write context, and note new teammates. It can never message anyone. */
+export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
+  ...CONTEXT_READ_WRITE_PERMISSIONS,
+  { tool: "people.find" },
+  { tool: "people.create", limits: { maxPerRun: 5 } },
+  { tool: "people.add_identity", limits: { maxPerRun: 10 } },
+];
 
 /** Where a person's call came in: an MCP client, the CLI, or Draft's own app. Only the first two are logged as agent queries. */
 export type UserCallSurface = "mcp" | "cli" | "app";

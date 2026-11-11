@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "members": [
+    { "id": "U001", "name": "uzo", "real_name": "Uzo A", "profile": { "email": "Uzo@Example.com", "real_name": "Uzo A" } },
+    { "id": "U002", "name": "cory", "real_name": "Cory B", "profile": { "email": "cory@example.com", "real_name": "Cory B" } },
+    { "id": "U003", "name": "robot", "is_bot": true, "profile": { "email": "bot@example.com" } },
+    { "id": "USLACKBOT", "name": "slackbot", "profile": {} },
+    { "id": "U004", "name": "old", "deleted": true, "profile": { "email": "old@example.com" } },
+    { "id": "U005", "name": "client", "is_restricted": true, "profile": { "email": "client@acme.com" } },
+    { "id": "U006", "name": "guest", "is_ultra_restricted": true, "profile": { "email": "guest@acme.com" } }
+  ],
+  "response_metadata": { "next_cursor": "" }
+}

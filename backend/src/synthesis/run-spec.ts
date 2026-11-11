@@ -1,4 +1,4 @@
-import { AGENT_RUN_SYSTEM_REASONS, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
+import { AGENT_RUN_SYSTEM_REASONS, agentActor, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
 import { type AnyDraftToolPermission } from "draft-core/tools";
 import { cloudEnvironmentFor } from "draft-core/harnesses";
 import type { SynthesisRunTriggerType } from "../types/enums";
@@ -45,7 +45,8 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
     kind: "synthesis",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
-    principal: { type: "workspace" },
+    actor: agentActor(parseAgentRunId(input.runId)),
+    onBehalfOf: null,
     runtime: { type: "cloud", environment: cloudEnvironmentFor("claude") },
     harness: "claude",
     model: null,

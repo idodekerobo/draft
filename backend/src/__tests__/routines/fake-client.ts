@@ -10,10 +10,12 @@ export interface FakeDb {
   unique: Record<string, string[][]>;
   rpcs: Record<string, RpcHandler>;
   rpcCalls: Array<{ name: string; args: Record<string, unknown> }>;
+  /** Tables whose new rows get a UUID id instead of `table-n`. */
+  uuidTables: string[];
 }
 
-export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<FakeDb, "unique" | "rpcs">> = {}): FakeDb {
-  return { tables, unique: extra.unique ?? {}, rpcs: extra.rpcs ?? {}, rpcCalls: [] };
+export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<FakeDb, "unique" | "rpcs" | "uuidTables">> = {}): FakeDb {
+  return { tables, unique: extra.unique ?? {}, rpcs: extra.rpcs ?? {}, rpcCalls: [], uuidTables: extra.uuidTables ?? [] };
 }
 
 class Query implements PromiseLike<{ data: unknown; error: unknown }> {
@@ -53,7 +55,7 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
           return { data: null, error: { code: "23505", message: `duplicate key value violates unique constraint on ${columns.join(",")}` } };
         }
       }
-      if (row.id === undefined) row.id = `${this.table}-${rows.length + 1}`;
+      if (row.id === undefined) row.id = this.db.uuidTables.includes(this.table) ? crypto.randomUUID() : `${this.table}-${rows.length + 1}`;
       rows.push(row);
       return { data: this.returning ? [row] : null, error: null };
     }
@@ -67,7 +69,7 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
       for (const row of matched) Object.assign(row, this.payload);
       return { data: this.returning ? matched : null, error: null };
     }
-    return { data: matched, error: null };
+    return { data: matched, error: null, count: matched.length } as { data: unknown; error: unknown };
   }
 }
 

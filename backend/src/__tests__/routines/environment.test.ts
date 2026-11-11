@@ -7,6 +7,7 @@ import type { ScheduledTaskRow } from "../../types/tables";
 import { fakeClient, fakeDb } from "./fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
+const TEAM = "77777777-7777-4777-8777-777777777777";
 const TASK = "55555555-5555-4555-8555-555555555555";
 const VERSION = "44444444-4444-4444-8444-444444444444";
 const OWNER = "33333333-3333-4333-8333-333333333333";
@@ -67,7 +68,7 @@ describe("a routine run's environment", () => {
 
   it("carries the chosen tools and connections into the spec", () => {
     const spec = buildRoutineRunSpec({
-      id: "22222222-2222-4222-8222-222222222222", workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T09:00:00.000Z",
+      id: "22222222-2222-4222-8222-222222222222", workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: "2026-11-09T09:00:00.000Z",
       routine, contextVersionId: VERSION, mcpServers: [{ connectionId: OWN, tools: "all" }],
     });
     if (spec.runtime.type !== "cloud") throw new Error("unreachable");
@@ -94,7 +95,8 @@ describe("dispatch resolves a routine's connections", () => {
     return fakeDb(
       {
         sessions: [], errors: [], agent_runs: [],
-        workspaces: [{ id: WS, timezone: "UTC", current_context_version_id: VERSION }],
+        workspaces: [{ id: WS, team_id: TEAM, timezone: "UTC", current_context_version_id: VERSION }],
+        users: [{ id: OWNER, status: "active", primary_team_id: TEAM }],
         workspace_context_versions: [{ id: VERSION, version_number: 1, documents_json: {} }],
         source_connections: [
           connection(OWN),

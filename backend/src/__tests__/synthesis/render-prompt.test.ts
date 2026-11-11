@@ -208,6 +208,45 @@ describe("renderSynthesisPrompt", () => {
     expect(prompt).not.toContain('"documents"');
   });
 
+  it("gives the people rules and action-item rules, and points at the roster only when the bundle has one", async () => {
+    const without = await renderSynthesisPrompt(buildValidatedRunBundle(bundleInput()));
+    expect(without.prompt).toContain("## People");
+    expect(without.prompt).toContain("Add teammates only");
+    expect(without.prompt).toContain("[Name](person:<id>)");
+    expect(without.prompt).toContain("open or done");
+    expect(without.prompt).toContain("Draft has no people on its roster yet");
+    expect(without.prompt).not.toContain("input/people.json");
+
+    const roster = { ...bundleInput(), people: [{ id: "99999999-9999-4999-8999-999999999999", name: "Uzo", status: "active" as const }] };
+    const withRoster = await renderSynthesisPrompt(buildValidatedRunBundle(roster));
+    expect(withRoster.prompt).toContain("input/people.json");
+    expect(withRoster.prompt).toContain("do not add them again");
+  });
+
+  it("puts only id, name and status in the roster file, in a stable order", () => {
+    const people = [
+      { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Zed", status: "pending" as const, email: "z@example.com" },
+      { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Ana", status: "active" as const, email: "a@example.com" },
+    ];
+    const bundle = buildValidatedRunBundle({ ...bundleInput(), people });
+    const file = bundle.files["input/people.json"]!;
+    expect(JSON.parse(file.content)).toEqual({
+      people: [
+        { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Ana", status: "active" },
+        { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Zed", status: "pending" },
+      ],
+    });
+    expect(file.content).not.toContain("example.com");
+    const reversed = buildValidatedRunBundle({ ...bundleInput(), people: [...people].reverse() });
+    expect(reversed.bundleHash).toBe(bundle.bundleHash);
+  });
+
+  it("adds no roster file, and leaves the bundle hash alone, when there are no people", () => {
+    const plain = buildValidatedRunBundle(bundleInput());
+    expect(plain.files["input/people.json"]).toBeUndefined();
+    expect(buildValidatedRunBundle({ ...bundleInput(), people: [] }).bundleHash).toBe(plain.bundleHash);
+  });
+
   it("handles a bundle with no source files", async () => {
     const input = bundleInput();
     input.sources = [];

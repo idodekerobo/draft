@@ -131,6 +131,16 @@ function createFakeClient() {
         }),
       };
     }
+    if (table === "people") {
+      return {
+        select: () => ({
+          eq: async (column: string, value: string) => {
+            if (column !== "workspace_id" || value !== ids.workspace) throw new Error(`unexpected filter on people: ${column}=${value}`);
+            return { data: [{ id: "99999999-9999-4999-8999-999999999999", display_name: "Uzo", status: "active", email: "uzo@example.com" }], error: null };
+          },
+        }),
+      };
+    }
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
@@ -143,5 +153,11 @@ describe("loadValidatedRunBundle", () => {
     const bundle = await loadValidatedRunBundle({ runId: ids.run, client });
     expect(bundle.runId).toBe(ids.run);
     expect(Object.keys(bundle.files)).toContain("input/sources/0000-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.md");
+  });
+
+  it("puts the workspace's people, without contact data, in the bundle as a roster", async () => {
+    const bundle = await loadValidatedRunBundle({ runId: ids.run, client: createFakeClient() });
+    expect(JSON.parse(bundle.files["input/people.json"]!.content)).toEqual({ people: [{ id: "99999999-9999-4999-8999-999999999999", name: "Uzo", status: "active" }] });
+    expect(bundle.files["input/people.json"]!.content).not.toContain("example.com");
   });
 });

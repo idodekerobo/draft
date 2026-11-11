@@ -23,6 +23,12 @@ describe("hosted Slack manifest", () => {
     expect(slackManifest).toEqual(JSON.parse(readFileSync(manifestPath, "utf8")));
   });
 
+  it("asks for the scopes that let Draft message a person and match them by email", () => {
+    const scopes = (slackManifest.oauth_config as { scopes: { bot: string[] } }).scopes.bot;
+    expect(scopes).toEqual(expect.arrayContaining(["chat:write", "im:write", "users:read", "users:read.email"]));
+    expect(String(slackManifest.display_information.description)).not.toContain("Passive");
+  });
+
   it("builds a decodable Slack URL containing the exact canonical manifest", () => {
     const result = buildSlackManifestUrl();
     expect(result.ok).toBe(true);

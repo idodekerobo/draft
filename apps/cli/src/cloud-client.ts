@@ -473,7 +473,10 @@ async function requestValue<T>(
 }
 
 /** `refusal` is the code of the tool's own "no", when that is why the call failed. */
-type ToolCallResult = { ok: true; output: unknown } | { ok: false; code: FetchErrorCode; refusal?: string };
+export type ToolCallResult =
+  | { ok: true; output: unknown }
+  // `message` is the tool's own words for why not, when it gave some. `toolStatus` says which kind of "no" it was.
+  | { ok: false; code: FetchErrorCode; refusal?: string; message?: string; toolStatus?: "refused" | "denied" | "invalid" | "error" | "malformed" };
 
 /** Calls one of Draft's tools as the signed-in person. The answer is the tool's output, or why the call did not work. */
 async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult> {
@@ -494,9 +497,12 @@ async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult
 
   const outcome = decodeToolEnvelope(value);
   if (outcome.ok) return { ok: true, output: outcome.output };
-  if (outcome.status !== "refused") return { ok: false, code: "request_failed" };
-  return { ok: false, code: safeBackendError({ error: outcome.code }) ?? "request_failed", refusal: outcome.code };
+  if (outcome.status !== "refused") return { ok: false, code: "request_failed", message: outcome.message, toolStatus: outcome.status };
+  return { ok: false, code: safeBackendError({ error: outcome.code }) ?? "request_failed", refusal: outcome.code, message: outcome.message, toolStatus: "refused" };
 }
+
+/** Calls any Draft tool as the signed-in person and keeps the tool's own answer, for commands that show it. */
+export const callPersonTool = (name: string, input: unknown): Promise<ToolCallResult> => callToolRaw(name, input);
 
 async function callTool<T>(name: string, input: unknown, decode: (output: unknown) => T | null): Promise<FetchResult<T>> {
   const call = await callToolRaw(name, input);

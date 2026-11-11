@@ -1,5 +1,5 @@
 -- One row per agent run: one agent process started by Draft with one fixed spec.
--- The spec columns (trigger, principal, runtime, permissions, output) are the
+-- The spec columns (trigger, on_behalf_of_user_id, runtime, permissions, output) are the
 -- AgentRunSpec in core/src/agent-run.ts, copied here when the run starts.
 create table agent_runs (
   id                       uuid primary key default gen_random_uuid(),
@@ -7,7 +7,10 @@ create table agent_runs (
   kind                     text not null
                              check (kind in ('interactive', 'routine', 'synthesis', 'summarization')),
   trigger                  jsonb not null,
+  -- Replaced by on_behalf_of_user_id. Nothing writes it now; a later migration drops it.
   principal                jsonb not null default '{"type": "workspace"}',
+  -- The user whose connections and context the run may use. The actor is always the run itself.
+  on_behalf_of_user_id     uuid references users(id) on delete set null,
   runtime                  jsonb not null,
   harness                  text not null,
   model                    text,

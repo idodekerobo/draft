@@ -11,6 +11,7 @@
     "test:db:lifecycle": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/integration-lifecycle.test.ts",
     "test:db:retrieval": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/retrieval.test.ts",
     "test:db:synthesis-consumption": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/synthesis-consumption.test.ts",
+    "test:db:people-schema": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/people-schema.test.ts",
     "test:db:slack-backfill": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/slack-backfill.test.ts"
   },
   "dependencies": {

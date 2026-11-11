@@ -46,7 +46,7 @@ describe("the synthesis run spec", () => {
   it("is saved onto the run row a trigger already made, and reads back the same", async () => {
     const db = fakeDb({
       agent_runs: [{
-        id: RUN, workspace_id: WS, kind: "synthesis", trigger: { type: "system", reason: "manual" }, principal: { type: "workspace" },
+        id: RUN, workspace_id: WS, kind: "synthesis", trigger: { type: "system", reason: "manual" }, on_behalf_of_user_id: null,
         runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
         harness: "claude", model: null, instructions: "", base_context_version_id: VERSION, permissions: [], output: { type: "none" }, status: "preparing",
       }],

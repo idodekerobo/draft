@@ -13,7 +13,8 @@ const spec: AgentRunSpec = {
     scheduledTaskId: parseScheduledTaskId("55555555-5555-4555-8555-555555555555"),
     occurrenceAt: parseIsoTimestamp("2026-11-09T09:00:00.000Z"),
   },
-  principal: { type: "workspace" },
+  actor: { type: "agent", runId: parseAgentRunId("11111111-1111-4111-8111-111111111111") },
+  onBehalfOf: null,
   runtime: {
     type: "cloud",
     environment: {
@@ -57,6 +58,15 @@ describe("agent run store", () => {
     expect(specFromRow(rowFrom(inserts[0].row))).toEqual(spec);
   });
 
+  it("round-trips the user a run acts for, and reads the actor back from the run id", async () => {
+    const { client, inserts } = fakeClient();
+    const asUser: AgentRunSpec = { ...spec, onBehalfOf: parseUserId("99999999-9999-4999-8999-999999999999") };
+    await createAgentRun(client, { spec: asUser, idempotencyKey: "k-user" });
+    expect(inserts[0].row.on_behalf_of_user_id).toBe(asUser.onBehalfOf);
+    expect(inserts[0].row).not.toHaveProperty("principal");
+    expect(specFromRow(rowFrom(inserts[0].row))).toEqual(asUser);
+  });
+
   it("stores the original run id of a retry", async () => {
     const { client, inserts } = fakeClient();
     const original = parseAgentRunId("77777777-7777-4777-8777-777777777777");
@@ -66,7 +76,7 @@ describe("agent run store", () => {
 
   it("reads the run a synthesis run was mirrored as, with a system trigger", () => {
     const mirrored = rowFrom({
-      id: spec.id, workspace_id: spec.workspaceId, kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, principal: spec.principal,
+      id: spec.id, workspace_id: spec.workspaceId, kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, on_behalf_of_user_id: spec.onBehalfOf,
       runtime: spec.runtime, harness: "claude", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
       permissions: [], output: { type: "structured", schema: {} }, status: "succeeded", attempt: 1, retry_of_run_id: null, idempotency_key: "k", prompt_version: "synthesis-v1", session_id: null,
     });
@@ -75,7 +85,7 @@ describe("agent run store", () => {
 
   it("rejects rows that do not match the spec", () => {
     const good = rowFrom({
-      id: spec.id, workspace_id: spec.workspaceId, kind: "routine", trigger: spec.trigger, principal: spec.principal,
+      id: spec.id, workspace_id: spec.workspaceId, kind: "routine", trigger: spec.trigger, on_behalf_of_user_id: spec.onBehalfOf,
       runtime: spec.runtime, harness: "codex", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
       permissions: [], output: spec.output, status: "queued", attempt: 1, retry_of_run_id: null, idempotency_key: "k", prompt_version: null, session_id: null,
     });

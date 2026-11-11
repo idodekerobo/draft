@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId } from "draft-core/run-spec";
 import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
-import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context-tools";
+import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context";
 import { sha256 } from "../../../synthesis/context-version-files";
 import { createFakeContextDb } from "../context/fake-context-db";
 import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
@@ -18,7 +18,7 @@ function setup(files: Record<string, string>, permissions: AnyDraftToolPermissio
       kind: "routine",
       workspaceId: parseWorkspaceId(WS),
       trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
-      principal: { type: "workspace" },
+      actor: { type: "agent", runId: parseAgentRunId("22222222-2222-4222-8222-222222222222") }, onBehalfOf: null,
       runtime: { type: "local", hostMachineId: parseHostMachineId("mac") },
       harness: "claude",
       model: null,

@@ -60,6 +60,7 @@ describe("fetchFirefliesMeeting", () => {
     expect(result.title).toBe("Weekly Sync");
     expect(result.occurredAt).toBe(new Date(1735689600000).toISOString());
     expect(result.attendees).toEqual(["Alice", "Bob"]);
+    expect(result.attendeeEmails).toEqual(["a@example.com", "b@example.com"]);
     expect(result.shortSummary).toBe("Quick sync on Q1 roadmap.");
     expect(result.overview).toBe("Discussed roadmap priorities.");
     expect(result.actionItems).toBe("- Alice to follow up with design.");

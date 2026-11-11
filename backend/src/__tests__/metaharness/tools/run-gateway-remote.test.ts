@@ -40,7 +40,7 @@ async function setup(options: { named?: boolean } = {}) {
     kind: "routine",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
-    principal: { type: "workspace" },
+    actor: { type: "agent", runId: parseAgentRunId(RUN_ID) }, onBehalfOf: null,
     runtime: {
       type: "cloud",
       environment: { nativeTools: [], mcpServers: options.named === false ? [] : [{ connectionId: parseSourceConnectionId(CONNECTION_ID), tools: "all" }], skills: [], instructions: [] },

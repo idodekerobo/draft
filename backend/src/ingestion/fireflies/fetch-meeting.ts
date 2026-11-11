@@ -64,6 +64,8 @@ export interface FirefliesMeetingData {
   title: string;
   occurredAt: string; // ISO
   attendees: string[];
+  /** Lowercased, from the attendee list. Kept so a person can be matched to a meeting by email. */
+  attendeeEmails?: string[];
   shortSummary?: string;
   overview?: string;
   actionItems?: string;
@@ -188,6 +190,14 @@ export async function fetchFirefliesMeeting(
       ? attendeesFromAttendeeList
       : (transcript.participants ?? []).filter((v): v is string => Boolean(v));
 
+  const attendeeEmails = [
+    ...new Set(
+      (transcript.meeting_attendees ?? [])
+        .map((a) => a.email?.trim().toLowerCase())
+        .filter((v): v is string => Boolean(v)),
+    ),
+  ];
+
   const sentences = (transcript.sentences ?? []).map((s) => ({
     speakerName: s.speaker_name ?? "Unknown speaker",
     text: s.text ?? "",
@@ -198,6 +208,7 @@ export async function fetchFirefliesMeeting(
     title: transcript.title ?? "Untitled meeting",
     occurredAt: toIsoDate(transcript.date),
     attendees,
+    attendeeEmails,
     shortSummary: transcript.summary?.short_summary ?? undefined,
     overview: transcript.summary?.overview ?? undefined,
     actionItems: transcript.summary?.action_items ?? undefined,

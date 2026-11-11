@@ -13,6 +13,7 @@
     "./harnesses/*":          "./src/harnesses/*.ts",
     "./run-spec":             "./src/run-spec.ts",
     "./tools":                "./src/tools.ts",
+    "./notify":               "./src/notify.ts",
     "./run-manifest":         "./src/run-manifest.ts",
     "./tool-envelope":        "./src/tool-envelope.ts",
     "./appState":             "./src/appState.ts",

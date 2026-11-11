@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { personSearchTerms } from "../people/search-terms";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   SOURCE_FULL_SUMMARY_MAX_BYTES,
@@ -137,7 +138,7 @@ function normalizeDate(value: string | undefined, endExclusive: boolean): Source
   return { ok: true, value: date.toISOString() };
 }
 
-function searchBinding(input: { query: string; provider: string | null; type: string[]; since: string | null; until: string | null }): string {
+function searchBinding(input: { query: string | null; person: string | null; provider: string | null; type: string[]; since: string | null; until: string | null }): string {
   return createHash("sha256").update(JSON.stringify(input)).digest("base64url");
 }
 
@@ -205,9 +206,9 @@ export async function searchSources(
   callerUserId: string,
   input: SourceSearchInput,
 ): Promise<SourceResult<SourceSearchResponse>> {
-  const query = input.query?.trim();
-  if (!query || query.length > SOURCE_QUERY_MAX_CHARACTERS) {
-    return failure("invalid_query", `query must contain 1 to ${SOURCE_QUERY_MAX_CHARACTERS} characters.`);
+  const query = input.query?.trim() || null;
+  if (query ? query.length > SOURCE_QUERY_MAX_CHARACTERS : !input.person) {
+    return failure("invalid_query", `query must contain 1 to ${SOURCE_QUERY_MAX_CHARACTERS} characters unless a person is given.`);
   }
   const limit = input.limit ?? SOURCE_SEARCH_DEFAULT_LIMIT;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > SOURCE_SEARCH_MAX_LIMIT) {
@@ -226,9 +227,18 @@ export async function searchSources(
   if (types.some((type) => !ITEM_TYPES.has(type))) return failure("invalid_filter", "Unknown source type.");
 
   const filters = { provider: input.provider ?? null, type: types, since: sinceResult.value, until: untilResult.value };
-  const binding = searchBinding({ query, ...filters });
+  const binding = searchBinding({ query, person: input.person ?? null, ...filters });
   const cursorResult = input.cursor ? parseSearchCursor(input.cursor, binding) : { ok: true as const, value: null };
   if (!cursorResult.ok) return cursorResult;
+
+  let personTerms: string[] | null = null;
+  if (input.person) {
+    const resolved = await personSearchTerms(client, workspaceId, callerUserId, input.person);
+    if (!resolved.ok) return failure("invalid_filter", "No person with that id in this workspace.");
+    // A person Draft cannot yet recognise anywhere matches no source.
+    if (resolved.terms.length === 0) return { ok: true, value: { results: [], next_cursor: null, consistency: "live", filters } };
+    personTerms = resolved.terms;
+  }
 
   const { data, error } = await client.rpc("search_sources", {
     p_workspace_id: workspaceId,
@@ -242,6 +252,7 @@ export async function searchSources(
     p_after_occurred_at: cursorResult.value?.occurred_at ?? null,
     p_after_id: cursorResult.value?.id ?? null,
     p_limit: limit + 1,
+    p_person_terms: personTerms,
   });
   if (error) return failure("search_failed", "Source search failed.");
 

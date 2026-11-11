@@ -39,7 +39,7 @@ describe("summarization run spec", () => {
       kind: "summarization",
       harness: "claude",
       permissions: [],
-      principal: { type: "workspace" },
+      actor: { type: "agent", runId: RUN }, onBehalfOf: null,
       trigger: { type: "cron", scheduledTaskId: TASK, occurrenceAt: schedule.occurrenceAt },
       output: { type: "structured" },
     });

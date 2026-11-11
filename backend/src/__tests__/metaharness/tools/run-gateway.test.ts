@@ -19,7 +19,7 @@ async function setup(permissions: AnyDraftToolPermission[], status = "running") 
     kind: "routine",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
-    principal: { type: "workspace" },
+    actor: { type: "agent", runId: parseAgentRunId(RUN_ID) }, onBehalfOf: null,
     runtime: { type: "local", hostMachineId: parseHostMachineId("mac") },
     harness: "claude",
     model: null,

@@ -9,18 +9,24 @@ import { fakeClient, fakeDb } from "./fake-client";
 const WS_ID = "11111111-1111-4111-8111-111111111111";
 const TASK_ID = "55555555-5555-4555-8555-555555555555";
 const VERSION_ID = "44444444-4444-4444-8444-444444444444";
+const OWNER_ID = "66666666-6666-4666-8666-666666666666";
+const TEAM_ID = "77777777-7777-4777-8777-777777777777";
 
 const task = {
   id: TASK_ID,
   workspace_id: WS_ID,
   task_type: "agent_routine",
-  created_by_user_id: "user-1",
+  created_by_user_id: OWNER_ID,
   config_json: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" },
 } as unknown as ScheduledTaskRow;
 
-const newDb = (workspace: Record<string, unknown> | null = { id: WS_ID, timezone: "UTC", current_context_version_id: VERSION_ID }) =>
+const newDb = (
+  workspace: Record<string, unknown> | null = { id: WS_ID, team_id: TEAM_ID, timezone: "UTC", current_context_version_id: VERSION_ID },
+  owner: Record<string, unknown> = { id: OWNER_ID, status: "active", primary_team_id: TEAM_ID },
+) =>
   fakeDb(
     {
+      users: [owner],
       sessions: [],
       errors: [],
       agent_runs: [],
@@ -49,7 +55,7 @@ describe("dispatchAgentRoutine", () => {
     expect(db.tables.sessions).toHaveLength(1);
     expect(db.tables.sessions![0]).toMatchObject({
       session_type: "routine",
-      owner_user_id: "user-1",
+      owner_user_id: OWNER_ID,
       scheduled_task_id: TASK_ID,
       status: "starting",
       title: "Weekly digest",
@@ -121,7 +127,8 @@ describe("dispatchAgentRoutine", () => {
       status: "running",
       sandbox_machine_id: "machine-9",
       trigger: { type: "cron", scheduledTaskId: TASK_ID, occurrenceAt: "2026-10-27T09:00:00.000Z" },
-      principal: { type: "workspace" },
+      on_behalf_of_user_id: OWNER_ID,
+      scheduled_task_id: TASK_ID,
       output: { type: "text" },
     });
     expect(run.permissions).toEqual([{ tool: "context.read" }, { tool: "context.write" }]);
@@ -132,6 +139,20 @@ describe("dispatchAgentRoutine", () => {
     expect(launchInput.run.inputs.contextVersionId).toBe(VERSION_ID as never);
   });
 
+  it.each([
+    ["was disabled", { id: OWNER_ID, status: "disabled", primary_team_id: TEAM_ID }],
+    ["left the team", { id: OWNER_ID, status: "active", primary_team_id: "88888888-8888-4888-8888-888888888888" }],
+  ])("fails with principal_inactive, and launches nothing, when the owner %s", async (_label, owner) => {
+    const db = newDb(undefined, owner);
+    const launch = okLaunch();
+    await dispatch(db, launch);
+
+    expect(launch).not.toHaveBeenCalled();
+    expect(db.tables.agent_runs).toHaveLength(0);
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed" });
+    expect(db.tables.errors).toEqual([expect.objectContaining({ detail_json: expect.objectContaining({ code: "principal_inactive" }) })]);
+  });
+
   it("gives a Codex routine a Codex environment", async () => {
     const db = newDb();
     await dispatch(db, okLaunch(), undefined, { config_json: { title: "t", prompt: "p", harness: "codex", model: null } });
@@ -140,7 +161,7 @@ describe("dispatchAgentRoutine", () => {
   });
 
   it("seeds a workspace with no context so the run has a base version", async () => {
-    const db = newDb({ id: WS_ID, timezone: "UTC", current_context_version_id: null });
+    const db = newDb({ id: WS_ID, team_id: TEAM_ID, timezone: "UTC", current_context_version_id: null });
     await dispatch(db, okLaunch());
     expect(db.rpcCalls.map((call) => call.name)).toContain("commit_context_write");
     expect(db.rpcCalls[0]!.args).toMatchObject({ p_creation_reason: "seed", p_expected_version_id: null });

@@ -11,6 +11,7 @@ type Brand<T, B extends string> = T & { readonly __brand: B };
 export type AgentRunId = Brand<string, "AgentRunId">;
 export type WorkspaceId = Brand<string, "WorkspaceId">;
 export type UserId = Brand<string, "UserId">;
+export type PersonId = Brand<string, "PersonId">;
 export type ContextVersionId = Brand<string, "ContextVersionId">;
 export type ScheduledTaskId = Brand<string, "ScheduledTaskId">;
 export type SourceConnectionId = Brand<string, "SourceConnectionId">;
@@ -31,6 +32,8 @@ function uuidParser<T extends string>(label: string) {
 export const parseAgentRunId = uuidParser<AgentRunId>("AgentRunId");
 export const parseWorkspaceId = uuidParser<WorkspaceId>("WorkspaceId");
 export const parseUserId = uuidParser<UserId>("UserId");
+/** Marked pure so the sandbox runner bundle stays the same when it does not use it. */
+export const parsePersonId = /* @__PURE__ */ uuidParser<PersonId>("PersonId");
 export const parseContextVersionId = uuidParser<ContextVersionId>("ContextVersionId");
 export const parseScheduledTaskId = uuidParser<ScheduledTaskId>("ScheduledTaskId");
 export const parseSourceConnectionId = uuidParser<SourceConnectionId>("SourceConnectionId");
@@ -86,8 +89,13 @@ export function cronTrigger(scheduledTaskId: string, occurrenceAt: string): Agen
   return { type: "cron", scheduledTaskId: parseScheduledTaskId(scheduledTaskId), occurrenceAt: parseIsoTimestamp(occurrenceAt) };
 }
 
-/** Who the run acts for. Only the workspace exists today. Identity work adds a user case. */
-export type AgentRunPrincipal = { type: "workspace" };
+/**
+ * Who did the thing. It is always the agent run, never a person: every write, message and tool call
+ * a run makes is recorded against the run, so it is clear an agent did it.
+ */
+export type AgentRunActor = { type: "agent"; runId: AgentRunId };
+
+export const agentActor = (runId: AgentRunId): AgentRunActor => ({ type: "agent", runId });
 
 /** Claude Code tools a run may be given. Which of them are safe in the cloud is decided by the cloud environment. */
 export const CLAUDE_NATIVE_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "Edit", "Write"] as const;
@@ -143,7 +151,12 @@ export interface AgentRunSpec {
   kind: AgentRunKind;
   workspaceId: WorkspaceId;
   trigger: AgentRunTrigger;
-  principal: AgentRunPrincipal;
+  actor: AgentRunActor;
+  /**
+   * The user whose connections and context the run may use, and who "self" is. This is authority lent to
+   * the run, not the actor. Null for a workspace run on shared sources, which has no self.
+   */
+  onBehalfOf: UserId | null;
   runtime: AgentRunRuntime;
   harness: HarnessId;
   /** A model alias of the harness, or null for the harness default. */

@@ -8,6 +8,7 @@ import { runAdd } from "./commands/add.ts";
 import { runAuth } from "./commands/auth.ts";
 import { runContext } from "./commands/context.ts";
 import { runIntegrations } from "./commands/integrations.ts";
+import { runPeople } from "./commands/people.ts";
 import { runRoutines } from "./commands/routines.ts";
 import { runSessions } from "./commands/sessions.ts";
 import { runSkills } from "./commands/skills.ts";
@@ -45,6 +46,9 @@ if (command === "--version" || command === "-v") {
       break;
     case "integrations":
       process.exitCode = await runIntegrations(rest);
+      break;
+    case "people":
+      process.exitCode = await runPeople(rest);
       break;
     case "routines":
       process.exitCode = await runRoutines(rest);

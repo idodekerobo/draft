@@ -65,7 +65,7 @@ export async function loadValidatedRunBundle(
   if (runError) throw runError;
   const run = runData as SelectedRun;
 
-  const [workspaceResult, versionResult, membershipResult] = await Promise.all([
+  const [workspaceResult, versionResult, membershipResult, peopleResult] = await Promise.all([
     client
       .from("workspaces")
       .select("id, organization_id, team_id")
@@ -83,10 +83,12 @@ export async function loadValidatedRunBundle(
       )
       .eq("agent_run_id", run.id)
       .order("position", { ascending: true }),
+    client.from("people").select("id, display_name, status").eq("workspace_id", run.workspace_id),
   ]);
   if (workspaceResult.error) throw workspaceResult.error;
   if (versionResult.error) throw versionResult.error;
   if (membershipResult.error) throw membershipResult.error;
+  if (peopleResult.error) throw peopleResult.error;
 
   const workspace = workspaceResult.data as {
     id: string;
@@ -127,6 +129,11 @@ export async function loadValidatedRunBundle(
     run,
     baseVersion,
     sources,
+    people: ((peopleResult.data ?? []) as Array<{ id: string; display_name: string; status: "pending" | "active" | "rejected" }>).map((person) => ({
+      id: person.id,
+      name: person.display_name,
+      status: person.status,
+    })),
     limits: options.limits ?? { ...PILOT_RUN_BUNDLE_LIMITS },
   });
 }

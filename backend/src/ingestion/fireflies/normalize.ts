@@ -41,6 +41,7 @@ export function buildFirefliesSanitizedRaw(meeting: FirefliesMeetingData): Firef
     title: meeting.title,
     occurredAt: meeting.occurredAt,
     attendees: [...meeting.attendees],
+    ...(meeting.attendeeEmails?.length ? { attendeeEmails: [...meeting.attendeeEmails] } : {}),
     ...(meeting.shortSummary !== undefined ? { shortSummary: meeting.shortSummary } : {}),
     ...(meeting.overview !== undefined ? { overview: meeting.overview } : {}),
     ...(meeting.actionItems !== undefined ? { actionItems: meeting.actionItems } : {}),
@@ -152,6 +153,7 @@ export async function ingestFirefliesMeeting(
     metadata_json: {
       title: meeting.title,
       attendees: meeting.attendees,
+      attendee_emails: meeting.attendeeEmails ?? [],
       fireflies_meeting_id: meetingId,
     },
     sanitized_raw_json: sanitizedRaw,

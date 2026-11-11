@@ -17,7 +17,7 @@ const when = "2026-11-09T03:00:00.000Z";
 
 const routine = (harness: "claude" | "codex", nativeTools: string[] = []) =>
   buildRoutineRunSpec({
-    id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: when,
+    id: RUN, workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: when,
     routine: { title: "t", prompt: "p", harness, model: harness === "claude" ? "haiku" : null, environment: { nativeTools, mcpServers: [] } },
     contextVersionId: VERSION,
   });
