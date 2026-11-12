@@ -63,16 +63,6 @@ begin
       completed_at = v_now
   where id = p_run_id;
 
-  -- A run the old backend started is also in synthesis_runs. Keep that copy in step until it is dropped.
-  update synthesis_runs
-  set status = 'succeeded',
-      outcome = p_outcome,
-      result_summary = p_summary,
-      result_hash = p_result_hash,
-      needs_input_json = p_needs_input_json,
-      completed_at = v_now
-  where id = p_run_id;
-
   return jsonb_build_object('status', 'succeeded', 'outcome', p_outcome);
 end;
 $$;

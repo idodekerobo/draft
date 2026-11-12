@@ -52,7 +52,3 @@ create policy workspace_context_versions_select on workspace_context_versions
 
 grant select on table workspace_context_versions to authenticated;
 grant select on table workspace_context_versions to service_role;
-
--- Copies a synthesis_run_id to agent_run_id while both tables exist.
-create trigger workspace_context_versions_copy_run_id before insert on workspace_context_versions
-  for each row execute function copy_synthesis_run_id_to_agent_run_id();

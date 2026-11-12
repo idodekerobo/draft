@@ -1,6 +1,6 @@
 -- Allocates the next workspace_events.sequence_number, locking the
 -- workspace row first so concurrent writers across the codebase (this
--- function, commit_synthesis_run) can never collide on the same number.
+-- function, finalize_synthesis_run) can never collide on the same number.
 create or replace function next_workspace_event_sequence(p_workspace_id uuid)
 returns bigint
 language plpgsql

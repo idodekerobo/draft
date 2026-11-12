@@ -53,6 +53,3 @@ create trigger workspace_events_signal
   for each statement execute function signal_workspace_events();
 
 create index workspace_events_agent_run_idx on workspace_events (agent_run_id) where agent_run_id is not null;
-
-create trigger workspace_events_copy_run_id before insert on workspace_events
-  for each row execute function copy_synthesis_run_id_to_agent_run_id();

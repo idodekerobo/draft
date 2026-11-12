@@ -41,10 +41,6 @@ create table errors (
 
 create index errors_agent_run_idx on errors (agent_run_id) where agent_run_id is not null;
 
--- Copies a synthesis_run_id to agent_run_id while both tables exist.
-create trigger errors_copy_run_id before insert on errors
-  for each row execute function copy_synthesis_run_id_to_agent_run_id();
-
 alter table errors enable row level security;
 
 create policy errors_select on errors
