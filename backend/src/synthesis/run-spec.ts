@@ -17,8 +17,7 @@ export interface SynthesisRunSpecInput {
 }
 
 /**
- * How a synthesis run started, in the typed contract. The database trigger that copies synthesis runs
- * to agent_runs maps the same way (supabase/migrations/…_synthesis_runs_mirror.sql); a test holds them together.
+ * How a synthesis run started, in the typed contract.
  */
 export function synthesisTrigger(input: Pick<SynthesisRunSpecInput, "triggerType" | "scheduledTaskId" | "occurrenceAt" | "retryOfRunId">): AgentRunTrigger {
   if (input.triggerType === "schedule" && input.scheduledTaskId && input.occurrenceAt) {

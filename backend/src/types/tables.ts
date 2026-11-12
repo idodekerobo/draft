@@ -202,43 +202,6 @@ export interface ScheduledTaskRow {
   created_by_user_id: string | null;
 }
 
-export interface SynthesisRunRow {
-  id: string;
-  workspace_id: string;
-  scheduled_task_id: string | null;
-  retry_of_run_id: string | null;
-  idempotency_key: string;
-  status: SynthesisRunStatus;
-  trigger_type: SynthesisRunTriggerType;
-  base_context_version_id: string;
-  attempt: number;
-  prompt_version: string;
-  outcome: SynthesisRunOutcome | null;
-  result_summary: string | null;
-  result_hash: string | null;
-  transcript_json: unknown[] | null;
-  sandbox_machine_id: string | null;
-  needs_input_json: unknown[] | null;
-  needs_input_resolution: string | null;
-  needs_input_resolved_at: string | null;
-  needs_input_resolved_by: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-// Immutable membership row: no updated_at.
-export interface SynthesisRunSourceItemRow {
-  workspace_id: string;
-  synthesis_run_id: string;
-  source_item_id: string;
-  position: number;
-  source_item_version: string;
-  content_hash: string;
-  created_at: string;
-}
-
 // Immutable feed row: no updated_at.
 export interface WorkspaceEventRow {
   id: string;

@@ -1,3 +1,4 @@
+-- DEPRECATED. Archive only: runs live in agent_runs (same ids). Nothing writes or reads this table.
 create table synthesis_runs (
   id                          uuid primary key default gen_random_uuid(),
   workspace_id                uuid not null references workspaces(id) on delete cascade,
@@ -67,8 +68,3 @@ create policy synthesis_runs_select on synthesis_runs
 
 grant select on table synthesis_runs to authenticated;
 grant select, insert, update on table synthesis_runs to service_role;
-
--- Every change is copied to agent_runs (same id) while the two tables are folded together.
-create trigger synthesis_runs_mirror
-  after insert or update on synthesis_runs
-  for each row execute function mirror_synthesis_run_trigger();

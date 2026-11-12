@@ -1,3 +1,4 @@
+-- DEPRECATED. Archive only: runs live in agent_runs (same ids). Nothing writes or reads this table.
 -- Immutable membership rows: no updated_at. No `authenticated` select policy
 -- -- read through synthesis_runs; this join table is service-role only for now.
 create table synthesis_run_source_items (
@@ -27,7 +28,3 @@ create index synthesis_run_source_items_source_item_idx
 alter table synthesis_run_source_items enable row level security;
 
 grant select, insert on table synthesis_run_source_items to service_role;
-
-create trigger synthesis_run_source_items_mirror
-  after insert on synthesis_run_source_items
-  for each row execute function mirror_synthesis_run_source_item_trigger();
