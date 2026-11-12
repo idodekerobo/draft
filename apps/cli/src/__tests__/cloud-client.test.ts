@@ -297,7 +297,7 @@ describe("hosted provider wrappers", () => {
         refresh_token: "replacement-rt",
         workspace_id: "replacement-workspace",
       });
-      return Response.json({ error: "invalid_grant" }, { status: 401 });
+      return Response.json({ error_code: "refresh_token_not_found" }, { status: 400 });
     };
 
     expect(await invoke("listConnections")).toEqual({ ok: false, code: "not_authenticated" });

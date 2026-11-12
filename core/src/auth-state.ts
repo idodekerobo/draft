@@ -172,12 +172,28 @@ async function refreshErrorCode(response: Response): Promise<string | undefined>
   }
 }
 
+// Codes that prove the refresh token or its session is gone for good.
+const DEAD_LOGIN_CODES = new Set([
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "session_not_found",
+  "session_expired",
+  "user_not_found",
+  "user_banned",
+]);
+const MAX_REJECTED_REFRESHES = 5;
+const REJECTED_REFRESH_BACKOFF_MS = 30_000;
+
 export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
   let inFlightRefresh: Promise<string> | null = null;
+  // Server answers that do not prove the login is dead, such as a bad app key. They are
+  // counted per refresh token, with a pause between attempts, so a burst of calls is one try.
+  let rejected: { refreshToken: string; count: number; at: number; status: number; code?: string } | null = null;
   return async function accessToken(options: { supabaseUrl: string; publishableKey: string; now?: () => number; forceRefresh?: boolean }): Promise<string> {
     const state = deps.read();
     if (!state) throw new Error("not_signed_in");
-    const nowSeconds = Math.floor((options.now?.() ?? Date.now()) / 1000);
+    const nowMs = options.now?.() ?? Date.now();
+    const nowSeconds = Math.floor(nowMs / 1000);
     if (!options.forceRefresh && state.expires_at > nowSeconds + 60) return state.access_token;
     if (inFlightRefresh) return inFlightRefresh;
 
@@ -191,6 +207,10 @@ export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
         const current0 = deps.read() ?? state;
         if (!options.forceRefresh && current0.expires_at > nowSeconds + 60) return current0.access_token;
 
+        if (rejected?.refreshToken === current0.refresh_token && nowMs - rejected.at < REJECTED_REFRESH_BACKOFF_MS) {
+          throw new AuthRefreshError("transient", rejected.status, rejected.code);
+        }
+
         let response: Response;
         try {
           response = await deps.fetch(`${options.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
@@ -202,8 +222,15 @@ export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
           throw new AuthRefreshError("transient");
         }
         if (!response.ok) {
-          const terminal = response.status === 400 || response.status === 401 || response.status === 403;
-          throw new AuthRefreshError(terminal ? "terminal" : "transient", response.status, await refreshErrorCode(response));
+          const code = await refreshErrorCode(response);
+          const answered = response.status === 400 || response.status === 401 || response.status === 403;
+          let terminal = answered && code !== undefined && DEAD_LOGIN_CODES.has(code);
+          if (answered && !terminal) {
+            const count = rejected?.refreshToken === current0.refresh_token ? rejected.count + 1 : 1;
+            rejected = { refreshToken: current0.refresh_token, count, at: nowMs, status: response.status, code };
+            terminal = count >= MAX_REJECTED_REFRESHES;
+          }
+          throw new AuthRefreshError(terminal ? "terminal" : "transient", response.status, code);
         }
         const body = await response.json() as { access_token?: string; refresh_token?: string; expires_at?: number; expires_in?: number };
         if (!body.access_token || !body.refresh_token) throw new AuthRefreshError("transient");
@@ -216,12 +243,12 @@ export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
         const current = deps.read();
         if (!current || current.refresh_token !== current0.refresh_token) throw new Error("auth_state_changed");
         deps.write(refreshed);
+        rejected = null;
         return refreshed.access_token;
       } finally {
         releaseLock?.();
-        inFlightRefresh = null;
       }
-    })();
+    })().finally(() => { inFlightRefresh = null; });
 
     return inFlightRefresh;
   };

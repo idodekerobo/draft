@@ -152,7 +152,7 @@ describe("draft auth whoami", () => {
 
   test("terminal refresh failure clears credentials and reports not_authenticated", async () => {
     seedCliAuth(home, { expires_at: Math.floor(Date.now() / 1000) - 10 });
-    backend.state.refreshResponse = () => new Response(null, { status: 401 });
+    backend.state.refreshResponse = () => Response.json({ error_code: "refresh_token_not_found" }, { status: 400 });
     const result = await runCli(["auth", "whoami", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout).code).toBe("not_authenticated");

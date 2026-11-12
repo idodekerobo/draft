@@ -19,7 +19,63 @@ describe("auth state", () => {
     expect(await h.token({ ...options, now: () => 0, forceRefresh: true })).toBe("new");
     expect(h.calls()).toBe(1); expect(h.value()).toMatchObject({ refresh_token: "rotated", identity_resolved: true, workspace_id: "workspace" });
   });
-  test.each([400, 401, 403])("classifies %s as terminal", async (status) => { const h = harness(auth(), async () => new Response(null, { status })); expect(h.token(options)).rejects.toThrow("session_refresh_terminal"); });
+  test.each(["refresh_token_not_found", "refresh_token_already_used", "session_not_found", "session_expired", "user_not_found", "user_banned"])("%s is terminal on the first failure", async (code) => {
+    const h = harness(auth(), async () => Response.json({ error_code: code }, { status: 400 }));
+    expect(await h.token(options).catch((e) => e)).toMatchObject({ kind: "terminal", status: 400, code });
+  });
+  describe("a rejection that does not prove the login is dead", () => {
+    const rejectedBody = () => Response.json({ message: "Unregistered API key" }, { status: 401 });
+    function clocked(fetcher: (calls: number) => Promise<Response>, initial = auth()) {
+      let clock = 20_000; const h = harness(initial, fetcher);
+      return { ...h, attempt: () => h.token({ ...options, now: () => clock }).catch((e) => e), wait: (ms: number) => { clock += ms; } };
+    }
+    test("is transient for four attempts and terminal on the fifth, keeping the status", async () => {
+      const h = clocked(async () => rejectedBody());
+      for (let i = 0; i < 4; i++) { expect(await h.attempt()).toMatchObject({ kind: "transient", status: 401 }); h.wait(31_000); }
+      expect(await h.attempt()).toMatchObject({ kind: "terminal", status: 401, code: undefined });
+      expect(h.calls()).toBe(5);
+    });
+    test.each([400, 403])("counts a %s with no dead-login code", async (status) => {
+      const h = clocked(async () => new Response(null, { status }));
+      for (let i = 0; i < 4; i++) { await h.attempt(); h.wait(31_000); }
+      expect(await h.attempt()).toMatchObject({ kind: "terminal", status });
+    });
+    test("counts validation_failed", async () => {
+      const h = clocked(async () => Response.json({ error_code: "validation_failed" }, { status: 400 }));
+      for (let i = 0; i < 4; i++) { expect(await h.attempt()).toMatchObject({ kind: "transient", code: "validation_failed" }); h.wait(31_000); }
+      expect(await h.attempt()).toMatchObject({ kind: "terminal" });
+    });
+    test("a call inside the pause fails fast, with no request and no count", async () => {
+      const h = clocked(async () => rejectedBody());
+      await h.attempt();
+      for (let i = 0; i < 20; i++) expect(await h.attempt()).toMatchObject({ kind: "transient", status: 401 });
+      expect(h.calls()).toBe(1);
+      h.wait(31_000);
+      for (let i = 0; i < 3; i++) { await h.attempt(); h.wait(31_000); }
+      expect(await h.attempt()).toMatchObject({ kind: "terminal" });
+    });
+    test("429, 5xx and network failures never count", async () => {
+      const statuses = [429, 500, 503, 502];
+      const h = clocked(async (n) => { if (n > 10) throw new Error("offline"); return new Response(null, { status: statuses[n % 4] }); });
+      for (let i = 0; i < 15; i++) { expect(await h.attempt()).toMatchObject({ kind: "transient" }); h.wait(31_000); }
+    });
+    test("a successful refresh resets the count", async () => {
+      let ok = false;
+      const h = clocked(async () => ok ? Response.json({ access_token: "new", refresh_token: "rotated", expires_in: 60 }) : rejectedBody());
+      for (let i = 0; i < 4; i++) { await h.attempt(); h.wait(31_000); }
+      ok = true; expect(await h.attempt()).toBe("new");
+      ok = false; h.wait(100_000_000);
+      for (let i = 0; i < 4; i++) { expect(await h.attempt()).toMatchObject({ kind: "transient" }); h.wait(31_000); }
+    });
+    test("a new refresh token resets the count", async () => {
+      let value = auth(); let clock = 20_000;
+      const token = createAccessTokenProvider({ read: () => value, write: (next) => { value = next; }, fetch: async () => rejectedBody() });
+      const attempt = () => token({ ...options, now: () => clock }).catch((e) => e);
+      for (let i = 0; i < 4; i++) { await attempt(); clock += 31_000; }
+      value = auth({ refresh_token: "signed-in-again" });
+      expect(await attempt()).toMatchObject({ kind: "transient" });
+    });
+  });
   test.each([429, 500, 503])("classifies %s as transient", async (status) => { const h = harness(auth(), async () => new Response(null, { status })); expect(h.token(options)).rejects.toThrow("session_refresh_transient"); });
   test("keeps the provider's status and error code on a failed refresh", async () => {
     const h = harness(auth(), async () => Response.json({ error_code: "refresh_token_already_used" }, { status: 400 }));
