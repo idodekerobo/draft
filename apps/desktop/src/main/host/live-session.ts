@@ -3,7 +3,7 @@ import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
-import { SIGNAL_EVENTS, hostErrorAction, sessionSignalTopic } from "draft-core/live-sessions";
+import { SIGNAL_EVENTS, sessionSignalTopic } from "draft-core/live-sessions";
 import type { ApprovalResponse, LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
 import { realtime } from "../realtime/instance";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
@@ -12,6 +12,7 @@ import { deleteState, loadStates, saveState, type HostSessionState } from "./cur
 import { registrationFor } from "./drivers";
 import { getHostMachineId } from "./machine-id";
 import { gitRemote } from "./git-remote";
+import { hostFailureAction } from "./host-failure";
 import { startHeartbeat } from "./heartbeat";
 import { InputWake } from "./input-wake";
 import { LaunchError, type HarnessDriver, type HostInput } from "./harness-driver";
@@ -52,8 +53,8 @@ class SessionRunner {
       },
       postHostEvents: (events) => this.postHostEvents(events),
       setInputState: this.setInputState,
-      isFatal: (error) => error instanceof ServerError && hostErrorAction(error.code) !== "retry",
-      onFatal: (error) => (error instanceof ServerError && hostErrorAction(error.code) === "pause" ? this.suspend() : this.abandon()),
+      isFatal: (error) => hostFailureAction(error) !== "retry",
+      onFatal: (error) => (hostFailureAction(error) === "pause" ? this.suspend() : this.abandon()),
       reportError: (what, error) => this.reportInputError(what, error),
       requestUpload: () => {
         this.uploadWanted = true;
@@ -146,10 +147,10 @@ class SessionRunner {
     saveState(this.state);
   }
 
-  /** This login cannot reach the session (another environment or account). Stop work and keep the saved state. */
+  /** There is no login, or this one cannot reach the session (another environment or account). Stop work and keep the saved state. */
   private suspend(): void {
     if (this.finished) return;
-    console.warn("[live-session] paused: this login cannot reach session", this.state.sessionId);
+    console.warn("[live-session] paused: no login can reach session", this.state.sessionId);
     this.finished = true;
     this.stopWatching();
     this.stopHeartbeat?.();
@@ -200,7 +201,7 @@ class SessionRunner {
   }
 
   private reportInputError(what: string, error: unknown): void {
-    const action = error instanceof ServerError ? hostErrorAction(error.code) : "retry";
+    const action = hostFailureAction(error);
     if (action === "pause") this.suspend();
     else if (action === "retry") console.error(`[live-session] ${what} failed`, error);
   }

@@ -61,6 +61,7 @@ import { PresenceHub } from "./main/presence/presence-hub";
 import { realtime, setSignalSender } from "./main/realtime/instance";
 import { ServerError, apiUrl, callServerTool, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 import { logLoginCleared } from "./main/auth/auth-log";
+import { createSessionExpiredHandler } from "./main/auth/session-expired";
 const presenceHub = new PresenceHub(connectPresence);
 setSignalSender(
   (topic, event) => {
@@ -974,6 +975,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             try {
               rpc.send.signInProgress(value);
             } catch {}
+            // Sessions paused while signed out pick up again with the new login.
+            if (value.phase === "complete") void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
           },
         });
         return { ok: true };
@@ -1049,11 +1052,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   },
 });
 
-setSessionExpiredHandler((cause) => {
-  logLoginCleared("api_call", cause);
-  try { clearAuthState(); } catch {}
-  try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
-});
+setSessionExpiredHandler(createSessionExpiredHandler({
+  read: readAuthState,
+  clear: clearAuthState,
+  log: logLoginCleared,
+  notifySignedOut: () => { try { rpc.send.authStateChanged({ signedIn: false }); } catch {} },
+}));
 
 // ── Bundled binary sync ────────────────────────────────────────────────────────
 
