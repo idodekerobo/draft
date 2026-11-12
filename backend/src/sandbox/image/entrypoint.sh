@@ -21,10 +21,9 @@ callback_host="$({ node -e '
   exit 1
 }
 
-# The harness comes from the run manifest, or from the older variable when there is no manifest.
+# The harness comes from the run manifest. The runner refuses a run without one.
 harness="$({ node -e '
-  const raw = process.env.DRAFT_RUN_MANIFEST;
-  const harness = raw ? JSON.parse(raw).harness : process.env.DRAFT_RUN_HARNESS;
+  const harness = JSON.parse(process.env.DRAFT_RUN_MANIFEST).harness;
   process.stdout.write(harness === "codex" ? "codex" : "claude");
 '; } 2>/dev/null)" || harness="claude"
 

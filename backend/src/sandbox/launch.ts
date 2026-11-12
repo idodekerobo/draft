@@ -5,7 +5,7 @@ import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import { type SandboxDeploymentConfig, validateSandboxDeploymentConfig } from "./config";
 import { providerFor, type SandboxPlan, type SandboxProvider } from "./providers";
-import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer, type PromptSource } from "./run-manifest";
+import { buildRunnerManifest, needsDraftToolServer, type PromptSource } from "./run-manifest";
 
 const PROMPT_PATH = "input/prompt.md";
 const OUTPUT_SCHEMA_PATH = "input/output-schema.json";
@@ -147,10 +147,8 @@ export async function buildSandboxPlan(
     DRAFT_EGRESS_HOSTS: storageHost,
     DRAFT_CALLBACK_URL: config.callbackUrl,
     DRAFT_CALLBACK_TOKEN: callbackToken,
-    DRAFT_PROMPT_PATH: `/run/${PROMPT_PATH}`,
     DRAFT_TIMEOUT_SECONDS: String(manifest.timeoutSeconds),
     DRAFT_RUN_MANIFEST: JSON.stringify(manifest),
-    ...legacyRunnerEnv(manifest),
   };
   if (spec.harness === "codex") env.CODEX_AUTH_JSON = codexAuthJson!;
   else env.CLAUDE_CODE_OAUTH_TOKEN = claudeToken!;

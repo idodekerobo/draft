@@ -189,8 +189,6 @@ describe("launchSandboxRun", () => {
       "DRAFT_CALLBACK_TOKEN",
       "DRAFT_CALLBACK_URL",
       "DRAFT_EGRESS_HOSTS",
-      "DRAFT_OUTPUT_SCHEMA_PATH",
-      "DRAFT_PROMPT_PATH",
       "DRAFT_RUN_ID",
       "DRAFT_RUN_MANIFEST",
       "DRAFT_TIMEOUT_SECONDS",
@@ -202,8 +200,6 @@ describe("launchSandboxRun", () => {
       DRAFT_EGRESS_HOSTS: "project.supabase.co",
       DRAFT_CALLBACK_URL: config.callbackUrl,
       CLAUDE_CODE_OAUTH_TOKEN: "claude-oauth-secret",
-      DRAFT_PROMPT_PATH: "/run/input/prompt.md",
-      DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json",
       DRAFT_TIMEOUT_SECONDS: "1200",
     });
     expect(JSON.stringify(launched)).not.toContain(config.provider.apiToken);
@@ -320,7 +316,6 @@ describe("launchSandboxRun", () => {
     });
 
     expect(uploads["input/prompt.md"]).toBeUndefined();
-    expect(env).toMatchObject({ DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json" });
     expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).prompt).toEqual({ kind: "items", manifestPath: "/run/input/manifest.json" });
   });
 });
@@ -367,14 +362,14 @@ describe("launchSandboxRun routine runs", () => {
 
     expect(Object.keys(uploads)).not.toContain("input/output-schema.json");
     expect(uploads["input/prompt.md"]).toBe("Summarize the week.\n");
-    expect(env).toMatchObject({ DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku", DRAFT_TIMEOUT_SECONDS: "900" });
-    expect(env).not.toHaveProperty("DRAFT_OUTPUT_SCHEMA_PATH");
+    expect(env.DRAFT_TIMEOUT_SECONDS).toBe("900");
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!))).toMatchObject({ model: "haiku", output: { kind: "stream" } });
   });
 
   it("gives a run Draft's tools: a tool server URL on the callback host and a run token", async () => {
     const { env } = await launch({ spec: routineSpec(), prompt: text("Go.\n"), credentials: claudeLogin });
 
-    expect(env.DRAFT_MCP_URL).toBe(`https://api.example.test/runs/${RUN}/mcp`);
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBe(`https://api.example.test/runs/${RUN}/mcp`);
     const claims = verifyAgentRunToken(env.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 });
     expect(claims).toMatchObject({ runId: RUN, workspaceId: WS });
     expect(() => verifySandboxCallbackToken(env.DRAFT_RUN_TOKEN!, config.callbackSecret, { now: 1_001 })).toThrow();
@@ -386,12 +381,11 @@ describe("launchSandboxRun routine runs", () => {
       prompt: text("Go.\n"),
       credentials: claudeLogin,
     });
-    expect(env.DRAFT_NATIVE_TOOLS).toBe("Read,Glob,WebSearch");
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.native).toEqual(["Read", "Glob", "WebSearch"]);
   });
 
   it("sets no tool server or run token when the run has no Draft tools", async () => {
     const { env } = await launch({ spec: { ...routineSpec(), permissions: [] }, prompt: text("Go.\n"), credentials: claudeLogin });
-    expect(env).not.toHaveProperty("DRAFT_MCP_URL");
     expect(env).not.toHaveProperty("DRAFT_RUN_TOKEN");
     expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.draftMcpUrl).toBeNull();
   });
@@ -413,7 +407,8 @@ describe("launchSandboxRun routine runs", () => {
       credentials: { codexAuthJson: "{\"auth_mode\":\"chatgpt\"}" },
     });
 
-    expect(env).toMatchObject({ DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{\"auth_mode\":\"chatgpt\"}", DRAFT_RUN_MODE: "routine" });
+    expect(env).toMatchObject({ CODEX_AUTH_JSON: "{\"auth_mode\":\"chatgpt\"}" });
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).harness).toBe("codex");
     expect(env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
   });
 
