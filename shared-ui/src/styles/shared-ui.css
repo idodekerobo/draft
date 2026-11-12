@@ -827,17 +827,28 @@
 .ui-composer__box { transition: border-color 120ms var(--motion-ease); }
 .ui-composer__box:focus-within { border-color: var(--color-focus); }
 .ui-composer__box .ui-composer__input:focus-visible { outline: none; }
-.ui-composer__modes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-bottom: var(--space-2); }
+.ui-composer__modes { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--space-1) var(--space-3); min-height: 28px; margin-top: var(--space-1); }
 .ui-mode { position: relative; }
-.ui-mode__trigger { min-height: 30px; padding: 0 10px; font-size: var(--font-size-secondary); touch-action: manipulation; }
-.ui-mode__list { position: absolute; right: 0; bottom: calc(100% + 4px); z-index: 10; min-width: 260px; margin: 0; padding: var(--space-1); list-style: none; background: var(--color-bg-elevated); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);  animation: ui-panel-enter 200ms var(--motion-ease) both; }
+.ui-mode__trigger { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 6px; margin-left: -6px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text-secondary); font: inherit; font-size: var(--font-size-secondary); cursor: pointer; touch-action: manipulation; transition: background-color 120ms var(--motion-ease), color 120ms var(--motion-ease); }
+.ui-mode__trigger:active:not(:disabled) { transform: scale(.98); }
+@media (pointer: coarse) { .ui-mode__trigger { min-height: 36px; } }
+.ui-mode__trigger:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.ui-mode__trigger:disabled { cursor: default; }
+.ui-mode__trigger[data-risky] { color: var(--color-status-yellow); }
+.ui-mode__label { color: var(--color-text-muted); }
+.ui-mode__chevron { opacity: .7; }
+.ui-mode__heading { padding: 6px 10px 4px; font-size: var(--font-size-secondary); color: var(--color-text-muted); }
+.ui-mode__name { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.ui-mode__check { color: var(--color-accent-text); flex: none; }
+@media (hover: hover) and (pointer: fine) { .ui-mode__trigger:hover:not(:disabled) { background: var(--color-bg-hover); color: var(--color-text-primary); } }
+.ui-mode__list { position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 10; min-width: 260px; margin: 0; padding: var(--space-1); list-style: none; background: var(--color-bg-elevated); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);  animation: ui-panel-enter 200ms var(--motion-ease) both; }
 .ui-mode__item { display: grid; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text-primary); font: inherit; text-align: left; cursor: pointer; touch-action: manipulation;  transition: transform 120ms var(--motion-ease), background-color 120ms var(--motion-ease); }
 .ui-mode__item:active { transform: scale(.98); }
 .ui-mode__item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
-.ui-mode__error { margin: 0; width: 100%; text-align: right; font-size: var(--font-size-secondary); }
+.ui-mode__error { margin: 0; width: 100%; font-size: var(--font-size-secondary); }
 .ui-mode__desc { font-size: var(--font-size-small); color: var(--color-text-secondary); }
 @media (hover: hover) and (pointer: fine) { .ui-mode__item:hover { background: var(--color-bg-hover); } }
-@media (prefers-reduced-motion: reduce) { .ui-mode__list { animation: ui-fade-in 200ms linear both; } .ui-mode__item:active, .ui-question__option:active { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ui-mode__list { animation: ui-fade-in 200ms linear both; } .ui-mode__item:active, .ui-question__option:active, .ui-mode__trigger:active:not(:disabled) { transform: none; } }
 .ui-composer__folder { display: flex; align-items: center; gap: var(--space-2); padding: 6px 12px; background: var(--color-bg-surface); color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-composer__row { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
 .ui-composer__footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }

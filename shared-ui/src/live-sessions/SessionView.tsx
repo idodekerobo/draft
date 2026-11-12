@@ -357,7 +357,8 @@ function LoadedSession({
     <>
       {modes.permission.length > 0 && (
         <ModeMenu
-          label={modes.approval.length > 0 ? "Mode" : "Permissions"}
+          label="Mode"
+          showLabel={modes.approval.length > 0}
           options={modes.permission}
           value={session.permission_mode ?? null}
           switchingTo={permissionSwitch.target || null}
@@ -365,7 +366,7 @@ function LoadedSession({
         />
       )}
       {modes.approval.length > 0 && (
-        <ModeMenu label="Approvals" options={modes.approval} value={session.approval_mode ?? null} switchingTo={approvalSwitch.target || null} onSelect={(approvalMode) => changeMode({ approvalMode })} />
+        <ModeMenu label="Approvals" showLabel options={modes.approval} value={session.approval_mode ?? null} switchingTo={approvalSwitch.target || null} onSelect={(approvalMode) => changeMode({ approvalMode })} />
       )}
       {modeError && <p className="ui-error ui-mode__error" role="alert">{modeError}</p>}
     </>

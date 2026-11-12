@@ -515,23 +515,29 @@ describe("SessionView view event", () => {
 
     it("shows Claude's current mode and the four choices in Shift+Tab order, and asks for the chosen one", async () => {
       const setMode = setup({ permission_mode: "auto" });
-      fireEvent.click(await screen.findByRole("button", { name: "Permissions: Auto" }));
-      expect(screen.getAllByRole("menuitemradio").map((m) => m.querySelector(".ui-mode__name")?.textContent)).toEqual(["Manual", "Auto ✓", "Accept edits", "Plan"]);
+      fireEvent.click(await screen.findByRole("button", { name: "Mode: Auto" }));
+      expect(screen.getAllByRole("menuitemradio").map((m) => m.querySelector(".ui-mode__name")?.textContent)).toEqual(["Manual", "Auto", "Accept edits", "Plan"]);
       fireEvent.click(screen.getByRole("menuitemradio", { name: /Plan/ }));
       await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { permissionMode: "plan" }));
-      expect((await screen.findByRole("button", { name: /Permissions: Plan/ }) as HTMLButtonElement).disabled).toBe(true);
+      expect((await screen.findByRole("button", { name: /Mode: Plan/ }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it("shows no mode until the host reports one", async () => {
+      setup({ permission_mode: null });
+      await screen.findByPlaceholderText(/Message/);
+      expect(screen.queryByRole("button", { name: /Mode/ })).toBeNull();
     });
 
     it("cycles to the next mode on Shift+Tab in the message box", async () => {
       const setMode = setup({ permission_mode: "plan" });
-      await screen.findByRole("button", { name: "Permissions: Plan" });
+      await screen.findByRole("button", { name: "Mode: Plan" });
       fireEvent.keyDown(screen.getByPlaceholderText(/Message/), { key: "Tab", shiftKey: true });
       await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { permissionMode: "default" }));
     });
 
     it("shows a mode the menu does not list, without letting it be changed", async () => {
       setup({ permission_mode: "bypassPermissions" });
-      const trigger = (await screen.findByRole("button", { name: /Permissions: Bypass Permissions/ })) as HTMLButtonElement;
+      const trigger = (await screen.findByRole("button", { name: /Mode: Bypass Permissions/ })) as HTMLButtonElement;
       expect(trigger.disabled).toBe(true);
     });
 
@@ -546,18 +552,18 @@ describe("SessionView view event", () => {
     it("shows a failed change beside the menu, not in the page banner", async () => {
       const setMode = mock(async (..._args: unknown[]) => { throw new Error("nope"); });
       const { container } = render(<SessionView api={{ ...api, setMode, fetchEvents: async () => ({ viewer, session: live({ permission_mode: "auto" }), events: [], inputs: [] }) }} sessionId="s1" />);
-      fireEvent.click(await screen.findByRole("button", { name: "Permissions: Auto" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Mode: Auto" }));
       fireEvent.click(screen.getByRole("menuitemradio", { name: /Plan/ }));
       const alert = await screen.findByText("Could not change the mode. Try again.");
       expect(alert.closest(".ui-composer__modes")).toBeTruthy();
       expect(container.querySelector(".ui-session__notice")).toBeNull();
-      expect((screen.getByRole("button", { name: "Permissions: Auto" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Mode: Auto" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
     it("is hidden once the session has ended, and for a routine run", async () => {
       setup({ status: "ended" });
       await screen.findByText(/This session has ended/);
-      expect(screen.queryByRole("button", { name: /Permissions:/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Mode:/ })).toBeNull();
     });
   });
 });

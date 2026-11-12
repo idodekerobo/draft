@@ -119,7 +119,6 @@ export function SessionComposer({
         <EndedNote onResume={onResume} />
       ) : (
         <>
-        {modeControl && <div className="ui-composer__modes">{modeControl}</div>}
         <form className="ui-composer__box" onSubmit={submit}>
           {folderName && (
             <div className="ui-composer__folder">
@@ -154,6 +153,7 @@ export function SessionComposer({
           </div>
           </div>
         </form>
+        {modeControl && <div className="ui-composer__modes">{modeControl}</div>}
         </>
       )}
       {error && <p className="ui-error" role="alert">{error}</p>}
