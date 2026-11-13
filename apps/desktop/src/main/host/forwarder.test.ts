@@ -227,6 +227,22 @@ describe("TranscriptForwarder", () => {
     expect(raws(h.posted)).toEqual(Array.from({ length: 12 }, (_, i) => i));
   });
 
+  it("caps each post at 500 lines and sends every line once", async () => {
+    const root = projectDir();
+    const h = harness(root);
+    const text = Array.from({ length: 5000 }, (_, i) => line(i)).join("\n") + "\n";
+    writeFileSync(h.rootPath, text);
+    await h.forwarder.tick();
+
+    expect(h.posts.length).toBeGreaterThan(1);
+    for (const post of h.posts) {
+      expect(post.length).toBeLessThanOrEqual(500);
+      expect(Buffer.byteLength(JSON.stringify(post))).toBeLessThanOrEqual(4 * 1024 * 1024);
+    }
+    expect(raws(h.posted)).toEqual(Array.from({ length: 5000 }, (_, i) => i));
+    expect(h.state.cursors["root.jsonl"]!.offset).toBe(Buffer.byteLength(text));
+  });
+
   it("waits until the transcript file exists", async () => {
     const root = projectDir();
     let located: string | null = null;

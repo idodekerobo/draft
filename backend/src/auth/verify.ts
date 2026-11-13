@@ -1,24 +1,24 @@
 import { publishableClient } from "../db/client";
+import { createAccessTokenVerifier } from "./access-token-verifier";
 import { recordRejectedToken } from "./record-rejected-token";
+import { getLocalVerifier } from "./verify-local";
 
 export interface VerifiedCaller {
   userId: string;
   accessToken: string;
 }
 
-export async function verifyAccessToken(
-  accessToken: string,
-): Promise<VerifiedCaller | null> {
-  if (!accessToken) return null;
-
-  const { data, error } = await publishableClient.auth.getUser(accessToken);
-  if (error || !data.user) {
-    recordRejectedToken(accessToken, error);
-    return null;
-  }
-
-  return { userId: data.user.id, accessToken };
-}
+export const verifyAccessToken = createAccessTokenVerifier({
+  verifyLocal: (token) => getLocalVerifier()(token),
+  verifyRemote: async (token) => {
+    const { data, error } = await publishableClient.auth.getUser(token);
+    if (error || !data.user) {
+      recordRejectedToken(token, error);
+      return null;
+    }
+    return data.user.id;
+  },
+});
 
 export async function verifyRequest(
   req: Request,

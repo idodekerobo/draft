@@ -1,4 +1,5 @@
-import { toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
+import { liveTextListener, toApprovalResult, type LiveSessionsApi } from "draft-shared-ui";
+import { liveTextTopic } from "draft-core/live-sessions";
 import { rpc, events } from "./rpc";
 import { createWindowSignalWatcher } from "./signalWatcher";
 
@@ -7,19 +8,21 @@ const PRESENCE_FIRST_FOLLOW_UP_MS = 1_500;
 
 const signals = createWindowSignalWatcher({
   setTopics: (topics) => rpc.request.setSignalTopics({ topics }),
-  onSignal: (handler) => events.on("liveSignal", ({ topic, event }) => handler(topic, event)),
+  onSignal: (handler) => events.on("liveSignal", ({ topic, event, payload }) => handler(topic, event, payload)),
   onConnection: (handler) => events.on("liveConnection", ({ connected }) => handler(connected)),
 });
 export const watchSignals = signals.watch;
 
 export const liveSessionsApi: LiveSessionsApi = {
   watchSignals,
+  watchLiveText: (sessionId, onChunk) => watchSignals(liveTextTopic(sessionId), liveTextListener(onChunk)),
   watchConnection: signals.watchConnection,
   listSessions: () => rpc.request.listLiveSessions(),
   fetchEvents: (sessionId, after) => rpc.request.getLiveSessionEvents({ sessionId, after }),
   sendMessage: async (sessionId, text) => {
     const result = await rpc.request.sendLiveSessionMessage({ sessionId, text });
     if (!result.ok) throw new Error(result.error);
+    return result.input ? { ...result.input, mine: true } : undefined;
   },
   actOnInput: (sessionId, inputId, action) => rpc.request.actOnLiveSessionInput({ sessionId, inputId, action }),
   decideApproval: async (sessionId, requestId, response) => {

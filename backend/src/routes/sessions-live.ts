@@ -9,7 +9,7 @@ import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { SESSION_COLUMNS, authorize, authorizeOwned, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -121,14 +121,12 @@ async function loadSessionLinks(workspaceId: string, session: SessionRow) {
 
 export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
   const params = new URL(req.url).searchParams;
   const after = Math.max(0, Number(params.get("after")) || 0);
   const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || EVENTS_PAGE_SIZE));
 
-  const [{ data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
+  const [denied, { data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
+    authorize(workspaceId, caller.userId),
     serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle<SessionRow>(),
     serviceClient
       .from("session_events")
@@ -140,19 +138,31 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
       .limit(limit),
     loadViewerInputs(workspaceId, sessionId, caller.userId),
   ]);
+  if (denied) return denied;
   if (sessionError) return errorResponse("session_lookup_failed", 500, sessionError, workspaceId, sessionId);
   if (!session) return errorResponse("session_not_found", 404);
   if (eventsError) return errorResponse("events_lookup_failed", 500, eventsError, workspaceId, sessionId);
   if (!viewerInputs.ok) return errorResponse("inputs_lookup_failed", 500, viewerInputs.error, workspaceId, sessionId);
 
-  const named = await withOwnerNames(workspaceId, [session], caller.userId);
-  if (named instanceof Response) return named;
-  const links = await loadSessionLinks(workspaceId, session);
-  if (links instanceof Response) return links;
   const rows = (events ?? []) as Partial<SessionEventRow>[];
-  const authors = await loadTurnAuthors(workspaceId, sessionId, rows);
+  const [links, authors, recent] = await Promise.all([
+    loadSessionLinks(workspaceId, session),
+    loadTurnAuthors(workspaceId, sessionId, rows),
+    loadRecentAuthors(workspaceId, sessionId),
+  ]);
+  if (links instanceof Response) return links;
   if (!authors.ok) return errorResponse("inputs_lookup_failed", 500, authors.error, workspaceId, sessionId);
-  const authorIds = [...new Set([...authors.bySeq.values(), ...viewerInputs.inputs.map((i) => i.author_user_id)])];
+  if (!recent.ok) return errorResponse("inputs_lookup_failed", 500, recent.error, workspaceId, sessionId);
+
+  const authorIds = [
+    ...new Set([
+      caller.userId,
+      session.owner_user_id,
+      ...authors.bySeq.values(),
+      ...recent.rows.map((r) => r.author_user_id),
+      ...viewerInputs.inputs.map((i) => i.author_user_id),
+    ]),
+  ];
   const names = await loadDisplayNames(serviceClient, authorIds, []);
   if (!names.ok) return errorResponse(names.code, 500, names.detail, workspaceId, sessionId);
   const withAuthors = rows.map((e) => {
@@ -162,8 +172,32 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   });
   // The name saved with a waiting message is from send time. The current one wins.
   const inputs = viewerInputs.inputs.map((i) => ({ ...i, author_name: names.users.get(i.author_user_id) ?? i.author_name }));
-  return Response.json({ session: { ...named.sessions[0], ...links }, viewer: named.viewer, events: withAuthors, inputs });
+  const authorList = recent.rows.map((r) => ({ seq: r.consumed_seq, author_user_id: r.author_user_id, author_name: names.users.get(r.author_user_id) ?? null }));
+  return Response.json({
+    session: { ...session, owner_name: names.users.get(session.owner_user_id) ?? null, mine: session.owner_user_id === caller.userId, ...links },
+    viewer: { id: caller.userId, name: names.users.get(caller.userId) ?? "A teammate" },
+    events: withAuthors,
+    inputs,
+    authors: authorList,
+  });
 });
+
+const RECENT_AUTHORS_LIMIT = 20;
+
+/** Who sent the latest messages Claude took, newest first, for labelling a session's recent turns. */
+async function loadRecentAuthors(workspaceId: string, sessionId: string) {
+  const { data, error } = await serviceClient
+    .from("session_inputs")
+    .select("consumed_seq, author_user_id")
+    .eq("session_id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .eq("kind", "message")
+    .not("consumed_seq", "is", null)
+    .order("consumed_seq", { ascending: false })
+    .limit(RECENT_AUTHORS_LIMIT);
+  if (error) return { ok: false as const, error };
+  return { ok: true as const, rows: (data ?? []) as { consumed_seq: number; author_user_id: string }[] };
+}
 
 /** Who sent each user turn that came through Draft, by event seq. A turn typed in the terminal has no entry. */
 async function loadTurnAuthors(workspaceId: string, sessionId: string, events: Partial<SessionEventRow>[]) {
@@ -188,10 +222,7 @@ function firstLine(text: string): string {
 
 export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -221,6 +252,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
     .flatMap((line) => eventsForHarness(owned.session.harness, line))
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
 
+  const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   let lastSeq = owned.session.last_seq;
   let inserted = 0;
   if (events.length > 0) {
@@ -234,12 +266,11 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
       return knownDbError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);
     }
     ({ last_seq: lastSeq, inserted } = data as { last_seq: number; inserted: number });
-    if (inserted > 0) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
+    if (inserted > 0 && firstPrompt) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
   } else if (owned.session.host_machine_id !== hostMachineId) {
     return errorResponse("foreign_host", 403);
   }
 
-  const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
   const nativeTitle = latestNativeTitle(incoming, TITLE_MAX_CHARS);
   if (nativeTitle) {
@@ -286,10 +317,7 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
 
 export const END = withAuth<EndRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -312,10 +340,7 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
 /** The owner continues an ended session on the computer it ran on. It is the same session, live again. */
 export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -340,10 +365,7 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
 
 export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -367,10 +389,7 @@ export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
 
 export const RAW_UPLOAD_COMPLETE = withAuth<RawCompleteRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);

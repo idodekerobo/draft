@@ -1,3 +1,5 @@
+import type { LiveTextChunk } from "draft-core/live-sessions";
+
 export type LiveSessionStatus = "starting" | "live" | "host_offline" | "ended";
 
 export interface LiveSession {
@@ -136,6 +138,8 @@ export interface LiveSessionEventsPage {
   events: LiveSessionEvent[];
   /** Messages that Claude has not yet taken. */
   inputs: LiveSessionInput[];
+  /** Who sent each of the latest 20 messages through the app. Absent on older servers. */
+  authors?: Array<{ seq: number; author_user_id: string; author_name: string | null }>;
 }
 
 export type LiveSessionInputState = "queued" | "delivering" | "failed" | "uncertain";
@@ -171,7 +175,8 @@ export type ApprovalResult =
 export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
-  sendMessage(sessionId: string, text: string): Promise<void>;
+  /** Returns the created input when the transport gives it back; otherwise the caller refetches. */
+  sendMessage(sessionId: string, text: string): Promise<LiveSessionInput | void>;
   actOnInput(sessionId: string, inputId: string, action: "resend" | "dismiss" | "steer" | "cancel"): Promise<void>;
   decideApproval(sessionId: string, requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
@@ -188,6 +193,8 @@ export interface LiveSessionsApi {
    * Absent where Realtime is not available; the app then relies on its slow safety polls alone.
    */
   watchSignals?(topic: string, onSignal: (event: string) => void): () => void;
+  /** Calls `onChunk` with each piece of text the agent is writing. Nothing is stored; a viewer who joins late sees only what comes after. Returns the stop function. Absent where Realtime is not available. */
+  watchLiveText?(sessionId: string, onChunk: (chunk: LiveTextChunk) => void): () => void;
   /** Calls `onChange` with whether every watched topic is joined, now and at each change. Returns the stop function. */
   watchConnection?(onChange: (connected: boolean) => void): () => void;
 }

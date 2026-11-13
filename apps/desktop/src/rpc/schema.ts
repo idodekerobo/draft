@@ -227,7 +227,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
+import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -354,7 +354,7 @@ export type AppRPCType = {
       getLiveSessionEvents: { params: { sessionId: string; after: number }; response: LiveSessionEventsPage };
 
       /** Queue a message for a live session; the error is the server's error code. */
-      sendLiveSessionMessage: { params: { sessionId: string; text: string }; response: { ok: true } | { ok: false; error: string } };
+      sendLiveSessionMessage: { params: { sessionId: string; text: string }; response: { ok: true; input?: LiveSessionInput } | { ok: false; error: string } };
 
       /** Resend or dismiss a message that may not have arrived. */
       actOnLiveSessionInput: { params: { sessionId: string; inputId: string; action: "resend" | "dismiss" | "steer" | "cancel" }; response: void };
@@ -493,7 +493,7 @@ export type AppRPCType = {
     messages: {
 
       /** A signal from the server on a topic the window watches. `catch-up` means fetch what may have been missed. */
-      liveSignal: { topic: string; event: string };
+      liveSignal: { topic: string; event: string; payload?: unknown };
 
       /** Whether every signal topic is joined. Sent when that changes and after each topic list. */
       liveConnection: { connected: boolean };

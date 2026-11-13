@@ -59,7 +59,7 @@ function createFakeClient() {
 
 const fakeClient = createFakeClient();
 mock.module("../../db/client", () => ({ serviceClient: fakeClient }));
-const { assertWorkspaceAccess } = await import("../../auth/workspace-access");
+const { assertWorkspaceAccess, resetAccessCacheForTests } = await import("../../auth/workspace-access");
 const { resetThrottleForTests } = await import("../../errors/throttle");
 
 const ids = {
@@ -90,7 +90,7 @@ async function responseBody(response: Response): Promise<{ error: string }> {
 }
 
 describe("assertWorkspaceAccess", () => {
-  beforeEach(() => { errorRows.length = 0; resetThrottleForTests(); });
+  beforeEach(() => { errorRows.length = 0; resetThrottleForTests(); resetAccessCacheForTests(); });
 
   it("allows a matching team_default workspace", async () => {
     options = validOptions();
@@ -149,5 +149,63 @@ describe("assertWorkspaceAccess", () => {
     const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
     expect(response?.status).toBe(404);
     expect(await responseBody(response!)).toEqual({ error: "not_found" });
+  });
+
+  it("returns 500 when the users lookup fails", async () => {
+    options = validOptions({ userError: { message: "boom" } });
+    const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
+    expect(response?.status).toBe(500);
+    expect(await responseBody(response!)).toEqual({ error: "lookup_failed" });
+  });
+
+  it("returns 500 when the workspaces lookup fails", async () => {
+    options = validOptions({ workspaceError: { message: "boom" } });
+    const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
+    expect(response?.status).toBe(500);
+    expect(await responseBody(response!)).toEqual({ error: "lookup_failed" });
+  });
+
+  it("returns no_team before a workspaces lookup failure", async () => {
+    options = validOptions({
+      user: { id: ids.caller, organization_id: ids.organization, primary_team_id: null },
+      workspaceError: { message: "boom" },
+    });
+    const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
+    expect(response?.status).toBe(404);
+    expect(await responseBody(response!)).toEqual({ error: "no_team" });
+  });
+});
+
+describe("assertWorkspaceAccess cache", () => {
+  beforeEach(() => { errorRows.length = 0; resetThrottleForTests(); resetAccessCacheForTests(); });
+
+  it("trusts a passed check for a short time without another lookup", async () => {
+    options = validOptions();
+    expect(await assertWorkspaceAccess(ids.workspace, ids.caller)).toBeNull();
+    options = validOptions({ workspace: null });
+    expect(await assertWorkspaceAccess(ids.workspace, ids.caller)).toBeNull();
+  });
+
+  it("does not remember a refusal, and keeps callers and workspaces apart", async () => {
+    options = validOptions({ workspace: null });
+    expect((await assertWorkspaceAccess(ids.workspace, ids.caller))?.status).toBe(404);
+    options = validOptions();
+    expect(await assertWorkspaceAccess(ids.workspace, ids.caller)).toBeNull();
+    options = validOptions({ workspace: null });
+    expect((await assertWorkspaceAccess(ids.workspace, "55555555-5555-4555-8555-555555555555"))?.status).toBe(404);
+    expect((await assertWorkspaceAccess("66666666-6666-4666-8666-666666666666", ids.caller))?.status).toBe(404);
+  });
+
+  it("checks again after the time is up", async () => {
+    const realNow = Date.now;
+    try {
+      options = validOptions();
+      expect(await assertWorkspaceAccess(ids.workspace, ids.caller)).toBeNull();
+      Date.now = () => realNow() + 31_000;
+      options = validOptions({ workspace: null });
+      expect((await assertWorkspaceAccess(ids.workspace, ids.caller))?.status).toBe(404);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });

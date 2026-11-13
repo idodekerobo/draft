@@ -20,6 +20,16 @@ const event = (kind: LiveSessionEventKind, payload: LiveSessionEventPayload): Li
 });
 
 describe("SessionStream", () => {
+  it("shows a live preview last, with the markup of a stored assistant message", () => {
+    const events = [event("user_message", { text: "list files" }), event("assistant_text", { text: "Here are two" })];
+    const { container } = render(<SessionStream items={[...buildStreamItems(events), { type: "live", messageId: "m1", text: "Checking **now**" }]} />);
+    const rows = container.querySelectorAll("li.ui-stream__item");
+    const last = rows[rows.length - 1]!;
+    expect(last.className).toContain("ui-stream__item--assistant");
+    expect(last.id).toBe("");
+    expect(last.querySelector(".ui-prose strong")?.textContent).toBe("now");
+  });
+
   it("shows a waiting line before the first event", () => {
     render(<Stream events={[]} />);
     expect(screen.getByRole("status").textContent).toContain("Waiting");

@@ -67,7 +67,17 @@ mock.module("../../db/client", () => ({
       rpcCalls.push({ fn, args });
       if (rpcError) return { data: null, error: rpcError };
       if (fn === "create_session_input") {
-        return { data: { id: "input-new", author_user_id: args.p_author_user_id, author_name: args.p_author_name, kind: "message", payload: args.p_payload, state: "queued", reason: null, created_at: "t", updated_at: "t" }, error: null };
+        const author = tables.users!.find((u) => u.id === args.p_author_user_id);
+        return { data: { id: "input-new", author_user_id: args.p_author_user_id, author_name: args.p_author_name ?? author?.display_name ?? author?.email ?? "A teammate", kind: "message", payload: args.p_payload, state: "queued", reason: null, created_at: "t", updated_at: "t" }, error: null };
+      }
+      if (fn === "host_transition_session_input") {
+        const session = tables.sessions!.find((r) => r.id === args.p_session_id && r.workspace_id === args.p_workspace_id);
+        const fail = (message: string) => ({ data: null, error: { message } });
+        if (!session) return fail("session_not_found");
+        if (session.owner_user_id !== args.p_owner_user_id) return fail("not_session_owner");
+        if (session.host_machine_id !== args.p_host_machine_id) return fail("foreign_host");
+        const input = tables.session_inputs!.find((r) => r.id === args.p_input_id);
+        if (args.p_to === "consumed" && (!input || input.kind === "message")) return fail("invalid_state");
       }
       return { data: true, error: null };
     },
@@ -104,7 +114,8 @@ describe("sending a message", () => {
     const call = rpcCalls[0]!;
     expect(call.fn).toBe("create_session_input");
     expect(call.args.p_author_user_id).toBe("user-2");
-    expect(call.args.p_author_name).toBe("Priya");
+    expect(call.args.p_author_name).toBeNull();
+    expect(((await res.json()) as { input: { author_name: string } }).input.author_name).toBe("Priya");
     expect(call.args.p_payload).toEqual({ text: "please add tests" });
   });
 
@@ -176,7 +187,7 @@ describe("host routes", () => {
     tables.session_inputs = [input, { ...input, id: "i2", kind: "stop" }];
     const message = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
     expect(message.status).toBe(400);
-    expect(rpcCalls).toEqual([]);
+    rpcCalls = [];
     const stop = await routes.INPUT_STATE(request("POST", "/x", { hostMachineId: "host-1", from: ["delivering"], to: "consumed" }, { id: WS, sessionId: SESSION, inputId: "i2" }));
     expect(stop.status).toBe(200);
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i2", p_to: "consumed" });
@@ -198,6 +209,13 @@ describe("host routes", () => {
 
     const messagesOnly = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as Pending;
     expect(messagesOnly.inputs.map((i) => i.id)).toEqual(["i1"]);
+  });
+
+  it("refuses a state change from a user who does not own the session", async () => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_machine_id: "host-1", last_seq: 0 }];
+    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["queued"], to: "delivering" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: "not_session_owner" });
   });
 
   it("refuses a state change from another host", async () => {
@@ -318,6 +336,41 @@ describe("matching consumed inputs", () => {
       tables.session_events = [turn(2, "[Dev via Draft] go")];
       await routes.matchConsumedInputs(WS, SESSION, 1, 2);
       expect(rpcCalls.map((c) => c.args.p_input_id)).toEqual([A]);
+    });
+  });
+
+  describe("a merged turn with several tagged messages", () => {
+    const A = "aaaa1111-0000-4000-8000-000000000000";
+    const B = "bbbb2222-0000-4000-8000-000000000000";
+    const merged = "[Dev via Draft #aaaa1111] run tests\n\n[Priya via Draft #bbbb2222] ship it";
+
+    it("consumes every input in the turn with the same seq", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests"), waiting(B, "Priya", "ship it")];
+      tables.session_events = [turn(5, merged)];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_consumed_seq])).toEqual([[A, 5], [B, 5]]);
+    });
+
+    it("still consumes one input for a single tagged turn", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests"), waiting(B, "Priya", "ship it")];
+      tables.session_events = [turn(5, "[Dev via Draft #aaaa1111] run tests")];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_consumed_seq])).toEqual([[A, 5]]);
+    });
+
+    it("consumes nothing for a turn whose only tag is unknown", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests")];
+      tables.session_events = [turn(5, "[Dev via Draft #cccc3333] run tests")];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls).toEqual([]);
+    });
+
+    it("skips a later tag that matches several waiting inputs", async () => {
+      const A2 = "aaaa1111-1111-4000-8000-000000000000";
+      tables.session_inputs = [waiting(A, "Dev", "run tests"), waiting(A2, "Dev", "lint"), waiting(B, "Priya", "ship it")];
+      tables.session_events = [turn(5, "[Priya via Draft #bbbb2222] ship it\n\n[Dev via Draft #aaaa1111] run tests")];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls.map((c) => c.args.p_input_id)).toEqual([B]);
     });
   });
 

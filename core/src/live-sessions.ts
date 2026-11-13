@@ -118,6 +118,23 @@ export const presenceChannel = (sessionId: string) => `session:${sessionId}`;
 export const sessionSignalTopic = (sessionId: string) => `signals:session:${sessionId}`;
 export const workspaceSignalTopic = (workspaceId: string) => `signals:workspace:${workspaceId}`;
 
+/** The topic a session's host sends live text on, while the agent writes a message. Nothing on it is stored. */
+export const liveTextTopic = (sessionId: string) => `live:session:${sessionId}`;
+export const LIVE_TEXT_EVENT = "text";
+
+/** A piece of a message the agent is writing. Pieces of one message have rising `index`; `final` ends it. */
+export interface LiveTextChunk {
+  messageId: string;
+  index: number;
+  text: string;
+  final: boolean;
+}
+
+export function isLiveTextChunk(value: unknown): value is LiveTextChunk {
+  const v = value as Partial<LiveTextChunk> | null;
+  return !!v && typeof v.messageId === "string" && v.messageId !== "" && typeof v.index === "number" && typeof v.text === "string" && typeof v.final === "boolean";
+}
+
 /** Event names of a signal. `catchUp` is never sent by the server: apps make it when a connection joins or returns. */
 export const SIGNAL_EVENTS = {
   catchUp: "catch-up",

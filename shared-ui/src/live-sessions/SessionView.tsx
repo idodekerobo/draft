@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
 import { PlanCard } from "./PlanCard";
@@ -20,7 +21,7 @@ import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
 import { pendingItems } from "./pending-items";
-import { buildStreamItems, openApprovals } from "./stream-items";
+import { buildStreamItems, openApprovals, type StreamItem } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
 import { prependToDraft } from "./drafts";
@@ -28,6 +29,7 @@ import { useSessionInputs } from "./useSessionInputs";
 import { useConnectionState } from "./useConnectionState";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
+import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
 
@@ -39,13 +41,14 @@ export interface SessionMenuItem {
 }
 
 const SKIPPED_MESSAGE = "The user skipped this.";
-const NEAR_BOTTOM_PX = 96;
 
 /** Scroll offset per session, kept while the app runs; null means the user was following the latest message. */
 const scrollMemory = new Map<string, number | null>();
 const STOPPING_MS = 3_000;
 const HIGHLIGHT_MS = 2_000;
 const COPIED_MS = 1_500;
+
+const prefersReducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 function SessionMenu({ items, onSelect }: { items: SessionMenuItem[]; onSelect: (item: SessionMenuItem) => void }) {
   const { open, setOpen, rootRef, triggerRef } = usePopover();
@@ -232,14 +235,17 @@ function LoadedSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const inputs = useSessionInputs(api, sessionId, waiting, refresh, track);
-  const scroller = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
-  const [atBottom, setAtBottom] = useState(true);
+  const { scrollRef, contentRef, scrollToBottom, stopScroll, isAtBottom, state: scrollState } = useStickToBottom({
+    initial: "instant",
+    resize: prefersReducedMotion() ? "instant" : undefined,
+  });
   const [stopping, setStopping] = useState(false);
   const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
   const logItems = useMemo(() => buildStreamItems(events), [events]);
+  const livePreviews = useLiveText(api, sessionId, events);
+  const liveText = useMemo(() => (session.status === "ended" ? [] : livePreviews), [session.status, livePreviews]);
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
   const ownerName = session.owner_name ?? "the owner";
   const harnessId = session.harness ?? "claude";
@@ -248,36 +254,36 @@ function LoadedSession({
   const hasTerminal = harnessId === "claude";
   const hostOffline = session.status === "host_offline";
   const viewerName = viewer.name;
-  const items = useMemo(
-    () => [...logItems, ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline })],
-    [logItems, inputs.inputs, events, viewerName, ownerName, hostOffline],
+  const items = useMemo<StreamItem[]>(
+    () => [
+      ...logItems,
+      ...liveText.map((preview) => ({ type: "live" as const, messageId: preview.messageId, text: preview.text })),
+      ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline }),
+    ],
+    [logItems, liveText, inputs.inputs, events, viewerName, ownerName, hostOffline],
   );
   const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
   const jumpToLatest = useCallback(() => {
-    const el = scroller.current;
-    if (el) el.scrollTo({ top: el.scrollHeight });
-  }, []);
+    void scrollToBottom({ animation: prefersReducedMotion() ? "instant" : undefined });
+  }, [scrollToBottom]);
 
   const onScroll = useCallback(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-    following.current = near;
-    setAtBottom(near);
-    scrollMemory.set(sessionId, near ? null : el.scrollTop);
-  }, [sessionId]);
+    const el = scrollRef.current;
+    if (el) scrollMemory.set(sessionId, scrollState.isNearBottom ? null : el.scrollTop);
+  }, [sessionId, scrollRef, scrollState]);
 
   useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
     const saved = scrollMemory.get(sessionId);
-    if (saved == null || !scroller.current) return;
-    following.current = false;
-    scroller.current.scrollTop = saved;
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (following.current) jumpToLatest();
-  }, [events.length, inputs.inputs.length, jumpToLatest]);
+    if (saved == null) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    stopScroll();
+    el.scrollTop = saved;
+  }, [sessionId, scrollRef, stopScroll]);
 
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const wantedSeq = useRef<number | null>(null);
@@ -285,15 +291,15 @@ function LoadedSession({
   // A long session arrives in pages, so the linked message can show up after the first render.
   const scrollToWanted = useCallback(() => {
     const seq = wantedSeq.current;
-    const target = seq === null ? null : scroller.current?.querySelector(`#${messageDomId(seq)}`);
+    const target = seq === null ? null : scrollRef.current?.querySelector(`#${messageDomId(seq)}`);
     if (seq === null || !target) return;
     wantedSeq.current = null;
-    following.current = false;
+    stopScroll();
     target.scrollIntoView({ block: "center" });
     setHighlightSeq(seq);
     clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightSeq(null), HIGHLIGHT_MS);
-  }, []);
+  }, [scrollRef, stopScroll]);
   useLayoutEffect(() => {
     wantedSeq.current = focusSeq;
     scrollToWanted();
@@ -451,8 +457,8 @@ function LoadedSession({
       <SessionLinks session={session} onOpenSession={onOpenSession} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
-      <div className="ui-session__scroll" ref={scroller} onScroll={onScroll}>
-        <div className="ui-session__column">
+      <div className="ui-session__scroll" ref={scrollRef} onScroll={onScroll}>
+        <div className="ui-session__column" ref={contentRef}>
           <SessionStream
             items={items}
             ownerName={session.owner_name ?? undefined}
@@ -471,7 +477,7 @@ function LoadedSession({
           />
         </div>
       </div>
-      {!atBottom && (
+      {!isAtBottom && (
         <button type="button" className="ui-btn ui-session__jump" onClick={jumpToLatest} aria-label="Jump to latest message">↓</button>
       )}
       <div className="ui-session__footer">

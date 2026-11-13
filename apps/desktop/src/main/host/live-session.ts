@@ -3,8 +3,8 @@ import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
-import { SIGNAL_EVENTS, sessionSignalTopic } from "draft-core/live-sessions";
-import type { ApprovalResponse, LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
+import { SIGNAL_EVENTS } from "draft-core/live-sessions";
+import type { ApprovalResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-shared-ui";
 import { realtime } from "../realtime/instance";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import type { HostEvent } from "./approvals";
@@ -15,6 +15,7 @@ import { gitRemote } from "./git-remote";
 import { hostFailureAction } from "./host-failure";
 import { startHeartbeat } from "./heartbeat";
 import { InputWake } from "./input-wake";
+import { SessionTopics } from "./session-topics";
 import { LaunchError, type HarnessDriver, type HostInput } from "./harness-driver";
 
 const PANE_WATCH_MS = 2_000;
@@ -34,13 +35,18 @@ class SessionRunner {
   private watcher: ReturnType<typeof setTimeout> | null = null;
   private stepping = false;
   private wakePending = false;
-  private stopSignals: (() => void) | null = null;
-  private readonly inputWake = new InputWake();
+  private readonly topics: SessionTopics;
+  private readonly inputWake = new InputWake(undefined, undefined, () => realtime.connected());
+  /** The last list from the server. Passes between fetches reuse it; each delivery still claims its input first. */
+  private pending: HostInput[] = [];
   private finished = false;
   private readonly base: string;
 
   constructor(private state: HostSessionState) {
     this.base = `workspaces/${state.workspaceId}/live-sessions/${state.sessionId}`;
+    this.topics = new SessionTopics((topic, listener) => realtime.watch(topic, listener), state.sessionId, (event) => {
+      if (event === SIGNAL_EVENTS.inputs || event === SIGNAL_EVENTS.catchUp) this.wake();
+    });
     this.driver = registrationFor(state.harness).createDriver({
       base: this.base,
       state: () => this.state,
@@ -59,6 +65,7 @@ class SessionRunner {
       requestUpload: () => {
         this.uploadWanted = true;
       },
+      wake: () => this.wake(),
       reportModes: (modes) => this.reportModes(modes),
     });
   }
@@ -86,9 +93,6 @@ class SessionRunner {
   start(): void {
     if (!this.state.ended) {
       this.stopHeartbeat = startHeartbeat(() => this.sendHeartbeat());
-      this.stopSignals = realtime.watch(sessionSignalTopic(this.state.sessionId), (event) => {
-        if (event === SIGNAL_EVENTS.inputs || event === SIGNAL_EVENTS.catchUp) this.wake();
-      });
       this.driver.start();
     }
     this.scheduleStep();
@@ -119,8 +123,7 @@ class SessionRunner {
   }
 
   private stopWatching(): void {
-    this.stopSignals?.();
-    this.stopSignals = null;
+    this.topics.close();
   }
 
   private modes: { permissionMode?: string | null; approvalMode?: string | null } = {};
@@ -137,6 +140,7 @@ class SessionRunner {
         method: "POST",
         body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes }),
       });
+      this.topics.open();
     } catch (error) {
       this.reportInputError("heartbeat", error);
     }
@@ -185,19 +189,19 @@ class SessionRunner {
   }
 
   private async whileAlive(): Promise<void> {
-    let pending: HostInput[] = [];
     if (this.inputWake.due()) {
       this.inputWake.asking();
       try {
-        pending = await this.fetchInputs();
+        this.pending = await this.fetchInputs();
       } catch (error) {
         this.inputWake.failed();
         this.reportInputError("fetching inputs", error);
         return;
       }
-      this.inputWake.answered(pending.length);
+      this.topics.open();
+      this.inputWake.answered(this.pending.length);
     }
-    await this.driver.serve(pending);
+    await this.driver.serve(this.pending);
   }
 
   private reportInputError(what: string, error: unknown): void {
@@ -333,6 +337,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   const folderPath = resolve(input.folderPath);
   if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) return { ok: false, error: "Choose a valid folder." };
 
+  const remote = gitRemote(folderPath);
   const checked = await launcher.check();
   if (!checked.ok) return { ok: false, error: checked.error };
   if (!isKnownModel(harness, input.model)) return { ok: false, error: "Choose a model from the list." };
@@ -350,7 +355,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
         hostMachineId,
         hostName: hostname(),
         folderName: basename(folderPath),
-        gitRemote: await gitRemote(folderPath),
+        gitRemote: await remote,
         harness,
         model,
         nativeSessionId,
@@ -475,10 +480,10 @@ export async function getLiveSessionEvents(sessionId: string, after: number): Pr
   return fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=${after}`);
 }
 
-export async function sendLiveSessionMessage(sessionId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function sendLiveSessionMessage(sessionId: string, text: string): Promise<{ ok: true; input?: LiveSessionInput } | { ok: false; error: string }> {
   try {
-    await fetchServer(`${sessionBase(sessionId)}/inputs`, { method: "POST", body: JSON.stringify({ text }) });
-    return { ok: true };
+    const body = await fetchServerJSON<{ input?: LiveSessionInput }>(`${sessionBase(sessionId)}/inputs`, { method: "POST", body: JSON.stringify({ text }) });
+    return { ok: true, input: body.input };
   } catch (error) {
     return { ok: false, error: error instanceof ServerError ? error.code : "send_failed" };
   }

@@ -8,14 +8,50 @@ afterEach(cleanup);
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 describe("createRefresher", () => {
-  it("runs once for a burst of signals and passes their names", async () => {
+  it("runs at once for the first signal", () => {
     const runs: string[][] = [];
     const refresher = createRefresher((events) => void runs.push([...events]), 10);
     refresher.trigger("events");
-    refresher.trigger("inputs");
-    refresher.trigger("events");
+    expect(runs).toEqual([["events"]]);
+  });
+
+  it("gathers a burst of signals into one follow-up run with their names", async () => {
+    const runs: string[][] = [];
+    const refresher = createRefresher((events) => void runs.push([...events]), 10);
+    for (const event of ["events", "inputs", "events", "inputs", "events"]) refresher.trigger(event);
     await wait(40);
-    expect(runs).toEqual([["events", "inputs"]]);
+    expect(runs).toEqual([["events"], ["inputs", "events"]]);
+  });
+
+  it("runs once after a slow run, with the signals that came during it", async () => {
+    const runs: string[][] = [];
+    let release = () => {};
+    const refresher = createRefresher(async (events) => {
+      runs.push([...events]);
+      if (runs.length === 1) await new Promise<void>((done) => (release = done));
+    }, 10);
+    refresher.trigger("events");
+    refresher.trigger("inputs");
+    await wait(30);
+    expect(runs).toEqual([["events"]]);
+    release();
+    await wait(30);
+    expect(runs).toEqual([["events"], ["inputs"]]);
+  });
+
+  it("does not run the follow-up after stop", async () => {
+    const runs: string[][] = [];
+    let release = () => {};
+    const refresher = createRefresher(async (events) => {
+      runs.push([...events]);
+      await new Promise<void>((done) => (release = done));
+    }, 10);
+    refresher.trigger("events");
+    refresher.trigger("inputs");
+    refresher.stop();
+    release();
+    await wait(30);
+    expect(runs).toEqual([["events"]]);
   });
 
   it("runs once more when a signal arrives during a run", async () => {

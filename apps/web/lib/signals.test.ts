@@ -4,12 +4,12 @@ import { createSignalWatcher } from "./signals";
 type StatusCallback = (status: string) => void;
 
 function fakeClient() {
-  const channels: Array<{ topic: string; sendBroadcast(event: string): void; subscribed(): void; status(status: string): void; removed: boolean }> = [];
+  const channels: Array<{ topic: string; sendBroadcast(event: string, payload?: unknown): void; subscribed(): void; status(status: string): void; removed: boolean }> = [];
   const client = {
     channel(topic: string) {
-      let onMessage: (message: { event: string }) => void = () => {};
+      let onMessage: (message: { event: string; payload?: unknown }) => void = () => {};
       let onStatus: StatusCallback = () => {};
-      const record = { topic, removed: false, sendBroadcast: (event: string) => onMessage({ event }), subscribed: () => onStatus("SUBSCRIBED"), status: (status: string) => onStatus(status) };
+      const record = { topic, removed: false, sendBroadcast: (event: string, payload?: unknown) => onMessage({ event, payload }), subscribed: () => onStatus("SUBSCRIBED"), status: (status: string) => onStatus(status) };
       channels.push(record);
       const channel = {
         on: (_type: string, _filter: unknown, callback: typeof onMessage) => {
@@ -53,6 +53,18 @@ describe("createSignalWatcher", () => {
     expect(seen).toEqual(["catch-up", "events"]);
   });
 
+  it("passes a broadcast payload to the listener", () => {
+    const { client, channels } = fakeClient();
+    const seen: Array<[string, unknown]> = [];
+    createSignalWatcher(() => client).watch("live:session:s1", (event, payload) => seen.push([event, payload]));
+    channels[0].subscribed();
+    channels[0].sendBroadcast("text", { messageId: "m1", index: 0, text: "Hi", final: false });
+    expect(seen).toEqual([
+      ["catch-up", undefined],
+      ["text", { messageId: "m1", index: 0, text: "Hi", final: false }],
+    ]);
+  });
+
   it("sends catch-up when a dropped channel rejoins, the browser comes online, and the tab becomes visible", () => {
     const { client, channels } = fakeClient();
     const seen: string[] = [];
@@ -79,6 +91,24 @@ describe("createSignalWatcher", () => {
     stopSecond();
     expect(channels[0].removed).toBe(true);
     expect(listeners.get("online")?.size).toBe(0);
+  });
+
+  it("gives a listener that joins a subscribed topic one catch-up, unless it left first", async () => {
+    const { client, channels } = fakeClient();
+    const { watch } = createSignalWatcher(() => client);
+    const first: string[] = [];
+    const late: string[] = [];
+    const gone: string[] = [];
+    watch("signals:workspace:w1", (event) => first.push(event));
+    channels[0].subscribed();
+    const stopLate = watch("signals:workspace:w1", (event) => late.push(event));
+    const stopGone = watch("signals:workspace:w1", (event) => gone.push(event));
+    stopGone();
+    await Promise.resolve();
+    expect(late).toEqual(["catch-up"]);
+    expect(gone).toEqual([]);
+    expect(first).toEqual(["catch-up"]);
+    stopLate();
   });
 
   it("reports whether every watched topic is joined, and is connected when it watches nothing", () => {

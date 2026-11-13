@@ -3,16 +3,44 @@ import { act, cleanup, fireEvent, render as renderUi, screen, waitFor } from "@t
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
+import { messageDomId } from "./share-links";
 import { SessionNotFoundError, type LiveSession, type LiveSessionEvent, type LiveSessionsApi } from "./types";
+import type { LiveTextChunk } from "draft-core/live-sessions";
 
 afterEach(cleanup);
 
 const render = (ui: ReactElement) =>
   renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
 
+/** The test DOM has no layout: every element gets one scroll height and view, and scrollTop stops at the bottom. */
+function fakeScrollGeometry(height = 1000, view = 100) {
+  const tops = new WeakMap<Element, number>();
+  const names = ["scrollTop", "scrollHeight", "clientHeight"] as const;
+  const before = names.map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
+  Object.defineProperties(HTMLElement.prototype, {
+    scrollHeight: { configurable: true, get: () => height },
+    clientHeight: { configurable: true, get: () => view },
+    scrollTop: {
+      configurable: true,
+      get(this: Element) {
+        return tops.get(this) ?? 0;
+      },
+      set(this: Element, top: number) {
+        tops.set(this, Math.min(Math.max(top, 0), height - view));
+      },
+    },
+  });
+  return () => {
+    for (const [name, descriptor] of before) {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+    }
+  };
+}
+
 const session: LiveSession = {
   id: "s1", owner_user_id: "u1", owner_name: "Maya", title: "[Maya via Draft] fix login", folder_name: "marigold",
-  host_name: null, status: "live", started_at: "2026-10-27T00:00:00Z", ended_at: null, last_event_at: null, last_seq: 2,
+  host_name: null, status: "live", started_at: "2026-10-27T00:00:00Z", ended_at: null, last_event_at: null, last_seq: 1,
 };
 
 const viewer = { id: "u9", name: "Dev" };
@@ -363,6 +391,65 @@ describe("SessionView", () => {
     }
   });
 
+  describe("scroll follow", () => {
+    const scroller = () => document.querySelector<HTMLElement>(".ui-session__scroll") as HTMLElement;
+    const moveTo = (top: number) => {
+      scroller().scrollTop = top;
+      scroller().dispatchEvent(new Event("scroll"));
+    };
+    const jumpButton = () => screen.queryByRole("button", { name: "Jump to latest message" });
+
+    it("shows Jump to latest once the reader scrolls up, and pressing it returns to the bottom", async () => {
+      const restore = fakeScrollGeometry();
+      const matchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({ matches: query.includes("reduce"), media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+      try {
+        render(<SessionView api={api} sessionId="s-jump" />);
+        await screen.findByRole("heading", { name: "fix login" });
+        expect(jumpButton()).toBeNull();
+        moveTo(900);
+        moveTo(400);
+        fireEvent.click(await screen.findByRole("button", { name: "Jump to latest message" }));
+        await waitFor(() => expect(scroller().scrollTop).toBe(899));
+        await waitFor(() => expect(jumpButton()).toBeNull());
+      } finally {
+        window.matchMedia = matchMedia;
+        restore();
+      }
+    });
+
+    it("returns to a session at the reader's saved position, not the bottom", async () => {
+      const restore = fakeScrollGeometry();
+      try {
+        const first = render(<SessionView api={api} sessionId="s-memory" />);
+        await screen.findByRole("heading", { name: "fix login" });
+        moveTo(900);
+        moveTo(400);
+        await screen.findByRole("button", { name: "Jump to latest message" });
+        first.unmount();
+
+        render(<SessionView api={api} sessionId="s-memory" />);
+        await screen.findByRole("heading", { name: "fix login" });
+        expect(scroller().scrollTop).toBe(400);
+        expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeTruthy();
+      } finally {
+        restore();
+      }
+    });
+
+    it("treats a reader moved to a linked message as not at the bottom", async () => {
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function () {};
+      try {
+        render(<SessionView api={api} sessionId="s-linked" focusSeq={1} />);
+        await screen.findByRole("heading", { name: "fix login" });
+        expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeTruthy();
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+  });
+
   it("shows a no-access page, not a retry, when the session is not found", async () => {
     const missing = async () => {
       throw new SessionNotFoundError();
@@ -565,5 +652,33 @@ describe("SessionView view event", () => {
       await screen.findByText(/This session has ended/);
       expect(screen.queryByRole("button", { name: /Mode:/ })).toBeNull();
     });
+  });
+});
+
+describe("SessionView live text", () => {
+  it("shows the text being written after the stored items, and shows it once when the stored message arrives", async () => {
+    let page: LiveSessionEvent[] = [
+      { seq: 1, source_id: "a", kind: "user_message", payload: { text: "hello" }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "assistant_text", payload: { text: "Hi there" }, created_at: "" },
+    ];
+    let emit: (chunk: LiveTextChunk) => void = () => {};
+    let signal: (event: string) => void = () => {};
+    const live: LiveSessionsApi = {
+      ...api,
+      fetchEvents: async () => ({ viewer, session, events: page, inputs: [] }),
+      watchSignals: (_topic, onSignal) => ((signal = onSignal), () => {}),
+      watchLiveText: (_sessionId, onChunk) => ((emit = onChunk), () => {}),
+    };
+    const { container } = render(<SessionView api={live} sessionId="s1" />);
+    await screen.findByText("Hi there");
+    act(() => emit({ messageId: "m1", index: 0, text: "Let me check", final: false }));
+    const texts = () => Array.from(container.querySelectorAll(".ui-stream__item--assistant .ui-prose"), (prose) => prose.textContent?.trim());
+    expect(texts()).toEqual(["Hi there", "Let me check"]);
+
+    page = [...page, { seq: 3, source_id: "c", kind: "assistant_text", payload: { text: "Let me check" }, created_at: "" }];
+    act(() => signal("events"));
+    await waitFor(() => expect(container.querySelector(`#${messageDomId(3)}`)).not.toBeNull());
+    await waitFor(() => expect(texts()).toEqual(["Hi there", "Let me check"]));
+    expect(container.querySelectorAll(`#${messageDomId(3)}`).length).toBe(1);
   });
 });

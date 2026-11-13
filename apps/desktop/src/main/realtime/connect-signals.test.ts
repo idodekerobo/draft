@@ -4,17 +4,24 @@ import { createSignalSource } from "./connect-signals";
 function setup() {
   let time = 0;
   const log: string[] = [];
-  const channels: Array<{ topic: string; deliver(event: string): void; join(): void }> = [];
+  const channels: Array<{
+    topic: string;
+    options: unknown;
+    deliver(event: string, payload?: unknown): void;
+    join(): void;
+    sent: unknown[];
+  }> = [];
   let tokens = 0;
   const client = {
     realtime: {
       setAuth: async (token: string) => void log.push(`auth:${token}`),
       disconnect: () => void log.push("disconnect"),
     },
-    channel(topic: string) {
-      let onMessage: (message: { event: string }) => void = () => {};
+    channel(topic: string, options: unknown) {
+      let onMessage: (message: { event: string; payload?: unknown }) => void = () => {};
       let onStatus: (status: string) => void = () => {};
-      channels.push({ topic, deliver: (event) => onMessage({ event }), join: () => onStatus("SUBSCRIBED") });
+      const sent: unknown[] = [];
+      channels.push({ topic, options, deliver: (event, payload) => onMessage({ event, payload }), join: () => onStatus("SUBSCRIBED"), sent });
       const channel = {
         on: (_t: string, _f: unknown, fn: typeof onMessage) => {
           onMessage = fn;
@@ -23,6 +30,14 @@ function setup() {
         subscribe: (fn: typeof onStatus) => {
           onStatus = fn;
           return channel;
+        },
+        send: async (message: unknown) => {
+          sent.push(message);
+          return "ok";
+        },
+        httpSend: async (event: string, payload: unknown) => {
+          sent.push({ http: event, payload });
+          return { success: true };
         },
       };
       return channel;
@@ -47,7 +62,7 @@ describe("createSignalSource", () => {
     const t = setup();
     const heard: string[] = [];
     const connected: boolean[] = [];
-    const leave = t.source("signals:session:s1", (event) => heard.push(event), (ok) => connected.push(ok));
+    const { leave } = t.source("signals:session:s1", (event) => heard.push(event), (ok) => connected.push(ok));
     await flush();
     expect(t.log).toEqual(["auth:t1"]);
     t.channels[0]!.join();
@@ -58,18 +73,57 @@ describe("createSignalSource", () => {
     expect(t.log).toEqual(["auth:t1", "remove", "disconnect"]);
   });
 
+  it("passes the payload of a signal on to the listener", async () => {
+    const t = setup();
+    const heard: Array<[string, unknown]> = [];
+    t.source("live:session:s1", (event, payload) => heard.push([event, payload]), () => {});
+    await flush();
+    t.channels[0]!.join();
+    t.channels[0]!.deliver("text", { messageId: "m1" });
+    expect(heard).toEqual([
+      ["catch-up", undefined],
+      ["text", { messageId: "m1" }],
+    ]);
+  });
+
+  it("joins a live topic with broadcast.self and a signals topic without it", async () => {
+    const t = setup();
+    t.source("live:session:s1", () => {}, () => {});
+    t.source("signals:session:s1", () => {}, () => {});
+    await flush();
+    const options = Object.fromEntries(t.channels.map((c) => [c.topic, c.options]));
+    expect(options).toEqual({
+      "live:session:s1": { config: { private: true, broadcast: { self: true } } },
+      "signals:session:s1": { config: { private: true } },
+    });
+  });
+
+  it("drops a send made before the channel exists, sends over HTTP until it has joined, then on the socket", async () => {
+    const t = setup();
+    const { send } = t.source("live:session:s1", () => {}, () => {});
+    send("text", { text: "early" });
+    await flush();
+    send("text", { text: "joining" });
+    t.channels[0]!.join();
+    send("text", { text: "hi" });
+    expect(t.channels[0]!.sent).toEqual([
+      { http: "text", payload: { text: "joining" } },
+      { type: "broadcast", event: "text", payload: { text: "hi" } },
+    ]);
+  });
+
   it("uses one client for every topic and refreshes the token only when it is old", async () => {
     const t = setup();
     const leaves = [t.source("a", () => {}, () => {}), t.source("b", () => {}, () => {})];
     await flush();
     expect(t.made.count).toBe(1);
     expect(t.log.filter((entry) => entry.startsWith("auth"))).toEqual(["auth:t1"]);
-    leaves.forEach((leave) => leave());
+    leaves.forEach(({ leave }) => leave());
   });
 
   it("refreshes the token every ten minutes", async () => {
     const t = setup();
-    const leave = t.source("a", () => {}, () => {});
+    const { leave } = t.source("a", () => {}, () => {});
     await flush();
     for (let step = 0; step < 36; step++) {
       t.advance(15_000);
@@ -87,7 +141,7 @@ describe("createSignalSource", () => {
   it("refreshes the token and says catch-up to every topic after a sleep", async () => {
     const t = setup();
     const heard: string[] = [];
-    const leave = t.source("a", (event) => heard.push(event), () => {});
+    const { leave } = t.source("a", (event) => heard.push(event), () => {});
     await flush();
     t.advance(1_000);
     await t.tick();
@@ -100,7 +154,7 @@ describe("createSignalSource", () => {
 
   it("does not join a topic that was left before the token arrived", async () => {
     const t = setup();
-    t.source("a", () => {}, () => {})();
+    t.source("a", () => {}, () => {}).leave();
     await flush();
     expect(t.channels).toHaveLength(0);
   });

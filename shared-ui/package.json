@@ -34,7 +34,8 @@
     "draft-core": "workspace:*",
     "lucide-react": "^0.577.0",
     "marked": "^18.0.4",
-    "sonner": "^2.0.8"
+    "sonner": "^2.0.8",
+    "use-stick-to-bottom": "^1.1.6"
   },
   "scripts": {
     "test": "bun test",

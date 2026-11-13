@@ -17,7 +17,7 @@ interface Deps {
 }
 
 interface Joined {
-  onEvent: (event: string) => void;
+  onEvent: (event: string, payload?: unknown) => void;
 }
 
 /**
@@ -60,30 +60,45 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
     joined.add(entry);
     let stopped = false;
     let leave = () => {};
+    let sendOn = (_event: string, _payload: unknown) => {};
     void (async () => {
       if (!client || now() - lastRefresh >= TOKEN_REFRESH_MS) await refreshToken();
       if (stopped || !client) return;
       const live = client;
-      const channel = live.channel(topic, { config: { private: true } });
-      channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event)).subscribe((status) => {
-        onConnected(status === "SUBSCRIBED");
-        if (status === "SUBSCRIBED") onEvent(SIGNAL_EVENTS.catchUp);
+      const channel = live.channel(topic, { config: topic.startsWith("live:") ? { private: true, broadcast: { self: true } } : { private: true } });
+      let subscribed = false;
+      let failureLogged = false;
+      channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event, message.payload)).subscribe((status, error) => {
+        subscribed = status === "SUBSCRIBED";
+        onConnected(subscribed);
+        if (subscribed) onEvent(SIGNAL_EVENTS.catchUp);
+        else if (status !== "CLOSED" && !failureLogged) {
+          failureLogged = true;
+          console.error(`[signals] could not join ${topic}: ${status}`, error?.message ?? "");
+        }
       });
+      // An unjoined channel can only send over HTTP. Asking for that by name keeps the library from warning on each send.
+      sendOn = (event, payload) =>
+        void (subscribed ? channel.send({ type: "broadcast", event, payload }) : channel.httpSend(event, payload)).catch(() => {});
       leave = () => void live.removeChannel(channel);
       if (stopped) leave();
     })();
     ticker ??= setInterval(() => void tick(), TICK_MS);
 
-    return () => {
-      stopped = true;
-      joined.delete(entry);
-      leave();
-      if (joined.size > 0) return;
-      if (ticker) clearInterval(ticker);
-      ticker = null;
-      if (client) void client.realtime.disconnect();
-      client = null;
-      lastRefresh = 0;
+    return {
+      leave: () => {
+        stopped = true;
+        joined.delete(entry);
+        leave();
+        sendOn = () => {};
+        if (joined.size > 0) return;
+        if (ticker) clearInterval(ticker);
+        ticker = null;
+        if (client) void client.realtime.disconnect();
+        client = null;
+        lastRefresh = 0;
+      },
+      send: (event, payload) => sendOn(event, payload),
     };
   };
 

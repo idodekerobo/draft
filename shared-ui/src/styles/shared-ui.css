@@ -295,6 +295,7 @@
 .ui-prose table { border-collapse: collapse; margin: 0 0 12px; }
 .ui-prose th, .ui-prose td { padding: 6px 10px; border-bottom: 1px solid var(--color-border); text-align: left; }
 .ui-prose blockquote { margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--color-border-strong); color: var(--color-text-secondary); }
+.ui-prose__block { display: contents; }
 
 @media (max-width: 720px) {
   .ui-context { grid-template-columns: 1fr; }

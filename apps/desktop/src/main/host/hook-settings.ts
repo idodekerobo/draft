@@ -9,15 +9,16 @@ const MESSAGE_TIMEOUT_SECONDS = 5;
 
 /**
  * Calls the host's local server. The server writes its port and token for each session it serves, named by the session id.
- * Any failure exits non-zero, so Claude falls back to its own dialog.
+ * Any failure exits non-zero, so Claude falls back to its own dialog. Streamed message chunks are appended to a file
+ * instead, so Claude never waits on the network.
  */
 export function hookScript(): string {
   return `#!/bin/sh
 dir="$HOME/.draft/host/hooks"
+if [ "$2" = message ]; then umask 077; mkdir -p "$dir"; { tr -d '\\n'; echo; } >> "$dir/$1.deltas" 2>/dev/null; exit 0; fi
 port=$(cat "$dir/$1.port" 2>/dev/null) || exit 1
 token=$(cat "$dir/$1.token" 2>/dev/null) || exit 1
 wait=3700
-[ "$2" = message ] && wait=3
 exec curl -sS --fail --max-time "$wait" -X POST -H "x-draft-token: $token" --data-binary @- "http://127.0.0.1:$port/hook/$1/$2"
 `;
 }

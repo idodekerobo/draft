@@ -46,10 +46,36 @@ describe("InputDelivery", () => {
     expect(t.states.get("a")).toBe("delivering");
   });
 
-  it("delivers the oldest input first and one per pass", async () => {
+  it("delivers the oldest input first and goes on to the next one in the same pass", async () => {
     const t = setup({ pane: [READY, READY], pending: [input("a"), input("b")] });
     await t.tick();
-    expect(t.log.filter((l) => l.endsWith(":delivering"))).toEqual(["a:delivering"]);
+    expect(t.log.filter((l) => l.endsWith(":delivering"))).toEqual(["a:delivering", "b:delivering"]);
+    expect(t.log.indexOf("a:delivering")).toBeLessThan(t.log.indexOf("b:delivering"));
+  });
+
+  it("keeps the second input queued when the pane is not ready after the first", async () => {
+    const t = setup({ pane: [READY, READY, TYPING], pending: [input("a"), input("b")] });
+    await t.tick();
+    expect(t.log).toEqual(["a:delivering", 'paste:"[Dev via Draft] a"', "enter", "b:queued(composer_busy)"]);
+    expect(t.states.get("b")).toBe("queued");
+  });
+
+  it("claims an input once when the same stale list is passed again", async () => {
+    const calls: string[] = [];
+    const delivery = new InputDelivery({
+      setState: async (id, _from, to) => {
+        calls.push(`${id}:${to}`);
+        return true;
+      },
+      capture: async () => READY,
+      paste: async () => {},
+      pressEnter: async () => {},
+      sleep: async () => {},
+    });
+    const stale = [input("a")];
+    await delivery.tick(stale);
+    await delivery.tick(stale);
+    expect(calls).toEqual(["a:delivering"]);
   });
 
   it("keeps the input queued while a permission prompt is open and says why once", async () => {

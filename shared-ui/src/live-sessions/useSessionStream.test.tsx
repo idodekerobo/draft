@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { EVENTS_PAGE_SIZE } from "draft-core/live-sessions";
 import { Suspense } from "react";
-import { useSessionStream } from "./useSessionStream";
+import { sessionPollMs, useSessionStream } from "./useSessionStream";
+import { SESSION_DISCONNECTED_POLL_MS, SESSION_SAFETY_POLL_MS } from "./signals";
 import type { LiveSession, LiveSessionEvent, LiveSessionsApi } from "./types";
 
 afterEach(cleanup);
@@ -15,11 +16,11 @@ const session: LiveSession = {
 const event = (seq: number): LiveSessionEvent => ({ seq, source_id: `s${seq}`, kind: "assistant_text", payload: { text: `m${seq}` }, created_at: "" });
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => event(from + i));
 
-function setup(pages: (after: number) => LiveSessionEvent[], watchSignals?: LiveSessionsApi["watchSignals"]) {
+function setup(pages: (after: number) => LiveSessionEvent[], watchSignals?: LiveSessionsApi["watchSignals"], lastSeq: () => number = () => 0) {
   const afters: number[] = [];
   const fetchEvents = mock(async (_id: string, after: number) => {
     afters.push(after);
-    return { session, viewer: { id: "u9", name: "Dev" }, events: pages(after), inputs: [] };
+    return { session: { ...session, last_seq: lastSeq() }, viewer: { id: "u9", name: "Dev" }, events: pages(after), inputs: [] };
   });
   const api = { fetchEvents, watchSignals } as unknown as LiveSessionsApi;
   let renders = 0;
@@ -43,10 +44,17 @@ function setup(pages: (after: number) => LiveSessionEvent[], watchSignals?: Live
   return { afters, renders: () => renders };
 }
 
+describe("sessionPollMs", () => {
+  it("polls every 5 s while the connection is down and every 60 s while it is up", () => {
+    expect(sessionPollMs(true)).toBe(SESSION_SAFETY_POLL_MS);
+    expect(sessionPollMs(false)).toBe(SESSION_DISCONNECTED_POLL_MS);
+  });
+});
+
 describe("useSessionStream", () => {
   it("shows the fallback until the first page, then asks only for events above the last one it has", async () => {
     let available = 2;
-    const t = setup((after) => range(1, available).filter((e) => e.seq > after));
+    const t = setup((after) => range(1, available).filter((e) => e.seq > after), undefined, () => available);
     expect(screen.getByText("loading")).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("2"));
 
@@ -57,13 +65,27 @@ describe("useSessionStream", () => {
   });
 
   it("follows a full page at once with the next one", async () => {
-    const t = setup((after) => (after === 0 ? range(1, EVENTS_PAGE_SIZE) : range(EVENTS_PAGE_SIZE + 1, EVENTS_PAGE_SIZE + 5)));
+    const t = setup((after) => (after === 0 ? range(1, EVENTS_PAGE_SIZE) : range(EVENTS_PAGE_SIZE + 1, EVENTS_PAGE_SIZE + 5)), undefined, () => EVENTS_PAGE_SIZE + 5);
     await waitFor(() => expect(screen.getByTestId("count").textContent).toBe(String(EVENTS_PAGE_SIZE + 5)));
     expect(t.afters).toEqual([0, EVENTS_PAGE_SIZE]);
   });
 
+  it("stops after a full page when it holds the last seq", async () => {
+    const t = setup((after) => (after === 0 ? range(1, EVENTS_PAGE_SIZE) : []), undefined, () => EVENTS_PAGE_SIZE);
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe(String(EVENTS_PAGE_SIZE)));
+    await new Promise((done) => setTimeout(done, 30));
+    expect(t.afters).toEqual([0]);
+  });
+
+  it("stops at an empty page even when the session says there is more", async () => {
+    const t = setup(() => [], undefined, () => 5);
+    await waitFor(() => expect(t.afters).toEqual([0]));
+    await new Promise((done) => setTimeout(done, 30));
+    expect(t.afters).toEqual([0]);
+  });
+
   it("does not render again when a poll finds nothing new", async () => {
-    const t = setup((after) => range(1, 2).filter((e) => e.seq > after));
+    const t = setup((after) => range(1, 2).filter((e) => e.seq > after), undefined, () => 2);
     await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("2"));
     const before = t.renders();
     fireEvent.click(screen.getByText("refresh"));
@@ -83,6 +105,7 @@ describe("useSessionStream", () => {
         send = onSignal;
         return () => {};
       },
+      () => available,
     );
     await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("2"));
     expect(topics).toEqual(["signals:session:s1"]);

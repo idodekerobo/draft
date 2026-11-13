@@ -1,5 +1,5 @@
-import { SessionNotFoundError, toApprovalResult, type ApprovalResponse, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionsApi } from "draft-shared-ui";
-import { presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
+import { SessionNotFoundError, liveTextListener, toApprovalResult, type ApprovalResponse, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
+import { liveTextTopic, presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
 import { ApiError, apiFetch } from "@/lib/api";
 import { createSignalWatcher } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/client";
@@ -16,9 +16,9 @@ async function fetchLive<T>(path: string): Promise<T> {
   }
 }
 
-async function post(path: string, body: unknown): Promise<void> {
+async function post<T = void>(path: string, body: unknown): Promise<T> {
   try {
-    await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
+    return await apiFetch<T>(path, { method: "POST", body: JSON.stringify(body) });
   } catch (error) {
     // The composer maps these codes to messages.
     if (error instanceof ApiError) throw new Error(error.code);
@@ -41,7 +41,10 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
   return {
     listSessions: async () => (await fetchLive<{ sessions: Awaited<ReturnType<LiveSessionsApi["listSessions"]>> }>(base)).sessions,
     fetchEvents: (sessionId, after) => fetchLive<LiveSessionEventsPage>(`${base}/${sessionId}/events?after=${after}`),
-    sendMessage: (sessionId, text) => post(`${base}/${sessionId}/inputs`, { text }),
+    sendMessage: async (sessionId, text) => {
+      const body = await post<{ input?: LiveSessionInput }>(`${base}/${sessionId}/inputs`, { text });
+      return body.input ? { ...body.input, mine: true } : undefined;
+    },
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
     decideApproval: (sessionId, requestId, response) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, response),
     setMode: (sessionId, change) => post(`${base}/${sessionId}/mode`, change),
@@ -55,6 +58,7 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
       }
     },
     watchSignals,
+    watchLiveText: (sessionId, onChunk) => signals.watch(liveTextTopic(sessionId), liveTextListener(onChunk)),
     watchConnection: signals.watchConnection,
     watchPresence: (sessionId, viewer, onChange) => {
       const client = createClient();

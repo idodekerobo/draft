@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { renderMarkdown } from "../context/markdown";
+import { cachedMarkdown } from "./markdown-cache";
+import { LiveText } from "./LiveText";
 import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { isPromptBlock } from "draft-core/live-sessions";
 import { inputStatusLine, isBlocked } from "./input-status";
 import { approvalOutcome, isMine, type StreamItem } from "./stream-items";
 
-const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.seq);
+const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.type === "live" ? `live-${item.messageId}` : item.seq);
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
@@ -76,10 +77,12 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
     case "assistant":
       return (
         <>
-          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />
+          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} />
           <MessageActions text={item.text} at={item.at} linkUrl={linkFor?.(item.seq)} />
         </>
       );
+    case "live":
+      return <LiveText text={item.text} />;
     case "thinking":
       return (
         <details className="ui-stream__details">
@@ -123,7 +126,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         return (
           <details className="ui-stream__details" open>
             <summary><span className="ui-stream__tool">Plan</span></summary>
-            <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown((item.input as { plan: string }).plan) }} />
+            <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown((item.input as { plan: string }).plan) }} />
           </details>
         );
       }
@@ -141,7 +144,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
             </summary>
             <ol className="ui-stream__nested">
               {item.children.map((child) => (
-                <li key={keyOf(child)} id={child.type === "pending" ? undefined : messageDomId(child.seq)} className={`ui-stream__item ui-stream__item--${child.type}`}>
+                <li key={keyOf(child)} id={child.type === "pending" || child.type === "live" ? undefined : messageDomId(child.seq)} className={`ui-stream__item ui-stream__item--${child.type}`}>
                   <Item item={child} mine ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} />
                 </li>
               ))}
@@ -219,8 +222,8 @@ export function SessionStream({
         return (
           <li
             key={keyOf(item)}
-            id={item.type === "pending" ? undefined : messageDomId(item.seq)}
-            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+            id={item.type === "pending" || item.type === "live" ? undefined : messageDomId(item.seq)}
+            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
           >
             <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} onDismissPrompt={onDismissPrompt} />
           </li>

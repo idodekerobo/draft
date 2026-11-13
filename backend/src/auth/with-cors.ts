@@ -19,6 +19,7 @@ function addHeaders(response: Response, origin: string | null): Response {
   }
   response.headers.set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  response.headers.set("Access-Control-Max-Age", "7200");
   return response;
 }
 export function withCors<Req extends Request = Request>(handler: Handler<Req>): Handler<Req> {

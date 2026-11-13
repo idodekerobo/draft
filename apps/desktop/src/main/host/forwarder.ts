@@ -17,9 +17,11 @@ const READ_BYTES = 2 * 1024 * 1024;
 const SCAN_BYTES = 1024 * 1024;
 // The route caps a request body at 5 MiB; stay under it with room for the wrapper.
 const MAX_POST_BYTES = 4 * 1024 * 1024;
+// The route rejects more than 2,000 lines in one request.
+const MAX_POST_LINES = 500;
 const FINGERPRINT_BYTES = 256;
 const SEEN_IDS_KEPT = 200;
-const POLL_MS = 500;
+const POLL_MS = 250;
 const MAX_BACKOFF_MS = 15_000;
 
 const emptyCursor = (): FileCursor => ({ offset: 0, fingerprint: "", seenIds: [] });
@@ -207,7 +209,12 @@ export class TranscriptForwarder {
     let batch: ForwardedLine[] = [];
     let batchBytes = 0;
     const flush = async () => {
-      if (batch.length > 0) await this.options.post(batch);
+      if (batch.length === 0) return;
+      await this.options.post(batch);
+      for (const line of batch) {
+        const id = line.raw !== undefined ? nativeUuid(line.raw) : null;
+        if (id !== null) cursor.seenIds.push(id);
+      }
       batch = [];
       batchBytes = 0;
     };
@@ -218,14 +225,13 @@ export class TranscriptForwarder {
         line = { file: line.file, offset: line.offset, oversizeBytes: Buffer.byteLength(line.raw ?? "") };
         bytes = serializedBytes(line);
       }
-      if (batchBytes + bytes > MAX_POST_BYTES) await flush();
+      if (batchBytes + bytes > MAX_POST_BYTES || batch.length >= MAX_POST_LINES) await flush();
       batch.push(line);
       batchBytes += bytes;
     }
     await flush();
 
-    const ids = fresh.flatMap((line) => (line.raw !== undefined ? [nativeUuid(line.raw)] : [])).filter((id): id is string => id !== null);
-    cursor.seenIds = [...cursor.seenIds, ...ids].slice(-SEEN_IDS_KEPT);
+    cursor.seenIds = cursor.seenIds.slice(-SEEN_IDS_KEPT);
     cursor.offset += consumed;
     cursor.fingerprint = fingerprintBefore(path, cursor.offset);
     this.options.onCursors(structuredClone(this.cursors));

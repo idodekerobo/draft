@@ -5,7 +5,7 @@ import { getHarness } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
-import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type InputsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs">;
 type PendingRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs/pending">;
@@ -51,7 +51,7 @@ async function createInput(workspaceId: string, sessionId: string, userId: strin
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: userId,
-    p_author_name: await authorName(userId),
+    p_author_name: null,
     p_kind: "message",
     p_payload: { text },
   });
@@ -198,15 +198,7 @@ export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
 
 export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
-  if (!owned.ok) return owned.response;
   const params = new URL(req.url).searchParams;
-  if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
-
-  const everything = params.get("kinds") === "all";
   let query = serviceClient
     .from("session_inputs")
     .select(INPUT_COLUMNS)
@@ -215,8 +207,12 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
     .in("state", ["queued", "delivering"])
     .order("created_at", { ascending: true })
     .limit(VIEWER_LIMIT);
-  if (!everything) query = query.eq("kind", "message");
-  const { data, error } = await query;
+  if (params.get("kinds") !== "all") query = query.eq("kind", "message");
+
+  // The read runs beside the access check, and its rows are used only after that check passes.
+  const [owned, { data, error }] = await Promise.all([authorizeOwned(workspaceId, sessionId, caller.userId), query]);
+  if (!owned.ok) return owned.response;
+  if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
   if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
 
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
@@ -227,18 +223,16 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   return Response.json({ inputs });
 });
 
+const HOST_TRANSITION_ERRORS: Record<string, number> = { not_session_owner: 403, invalid_state: 400, invalid_transition: 409 };
+
 export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, inputId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
 
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
-  if (!owned.ok) return owned.response;
-
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
-  if (optionalString(body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
 
   const to = body.to as SessionInputState;
   const from = body.from;
@@ -247,30 +241,26 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
     return errorResponse("invalid_state", 400);
   }
 
-  if (to === "consumed") {
-    const { data: input } = await serviceClient
-      .from("session_inputs")
-      .select("kind")
-      .eq("id", inputId)
-      .eq("session_id", sessionId)
-      .maybeSingle<Pick<SessionInputRow, "kind">>();
-    if (!input || input.kind === "message") return errorResponse("invalid_state", 400);
-  }
-
-  const { data, error } = await serviceClient.rpc("transition_session_input", {
+  const { data, error } = await serviceClient.rpc("host_transition_session_input", {
     p_input_id: inputId,
     p_session_id: sessionId,
+    p_workspace_id: workspaceId,
+    p_owner_user_id: caller.userId,
+    p_host_machine_id: optionalString(body.hostMachineId, 200),
     p_from: from,
     p_to: to,
     p_reason: optionalString(body.reason, REASON_MAX_CHARS),
-    p_consumed_seq: null,
   });
   if (error) {
-    if (error.message.includes("invalid_transition")) return errorResponse("invalid_transition", 409);
-    return errorResponse("input_update_failed", 500, error, workspaceId, sessionId);
+    const known = Object.keys(HOST_TRANSITION_ERRORS).find((code) => error.message.includes(code));
+    if (known) return errorResponse(known, HOST_TRANSITION_ERRORS[known]);
+    return knownDbError(error.message) ?? errorResponse("input_update_failed", 500, error, workspaceId, sessionId);
   }
   return Response.json({ ok: true, changed: data === true });
 });
+
+const TAG_REF = /^\[[^\]\n]{1,60} via Draft #([0-9a-f]{8})\]/gm;
+const tagRefs = (text: string): string[] => [...text.matchAll(TAG_REF)].map((m) => m[1]!);
 
 /** Marks a delivering (or uncertain) input consumed when the transcript shows its message as a new user turn. */
 export async function matchConsumedInputs(workspaceId: string, sessionId: string, afterSeq: number, uptoSeq: number): Promise<void> {
@@ -302,6 +292,18 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
     if (turns.length === 0) return;
 
     const candidates = [...(waiting as Pick<SessionInputRow, "id" | "author_name" | "payload" | "state">[])];
+    const consume = async (match: (typeof candidates)[number], seq: number) => {
+      candidates.splice(candidates.indexOf(match), 1);
+      const { error: moveError } = await serviceClient.rpc("transition_session_input", {
+        p_input_id: match.id,
+        p_session_id: sessionId,
+        p_from: ["delivering", "uncertain"],
+        p_to: "consumed",
+        p_reason: null,
+        p_consumed_seq: seq,
+      });
+      if (moveError) throw moveError;
+    };
     for (const turn of turns) {
       const turnText = turn.payload.text as string;
       const { inputRef } = splitAuthor(turnText);
@@ -310,17 +312,13 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
         sameText(deliveredText(c.author_name, textOf(c), c.id), turnText) || sameText(deliveredText(c.author_name, textOf(c)), turnText);
       const byRef = inputRef ? candidates.filter((c) => c.id.startsWith(inputRef)) : [];
       const match = byRef.length === 1 ? byRef[0] : (byRef.length > 1 ? byRef : candidates).find(sameBody);
-      if (!match) continue;
-      candidates.splice(candidates.indexOf(match), 1);
-      const { error: moveError } = await serviceClient.rpc("transition_session_input", {
-        p_input_id: match.id,
-        p_session_id: sessionId,
-        p_from: ["delivering", "uncertain"],
-        p_to: "consumed",
-        p_reason: null,
-        p_consumed_seq: turn.seq,
-      });
-      if (moveError) throw moveError;
+      if (match) await consume(match, turn.seq);
+
+      // A merged turn can carry several sent messages, each with its own tag.
+      for (const ref of tagRefs(turnText)) {
+        const hits = candidates.filter((c) => c.id.startsWith(ref));
+        if (hits.length === 1) await consume(hits[0]!, turn.seq);
+      }
     }
   } catch (error) {
     void recordError({
