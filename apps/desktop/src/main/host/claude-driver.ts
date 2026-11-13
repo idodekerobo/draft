@@ -39,7 +39,6 @@ export class ClaudeDriver implements HarnessDriver {
   private readonly controls: ControlActions;
   private readonly relay: LiveTextRelay;
   private readonly deltas: DeltaTail;
-  private stopLive: (() => void) | null = null;
   private unregisterHooks: (() => void) | null = null;
   private rotateTo: string | null = null;
   private caughtUp = false;
@@ -114,7 +113,6 @@ export class ClaudeDriver implements HarnessDriver {
         this.rotateTo ??= rotationTarget(this.host.state().nativeSessionId, payload);
       },
     });
-    this.stopLive = realtime.watch(liveTextTopic(state.sessionId), () => {});
     this.deltas.start();
     for (const requestId of state.openRequests ?? []) {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
@@ -142,8 +140,6 @@ export class ClaudeDriver implements HarnessDriver {
     this.forwarder.halt();
     this.deltas.stop();
     this.relay.stop();
-    this.stopLive?.();
-    this.stopLive = null;
   }
 
   dispose(): void {

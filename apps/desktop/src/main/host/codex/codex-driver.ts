@@ -155,7 +155,6 @@ export class CodexDriver implements HarnessDriver {
   private attachFailed = false;
   private respawned = false;
   private readonly relay: LiveTextRelay;
-  private stopLive: (() => void) | null = null;
 
   constructor(private readonly host: DriverHost) {
     this.relay = new LiveTextRelay({
@@ -175,7 +174,6 @@ export class CodexDriver implements HarnessDriver {
   }
 
   start(): void {
-    this.stopLive = realtime.watch(liveTextTopic(this.host.state().sessionId), () => {});
     for (const requestId of this.host.state().openRequests ?? []) {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
     }
@@ -323,8 +321,6 @@ export class CodexDriver implements HarnessDriver {
   halt(): void {
     this.halted = true;
     this.relay.stop();
-    this.stopLive?.();
-    this.stopLive = null;
   }
 
   dispose(): void {
