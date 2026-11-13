@@ -20,7 +20,7 @@ function setup(sendMessage: LiveSessionsApi["sendMessage"], initial: LiveSession
   const api = { sendMessage } as unknown as LiveSessionsApi;
   let latest!: ReturnType<typeof useSessionInputs>;
   function Probe() {
-    const { data } = useQuery({ queryKey: sessionStreamKey("s1"), queryFn: () => Promise.reject(new Error("unused")), enabled: false });
+    const { data } = useQuery<SessionStreamData>({ queryKey: sessionStreamKey("s1"), queryFn: () => Promise.reject(new Error("unused")), enabled: false });
     latest = useSessionInputs(api, "s1", data?.inputs ?? server, refresh, track);
     return <span data-testid="states">{latest.inputs.map((i) => `${i.text}:${i.state}`).join("|")}</span>;
   }

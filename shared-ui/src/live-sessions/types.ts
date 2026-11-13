@@ -136,6 +136,8 @@ export interface LiveSessionEventsPage {
   events: LiveSessionEvent[];
   /** Messages that Claude has not yet taken. */
   inputs: LiveSessionInput[];
+  /** Who sent each of the latest 20 messages through the app. Absent on older servers. */
+  authors?: Array<{ seq: number; author_user_id: string; author_name: string | null }>;
 }
 
 export type LiveSessionInputState = "queued" | "delivering" | "failed" | "uncertain";
