@@ -51,6 +51,11 @@ export function createSignalWatcher(getClient: () => Pick<SupabaseClient, "chann
     entries.set(topic, entry);
     entry.listeners.add(onSignal);
     if (!existing) reportConnection();
+    else if (entry.subscribed) {
+      queueMicrotask(() => {
+        if (entry.listeners.has(onSignal)) onSignal(SIGNAL_EVENTS.catchUp);
+      });
+    }
     return () => {
       entry.listeners.delete(onSignal);
       if (entry.listeners.size > 0) return;

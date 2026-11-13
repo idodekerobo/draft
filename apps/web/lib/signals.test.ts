@@ -81,6 +81,24 @@ describe("createSignalWatcher", () => {
     expect(listeners.get("online")?.size).toBe(0);
   });
 
+  it("gives a listener that joins a subscribed topic one catch-up, unless it left first", async () => {
+    const { client, channels } = fakeClient();
+    const { watch } = createSignalWatcher(() => client);
+    const first: string[] = [];
+    const late: string[] = [];
+    const gone: string[] = [];
+    watch("signals:workspace:w1", (event) => first.push(event));
+    channels[0].subscribed();
+    const stopLate = watch("signals:workspace:w1", (event) => late.push(event));
+    const stopGone = watch("signals:workspace:w1", (event) => gone.push(event));
+    stopGone();
+    await Promise.resolve();
+    expect(late).toEqual(["catch-up"]);
+    expect(gone).toEqual([]);
+    expect(first).toEqual(["catch-up"]);
+    stopLate();
+  });
+
   it("reports whether every watched topic is joined, and is connected when it watches nothing", () => {
     const { client, channels } = fakeClient();
     const { watch, watchConnection } = createSignalWatcher(() => client);
