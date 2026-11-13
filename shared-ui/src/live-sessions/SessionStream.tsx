@@ -240,7 +240,7 @@ export function SessionStream({
           <li
             key={keyOf(item)}
             id={item.type === "pending" || item.type === "live" ? undefined : messageDomId(item.seq)}
-            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "tool" && item.children ? " ui-stream__item--agent" : ""}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
           >
             <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} onDismissPrompt={onDismissPrompt} />
           </li>
