@@ -100,3 +100,23 @@ describe("CodexDriver live text", () => {
     expect(sent.slice(-1)[0]!.chunk).toEqual({ messageId: "i1", index: 0, text: "again", final: false });
   });
 });
+
+describe("CodexDriver turn end", () => {
+  it("wakes the runner when a turn ends with a message waiting, and not otherwise", async () => {
+    let wakes = 0;
+    const driver = new CodexDriver({ ...host, wake: () => void wakes++ }) as unknown as {
+      onNotification(connection: unknown, method: string, params: unknown): void;
+      deliver(connection: unknown, messages: unknown[]): Promise<void>;
+    };
+    const connection = { threadId: "t1", busy: true, turnId: "u1", hasTurned: true, history: [] };
+
+    driver.onNotification(connection, "turn/completed", { threadId: "t1", turn: { id: "u1" } });
+    expect(wakes).toBe(0);
+
+    connection.busy = true;
+    connection.turnId = "u2";
+    await driver.deliver(connection, [{ id: "i1", kind: "message", state: "queued", delivered_text: "hi" }]);
+    driver.onNotification(connection, "turn/completed", { threadId: "t1", turn: { id: "u2" } });
+    expect(wakes).toBe(1);
+  });
+});

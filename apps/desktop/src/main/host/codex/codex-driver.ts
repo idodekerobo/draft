@@ -148,6 +148,7 @@ export class CodexDriver implements HarnessDriver {
   private recovered = false;
   private reported = new Map<string, string>();
   private readonly steerFailed = new Set<string>();
+  private waiting = false;
   private halted = false;
   private lastActivityAt = Date.now();
   private attaching = false;
@@ -254,6 +255,7 @@ export class CodexDriver implements HarnessDriver {
     } else if (method === "turn/completed") {
       connection.busy = false;
       connection.turnId = null;
+      if (this.waiting) this.host.wake();
     }
     if (method === "item/completed" || method === "turn/completed") this.enqueue({ method, params });
   }
@@ -435,6 +437,7 @@ export class CodexDriver implements HarnessDriver {
 
   private async deliver(connection: CodexConnection, messages: PendingInput[]): Promise<void> {
     const queued = messages.filter((i) => i.state === "queued");
+    this.waiting = queued.length > 0 && connection.busy;
     if (queued.length === 0) return;
     this.lastActivityAt = Date.now();
     if (connection.busy) {
