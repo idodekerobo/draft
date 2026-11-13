@@ -5,7 +5,7 @@ import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { isPromptBlock } from "draft-core/live-sessions";
 import { inputStatusLine, isBlocked } from "./input-status";
-import { approvalOutcome, isMine, type StreamItem } from "./stream-items";
+import { approvalOutcome, isMine, oneLine, type StreamItem } from "./stream-items";
 
 const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.type === "live" ? `live-${item.messageId}` : item.seq);
 
@@ -96,6 +96,21 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         return <p className="ui-stream__note ui-stream__note--interrupted">{mine ? "You interrupted" : `Interrupted by ${item.interruptedBy.name}`}</p>;
       }
       return <p className="ui-stream__note">{item.text}</p>;
+    case "agent_message": {
+      const preview = oneLine(item.text);
+      return (
+        <details className="ui-stream__details">
+          <summary>
+            <span className="ui-stream__tool">Agent</span>
+            <span className="ui-stream__summary">
+              @{item.from} {item.kind === "idle" ? "finished" : (item.summary ?? "sent a message")}
+              {preview && <span className="ui-muted"> · {preview}</span>}
+            </span>
+          </summary>
+          {item.text ? <div className="ui-prose ui-stream__agent-body" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} /> : <p className="ui-stream__text ui-muted">No details.</p>}
+        </details>
+      );
+    }
     case "approval":
       if (item.kind === "question" && item.questions.length > 0) {
         const answers = item.resolved?.answers ?? {};

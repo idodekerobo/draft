@@ -30,6 +30,19 @@ describe("SessionStream", () => {
     expect(last.querySelector(".ui-prose strong")?.textContent).toBe("now");
   });
 
+  it("shows an agent's message as an expandable row, not as a person's bubble", () => {
+    const { container } = render(
+      <Stream
+        events={[event("session_note", { text: "Message from test-updater", agent_message: { from: "test-updater", type: "idle", text: "Core tests **pass**" } })]}
+      />,
+    );
+    expect(container.querySelector(".ui-stream__bubble")).toBeNull();
+    const summary = container.querySelector(".ui-stream__item--agent_message summary")!;
+    expect(summary.textContent).toContain("Agent");
+    expect(summary.textContent).toContain("@test-updater finished");
+    expect(container.querySelector(".ui-stream__agent-body strong")?.textContent).toBe("pass");
+  });
+
   it("shows a waiting line before the first event", () => {
     render(<Stream events={[]} />);
     expect(screen.getByRole("status").textContent).toContain("Waiting");

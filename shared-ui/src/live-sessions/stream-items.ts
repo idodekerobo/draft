@@ -6,6 +6,8 @@ export type StreamItem =
   | { type: "assistant"; seq: number; at: string; text: string; agentId: string | null }
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
+  /** A message from another agent in the team. People's messages are `user`. */
+  | { type: "agent_message"; seq: number; at: string; from: string; kind: "idle" | "message"; summary: string | null; text: string; agentId: string | null }
   | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostOffline: boolean }
   /** Text the agent is writing now. It stands in the stream until the stored message replaces it. */
   | { type: "live"; messageId: string; text: string }
@@ -49,7 +51,7 @@ export type StreamItem =
 const SUMMARY_MAX_CHARS = 100;
 const SUMMARY_KEYS = ["command", "file_path", "path", "pattern", "query", "url", "description", "prompt"];
 
-function oneLine(value: string): string {
+export function oneLine(value: string): string {
   const line = value.split("\n").find((l) => l.trim())?.trim() ?? "";
   return line.length > SUMMARY_MAX_CHARS ? `${line.slice(0, SUMMARY_MAX_CHARS)}…` : line;
 }
@@ -76,7 +78,9 @@ function sameMessage(a: string, b: string): boolean {
 }
 
 const AGENT_TOOLS = new Set(["Agent", "Task"]);
-const LAUNCHED_AGENT_ID = /agentId:\s*([A-Za-z0-9_-]+)/;
+// A sub-agent call says `agentId: …`. A team member's call says `agent_id: …`.
+const LAUNCHED_AGENT_ID = /agent_?[iI]d:\s*([A-Za-z0-9_-]+)/;
+const TEAM_LEAD = "team-lead";
 
 /**
  * Moves each sub-agent's items under the tool call that started it, found by the agent id in the
@@ -103,8 +107,9 @@ function nestAgentRuns(items: StreamItem[]): StreamItem[] {
       hosts.set(id, host);
       out.push(host);
     }
-    // A launched agent's prompt is already in the call's input.
+    // A launched agent's prompt is already in the call's input. A team member's arrives as the lead's message.
     if (item.type === "user" && launched.has(host)) continue;
+    if (item.type === "agent_message" && item.from === TEAM_LEAD && launched.has(host) && !host.children?.length) continue;
     (host.children ??= []).push(item);
   }
   return out;
@@ -144,6 +149,11 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
         items.push({ type: "thinking", seq: event.seq, text: payload.text ?? "", agentId });
         break;
       case "session_note":
+        if (payload.agent_message) {
+          const message = payload.agent_message;
+          items.push({ type: "agent_message", seq: event.seq, at: event.created_at, from: message.from, kind: message.type, summary: message.summary ?? null, text: message.text, agentId });
+          break;
+        }
         items.push({ type: "note", seq: event.seq, text: payload.text ?? "", interruptedBy: payload.interrupted_by });
         break;
       case "permission_request": {

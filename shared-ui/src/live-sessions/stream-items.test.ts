@@ -55,6 +55,29 @@ describe("buildStreamItems", () => {
   });
 });
 
+describe("messages from other agents", () => {
+  const note = (agent_id?: string) =>
+    event("session_note", { text: "Message from test-updater", agent_message: { from: "test-updater", type: "idle", text: "Done" }, ...(agent_id ? { agent_id } : {}) });
+
+  it("makes an agent item, apart from a person's message", () => {
+    const items = buildStreamItems([event("user_message", { text: "[Idode via Draft #3eb2c942] hi" }), note()]);
+    expect(items.map((i) => i.type)).toEqual(["user", "agent_message"]);
+    expect(items[1]).toMatchObject({ from: "test-updater", kind: "idle", text: "Done", agentId: null });
+  });
+
+  it("nests a team member under its spawn call and drops the lead's first message, which repeats the prompt", () => {
+    const items = buildStreamItems([
+      event("tool_use", { tool_use_id: "t1", name: "Agent", input: { name: "test-updater", prompt: "Do it" } }),
+      event("tool_result", { tool_use_id: "t1", content: "Spawned successfully.\nagent_id: atest-updater-c0a3\nname: test-updater" }),
+      event("session_note", { text: "Message from team-lead", agent_id: "atest-updater-c0a3", agent_message: { from: "team-lead", type: "message", text: "Do it" } }),
+      event("assistant_text", { text: "On it", agent_id: "atest-updater-c0a3" }),
+      event("session_note", { text: "Message from team-lead", agent_id: "atest-updater-c0a3", agent_message: { from: "team-lead", type: "message", text: "Also this" } }),
+    ]);
+    expect(items).toHaveLength(1);
+    expect((items[0] as { children: Array<{ type: string }> }).children.map((c) => c.type)).toEqual(["assistant", "agent_message"]);
+  });
+});
+
 describe("toolSummary", () => {
   it("prefers the field that says what the tool acts on", () => {
     expect(toolSummary({ command: "bun test", description: "Run tests" })).toBe("bun test");
