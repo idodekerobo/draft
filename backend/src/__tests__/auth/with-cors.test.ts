@@ -18,6 +18,7 @@ describe("withCors", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe(appOrigin);
     expect(response.headers.get("access-control-allow-methods")?.split(",")).toContain(method);
     expect(response.headers.get("access-control-allow-headers")).toContain("Authorization");
+    expect(response.headers.get("access-control-max-age")).toBe("7200");
   });
 
   it("rejects a disallowed origin", async () => {
