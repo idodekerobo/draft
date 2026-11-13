@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, uti
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, describe, expect, test } from "bun:test";
-import { AuthLockError, acquireFileLock, createAccessTokenProvider, createAuthStateStore, normalizeAuthState, type AuthState } from "../auth-state";
+import { AuthLockError, acquireFileLock, createAccessTokenProvider, createAuthStateStore, desktopAuthFilePath, normalizeAuthState, type AuthState } from "../auth-state";
 
 const auth = (overrides: Partial<AuthState> = {}): AuthState => ({ access_token: "old", refresh_token: "refresh", expires_at: 10, organization_id: "org", team_id: "team", workspace_id: "workspace", identity_resolved: true, onboarding_completed_at: null, ...overrides });
 function harness(initial = auth(), fetcher: (calls: number) => Promise<Response> = async () => Response.json({ access_token: "new", refresh_token: "rotated", expires_in: 60 })) {
@@ -221,4 +221,11 @@ describe("acquireFileLock", () => {
     writeFileSync(lockPath, ""); // fresh lock — never recovered as stale within the wait window
     await expect(acquireFileLock(lockPath)).rejects.toBeInstanceOf(AuthLockError);
   }, 15_000);
+});
+
+describe("desktop auth file", () => {
+  test("a dev build keeps its login apart from the installed app", () => {
+    expect(desktopAuthFilePath("/root", false)).toBe("/root/personal/auth.json");
+    expect(desktopAuthFilePath("/root", true)).toBe("/root/personal/auth.dev.json");
+  });
 });

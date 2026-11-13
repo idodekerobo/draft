@@ -36,9 +36,12 @@ export interface HostSessionState {
   openRequests?: string[];
 }
 
-const SESSIONS_DIR = `${process.env.HOME}/.draft/host/sessions`;
+/** Dev builds use another folder so they never resume the installed app's sessions, or the reverse. */
+export function hostSessionsDir(home = process.env.HOME, dev = process.env.DRAFT_DESKTOP_DEV === "1"): string {
+  return `${home}/.draft/${dev ? "host-dev" : "host"}/sessions`;
+}
 
-export function saveState(state: HostSessionState, dir = SESSIONS_DIR): void {
+export function saveState(state: HostSessionState, dir = hostSessionsDir()): void {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${state.sessionId}.json`);
   const tmp = `${path}.tmp`;
@@ -46,7 +49,7 @@ export function saveState(state: HostSessionState, dir = SESSIONS_DIR): void {
   renameSync(tmp, path);
 }
 
-export function loadStates(dir = SESSIONS_DIR): HostSessionState[] {
+export function loadStates(dir = hostSessionsDir()): HostSessionState[] {
   if (!existsSync(dir)) return [];
   const states: HostSessionState[] = [];
   for (const name of readdirSync(dir)) {
@@ -60,6 +63,6 @@ export function loadStates(dir = SESSIONS_DIR): HostSessionState[] {
   return states;
 }
 
-export function deleteState(sessionId: string, dir = SESSIONS_DIR): void {
+export function deleteState(sessionId: string, dir = hostSessionsDir()): void {
   rmSync(join(dir, `${sessionId}.json`), { force: true });
 }
