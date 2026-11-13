@@ -1,3 +1,4 @@
+import { liveTextTopic, LIVE_TEXT_EVENT, type LiveTextChunk } from "draft-core/live-sessions";
 import { ApprovalBroker } from "./approvals";
 import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
 import { ControlActions, type ControlInput } from "./controls";
@@ -5,12 +6,15 @@ import { findRunnerBin } from "./find-bin";
 import { existsSync, readFileSync } from "fs";
 import { TranscriptForwarder, findTranscript, type ForwardedLine } from "./forwarder";
 import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "./harness-driver";
+import { DeltaTail } from "./delta-tail";
 import { writeSessionSettings } from "./hook-settings";
-import { ensureHooksServer, registerSessionHooks } from "./hooks-server";
+import { deltasPath, ensureHooksServer, registerSessionHooks } from "./hooks-server";
 import { InputDelivery, type PendingInput } from "./input-delivery";
 import { LeadInRelay } from "./lead-in";
+import { LiveTextRelay } from "./live-text-relay";
 import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressBackTab, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
 import { openPaneInTerminal } from "./open-in-terminal";
+import { realtime } from "../realtime/instance";
 import { CYCLE_MODES, modeFromScreen, switchMode, type ClaudeMode } from "./mode";
 import { classifyPane, isTurnRunning } from "./pane-state";
 import { preTrustFolder } from "./pre-trust";
@@ -33,6 +37,9 @@ export class ClaudeDriver implements HarnessDriver {
   private readonly broker: ApprovalBroker;
   private readonly leadIn: LeadInRelay;
   private readonly controls: ControlActions;
+  private readonly relay: LiveTextRelay;
+  private readonly deltas: DeltaTail;
+  private stopLive: (() => void) | null = null;
   private unregisterHooks: (() => void) | null = null;
   private rotateTo: string | null = null;
   private caughtUp = false;
@@ -57,6 +64,16 @@ export class ClaudeDriver implements HarnessDriver {
       sleep,
     });
     this.leadIn = new LeadInRelay((events) => host.postHostEvents(events));
+    this.relay = new LiveTextRelay({
+      send: (chunk: LiveTextChunk) => realtime.send(liveTextTopic(host.state().sessionId), LIVE_TEXT_EVENT, chunk),
+    });
+    this.deltas = new DeltaTail({
+      path: deltasPath(state.hookId ?? state.sessionId),
+      onPayload: (payload) => {
+        this.leadIn.message(payload);
+        this.relayDelta(payload);
+      },
+    });
     this.broker = new ApprovalBroker({
       postEvents: (events) => host.postHostEvents(events),
       paneBlocked: async () => {
@@ -93,16 +110,25 @@ export class ClaudeDriver implements HarnessDriver {
         this.host.requestUpload();
         if (this.waiting) this.host.wake();
       },
-      message: (payload) => this.leadIn.message(payload),
       sessionStarted: (payload) => {
         this.rotateTo ??= rotationTarget(this.host.state().nativeSessionId, payload);
       },
     });
+    this.stopLive = realtime.watch(liveTextTopic(state.sessionId), () => {});
+    this.deltas.start();
     for (const requestId of state.openRequests ?? []) {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
     }
     this.forwarder.start();
     void this.catchUp();
+  }
+
+  /** Sends one streamed chunk to viewers, when it belongs to this conversation's current message. */
+  private relayDelta(payload: Record<string, unknown>): void {
+    const { session_id: sessionId, message_id: messageId, delta, final } = payload;
+    if (sessionId !== undefined && sessionId !== this.host.state().nativeSessionId) return;
+    if (typeof messageId !== "string" || messageId === "" || typeof delta !== "string") return;
+    this.relay.push(messageId, delta, final === true);
   }
 
   /** Input delivery waits until the transcript is up to date, so a sent message is not called uncertain too soon. */
@@ -114,9 +140,14 @@ export class ClaudeDriver implements HarnessDriver {
   halt(): void {
     this.halted = true;
     this.forwarder.halt();
+    this.deltas.stop();
+    this.relay.stop();
+    this.stopLive?.();
+    this.stopLive = null;
   }
 
   dispose(): void {
+    this.deltas.stop(true);
     this.halt();
     this.unregisterHooks?.();
   }

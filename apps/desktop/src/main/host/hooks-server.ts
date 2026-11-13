@@ -5,8 +5,6 @@ import { HOST_DIR } from "./hook-settings";
 export interface SessionHooks {
   permission(payload: Record<string, unknown>, signal: AbortSignal): Promise<HookAnswer | null>;
   stopped(): void;
-  /** One streamed chunk of an assistant message. */
-  message(payload: Record<string, unknown>): void;
   /** Claude started or replaced its conversation; `/clear` and `/fork` give it a new session id. */
   sessionStarted(payload: Record<string, unknown>): void;
 }
@@ -17,6 +15,11 @@ let serverToken = "";
 let endpointDir = HOST_DIR;
 
 const endpointPath = (sessionId: string, name: "port" | "token") => `${endpointDir}/hooks/${sessionId}.${name}`;
+
+/** Where the hook script appends the streamed message chunks of a session, one JSON object per line. */
+export function deltasPath(sessionId: string): string {
+  return `${endpointDir}/hooks/${sessionId}.deltas`;
+}
 
 /**
  * Each session has its own endpoint files, so another Draft process on the same computer (a dev build next to an
@@ -64,17 +67,13 @@ export function ensureHooksServer(dir = HOST_DIR): void {
     port: 0,
     async fetch(req, bunServer) {
       const url = new URL(req.url);
-      const match = /^\/hook\/([^/]+)\/(permission|stop|session-start|message)$/.exec(url.pathname);
+      const match = /^\/hook\/([^/]+)\/(permission|stop|session-start)$/.exec(url.pathname);
       if (req.method !== "POST" || !match || req.headers.get("x-draft-token") !== token) return new Response("not found", { status: 404 });
       const hooks = sessions.get(match[1]!);
       if (!hooks) return new Response(null, { status: 204 });
 
       if (match[2] === "stop") {
         hooks.stopped();
-        return new Response(null, { status: 204 });
-      }
-      if (match[2] === "message") {
-        hooks.message(await readPayload(req));
         return new Response(null, { status: 204 });
       }
       if (match[2] === "session-start") {
