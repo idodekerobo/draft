@@ -198,12 +198,7 @@ export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
 
 export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
-  if (!owned.ok) return owned.response;
   const params = new URL(req.url).searchParams;
-  if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
-
-  const everything = params.get("kinds") === "all";
   let query = serviceClient
     .from("session_inputs")
     .select(INPUT_COLUMNS)
@@ -212,8 +207,12 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
     .in("state", ["queued", "delivering"])
     .order("created_at", { ascending: true })
     .limit(VIEWER_LIMIT);
-  if (!everything) query = query.eq("kind", "message");
-  const { data, error } = await query;
+  if (params.get("kinds") !== "all") query = query.eq("kind", "message");
+
+  // The read runs beside the access check, and its rows are used only after that check passes.
+  const [owned, { data, error }] = await Promise.all([authorizeOwned(workspaceId, sessionId, caller.userId), query]);
+  if (!owned.ok) return owned.response;
+  if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
   if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
 
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
