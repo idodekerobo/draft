@@ -203,8 +203,9 @@ function truncateUtf8(value: string, maxBytes: number): string {
 export async function searchSources(
   client: SupabaseClient,
   workspaceId: string,
-  callerUserId: string,
+  callerUserId: string | null,
   input: SourceSearchInput,
+  personUserId: string | null = callerUserId,
 ): Promise<SourceResult<SourceSearchResponse>> {
   const query = input.query?.trim() || null;
   if (query ? query.length > SOURCE_QUERY_MAX_CHARACTERS : !input.person) {
@@ -233,7 +234,7 @@ export async function searchSources(
 
   let personTerms: string[] | null = null;
   if (input.person) {
-    const resolved = await personSearchTerms(client, workspaceId, callerUserId, input.person);
+    const resolved = await personSearchTerms(client, workspaceId, personUserId, input.person);
     if (!resolved.ok) return failure("invalid_filter", "No person with that id in this workspace.");
     // A person Draft cannot yet recognise anywhere matches no source.
     if (resolved.terms.length === 0) return { ok: true, value: { results: [], next_cursor: null, consistency: "live", filters } };
@@ -312,7 +313,7 @@ function sliceUtf8(value: string, offset: number, maxBytes: number): { content: 
 export async function readSource(
   client: SupabaseClient,
   workspaceId: string,
-  callerUserId: string,
+  callerUserId: string | null,
   input: SourceReadInput,
 ): Promise<SourceResult<SourceReadResponse>> {
   const representation = input.representation ?? "default";
@@ -320,10 +321,11 @@ export async function readSource(
   const maxBytesResult = parseMaxBytes(input.max_bytes);
   if (!maxBytesResult.ok) return maxBytesResult;
 
-  const { data, error } = await client.from("source_items")
+  let query = client.from("source_items")
     .select("id, external_version, source_connection_id, item_type, representation_kind, occurred_at, source_time_start, source_time_end, metadata_json, content_markdown, sanitized_raw_json, agent_session_id, lifecycle_status, visibility, owner_user_id, source_connections(provider)")
-    .eq("workspace_id", workspaceId).eq("id", input.source_item_id)
-    .or(`visibility.eq.shared,owner_user_id.eq.${callerUserId}`).maybeSingle();
+    .eq("workspace_id", workspaceId).eq("id", input.source_item_id);
+  query = callerUserId ? query.or(`visibility.eq.shared,owner_user_id.eq.${callerUserId}`) : query.eq("visibility", "shared");
+  const { data, error } = await query.maybeSingle();
   if (error) return failure("read_failed", "Source read failed.");
   if (!data) return failure("source_not_found", "Source not found.");
   const item = data as Record<string, unknown>;
