@@ -5,7 +5,7 @@ import { getHarness } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
-import { authorName, authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
+import { authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type InputsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs">;
 type PendingRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs/pending">;
@@ -46,12 +46,12 @@ function publicInput(row: SessionInputRow): PublicInput {
   };
 }
 
-async function createInput(workspaceId: string, sessionId: string, userId: string, text: string, name?: string): Promise<Response> {
+async function createInput(workspaceId: string, sessionId: string, userId: string, text: string): Promise<Response> {
   const { data, error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: userId,
-    p_author_name: name ?? (await authorName(userId)),
+    p_author_name: null,
     p_kind: "message",
     p_payload: { text },
   });
@@ -91,7 +91,7 @@ export const INPUTS_LIST = withAuth<InputsRequest>(async (req, caller) => {
 
 export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const [denied, name] = await Promise.all([authorize(workspaceId, caller.userId), authorName(caller.userId)]);
+  const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
 
   const parsed = await readBody(req);
@@ -101,7 +101,7 @@ export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
   if (!text) return errorResponse("empty_message", 400);
   if (text.length > MAX_INPUT_CHARS) return errorResponse("message_too_long", 400);
 
-  return createInput(workspaceId, sessionId, caller.userId, text, name);
+  return createInput(workspaceId, sessionId, caller.userId, text);
 });
 
 /** Asks the host to put a waiting message into the turn that is running, instead of after it. */
@@ -223,15 +223,16 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   return Response.json({ inputs });
 });
 
+const HOST_TRANSITION_ERRORS: Record<string, number> = { not_session_owner: 403, invalid_state: 400, invalid_transition: 409 };
+
 export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, inputId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
-  if (!owned.ok) return owned.response;
+  const denied = await authorize(workspaceId, caller.userId);
+  if (denied) return denied;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
-  if (optionalString(body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
 
   const to = body.to as SessionInputState;
   const from = body.from;
@@ -240,27 +241,20 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
     return errorResponse("invalid_state", 400);
   }
 
-  if (to === "consumed") {
-    const { data: input } = await serviceClient
-      .from("session_inputs")
-      .select("kind")
-      .eq("id", inputId)
-      .eq("session_id", sessionId)
-      .maybeSingle<Pick<SessionInputRow, "kind">>();
-    if (!input || input.kind === "message") return errorResponse("invalid_state", 400);
-  }
-
-  const { data, error } = await serviceClient.rpc("transition_session_input", {
+  const { data, error } = await serviceClient.rpc("host_transition_session_input", {
     p_input_id: inputId,
     p_session_id: sessionId,
+    p_workspace_id: workspaceId,
+    p_owner_user_id: caller.userId,
+    p_host_machine_id: optionalString(body.hostMachineId, 200),
     p_from: from,
     p_to: to,
     p_reason: optionalString(body.reason, REASON_MAX_CHARS),
-    p_consumed_seq: null,
   });
   if (error) {
-    if (error.message.includes("invalid_transition")) return errorResponse("invalid_transition", 409);
-    return errorResponse("input_update_failed", 500, error, workspaceId, sessionId);
+    const known = Object.keys(HOST_TRANSITION_ERRORS).find((code) => error.message.includes(code));
+    if (known) return errorResponse(known, HOST_TRANSITION_ERRORS[known]);
+    return knownDbError(error.message) ?? errorResponse("input_update_failed", 500, error, workspaceId, sessionId);
   }
   return Response.json({ ok: true, changed: data === true });
 });

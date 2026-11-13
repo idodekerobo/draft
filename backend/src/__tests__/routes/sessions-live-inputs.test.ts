@@ -67,7 +67,17 @@ mock.module("../../db/client", () => ({
       rpcCalls.push({ fn, args });
       if (rpcError) return { data: null, error: rpcError };
       if (fn === "create_session_input") {
-        return { data: { id: "input-new", author_user_id: args.p_author_user_id, author_name: args.p_author_name, kind: "message", payload: args.p_payload, state: "queued", reason: null, created_at: "t", updated_at: "t" }, error: null };
+        const author = tables.users!.find((u) => u.id === args.p_author_user_id);
+        return { data: { id: "input-new", author_user_id: args.p_author_user_id, author_name: args.p_author_name ?? author?.display_name ?? author?.email ?? "A teammate", kind: "message", payload: args.p_payload, state: "queued", reason: null, created_at: "t", updated_at: "t" }, error: null };
+      }
+      if (fn === "host_transition_session_input") {
+        const session = tables.sessions!.find((r) => r.id === args.p_session_id && r.workspace_id === args.p_workspace_id);
+        const fail = (message: string) => ({ data: null, error: { message } });
+        if (!session) return fail("session_not_found");
+        if (session.owner_user_id !== args.p_owner_user_id) return fail("not_session_owner");
+        if (session.host_machine_id !== args.p_host_machine_id) return fail("foreign_host");
+        const input = tables.session_inputs!.find((r) => r.id === args.p_input_id);
+        if (args.p_to === "consumed" && (!input || input.kind === "message")) return fail("invalid_state");
       }
       return { data: true, error: null };
     },
@@ -104,7 +114,8 @@ describe("sending a message", () => {
     const call = rpcCalls[0]!;
     expect(call.fn).toBe("create_session_input");
     expect(call.args.p_author_user_id).toBe("user-2");
-    expect(call.args.p_author_name).toBe("Priya");
+    expect(call.args.p_author_name).toBeNull();
+    expect(((await res.json()) as { input: { author_name: string } }).input.author_name).toBe("Priya");
     expect(call.args.p_payload).toEqual({ text: "please add tests" });
   });
 
@@ -176,7 +187,7 @@ describe("host routes", () => {
     tables.session_inputs = [input, { ...input, id: "i2", kind: "stop" }];
     const message = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
     expect(message.status).toBe(400);
-    expect(rpcCalls).toEqual([]);
+    rpcCalls = [];
     const stop = await routes.INPUT_STATE(request("POST", "/x", { hostMachineId: "host-1", from: ["delivering"], to: "consumed" }, { id: WS, sessionId: SESSION, inputId: "i2" }));
     expect(stop.status).toBe(200);
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i2", p_to: "consumed" });
@@ -198,6 +209,13 @@ describe("host routes", () => {
 
     const messagesOnly = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as Pending;
     expect(messagesOnly.inputs.map((i) => i.id)).toEqual(["i1"]);
+  });
+
+  it("refuses a state change from a user who does not own the session", async () => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_machine_id: "host-1", last_seq: 0 }];
+    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["queued"], to: "delivering" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: "not_session_owner" });
   });
 
   it("refuses a state change from another host", async () => {

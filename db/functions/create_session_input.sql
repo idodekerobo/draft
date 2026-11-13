@@ -1,6 +1,7 @@
 -- Adds an input to a session's queue. The author is the caller's user id and
 -- display name, taken by the backend from the JWT. An ended session takes no input,
 -- and a routine session never does: nothing is listening for it.
+-- A null p_author_name is filled with the author's display name, or their email.
 create or replace function create_session_input(
   p_session_id uuid,
   p_workspace_id uuid,
@@ -18,6 +19,7 @@ declare
   v_status text;
   v_type text;
   v_row session_inputs%rowtype;
+  v_name text;
 begin
   select status, session_type into v_status, v_type
   from sessions
@@ -38,8 +40,12 @@ begin
     raise exception 'queue_full';
   end if;
 
+  if p_author_name is null then
+    select coalesce(display_name, email) into v_name from users where id = p_author_user_id;
+  end if;
+
   insert into session_inputs (session_id, workspace_id, author_user_id, author_name, kind, payload)
-  values (p_session_id, p_workspace_id, p_author_user_id, p_author_name, p_kind, coalesce(p_payload, '{}'::jsonb))
+  values (p_session_id, p_workspace_id, p_author_user_id, coalesce(p_author_name, v_name, 'A teammate'), p_kind, coalesce(p_payload, '{}'::jsonb))
   returning * into v_row;
 
   return to_jsonb(v_row);
