@@ -11,15 +11,21 @@ export interface CapabilityValue {
   canNotify: boolean;
   /** Null when the routine may not post in Slack. */
   postChannels: "joined" | string[] | null;
+  /** Null when the routine may not touch GitHub. */
+  github: { repos: string[]; access: "read" | "write" } | null;
 }
 
-export const capabilitiesOf = (agent: Pick<AgentRoutine, "events" | "canNotify" | "postChannels"> | null): CapabilityValue => ({
+export const capabilitiesOf = (agent: Pick<AgentRoutine, "events" | "canNotify" | "postChannels" | "github"> | null): CapabilityValue => ({
   events: agent?.events ?? [],
   canNotify: agent?.canNotify ?? false,
   postChannels: agent?.postChannels ?? null,
+  github: agent?.github ?? null,
 });
 
-export const NO_CAPABILITIES: CapabilityValue = { events: [], canNotify: false, postChannels: null };
+export const NO_CAPABILITIES: CapabilityValue = { events: [], canNotify: false, postChannels: null, github: null };
+
+const sameGithub = (a: CapabilityValue["github"], b: CapabilityValue["github"]) =>
+  a === b || (!!a && !!b && a.access === b.access && a.repos.length === b.repos.length && a.repos.every((repo) => b.repos.includes(repo)));
 
 const sameChannels = (a: CapabilityValue["postChannels"], b: CapabilityValue["postChannels"]) =>
   a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((channel) => b.includes(channel)));
@@ -30,11 +36,13 @@ export function capabilityChanges(original: CapabilityValue, next: CapabilityVal
   if (next.events.length !== original.events.length || next.events.some((event) => !original.events.includes(event))) changes.events = next.events;
   if (next.canNotify !== original.canNotify) changes.canNotify = next.canNotify;
   if (!sameChannels(original.postChannels, next.postChannels)) changes.postChannels = next.postChannels;
+  if (!sameGithub(original.github, next.github)) changes.github = next.github;
   return changes;
 }
 
 /** "Only these channels" with none picked would allow posting nowhere, so it can't be saved. */
-export const capabilitiesValid = (value: CapabilityValue) => !(Array.isArray(value.postChannels) && value.postChannels.length === 0);
+export const capabilitiesValid = (value: CapabilityValue) =>
+  !(Array.isArray(value.postChannels) && value.postChannels.length === 0) && !(value.github && value.github.repos.length === 0);
 
 /** A plain sentence for a person who can see the routine but not change it. */
 export function describeCapabilities(value: CapabilityValue): string {
@@ -42,6 +50,7 @@ export function describeCapabilities(value: CapabilityValue): string {
   if (value.canNotify) parts.push("messages teammates on Slack");
   if (value.postChannels === "joined") parts.push("posts in any Slack channel Draft is in");
   else if (value.postChannels) parts.push(`posts in ${value.postChannels.join(", ")}`);
+  if (value.github) parts.push(`${value.github.access === "write" ? "opens pull requests in" : "reads"} ${value.github.repos.join(", ")}`);
   if (value.events.includes("fireflies.meeting_summarized")) parts.push("also runs when a Fireflies meeting is summarized");
   return `${parts.join(", ")}.`;
 }
@@ -110,6 +119,53 @@ function SlackChannelPicker({ selected, onChange, disabled }: { selected: string
   );
 }
 
+function GithubRepoPicker({ value, onChange, disabled }: { value: NonNullable<CapabilityValue["github"]>; onChange: (value: NonNullable<CapabilityValue["github"]>) => void; disabled: boolean }) {
+  const api = useDraftApi();
+  const repos = useQuery({
+    queryKey: ["routine-github-repos"],
+    queryFn: () => api.getRoutineGithubRepos!(),
+    enabled: !!api.getRoutineGithubRepos,
+    staleTime: 60_000,
+  });
+  return (
+    <fieldset className="ui-routines__group ui-routines__group--nested">
+      <legend className="ui-routines__visually-hidden">GitHub access</legend>
+      <label className="ui-routines__check">
+        <input type="radio" checked={value.access === "read"} disabled={disabled} onChange={() => onChange({ ...value, access: "read" })} />
+        Read code
+      </label>
+      <label className="ui-routines__check">
+        <input type="radio" checked={value.access === "write"} disabled={disabled} onChange={() => onChange({ ...value, access: "write" })} />
+        Push branches and open pull requests
+      </label>
+      {repos.isPending && <p className="ui-routines__secondary" role="status">Loading repositories…</p>}
+      {repos.isError && (
+        <p className="ui-routines__error" role="alert">
+          Couldn’t load repositories. <button type="button" className="ui-routines__text-button" onClick={() => void repos.refetch()}>Try again</button>
+        </p>
+      )}
+      {repos.data?.length === 0 && <p className="ui-routines__secondary">Connect GitHub in Connections and give Draft access to a repository first.</p>}
+      {!!repos.data?.length && (
+        <div className="ui-routines__channel-list">
+          {[...new Set([...repos.data, ...value.repos])].map((repo) => (
+            <label key={repo} className="ui-routines__check">
+              <input
+                type="checkbox"
+                checked={value.repos.includes(repo)}
+                disabled={disabled}
+                onChange={(event) => onChange({ ...value, repos: event.target.checked ? [...value.repos, repo] : value.repos.filter((name) => name !== repo) })}
+              />
+              {repo}
+              {!repos.data.includes(repo) && <span className="ui-routines__secondary">No longer shared with Draft</span>}
+            </label>
+          ))}
+        </div>
+      )}
+      {value.repos.length === 0 && <p className="ui-routines__error" role="alert">Pick at least one repository.</p>}
+    </fieldset>
+  );
+}
+
 /** Collapsed by default. Every ability is off until a person turns it on. */
 export function CapabilityFields({ value, onChange, disabled, fieldError, initiallyOpen = false }: {
   value: CapabilityValue;
@@ -159,6 +215,12 @@ export function CapabilityFields({ value, onChange, disabled, fieldError, initia
           </fieldset>
         )}
         {fieldError("postChannels")}
+        <label className="ui-routines__check">
+          <input type="checkbox" checked={value.github !== null} disabled={disabled} onChange={(event) => onChange({ ...value, github: event.target.checked ? { repos: [], access: "read" } : null })} />
+          Work in GitHub repos
+        </label>
+        {value.github && <GithubRepoPicker value={value.github} disabled={disabled} onChange={(github) => onChange({ ...value, github })} />}
+        {fieldError("github")}
       </div>
     </div>
   );

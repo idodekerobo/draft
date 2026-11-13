@@ -10,6 +10,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   events: "Choose a valid event.",
   canNotify: "Choose whether it may message teammates.",
   postChannels: "Choose up to 20 channels.",
+  github: "Choose repositories Draft can reach.",
   limit: "This workspace has reached its limit of routines. Delete one or ask Draft for more.",
 };
 

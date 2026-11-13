@@ -54,8 +54,9 @@ function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine
   const deleteRoutine = mock(options.deleteRoutine ?? (async () => {}));
   const runRoutine = mock(async (_id: string) => ({}));
   const getRoutineSlackChannels = mock(async () => [{ id: "C1", name: "general" }, { id: "C2", name: "eng" }]);
+  const getRoutineGithubRepos = mock(async () => ["acme/app", "acme/site"]);
   const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels };
+  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels, getRoutineGithubRepos };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -407,5 +408,17 @@ describe("what a routine can do", () => {
     expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(await screen.findByLabelText("#eng"));
     expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("grants write access to the picked GitHub repos", async () => {
+    const { updateRoutine } = setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    fireEvent.click(await screen.findByRole("button", { name: /What it can do/ }));
+    fireEvent.click(screen.getByLabelText("Work in GitHub repos"));
+    fireEvent.click(screen.getByLabelText("Push branches and open pull requests"));
+    fireEvent.click(await screen.findByLabelText("acme/app"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { github: { repos: ["acme/app"], access: "write" } }));
   });
 });

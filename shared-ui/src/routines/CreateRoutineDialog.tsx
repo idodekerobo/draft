@@ -51,6 +51,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
         ...(capabilities.events.length ? { events: capabilities.events } : {}),
         ...(capabilities.canNotify ? { canNotify: true } : {}),
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
+        ...(capabilities.github ? { github: capabilities.github } : {}),
       });
     } catch (caught) {
       setError(
