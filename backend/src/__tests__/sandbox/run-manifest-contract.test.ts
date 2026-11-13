@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { loadRunnerManifest } from "../../sandbox/runner/manifest";
 import { validateRunnerManifest } from "draft-core/run-manifest";
-import { buildRunnerManifest, legacyRunnerEnv, needsDraftToolServer } from "../../sandbox/run-manifest";
+import { buildRunnerManifest, needsDraftToolServer } from "../../sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 
@@ -36,10 +36,9 @@ describe("the manifest the backend builds, for every kind of run", () => {
       expect(validateRunnerManifest(JSON.parse(JSON.stringify(manifest)), { callbackUrl: CALLBACK })).toEqual(manifest);
     });
 
-    it(`${name}: the older environment variables give the same manifest`, () => {
+    it(`${name}: the runner reads back the manifest the backend sent in its environment`, () => {
       const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
-      const fromLegacy = loadRunnerManifest({ ...legacyRunnerEnv(manifest), DRAFT_TIMEOUT_SECONDS: "900" }, CALLBACK);
-      expect(fromLegacy).toEqual(manifest);
+      expect(loadRunnerManifest({ DRAFT_RUN_MANIFEST: JSON.stringify(manifest) }, CALLBACK)).toEqual(manifest);
     });
   }
 });

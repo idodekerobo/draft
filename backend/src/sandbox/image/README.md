@@ -34,10 +34,6 @@ Set by the backend in `backend/src/sandbox/launch.ts`:
 - `DRAFT_EGRESS_HOSTS` for extra HTTPS hosts (the model provider and the
   callback host are added automatically)
 
-An older backend sends the earlier variables instead of a manifest
-(`DRAFT_RUN_MODE`, `DRAFT_NATIVE_TOOLS` and others). The runner still reads
-them.
-
 ## Failures
 
 Any error after the callback variables are read is posted to the callback as

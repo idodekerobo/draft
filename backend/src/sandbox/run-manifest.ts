@@ -41,24 +41,3 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
   };
   return validateRunnerManifest(manifest, { callbackUrl: input.callbackUrl });
 }
-
-/**
- * The environment variables the runner used before it read a manifest. They are still set, so an image
- * that has not been replaced keeps working. Remove them once every environment runs a manifest-reading image.
- */
-export function legacyRunnerEnv(manifest: RunnerManifest): Record<string, string> {
-  const env: Record<string, string> = {};
-  if (manifest.harness === "codex") env.DRAFT_RUN_HARNESS = "codex";
-  if (manifest.output.kind === "structured") env.DRAFT_OUTPUT_SCHEMA_PATH = manifest.output.schemaPath;
-  if (manifest.prompt.kind === "items") {
-    env.DRAFT_RUN_MODE = "batch";
-    env.DRAFT_MANIFEST_PATH = manifest.prompt.manifestPath;
-  }
-  if (manifest.output.kind === "stream") {
-    env.DRAFT_RUN_MODE = "routine";
-    if (manifest.model) env.DRAFT_ROUTINE_MODEL = manifest.model;
-    env.DRAFT_NATIVE_TOOLS = manifest.tools.native.join(",");
-    if (manifest.tools.draftMcpUrl) env.DRAFT_MCP_URL = manifest.tools.draftMcpUrl;
-  }
-  return env;
-}

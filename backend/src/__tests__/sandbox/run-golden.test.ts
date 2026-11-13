@@ -182,7 +182,6 @@ const BASE_ENV = {
   DRAFT_EGRESS_HOSTS: "project.supabase.co",
   DRAFT_CALLBACK_URL: "https://api.example.test/sandbox/callback",
   DRAFT_CALLBACK_TOKEN: "<token>",
-  DRAFT_PROMPT_PATH: "/run/input/prompt.md",
 };
 
 const synthesisSpec = () =>
@@ -192,7 +191,7 @@ const summarizationSpec = () =>
 const routineSpec = (routine: { harness: "claude" | "codex"; model: string | null; environment?: { nativeTools: string[]; mcpServers: [] } }) =>
   buildRoutineRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: "2026-11-09T09:00:00.000Z", routine: { title: "t", prompt: "p", ...routine }, contextVersionId: VERSION });
 
-// The older variables, unchanged, plus the manifest. An image that has not been replaced reads the older ones.
+// The base variables plus the manifest, which holds everything else the runner needs.
 const withManifest = (env: Record<string, string>, manifest: RunnerManifest) => ({ ...env, DRAFT_RUN_MANIFEST: JSON.stringify(manifest) });
 
 describe("environments the launcher gives the machine", () => {
@@ -200,7 +199,7 @@ describe("environments the launcher gives the machine", () => {
     const result = await launched({ spec: synthesisSpec(), prompt: { kind: "text", text: "PROMPT" }, credentials: { claudeCodeOAuthToken: "login" } });
     expect(result.env).toEqual(
       withManifest(
-        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json" },
+        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login" },
         manifestOf({ timeoutSeconds: 1200, output: STRUCTURED }),
       ),
     );
@@ -211,10 +210,7 @@ describe("environments the launcher gives the machine", () => {
     const result = await launched({ spec: summarizationSpec(), prompt: { kind: "items", manifestPath: "input/manifest.json" }, credentials: { claudeCodeOAuthToken: "login" } });
     expect(result.env).toEqual(
       withManifest(
-        {
-          ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login",
-          DRAFT_OUTPUT_SCHEMA_PATH: "/run/input/output-schema.json", DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json",
-        },
+        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login" },
         manifestOf({ timeoutSeconds: 1200, output: STRUCTURED, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } }),
       ),
     );
@@ -230,10 +226,7 @@ describe("environments the launcher gives the machine", () => {
     });
     expect(result.env).toEqual(
       withManifest(
-        {
-          ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku",
-          DRAFT_NATIVE_TOOLS: "Read,Glob,WebSearch", DRAFT_MCP_URL: MCP_URL, DRAFT_RUN_TOKEN: "<token>",
-        },
+        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_TOKEN: "<token>" },
         manifestOf({ model: "haiku", tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }),
       ),
     );
@@ -249,10 +242,7 @@ describe("environments the launcher gives the machine", () => {
     });
     expect(result.env).toEqual(
       withManifest(
-        {
-          ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", DRAFT_RUN_HARNESS: "codex", CODEX_AUTH_JSON: "{}", DRAFT_RUN_MODE: "routine",
-          DRAFT_NATIVE_TOOLS: "shell,web_search", DRAFT_MCP_URL: MCP_URL, DRAFT_RUN_TOKEN: "<token>",
-        },
+        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CODEX_AUTH_JSON: "{}", DRAFT_RUN_TOKEN: "<token>" },
         manifestOf({ harness: "codex", tools: { native: ["shell", "web_search"], draftMcpUrl: MCP_URL } }),
       ),
     );

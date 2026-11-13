@@ -11,7 +11,7 @@ import { classifyClaudeEnvelopeFailure, claudeMcpConfigJson, extractStructuredOu
 import { classifyFailureChunk } from "draft-core/harnesses/failure";
 import { codexConfigToml, codexMcpConfigToml, codexArgs, parseAgentIds, parseCodexResultLine, sanitizedCodexEnv } from "draft-core/harnesses/codex/runner";
 import { parseBatchManifest, runBatch } from "../../sandbox/runner/batch";
-import { parseTimeoutSeconds, loadRunnerManifest, manifestFromLegacyEnv } from "../../sandbox/runner/manifest";
+import { parseTimeoutSeconds, loadRunnerManifest } from "../../sandbox/runner/manifest";
 import { harnessCommand } from "../../sandbox/runner/process";
 import { parseRunnerManifest, validateRunnerManifest, type RunnerManifest } from "draft-core/run-manifest";
 import { routineFailureCode, StreamLineReader } from "../../sandbox/runner/stream";
@@ -622,38 +622,14 @@ describe("built-in tools of a run", () => {
   });
 });
 
-describe("a manifest from the older environment variables", () => {
-  const base = { DRAFT_TIMEOUT_SECONDS: "1200" };
-
-  test("synthesis: one prompt, a structured result, Read and Glob", () => {
-    expect(manifestFromLegacyEnv(base, CALLBACK)).toEqual(
-      manifestOf({ timeoutSeconds: 1200, output: structured }),
-    );
-  });
-
-  test("summarization: a file of items, a structured result", () => {
-    expect(manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "batch", DRAFT_MANIFEST_PATH: "/run/input/manifest.json" }, CALLBACK)).toEqual(
-      manifestOf({ timeoutSeconds: 1200, output: structured, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } }),
-    );
-    expect(() => manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "batch" }, CALLBACK)).toThrow("DRAFT_MANIFEST_PATH is required");
-  });
-
-  test("a Claude routine with a model, web search and Draft's tools", () => {
-    expect(
-      manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "routine", DRAFT_ROUTINE_MODEL: "haiku", DRAFT_NATIVE_TOOLS: "Read,Glob,WebSearch", DRAFT_MCP_URL: MCP_URL }, CALLBACK),
-    ).toEqual(manifestOf({ timeoutSeconds: 1200, model: "haiku", tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }));
-  });
-
-  test("a Codex routine", () => {
-    expect(manifestFromLegacyEnv({ ...base, DRAFT_RUN_MODE: "routine", DRAFT_RUN_HARNESS: "codex", DRAFT_NATIVE_TOOLS: "shell,web_search" }, CALLBACK)).toEqual(
-      manifestOf({ timeoutSeconds: 1200, harness: "codex", tools: { native: ["shell", "web_search"], draftMcpUrl: null } }),
-    );
-  });
-
-  test("a manifest in the environment wins over the older variables", () => {
+describe("loading the run manifest", () => {
+  test("reads the manifest from the environment", () => {
     const chosen = manifestOf({ model: "sonnet", timeoutSeconds: 60 });
-    expect(loadRunnerManifest({ DRAFT_RUN_MANIFEST: JSON.stringify(chosen), DRAFT_RUN_MODE: "batch", DRAFT_ROUTINE_MODEL: "haiku" }, CALLBACK)).toEqual(chosen);
-    expect(loadRunnerManifest({ ...base }, CALLBACK).output.kind).toBe("structured");
+    expect(loadRunnerManifest({ DRAFT_RUN_MANIFEST: JSON.stringify(chosen) }, CALLBACK)).toEqual(chosen);
+  });
+
+  test("refuses a run that has no manifest", () => {
+    expect(() => loadRunnerManifest({ DRAFT_TIMEOUT_SECONDS: "1200" }, CALLBACK)).toThrow("DRAFT_RUN_MANIFEST is required");
   });
 });
 
