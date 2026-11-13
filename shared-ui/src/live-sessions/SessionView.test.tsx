@@ -12,7 +12,7 @@ const render = (ui: ReactElement) =>
 
 const session: LiveSession = {
   id: "s1", owner_user_id: "u1", owner_name: "Maya", title: "[Maya via Draft] fix login", folder_name: "marigold",
-  host_name: null, status: "live", started_at: "2026-10-27T00:00:00Z", ended_at: null, last_event_at: null, last_seq: 2,
+  host_name: null, status: "live", started_at: "2026-10-27T00:00:00Z", ended_at: null, last_event_at: null, last_seq: 1,
 };
 
 const viewer = { id: "u9", name: "Dev" };

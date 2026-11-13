@@ -20,6 +20,7 @@ export const liveSessionsApi: LiveSessionsApi = {
   sendMessage: async (sessionId, text) => {
     const result = await rpc.request.sendLiveSessionMessage({ sessionId, text });
     if (!result.ok) throw new Error(result.error);
+    return result.input ? { ...result.input, mine: true } : undefined;
   },
   actOnInput: (sessionId, inputId, action) => rpc.request.actOnLiveSessionInput({ sessionId, inputId, action }),
   decideApproval: async (sessionId, requestId, response) => {

@@ -38,10 +38,15 @@ export function useSessionInputs(api: LiveSessionsApi, sessionId: string, inputs
   const mutation = useMutation({
     mutationKey: sendKey(sessionId),
     mutationFn: async ({ text }: SendVariables) => {
-      await api.sendMessage(sessionId, text);
+      const input = await api.sendMessage(sessionId, text);
       const session = client.getQueryData<SessionStreamData>(sessionStreamKey(sessionId))?.session;
       if (session) track?.("session_message_sent", { live_session_id: sessionId, is_owner: session.mine === true });
-      await refresh();
+      if (input) {
+        client.setQueryData<SessionStreamData>(sessionStreamKey(sessionId), (data) => (data && !data.inputs.some((i) => i.id === input.id) ? { ...data, inputs: [...data.inputs, input] } : data));
+        void refresh().catch(() => {});
+      } else {
+        await refresh();
+      }
     },
     onMutate: () => {
       const session = client.getQueryData<SessionStreamData>(sessionStreamKey(sessionId))?.session;

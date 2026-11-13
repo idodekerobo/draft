@@ -4,7 +4,7 @@ import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
 import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { SIGNAL_EVENTS, sessionSignalTopic } from "draft-core/live-sessions";
-import type { ApprovalResponse, LiveSession, LiveSessionEventsPage } from "draft-shared-ui";
+import type { ApprovalResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-shared-ui";
 import { realtime } from "../realtime/instance";
 import { ServerError, fetchServer, fetchServerJSON } from "../server/server-client";
 import type { HostEvent } from "./approvals";
@@ -478,10 +478,10 @@ export async function getLiveSessionEvents(sessionId: string, after: number): Pr
   return fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=${after}`);
 }
 
-export async function sendLiveSessionMessage(sessionId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function sendLiveSessionMessage(sessionId: string, text: string): Promise<{ ok: true; input?: LiveSessionInput } | { ok: false; error: string }> {
   try {
-    await fetchServer(`${sessionBase(sessionId)}/inputs`, { method: "POST", body: JSON.stringify({ text }) });
-    return { ok: true };
+    const body = await fetchServerJSON<{ input?: LiveSessionInput }>(`${sessionBase(sessionId)}/inputs`, { method: "POST", body: JSON.stringify({ text }) });
+    return { ok: true, input: body.input };
   } catch (error) {
     return { ok: false, error: error instanceof ServerError ? error.code : "send_failed" };
   }
