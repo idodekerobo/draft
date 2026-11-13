@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cachedMarkdown } from "./markdown-cache";
+import { LiveText } from "./LiveText";
 import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { isPromptBlock } from "draft-core/live-sessions";
@@ -81,7 +82,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         </>
       );
     case "live":
-      return <div className="ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} />;
+      return <LiveText text={item.text} />;
     case "thinking":
       return (
         <details className="ui-stream__details">

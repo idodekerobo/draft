@@ -31,3 +31,31 @@ const marked = new Marked({
 export function renderMarkdown(markdown: string): string {
   return marked.parse(markdown, { async: false });
 }
+
+/** The source of each top-level block. Joined, they give back the input exactly, CRLF included. */
+export function markdownBlocks(markdown: string): string[] {
+  const normalized = markdown.replace(/\r\n?/g, "\n");
+  const raws: string[] = [];
+  let leading = "";
+  for (const token of marked.lexer(normalized)) {
+    if (token.type !== "space") {
+      raws.push(leading + token.raw);
+      leading = "";
+    } else if (raws.length > 0) {
+      raws[raws.length - 1] += token.raw;
+    } else {
+      leading += token.raw;
+    }
+  }
+  if (leading) raws.push(leading);
+
+  const blocks: string[] = [];
+  let at = 0;
+  for (const raw of raws) {
+    let end = at;
+    for (let i = 0; i < raw.length; i++) end += markdown.startsWith("\r\n", end) ? 2 : 1;
+    blocks.push(markdown.slice(at, end));
+    at = end;
+  }
+  return blocks;
+}
