@@ -64,8 +64,8 @@ import { logLoginCleared } from "./main/auth/auth-log";
 import { createSessionExpiredHandler } from "./main/auth/session-expired";
 const presenceHub = new PresenceHub(connectPresence);
 setSignalSender(
-  (topic, event) => {
-    try { rpc.send.liveSignal({ topic, event }); } catch {}
+  (topic, event, payload) => {
+    try { rpc.send.liveSignal({ topic, event, payload }); } catch {}
   },
   (connected) => {
     try { rpc.send.liveConnection({ connected }); } catch {}

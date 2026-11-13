@@ -17,7 +17,7 @@ interface Deps {
 }
 
 interface Joined {
-  onEvent: (event: string) => void;
+  onEvent: (event: string, payload?: unknown) => void;
 }
 
 /**
@@ -60,30 +60,36 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
     joined.add(entry);
     let stopped = false;
     let leave = () => {};
+    let sendOn = (_event: string, _payload: unknown) => {};
     void (async () => {
       if (!client || now() - lastRefresh >= TOKEN_REFRESH_MS) await refreshToken();
       if (stopped || !client) return;
       const live = client;
-      const channel = live.channel(topic, { config: { private: true } });
-      channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event)).subscribe((status) => {
+      const channel = live.channel(topic, { config: topic.startsWith("live:") ? { private: true, broadcast: { self: true } } : { private: true } });
+      channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event, message.payload)).subscribe((status) => {
         onConnected(status === "SUBSCRIBED");
         if (status === "SUBSCRIBED") onEvent(SIGNAL_EVENTS.catchUp);
       });
+      sendOn = (event, payload) => void channel.send({ type: "broadcast", event, payload }).catch(() => {});
       leave = () => void live.removeChannel(channel);
       if (stopped) leave();
     })();
     ticker ??= setInterval(() => void tick(), TICK_MS);
 
-    return () => {
-      stopped = true;
-      joined.delete(entry);
-      leave();
-      if (joined.size > 0) return;
-      if (ticker) clearInterval(ticker);
-      ticker = null;
-      if (client) void client.realtime.disconnect();
-      client = null;
-      lastRefresh = 0;
+    return {
+      leave: () => {
+        stopped = true;
+        joined.delete(entry);
+        leave();
+        sendOn = () => {};
+        if (joined.size > 0) return;
+        if (ticker) clearInterval(ticker);
+        ticker = null;
+        if (client) void client.realtime.disconnect();
+        client = null;
+        lastRefresh = 0;
+      },
+      send: (event, payload) => sendOn(event, payload),
     };
   };
 
