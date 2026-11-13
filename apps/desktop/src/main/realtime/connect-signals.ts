@@ -66,11 +66,20 @@ export function createSignalSource({ makeClient, getToken, now = Date.now }: Dep
       if (stopped || !client) return;
       const live = client;
       const channel = live.channel(topic, { config: topic.startsWith("live:") ? { private: true, broadcast: { self: true } } : { private: true } });
-      channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event, message.payload)).subscribe((status) => {
-        onConnected(status === "SUBSCRIBED");
-        if (status === "SUBSCRIBED") onEvent(SIGNAL_EVENTS.catchUp);
+      let subscribed = false;
+      let failureLogged = false;
+      channel.on("broadcast", { event: "*" }, (message) => onEvent(message.event, message.payload)).subscribe((status, error) => {
+        subscribed = status === "SUBSCRIBED";
+        onConnected(subscribed);
+        if (subscribed) onEvent(SIGNAL_EVENTS.catchUp);
+        else if (status !== "CLOSED" && !failureLogged) {
+          failureLogged = true;
+          console.error(`[signals] could not join ${topic}: ${status}`, error?.message ?? "");
+        }
       });
-      sendOn = (event, payload) => void channel.send({ type: "broadcast", event, payload }).catch(() => {});
+      // An unjoined channel can only send over HTTP. Asking for that by name keeps the library from warning on each send.
+      sendOn = (event, payload) =>
+        void (subscribed ? channel.send({ type: "broadcast", event, payload }) : channel.httpSend(event, payload)).catch(() => {});
       leave = () => void live.removeChannel(channel);
       if (stopped) leave();
     })();

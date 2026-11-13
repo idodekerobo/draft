@@ -35,6 +35,10 @@ function setup() {
           sent.push(message);
           return "ok";
         },
+        httpSend: async (event: string, payload: unknown) => {
+          sent.push({ http: event, payload });
+          return { success: true };
+        },
       };
       return channel;
     },
@@ -94,13 +98,18 @@ describe("createSignalSource", () => {
     });
   });
 
-  it("sends a broadcast on the channel once it has joined, and drops a send made before that", async () => {
+  it("drops a send made before the channel exists, sends over HTTP until it has joined, then on the socket", async () => {
     const t = setup();
     const { send } = t.source("live:session:s1", () => {}, () => {});
     send("text", { text: "early" });
     await flush();
+    send("text", { text: "joining" });
+    t.channels[0]!.join();
     send("text", { text: "hi" });
-    expect(t.channels[0]!.sent).toEqual([{ type: "broadcast", event: "text", payload: { text: "hi" } }]);
+    expect(t.channels[0]!.sent).toEqual([
+      { http: "text", payload: { text: "joining" } },
+      { type: "broadcast", event: "text", payload: { text: "hi" } },
+    ]);
   });
 
   it("uses one client for every topic and refreshes the token only when it is old", async () => {
