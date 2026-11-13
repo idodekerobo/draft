@@ -8,49 +8,61 @@ import type { LiveSessionsApi } from "./types";
 
 export type WatchSignals = NonNullable<LiveSessionsApi["watchSignals"]>;
 
-/** A fast-streaming session signals many times a second; one fetch per this long is enough. */
+/** A fast-streaming session signals many times a second; fetches start at most this often. */
 export const SESSION_SIGNAL_DELAY_MS = 250;
 
 /** Polls are only safety nets, in case a signal is missed. */
 export const SESSION_SAFETY_POLL_MS = 60_000;
 
 /**
- * Runs `run` after a signal, once for a burst of signals. A signal that arrives while `run` is going
- * runs it once more afterwards. `run` gets the names of the events since the last run.
+ * Runs `run` at once for the first signal. Signals that arrive while it runs, or within `delayMs` of its start,
+ * wait for one follow-up run with the names gathered meanwhile. `run` gets those names.
  */
 export function createRefresher(run: (events: Set<string>) => unknown, delayMs = SESSION_SIGNAL_DELAY_MS) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let running = false;
   let stopped = false;
+  let lastStart = -Infinity;
   let pending = new Set<string>();
 
   const start = async () => {
     const events = pending;
     pending = new Set();
     running = true;
+    lastStart = Date.now();
     try {
       await run(events);
     } catch {
       // The next signal or the safety poll tries again.
     } finally {
       running = false;
-      if (pending.size > 0 && !stopped) void start();
+      if (pending.size > 0) schedule();
     }
+  };
+
+  const schedule = () => {
+    if (timer || running || stopped) return;
+    const wait = lastStart + delayMs - Date.now();
+    if (wait <= 0) {
+      void start();
+      return;
+    }
+    timer = setTimeout(() => {
+      timer = undefined;
+      void start();
+    }, wait);
   };
 
   return {
     trigger(event: string) {
       if (stopped) return;
       pending.add(event);
-      if (running || timer) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        void start();
-      }, delayMs);
+      schedule();
     },
     stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
+      timer = undefined;
     },
   };
 }
