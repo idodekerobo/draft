@@ -52,6 +52,24 @@ describe("InputDelivery", () => {
     expect(t.log.filter((l) => l.endsWith(":delivering"))).toEqual(["a:delivering"]);
   });
 
+  it("claims an input once when the same stale list is passed again", async () => {
+    const calls: string[] = [];
+    const delivery = new InputDelivery({
+      setState: async (id, _from, to) => {
+        calls.push(`${id}:${to}`);
+        return true;
+      },
+      capture: async () => READY,
+      paste: async () => {},
+      pressEnter: async () => {},
+      sleep: async () => {},
+    });
+    const stale = [input("a")];
+    await delivery.tick(stale);
+    await delivery.tick(stale);
+    expect(calls).toEqual(["a:delivering"]);
+  });
+
   it("keeps the input queued while a permission prompt is open and says why once", async () => {
     const t = setup({ pane: [PERMISSION], pending: [input("a")] });
     await t.tick();

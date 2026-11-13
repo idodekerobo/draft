@@ -52,6 +52,8 @@ export class InputDelivery {
   private busy = false;
   private recovered = false;
   private readonly reported = new Map<string, string>();
+  // The caller may pass a list fetched before a claim, so an input is claimed at most once.
+  private readonly claimed = new Set<string>();
 
   constructor(private readonly deps: DeliveryDeps) {}
 
@@ -69,7 +71,7 @@ export class InputDelivery {
     this.busy = true;
     try {
       if (!this.recovered) await this.recover(pending);
-      const next = pending.find((i) => i.state === "queued");
+      const next = pending.find((i) => i.state === "queued" && !this.claimed.has(i.id));
       if (!next) return;
 
       const state = classifyPane(await this.deps.capture());
@@ -77,7 +79,9 @@ export class InputDelivery {
         await this.report(next.id, BLOCK_REASONS[state]);
         return;
       }
-      if (!(await this.deps.setState(next.id, ["queued"], "delivering"))) return;
+      const taken = await this.deps.setState(next.id, ["queued"], "delivering");
+      this.claimed.add(next.id);
+      if (!taken) return;
       await this.deliver(next);
     } finally {
       this.busy = false;
