@@ -252,6 +252,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
     .flatMap((line) => eventsForHarness(owned.session.harness, line))
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
 
+  const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   let lastSeq = owned.session.last_seq;
   let inserted = 0;
   if (events.length > 0) {
@@ -265,12 +266,11 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
       return knownDbError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);
     }
     ({ last_seq: lastSeq, inserted } = data as { last_seq: number; inserted: number });
-    if (inserted > 0) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
+    if (inserted > 0 && firstPrompt) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
   } else if (owned.session.host_machine_id !== hostMachineId) {
     return errorResponse("foreign_host", 403);
   }
 
-  const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
   const nativeTitle = latestNativeTitle(incoming, TITLE_MAX_CHARS);
   if (nativeTitle) {

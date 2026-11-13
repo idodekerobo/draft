@@ -6,6 +6,7 @@ let rpcResult: { data: unknown; error: { message: string } | null } = { data: { 
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 let storageObjects: Array<{ name: string }> = [];
 const signedPaths: string[] = [];
+const queriedTables: string[] = [];
 
 type Row = Record<string, unknown>;
 let tables: Record<string, Row[]> = {};
@@ -17,6 +18,7 @@ function queryBuilder(table: string) {
   const eqs: [string, unknown][] = [];
   const gts: [string, number][] = [];
   const ins: [string, unknown[]][] = [];
+  const ltes: [string, number][] = [];
   const nots: [string, unknown][] = [];
   let insertPayload: Row | undefined;
   let updatePayload: Row | undefined;
@@ -27,6 +29,7 @@ function queryBuilder(table: string) {
         eqs.every(([col, v]) => row[col] === v) &&
         ins.every(([col, vs]) => vs.includes(row[col])) &&
         gts.every(([col, v]) => (row[col] as number) > v) &&
+        ltes.every(([col, v]) => (row[col] as number) <= v) &&
         nots.every(([col, v]) => (row[col] ?? null) !== v),
     );
 
@@ -50,6 +53,7 @@ function queryBuilder(table: string) {
     neq: () => builder,
     is: () => builder,
     gt: (col: string, value: number) => (gts.push([col, value]), builder),
+    lte: (col: string, value: number) => (ltes.push([col, value]), builder),
     not: (col: string, _operator: string, value: unknown) => (nots.push([col, value]), builder),
     order: () => builder,
     limit: () => builder,
@@ -76,7 +80,7 @@ mock.module("../../auth/withAuth", () => ({
 mock.module("../../auth/workspace-access", () => ({ assertWorkspaceAccess: async () => accessResult }));
 mock.module("../../db/client", () => ({
   serviceClient: {
-    from: (table: string) => queryBuilder(table),
+    from: (table: string) => (queriedTables.push(table), queryBuilder(table)),
     rpc: async (fn: string, args: Record<string, unknown>) => {
       rpcCalls.push({ fn, args });
       return rpcResult;
@@ -129,6 +133,7 @@ beforeEach(() => {
   rpcCalls.length = 0;
   storageObjects = [];
   signedPaths.length = 0;
+  queriedTables.length = 0;
   inserted = [];
   updates = [];
   errorRows = [];
@@ -168,6 +173,22 @@ describe("live session routes", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ ok: false, error: "not_session_owner" });
     expect(rpcCalls).toEqual([]);
+  });
+
+  it("does not match sent messages for a batch with no user turn", async () => {
+    tables.session_inputs = [{ id: "w1", session_id: SESSION, workspace_id: WS, kind: "message", state: "delivering", payload: { text: "Fix the login bug" }, author_name: "Maya", created_at: "t" }];
+    const assistantLine = { file: "root.jsonl", offset: 1, raw: JSON.stringify({ type: "assistant", uuid: "a1", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } }) };
+    const res = await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [assistantLine] }));
+    expect(res.status).toBe(200);
+    expect(rpcCalls.map((c) => c.fn)).toEqual(["append_session_events"]);
+    expect(queriedTables).not.toContain("session_inputs");
+  });
+
+  it("matches a sent message when the batch holds a user turn", async () => {
+    tables.session_inputs = [{ id: "w1", session_id: SESSION, workspace_id: WS, kind: "message", state: "delivering", payload: { text: "Fix the login bug" }, author_name: "Maya", created_at: "t" }];
+    tables.session_events = [{ session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message", payload: { text: "[Maya via Draft] Fix the login bug" } }];
+    await routes.LINES(post("/x", { hostMachineId: "host-1", lines: [userLine("u1", "[Maya via Draft] Fix the login bug")] }));
+    expect(rpcCalls.map((c) => c.fn)).toContain("transition_session_input");
   });
 
   it("leaves the author tag of a Draft message out of the title", async () => {
