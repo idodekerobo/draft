@@ -335,6 +335,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   const folderPath = resolve(input.folderPath);
   if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) return { ok: false, error: "Choose a valid folder." };
 
+  const remote = gitRemote(folderPath);
   const checked = await launcher.check();
   if (!checked.ok) return { ok: false, error: checked.error };
   if (!isKnownModel(harness, input.model)) return { ok: false, error: "Choose a model from the list." };
@@ -352,7 +353,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
         hostMachineId,
         hostName: hostname(),
         folderName: basename(folderPath),
-        gitRemote: await gitRemote(folderPath),
+        gitRemote: await remote,
         harness,
         model,
         nativeSessionId,

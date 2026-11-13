@@ -247,8 +247,9 @@ const launcher: HarnessLauncher = {
   async check() {
     const bin = findRunnerBin("claude");
     if (!bin) return { ok: false, error: CLAUDE_MISSING_MESSAGE };
-    if ((await readClaudeAuth(bin)) === "signed_out") return { ok: false, error: CLAUDE_SIGNED_OUT_MESSAGE };
-    return { ok: true, bin, version: await readClaudeVersion(bin) };
+    const [auth, version] = await Promise.all([readClaudeAuth(bin), readClaudeVersion(bin)]);
+    if (auth === "signed_out") return { ok: false, error: CLAUDE_SIGNED_OUT_MESSAGE };
+    return { ok: true, bin, version };
   },
   newNativeSessionId: () => crypto.randomUUID(),
   async resume({ sessionId, nativeSessionId, model, bin }) {
