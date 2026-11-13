@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { renderMarkdown } from "../context/markdown";
+import { cachedMarkdown } from "./markdown-cache";
 import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { isPromptBlock } from "draft-core/live-sessions";
@@ -76,12 +76,12 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
     case "assistant":
       return (
         <>
-          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />
+          <div className="ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} />
           <MessageActions text={item.text} at={item.at} linkUrl={linkFor?.(item.seq)} />
         </>
       );
     case "live":
-      return <div className="ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }} />;
+      return <div className="ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} />;
     case "thinking":
       return (
         <details className="ui-stream__details">
@@ -125,7 +125,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         return (
           <details className="ui-stream__details" open>
             <summary><span className="ui-stream__tool">Plan</span></summary>
-            <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: renderMarkdown((item.input as { plan: string }).plan) }} />
+            <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown((item.input as { plan: string }).plan) }} />
           </details>
         );
       }
