@@ -19,7 +19,7 @@ const SCAN_BYTES = 1024 * 1024;
 const MAX_POST_BYTES = 4 * 1024 * 1024;
 const FINGERPRINT_BYTES = 256;
 const SEEN_IDS_KEPT = 200;
-const POLL_MS = 500;
+const POLL_MS = 250;
 const MAX_BACKOFF_MS = 15_000;
 
 const emptyCursor = (): FileCursor => ({ offset: 0, fingerprint: "", seenIds: [] });
