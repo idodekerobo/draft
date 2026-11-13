@@ -3,7 +3,7 @@ import { MAX_DECISION_MESSAGE_CHARS } from "draft-core/live-sessions";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { SessionInputRow } from "../types/tables";
-import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { authorName, authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type DecisionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision">;
 type StopRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/stop">;
@@ -230,10 +230,7 @@ function isHostEvent(value: unknown): value is HostEvent {
 /** The host reports what only it can see: a permission request, how one ended, a note such as a Stop. */
 export const HOST_EVENTS = withAuth<HostEventsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);

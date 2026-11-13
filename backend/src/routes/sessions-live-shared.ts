@@ -82,3 +82,9 @@ export async function loadOwnedSession(workspaceId: string, sessionId: string, u
   if (data.owner_user_id !== userId) return { ok: false, response: errorResponse("not_session_owner", 403) };
   return { ok: true, session: data };
 }
+
+/** Checks access and loads the owner's session together. The access answer comes first. */
+export async function authorizeOwned(workspaceId: string, sessionId: string, userId: string): Promise<OwnedSession> {
+  const [denied, owned] = await Promise.all([authorize(workspaceId, userId), loadOwnedSession(workspaceId, sessionId, userId)]);
+  return denied ? { ok: false, response: denied } : owned;
+}

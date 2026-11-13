@@ -9,7 +9,7 @@ import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { SESSION_COLUMNS, authorize, authorizeOwned, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -188,10 +188,7 @@ function firstLine(text: string): string {
 
 export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -286,10 +283,7 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
 
 export const END = withAuth<EndRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -312,10 +306,7 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
 /** The owner continues an ended session on the computer it ran on. It is the same session, live again. */
 export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -340,10 +331,7 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
 
 export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
@@ -367,10 +355,7 @@ export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
 
 export const RAW_UPLOAD_COMPLETE = withAuth<RawCompleteRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);

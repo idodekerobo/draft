@@ -5,7 +5,7 @@ import { getHarness } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
-import { authorName, authorize, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { authorName, authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type InputsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs">;
 type PendingRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs/pending">;
@@ -46,12 +46,12 @@ function publicInput(row: SessionInputRow): PublicInput {
   };
 }
 
-async function createInput(workspaceId: string, sessionId: string, userId: string, text: string): Promise<Response> {
+async function createInput(workspaceId: string, sessionId: string, userId: string, text: string, name?: string): Promise<Response> {
   const { data, error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_author_user_id: userId,
-    p_author_name: await authorName(userId),
+    p_author_name: name ?? (await authorName(userId)),
     p_kind: "message",
     p_payload: { text },
   });
@@ -91,7 +91,7 @@ export const INPUTS_LIST = withAuth<InputsRequest>(async (req, caller) => {
 
 export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
+  const [denied, name] = await Promise.all([authorize(workspaceId, caller.userId), authorName(caller.userId)]);
   if (denied) return denied;
 
   const parsed = await readBody(req);
@@ -101,7 +101,7 @@ export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
   if (!text) return errorResponse("empty_message", 400);
   if (text.length > MAX_INPUT_CHARS) return errorResponse("message_too_long", 400);
 
-  return createInput(workspaceId, sessionId, caller.userId, text);
+  return createInput(workspaceId, sessionId, caller.userId, text, name);
 });
 
 /** Asks the host to put a waiting message into the turn that is running, instead of after it. */
@@ -198,10 +198,7 @@ export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
 
 export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
   const params = new URL(req.url).searchParams;
   if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
@@ -229,10 +226,7 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
 
 export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, inputId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
-
-  const owned = await loadOwnedSession(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
