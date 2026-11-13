@@ -1,5 +1,5 @@
 export const CATCH_UP_MS = 300;
-export const MIN_CHARS_PER_SECOND = 40;
+export const MIN_CHARS_PER_SECOND = 120;
 export const MAX_FRAME_MS = 100;
 
 /** How many characters to show after `dtMs` more milliseconds. The pace rises with the backlog, so the shown text is never far behind. */

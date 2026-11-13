@@ -3,7 +3,8 @@ import { nextShown, safeCut } from "./reveal";
 
 describe("nextShown", () => {
   it("advances a small backlog at the minimum pace", () => {
-    expect(nextShown(0, 5, 16)).toBe(1);
+    expect(nextShown(0, 5, 16)).toBe(2);
+    expect(nextShown(0, 5, 4)).toBe(1);
   });
 
   it("drains a long backlog toward the target over 16 ms frames", () => {
