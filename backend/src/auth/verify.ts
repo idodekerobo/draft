@@ -1,5 +1,6 @@
 import { publishableClient } from "../db/client";
 import { recordRejectedToken } from "./record-rejected-token";
+import { getLocalVerifier } from "./verify-local";
 
 export interface VerifiedCaller {
   userId: string;
@@ -10,6 +11,11 @@ export async function verifyAccessToken(
   accessToken: string,
 ): Promise<VerifiedCaller | null> {
   if (!accessToken) return null;
+
+  if (process.env.LOCAL_JWT_VERIFY === "on") {
+    const userId = await getLocalVerifier()(accessToken);
+    if (userId) return { userId, accessToken };
+  }
 
   const { data, error } = await publishableClient.auth.getUser(accessToken);
   if (error || !data.user) {
