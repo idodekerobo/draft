@@ -40,3 +40,25 @@ describe("LiveText", () => {
     expect(after[2].textContent).toContain("extended.");
   });
 });
+
+describe("LiveText with an unclosed code block", () => {
+  const open = "Intro text.\n\n```ts\nconst a = 1;\nconst b = 2;";
+  const closed = `${open}\n\`\`\``;
+
+  it("renders the open code as one pre and no paragraph", () => {
+    const { container } = render(<LiveText text={open} />);
+    const pres = container.querySelectorAll("pre");
+    expect(pres.length).toBe(1);
+    expect(pres[0].textContent).toContain("const a = 1;");
+    expect(pres[0].textContent).toContain("const b = 2;");
+    expect(Array.from(container.querySelectorAll("p")).some((p) => p.textContent?.includes("const"))).toBe(false);
+  });
+
+  it("renders the blocks before the code the same with and without the closing fence", () => {
+    const openView = render(<LiveText text={open} />);
+    const openIntro = blockNodes(openView.container)[0].innerHTML;
+    openView.unmount();
+    const closedView = render(<LiveText text={closed} />);
+    expect(blockNodes(closedView.container)[0].innerHTML).toBe(openIntro);
+  });
+});
