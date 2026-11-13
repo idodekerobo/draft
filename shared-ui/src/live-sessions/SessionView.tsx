@@ -20,7 +20,7 @@ import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
 import { pendingItems } from "./pending-items";
-import { buildStreamItems, openApprovals } from "./stream-items";
+import { buildStreamItems, openApprovals, type StreamItem } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
 import { prependToDraft } from "./drafts";
@@ -28,6 +28,7 @@ import { useSessionInputs } from "./useSessionInputs";
 import { useConnectionState } from "./useConnectionState";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
+import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
 
@@ -240,6 +241,9 @@ function LoadedSession({
   const [actionError, setActionError] = useState<string | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
   const logItems = useMemo(() => buildStreamItems(events), [events]);
+  const livePreviews = useLiveText(api, sessionId, events);
+  const liveText = useMemo(() => (session.status === "ended" ? [] : livePreviews), [session.status, livePreviews]);
+  const liveChars = liveText.reduce((total, preview) => total + preview.text.length, 0);
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
   const ownerName = session.owner_name ?? "the owner";
   const harnessId = session.harness ?? "claude";
@@ -248,9 +252,13 @@ function LoadedSession({
   const hasTerminal = harnessId === "claude";
   const hostOffline = session.status === "host_offline";
   const viewerName = viewer.name;
-  const items = useMemo(
-    () => [...logItems, ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline })],
-    [logItems, inputs.inputs, events, viewerName, ownerName, hostOffline],
+  const items = useMemo<StreamItem[]>(
+    () => [
+      ...logItems,
+      ...liveText.map((preview) => ({ type: "live" as const, messageId: preview.messageId, text: preview.text })),
+      ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline }),
+    ],
+    [logItems, liveText, inputs.inputs, events, viewerName, ownerName, hostOffline],
   );
   const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
@@ -277,7 +285,7 @@ function LoadedSession({
 
   useEffect(() => {
     if (following.current) jumpToLatest();
-  }, [events.length, inputs.inputs.length, jumpToLatest]);
+  }, [events.length, inputs.inputs.length, liveChars, jumpToLatest]);
 
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const wantedSeq = useRef<number | null>(null);

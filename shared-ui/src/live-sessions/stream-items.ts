@@ -7,6 +7,8 @@ export type StreamItem =
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
   | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostOffline: boolean }
+  /** Text the agent is writing now. It stands in the stream until the stored message replaces it. */
+  | { type: "live"; messageId: string; text: string }
   | {
       type: "approval";
       seq: number;

@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render as renderUi, screen, waitFor } from "@t
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
+import { messageDomId } from "./share-links";
 import { SessionNotFoundError, type LiveSession, type LiveSessionEvent, type LiveSessionsApi } from "./types";
+import type { LiveTextChunk } from "draft-core/live-sessions";
 
 afterEach(cleanup);
 
@@ -565,5 +567,33 @@ describe("SessionView view event", () => {
       await screen.findByText(/This session has ended/);
       expect(screen.queryByRole("button", { name: /Mode:/ })).toBeNull();
     });
+  });
+});
+
+describe("SessionView live text", () => {
+  it("shows the text being written after the stored items, and shows it once when the stored message arrives", async () => {
+    let page: LiveSessionEvent[] = [
+      { seq: 1, source_id: "a", kind: "user_message", payload: { text: "hello" }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "assistant_text", payload: { text: "Hi there" }, created_at: "" },
+    ];
+    let emit: (chunk: LiveTextChunk) => void = () => {};
+    let signal: (event: string) => void = () => {};
+    const live: LiveSessionsApi = {
+      ...api,
+      fetchEvents: async () => ({ viewer, session, events: page, inputs: [] }),
+      watchSignals: (_topic, onSignal) => ((signal = onSignal), () => {}),
+      watchLiveText: (_sessionId, onChunk) => ((emit = onChunk), () => {}),
+    };
+    const { container } = render(<SessionView api={live} sessionId="s1" />);
+    await screen.findByText("Hi there");
+    act(() => emit({ messageId: "m1", index: 0, text: "Let me check", final: false }));
+    const texts = () => Array.from(container.querySelectorAll(".ui-stream__item--assistant .ui-prose"), (prose) => prose.textContent?.trim());
+    expect(texts()).toEqual(["Hi there", "Let me check"]);
+
+    page = [...page, { seq: 3, source_id: "c", kind: "assistant_text", payload: { text: "Let me check" }, created_at: "" }];
+    act(() => signal("events"));
+    await waitFor(() => expect(container.querySelector(`#${messageDomId(3)}`)).not.toBeNull());
+    await waitFor(() => expect(texts()).toEqual(["Hi there", "Let me check"]));
+    expect(container.querySelectorAll(`#${messageDomId(3)}`).length).toBe(1);
   });
 });
