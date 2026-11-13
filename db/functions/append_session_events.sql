@@ -6,6 +6,8 @@
 -- Appends a batch of events in order. Seq comes from the session's counter, so
 -- it has no gaps. A duplicate source_id is skipped and does not use a seq.
 -- open_approval_count goes up for a new permission_request and down for a new permission_resolved.
+-- Each row is its own insert statement, so the statement trigger would signal once per row.
+-- The function turns the trigger off for this transaction and sends one signal for the batch.
 create or replace function append_session_events(
   p_session_id uuid,
   p_workspace_id uuid,
@@ -41,6 +43,7 @@ begin
   end if;
 
   v_seq := v_session.last_seq;
+  perform set_config('draft.skip_event_signal', 'on', true);
 
   for v_event in select * from jsonb_array_elements(p_events) loop
     insert into session_events (session_id, workspace_id, seq, source_id, kind, payload)
@@ -70,7 +73,12 @@ begin
         status = 'live',
         open_approval_count = greatest(0, open_approval_count + v_approvals)
     where id = p_session_id;
+
+    perform broadcast_signal('signals:session:' || p_session_id, 'events', jsonb_build_object('seq', v_seq));
+    perform broadcast_signal('signals:workspace:' || p_workspace_id, 'sessions');
   end if;
+
+  perform set_config('draft.skip_event_signal', 'off', true);
 
   return jsonb_build_object('last_seq', v_seq, 'inserted', v_inserted);
 end;

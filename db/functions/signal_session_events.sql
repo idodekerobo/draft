@@ -1,4 +1,5 @@
 -- New events: one signal per session in the statement, with the highest seq, and one per workspace.
+-- append_session_events sends its own signal for a whole batch and sets draft.skip_event_signal to skip this.
 create or replace function signal_session_events()
 returns trigger
 language plpgsql
@@ -8,6 +9,9 @@ as $$
 declare
   r record;
 begin
+  if current_setting('draft.skip_event_signal', true) = 'on' then
+    return null;
+  end if;
   for r in select session_id, max(seq) as seq from new_rows group by session_id loop
     perform public.broadcast_signal('signals:session:' || r.session_id, 'events', jsonb_build_object('seq', r.seq));
   end loop;
