@@ -1,10 +1,13 @@
+import { liveTextTopic, LIVE_TEXT_EVENT, type LiveTextChunk } from "draft-core/live-sessions";
 import { ApprovalBroker } from "../approvals";
 import type { ControlInput } from "../controls";
 import type { ForwardedLine } from "../forwarder";
 import { findRunnerBin } from "../find-bin";
 import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "../harness-driver";
 import type { PendingInput } from "../input-delivery";
+import { LiveTextRelay } from "../live-text-relay";
 import { openCommandInTerminal } from "../open-in-terminal";
+import { realtime } from "../../realtime/instance";
 import { shellQuote } from "../launch";
 import { codexRequest } from "./approvals";
 import { DEFAULT_APPROVAL, DEFAULT_COLLABORATION, approvalOverrides, collaborationUpdate, isApproval, isCollaboration, type CodexApproval, type CodexCollaboration } from "./modes";
@@ -150,8 +153,13 @@ export class CodexDriver implements HarnessDriver {
   private attaching = false;
   private attachFailed = false;
   private respawned = false;
+  private readonly relay: LiveTextRelay;
+  private stopLive: (() => void) | null = null;
 
   constructor(private readonly host: DriverHost) {
+    this.relay = new LiveTextRelay({
+      send: (chunk: LiveTextChunk) => realtime.send(liveTextTopic(host.state().sessionId), LIVE_TEXT_EVENT, chunk),
+    });
     this.broker = new ApprovalBroker({
       postEvents: (events) => host.postHostEvents(events),
       paneBlocked: async () => false,
@@ -166,6 +174,7 @@ export class CodexDriver implements HarnessDriver {
   }
 
   start(): void {
+    this.stopLive = realtime.watch(liveTextTopic(this.host.state().sessionId), () => {});
     for (const requestId of this.host.state().openRequests ?? []) {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
     }
@@ -228,6 +237,15 @@ export class CodexDriver implements HarnessDriver {
       return;
     }
     if (p.threadId !== connection.threadId) return;
+    if (method === "item/agentMessage/delta" || method === "item/plan/delta") {
+      const { itemId, delta } = params as { itemId?: unknown; delta?: unknown };
+      if (typeof itemId === "string" && typeof delta === "string") this.relay.push(itemId, delta, false);
+      return;
+    }
+    if (method === "item/completed") {
+      const item = (params as { item?: { id?: unknown; type?: unknown } }).item;
+      if ((item?.type === "agentMessage" || item?.type === "plan") && typeof item.id === "string") this.relay.push(item.id, "", true);
+    }
     this.lastActivityAt = Date.now();
     if (method === "turn/started") {
       connection.busy = true;
@@ -302,6 +320,9 @@ export class CodexDriver implements HarnessDriver {
 
   halt(): void {
     this.halted = true;
+    this.relay.stop();
+    this.stopLive?.();
+    this.stopLive = null;
   }
 
   dispose(): void {
