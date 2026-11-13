@@ -24,6 +24,7 @@ function manifestOf(overrides: Partial<RunnerManifest> = {}): RunnerManifest {
     tools: { native: ["Read", "Glob"], draftMcpUrl: null },
     output: { kind: "stream" },
     timeoutSeconds: 900,
+    network: "restricted",
     ...overrides,
   };
 }
@@ -83,6 +84,9 @@ describe("commands the runner builds", () => {
     const codex = (model: string | null) => manifestOf({ harness: "codex", model, tools: { native: ["shell"], draftMcpUrl: null } });
     expect(codexArgs(codex(null))).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-"]);
     expect(codexArgs(codex("gpt-6-luna"))).toEqual(["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", "-m", "gpt-6-luna", "-"]);
+    expect(codexArgs({ ...codex(null), network: "open" })).toEqual([
+      "exec", "--json", "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "--skip-git-repo-check", "--ephemeral", "-",
+    ]);
   });
 
   it("the Codex config: web search first, then Draft's server", () => {
@@ -113,6 +117,15 @@ describe("environments the runner gives the harness", () => {
       TZ: "UTC",
       DRAFT_RUN_TOKEN: "run",
     });
+  });
+
+  it("a run with a run token also gets where to ask for a GitHub token, never the callback token", () => {
+    const fromRunner = { DRAFT_RUN_TOKEN: "run", DRAFT_CALLBACK_URL: "https://api.example.test/callback", DRAFT_RUN_ID: "RUN-ID", DRAFT_CALLBACK_TOKEN: "cb" };
+    for (const env of [sanitizedClaudeEnv({ CLAUDE_CODE_OAUTH_TOKEN: "login", ...fromRunner }), sanitizedCodexEnv(fromRunner)]) {
+      expect(env).toMatchObject({ DRAFT_CALLBACK_URL: "https://api.example.test/callback", DRAFT_RUN_ID: "RUN-ID" });
+      expect(env).not.toHaveProperty("DRAFT_CALLBACK_TOKEN");
+    }
+    expect(sanitizedCodexEnv({ DRAFT_CALLBACK_URL: "https://api.example.test/callback", DRAFT_RUN_ID: "RUN-ID" })).not.toHaveProperty("DRAFT_RUN_ID");
   });
 
   it("Codex gets its own home and the run token", () => {
@@ -227,7 +240,7 @@ describe("environments the launcher gives the machine", () => {
     expect(result.env).toEqual(
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_TOKEN: "<token>" },
-        manifestOf({ model: "haiku", tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: MCP_URL } }),
+        manifestOf({ model: "haiku", network: "open", tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: MCP_URL } }),
       ),
     );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/prompt.md"]);
@@ -243,7 +256,7 @@ describe("environments the launcher gives the machine", () => {
     expect(result.env).toEqual(
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CODEX_AUTH_JSON: "{}", DRAFT_RUN_TOKEN: "<token>" },
-        manifestOf({ harness: "codex", tools: { native: ["shell", "web_search"], draftMcpUrl: MCP_URL } }),
+        manifestOf({ harness: "codex", network: "open", tools: { native: ["shell", "web_search"], draftMcpUrl: MCP_URL } }),
       ),
     );
   });

@@ -81,6 +81,7 @@ function runWith(connectionId: string, toolsAllowed: "all" | string[] = "all"): 
   return {
     id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
     kind: "routine",
+    network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
     actor: { type: "agent", runId: parseAgentRunId("22222222-2222-4222-8222-222222222222") }, onBehalfOf: null,

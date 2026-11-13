@@ -27,6 +27,15 @@ harness="$({ node -e '
   process.stdout.write(harness === "codex" ? "codex" : "claude");
 '; } 2>/dev/null)" || harness="claude"
 
+network="$({ node -e '
+  const value = JSON.parse(process.env.DRAFT_RUN_MANIFEST).network ?? "restricted";
+  if (value !== "open" && value !== "restricted") throw new Error("invalid network mode");
+  process.stdout.write(value);
+'; } 2>/dev/null)" || {
+  echo "[entrypoint] fatal: invalid network mode" >&2
+  exit 1
+}
+
 # A run reaches only its own model provider, the callback and the bundle storage.
 if [ "$harness" = "codex" ]; then
   model_hosts="chatgpt.com auth.openai.com api.openai.com"
@@ -35,8 +44,10 @@ else
   model_hosts="api.anthropic.com"
   export DRAFT_EGRESS_REQUIRED_HOST="api.anthropic.com"
 fi
-export DRAFT_EGRESS_HOSTS="${model_hosts} ${callback_host} ${DRAFT_EGRESS_HOSTS:-}"
-export DRAFT_CALLBACK_HOST="$callback_host"
-/usr/local/sbin/configure-egress.sh
+if [ "$network" = "restricted" ]; then
+  export DRAFT_EGRESS_HOSTS="${model_hosts} ${callback_host} ${DRAFT_EGRESS_HOSTS:-}"
+  export DRAFT_CALLBACK_HOST="$callback_host"
+  /usr/local/sbin/configure-egress.sh
+fi
 
 exec node /opt/draft/runner.mjs

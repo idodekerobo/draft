@@ -29,6 +29,7 @@ function manifestOf(overrides: Partial<RunnerManifest> = {}): RunnerManifest {
     tools: { native: ["Read", "Glob"], draftMcpUrl: null },
     output: { kind: "stream" },
     timeoutSeconds: 900,
+    network: "restricted",
     ...overrides,
   };
 }

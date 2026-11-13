@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+if [ -z "${DRAFT_RUN_TOKEN:-}" ]; then
+  echo "GitHub credentials unavailable" >&2
+  exit 1
+fi
+GH_TOKEN="$(/usr/local/bin/draft-github-token)" exec /usr/local/lib/gh/gh "$@"

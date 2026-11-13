@@ -6,6 +6,12 @@ import type { AgentRoutineConfig } from "./config";
 /** What a routine may call through Draft today. It reads and writes context. */
 export const ROUTINE_PERMISSIONS = ROUTINE_READ_PERMISSIONS;
 
+/** Built-in tools every routine gets on top of the harness's starting tools. Synthesis never gets a shell. */
+export const ROUTINE_NATIVE_TOOLS: Record<AgentRoutineConfig["harness"], ReadonlyArray<string>> = {
+  claude: ["Grep", "Bash"],
+  codex: ["shell"],
+};
+
 /** A routine that may message teammates: it can find people and notify any member, up to this many times a run. */
 export const ROUTINE_NOTIFY_MAX_PER_RUN = 15;
 
@@ -41,6 +47,7 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
   return {
     id: parseAgentRunId(input.id),
     kind: "routine",
+    network: "open",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: input.trigger ?? cronTrigger(input.scheduledTaskId, input.occurrenceAt),
     actor: agentActor(parseAgentRunId(input.id)),
@@ -48,7 +55,7 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
     runtime: {
       type: "cloud",
       environment: cloudEnvironmentFor(input.routine.harness, {
-        nativeTools: input.routine.environment?.nativeTools ?? [],
+        nativeTools: [...ROUTINE_NATIVE_TOOLS[input.routine.harness], ...(input.routine.environment?.nativeTools ?? [])],
         mcpServers: (input.mcpServers ?? []).map((server) => ({ connectionId: parseSourceConnectionId(server.connectionId), tools: server.tools })),
       }),
     },

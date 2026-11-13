@@ -114,7 +114,7 @@ export type NativeToolPermission =
  * tool that needs one is reached through Draft's gateway instead.
  */
 export const CLOUD_NATIVE_TOOLS = {
-  claude: ["Read", "Glob", "Grep", "WebSearch"],
+  claude: ["Read", "Glob", "Grep", "WebSearch", "Bash"],
   codex: ["shell", "web_search"],
 } as const satisfies { claude: ReadonlyArray<ClaudeNativeTool>; codex: ReadonlyArray<CodexNativeTool> };
 
@@ -149,6 +149,7 @@ export type AgentRunOutput =
 export interface AgentRunSpec {
   id: AgentRunId;
   kind: AgentRunKind;
+  network: "open" | "restricted";
   workspaceId: WorkspaceId;
   trigger: AgentRunTrigger;
   actor: AgentRunActor;

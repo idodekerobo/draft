@@ -16,6 +16,7 @@ function setup(files: Record<string, string>, permissions: AnyDraftToolPermissio
     run: {
       id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
       kind: "routine",
+      network: "restricted",
       workspaceId: parseWorkspaceId(WS),
       trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
       actor: { type: "agent", runId: parseAgentRunId("22222222-2222-4222-8222-222222222222") }, onBehalfOf: null,

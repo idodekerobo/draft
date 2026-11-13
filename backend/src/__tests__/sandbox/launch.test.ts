@@ -334,9 +334,10 @@ describe("the run manifest the launcher sends", () => {
       harness: "claude",
       model: "haiku",
       prompt: { kind: "file", path: "/run/input/prompt.md" },
-      tools: { native: ["Read", "Glob", "WebSearch"], draftMcpUrl: `https://api.example.test/runs/${RUN}/mcp` },
+      tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: `https://api.example.test/runs/${RUN}/mcp` },
       output: { kind: "stream" },
       timeoutSeconds: 900,
+      network: "open",
     });
     expect(env.DRAFT_RUN_MANIFEST).not.toContain("login-secret");
     expect(env.DRAFT_RUN_MANIFEST).not.toContain(env.DRAFT_RUN_TOKEN!);
@@ -381,7 +382,7 @@ describe("launchSandboxRun routine runs", () => {
       prompt: text("Go.\n"),
       credentials: claudeLogin,
     });
-    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.native).toEqual(["Read", "Glob", "WebSearch"]);
+    expect(parseManifest(JSON.parse(env.DRAFT_RUN_MANIFEST!)).tools.native).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
   });
 
   it("sets no tool server or run token when the run has no Draft tools", async () => {

@@ -13,6 +13,7 @@ const good: RunnerManifest = {
   tools: { native: ["Read", "Glob"], draftMcpUrl: null },
   output: { kind: "stream" },
   timeoutSeconds: 900,
+  network: "restricted",
 };
 const structured: RunnerManifest["output"] = { kind: "structured", schemaPath: "/run/input/output-schema.json" };
 const parse = (value: unknown) => validateRunnerManifest(value, checks);
@@ -39,7 +40,7 @@ describe("the run manifest", () => {
     expect(() => parse({ ...good, harness: "gemini" })).toThrow("harness");
     expect(() => parse({ ...good, model: "bad model; rm -rf" })).toThrow("model");
     expect(() => parse({ ...good, timeoutSeconds: 0 })).toThrow("timeoutSeconds");
-    expect(() => parse({ ...good, timeoutSeconds: 4000 })).toThrow("timeoutSeconds");
+    expect(() => parse({ ...good, timeoutSeconds: 8000 })).toThrow("timeoutSeconds");
     expect(() => parse({ ...good, timeoutSeconds: 1.5 })).toThrow("timeoutSeconds");
   });
 
@@ -50,7 +51,7 @@ describe("the run manifest", () => {
   });
 
   it("refuses a native tool the harness may not use", () => {
-    expect(() => parse({ ...good, tools: { native: ["Bash"], draftMcpUrl: null } })).toThrow("tools.native");
+    expect(() => parse({ ...good, tools: { native: ["Write"], draftMcpUrl: null } })).toThrow("tools.native");
     expect(() => parse({ ...good, harness: "codex", tools: { native: ["Read"], draftMcpUrl: null } })).toThrow("tools.native");
   });
 

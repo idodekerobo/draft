@@ -38,6 +38,7 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
     tools: { native, draftMcpUrl: input.draftMcpUrl },
     output: spec.output.type === "text" ? { kind: "stream" } : { kind: "structured", schemaPath: OUTPUT_SCHEMA_FILE },
     timeoutSeconds: input.timeoutSeconds,
+    network: spec.network ?? "restricted",
   };
   return validateRunnerManifest(manifest, { callbackUrl: input.callbackUrl });
 }

@@ -41,7 +41,7 @@ describe("routine config environment", () => {
   });
 
   it("refuses a tool that would widen the sandbox, or that belongs to the other harness", () => {
-    for (const tool of ["Bash", "Edit", "Write", "WebFetch", "shell"]) {
+    for (const tool of ["Edit", "Write", "WebFetch", "shell"]) {
       expect(validateAgentRoutineConfig({ ...base, environment: { nativeTools: [tool] } })).toEqual({ ok: false, field: "environment" });
     }
     expect(validateAgentRoutineConfig({ ...base, harness: "codex", environment: { nativeTools: ["WebSearch"] } })).toEqual({ ok: false, field: "environment" });
@@ -72,7 +72,7 @@ describe("a routine run's environment", () => {
       routine, contextVersionId: VERSION, mcpServers: [{ connectionId: OWN, tools: "all" }],
     });
     if (spec.runtime.type !== "cloud") throw new Error("unreachable");
-    expect(spec.runtime.environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
+    expect(spec.runtime.environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
     expect(spec.runtime.environment.mcpServers.map((server) => [server.connectionId as string, server.tools])).toEqual([[OWN, "all"]]);
   });
 });
@@ -117,7 +117,7 @@ describe("dispatch resolves a routine's connections", () => {
     const run = db.tables.agent_runs![0]!;
     const environment = (run.runtime as { environment: { nativeTools: Array<{ tool: string }>; mcpServers: Array<{ connectionId: string }> } }).environment;
     expect(environment.mcpServers.map((server) => server.connectionId)).toEqual([OWN, SHARED]);
-    expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
+    expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
     expect(run.status).toBe("running");
 
     expect(db.tables.errors).toHaveLength(1);

@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+node -e '
+  const fail = () => { process.stderr.write("GitHub credentials unavailable\\n"); process.exit(1); };
+  (async () => {
+    const base = process.env.DRAFT_CALLBACK_URL;
+    const runId = process.env.DRAFT_RUN_ID;
+    const token = process.env.DRAFT_RUN_TOKEN;
+    if (!base || !runId || !token) fail();
+    let callback;
+    try { callback = new URL(base); } catch { fail(); }
+    if (callback.protocol !== "https:" || callback.username || callback.password || callback.port && callback.port !== "443") fail();
+    if (!/^[0-9a-f-]{36}$/i.test(runId)) fail();
+    const endpoint = new URL(`/runs/${encodeURIComponent(runId)}/tools/github.credential`, callback.origin);
+    if (endpoint.protocol !== "https:" || endpoint.host !== callback.host) fail();
+    try {
+      const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" });
+      if (!response.ok) fail();
+      const body = await response.json();
+      if (typeof body.output?.token !== "string" || !body.output.token || typeof body.output?.expiresAt !== "string" || Date.parse(body.output.expiresAt) <= Date.now()) fail();
+      process.stdout.write(body.output.token);
+    } catch { fail(); }
+  })();
+'

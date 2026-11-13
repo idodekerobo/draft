@@ -73,6 +73,8 @@ export function sanitizedClaudeEnv(env: NodeJS.ProcessEnv): Record<string, strin
   };
   if (env.TZ) allowed.TZ = env.TZ;
   if (env.DRAFT_RUN_TOKEN) allowed.DRAFT_RUN_TOKEN = env.DRAFT_RUN_TOKEN;
+  // The git credential helper and the gh wrapper ask Draft for a GitHub token with these.
+  if (env.DRAFT_RUN_TOKEN && env.DRAFT_CALLBACK_URL && env.DRAFT_RUN_ID) Object.assign(allowed, { DRAFT_CALLBACK_URL: env.DRAFT_CALLBACK_URL, DRAFT_RUN_ID: env.DRAFT_RUN_ID });
   return allowed;
 }
 

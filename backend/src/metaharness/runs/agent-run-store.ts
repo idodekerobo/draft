@@ -35,7 +35,7 @@ const environmentSchema = z.object({
 
 const runtimeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("local"), hostMachineId: z.string().transform(parseHostMachineId) }),
-  z.object({ type: z.literal("cloud"), environment: environmentSchema }),
+  z.object({ type: z.literal("cloud"), environment: environmentSchema, network: z.enum(["open", "restricted"]).optional() }),
 ]);
 
 const toolNames = DRAFT_TOOLS.map((tool) => tool.name) as [string, ...string[]];
@@ -69,7 +69,7 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
     kind: spec.kind,
     trigger: spec.trigger,
     on_behalf_of_user_id: spec.onBehalfOf,
-    runtime: spec.runtime,
+    runtime: spec.runtime.type === "cloud" ? { ...spec.runtime, network: spec.network ?? "restricted" } : spec.runtime,
     harness: spec.harness,
     model: spec.model,
     instructions: spec.instructions,
@@ -95,7 +95,7 @@ export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpe
   const { error } = await client
     .from("agent_runs")
     .update({
-      runtime: spec.runtime,
+      runtime: spec.runtime.type === "cloud" ? { ...spec.runtime, network: spec.network ?? "restricted" } : spec.runtime,
       harness: spec.harness,
       model: spec.model,
       instructions: spec.instructions,
@@ -110,14 +110,16 @@ export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpe
 export function specFromRow(row: AgentRunRow): AgentRunSpec {
   if (!(AGENT_RUN_KINDS as ReadonlyArray<string>).includes(row.kind)) throw new Error(`Unknown run kind: ${row.kind}`);
   if (!isHarnessId(row.harness)) throw new Error(`Unknown harness: ${row.harness}`);
+  const storedRuntime = runtimeSchema.parse(row.runtime);
   return {
     id: parseAgentRunId(row.id),
     kind: row.kind as AgentRunKind,
+    network: storedRuntime.type === "cloud" ? storedRuntime.network ?? "restricted" : "restricted",
     workspaceId: parseWorkspaceId(row.workspace_id),
     trigger: triggerSchema.parse(row.trigger),
     actor: agentActor(parseAgentRunId(row.id)),
     onBehalfOf: row.on_behalf_of_user_id ? parseUserId(row.on_behalf_of_user_id) : null,
-    runtime: runtimeSchema.parse(row.runtime),
+    runtime: storedRuntime.type === "cloud" ? { type: "cloud", environment: storedRuntime.environment } : storedRuntime,
     harness: row.harness,
     model: row.model,
     instructions: row.instructions,

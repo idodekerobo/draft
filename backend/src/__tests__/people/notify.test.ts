@@ -72,6 +72,7 @@ function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel
 const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): AgentRunSpec => ({
   id: parseAgentRunId(RUN),
   kind: "routine",
+    network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   actor: agentActor(parseAgentRunId(RUN)),

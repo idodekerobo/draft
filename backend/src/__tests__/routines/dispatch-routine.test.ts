@@ -136,7 +136,7 @@ describe("dispatchAgentRoutine", () => {
       { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
       { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
     ]);
-    expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }] } });
+    expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }, { harness: "claude", tool: "Grep" }, { harness: "claude", tool: "Bash" }] } });
     expect(run.started_at).toBeTruthy();
     const launchInput = launch.mock.calls[0]![0];
     expect(launchInput.run.id).toBe(run.id as never);
