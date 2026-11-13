@@ -10,7 +10,7 @@ import { buildRunnerManifest, needsDraftToolServer, type PromptSource } from "./
 const PROMPT_PATH = "input/prompt.md";
 const OUTPUT_SCHEMA_PATH = "input/output-schema.json";
 const SANDBOX_TIMEOUT_SECONDS = 20 * 60;
-const CALLBACK_TOKEN_TTL_MS = 30 * 60 * 1_000;
+const CALLBACK_TOKEN_TTL_GRACE_MS = 15 * 60 * 1_000;
 
 // Narrowed subset of ValidatedRunBundle so non-synthesis callers (e.g.
 // summarization) don't depend on synthesis's bundle-building internals.
@@ -104,7 +104,8 @@ export async function buildSandboxPlan(
 
   const now = dependencies.now ?? Date.now;
   const nonce = dependencies.nonce ?? randomUUID;
-  const callbackExpiresAt = now() + CALLBACK_TOKEN_TTL_MS;
+  const timeoutSeconds = input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS;
+  const callbackExpiresAt = now() + timeoutSeconds * 1_000 + CALLBACK_TOKEN_TTL_GRACE_MS;
   const callbackToken = createSandboxCallbackToken(
     {
       runId: input.bundle.runId,
@@ -121,7 +122,7 @@ export async function buildSandboxPlan(
     spec,
     callbackUrl: config.callbackUrl,
     prompt: input.prompt,
-    timeoutSeconds: input.timeoutSeconds ?? SANDBOX_TIMEOUT_SECONDS,
+    timeoutSeconds,
     draftMcpUrl,
   });
 
@@ -152,7 +153,7 @@ export async function buildSandboxPlan(
   };
   if (spec.harness === "codex") env.CODEX_AUTH_JSON = codexAuthJson!;
   else env.CLAUDE_CODE_OAUTH_TOKEN = claudeToken!;
-  if (draftMcpUrl) {
+  if (draftMcpUrl || (spec.kind === "routine" && spec.permissions.some((permission) => permission.tool === "github.credential"))) {
     env.DRAFT_RUN_TOKEN = createAgentRunToken(
       { runId: spec.id, workspaceId: spec.workspaceId, expiresAt: callbackExpiresAt, nonce: nonce() },
       config.callbackSecret,

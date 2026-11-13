@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync } from "fs";
-import { createMockBackend } from "./helpers/mock-backend.ts";
+import { createMockBackend, refusal } from "./helpers/mock-backend.ts";
 import { makeHome, runCli, seedCliAuth } from "./helpers/cli-runner.ts";
 
 let backend: ReturnType<typeof createMockBackend>;
@@ -79,5 +79,66 @@ describe("draft routines list", () => {
     const result = await runCli(["routines", "list", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "request_failed" });
+  });
+});
+
+describe("draft routines create, update, run and delete", () => {
+  test("create sends the schedule as a nested object", async () => {
+    let seen: unknown;
+    backend.state.toolOutputs["routines.create"] = (input) => { seen = input; return { id: "t3", title: "Digest" }; };
+    const result = await runCli([
+      "routines", "create", "--title", "Digest", "--prompt", "Summarize the day", "--harness", "claude",
+      "--preset", "daily", "--time", "09:00", "--timezone", "UTC", "--notify", "--on", "fireflies.meeting_summarized",
+    ], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({
+      title: "Digest",
+      prompt: "Summarize the day",
+      harness: "claude",
+      model: null,
+      schedule: { preset: "daily", time: "09:00", timezone: "UTC" },
+      canNotify: true,
+      events: ["fireflies.meeting_summarized"],
+    });
+  });
+
+  test("update sends a flat patch, and --no-post sends postChannels null", async () => {
+    let seen: unknown;
+    backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { id: "t1" }; };
+    const result = await runCli(["routines", "update", "t1", "--time", "10:30", "--no-post"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ taskId: "t1", patch: { time: "10:30", postChannels: null } });
+  });
+
+  test("create without a required flag is a usage error, exit 2", async () => {
+    const result = await runCli(["routines", "create", "--title", "Digest", "--prompt", "x", "--harness", "claude"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("usage: draft routines create");
+  });
+
+  test("update with nothing to change is a usage error, exit 2", async () => {
+    const result = await runCli(["routines", "update", "t1"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("run prints the started message", async () => {
+    backend.state.toolOutputs["routines.run"] = () => ({ outcome: { status: "started" } });
+    const result = await runCli(["routines", "run", "t1"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("Started a run of t1.");
+  });
+
+  test("a refusal from the tool is reported as its code, exit 1", async () => {
+    backend.state.toolOutputs["routines.delete"] = () => refusal("not_permitted", "Only the creator or an admin can delete this routine.");
+    const result = await runCli(["routines", "delete", "t1", "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "not_permitted" });
+  });
+
+  test("show reports a missing routine, exit 1", async () => {
+    backend.state.routinesResponse = () => Response.json({ routines: [cronRoutine], canEdit: true });
+    const result = await runCli(["routines", "show", "nope"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Routine not found: nope");
   });
 });

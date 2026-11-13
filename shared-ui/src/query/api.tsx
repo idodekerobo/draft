@@ -13,6 +13,9 @@ export interface DraftApi {
   /** Hides an agent routine and stops its runs. Its past runs stay. */
   deleteRoutine(id: string): Promise<void>;
   getRoutineRuns(id: string): Promise<RoutineRun[]>;
+  runRoutine?(id: string): Promise<unknown>;
+  getRoutineSlackChannels?(): Promise<Array<{ id: string; name: string }>>;
+  getRoutineGithubRepos?(): Promise<string[]>;
 }
 
 const DraftApiContext = createContext<DraftApi | null>(null);

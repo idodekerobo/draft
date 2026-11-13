@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { dispatchAgentRoutine } from "../../routines/dispatch-routine";
 import { failStaleRoutineSessions } from "../../routines/fail-stale-routine-sessions";
 import { CredentialError } from "../../credentials/crypto";
+import { ROUTINE_STALE_AFTER_MS } from "../../routines/config";
 import { RoutineLeaseBusyError, type LaunchRoutineRun } from "../../routines/launch-routine-run";
 import type { ScheduledTaskRow } from "../../types/tables";
 import { fakeClient, fakeDb } from "./fake-client";
@@ -131,7 +132,10 @@ describe("dispatchAgentRoutine", () => {
       scheduled_task_id: TASK_ID,
       output: { type: "text" },
     });
-    expect(run.permissions).toEqual([{ tool: "context.read" }, { tool: "context.write" }]);
+    expect(run.permissions).toEqual([
+      { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
+      { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
+    ]);
     expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }] } });
     expect(run.started_at).toBeTruthy();
     const launchInput = launch.mock.calls[0]![0];
@@ -206,6 +210,8 @@ describe("dispatchAgentRoutine", () => {
 
 describe("failStaleRoutineSessions", () => {
   const now = new Date("2026-10-27T12:00:00.000Z");
+  const staleStart = new Date(now.getTime() - ROUTINE_STALE_AFTER_MS - 60_000).toISOString();
+  const freshStart = new Date(now.getTime() - 5 * 60_000).toISOString();
   const session = (id: string, startedAt: string, extra: Record<string, unknown> = {}) => ({
     id, workspace_id: "ws-1", session_type: "routine", status: "starting", scheduled_task_id: TASK_ID,
     host_machine_id: `fly:${id}`, started_at: startedAt, ...extra,
@@ -213,7 +219,7 @@ describe("failStaleRoutineSessions", () => {
 
   it("fails a silent machine once it is past the timeout, and leaves a fresh run alone", async () => {
     const db = fakeDb({
-      sessions: [session("old", "2026-10-27T11:30:00.000Z"), session("fresh", "2026-10-27T11:55:00.000Z")],
+      sessions: [session("old", staleStart), session("fresh", freshStart)],
       errors: [],
     });
     expect(await failStaleRoutineSessions(fakeClient(db), now)).toBe(1);
@@ -224,7 +230,7 @@ describe("failStaleRoutineSessions", () => {
   });
 
   it("writes no second error on the next tick", async () => {
-    const db = fakeDb({ sessions: [session("old", "2026-10-27T11:30:00.000Z", { status: "live" })], errors: [] });
+    const db = fakeDb({ sessions: [session("old", staleStart, { status: "live" })], errors: [] });
     await failStaleRoutineSessions(fakeClient(db), now);
     await failStaleRoutineSessions(fakeClient(db), now);
     expect(db.tables.errors).toHaveLength(1);

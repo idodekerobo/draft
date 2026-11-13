@@ -20,7 +20,7 @@ export const runsQueryOptions = (api: DraftApi, workspaceId: string) =>
     queryKey: queryKeys.runs(workspaceId),
     queryFn: () => api.getRuns(),
     staleTime: STALE_MS.runs,
-    refetchInterval: SAFETY_POLL_MS,
+    refetchInterval: (query) => query.state.data?.some((run) => ["queued", "preparing", "running", "validating", "committing"].includes(run.status)) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS,
   });
 
 export const routinesQueryOptions = (api: Pick<DraftApi, "getRoutines">, workspaceId: string) =>

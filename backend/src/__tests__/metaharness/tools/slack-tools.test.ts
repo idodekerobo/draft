@@ -12,7 +12,7 @@ const OWNER = "44444444-4444-4444-8444-444444444444";
 const TASK = "66666666-6666-4666-8666-666666666666";
 
 const run = (permissions: AnyDraftToolPermission[]): AgentRunSpec => ({
-  id: parseAgentRunId(RUN), kind: "routine", network: "open",
+  id: parseAgentRunId(RUN), kind: "routine",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   actor: agentActor(parseAgentRunId(RUN)), onBehalfOf: parseUserId(OWNER),

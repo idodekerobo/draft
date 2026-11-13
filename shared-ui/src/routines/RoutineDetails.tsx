@@ -3,6 +3,7 @@
 import type { HarnessId } from "draft-core/harnesses";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AgentFields, isDisconnected, type AgentStatuses, type AgentValue } from "./AgentFields";
+import { CapabilityFields, TriggerFields, capabilitiesOf, capabilitiesValid, capabilityChanges, describeCapabilities, type CapabilityValue } from "./CapabilityFields";
 import { Dialog } from "./Dialog";
 import { agentLabel } from "./agent-label";
 import { RoutineError } from "./errors";
@@ -36,6 +37,8 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     [routine],
   );
   const [agent, setAgent] = useState<AgentValue | null>(original);
+  const originalCapabilities = useMemo(() => capabilitiesOf(routine.agent), [routine]);
+  const [capabilities, setCapabilities] = useState<CapabilityValue>(originalCapabilities);
   const [preset, setPreset] = useState<RoutinePreset>(routine.preset);
   const [time, setTime] = useState(routine.time ?? "09:00");
   const [weekday, setWeekday] = useState<RoutineWeekday>(routine.weekday ?? "mon");
@@ -70,8 +73,9 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     if (agent.harness !== original.harness) agentEdit.harness = agent.harness;
     if (agent.harness !== original.harness || agent.model !== original.model) agentEdit.model = agent.model;
   }
+  if (agent && original) Object.assign(agentEdit, capabilityChanges(originalCapabilities, capabilities));
   const agentDirty = Object.keys(agentEdit).length > 0;
-  const agentValid = !agent || (agent.title.trim() !== "" && agent.prompt.trim() !== "");
+  const agentValid = !agent || (agent.title.trim() !== "" && agent.prompt.trim() !== "" && capabilitiesValid(capabilities));
   const blocked = !!agent && !!original && agent.harness !== original.harness && isDisconnected(agents[agent.harness]);
   const scheduleOk = !scheduleDirty || (preset !== "custom" && (!usesTime || time !== ""));
   const canSave = editable && (scheduleDirty || agentDirty) && scheduleOk && agentValid && !blocked && !saving && !deleting;
@@ -142,6 +146,8 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
             {agentLabel(routine.agent)}
             {routine.agent.createdByName ? ` · Created by ${routine.agent.createdByName}` : ""}
           </p>
+          <h3 className="ui-routines__subheading">What it can do</h3>
+          <p className="ui-routines__secondary">{describeCapabilities(originalCapabilities)}</p>
         </section>
       )}
       {!agentEditable && runs}
@@ -234,6 +240,13 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
             )}
           </div>
 
+          {agentEditable && (
+            <div className="ui-routines__fields">
+              <TriggerFields value={capabilities} onChange={setCapabilities} disabled={saving || deleting} />
+              <CapabilityFields value={capabilities} onChange={setCapabilities} disabled={saving || deleting} fieldError={fieldError} />
+            </div>
+          )}
+
           {(isDefault || isHeavyCadence(preset)) && (
             <p className="ui-routines__notice" role="status">
               {isDefault
@@ -254,7 +267,11 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
 
           <div className="ui-routines__actions">
             <span className="ui-routines__secondary">
-              {editable ? "Applies to your whole workspace." : "You have view-only access to routines."}
+              {editable
+                ? "Applies to your whole workspace."
+                : routine.agent
+                  ? "Only the person who made this routine or a workspace admin can change it."
+                  : "You have view-only access to routines."}
             </span>
             {editable && (
               <>

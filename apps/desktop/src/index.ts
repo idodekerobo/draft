@@ -453,6 +453,32 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      runRoutine: async ({ id }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, code: "signed_out" };
+        try {
+          await fetchServerJSON(`workspaces/${workspaceId}/schedules/${id}/run`, { method: "POST" });
+          return { ok: true };
+        } catch (err) {
+          return err instanceof ServerError
+            ? { ok: false, code: err.code, field: err.field }
+            : { ok: false, code: "network" };
+        }
+      },
+      getRoutineSlackChannels: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        const result = await fetchServerJSON<{ status: string; output?: Array<{ id: string; name: string }>; message?: string }>(`workspaces/${workspaceId}/tools/slack.list_channels`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+        });
+        if (result.status !== "ok" || !result.output) throw new Error(result.message ?? "Could not load Slack channels.");
+        return result.output;
+      },
+      getRoutineGithubRepos: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        return (await fetchServerJSON<{ repos: string[] }>(`workspaces/${workspaceId}/routine-repositories`)).repos;
+      },
       listRoutineRuns: async ({ id }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");

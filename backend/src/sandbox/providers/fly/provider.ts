@@ -13,7 +13,7 @@ const BOOT_TIMEOUT_MS = 60_000;
 const SANDBOX_GUEST = {
   cpu_kind: "shared" as const,
   cpus: 1,
-  memory_mb: 1024,
+  memory_mb: 4096,
 };
 
 /** The part of the Fly Machines client the provider uses. A test passes a fake. */

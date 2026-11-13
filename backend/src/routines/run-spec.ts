@@ -1,18 +1,24 @@
 import { cloudEnvironmentFor } from "draft-core/harnesses";
 import { agentActor, cronTrigger, parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
-import { CONTEXT_READ_WRITE_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
+import { ROUTINE_READ_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
 import type { AgentRoutineConfig } from "./config";
 
 /** What a routine may call through Draft today. It reads and writes context. */
-export const ROUTINE_PERMISSIONS = CONTEXT_READ_WRITE_PERMISSIONS;
+export const ROUTINE_PERMISSIONS = ROUTINE_READ_PERMISSIONS;
 
 /** A routine that may message teammates: it can find people and notify any member, up to this many times a run. */
 export const ROUTINE_NOTIFY_MAX_PER_RUN = 15;
 
 /** What a routine may call. Messaging is off unless the routine was saved with canNotify. */
-export function routinePermissions(routine: Pick<AgentRoutineConfig, "canNotify">): ReadonlyArray<AnyDraftToolPermission> {
-  if (!routine.canNotify) return ROUTINE_PERMISSIONS;
-  return [...ROUTINE_PERMISSIONS, { tool: "people.find" }, { tool: "people.notify", limits: { recipients: "members", maxPerRun: ROUTINE_NOTIFY_MAX_PER_RUN } }];
+export function routinePermissions(routine: Pick<AgentRoutineConfig, "canNotify" | "postChannels" | "github">): ReadonlyArray<AnyDraftToolPermission> {
+  const permissions: AnyDraftToolPermission[] = [...ROUTINE_PERMISSIONS];
+  if (routine.canNotify) permissions.push({ tool: "people.find" }, { tool: "people.notify", limits: { recipients: "members", maxPerRun: ROUTINE_NOTIFY_MAX_PER_RUN } });
+  if (routine.postChannels) permissions.push(
+    { tool: "slack.list_channels" }, { tool: "slack.read_channel" },
+    { tool: "slack.post_message", limits: { channels: routine.postChannels, maxPerRun: 10 } },
+  );
+  if (routine.github) permissions.push({ tool: "github.credential", limits: routine.github });
+  return permissions;
 }
 
 export interface RoutineRunSpecInput {

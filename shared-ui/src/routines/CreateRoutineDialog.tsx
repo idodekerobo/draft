@@ -3,6 +3,7 @@
 import { DEFAULT_HARNESS_ID, type HarnessId } from "draft-core/harnesses";
 import { useId, useMemo, useState, type ReactNode } from "react";
 import { AgentFields, isDisconnected, type AgentValue } from "./AgentFields";
+import { CapabilityFields, NO_CAPABILITIES, TriggerFields, capabilitiesValid, type CapabilityValue } from "./CapabilityFields";
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun } from "./format";
@@ -24,13 +25,14 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
   const titleId = `${ids}-title`;
   const [agent, setAgent] = useState<AgentValue>({ title: "", prompt: "", harness: DEFAULT_HARNESS_ID, model: null });
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({ preset: "daily", time: "09:00", weekday: "mon", timezone: browserTimezone() }));
+  const [capabilities, setCapabilities] = useState<CapabilityValue>(NO_CAPABILITIES);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
   const usesTime = presetUsesTime(schedule.preset);
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
   const blocked = isDisconnected(agents[agent.harness]);
-  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!usesTime || schedule.time !== "") && !saving && !blocked;
+  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!usesTime || schedule.time !== "") && capabilitiesValid(capabilities) && !saving && !blocked;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
 
   async function create() {
@@ -46,6 +48,9 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
         ...(usesTime ? { time: schedule.time } : {}),
         ...(schedule.preset === "weekly" ? { weekday: schedule.weekday } : {}),
         timezone: schedule.timezone,
+        ...(capabilities.events.length ? { events: capabilities.events } : {}),
+        ...(capabilities.canNotify ? { canNotify: true } : {}),
+        ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
       });
     } catch (caught) {
       setError(
@@ -67,7 +72,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
         <button type="button" className="ui-routines__btn" aria-label="Close new routine" disabled={saving} onClick={onClose}>Close</button>
       </header>
       <p className="ui-dialog__description">
-        An agent runs on this schedule and reads your company brain to answer your request. It cannot change anything.
+        An agent runs on this schedule and reads your company brain to do what you ask. It takes only the actions you allow below.
       </p>
 
       <form
@@ -92,6 +97,10 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
         </div>
 
         <ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />
+        <div className="ui-routines__fields">
+          <TriggerFields value={capabilities} onChange={setCapabilities} disabled={saving} />
+          <CapabilityFields value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} />
+        </div>
 
         {isHeavyCadence(schedule.preset) && (
           <p className="ui-routines__notice" role="status">Hourly runs use your Claude plan every hour.</p>

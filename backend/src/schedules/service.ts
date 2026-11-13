@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import { loadDisplayNames } from "../routes/session-display-names";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
@@ -24,6 +23,11 @@ import {
 } from "../scheduling/routine-registry";
 import type { AgentRunRow, ScheduledTaskRow, SessionRow, SourceConnectionRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
+import { canEditRoutine, routineEditChecker } from "./permissions";
+import { dispatchAgentRoutine, type RoutineDispatchOutcome } from "../routines/dispatch-routine";
+import { loadSandboxDeploymentConfig } from "../sandbox";
+import { loadRunResults } from "../metaharness/runs/result-line";
+import { serviceClient } from "../db/client";
 
 const LIVE_CONNECTION_STATUSES = new Set(["active", "degraded"]);
 
@@ -40,6 +44,7 @@ export interface RoutineRun {
   status: RoutineRunStatus;
   startedAt: string;
   endedAt: string | null;
+  result: string | null;
 }
 
 export interface AgentRoutineInfo extends Omit<AgentRoutineConfig, "title"> {
@@ -61,6 +66,7 @@ export interface Routine {
   intervalSeconds: number | null;
   enabled: boolean;
   editable: RoutineEditability;
+  canEdit: boolean;
   connectionLabel: string | null;
   needsReconnect: boolean;
   nextRunAt: string | null;
@@ -77,7 +83,7 @@ type RunInfo = Pick<AgentRunRow, "status" | "outcome" | "completed_at">;
 
 export class ScheduleServiceError extends Error {
   constructor(
-    readonly code: "not_found" | "invalid_schedule",
+    readonly code: "not_found" | "invalid_schedule" | "forbidden",
     readonly field?: string,
   ) {
     super(code);
@@ -117,6 +123,7 @@ function toRoutine(
     intervalSeconds: task.schedule_kind === "interval" ? task.interval_seconds : null,
     enabled: task.enabled,
     editable: definition.editable,
+    canEdit: false,
     connectionLabel: connection ? providerName(connection.provider) : null,
     needsReconnect,
     nextRunAt: task.enabled ? task.next_due_at : null,
@@ -140,7 +147,7 @@ type RunRow = Pick<SessionRow, "id" | "status" | "end_reason" | "started_at" | "
 function toRoutineRun(row: RunRow): RoutineRun {
   const status: RoutineRunStatus =
     row.status !== "ended" ? "running" : row.end_reason === "completed" ? "completed" : "failed";
-  return { id: row.id, status, startedAt: row.started_at, endedAt: row.ended_at };
+  return { id: row.id, status, startedAt: row.started_at, endedAt: row.ended_at, result: null };
 }
 
 async function loadTasks(workspaceId: string): Promise<ScheduledTaskRow[]> {
@@ -277,8 +284,16 @@ async function buildRoutines(
   });
 }
 
-export async function listRoutines(workspaceId: string): Promise<Routine[]> {
-  return buildRoutines(workspaceId, await loadTasks(workspaceId));
+export async function listRoutines(workspaceId: string, callerId?: string): Promise<Routine[]> {
+  const tasks = await loadTasks(workspaceId);
+  const routines = await buildRoutines(workspaceId, tasks);
+  if (!callerId) return routines;
+  const canEdit = await routineEditChecker(callerId);
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  return routines.map((routine) => {
+    const task = taskById.get(routine.id);
+    return { ...routine, canEdit: task ? canEdit(task) : false };
+  });
 }
 
 export interface RoutineTask {
@@ -333,6 +348,7 @@ export async function updateRoutine(
   userId: string,
   now: Date = new Date(),
 ): Promise<Routine> {
+  if (!(await canEditRoutine(userId, task))) throw new ScheduleServiceError("forbidden");
   const changes: Partial<ScheduledTaskRow> = {};
   if (patch.enabled !== undefined) changes.enabled = patch.enabled;
   if (patch.agent) changes.config_json = { ...patch.agent };
@@ -380,6 +396,7 @@ export async function updateRoutine(
 
 /** Hides the routine and stops its runs. The row stays, because its past runs point at it. */
 export async function deleteRoutine({ task }: RoutineTask, userId: string, now: Date = new Date()): Promise<void> {
+  if (!(await canEditRoutine(userId, task))) throw new ScheduleServiceError("forbidden");
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
     .update({ deleted_at: now.toISOString(), enabled: false, updated_by_user_id: userId })
@@ -392,6 +409,19 @@ export async function deleteRoutine({ task }: RoutineTask, userId: string, now: 
   if (!data) throw new ScheduleServiceError("not_found");
 
   console.log(JSON.stringify({ event: "schedule_deleted", workspaceId: task.workspace_id, taskId: task.id, userId }));
+}
+
+export async function runRoutineNow(workspaceId: string, taskId: string, userId: string): Promise<RoutineDispatchOutcome> {
+  const routine = await getRoutineTask(workspaceId, taskId);
+  if (!routine || routine.task.task_type !== "agent_routine") throw new ScheduleServiceError("not_found");
+  if (!(await canEditRoutine(userId, routine.task))) throw new ScheduleServiceError("forbidden");
+  return dispatchAgentRoutine({
+    task: routine.task,
+    occurrenceAt: new Date().toISOString(),
+    manual: { requestedBy: userId },
+    config: loadSandboxDeploymentConfig(),
+    client: serviceClient,
+  });
 }
 
 function pickLogged(task: ScheduledTaskRow) {
@@ -426,13 +456,19 @@ export async function listRoutineRuns(workspaceId: string, taskId: string): Prom
     .order("started_at", { ascending: false })
     .limit(RUN_HISTORY_LIMIT);
   if (error) throw error;
-  return ((data ?? []) as RunRow[]).map(toRoutineRun);
+  const rows = (data ?? []) as RunRow[];
+  const { data: runs, error: runsError } = await serviceClient.from("agent_runs").select("id, session_id, summary").eq("workspace_id", workspaceId).in("session_id", rows.map((row) => row.id));
+  if (runsError) throw runsError;
+  const runRows = (runs ?? []) as Array<{ id: string; session_id: string; summary: string | null }>;
+  const results = await loadRunResults(serviceClient, workspaceId, runRows.map(({ id, summary }) => ({ id, summary })));
+  const runBySession = new Map(runRows.map((run) => [run.session_id, run.id]));
+  return rows.map((row) => ({ ...toRoutineRun(row), result: results.get(runBySession.get(row.id) ?? "") ?? null }));
 }
 
 export async function createAgentRoutine(
   workspaceId: string,
   userId: string,
-  input: { config: AgentRoutineConfig; schedule: ScheduleInput },
+  input: { config: AgentRoutineConfig; schedule: ScheduleInput; enabled?: boolean },
   now: Date = new Date(),
 ): Promise<Routine> {
   const built = buildSchedule(input.schedule);
@@ -466,9 +502,9 @@ export async function createAgentRoutine(
       schedule_kind: "cron",
       cron_expression: built.cron,
       timezone: built.timezone,
-      enabled: true,
+      enabled: input.enabled ?? true,
       config_json: input.config,
-      next_due_at: safeNextDueAt(draft, now),
+      next_due_at: (input.enabled ?? true) ? safeNextDueAt(draft, now) : null,
       created_by_user_id: userId,
       updated_by_user_id: userId,
     })

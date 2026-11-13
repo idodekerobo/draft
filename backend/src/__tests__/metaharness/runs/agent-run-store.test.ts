@@ -91,7 +91,7 @@ describe("agent run store", () => {
     });
     expect(() => specFromRow({ ...good, harness: "unknown-harness" })).toThrow("Unknown harness");
     expect(() => specFromRow({ ...good, kind: "mystery" as never })).toThrow("Unknown run kind");
-    expect(() => specFromRow({ ...good, permissions: [{ tool: "slack.post_message" }] })).toThrow();
+    expect(() => specFromRow({ ...good, permissions: [{ tool: "made.up_tool" }] })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
     expect(() => specFromRow({ ...good, runtime: { type: "local", hostMachineId: "" } })).toThrow();

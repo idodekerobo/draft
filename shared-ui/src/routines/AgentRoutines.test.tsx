@@ -52,8 +52,10 @@ function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
   const deleteRoutine = mock(options.deleteRoutine ?? (async () => {}));
+  const runRoutine = mock(async (_id: string) => ({}));
+  const getRoutineSlackChannels = mock(async () => [{ id: "C1", name: "general" }, { id: "C2", name: "eng" }]);
   const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns };
+  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -64,16 +66,16 @@ function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine
       </DraftApiProvider>
     </QueryClientProvider>,
   );
-  return { createRoutine, updateRoutine, deleteRoutine, getRoutineRuns, onOpenRun, response };
+  return { createRoutine, updateRoutine, deleteRoutine, getRoutineRuns, runRoutine, onOpenRun, response };
 }
 
 const ready = () => screen.findByRole("button", { name: /^All/ });
 
 describe("agent routines in the list", () => {
-  it("shows the agent and model under the name and the newest run's outcome", async () => {
+  it("shows the agent, model and creator under the name and the newest run's outcome", async () => {
     setup();
     await ready();
-    expect(screen.getByText("Claude Code · Haiku")).toBeTruthy();
+    expect(screen.getByText("Claude Code · Haiku · by Maya")).toBeTruthy();
     expect(screen.getByText("Failed")).toBeTruthy();
   });
 
@@ -354,5 +356,56 @@ describe("deleting a routine", () => {
     fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByRole("button", { name: "Delete routine" })).toBeNull();
+  });
+});
+
+describe("run now and edit rights", () => {
+  it("starts a run from the row", async () => {
+    const { runRoutine } = setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /Run .* now/ }));
+    await waitFor(() => expect(runRoutine).toHaveBeenCalledWith("digest"));
+  });
+
+  it("hides Run now and editing on a routine the person cannot change", async () => {
+    setup({ routines: [agentRoutine({ canEdit: false })] });
+    await ready();
+    expect(screen.queryByRole("button", { name: /Run .* now/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    expect(await screen.findByText(/Only the person who made this routine/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+});
+
+describe("what a routine can do", () => {
+  it("shows each run's result under its time", async () => {
+    const { getRoutineRuns } = setup();
+    getRoutineRuns.mockImplementation(async () => [{ ...runs[0]!, result: "Posted in #general" }]);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    expect(await screen.findByText("Posted in #general")).toBeTruthy();
+  });
+
+  it("turns posting off with null and keeps the other abilities", async () => {
+    const { updateRoutine } = setup({ routines: [agentRoutine({ agent: { ...agentRoutine().agent!, canNotify: true, postChannels: "joined" } })] });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    fireEvent.click(await screen.findByRole("button", { name: /What it can do/ }));
+    fireEvent.click(screen.getByLabelText("Post in Slack"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { postChannels: null }));
+  });
+
+  it("will not save Only these channels with none picked", async () => {
+    setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    fireEvent.click(await screen.findByRole("button", { name: /What it can do/ }));
+    fireEvent.click(screen.getByLabelText("Post in Slack"));
+    fireEvent.click(screen.getByLabelText("Only these channels"));
+    expect(await screen.findByText("Pick at least one channel.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await screen.findByLabelText("#eng"));
+    expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

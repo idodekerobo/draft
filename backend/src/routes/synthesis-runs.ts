@@ -9,6 +9,7 @@ import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
 import { recordRouteError } from "../errors/route-error";
 import type { AgentRunRow } from "../types/tables";
+import { loadRunResults } from "../metaharness/runs/result-line";
 import { synthesisTriggerType } from "../synthesis/run-spec";
 
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
@@ -17,7 +18,7 @@ const RUNS_LIST_LIMIT = 50;
 
 type SynthesisRunListRow = Pick<
   AgentRunRow,
-  "id" | "status" | "outcome" | "trigger" | "summary" | "started_at" | "completed_at" | "created_at"
+  "id" | "kind" | "session_id" | "scheduled_task_id" | "status" | "outcome" | "trigger" | "summary" | "started_at" | "completed_at" | "created_at"
 >;
 
 export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
@@ -26,8 +27,7 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
 
   const { data, error } = await serviceClient
     .from("agent_runs")
-    .select("id, status, outcome, trigger, summary, started_at, completed_at, created_at")
-    .eq("kind", "synthesis")
+    .select("id, kind, session_id, scheduled_task_id, status, outcome, trigger, summary, started_at, completed_at, created_at")
     .eq("workspace_id", req.params.id)
     .order("created_at", { ascending: false })
     .limit(RUNS_LIST_LIMIT)
@@ -38,13 +38,32 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
     return Response.json({ error: error.message }, { status: 500 });
   }
 
+  const rows = data ?? [];
+  const taskIds = [...new Set(rows.flatMap((run) => run.scheduled_task_id ? [run.scheduled_task_id] : []))];
+  let titles = new Map<string, string>();
+  let results = new Map<string, string | null>();
+  try {
+    if (taskIds.length) {
+      const tasks = await serviceClient.from("scheduled_tasks").select("id, config_json")
+        .eq("workspace_id", req.params.id).in("id", taskIds);
+      if (tasks.error) throw tasks.error;
+      titles = new Map((tasks.data ?? []).map((task) => [task.id, typeof task.config_json?.title === "string" ? task.config_json.title : "Routine"]));
+    }
+    results = await loadRunResults(serviceClient, req.params.id, rows.filter((run) => run.kind === "routine"));
+  } catch (error) {
+    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "activity_results_read_failed", error });
+  }
   return Response.json({
-    runs: (data ?? []).map((run) => ({
+    runs: rows.map((run) => ({
       id: run.id,
+      kind: run.kind,
+      sessionId: run.session_id,
+      routineId: run.scheduled_task_id,
+      routineTitle: run.scheduled_task_id ? titles.get(run.scheduled_task_id) ?? "Routine" : null,
       status: run.status,
       outcome: run.outcome,
       triggerType: synthesisTriggerType(run.trigger),
-      resultSummary: run.summary,
+      resultSummary: results.get(run.id) ?? run.summary,
       startedAt: run.started_at,
       completedAt: run.completed_at,
       createdAt: run.created_at,

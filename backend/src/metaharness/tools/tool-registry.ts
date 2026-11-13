@@ -26,6 +26,8 @@ export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   callers?: ReadonlyArray<ToolCaller["type"]>;
   /** True when the person-facing MCP server offers this tool. */
   mcp?: boolean;
+  /** False for credentials and other HTTP-only tools that are not for model discovery. */
+  modelVisible?: boolean;
   input: S;
   /** Returns a reason when the input is outside the run's limits for this tool, or null when it is inside. */
   checkLimits?: (limits: DraftToolLimits[N] | undefined, input: z.output<S>) => string | null;
@@ -54,6 +56,7 @@ export interface RegisteredTool {
   callers: ReadonlyArray<ToolCaller["type"]>;
   /** True when the person-facing MCP server offers this tool. */
   mcp: boolean;
+  modelVisible: boolean;
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
@@ -74,6 +77,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     description: spec.description,
     callers: spec.callers ?? ["run", "user"],
     mcp: spec.mcp ?? false,
+    modelVisible: spec.modelVisible ?? true,
     inputSchema: spec.input,
     permission: (run) => findToolPermission(run, spec.name),
     parse(raw) {
@@ -118,9 +122,9 @@ export class ToolRegistry {
     return [...this.tools.values()];
   }
 
-  /** The tools this run may call. A run never sees the others. */
+  /** The tools this run's model may see. A hidden tool, such as a credential, is still callable by name. */
   listFor(run: AgentRunSpec): ReadonlyArray<RegisteredTool> {
-    return this.list().filter((tool) => tool.callers.includes("run") && tool.permission(run) !== null);
+    return this.list().filter((tool) => tool.modelVisible && tool.callers.includes("run") && tool.permission(run) !== null);
   }
 
   /** The same tools plus these. Used per request, for the tools a run reaches through a connection. */

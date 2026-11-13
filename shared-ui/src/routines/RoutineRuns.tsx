@@ -27,7 +27,10 @@ function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; 
   const content = (
     <>
       <RunStatus status={run.status} />
-      <span className="ui-routines__run-when">{formatWhen(run.startedAt, timezone)}</span>
+      <span className="ui-routines__run-when">
+        {formatWhen(run.startedAt, timezone)}
+        {run.result && <span className="ui-routines__run-result">{run.result}</span>}
+      </span>
       <span className="ui-routines__secondary">{detail}</span>
     </>
   );
@@ -46,7 +49,7 @@ function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; ro
   const api = useDraftApi();
   const { data: runs } = useSuspenseQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
   if (runs.length === 0) {
-    return <p className="ui-routines__secondary">No runs yet. The first run starts at the next scheduled time.</p>;
+    return <p className="ui-routines__secondary">No runs yet. The first run starts at the next scheduled time, or when someone presses Run now.</p>;
   }
   return (
     <ul className="ui-routines__runs">

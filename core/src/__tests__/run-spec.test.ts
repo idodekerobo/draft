@@ -42,7 +42,7 @@ describe("draft tools", () => {
 
   it("recognises only listed tool names", () => {
     expect(isDraftToolName("context.write")).toBe(true);
-    expect(isDraftToolName("slack.post_message")).toBe(false);
+    expect(isDraftToolName("made.up_tool")).toBe(false);
     expect(isDraftToolName(3)).toBe(false);
   });
 });

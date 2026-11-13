@@ -5,6 +5,10 @@ import { useState } from "react";
 /** Shape of one row from GET /workspaces/:id/synthesis-runs. */
 export interface SynthesisRunSummary {
   id: string;
+  kind?: "interactive" | "routine" | "synthesis" | "summarization";
+  sessionId?: string | null;
+  routineId?: string | null;
+  routineTitle?: string | null;
   status: string;
   outcome: "changed" | "no_change" | "failure" | "stale" | null;
   triggerType: string | null;
@@ -33,6 +37,9 @@ const OUTCOME_LABEL: Record<NonNullable<SynthesisRunSummary["outcome"]>, string>
 };
 
 function primaryLine(run: SynthesisRunSummary): string {
+  if (run.kind === "routine") return `${run.routineTitle ?? "Routine"} · routine`;
+  if (run.kind === "summarization") return "Summarization";
+  if (run.kind === "interactive") return "Interactive session";
   const trigger = run.triggerType ? `${run.triggerType[0]!.toUpperCase()}${run.triggerType.slice(1).replace(/_/g, " ")} synthesis` : "Synthesis";
   const state = runState(run);
   return `${trigger}, ${run.outcome ? OUTCOME_LABEL[run.outcome].toLowerCase() : state === "in_progress" ? "in progress" : state}`;
@@ -49,9 +56,9 @@ function formatDuration(run: SynthesisRunSummary): string | null {
   return Number.isFinite(ms) && ms >= 0 ? `${(ms / 1000).toFixed(1)}s` : null;
 }
 
-export function ActivityList({ runs, onFixInConnections }: { runs: SynthesisRunSummary[]; onFixInConnections: () => void }) {
+export function ActivityList({ runs, onFixInConnections, onOpenRun }: { runs: SynthesisRunSummary[]; onFixInConnections: () => void; onOpenRun?: (sessionId: string) => void }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  if (runs.length === 0) return <p className="ui-muted">No activity yet. Draft will list synthesis runs here.</p>;
+  if (runs.length === 0) return <p className="ui-muted">No activity yet. Draft will list your workspace runs here.</p>;
 
   return (
     <ul className="ui-rows">
@@ -68,13 +75,14 @@ export function ActivityList({ runs, onFixInConnections }: { runs: SynthesisRunS
                 <span className="ui-activity-row__meta">{meta}</span>
               </span>
             </button>
-            {state === "failed" && (
+            {state === "failed" && run.kind !== "routine" && (
               <button type="button" className="ui-link ui-activity-row__fix" onClick={onFixInConnections}>Fix in Connections</button>
             )}
+            {run.kind === "routine" && run.sessionId && onOpenRun && <button type="button" className="ui-link" onClick={() => onOpenRun(run.sessionId!)}>Open run</button>}
             {open && (
               <dl className="ui-activity-row__detail">
                 <dt>Started</dt><dd>{formatWhen(run.startedAt ?? run.createdAt)}</dd>
-                <dt>Duration</dt><dd>{formatDuration(run) ?? "Still running"}</dd>
+                <dt>Duration</dt><dd>{formatDuration(run) ?? (state === "in_progress" ? "Still running" : "Unavailable")}</dd>
                 <dt>Result</dt><dd>{run.resultSummary ?? (run.outcome ? OUTCOME_LABEL[run.outcome] : "Pending")}</dd>
               </dl>
             )}

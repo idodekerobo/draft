@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseUserId } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
@@ -26,7 +27,11 @@ export interface DispatchAgentRoutineOptions {
   launch?: LaunchRoutineRun;
   /** Set when an event started this run. It then runs once per event and does not wait for another run. */
   event?: RoutineEventPayload;
+  /** Set when a person pressed Run now. It gets its own idempotency key, so it never collides with a schedule. */
+  manual?: { requestedBy: string };
 }
+
+export type RoutineDispatchOutcome = { status: "started"; sessionId: string } | { status: "already_running" | "already_dispatched" | "failed"; sessionId?: string; code?: string };
 
 /**
  * The connections a routine chose that its owner may use now. One that was revoked, or that belongs to
@@ -58,14 +63,14 @@ async function usableMcpServersFor(client: SupabaseClient, task: ScheduledTaskRo
  * A run that fails to start ends as failed with one error and is not retried:
  * the next scheduled occurrence is the retry.
  */
-export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions): Promise<void> {
-  const { task, occurrenceAt, config, client, event } = options;
-  const idempotencyKey = event ? eventIdempotencyKey(task.id, event) : `${task.id}:${occurrenceAt}`;
+export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions): Promise<RoutineDispatchOutcome> {
+  const { task, occurrenceAt, config, client, event, manual } = options;
+  const idempotencyKey = event ? eventIdempotencyKey(task.id, event) : manual ? `${task.id}:manual:${randomUUID()}` : `${task.id}:${occurrenceAt}`;
   const routine = parseAgentRoutineConfig(task.config_json);
   if (!routine) throw new Error(`agent_routine task ${task.id} has an invalid config`);
   if (!task.created_by_user_id) throw new Error(`agent_routine task ${task.id} has no creator to own its sessions`);
 
-  // A scheduled occurrence is skipped while the last one still runs. An event is its own occurrence: two meetings
+  // A scheduled occurrence or a Run now is skipped while the last one still runs. An event is its own occurrence: two meetings
   // that end close together each get a run, and the idempotency key stops the same meeting from running twice.
   if (!event) {
     const { data: running, error: runningError } = await client
@@ -76,7 +81,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       .in("status", ["starting", "live"])
       .limit(1);
     if (runningError) throw runningError;
-    if (running?.length) return;
+    if (running?.length) return { status: "already_running" };
   }
 
   // TODO: routine sessions never pass the capture hook, so the brain does not learn from them.
@@ -99,7 +104,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       idempotency_key: idempotencyKey,
     });
   if (insertError) {
-    if (insertError.code === UNIQUE_VIOLATION) return;
+    if (insertError.code === UNIQUE_VIOLATION) return { status: "already_dispatched" };
     throw insertError;
   }
   const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
@@ -114,7 +119,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       scheduledTaskId: task.id,
       ownerUserId: task.created_by_user_id,
       occurrenceAt,
-      ...(event ? { trigger: eventTrigger(event) } : {}),
+      ...(event ? { trigger: eventTrigger(event) } : manual ? { trigger: { type: "manual" as const, requestedBy: parseUserId(manual.requestedBy) } } : {}),
       routine,
       contextVersionId,
     });
@@ -132,6 +137,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       client,
     });
     await markAgentRunRunning(client, run.id, launched?.machineId);
+    return { status: "started", sessionId };
   } catch (error) {
     if (error instanceof RoutineLeaseBusyError) {
       await failRoutineSession(client, session, {
@@ -140,7 +146,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
         message: `Routine ${task.id} was skipped while another Codex run held the login`,
         silent: true,
       });
-      return;
+      return { status: "failed", sessionId, code: "routine_lease_busy" };
     }
     if (error instanceof PrincipalInactiveError) {
       await failRoutineSession(client, session, {
@@ -149,7 +155,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
         message: `Routine ${task.id} was not started: its owner is not an active member`,
         detail: { user_id: task.created_by_user_id },
       });
-      return;
+      return { status: "failed", sessionId, code: error.code };
     }
     await failRoutineSession(client, session, {
       code: "routine_launch_failed",
@@ -157,5 +163,6 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       message: `Routine ${task.id} could not start its run`,
       error,
     });
+    return { status: "failed", sessionId, code: "routine_launch_failed" };
   }
 }

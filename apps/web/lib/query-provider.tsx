@@ -40,6 +40,20 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
         throw error;
       }
     },
+    runRoutine: async (id) => {
+      try {
+        return await apiFetch(`/workspaces/${workspaceId}/schedules/${id}/run`, { method: "POST" });
+      } catch (error) {
+        if (error instanceof ApiError) throw toRoutineError(error.code, error.field);
+        throw error;
+      }
+    },
+    getRoutineSlackChannels: async () => {
+      const result = await apiFetch<{ status: string; output?: Array<{ id: string; name: string }>; message?: string }>(`/workspaces/${workspaceId}/tools/slack.list_channels`, { method: "POST", body: "{}" });
+      if (result.status !== "ok" || !result.output) throw new Error(result.message ?? "Could not load Slack channels.");
+      return result.output;
+    },
+    getRoutineGithubRepos: async () => (await apiFetch<{ repos: string[] }>(`/workspaces/${workspaceId}/routine-repositories`)).repos,
     getRoutineRuns: async (id) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs`)).runs,
   };
   return <DraftQueryProvider api={api}>{children}</DraftQueryProvider>;

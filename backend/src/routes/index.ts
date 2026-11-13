@@ -26,6 +26,7 @@ import * as sessionTokensRotate from "./session-tokens-rotate";
 import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
 import * as schedules from "./schedules";
+import * as routineOptions from "./routine-options";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
 import * as whoami from "./whoami";
@@ -55,8 +56,10 @@ export const routes = {
   "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
   "/workspaces/:id/schedules": { GET: withCors(schedules.GET), POST: withCors(schedules.POST), OPTIONS },
+  "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },
   "/workspaces/:id/schedules/:taskId": { PATCH: withCors(schedules.PATCH), DELETE: withCors(schedules.DELETE), OPTIONS },
   "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(schedules.RUNS), OPTIONS },
+  "/workspaces/:id/schedules/:taskId/run": { POST: withCors(schedules.RUN), OPTIONS },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/github/install-sessions": { POST: withCors(githubInstall.createPOST), OPTIONS },
   "/workspaces/:id/github/install-sessions/:code": { GET: withCors(githubInstall.pollGET), OPTIONS },
