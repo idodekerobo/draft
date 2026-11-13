@@ -21,7 +21,16 @@ export interface AuthState {
   onboarding_completed_at: string | null;
 }
 const PERSONAL_DIR = join(DRAFT_ROOT, "personal");
-const AUTH_FILE = join(PERSONAL_DIR, "auth.json");
+
+/**
+ * Dev desktop builds sign in to staging, so they keep their own file. Sharing one would have
+ * each build refresh the other's token against the wrong project and clear it.
+ */
+export function desktopAuthFilePath(root = DRAFT_ROOT, dev = process.env.DRAFT_DESKTOP_DEV === "1"): string {
+  return join(root, "personal", dev ? "auth.dev.json" : "auth.json");
+}
+
+const AUTH_FILE = desktopAuthFilePath();
 const CLI_AUTH_FILE = join(PERSONAL_DIR, "cli-auth.json");
 
 export function normalizeAuthState(value: Partial<AuthState>): AuthState | null {
