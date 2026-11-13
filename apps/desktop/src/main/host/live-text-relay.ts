@@ -1,6 +1,6 @@
 import type { LiveTextChunk } from "draft-core/live-sessions";
 
-const FLUSH_MS = 50;
+const FLUSH_MS = 30;
 const MAX_CHUNK_CHARS = 8000;
 const MAX_OPEN = 20;
 

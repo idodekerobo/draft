@@ -1,6 +1,7 @@
 import { closeSync, fstatSync, openSync, readSync, rmSync, statSync, truncateSync } from "fs";
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const POLL_MS = 30;
 
 export interface DeltaTailOptions {
   path: string;
@@ -18,7 +19,7 @@ export class DeltaTail {
   /** Starts at the current end of the file, so lines written before this call are never replayed. */
   start(): void {
     this.offset = sizeOf(this.options.path);
-    if (this.timer === null) this.timer = setInterval(() => this.poll(), this.options.pollMs ?? 100);
+    if (this.timer === null) this.timer = setInterval(() => this.poll(), this.options.pollMs ?? POLL_MS);
   }
 
   poll(): void {

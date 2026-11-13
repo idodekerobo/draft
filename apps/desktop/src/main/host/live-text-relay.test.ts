@@ -26,12 +26,12 @@ function setup(options: { enabled?: () => boolean } = {}) {
 }
 
 describe("LiveTextRelay", () => {
-  it("joins pushes that come within 50 ms into one chunk", () => {
+  it("joins pushes that come within 30 ms into one chunk", () => {
     const t = setup();
     t.relay.push("m", "he", false);
     t.relay.push("m", "llo", false);
     expect(t.sent).toEqual([]);
-    expect([...t.timers.values()].map((timer) => timer.ms)).toEqual([50]);
+    expect([...t.timers.values()].map((timer) => timer.ms)).toEqual([30]);
     t.fire();
     expect(t.sent).toEqual([{ messageId: "m", index: 0, text: "hello", final: false }]);
   });
