@@ -12,6 +12,32 @@ afterEach(cleanup);
 const render = (ui: ReactElement) =>
   renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
 
+/** The test DOM has no layout: every element gets one scroll height and view, and scrollTop stops at the bottom. */
+function fakeScrollGeometry(height = 1000, view = 100) {
+  const tops = new WeakMap<Element, number>();
+  const names = ["scrollTop", "scrollHeight", "clientHeight"] as const;
+  const before = names.map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
+  Object.defineProperties(HTMLElement.prototype, {
+    scrollHeight: { configurable: true, get: () => height },
+    clientHeight: { configurable: true, get: () => view },
+    scrollTop: {
+      configurable: true,
+      get(this: Element) {
+        return tops.get(this) ?? 0;
+      },
+      set(this: Element, top: number) {
+        tops.set(this, Math.min(Math.max(top, 0), height - view));
+      },
+    },
+  });
+  return () => {
+    for (const [name, descriptor] of before) {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+    }
+  };
+}
+
 const session: LiveSession = {
   id: "s1", owner_user_id: "u1", owner_name: "Maya", title: "[Maya via Draft] fix login", folder_name: "marigold",
   host_name: null, status: "live", started_at: "2026-10-27T00:00:00Z", ended_at: null, last_event_at: null, last_seq: 1,
@@ -363,6 +389,65 @@ describe("SessionView", () => {
     } finally {
       Element.prototype.scrollIntoView = original;
     }
+  });
+
+  describe("scroll follow", () => {
+    const scroller = () => document.querySelector<HTMLElement>(".ui-session__scroll") as HTMLElement;
+    const moveTo = (top: number) => {
+      scroller().scrollTop = top;
+      scroller().dispatchEvent(new Event("scroll"));
+    };
+    const jumpButton = () => screen.queryByRole("button", { name: "Jump to latest message" });
+
+    it("shows Jump to latest once the reader scrolls up, and pressing it returns to the bottom", async () => {
+      const restore = fakeScrollGeometry();
+      const matchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({ matches: query.includes("reduce"), media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+      try {
+        render(<SessionView api={api} sessionId="s-jump" />);
+        await screen.findByRole("heading", { name: "fix login" });
+        expect(jumpButton()).toBeNull();
+        moveTo(900);
+        moveTo(400);
+        fireEvent.click(await screen.findByRole("button", { name: "Jump to latest message" }));
+        await waitFor(() => expect(scroller().scrollTop).toBe(899));
+        await waitFor(() => expect(jumpButton()).toBeNull());
+      } finally {
+        window.matchMedia = matchMedia;
+        restore();
+      }
+    });
+
+    it("returns to a session at the reader's saved position, not the bottom", async () => {
+      const restore = fakeScrollGeometry();
+      try {
+        const first = render(<SessionView api={api} sessionId="s-memory" />);
+        await screen.findByRole("heading", { name: "fix login" });
+        moveTo(900);
+        moveTo(400);
+        await screen.findByRole("button", { name: "Jump to latest message" });
+        first.unmount();
+
+        render(<SessionView api={api} sessionId="s-memory" />);
+        await screen.findByRole("heading", { name: "fix login" });
+        expect(scroller().scrollTop).toBe(400);
+        expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeTruthy();
+      } finally {
+        restore();
+      }
+    });
+
+    it("treats a reader moved to a linked message as not at the bottom", async () => {
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function () {};
+      try {
+        render(<SessionView api={api} sessionId="s-linked" focusSeq={1} />);
+        await screen.findByRole("heading", { name: "fix login" });
+        expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeTruthy();
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
   });
 
   it("shows a no-access page, not a retry, when the session is not found", async () => {
