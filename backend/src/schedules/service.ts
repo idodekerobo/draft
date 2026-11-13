@@ -23,7 +23,7 @@ import {
 } from "../scheduling/routine-registry";
 import type { AgentRunRow, ScheduledTaskRow, SessionRow, SourceConnectionRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
-import { canEditRoutine, routineEditChecker } from "./permissions";
+import { canEditSchedules } from "./permissions";
 import { dispatchAgentRoutine, type RoutineDispatchOutcome } from "../routines/dispatch-routine";
 import { loadSandboxDeploymentConfig } from "../sandbox";
 import { loadRunResults } from "../metaharness/runs/result-line";
@@ -288,12 +288,8 @@ export async function listRoutines(workspaceId: string, callerId?: string): Prom
   const tasks = await loadTasks(workspaceId);
   const routines = await buildRoutines(workspaceId, tasks);
   if (!callerId) return routines;
-  const canEdit = await routineEditChecker(callerId);
-  const taskById = new Map(tasks.map((task) => [task.id, task]));
-  return routines.map((routine) => {
-    const task = taskById.get(routine.id);
-    return { ...routine, canEdit: task ? canEdit(task) : false };
-  });
+  const canEdit = await canEditSchedules(workspaceId, callerId);
+  return routines.map((routine) => ({ ...routine, canEdit }));
 }
 
 export interface RoutineTask {
@@ -348,7 +344,7 @@ export async function updateRoutine(
   userId: string,
   now: Date = new Date(),
 ): Promise<Routine> {
-  if (!(await canEditRoutine(userId, task))) throw new ScheduleServiceError("forbidden");
+  if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
   const changes: Partial<ScheduledTaskRow> = {};
   if (patch.enabled !== undefined) changes.enabled = patch.enabled;
   if (patch.agent) changes.config_json = { ...patch.agent };
@@ -396,7 +392,7 @@ export async function updateRoutine(
 
 /** Hides the routine and stops its runs. The row stays, because its past runs point at it. */
 export async function deleteRoutine({ task }: RoutineTask, userId: string, now: Date = new Date()): Promise<void> {
-  if (!(await canEditRoutine(userId, task))) throw new ScheduleServiceError("forbidden");
+  if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
     .update({ deleted_at: now.toISOString(), enabled: false, updated_by_user_id: userId })
@@ -414,7 +410,7 @@ export async function deleteRoutine({ task }: RoutineTask, userId: string, now: 
 export async function runRoutineNow(workspaceId: string, taskId: string, userId: string): Promise<RoutineDispatchOutcome> {
   const routine = await getRoutineTask(workspaceId, taskId);
   if (!routine || routine.task.task_type !== "agent_routine") throw new ScheduleServiceError("not_found");
-  if (!(await canEditRoutine(userId, routine.task))) throw new ScheduleServiceError("forbidden");
+  if (!(await canEditSchedules(workspaceId, userId))) throw new ScheduleServiceError("forbidden");
   return dispatchAgentRoutine({
     task: routine.task,
     occurrenceAt: new Date().toISOString(),

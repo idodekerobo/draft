@@ -36,7 +36,10 @@ export async function attributionLine(client: SupabaseClient, caller: ToolCaller
     // A scheduled run names its task in the trigger. An event run is tied to its task through the run's own row.
     const taskId = run.trigger.type === "cron" ? run.trigger.scheduledTaskId : await taskOfRun(client, run.id);
     const title = taskId ? await routineTitle(client, run.workspaceId, taskId) : null;
-    return title ? `🤖 Draft agent · running ${owner}'s "${title}" routine` : `🤖 Draft agent · running a routine for ${owner}`;
+    const line = title ? `🤖 Draft agent · running ${owner}'s "${title}" routine` : `🤖 Draft agent · running a routine for ${owner}`;
+    // A teammate can press Run now on someone else's routine. The channel should know who did.
+    const starter = run.trigger.type === "manual" && run.trigger.requestedBy !== run.onBehalfOf ? await userName(client, run.trigger.requestedBy) : null;
+    return starter ? `${line} · started by ${starter}` : line;
   }
   return owner ? `🤖 Draft agent · working for ${owner}` : `🤖 Draft agent · ${run.kind} run`;
 }

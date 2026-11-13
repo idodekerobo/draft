@@ -25,7 +25,7 @@ export class RoutineError extends Error {
 export function toRoutineError(code: string, field?: string): RoutineError {
   if (code === "codex_not_connected") return new RoutineError("Connect Codex for routines first.", "harness");
   if (field && FIELD_MESSAGES[field]) return new RoutineError(FIELD_MESSAGES[field], field);
-  if (code === "forbidden") return new RoutineError("Only the person who made this routine or a workspace admin can change it.");
+  if (code === "forbidden") return new RoutineError("You can’t change routines in this workspace.");
   if (code === "already_running") return new RoutineError("This routine is already running.");
   if (code === "codex_login_busy") return new RoutineError("Another Codex run is using the login. Try again when it finishes.");
   if (code === "run_failed") return new RoutineError("The run could not start. Try again.");

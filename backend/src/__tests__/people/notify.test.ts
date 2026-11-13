@@ -118,6 +118,15 @@ describe("people.notify", () => {
     expect(sent[0]!.message.text).toBe(`${LINE}\nYour items.`);
   });
 
+  it("names the teammate who pressed Run now on someone else's routine, and not the owner who ran their own", async () => {
+    const { call, sent } = setup();
+    const manual = (requestedBy: string): ToolCaller => ({ type: "run", run: { ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } } });
+    await call(manual(ADMIN), "people.notify", { personId: IZA, text: "a" });
+    expect(sent[0]!.message.text.split("\n")[0]).toBe(`${LINE} · started by Ada`);
+    await call(manual(OWNER), "people.notify", { personId: IZA, text: "b" });
+    expect(sent[1]!.message.text.split("\n")[0]).toBe(LINE);
+  });
+
   it("says a run with no routine title, or no owner, is still an agent", async () => {
     const { call, sent, db } = setup();
     db.tables.scheduled_tasks![0]!.config_json = {};

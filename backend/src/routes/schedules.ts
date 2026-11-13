@@ -5,7 +5,7 @@ import { recordRouteError } from "../errors/route-error";
 import { isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { lacksRoutineLogin, routineAgentStatuses } from "../routines/agent-status";
-import { canEditRoutine } from "../schedules/permissions";
+import { canEditSchedules } from "../schedules/permissions";
 import { parseAgentRoutineConfig } from "../routines/config";
 import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask, listRoutineRuns, listRoutines, runRoutineNow, updateRoutine } from "../schedules/service";
 import { validateCreate } from "../schedules/validate-create";
@@ -26,8 +26,8 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
       // A failed lookup leaves the list working. The page then offers every agent as ready.
       routineAgentStatuses(serviceClient, req.params.id).catch(() => undefined),
     ]);
-    // Any member may create a routine. Each routine carries its own canEdit for changes.
-    const body = JSON.stringify({ routines, canEdit: true, agents });
+    const canEdit = await canEditSchedules(req.params.id, caller.userId);
+    const body = JSON.stringify({ routines, canEdit, agents });
     if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
       userId: caller.userId,
@@ -56,7 +56,6 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
   try {
     const routineTask = await getRoutineTask(workspaceId, taskId);
     if (!routineTask) return Response.json({ error: "not_found" }, { status: 404 });
-    if (!(await canEditRoutine(caller.userId, routineTask.task))) return Response.json({ error: "forbidden" }, { status: 403 });
     const { definition, task } = routineTask;
     const current = task.task_type === "agent_routine" ? parseAgentRoutineConfig(task.config_json) : null;
 
@@ -87,7 +86,6 @@ export const DELETE = withAuth<ScheduleRequest>(async (req, caller) => {
   try {
     const routineTask = await getRoutineTask(workspaceId, taskId);
     if (!routineTask) return Response.json({ error: "not_found" }, { status: 404 });
-    if (!(await canEditRoutine(caller.userId, routineTask.task))) return Response.json({ error: "forbidden" }, { status: 403 });
     // Only a routine that a person made can be deleted. The built-in ones are part of the product.
     if (routineTask.task.task_type !== "agent_routine") return Response.json({ error: "field_not_editable" }, { status: 400 });
     await deleteRoutine(routineTask, caller.userId);

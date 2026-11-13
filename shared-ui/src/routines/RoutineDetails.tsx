@@ -267,11 +267,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
 
           <div className="ui-routines__actions">
             <span className="ui-routines__secondary">
-              {editable
-                ? "Applies to your whole workspace."
-                : routine.agent
-                  ? "Only the person who made this routine or a workspace admin can change it."
-                  : "You have view-only access to routines."}
+              {editable ? "Applies to your whole workspace." : "You have view-only access to routines."}
             </span>
             {editable && (
               <>

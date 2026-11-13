@@ -7,7 +7,7 @@ import { requireUser } from "./shared";
 const scheduleService = () => import("../../../schedules/service");
 const UUID = z.string().uuid();
 const runError = (error: unknown) => error instanceof Error && error.message === "forbidden"
-  ? refuse("not_permitted", "Only the routine's creator or a workspace admin can change it.")
+  ? refuse("not_permitted", "You can't change routines in this workspace.")
   : refuse("routine_failed", "The routine operation could not be completed.");
 
 export function createRoutineTools(client: SupabaseClient) {
@@ -26,7 +26,7 @@ export function createRoutineTools(client: SupabaseClient) {
       return { status: "ok", output: await (await scheduleService()).createAgentRoutine(user.workspaceId, user.userId, checked) };
     } catch (error) { return runError(error); }
   } });
-  const update = defineTool({ name: "routines.update", mcp: true, callers: ["user"], input: z.object({ taskId: UUID, patch: RoutinePatch }), description: "Update a routine you created, or any routine as an admin.", handler: async ({ caller, input }) => {
+  const update = defineTool({ name: "routines.update", mcp: true, callers: ["user"], input: z.object({ taskId: UUID, patch: RoutinePatch }), description: "Update a routine in the workspace.", handler: async ({ caller, input }) => {
     const user = requireUser(caller, "routines.update");
     try {
       const svc = await scheduleService();
@@ -43,7 +43,7 @@ export function createRoutineTools(client: SupabaseClient) {
       return { status: "ok", output: await svc.updateRoutine(task, patch.patch, user.userId) };
     } catch (error) { return runError(error); }
   } });
-  const remove = defineTool({ name: "routines.delete", mcp: true, callers: ["user"], input: z.object({ taskId: UUID }), description: "Delete a routine you created, or any routine as an admin.", handler: async ({ caller, input }) => {
+  const remove = defineTool({ name: "routines.delete", mcp: true, callers: ["user"], input: z.object({ taskId: UUID }), description: "Delete a routine in the workspace.", handler: async ({ caller, input }) => {
     const user = requireUser(caller, "routines.delete");
     try {
       const svc = await scheduleService();

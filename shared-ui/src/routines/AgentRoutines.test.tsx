@@ -368,12 +368,12 @@ describe("run now and edit rights", () => {
     await waitFor(() => expect(runRoutine).toHaveBeenCalledWith("digest"));
   });
 
-  it("hides Run now and editing on a routine the person cannot change", async () => {
+  it("hides Run now and editing for a person with view-only access", async () => {
     setup({ routines: [agentRoutine({ canEdit: false })] });
     await ready();
     expect(screen.queryByRole("button", { name: /Run .* now/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
-    expect(await screen.findByText(/Only the person who made this routine/)).toBeTruthy();
+    expect(await screen.findByText("You have view-only access to routines.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   });
 });
