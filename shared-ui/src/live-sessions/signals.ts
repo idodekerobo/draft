@@ -14,6 +14,9 @@ export const SESSION_SIGNAL_DELAY_MS = 250;
 /** Polls are only safety nets, in case a signal is missed. */
 export const SESSION_SAFETY_POLL_MS = 60_000;
 
+/** While the live connection is down no signal arrives, so the poll does the work. */
+export const SESSION_DISCONNECTED_POLL_MS = 5_000;
+
 /**
  * Runs `run` at once for the first signal. Signals that arrive while it runs, or within `delayMs` of its start,
  * wait for one follow-up run with the names gathered meanwhile. `run` gets those names.

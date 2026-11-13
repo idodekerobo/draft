@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { EVENTS_PAGE_SIZE } from "draft-core/live-sessions";
 import { Suspense } from "react";
-import { useSessionStream } from "./useSessionStream";
+import { sessionPollMs, useSessionStream } from "./useSessionStream";
+import { SESSION_DISCONNECTED_POLL_MS, SESSION_SAFETY_POLL_MS } from "./signals";
 import type { LiveSession, LiveSessionEvent, LiveSessionsApi } from "./types";
 
 afterEach(cleanup);
@@ -42,6 +43,13 @@ function setup(pages: (after: number) => LiveSessionEvent[], watchSignals?: Live
   );
   return { afters, renders: () => renders };
 }
+
+describe("sessionPollMs", () => {
+  it("polls every 5 s while the connection is down and every 60 s while it is up", () => {
+    expect(sessionPollMs(true)).toBe(SESSION_SAFETY_POLL_MS);
+    expect(sessionPollMs(false)).toBe(SESSION_DISCONNECTED_POLL_MS);
+  });
+});
 
 describe("useSessionStream", () => {
   it("shows the fallback until the first page, then asks only for events above the last one it has", async () => {
