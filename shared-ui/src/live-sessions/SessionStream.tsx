@@ -147,11 +147,13 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
       }
       if (item.children) {
         const title = typeof (item.input as { description?: unknown } | null)?.description === "string" ? (item.input as { description: string }).description : "";
+        const agentName = typeof (item.input as { name?: unknown } | null)?.name === "string" ? (item.input as { name: string }).name : "";
         const steps = item.children.filter((child) => child.type === "tool").length;
         return (
           <details className="ui-stream__details">
             <summary>
               <span className="ui-stream__tool">{item.name}</span>
+              {agentName && <span className="ui-stream__summary">@{agentName} </span>}
               {title && <span className="ui-stream__summary ui-stream__summary--title">{title}</span>}
               {item.result === null && <span className="ui-muted"> · running</span>}
               {item.result?.isError && <span className="ui-error"> · failed</span>}

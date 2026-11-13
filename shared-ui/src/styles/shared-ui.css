@@ -808,6 +808,12 @@
 .ui-session__notice { margin: 0; padding: var(--space-2) clamp(16px, 4vw, 40px); }
 .ui-session__scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: var(--space-5) clamp(16px, 4vw, 40px); }
 .ui-session__column { width: 100%; max-width: 880px; margin: 0 auto; }
+.ui-team { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-2); padding: 0; list-style: none; }
+.ui-team__chip { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 28px; padding: 0 10px; border: 1px solid var(--color-border-strong); border-radius: 8px; background: transparent; color: var(--color-text-primary); font: inherit; font-size: var(--font-size-small); cursor: pointer; touch-action: manipulation; transition: background-color 120ms var(--motion-ease), transform 120ms var(--motion-ease); }
+.ui-team__chip:active { transform: scale(0.98); }
+.ui-team__name { font-family: var(--font-mono); }
+@media (hover: hover) and (pointer: fine) { .ui-team__chip:hover { background: var(--color-bg-hover); } }
+@media (prefers-reduced-motion: reduce) { .ui-team__chip { transition: none; } .ui-team__chip:active { transform: none; } }
 .ui-session__footer { padding: 0 clamp(16px, 4vw, 40px) var(--space-4); }
 .ui-session__jump { position: absolute; right: clamp(16px, 4vw, 40px); bottom: 150px; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; background: var(--color-bg-elevated); touch-action: manipulation; }
 .ui-session__menu { position: relative; flex: none; }

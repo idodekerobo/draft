@@ -24,6 +24,8 @@ import { pendingItems } from "./pending-items";
 import { buildStreamItems, openApprovals, type StreamItem } from "./stream-items";
 import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
+import { TeamStrip } from "./TeamStrip";
+import { teamRoster, type TeamMember } from "./team-roster";
 import { prependToDraft } from "./drafts";
 import { useSessionInputs } from "./useSessionInputs";
 import { useConnectionState } from "./useConnectionState";
@@ -247,6 +249,7 @@ function LoadedSession({
   const livePreviews = useLiveText(api, sessionId, events);
   const liveText = useMemo(() => (session.status === "ended" ? [] : livePreviews), [session.status, livePreviews]);
   const approvals = useMemo(() => openApprovals(logItems), [logItems]);
+  const team = useMemo(() => teamRoster(events), [events]);
   const ownerName = session.owner_name ?? "the owner";
   const harnessId = session.harness ?? "claude";
   const agentName = shortName(harnessId);
@@ -300,6 +303,14 @@ function LoadedSession({
     clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightSeq(null), HIGHLIGHT_MS);
   }, [scrollRef, stopScroll]);
+  const showAgent = useCallback(
+    (member: TeamMember) => {
+      wantedSeq.current = member.hostSeq;
+      scrollToWanted();
+      scrollRef.current?.querySelector<HTMLDetailsElement>(`#${messageDomId(member.hostSeq)} > details`)?.setAttribute("open", "");
+    },
+    [scrollRef, scrollToWanted],
+  );
   useLayoutEffect(() => {
     wantedSeq.current = focusSeq;
     scrollToWanted();
@@ -482,6 +493,7 @@ function LoadedSession({
       )}
       <div className="ui-session__footer">
         <div className="ui-session__column">
+          {session.status !== "ended" && <TeamStrip members={team} onShow={showAgent} />}
           {readOnly ? (
             <p className="ui-muted ui-session__notice">This run follows its routine on its own. It cannot take messages.</p>
           ) : (
