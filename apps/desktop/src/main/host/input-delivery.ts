@@ -39,8 +39,9 @@ const BLOCK_REASONS: Record<Exclude<PaneState, "ready">, InputBlockReason> = {
   dialog: "dialog",
 };
 
-const SUBMIT_POLL_MS = 400;
-const SUBMIT_POLLS = 6;
+const SUBMIT_POLL_MS = 100;
+const SUBMIT_POLLS = 24;
+const MAX_PER_PASS = 5;
 const MAX_PASTE_CHARS = 12_000;
 
 /** The backend already cleans text; this keeps the pane safe if it ever does not. */
@@ -65,24 +66,26 @@ export class InputDelivery {
     this.recovered = true;
   }
 
-  /** One pass over the pending messages: delivers the oldest queued input if the pane is ready. */
+  /** One pass over the pending messages: delivers the oldest queued inputs, one after another, while the pane stays ready. */
   async tick(pending: PendingInput[]): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
       if (!this.recovered) await this.recover(pending);
-      const next = pending.find((i) => i.state === "queued" && !this.claimed.has(i.id));
-      if (!next) return;
+      for (let delivered = 0; delivered < MAX_PER_PASS; delivered++) {
+        const next = pending.find((i) => i.state === "queued" && !this.claimed.has(i.id));
+        if (!next) return;
 
-      const state = classifyPane(await this.deps.capture());
-      if (state !== "ready") {
-        await this.report(next.id, BLOCK_REASONS[state]);
-        return;
+        const state = classifyPane(await this.deps.capture());
+        if (state !== "ready") {
+          await this.report(next.id, BLOCK_REASONS[state]);
+          return;
+        }
+        const taken = await this.deps.setState(next.id, ["queued"], "delivering");
+        this.claimed.add(next.id);
+        if (!taken) return;
+        if (!(await this.deliver(next))) return;
       }
-      const taken = await this.deps.setState(next.id, ["queued"], "delivering");
-      this.claimed.add(next.id);
-      if (!taken) return;
-      await this.deliver(next);
     } finally {
       this.busy = false;
     }
@@ -94,21 +97,24 @@ export class InputDelivery {
     await this.deps.setState(id, ["queued"], "queued", reason);
   }
 
-  private async deliver(input: PendingInput): Promise<void> {
+  /** Returns true when the text left the composer. */
+  private async deliver(input: PendingInput): Promise<boolean> {
     let pasted = false;
     try {
       await this.deps.paste(safePasteText(input.delivered_text));
       pasted = true;
       await this.deps.pressEnter();
-      if (await this.submitted()) return;
+      if (await this.submitted()) return true;
       await this.deps.pressEnter();
-      if (await this.submitted()) return;
+      if (await this.submitted()) return true;
       await this.deps.setState(input.id, ["delivering"], "uncertain", "not_submitted");
+      return false;
     } catch (error) {
       console.error("[live-session] delivery failed", input.id, error);
       await this.deps
         .setState(input.id, ["delivering"], pasted ? "uncertain" : "failed", pasted ? "delivery_interrupted" : "pane_unavailable")
         .catch(() => {});
+      return false;
     }
   }
 
