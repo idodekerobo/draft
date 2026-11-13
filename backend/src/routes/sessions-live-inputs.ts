@@ -266,6 +266,9 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
   return Response.json({ ok: true, changed: data === true });
 });
 
+const TAG_REF = /^\[[^\]\n]{1,60} via Draft #([0-9a-f]{8})\]/gm;
+const tagRefs = (text: string): string[] => [...text.matchAll(TAG_REF)].map((m) => m[1]!);
+
 /** Marks a delivering (or uncertain) input consumed when the transcript shows its message as a new user turn. */
 export async function matchConsumedInputs(workspaceId: string, sessionId: string, afterSeq: number, uptoSeq: number): Promise<void> {
   if (uptoSeq <= afterSeq) return;
@@ -296,6 +299,18 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
     if (turns.length === 0) return;
 
     const candidates = [...(waiting as Pick<SessionInputRow, "id" | "author_name" | "payload" | "state">[])];
+    const consume = async (match: (typeof candidates)[number], seq: number) => {
+      candidates.splice(candidates.indexOf(match), 1);
+      const { error: moveError } = await serviceClient.rpc("transition_session_input", {
+        p_input_id: match.id,
+        p_session_id: sessionId,
+        p_from: ["delivering", "uncertain"],
+        p_to: "consumed",
+        p_reason: null,
+        p_consumed_seq: seq,
+      });
+      if (moveError) throw moveError;
+    };
     for (const turn of turns) {
       const turnText = turn.payload.text as string;
       const { inputRef } = splitAuthor(turnText);
@@ -304,17 +319,13 @@ export async function matchConsumedInputs(workspaceId: string, sessionId: string
         sameText(deliveredText(c.author_name, textOf(c), c.id), turnText) || sameText(deliveredText(c.author_name, textOf(c)), turnText);
       const byRef = inputRef ? candidates.filter((c) => c.id.startsWith(inputRef)) : [];
       const match = byRef.length === 1 ? byRef[0] : (byRef.length > 1 ? byRef : candidates).find(sameBody);
-      if (!match) continue;
-      candidates.splice(candidates.indexOf(match), 1);
-      const { error: moveError } = await serviceClient.rpc("transition_session_input", {
-        p_input_id: match.id,
-        p_session_id: sessionId,
-        p_from: ["delivering", "uncertain"],
-        p_to: "consumed",
-        p_reason: null,
-        p_consumed_seq: turn.seq,
-      });
-      if (moveError) throw moveError;
+      if (match) await consume(match, turn.seq);
+
+      // A merged turn can carry several sent messages, each with its own tag.
+      for (const ref of tagRefs(turnText)) {
+        const hits = candidates.filter((c) => c.id.startsWith(ref));
+        if (hits.length === 1) await consume(hits[0]!, turn.seq);
+      }
     }
   } catch (error) {
     void recordError({

@@ -321,6 +321,41 @@ describe("matching consumed inputs", () => {
     });
   });
 
+  describe("a merged turn with several tagged messages", () => {
+    const A = "aaaa1111-0000-4000-8000-000000000000";
+    const B = "bbbb2222-0000-4000-8000-000000000000";
+    const merged = "[Dev via Draft #aaaa1111] run tests\n\n[Priya via Draft #bbbb2222] ship it";
+
+    it("consumes every input in the turn with the same seq", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests"), waiting(B, "Priya", "ship it")];
+      tables.session_events = [turn(5, merged)];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_consumed_seq])).toEqual([[A, 5], [B, 5]]);
+    });
+
+    it("still consumes one input for a single tagged turn", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests"), waiting(B, "Priya", "ship it")];
+      tables.session_events = [turn(5, "[Dev via Draft #aaaa1111] run tests")];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls.map((c) => [c.args.p_input_id, c.args.p_consumed_seq])).toEqual([[A, 5]]);
+    });
+
+    it("consumes nothing for a turn whose only tag is unknown", async () => {
+      tables.session_inputs = [waiting(A, "Dev", "run tests")];
+      tables.session_events = [turn(5, "[Dev via Draft #cccc3333] run tests")];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls).toEqual([]);
+    });
+
+    it("skips a later tag that matches several waiting inputs", async () => {
+      const A2 = "aaaa1111-1111-4000-8000-000000000000";
+      tables.session_inputs = [waiting(A, "Dev", "run tests"), waiting(A2, "Dev", "lint"), waiting(B, "Priya", "ship it")];
+      tables.session_events = [turn(5, "[Priya via Draft #bbbb2222] ship it\n\n[Dev via Draft #aaaa1111] run tests")];
+      await routes.matchConsumedInputs(WS, SESSION, 4, 5);
+      expect(rpcCalls.map((c) => c.args.p_input_id)).toEqual([B]);
+    });
+  });
+
   it("matches multi-line text when whitespace differs", async () => {
     tables.session_inputs = [waiting("a", "Dev", "line one\n\nline two  ")];
     tables.session_events = [turn(3, "[Dev via Draft] line one\nline two")];
