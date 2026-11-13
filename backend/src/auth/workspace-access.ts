@@ -4,11 +4,22 @@ import { allowOncePer } from "../errors/throttle";
 import type { UserRow, WorkspaceRow } from "../types/tables";
 
 const FORBIDDEN_WINDOW_MS = 60_000;
+// A passed check is trusted this long, so a person removed from a team keeps access for up to this long.
+const ALLOWED_TTL_MS = 30_000;
+const MAX_ALLOWED = 5_000;
+let allowed = new Map<string, number>();
+
+export function resetAccessCacheForTests(): void {
+  allowed = new Map();
+}
 
 export async function assertWorkspaceAccess(
   workspaceId: string,
   callerId: string,
 ): Promise<Response | null> {
+  const key = `${workspaceId}:${callerId}`;
+  if ((allowed.get(key) ?? 0) > Date.now()) return null;
+
   const [userResult, workspaceResult] = await Promise.all([
     serviceClient
       .from("users")
@@ -49,5 +60,7 @@ export async function assertWorkspaceAccess(
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
 
+  if (allowed.size >= MAX_ALLOWED) allowed = new Map();
+  allowed.set(key, Date.now() + ALLOWED_TTL_MS);
   return null;
 }
