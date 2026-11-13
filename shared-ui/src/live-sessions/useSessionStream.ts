@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { EVENTS_PAGE_SIZE, sessionSignalTopic } from "draft-core/live-sessions";
+import { sessionSignalTopic } from "draft-core/live-sessions";
 import { useSuspenseQuery } from "../query";
 import { mergeEvents } from "./merge-events";
 import { SESSION_DISCONNECTED_POLL_MS, SESSION_SAFETY_POLL_MS, useSignals } from "./signals";
@@ -48,7 +48,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
         const merged = mergeEvents(events, page.events);
         grew ||= merged !== events;
         events = merged;
-      } while (page.events.length >= EVENTS_PAGE_SIZE);
+      } while (page.events.length > 0 && (events.at(-1)?.seq ?? 0) < page.session.last_seq);
 
       syncSessionIntoLists(client, page.session);
       if (previous && !grew && sameJson(previous.session, page.session) && sameJson(previous.inputs, page.inputs) && sameJson(previous.viewer, page.viewer)) return previous;
