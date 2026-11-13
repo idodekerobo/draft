@@ -9,12 +9,20 @@ export async function assertWorkspaceAccess(
   workspaceId: string,
   callerId: string,
 ): Promise<Response | null> {
-  const { data: user, error: userErr } = await serviceClient
-    .from("users")
-    .select("id, organization_id, primary_team_id")
-    .eq("id", callerId)
-    .maybeSingle<Pick<UserRow, "id" | "organization_id" | "primary_team_id">>();
+  const [userResult, workspaceResult] = await Promise.all([
+    serviceClient
+      .from("users")
+      .select("id, organization_id, primary_team_id")
+      .eq("id", callerId)
+      .maybeSingle<Pick<UserRow, "id" | "organization_id" | "primary_team_id">>(),
+    serviceClient
+      .from("workspaces")
+      .select("organization_id, team_id, access_mode")
+      .eq("id", workspaceId)
+      .maybeSingle<Pick<WorkspaceRow, "organization_id" | "team_id" | "access_mode">>(),
+  ]);
 
+  const { data: user, error: userErr } = userResult;
   if (userErr) {
     console.error("assertWorkspaceAccess: users lookup failed", userErr);
     return Response.json({ error: "lookup_failed" }, { status: 500 });
@@ -23,12 +31,7 @@ export async function assertWorkspaceAccess(
     return Response.json({ error: "no_team" }, { status: 404 });
   }
 
-  const { data: workspace, error: wsErr } = await serviceClient
-    .from("workspaces")
-    .select("organization_id, team_id, access_mode")
-    .eq("id", workspaceId)
-    .maybeSingle<Pick<WorkspaceRow, "organization_id" | "team_id" | "access_mode">>();
-
+  const { data: workspace, error: wsErr } = workspaceResult;
   if (wsErr) {
     console.error("assertWorkspaceAccess: workspaces lookup failed", wsErr);
     return Response.json({ error: "lookup_failed" }, { status: 500 });

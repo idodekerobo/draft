@@ -150,4 +150,28 @@ describe("assertWorkspaceAccess", () => {
     expect(response?.status).toBe(404);
     expect(await responseBody(response!)).toEqual({ error: "not_found" });
   });
+
+  it("returns 500 when the users lookup fails", async () => {
+    options = validOptions({ userError: { message: "boom" } });
+    const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
+    expect(response?.status).toBe(500);
+    expect(await responseBody(response!)).toEqual({ error: "lookup_failed" });
+  });
+
+  it("returns 500 when the workspaces lookup fails", async () => {
+    options = validOptions({ workspaceError: { message: "boom" } });
+    const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
+    expect(response?.status).toBe(500);
+    expect(await responseBody(response!)).toEqual({ error: "lookup_failed" });
+  });
+
+  it("returns no_team before a workspaces lookup failure", async () => {
+    options = validOptions({
+      user: { id: ids.caller, organization_id: ids.organization, primary_team_id: null },
+      workspaceError: { message: "boom" },
+    });
+    const response = await assertWorkspaceAccess(ids.workspace, ids.caller);
+    expect(response?.status).toBe(404);
+    expect(await responseBody(response!)).toEqual({ error: "no_team" });
+  });
 });
