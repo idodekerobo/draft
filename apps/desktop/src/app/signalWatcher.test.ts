@@ -3,7 +3,7 @@ import { createWindowSignalWatcher } from "./signalWatcher";
 
 function setup() {
   const sent: string[][] = [];
-  let push: (topic: string, event: string) => void = () => {};
+  let push: (topic: string, event: string, payload?: unknown) => void = () => {};
   let pushConnection: (connected: boolean) => void = () => {};
   const { watch, watchConnection } = createWindowSignalWatcher({
     setTopics: (topics) => void sent.push(topics),
@@ -16,7 +16,7 @@ function setup() {
       return () => {};
     },
   });
-  return { watch, watchConnection, sent, push: (topic: string, event: string) => push(topic, event), pushConnection: (connected: boolean) => pushConnection(connected) };
+  return { watch, watchConnection, sent, push: (topic: string, event: string, payload?: unknown) => push(topic, event, payload), pushConnection: (connected: boolean) => pushConnection(connected) };
 }
 const tick = () => new Promise((done) => setTimeout(done, 0));
 
@@ -51,6 +51,18 @@ describe("createWindowSignalWatcher", () => {
     stopSecond();
     await tick();
     expect(t.sent).toEqual([[], ["a"], []]);
+  });
+
+  it("passes the payload of a signal to the listeners of its topic", () => {
+    const t = setup();
+    const seen: Array<[string, unknown]> = [];
+    t.watch("live:session:s1", (event, payload) => seen.push([event, payload]));
+    t.push("live:session:s1", "text", { messageId: "m1", index: 0, text: "Hi", final: false });
+    t.push("live:session:s1", "events");
+    expect(seen).toEqual([
+      ["text", { messageId: "m1", index: 0, text: "Hi", final: false }],
+      ["events", undefined],
+    ]);
   });
 
   it("assumes the connection is fine until main says otherwise, then follows what main says", () => {

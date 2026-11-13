@@ -17,7 +17,7 @@ type EventMap = {
   signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string };
   authStateChanged: { signedIn: boolean };
   identityRefreshNeeded: Record<string, never>;
-  liveSignal: { topic: string; event: string };
+  liveSignal: { topic: string; event: string; payload?: unknown };
   liveConnection: { connected: boolean };
   captureComplete: { source: string };
   updateCheckStarted: Record<string, never>;

@@ -1,5 +1,5 @@
-import { SessionNotFoundError, toApprovalResult, type ApprovalResponse, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
-import { presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
+import { SessionNotFoundError, liveTextListener, toApprovalResult, type ApprovalResponse, type ApprovalResult, type LiveSessionEventsPage, type LiveSessionInput, type LiveSessionsApi } from "draft-shared-ui";
+import { liveTextTopic, presenceChannel, presenceNames, type PresenceMeta } from "draft-core/live-sessions";
 import { ApiError, apiFetch } from "@/lib/api";
 import { createSignalWatcher } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/client";
@@ -58,6 +58,7 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
       }
     },
     watchSignals,
+    watchLiveText: (sessionId, onChunk) => signals.watch(liveTextTopic(sessionId), liveTextListener(onChunk)),
     watchConnection: signals.watchConnection,
     watchPresence: (sessionId, viewer, onChange) => {
       const client = createClient();

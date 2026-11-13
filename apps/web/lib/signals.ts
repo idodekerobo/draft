@@ -1,7 +1,7 @@
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { SIGNAL_EVENTS } from "draft-core/live-sessions";
 
-type Listener = (event: string) => void;
+type Listener = (event: string, payload?: unknown) => void;
 interface Entry {
   channel: RealtimeChannel;
   listeners: Set<Listener>;
@@ -24,13 +24,13 @@ export function createSignalWatcher(getClient: () => Pick<SupabaseClient, "chann
     const client = getClient();
     const channel = client.channel(topic, { config: { private: true } });
     const listeners = new Set<Listener>();
-    const tell = (event: string) => listeners.forEach((listener) => listener(event));
+    const tell = (event: string, payload?: unknown) => listeners.forEach((listener) => listener(event, payload));
     const onOnline = () => tell(SIGNAL_EVENTS.catchUp);
     const onVisible = () => {
       if (document.visibilityState === "visible") tell(SIGNAL_EVENTS.catchUp);
     };
     const entry: Entry = { channel, listeners, subscribed: false, leave: () => {} };
-    channel.on("broadcast", { event: "*" }, (message) => tell(message.event)).subscribe((status) => {
+    channel.on("broadcast", { event: "*" }, (message) => tell(message.event, message.payload)).subscribe((status) => {
       entry.subscribed = status === "SUBSCRIBED";
       reportConnection();
       if (entry.subscribed) tell(SIGNAL_EVENTS.catchUp);

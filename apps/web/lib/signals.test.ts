@@ -4,12 +4,12 @@ import { createSignalWatcher } from "./signals";
 type StatusCallback = (status: string) => void;
 
 function fakeClient() {
-  const channels: Array<{ topic: string; sendBroadcast(event: string): void; subscribed(): void; status(status: string): void; removed: boolean }> = [];
+  const channels: Array<{ topic: string; sendBroadcast(event: string, payload?: unknown): void; subscribed(): void; status(status: string): void; removed: boolean }> = [];
   const client = {
     channel(topic: string) {
-      let onMessage: (message: { event: string }) => void = () => {};
+      let onMessage: (message: { event: string; payload?: unknown }) => void = () => {};
       let onStatus: StatusCallback = () => {};
-      const record = { topic, removed: false, sendBroadcast: (event: string) => onMessage({ event }), subscribed: () => onStatus("SUBSCRIBED"), status: (status: string) => onStatus(status) };
+      const record = { topic, removed: false, sendBroadcast: (event: string, payload?: unknown) => onMessage({ event, payload }), subscribed: () => onStatus("SUBSCRIBED"), status: (status: string) => onStatus(status) };
       channels.push(record);
       const channel = {
         on: (_type: string, _filter: unknown, callback: typeof onMessage) => {
@@ -51,6 +51,18 @@ describe("createSignalWatcher", () => {
     channels[0].subscribed();
     channels[0].sendBroadcast("events");
     expect(seen).toEqual(["catch-up", "events"]);
+  });
+
+  it("passes a broadcast payload to the listener", () => {
+    const { client, channels } = fakeClient();
+    const seen: Array<[string, unknown]> = [];
+    createSignalWatcher(() => client).watch("live:session:s1", (event, payload) => seen.push([event, payload]));
+    channels[0].subscribed();
+    channels[0].sendBroadcast("text", { messageId: "m1", index: 0, text: "Hi", final: false });
+    expect(seen).toEqual([
+      ["catch-up", undefined],
+      ["text", { messageId: "m1", index: 0, text: "Hi", final: false }],
+    ]);
   });
 
   it("sends catch-up when a dropped channel rejoins, the browser comes online, and the tab becomes visible", () => {

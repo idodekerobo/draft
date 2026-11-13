@@ -1,3 +1,5 @@
+import type { LiveTextChunk } from "draft-core/live-sessions";
+
 export type LiveSessionStatus = "starting" | "live" | "host_offline" | "ended";
 
 export interface LiveSession {
@@ -191,6 +193,8 @@ export interface LiveSessionsApi {
    * Absent where Realtime is not available; the app then relies on its slow safety polls alone.
    */
   watchSignals?(topic: string, onSignal: (event: string) => void): () => void;
+  /** Calls `onChunk` with each piece of text the agent is writing. Nothing is stored; a viewer who joins late sees only what comes after. Returns the stop function. Absent where Realtime is not available. */
+  watchLiveText?(sessionId: string, onChunk: (chunk: LiveTextChunk) => void): () => void;
   /** Calls `onChange` with whether every watched topic is joined, now and at each change. Returns the stop function. */
   watchConnection?(onChange: (connected: boolean) => void): () => void;
 }

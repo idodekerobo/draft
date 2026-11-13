@@ -8,3 +8,4 @@ export { SessionsLayout, ColumnToggleButton } from "./SessionsLayout";
 export { SessionStartScreen, type HarnessProblem, type StartRequest, type StartResult } from "./SessionStartScreen";
 export { SessionView, type SessionMenuItem } from "./SessionView";
 export { MESSAGE_PARAM, parseMessageParam } from "./share-links";
+export { liveTextListener } from "./live-text";

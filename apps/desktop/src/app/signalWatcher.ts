@@ -1,8 +1,8 @@
-type Listener = (event: string) => void;
+type Listener = (event: string, payload?: unknown) => void;
 
 interface Deps {
   setTopics: (topics: string[]) => unknown;
-  onSignal: (handler: (topic: string, event: string) => void) => () => void;
+  onSignal: (handler: (topic: string, event: string, payload?: unknown) => void) => () => void;
   onConnection: (handler: (connected: boolean) => void) => () => void;
 }
 
@@ -34,7 +34,7 @@ export function createWindowSignalWatcher({ setTopics, onSignal, onConnection }:
     queueMicrotask(send);
   };
 
-  onSignal((topic, event) => listeners.get(topic)?.forEach((listener) => listener(event)));
+  onSignal((topic, event, payload) => listeners.get(topic)?.forEach((listener) => listener(event, payload)));
   onConnection((next) => {
     connected = next;
     connectionListeners.forEach((listener) => listener(next));
