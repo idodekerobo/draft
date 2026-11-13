@@ -28,10 +28,14 @@ describe("InputWake", () => {
     expect(t.wake.due()).toBe(true);
   });
 
-  it("keeps asking each pass while the last answer held inputs, and stops when it is empty", () => {
+  it("asks every 2 s while the last answer held inputs, and stops when it is empty", () => {
     const t = setup();
     t.wake.asking();
     t.wake.answered(2);
+    expect(t.wake.due()).toBe(false);
+    t.advance(1_900);
+    expect(t.wake.due()).toBe(false);
+    t.advance(100);
     expect(t.wake.due()).toBe(true);
     t.wake.asking();
     t.wake.answered(0);

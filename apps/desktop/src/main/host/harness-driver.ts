@@ -22,6 +22,8 @@ export interface DriverHost {
   reportError(what: string, error: unknown): void;
   /** The harness finished a turn, so raw files may have changed. */
   requestUpload(): void;
+  /** Run the next pass now. */
+  wake(): void;
   /** The modes the session is in. A change is sent to the server at once, and every heartbeat repeats them. */
   reportModes(modes: { permissionMode?: string | null; approvalMode?: string | null }): void;
 }

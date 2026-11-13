@@ -36,6 +36,8 @@ class SessionRunner {
   private wakePending = false;
   private stopSignals: (() => void) | null = null;
   private readonly inputWake = new InputWake(undefined, undefined, () => realtime.connected());
+  /** The last list from the server. Passes between fetches reuse it; each delivery still claims its input first. */
+  private pending: HostInput[] = [];
   private finished = false;
   private readonly base: string;
 
@@ -59,6 +61,7 @@ class SessionRunner {
       requestUpload: () => {
         this.uploadWanted = true;
       },
+      wake: () => this.wake(),
       reportModes: (modes) => this.reportModes(modes),
     });
   }
@@ -185,19 +188,18 @@ class SessionRunner {
   }
 
   private async whileAlive(): Promise<void> {
-    let pending: HostInput[] = [];
     if (this.inputWake.due()) {
       this.inputWake.asking();
       try {
-        pending = await this.fetchInputs();
+        this.pending = await this.fetchInputs();
       } catch (error) {
         this.inputWake.failed();
         this.reportInputError("fetching inputs", error);
         return;
       }
-      this.inputWake.answered(pending.length);
+      this.inputWake.answered(this.pending.length);
     }
-    await this.driver.serve(pending);
+    await this.driver.serve(this.pending);
   }
 
   private reportInputError(what: string, error: unknown): void {

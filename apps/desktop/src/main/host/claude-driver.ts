@@ -21,6 +21,8 @@ import { fetchServer, fetchServerJSON } from "../server/server-client";
 
 const END_POLLS = 10;
 const END_POLL_MS = 1_000;
+const IDLE_POLL_MS = 2_000;
+const QUEUED_POLL_MS = 250;
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
@@ -35,6 +37,7 @@ export class ClaudeDriver implements HarnessDriver {
   private rotateTo: string | null = null;
   private caughtUp = false;
   private halted = false;
+  private waiting = false;
 
   constructor(private readonly host: DriverHost) {
     const state = host.state();
@@ -86,7 +89,10 @@ export class ClaudeDriver implements HarnessDriver {
     ensureHooksServer();
     this.unregisterHooks = registerSessionHooks(state.hookId ?? state.sessionId, {
       permission: (payload, signal) => this.broker.hold(payload, signal),
-      stopped: () => this.host.requestUpload(),
+      stopped: () => {
+        this.host.requestUpload();
+        if (this.waiting) this.host.wake();
+      },
       message: (payload) => this.leadIn.message(payload),
       sessionStarted: (payload) => {
         this.rotateTo ??= rotationTarget(this.host.state().nativeSessionId, payload);
@@ -124,7 +130,12 @@ export class ClaudeDriver implements HarnessDriver {
     return this.forwarder.tick();
   }
 
+  pollMs(): number {
+    return this.waiting ? QUEUED_POLL_MS : IDLE_POLL_MS;
+  }
+
   async serve(inputs: HostInput[]): Promise<void> {
+    this.waiting = inputs.some((i) => i.kind === "message" && i.state === "queued");
     await restorePaneSize(this.tmux).catch(() => {});
     await this.broker.watchPane();
     await this.guarded("mode watch", () => this.watchMode());
