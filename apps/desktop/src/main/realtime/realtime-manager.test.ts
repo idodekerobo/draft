@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { SIGNAL_EVENTS } from "draft-core/live-sessions";
 import { RealtimeManager } from "./realtime-manager";
 
 function setup() {
@@ -73,5 +74,37 @@ describe("RealtimeManager", () => {
     t.setConnected("b", false);
     t.manager.clearWindow();
     expect(t.connection).toEqual([false, false, true, false, true, true]);
+  });
+
+  it("gives a listener that joins a connected topic one catch-up, and the first listener none", async () => {
+    const t = setup();
+    const first: string[] = [];
+    const second: string[] = [];
+    t.manager.watch("a", (event) => first.push(event));
+    t.setConnected("a", true);
+    t.manager.watch("a", (event) => second.push(event));
+    await Promise.resolve();
+    expect(first).toEqual([]);
+    expect(second).toEqual([SIGNAL_EVENTS.catchUp]);
+  });
+
+  it("gives no catch-up to a listener that joins a topic that is not connected", async () => {
+    const t = setup();
+    t.manager.watch("a", () => {});
+    const late: string[] = [];
+    t.manager.watch("a", (event) => late.push(event));
+    await Promise.resolve();
+    expect(late).toEqual([]);
+  });
+
+  it("skips the catch-up when the listener was removed before it ran", async () => {
+    const t = setup();
+    t.manager.watch("a", () => {});
+    t.setConnected("a", true);
+    const late: string[] = [];
+    const stop = t.manager.watch("a", (event) => late.push(event));
+    stop();
+    await Promise.resolve();
+    expect(late).toEqual([]);
   });
 });

@@ -1,3 +1,5 @@
+import { SIGNAL_EVENTS } from "draft-core/live-sessions";
+
 /**
  * Joins a topic and calls `onEvent` for each signal. Tells it `catch-up` each time the channel joins, and calls
  * `onConnected` when the channel joins or drops. Returns the leave function.
@@ -28,7 +30,8 @@ export class RealtimeManager {
   ) {}
 
   watch(topic: string, listener: SignalListener): () => void {
-    let entry = this.held.get(topic);
+    const existing = this.held.get(topic);
+    let entry = existing;
     if (!entry) {
       const created: Held = { leave: () => {}, listeners: new Set(), connected: false };
       this.held.set(topic, created);
@@ -44,6 +47,11 @@ export class RealtimeManager {
       this.reportConnection();
     }
     entry.listeners.add(listener);
+    if (existing?.connected) {
+      queueMicrotask(() => {
+        if (existing.listeners.has(listener)) listener(SIGNAL_EVENTS.catchUp);
+      });
+    }
     return () => {
       entry.listeners.delete(listener);
       if (entry.listeners.size > 0 || this.held.get(topic) !== entry) return;
