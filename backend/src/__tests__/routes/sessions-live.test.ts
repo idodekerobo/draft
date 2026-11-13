@@ -17,12 +17,17 @@ function queryBuilder(table: string) {
   const eqs: [string, unknown][] = [];
   const gts: [string, number][] = [];
   const ins: [string, unknown[]][] = [];
+  const nots: [string, unknown][] = [];
   let insertPayload: Row | undefined;
   let updatePayload: Row | undefined;
 
   const matches = () =>
     (tables[table] ?? []).filter(
-      (row) => eqs.every(([col, v]) => row[col] === v) && ins.every(([col, vs]) => vs.includes(row[col])) && gts.every(([col, v]) => (row[col] as number) > v),
+      (row) =>
+        eqs.every(([col, v]) => row[col] === v) &&
+        ins.every(([col, vs]) => vs.includes(row[col])) &&
+        gts.every(([col, v]) => (row[col] as number) > v) &&
+        nots.every(([col, v]) => (row[col] ?? null) !== v),
     );
 
   const builder = {
@@ -45,6 +50,7 @@ function queryBuilder(table: string) {
     neq: () => builder,
     is: () => builder,
     gt: (col: string, value: number) => (gts.push([col, value]), builder),
+    not: (col: string, _operator: string, value: unknown) => (nots.push([col, value]), builder),
     order: () => builder,
     limit: () => builder,
     async maybeSingle() {
@@ -292,6 +298,56 @@ describe("live session routes", () => {
     const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
     const body = (await (await routes.EVENTS(req)).json()) as { inputs: Array<{ id: string; mine: boolean; text: string }> };
     expect(body.inputs.map((i) => [i.id, i.mine, i.text])).toEqual([["mine", true, "hi"], ["theirs", false, "hi"]]);
+  });
+
+  it("returns the session, viewer, events and waiting inputs of a Draft turn", async () => {
+    tables.users.push({ id: "user-9", display_name: "Priya Shah", email: "priya@example.test" });
+    const previous = session({ id: "old", status: "ended", end_reason: "cleared", title: "Old chat", folder_name: "app" });
+    const current = session({ previous_session_id: "old", title: "Fix login", folder_name: "app" });
+    tables.sessions = [previous, current];
+    tables.session_events = [
+      { session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message", payload: { text: "Fix the login bug" }, created_at: "t1" },
+      { session_id: SESSION, workspace_id: WS, seq: 2, kind: "assistant_text", payload: { text: "On it" }, created_at: "t2" },
+    ];
+    tables.session_inputs = [
+      { session_id: SESSION, workspace_id: WS, kind: "message", state: "consumed", consumed_seq: 1, author_user_id: "user-9", payload: { text: "Fix the login bug" }, created_at: "t0", updated_at: "t0" },
+      { id: "w", session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", payload: { text: "hi" }, reason: null, created_at: "t3", updated_at: "t3", author_user_id: "user-1", author_name: "maya@example.test" },
+    ];
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const { authors: _authors, ...body } = (await (await routes.EVENTS(req)).json()) as Row;
+    expect(body).toEqual({
+      session: { ...current, owner_name: "Maya", mine: true, previous_session: previous, next_session: null },
+      viewer: { id: "user-1", name: "Maya" },
+      events: [
+        { session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message", payload: { text: "Fix the login bug" }, created_at: "t1", author_user_id: "user-9", author_name: "Priya Shah" },
+        { session_id: SESSION, workspace_id: WS, seq: 2, kind: "assistant_text", payload: { text: "On it" }, created_at: "t2" },
+      ],
+      inputs: [{ id: "w", author_user_id: "user-1", author_name: "Maya", kind: "message", text: "hi", state: "queued", reason: null, created_at: "t3", updated_at: "t3", mine: true }],
+    });
+  });
+
+  it("returns the senders of consumed messages with their current names", async () => {
+    tables.users.push({ id: "user-9", display_name: "Priya Shah", email: "priya@example.test" });
+    tables.session_inputs = [
+      { session_id: SESSION, workspace_id: WS, kind: "message", state: "consumed", consumed_seq: 4, author_user_id: "user-1" },
+      { session_id: SESSION, workspace_id: WS, kind: "message", state: "consumed", consumed_seq: 1, author_user_id: "user-9" },
+      { session_id: SESSION, workspace_id: WS, kind: "message", state: "queued", payload: { text: "later" }, created_at: "t", updated_at: "t", author_user_id: "user-9", author_name: "priya@example.test" },
+      { session_id: SESSION, workspace_id: WS, kind: "stop", state: "consumed", consumed_seq: 5, author_user_id: "user-1" },
+    ];
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const body = (await (await routes.EVENTS(req)).json()) as { authors: Row[] };
+    expect(body.authors).toEqual([
+      { seq: 4, author_user_id: "user-1", author_name: "Maya" },
+      { seq: 1, author_user_id: "user-9", author_name: "Priya Shah" },
+    ]);
+  });
+
+  it("refuses events to a caller the workspace does not admit", async () => {
+    accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+    const req = Object.assign(new Request("http://localhost/x?after=0"), { params: { id: WS, sessionId: SESSION } }) as never;
+    const res = await routes.EVENTS(req);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
   });
 
   it("stores the harness and model of a new session and rejects unknown ones", async () => {
