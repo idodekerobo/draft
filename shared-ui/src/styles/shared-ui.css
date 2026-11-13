@@ -761,7 +761,7 @@
 
 .ui-stream { list-style: none; margin: 0; padding: 0; }
 .ui-stream__item { padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
-.ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--thinking { padding: var(--space-2) 0; }
+.ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--agent_message, .ui-stream__item--thinking { padding: var(--space-2) 0; }
 .ui-stream__nested { list-style: none; margin: var(--space-2) 0 0 var(--space-1); padding: 0 0 0 var(--space-4); border-left: 1px solid var(--color-border-strong); }
 .ui-stream__nested > .ui-stream__item:last-child { border-bottom: 0; }
 .ui-stream__who { color: var(--color-text-secondary); font-size: var(--font-size-small); }
@@ -771,6 +771,7 @@
 .ui-stream__details > summary { cursor: pointer; color: var(--color-text-secondary); font-size: var(--font-size-secondary); list-style-position: inside; }
 .ui-stream__tool { font-family: var(--font-mono); color: var(--color-text-primary); margin-right: var(--space-2); }
 .ui-stream__summary { font-family: var(--font-mono); font-size: var(--font-size-small); overflow-wrap: anywhere; }
+.ui-stream__agent-body { margin-top: var(--space-2); padding-left: var(--space-3); border-left: 1px solid var(--color-border); }
 .ui-stream__summary--title { font-weight: 600; color: var(--color-text-primary); }
 .ui-stream__code { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 320px; overflow: auto; background: var(--color-bg-surface); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--font-size-small); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ui-stream__code--error { color: var(--color-status-red); }
@@ -807,6 +808,12 @@
 .ui-session__notice { margin: 0; padding: var(--space-2) clamp(16px, 4vw, 40px); }
 .ui-session__scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: var(--space-5) clamp(16px, 4vw, 40px); }
 .ui-session__column { width: 100%; max-width: 880px; margin: 0 auto; }
+.ui-team { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-2); padding: 0; list-style: none; }
+.ui-team__chip { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 28px; padding: 0 10px; border: 1px solid var(--color-border-strong); border-radius: 8px; background: transparent; color: var(--color-text-primary); font: inherit; font-size: var(--font-size-small); cursor: pointer; touch-action: manipulation; transition: background-color 120ms var(--motion-ease), transform 120ms var(--motion-ease); }
+.ui-team__chip:active { transform: scale(0.98); }
+.ui-team__name { font-family: var(--font-mono); }
+@media (hover: hover) and (pointer: fine) { .ui-team__chip:hover { background: var(--color-bg-hover); } }
+@media (prefers-reduced-motion: reduce) { .ui-team__chip { transition: none; } .ui-team__chip:active { transform: none; } }
 .ui-session__footer { padding: 0 clamp(16px, 4vw, 40px) var(--space-4); }
 .ui-session__jump { position: absolute; right: clamp(16px, 4vw, 40px); bottom: 150px; width: 36px; min-height: 36px; padding: 0; border-radius: 50%; background: var(--color-bg-elevated); touch-action: manipulation; }
 .ui-session__menu { position: relative; flex: none; }
@@ -817,7 +824,9 @@
 @media (hover: hover) and (pointer: fine) { .ui-session__menu-item:hover { background: var(--color-bg-hover); } }
 
 .ui-stream { display: flex; flex-direction: column; gap: var(--space-4); }
-.ui-stream__item, .ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--thinking { padding: 0; border-bottom: 0; }
+.ui-stream__item, .ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--agent_message, .ui-stream__item--thinking { padding: 0; border-bottom: 0; }
+/* Agent rows get room on all sides, so the highlight does not hug the text. Margin keeps the text aligned with other rows. */
+.ui-stream__item--agent, .ui-stream__item--agent_message { padding: var(--space-3); margin-inline: calc(var(--space-3) * -1); border-radius: var(--radius-md); }
 .ui-stream__item--human { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .ui-stream__item--theirs { align-items: flex-start; }
 .ui-stream__pending-note { font-size: var(--font-size-secondary); }

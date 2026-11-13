@@ -32,6 +32,8 @@ interface LiveJsonlLine {
   isSidechain?: boolean;
   isMeta?: boolean;
   isCompactSummary?: boolean;
+  /** Set to `{ kind: "human" }` on a line a person typed. */
+  origin?: { kind?: string } | null;
   message?: { role?: string; content?: string | ContentBlock[] };
   attachment?: { type?: string; prompt?: unknown };
 }
@@ -47,7 +49,50 @@ const LOCAL_COMMAND_OUTPUT = /^<local-command-(stdout|stderr)>([\s\S]*?)<\/local
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
+// Claude Code writes a message from another agent in a team as a user line with this wrapper.
+const TEAMMATE_LINE = /^(?:Another Claude session sent a message:\s*)?<teammate-message[\s>]/;
+const TEAMMATE_BLOCK = /<teammate-message\s+([^>]*)>([\s\S]*?)<\/teammate-message>/g;
+const ATTRIBUTE = /([\w-]+)="([^"]*)"/g;
+
 const SUBAGENT_FILE = /^subagents\/agent-(.+)\.jsonl$/;
+
+function attributesOf(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [, key, value] of raw.matchAll(ATTRIBUTE)) out[key!] = value!;
+  return out;
+}
+
+/**
+ * Reads the messages another agent sent, one per wrapper block. An idle notice carries JSON, whose
+ * `result` is what the agent reports. Any other body is shown as written.
+ */
+function parseAgentMessages(text: string): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const [, rawAttributes, rawBody] of text.matchAll(TEAMMATE_BLOCK)) {
+    const attributes = attributesOf(rawAttributes!);
+    const from = attributes.teammate_id;
+    if (!from) continue;
+    let type: "idle" | "message" = "message";
+    let body = rawBody!.trim();
+    try {
+      const json = JSON.parse(body) as { type?: unknown; result?: unknown; idleReason?: unknown };
+      if (json && json.type === "idle_notification") {
+        type = "idle";
+        body = typeof json.result === "string" ? json.result.trim() : "";
+      }
+    } catch {
+      // Plain text body.
+    }
+    out.push({
+      from,
+      type,
+      ...(attributes.color ? { color: attributes.color } : {}),
+      ...(attributes.summary ? { summary: attributes.summary } : {}),
+      text: clip(body, TEXT_MAX_CHARS).text,
+    });
+  }
+  return out;
+}
 
 /** The agent id for a sub-agent transcript file, or null for the root file. */
 export function agentIdFromFile(file: string): string | null {
@@ -103,7 +148,13 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
     if (typeof content === "string") {
       const text = stripPasteWrapper(content.trim());
       const output = LOCAL_COMMAND_OUTPUT.exec(text);
-      if (output) {
+      const agentMessages = parsed.origin?.kind !== "human" && TEAMMATE_LINE.test(text) ? parseAgentMessages(text) : [];
+      if (agentMessages.length > 0) {
+        // `text` is a plain line for clients that do not know the agent message.
+        for (const agent_message of agentMessages) {
+          out.push({ kind: "session_note", payload: { ...common, text: `Message from ${agent_message.from}`, agent_message } });
+        }
+      } else if (output) {
         const note = output[2]!.replace(ANSI, "").trim();
         if (note) out.push({ kind: "session_note", payload: { ...common, text: clip(note, TEXT_MAX_CHARS).text } });
       } else if (INTERRUPT_MARKER.test(text)) {

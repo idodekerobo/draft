@@ -167,6 +167,25 @@ describe("SessionView", () => {
     await waitFor(() => expect(box.value).toBe("first\n\nsecond\n\ntyped"));
   });
 
+  it("shows a chip for each team agent above the message box, opens its block on click, and hides the chips once the session ended", async () => {
+    const events: LiveSessionEvent[] = [
+      { seq: 1, source_id: "a", kind: "tool_use", payload: { tool_use_id: "t1", name: "Agent", input: { name: "cli-routines", description: "Rewrite CLI", prompt: "go" } }, created_at: "" },
+      { seq: 2, source_id: "b", kind: "tool_result", payload: { tool_use_id: "t1", content: "Spawned.\nagent_id: a-1" }, created_at: "" },
+      { seq: 3, source_id: "c", kind: "assistant_text", payload: { text: "On it", agent_id: "a-1" }, created_at: "" },
+    ];
+    const fetchEvents = (s: LiveSession) => async () => ({ viewer, session: s, events, inputs: [] });
+    const { container, unmount } = render(<SessionView api={{ ...api, fetchEvents: fetchEvents(session) }} sessionId="s1" />);
+    const chip = await screen.findByRole("button", { name: /@cli-routines/ });
+    expect(chip.textContent).toContain("working");
+    expect(container.querySelector(".ui-session__footer .ui-team")).not.toBeNull();
+    fireEvent.click(chip);
+    expect(container.querySelector<HTMLDetailsElement>("#m-1 > details")?.hasAttribute("open")).toBe(true);
+    unmount();
+    render(<SessionView api={{ ...api, fetchEvents: fetchEvents({ ...session, status: "ended" }) }} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: /@cli-routines/ })).toBeNull();
+  });
+
   it("shows no Stop for an ended session", async () => {
     const ended = { ...session, status: "ended" as const };
     render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: ended, events: [], inputs: [] }) }} sessionId="s1" />);

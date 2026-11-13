@@ -137,6 +137,38 @@ describe("parseLiveLine: notes and skips", () => {
   });
 });
 
+describe("parseLiveLine: messages from other agents", () => {
+  const idle = JSON.stringify({ type: "idle_notification", from: "test-updater", idleReason: "available", result: "Core tests now pass." });
+  const wrapped = `Another Claude session sent a message:\n<teammate-message teammate_id="test-updater" color="blue">\n${idle}\n</teammate-message>\n\nThis came from another Claude session.`;
+
+  it("shows an idle notice as a note about an agent, not as something a person typed", () => {
+    expect(parse(user(wrapped))).toEqual([
+      {
+        sourceId: "u-1",
+        kind: "session_note",
+        payload: {
+          timestamp: "2026-10-26T20:00:00.000Z",
+          text: "Message from test-updater",
+          agent_message: { from: "test-updater", type: "idle", color: "blue", text: "Core tests now pass." },
+        },
+      },
+    ]);
+  });
+
+  it("keeps a plain message and its summary, one note per block", () => {
+    const text = '<teammate-message teammate_id="a" summary="Need a call">Which is right?</teammate-message>\n<teammate-message teammate_id="b">Done</teammate-message>';
+    const notes = parse(user(text), 0, "subagents/agent-x.jsonl");
+    expect(notes.map((n) => n.sourceId)).toEqual(["u-1", "u-1#1"]);
+    expect(notes[0]!.payload).toMatchObject({ agent_id: "x", agent_message: { from: "a", type: "message", summary: "Need a call", text: "Which is right?" } });
+    expect(notes[1]!.payload).toMatchObject({ agent_message: { from: "b", text: "Done" } });
+  });
+
+  it("never treats a line a person typed as an agent message", () => {
+    expect(parse(user(wrapped, { origin: { kind: "human" } }))[0]).toMatchObject({ kind: "user_message" });
+    expect(parse(user("[Idode via Draft #3eb2c942] hello"))[0]).toMatchObject({ kind: "user_message" });
+  });
+});
+
 describe("parseLiveLine: source ids", () => {
   it("uses the native uuid, else file and offset", () => {
     expect(parse(user("hi"), 7)[0]!.sourceId).toBe("u-1");

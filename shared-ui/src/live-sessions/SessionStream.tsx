@@ -5,7 +5,7 @@ import { MessageActions } from "./MessageActions";
 import { messageDomId } from "./share-links";
 import { isPromptBlock } from "draft-core/live-sessions";
 import { inputStatusLine, isBlocked } from "./input-status";
-import { approvalOutcome, isMine, type StreamItem } from "./stream-items";
+import { approvalOutcome, isMine, oneLine, type StreamItem } from "./stream-items";
 
 const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.type === "live" ? `live-${item.messageId}` : item.seq);
 
@@ -96,6 +96,21 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         return <p className="ui-stream__note ui-stream__note--interrupted">{mine ? "You interrupted" : `Interrupted by ${item.interruptedBy.name}`}</p>;
       }
       return <p className="ui-stream__note">{item.text}</p>;
+    case "agent_message": {
+      const preview = oneLine(item.text);
+      return (
+        <details className="ui-stream__details">
+          <summary>
+            <span className="ui-stream__tool">Agent</span>
+            <span className="ui-stream__summary">
+              @{item.from} {item.kind === "idle" ? "finished" : (item.summary ?? "sent a message")}
+              {preview && <span className="ui-muted"> · {preview}</span>}
+            </span>
+          </summary>
+          {item.text ? <div className="ui-prose ui-stream__agent-body" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} /> : <p className="ui-stream__text ui-muted">No details.</p>}
+        </details>
+      );
+    }
     case "approval":
       if (item.kind === "question" && item.questions.length > 0) {
         const answers = item.resolved?.answers ?? {};
@@ -132,11 +147,13 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
       }
       if (item.children) {
         const title = typeof (item.input as { description?: unknown } | null)?.description === "string" ? (item.input as { description: string }).description : "";
+        const agentName = typeof (item.input as { name?: unknown } | null)?.name === "string" ? (item.input as { name: string }).name : "";
         const steps = item.children.filter((child) => child.type === "tool").length;
         return (
           <details className="ui-stream__details">
             <summary>
               <span className="ui-stream__tool">{item.name}</span>
+              {agentName && <span className="ui-stream__summary">@{agentName} </span>}
               {title && <span className="ui-stream__summary ui-stream__summary--title">{title}</span>}
               {item.result === null && <span className="ui-muted"> · running</span>}
               {item.result?.isError && <span className="ui-error"> · failed</span>}
@@ -223,7 +240,7 @@ export function SessionStream({
           <li
             key={keyOf(item)}
             id={item.type === "pending" || item.type === "live" ? undefined : messageDomId(item.seq)}
-            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "tool" && item.children ? " ui-stream__item--agent" : ""}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
           >
             <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} onDismissPrompt={onDismissPrompt} />
           </li>
