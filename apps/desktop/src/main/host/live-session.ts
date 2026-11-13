@@ -35,7 +35,7 @@ class SessionRunner {
   private stepping = false;
   private wakePending = false;
   private stopSignals: (() => void) | null = null;
-  private readonly inputWake = new InputWake();
+  private readonly inputWake = new InputWake(undefined, undefined, () => realtime.connected());
   private finished = false;
   private readonly base: string;
 
