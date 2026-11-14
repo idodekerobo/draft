@@ -111,7 +111,7 @@ export interface LiveSessionEventPayload {
   answers?: Record<string, AnswerValue>;
   message?: string;
   /** session_note: a message from another agent in the session's team. Never a person. */
-  agent_message?: { from: string; type: "idle" | "message"; color?: string; summary?: string; text: string };
+  agent_message?: { from: string; type: "idle" | "message" | "handback"; color?: string; summary?: string; text: string };
   /** session_note: who pressed Stop on a running turn. */
   interrupted_by?: { id: string; name: string };
 }

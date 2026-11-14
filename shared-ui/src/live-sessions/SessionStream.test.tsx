@@ -43,6 +43,14 @@ describe("SessionStream", () => {
     expect(container.querySelector(".ui-stream__agent-body strong")?.textContent).toBe("pass");
   });
 
+  it("labels a sub-agent's final report as reported back", () => {
+    const { container } = render(
+      <Stream events={[event("session_note", { text: "Message from general-purpose", agent_message: { from: "general-purpose", type: "handback", text: "Report" } })]} />,
+    );
+    expect(container.querySelector(".ui-stream__bubble")).toBeNull();
+    expect(container.querySelector(".ui-stream__item--agent_message summary")!.textContent).toContain("@general-purpose reported back");
+  });
+
   it("names a team agent in its block header", () => {
     const { container } = render(
       <Stream

@@ -32,10 +32,19 @@ interface LiveJsonlLine {
   isSidechain?: boolean;
   isMeta?: boolean;
   isCompactSummary?: boolean;
-  /** Set to `{ kind: "human" }` on a line a person typed. */
-  origin?: { kind?: string } | null;
+  origin?: LineOrigin | null;
   message?: { role?: string; content?: string | ContentBlock[] };
-  attachment?: { type?: string; prompt?: unknown };
+  attachment?: { type?: string; prompt?: unknown; origin?: LineOrigin | null };
+}
+
+/** `human` marks a line a person typed. `peer` marks a message from another agent. */
+interface LineOrigin {
+  kind?: string;
+  from?: string;
+  name?: string;
+  body?: string;
+  handback?: boolean;
+  handbackReportText?: string;
 }
 
 const TEXT_MAX_CHARS = 100_000;
@@ -49,10 +58,13 @@ const LOCAL_COMMAND_OUTPUT = /^<local-command-(stdout|stderr)>([\s\S]*?)<\/local
 // eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
 
-// Claude Code writes a message from another agent in a team as a user line with this wrapper.
-const TEAMMATE_LINE = /^(?:Another Claude session sent a message:\s*)?<teammate-message[\s>]/;
-const TEAMMATE_BLOCK = /<teammate-message\s+([^>]*)>([\s\S]*?)<\/teammate-message>/g;
+// A message from another agent is wrapped in one of these tags. A team member's message is a
+// `teammate-message`. A sub-agent's final report is an `agent-message`. Older versions carry no origin.
+const AGENT_LINE = /^(?:Another Claude session sent a message:\s*)?<(?:teammate|agent)-message[\s>]/;
+const AGENT_BLOCK = /<(teammate|agent)-message\s+([^>]*)>([\s\S]*?)<\/\1-message>/g;
 const ATTRIBUTE = /([\w-]+)="([^"]*)"/g;
+const HANDBACK_MARKER = "[Subagent hand-back]";
+const HANDBACK_REPORT_START = "The report follows:\n";
 
 const SUBAGENT_FILE = /^subagents\/agent-(.+)\.jsonl$/;
 
@@ -68,12 +80,16 @@ function attributesOf(raw: string): Record<string, string> {
  */
 function parseAgentMessages(text: string): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
-  for (const [, rawAttributes, rawBody] of text.matchAll(TEAMMATE_BLOCK)) {
+  for (const [, , rawAttributes, rawBody] of text.matchAll(AGENT_BLOCK)) {
     const attributes = attributesOf(rawAttributes!);
-    const from = attributes.teammate_id;
+    const from = attributes.teammate_id ?? attributes.from;
     if (!from) continue;
-    let type: "idle" | "message" = "message";
+    let type: "idle" | "message" | "handback" = "message";
     let body = rawBody!.trim();
+    if (body.startsWith(HANDBACK_MARKER)) {
+      type = "handback";
+      body = unindentReport(body);
+    }
     try {
       const json = JSON.parse(body) as { type?: unknown; result?: unknown; idleReason?: unknown };
       if (json && json.type === "idle_notification") {
@@ -92,6 +108,40 @@ function parseAgentMessages(text: string): Array<Record<string, unknown>> {
     });
   }
   return out;
+}
+
+/** The harness frames a hand-back and indents each line of the report. Returns the report alone. */
+function unindentReport(body: string): string {
+  const start = body.indexOf(HANDBACK_REPORT_START);
+  const report = start === -1 ? body : body.slice(start + HANDBACK_REPORT_START.length);
+  return report.replace(/^ {2}/gm, "").trim();
+}
+
+/**
+ * The agent messages a line carries, or none. A structured `peer` origin is read first. Without one,
+ * the wrapper tag is read. A line a person typed never counts.
+ */
+function agentMessagesOf(text: string, origin: LineOrigin | null | undefined): Array<Record<string, unknown>> {
+  if (origin?.kind === "human") return [];
+  if (origin?.kind === "peer") {
+    const from = origin.name || origin.from;
+    const body = origin.handback ? origin.handbackReportText : origin.body;
+    if (from && typeof body === "string") {
+      return [{ from, type: origin.handback ? "handback" : "message", text: clip(body.trim(), TEXT_MAX_CHARS).text }];
+    }
+  }
+  return AGENT_LINE.test(text) ? parseAgentMessages(text) : [];
+}
+
+function pushAgentNotes(
+  out: Array<Pick<ParsedLiveEvent, "kind" | "payload">>,
+  common: Record<string, unknown>,
+  agentMessages: Array<Record<string, unknown>>,
+): void {
+  // `text` is a plain line for clients that do not know the agent message.
+  for (const agent_message of agentMessages) {
+    out.push({ kind: "session_note", payload: { ...common, text: `Message from ${agent_message.from}`, agent_message } });
+  }
 }
 
 /** The agent id for a sub-agent transcript file, or null for the root file. */
@@ -142,18 +192,17 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
   } else if (parsed.type === "attachment" && parsed.attachment?.type === "queued_command" && typeof parsed.attachment.prompt === "string") {
     // A message sent while Claude was mid-turn is logged as this attachment, never as a user line.
     const text = stripPasteWrapper(parsed.attachment.prompt.trim());
-    if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
+    const agentMessages = agentMessagesOf(text, parsed.attachment.origin);
+    if (agentMessages.length > 0) pushAgentNotes(out, common, agentMessages);
+    else if (text && !HARNESS_WRAPPER.test(text)) out.push({ kind: "user_message", payload: { ...common, ...clip(text, TEXT_MAX_CHARS) } });
   } else if (parsed.type === "user" && parsed.message?.role === "user") {
     const content = parsed.message.content;
     if (typeof content === "string") {
       const text = stripPasteWrapper(content.trim());
       const output = LOCAL_COMMAND_OUTPUT.exec(text);
-      const agentMessages = parsed.origin?.kind !== "human" && TEAMMATE_LINE.test(text) ? parseAgentMessages(text) : [];
+      const agentMessages = agentMessagesOf(text, parsed.origin);
       if (agentMessages.length > 0) {
-        // `text` is a plain line for clients that do not know the agent message.
-        for (const agent_message of agentMessages) {
-          out.push({ kind: "session_note", payload: { ...common, text: `Message from ${agent_message.from}`, agent_message } });
-        }
+        pushAgentNotes(out, common, agentMessages);
       } else if (output) {
         const note = output[2]!.replace(ANSI, "").trim();
         if (note) out.push({ kind: "session_note", payload: { ...common, text: clip(note, TEXT_MAX_CHARS).text } });

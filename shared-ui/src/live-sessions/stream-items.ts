@@ -7,7 +7,7 @@ export type StreamItem =
   | { type: "thinking"; seq: number; text: string; agentId: string | null }
   | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
   /** A message from another agent in the team. People's messages are `user`. */
-  | { type: "agent_message"; seq: number; at: string; from: string; kind: "idle" | "message"; summary: string | null; text: string; agentId: string | null }
+  | { type: "agent_message"; seq: number; at: string; from: string; kind: "idle" | "message" | "handback"; summary: string | null; text: string; agentId: string | null }
   | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostOffline: boolean }
   /** Text the agent is writing now. It stands in the stream until the stored message replaces it. */
   | { type: "live"; messageId: string; text: string }
