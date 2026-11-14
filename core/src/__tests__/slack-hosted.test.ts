@@ -29,6 +29,12 @@ describe("hosted Slack manifest", () => {
     expect(String(slackManifest.display_information.description)).not.toContain("Passive");
   });
 
+  it("hears when someone mentions Draft, so a later version can answer", () => {
+    const manifest = slackManifest as unknown as { oauth_config: { scopes: { bot: string[] } }; settings: { event_subscriptions: { bot_events: string[] } } };
+    expect(manifest.oauth_config.scopes.bot).toContain("app_mentions:read");
+    expect(manifest.settings.event_subscriptions.bot_events).toContain("app_mention");
+  });
+
   it("builds a decodable Slack URL containing the exact canonical manifest", () => {
     const result = buildSlackManifestUrl();
     expect(result.ok).toBe(true);
