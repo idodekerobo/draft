@@ -1,21 +1,27 @@
 "use client";
 
-import { DEFAULT_HARNESS_ID, type HarnessId } from "draft-core/harnesses";
+import type { HarnessId } from "draft-core/harnesses";
 import { useId, useMemo, useState, type ReactNode } from "react";
 import { AgentFields, isDisconnected, type AgentValue } from "./AgentFields";
-import { CapabilityFields, NO_CAPABILITIES, TriggerFields, capabilitiesValid, type CapabilityValue } from "./CapabilityFields";
+import { defaultAgent, rememberAgent } from "./agent-default";
+import { agentLabel } from "./agent-label";
+import { AbilityFields, RoutinePreview, capabilitiesValid, defaultCapabilities, type CapabilityValue } from "./CapabilityFields";
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
-import { formatAbsolute, isHeavyCadence, previewNextRun } from "./format";
-import { ScheduleFields, browserTimezone, presetUsesTime, timezoneOptions, type ScheduleValue } from "./schedule-fields";
-import type { CreateRoutineInput, RoutineAgentStatus } from "./types";
+import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
+import { ScheduleFields, browserTimezone, presetUsesTime, scheduleSentence, timezoneOptions, type ScheduleValue } from "./schedule-fields";
+import type { CreateRoutineInput, RoutineAgentStatus, RoutineEventName, RoutinesResponse } from "./types";
+import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
-/** Asks for what the routine does, the agent that runs it, and when. Nothing is saved until Create. */
-export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgentSetup, refreshAgents }: {
+/** Asks what the routine does, which agent runs it, when, and what it may reach. Nothing is saved until Create. */
+export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents }: {
   onClose: () => void;
   onCreate: (input: CreateRoutineInput) => Promise<void>;
   /** Whether each agent is connected for this workspace's routines, by harness id. */
   agents?: Partial<Record<string, RoutineAgentStatus>>;
+  connectedProviders?: RoutinesResponse["connectedProviders"];
+  /** Opens Connections, for a trigger or ability whose connection is missing. */
+  onConnect?: () => void;
   /** Help to connect an agent, shown while it blocks Create. Call `refresh` after a connection changes. Null for an agent with none. */
   renderAgentSetup?: (harness: HarnessId, status: RoutineAgentStatus, refresh: () => void) => ReactNode;
   /** Reads the agents' statuses again. */
@@ -23,17 +29,24 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
-  const [agent, setAgent] = useState<AgentValue>({ title: "", prompt: "", harness: DEFAULT_HARNESS_ID, model: null });
+  const [agent, setAgent] = useState<AgentValue>(() => ({ title: "", prompt: "", ...defaultAgent(agents) }));
+  const [mode, setMode] = useState<WhenMode>("schedule");
+  const [events, setEvents] = useState<RoutineEventName[]>([]);
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({ preset: "daily", time: "09:00", weekday: "mon", timezone: browserTimezone() }));
-  const [capabilities, setCapabilities] = useState<CapabilityValue>(NO_CAPABILITIES);
+  const [capabilities, setCapabilities] = useState<CapabilityValue>(() => defaultCapabilities(connectedProviders));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
+  const onSchedule = mode === "schedule";
   const usesTime = presetUsesTime(schedule.preset);
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
   const blocked = isDisconnected(agents[agent.harness]);
-  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!usesTime || schedule.time !== "") && capabilitiesValid(capabilities) && !saving && !blocked;
+  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!onSchedule || !usesTime || schedule.time !== "") && capabilitiesValid(capabilities) && !saving && !blocked;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
+
+  const when = onSchedule
+    ? [`${scheduleSentence(schedule)} (${zoneLabel(schedule.timezone)})`, `Next run ${formatAbsolute(nextRun.toISOString(), schedule.timezone)}`]
+    : events.length ? events.map(triggerPreview) : ["Runs only when someone presses Run now"];
 
   async function create() {
     setSaving(true);
@@ -44,15 +57,17 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
         prompt: agent.prompt.trim(),
         harness: agent.harness,
         model: agent.model,
+        // The schedule is saved even when it is off, so turning it on later starts from it.
         preset: schedule.preset,
         ...(usesTime ? { time: schedule.time } : {}),
         ...(schedule.preset === "weekly" ? { weekday: schedule.weekday } : {}),
         timezone: schedule.timezone,
-        ...(capabilities.events.length ? { events: capabilities.events } : {}),
+        ...(onSchedule ? {} : { onSchedule: false, ...(events.length ? { events } : {}) }),
         ...(capabilities.canNotify ? { canNotify: true } : {}),
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
         ...(capabilities.github ? { github: capabilities.github } : {}),
       });
+      rememberAgent({ harness: agent.harness, model: agent.model });
     } catch (caught) {
       setError(
         caught instanceof RoutineError
@@ -67,14 +82,11 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
     error?.field === field ? <span className="ui-routines__error" role="alert">{error.message}</span> : null;
 
   return (
-    <Dialog titleId={titleId} onClose={onClose} busy={saving}>
+    <Dialog titleId={titleId} onClose={onClose} busy={saving} wide>
       <header className="ui-dialog__header">
         <h2 id={titleId}>New routine</h2>
         <button type="button" className="ui-routines__btn" aria-label="Close new routine" disabled={saving} onClick={onClose}>Close</button>
       </header>
-      <p className="ui-dialog__description">
-        An agent runs on this schedule and reads your company brain to do what you ask. It takes only the actions you allow below.
-      </p>
 
       <form
         className="ui-routines__editor"
@@ -83,33 +95,42 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, renderAgen
           if (canCreate) void create();
         }}
       >
-        <div className="ui-routines__fields">
-          <AgentFields
-            value={agent}
-            onChange={setAgent}
-            disabled={saving}
-            autoFocus
-            agents={agents}
-            blocked={blocked}
-            renderAgentSetup={renderAgentSetup}
-            refreshAgents={refreshAgents}
-            fieldError={fieldError}
-          />
-        </div>
+        <div className="ui-routine-form">
+          <div className="ui-routine-form__edit">
+            <div className="ui-routines__fields">
+              <AgentFields
+                value={agent}
+                onChange={setAgent}
+                disabled={saving}
+                autoFocus
+                agents={agents}
+                blocked={blocked}
+                renderAgentSetup={renderAgentSetup}
+                refreshAgents={refreshAgents}
+                fieldError={fieldError}
+              />
+              <WhenFields
+                mode={mode}
+                onModeChange={setMode}
+                events={events}
+                onEventsChange={setEvents}
+                connectedProviders={connectedProviders}
+                onConnect={onConnect}
+                disabled={saving}
+                schedule={<ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />}
+              />
+              <AbilityFields value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
+            </div>
+            {onSchedule && isHeavyCadence(schedule.preset) && (
+              <p className="ui-routines__notice" role="status">Hourly runs use your agent plan every hour.</p>
+            )}
+          </div>
 
-        <ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />
-        <div className="ui-routines__fields">
-          <TriggerFields value={capabilities} onChange={setCapabilities} disabled={saving} />
-          <CapabilityFields value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} />
+          <RoutinePreview when={when} agent={agentLabel(agent)} capabilities={capabilities} />
         </div>
-
-        {isHeavyCadence(schedule.preset) && (
-          <p className="ui-routines__notice" role="status">Hourly runs use your Claude plan every hour.</p>
-        )}
-        <p className="ui-routines__note">Next run: {formatAbsolute(nextRun.toISOString(), schedule.timezone)}</p>
 
         <div className="ui-routines__actions">
-          <span className="ui-routines__secondary">Applies to your whole workspace.</span>
+          <span className="ui-routines__secondary">Anyone in your workspace can see, edit and run it.</span>
           <button type="button" className="ui-routines__btn" onClick={onClose} disabled={saving}>Cancel</button>
           <button type="submit" className="ui-routines__btn ui-routines__btn--primary" disabled={!canCreate}>
             {saving ? "Creating…" : "Create routine"}

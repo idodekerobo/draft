@@ -46,8 +46,8 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
-  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents };
+function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
+  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
@@ -62,7 +62,7 @@ function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine
     <QueryClientProvider client={client}>
       <DraftApiProvider api={api}>
         <Suspense fallback="loading">
-          <RoutinesPanel workspaceId="ws-1" onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} initialOpenId={options.initialOpenId} />
+          <RoutinesPanel workspaceId="ws-1" onReconnect={options.onReconnect} onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} initialOpenId={options.initialOpenId} />
         </Suspense>
       </DraftApiProvider>
     </QueryClientProvider>,
@@ -391,7 +391,7 @@ describe("what a routine can do", () => {
     const { updateRoutine } = setup({ routines: [agentRoutine({ agent: { ...agentRoutine().agent!, canNotify: true, postChannels: "joined" } })] });
     await ready();
     fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
-    fireEvent.click(await screen.findByRole("button", { name: /What it can do/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit access" }));
     fireEvent.click(screen.getByLabelText("Post in Slack"));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { postChannels: null }));
@@ -401,7 +401,7 @@ describe("what a routine can do", () => {
     setup();
     await ready();
     fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
-    fireEvent.click(await screen.findByRole("button", { name: /What it can do/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit access" }));
     fireEvent.click(screen.getByLabelText("Post in Slack"));
     fireEvent.click(screen.getByLabelText("Only these channels"));
     expect(await screen.findByText("Pick at least one channel.")).toBeTruthy();
@@ -414,11 +414,67 @@ describe("what a routine can do", () => {
     const { updateRoutine } = setup();
     await ready();
     fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
-    fireEvent.click(await screen.findByRole("button", { name: /What it can do/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit access" }));
     fireEvent.click(screen.getByLabelText("Work in GitHub repos"));
     fireEvent.click(screen.getByLabelText("Push branches and open pull requests"));
     fireEvent.click(await screen.findByLabelText("acme/app"));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { github: { repos: ["acme/app"], access: "write" } }));
+  });
+});
+
+describe("when a routine runs", () => {
+  afterEach(() => window.localStorage.clear());
+
+  async function openNew(options: Parameters<typeof setup>[0] = {}) {
+    const result = setup({ routines: [], ...options });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Meeting notes" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Send the action items." } });
+    return { ...result, dialog };
+  }
+
+  it("runs on a trigger instead of the schedule, and says so in the preview", async () => {
+    const { createRoutine, dialog } = await openNew({ connectedProviders: ["fireflies"] });
+    fireEvent.click(within(dialog).getByLabelText("When something happens"));
+    expect(within(dialog).getByText("Runs only when someone presses Run now")).toBeTruthy();
+    fireEvent.click(within(dialog).getByLabelText("A Fireflies meeting is summarized"));
+    expect(within(dialog).getByText("Starts after every Fireflies meeting is summarized")).toBeTruthy();
+    expect(within(dialog).queryByText(/email arrives/i)).toBeNull();
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ onSchedule: false, events: ["fireflies.meeting_summarized"] });
+  });
+
+  it("offers to connect Fireflies instead of a trigger that cannot fire", async () => {
+    const onReconnect = mock(() => {});
+    const { dialog } = await openNew({ connectedProviders: [], onReconnect });
+    fireEvent.click(within(dialog).getByLabelText("When something happens"));
+    expect(within(dialog).queryByLabelText("A Fireflies meeting is summarized")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Connect Fireflies" }));
+    expect(onReconnect).toHaveBeenCalled();
+  });
+
+  it("starts with the agent the person can use", async () => {
+    const { dialog } = await openNew({ agents: { claude: "not_connected", codex: "connected" } });
+    expect(within(dialog).getByRole("button", { name: "Agent and model" }).textContent).toMatch(/Codex/);
+  });
+
+  it("starts with what its connections allow, grouped by connection, and saves that", async () => {
+    const onReconnect = mock(() => {});
+    const { createRoutine, dialog } = await openNew({ connectedProviders: ["slack"], onReconnect });
+    expect(within(dialog).getByText("Slack · posts, messages")).toBeTruthy();
+    expect(within(dialog).getByText("GitHub not connected")).toBeTruthy();
+    expect(within(dialog).getByText("Posts in any Slack channel Draft is in")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit access" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Connect GitHub" }));
+    expect(onReconnect).toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByLabelText("Message teammates on Slack"));
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ postChannels: "joined" });
+    expect(createRoutine.mock.calls[0]![0]).not.toHaveProperty("canNotify");
   });
 });

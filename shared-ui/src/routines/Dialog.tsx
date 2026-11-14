@@ -3,8 +3,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 /** Modal built on the native dialog: focus is contained and Escape closes it. */
-export function Dialog({ titleId, onClose, busy, children }: {
+export function Dialog({ titleId, onClose, busy, wide, children }: {
   titleId: string;
+  /** Room for a form and its preview side by side. */
+  wide?: boolean;
   onClose: () => void;
   /** Blocks dismissal while a save is in flight. */
   busy?: boolean;
@@ -28,7 +30,7 @@ export function Dialog({ titleId, onClose, busy, children }: {
   return (
     <dialog
       ref={ref}
-      className="ui-dialog"
+      className={wide ? "ui-dialog ui-dialog--wide" : "ui-dialog"}
       tabIndex={-1}
       aria-labelledby={titleId}
       onCancel={(event) => {

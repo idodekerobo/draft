@@ -7,10 +7,10 @@ import { routineRunsQueryOptions } from "../query/options";
 import { formatDuration, formatWhen } from "./format";
 import type { OpenRun, Routine, RoutineRun, RoutineRunStatus } from "./types";
 
-const STATUS_LABEL: Record<RoutineRunStatus, string> = { running: "Running", completed: "Completed", failed: "Failed" };
+const STATUS_LABEL: Record<RoutineRunStatus, string> = { running: "Running", completed: "Completed", failed: "Failed", skipped: "Skipped" };
 
-export function RunStatus({ status }: { status: RoutineRunStatus }) {
-  return <span className={`ui-routines__status ui-routines__status--${status}`}>{STATUS_LABEL[status]}</span>;
+export function RunStatus({ status, reason }: { status: RoutineRunStatus; reason?: string | null }) {
+  return <span className={`ui-routines__status ui-routines__status--${status}`} title={reason ?? undefined}>{STATUS_LABEL[status]}</span>;
 }
 
 function RunsSkeleton() {
@@ -23,13 +23,14 @@ function RunsSkeleton() {
 }
 
 function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; onOpen?: (run: RoutineRun) => void }) {
-  const detail = run.endedAt ? formatDuration(run.startedAt, run.endedAt) : null;
+  const detail = run.endedAt && run.status !== "skipped" ? formatDuration(run.startedAt, run.endedAt) : null;
+  const note = run.status === "skipped" ? run.skipReason : run.result;
   const content = (
     <>
       <RunStatus status={run.status} />
       <span className="ui-routines__run-when">
         {formatWhen(run.startedAt, timezone)}
-        {run.result && <span className="ui-routines__run-result">{run.result}</span>}
+        {note && <span className="ui-routines__run-result">{note}</span>}
       </span>
       <span className="ui-routines__secondary">{detail}</span>
     </>

@@ -37,8 +37,9 @@ function recentActivity(routine: Routine) {
       <div className="ui-routines__when" data-label="Last run">
         {run ? (
           <>
-            <RunStatus status={run.status} />
+            <RunStatus status={run.status} reason={run.skipReason} />
             <div className="ui-routines__secondary">{formatWhen(run.startedAt, routine.timezone)}</div>
+            {run.status === "skipped" && run.skipReason && <div className="ui-routines__secondary ui-routines__skip-reason">{run.skipReason}</div>}
           </>
         ) : (
           <>
@@ -95,6 +96,9 @@ function nextActivity(routine: Routine, onReconnect?: () => void) {
   } else if (!routine.enabled) {
     heading = "Paused";
     detail = "No upcoming activity";
+  } else if (routine.agent?.onSchedule === false) {
+    heading = "On trigger";
+    detail = routine.agent.events?.length ? "When something happens" : "When someone presses Run now";
   } else if (!routine.nextRunAt) {
     heading = "Not scheduled";
     detail = null;
@@ -129,7 +133,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
-  const { routines, canEdit, agents } = data;
+  const { routines, canEdit, agents, connectedProviders } = data;
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
@@ -344,6 +348,8 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onDelete={open.agent ? () => onDelete(open) : undefined}
           onOpenRun={onOpenRun}
           agents={agents}
+          connectedProviders={connectedProviders}
+          onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
         />
@@ -354,6 +360,8 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onClose={() => setCreating(false)}
           onCreate={onCreate}
           agents={agents}
+          connectedProviders={connectedProviders}
+          onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
         />
