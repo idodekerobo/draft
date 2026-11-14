@@ -103,7 +103,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
           <summary>
             <span className="ui-stream__tool">Agent</span>
             <span className="ui-stream__summary">
-              @{item.from} {item.kind === "idle" ? "finished" : (item.summary ?? "sent a message")}
+              @{item.from} {item.kind === "idle" ? "finished" : item.kind === "handback" ? "reported back" : (item.summary ?? "sent a message")}
               {preview && <span className="ui-muted"> · {preview}</span>}
             </span>
           </summary>

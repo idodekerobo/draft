@@ -163,6 +163,51 @@ describe("parseLiveLine: messages from other agents", () => {
     expect(notes[1]!.payload).toMatchObject({ agent_message: { from: "b", text: "Done" } });
   });
 
+  describe("a sub-agent's final report", () => {
+    const report = "Research report\n\n1. GITHUB\n  - nested point";
+    const framed = `<agent-message from="af7d88e9d3a006be7">\n[Subagent hand-back] The text below is the final report.\nThe report follows:\n  Research report\n  \n  1. GITHUB\n    - nested point\n</agent-message>`;
+    const origin = { kind: "peer", from: "af7d88e9d3a006be7", name: "general-purpose", handback: true, handbackReportText: report };
+    const expected = {
+      sourceId: "att-1",
+      kind: "session_note" as const,
+      payload: {
+        timestamp: "2026-11-14T23:10:53.146Z",
+        text: "Message from general-purpose",
+        agent_message: { from: "general-purpose", type: "handback", text: report },
+      },
+    };
+    const attachment = (extra: Record<string, unknown> = {}) => ({
+      type: "attachment",
+      uuid: "att-1",
+      timestamp: "2026-11-14T23:10:53.146Z",
+      attachment: { type: "queued_command", prompt: framed, commandMode: "prompt", origin, ...extra },
+    });
+
+    it("reads a mid-turn hand-back from its peer origin", () => {
+      expect(parse(attachment())).toEqual([expected]);
+    });
+
+    it("reads a hand-back written as a user line", () => {
+      expect(parse(user(`Another Claude session sent a message:\n${framed}`, { uuid: "att-1", timestamp: "2026-11-14T23:10:53.146Z", origin }))).toEqual([expected]);
+    });
+
+    it("falls back to the wrapper tag when there is no origin, and removes the frame and indent", () => {
+      const [note] = parse(attachment({ origin: undefined }));
+      expect(note!.payload).toMatchObject({ agent_message: { from: "af7d88e9d3a006be7", type: "handback", text: "Research report\n\n1. GITHUB\n  - nested point" } });
+      expect(parse(user(framed))[0]).toMatchObject({ kind: "session_note" });
+    });
+
+    it("keeps a peer message that is not a hand-back", () => {
+      const peer = { kind: "peer", from: "a1", name: "reviewer", body: "Need a call" };
+      expect(parse(attachment({ origin: peer }))[0]!.payload).toMatchObject({ agent_message: { from: "reviewer", type: "message", text: "Need a call" } });
+    });
+
+    it("never shows a person's quote of the tag as an agent message", () => {
+      expect(parse(attachment({ origin: { kind: "human" } }))[0]).toMatchObject({ kind: "user_message" });
+      expect(parse(user(framed, { origin: { kind: "human" } }))[0]).toMatchObject({ kind: "user_message" });
+    });
+  });
+
   it("never treats a line a person typed as an agent message", () => {
     expect(parse(user(wrapped, { origin: { kind: "human" } }))[0]).toMatchObject({ kind: "user_message" });
     expect(parse(user("[Idode via Draft #3eb2c942] hello"))[0]).toMatchObject({ kind: "user_message" });
