@@ -250,7 +250,7 @@ describe("dispatchAgentRoutine on Codex", () => {
     const db = newDb();
     await dispatch(db, rejecting(new RoutineLeaseBusyError()), "2026-10-27T09:00:00.000Z", codexTask);
 
-    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed", harness: "codex" });
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "skipped", harness: "codex" });
     expect(db.tables.errors).toHaveLength(0);
     const events = db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_events as Array<{ payload: { text: string } }>;
     expect(events[0]!.payload.text).toBe("Another Codex routine was still running, so this run was skipped.");

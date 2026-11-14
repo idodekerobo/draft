@@ -257,7 +257,7 @@ describe("schedules routes", () => {
 
     it("returns an empty list for a workspace with no rows", async () => {
       tables.scheduled_tasks = [];
-      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true });
+      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true, connectedProviders: ["slack"] });
     });
 
     it("passes through an access denial", async () => {

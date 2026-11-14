@@ -43,13 +43,14 @@ describe("buildRoutineRunSpec", () => {
 });
 
 describe("renderRoutinePrompt", () => {
-  const context = { title: "Digest", schedule: "Daily", timezone: "UTC", startedAt: new Date("2026-11-09T09:00:00Z") };
+  const context = { title: "Digest", setup: "Daily", timezone: "UTC", startedAt: new Date("2026-11-09T09:00:00Z"), startedBy: { type: "schedule" as const } };
 
   it("mentions Draft's tool server only when the run has one", () => {
     const withTools = renderRoutinePrompt("Go", { ...context, hasDraftTools: true });
     expect(withTools).toContain('"draft" tool server');
     expect(withTools).toContain("context.write");
     expect(withTools).toContain("baseSha");
+    expect(withTools).toContain("call context.read");
     expect(renderRoutinePrompt("Go", context)).not.toContain("context.write");
     expect(renderRoutinePrompt("Go", context)).not.toContain("tool server");
   });

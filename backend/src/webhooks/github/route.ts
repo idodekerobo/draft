@@ -1,3 +1,5 @@
+import { githubPullRequestFacts, githubPushFacts } from "../../routines/event-facts";
+import { fireRoutineEvent } from "../../routines/fire-event";
 import { authenticateGithubWebhookRequest, GithubWebhookAuthError } from "./request-auth";
 import {
   ingestGithubPullRequestEvent,
@@ -30,12 +32,23 @@ export async function POST(request: Request): Promise<Response> {
     sourceConnectionId = connection.id;
 
     switch (eventType) {
-      case "pull_request":
-        await ingestGithubPullRequestEvent(connection, payload as unknown as GithubPullRequestWebhookPayload);
+      case "pull_request": {
+        const pr = payload as unknown as GithubPullRequestWebhookPayload;
+        const ingested = await ingestGithubPullRequestEvent(connection, pr);
+        const name = pr.action === "opened" ? "github.pull_request_opened" : pr.action === "closed" && pr.pull_request.merged ? "github.pull_request_merged" : null;
+        if (name && "sourceItemId" in ingested) {
+          fireRoutineEvent({ workspaceId: connection.workspace_id, name, eventId: `${pr.repository.full_name}#${pr.pull_request.number}`, sourceItemId: ingested.sourceItemId, facts: githubPullRequestFacts(pr) });
+        }
         break;
-      case "push":
-        await ingestGithubPushEvent(connection, payload as unknown as GithubPushWebhookPayload);
+      }
+      case "push": {
+        const push = payload as unknown as GithubPushWebhookPayload;
+        const ingested = await ingestGithubPushEvent(connection, push);
+        // One run per push, read from its newest commit.
+        const head = "sourceItemIds" in ingested ? ingested.sourceItemIds.at(-1) : undefined;
+        if (head) fireRoutineEvent({ workspaceId: connection.workspace_id, name: "github.push", eventId: `${push.repository.full_name}@${push.commits.at(-1)!.id}`, sourceItemId: head, facts: githubPushFacts(push) });
         break;
+      }
       case "installation":
         await handleInstallationEvent(payload as unknown as GithubInstallationWebhookPayload);
         break;

@@ -9,7 +9,8 @@ import { usableMcpConnections } from "../metaharness/tools/remote-mcp";
 import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
-import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId } from "./config";
+import { describeRoutineTriggers } from "draft-core/routines";
+import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId, type AgentRoutineConfig } from "./config";
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
@@ -29,9 +30,11 @@ export interface DispatchAgentRoutineOptions {
   event?: RoutineEventPayload;
   /** Set when a person pressed Run now. It gets its own idempotency key, so it never collides with a schedule. */
   manual?: { requestedBy: string };
+  /** Records the occurrence as skipped instead of running it. The note says why, to anyone who can see the routine. */
+  skip?: { code: string; note: string };
 }
 
-export type RoutineDispatchOutcome = { status: "started"; sessionId: string } | { status: "already_running" | "already_dispatched" | "failed"; sessionId?: string; code?: string };
+export type RoutineDispatchOutcome = { status: "started" | "skipped"; sessionId: string } | { status: "already_running" | "already_dispatched" | "failed"; sessionId?: string; code?: string };
 
 /**
  * The connections a routine chose that its owner may use now. One that was revoked, or that belongs to
@@ -57,6 +60,15 @@ async function usableMcpServersFor(client: SupabaseClient, task: ScheduledTaskRo
   return chosen.filter((server) => usableIds.has(server.connectionId));
 }
 
+/** How the routine is set to run, in words, for example "Daily at 9:00 AM (UTC), and when a Linear issue is created". */
+export function describeRoutineSetup(task: ScheduledTaskRow, routine: Pick<AgentRoutineConfig, "onSchedule" | "events">): string {
+  const parts: string[] = [];
+  if (routine.onSchedule !== false) parts.push(`${describeTaskSchedule(task)} (${task.timezone})`);
+  if (routine.events?.length) parts.push(describeRoutineTriggers(routine.events));
+  if (parts.length === 0) return "Only when someone presses Run now";
+  return parts.map((part, index) => (index === 0 ? part : part[0]!.toLowerCase() + part.slice(1))).join(", and ");
+}
+
 /**
  * Starts one run of a routine. It does nothing when the previous run is still going
  * (a missed occurrence is not caught up) or when this occurrence already has a session.
@@ -64,7 +76,7 @@ async function usableMcpServersFor(client: SupabaseClient, task: ScheduledTaskRo
  * the next scheduled occurrence is the retry.
  */
 export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions): Promise<RoutineDispatchOutcome> {
-  const { task, occurrenceAt, config, client, event, manual } = options;
+  const { task, occurrenceAt, config, client, event, manual, skip } = options;
   const idempotencyKey = event ? eventIdempotencyKey(task.id, event) : manual ? `${task.id}:manual:${randomUUID()}` : `${task.id}:${occurrenceAt}`;
   const routine = parseAgentRoutineConfig(task.config_json);
   if (!routine) throw new Error(`agent_routine task ${task.id} has an invalid config`);
@@ -72,7 +84,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
 
   // A scheduled occurrence or a Run now is skipped while the last one still runs. An event is its own occurrence: two meetings
   // that end close together each get a run, and the idempotency key stops the same meeting from running twice.
-  if (!event) {
+  if (!event && !skip) {
     const { data: running, error: runningError } = await client
       .from("sessions")
       .select("id")
@@ -108,6 +120,10 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
     throw insertError;
   }
   const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
+  if (skip) {
+    await failRoutineSession(client, session, { ...skip, message: `Routine ${task.id} was skipped`, silent: true });
+    return { status: "skipped", sessionId };
+  }
 
   try {
     const contextVersionId = await resolveBaseContextVersionId(client, task.workspace_id);
@@ -131,8 +147,8 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       run,
       workspaceId: task.workspace_id,
       routine,
-      schedule: { description: event ? event.description : describeTaskSchedule(task), timezone: task.timezone },
-      ...(event ? { event } : {}),
+      setup: { description: describeRoutineSetup(task, routine), timezone: task.timezone },
+      ...(event ? { event } : manual ? { manual: true } : {}),
       config,
       client,
     });

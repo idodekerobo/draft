@@ -4,7 +4,7 @@ import type { RoutineEditability } from "../scheduling/routine-registry";
 import { RoutinePatch } from "draft-core/routines";
 
 const SCHEDULE_FIELDS = ["preset", "time", "weekday", "timezone"] as const;
-const AGENT_FIELDS = ["title", "prompt", "harness", "model", "events", "canNotify", "postChannels", "github"] as const;
+const AGENT_FIELDS = ["title", "prompt", "harness", "model", "events", "onSchedule", "canNotify", "postChannels", "github"] as const;
 /** Sending null for one of these turns that ability off. */
 const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github"]);
 const ALLOWED_FIELDS = new Set<string>(["enabled", ...SCHEDULE_FIELDS, ...AGENT_FIELDS]);

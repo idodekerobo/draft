@@ -13,7 +13,7 @@ export interface RoutineFailure {
   message: string;
   detail?: Record<string, unknown>;
   error?: unknown;
-  /** True when the run was left out on purpose, so no error row is written. */
+  /** True when the run was left out on purpose: the session ends as skipped and no error row is written. */
   silent?: boolean;
 }
 
@@ -21,7 +21,7 @@ export interface RoutineFailure {
 export async function endRoutineSession(
   client: SupabaseClient,
   session: Pick<RoutineSessionRef, "id" | "workspace_id">,
-  endReason: "completed" | "failed",
+  endReason: "completed" | "failed" | "skipped",
   failure?: { code: string; detail?: string; cancelled?: boolean },
 ): Promise<boolean> {
   const { data, error } = await client
@@ -39,7 +39,7 @@ export async function endRoutineSession(
     const outcome: AgentRunOutcome =
       endReason === "completed"
         ? { status: "succeeded" }
-        : { status: failure?.cancelled ? "cancelled" : "failed", failureCode: failure?.code, failureDetail: failure?.detail };
+        : { status: endReason === "skipped" || failure?.cancelled ? "cancelled" : "failed", failureCode: failure?.code, failureDetail: failure?.detail };
     await finishAgentRunForSession(client, session.id, outcome);
   }
   return !!ended;
@@ -66,7 +66,7 @@ export async function failRoutineSession(
     })
     .then(() => undefined, () => undefined);
 
-  if (!(await endRoutineSession(client, session, "failed", { code: failure.code, detail: failure.message, cancelled: failure.silent }))) return false;
+  if (!(await endRoutineSession(client, session, failure.silent ? "skipped" : "failed", { code: failure.code, detail: failure.message, cancelled: failure.silent }))) return false;
   if (failure.silent) return true;
 
   await recordError({

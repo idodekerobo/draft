@@ -107,6 +107,7 @@ describe("POST /webhooks/github", () => {
     mock.module("../../../ingestion/github/normalize", () => ({
       ingestGithubPullRequestEvent: async (...args: unknown[]) => {
         called = args;
+        return { skipped: true };
       },
       ingestGithubPushEvent: async () => {
         throw new Error("should not be called");
@@ -133,6 +134,7 @@ describe("POST /webhooks/github", () => {
       },
       ingestGithubPushEvent: async (...args: unknown[]) => {
         called = args;
+        return { skipped: true };
       },
     }));
 
@@ -194,5 +196,28 @@ describe("POST /webhooks/github", () => {
     const text = await response.text();
     expect(text).not.toContain("db connection refused");
     expect(text).not.toContain("10.0.0.5");
+  });
+
+  it("starts the routines waiting for an opened or merged pull request, and not for an edit", async () => {
+    const connection = { id: "conn-1", workspace_id: "ws-1" };
+    const fired: unknown[] = [];
+    mock.module("../../../routines/fire-event", () => ({ fireRoutineEvent: (input: unknown) => fired.push(input) }));
+    mock.module("../../../ingestion/github/normalize", () => ({
+      ingestGithubPullRequestEvent: async () => ({ sourceItemId: "item-1" }),
+      ingestGithubPushEvent: async () => ({ sourceItemIds: [] }),
+    }));
+    const pr = (action: string, merged = false) => ({ action, pull_request: { number: 7, merged }, repository: { full_name: "acme/app" } });
+    for (const payload of [pr("opened"), pr("edited"), pr("closed", true), pr("closed")]) {
+      mock.module("../../../webhooks/github/request-auth", () => ({
+        GithubWebhookAuthError: RealGithubWebhookAuthError,
+        authenticateGithubWebhookRequest: async () => ({ eventType: "pull_request", payload, connection }),
+      }));
+      const { POST } = await import("../../../webhooks/github/route");
+      expect((await POST(bunRequest())).status).toBe(200);
+    }
+    expect(fired).toEqual([
+      { workspaceId: "ws-1", name: "github.pull_request_opened", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Pull request", value: "#7" }]) },
+      { workspaceId: "ws-1", name: "github.pull_request_merged", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Repository", value: "acme/app" }]) },
+    ]);
   });
 });

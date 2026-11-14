@@ -30,9 +30,10 @@ it("still builds a bundle for a workspace with no brain yet", () => {
 
 const promptContext = {
   title: "Weekly digest",
-  schedule: "Mondays at 9:00 AM",
+  setup: "Mondays at 9:00 AM (America/New_York)",
   timezone: "America/New_York",
   startedAt: new Date("2026-11-02T14:00:00.000Z"),
+  startedBy: { type: "schedule" as const },
 };
 
 describe("renderRoutinePrompt", () => {
@@ -45,8 +46,15 @@ describe("renderRoutinePrompt", () => {
   it("tells the agent the routine, its schedule and when this run started", () => {
     const prompt = renderRoutinePrompt("Do it.", promptContext);
     expect(prompt).toContain("Routine: Weekly digest");
-    expect(prompt).toContain("Schedule: Mondays at 9:00 AM (America/New_York)");
+    expect(prompt).toContain("This run was started by the routine's schedule: Mondays at 9:00 AM (America/New_York).");
     expect(prompt).toContain("This run started: Monday, November 2, 2026 at 9:00 AM");
+  });
+
+  it("says a Run now came from a teammate, and still names how the routine is set to run", () => {
+    const prompt = renderRoutinePrompt("Do it.", { ...promptContext, startedBy: { type: "manual" } });
+    expect(prompt).toContain("A teammate started this run by pressing Run now.");
+    expect(prompt).toContain("The routine is set to run: Mondays at 9:00 AM (America/New_York).");
+    expect(prompt).not.toContain("started by the routine's schedule");
   });
 
   it("says to read the brain as needed and names no tool, so one text fits every agent", () => {

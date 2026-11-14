@@ -1,10 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ROUTINE_TRIGGERS } from "draft-core/routines";
 import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow, SourceItemRow } from "../types/tables";
 import { parseAgentRoutineConfig, type RoutineEventName } from "./config";
 import { dispatchAgentRoutine } from "./dispatch-routine";
 import type { RoutineEventPayload } from "./event";
+import type { EventFact } from "./event-facts";
 
 const MAX_EVENT_TEXT_CHARS = 20_000;
 
@@ -15,13 +17,15 @@ export interface StartEventRoutinesInput {
   eventId: string;
   /** The source item the event produced. Its content goes to the run, if the routine's owner may see it. */
   sourceItemId: string;
+  /** Ids, links and refs from the provider's payload, so the agent can act on the event. */
+  facts?: EventFact[];
 }
 
 type EventSource = Pick<SourceItemRow, "content_markdown" | "metadata_json" | "visibility" | "owner_user_id">;
 
 /**
  * Starts every enabled routine in the workspace that asked for this event. A routine runs on behalf of its owner,
- * so it only gets the source if the owner may see it. One routine failing to start does not stop the others, and
+ * so when the owner can't see the source, the run is recorded as skipped instead. One routine failing to start does not stop the others, and
  * each runs once per event id even if the provider sends the event again.
  */
 export async function startEventRoutines(
@@ -52,22 +56,40 @@ export async function startEventRoutines(
   const source = sourceData as EventSource | null;
   if (!source?.content_markdown) return 0;
 
-  const title = typeof source.metadata_json?.title === "string" ? source.metadata_json.title : "Untitled meeting";
+  const title = typeof source.metadata_json?.title === "string" ? source.metadata_json.title : "Untitled";
+  const trigger = ROUTINE_TRIGGERS.find((entry) => entry.event === input.name);
+  const description = trigger?.description ?? input.name;
   const dispatch = deps.dispatch ?? dispatchAgentRoutine;
   const occurrenceAt = (deps.now?.() ?? new Date()).toISOString();
   let started = 0;
 
+  const providerLabel = trigger?.providerLabel ?? input.name;
+  const event: RoutineEventPayload = {
+    name: input.name,
+    eventId: input.eventId,
+    description,
+    providerLabel,
+    sourceItemId: input.sourceItemId,
+    facts: input.facts ?? [],
+    title,
+    text: source.content_markdown.slice(0, MAX_EVENT_TEXT_CHARS),
+    truncated: source.content_markdown.length > MAX_EVENT_TEXT_CHARS,
+  };
+  // Anyone who can see the routine sees this note, so it never names the private source.
+  const hidden = {
+    code: "routine_source_not_visible",
+    note: `Skipped: ${description}, but that ${providerLabel} item is private, and this routine's owner can't see it. A routine only reads what its owner can see.`,
+  };
+
   for (const task of matching) {
     // The run is on behalf of the routine's owner, so it may only read what the owner may read.
     const ownerMaySee = source.visibility === "shared" || (!!task.created_by_user_id && source.owner_user_id === task.created_by_user_id);
-    if (!ownerMaySee) continue;
-    const event: RoutineEventPayload = {
-      name: input.name,
-      eventId: input.eventId,
-      description: "a Fireflies meeting was summarized",
-      title,
-      text: source.content_markdown.slice(0, MAX_EVENT_TEXT_CHARS),
-    };
+    if (!ownerMaySee) {
+      await dispatch({ task, occurrenceAt, config, client, event, skip: hidden }).catch((cause) =>
+        recordError({ client, workspaceId: input.workspaceId, scheduledTaskId: task.id, operation: "scheduling", message: "A skipped event run could not be recorded", code: "event_routine_skip_failed", error: cause }),
+      );
+      continue;
+    }
     try {
       await dispatch({ task, occurrenceAt, config, client, event });
       started += 1;

@@ -7,7 +7,7 @@ import { recordAgentQueryLog } from "../observability/record-query-log";
 import { lacksRoutineLogin, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../schedules/permissions";
 import { parseAgentRoutineConfig } from "../routines/config";
-import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask, listRoutineRuns, listRoutines, runRoutineNow, updateRoutine } from "../schedules/service";
+import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask, listRoutineRuns, listConnectedProviders, listRoutines, runRoutineNow, updateRoutine } from "../schedules/service";
 import { validateCreate } from "../schedules/validate-create";
 import { validatePatch } from "../schedules/validate-patch";
 
@@ -21,13 +21,15 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
   if (denied) return denied;
 
   try {
-    const [routines, agents] = await Promise.all([
+    const [routines, connectedProviders, agents] = await Promise.all([
       listRoutines(req.params.id, caller.userId),
+      // A failed lookup leaves the list working. The form then treats every connection as present.
+      listConnectedProviders(req.params.id).catch(() => undefined),
       // A failed lookup leaves the list working. The page then offers every agent as ready.
       routineAgentStatuses(serviceClient, req.params.id).catch(() => undefined),
     ]);
     const canEdit = await canEditSchedules(req.params.id, caller.userId);
-    const body = JSON.stringify({ routines, canEdit, agents });
+    const body = JSON.stringify({ routines, canEdit, agents, connectedProviders });
     if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
       userId: caller.userId,
