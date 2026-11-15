@@ -74,7 +74,10 @@ describe("agent routines", () => {
     );
 
     const runs = await listRoutineRuns("ws-1", taskId);
-    expect(runs!.map((r) => [r.id, r.status])).toEqual([["c", "running"], ["b", "failed"], ["a", "completed"]]);
+    expect(runs!.runs.map((r) => [r.id, r.status])).toEqual([["c", "running"], ["b", "failed"], ["a", "completed"]]);
+    expect(runs!.nextCursor).toBeNull();
+    const one = await listRoutineRuns("ws-1", taskId, { runId: "a" });
+    expect(one!.runs.map((r) => r.id)).toEqual(["a"]);
   });
 
   it("says what started each run, read from its idempotency key", async () => {
@@ -87,7 +90,7 @@ describe("agent routines", () => {
       run("c", "2026-10-27T10:00:00.000Z", `${taskId}:github.pull_request_merged:acme/app#7`),
     );
     const runs = await listRoutineRuns("ws-1", taskId);
-    expect(runs!.map((r) => [r.id, r.startedBy])).toEqual([
+    expect(runs!.runs.map((r) => [r.id, r.startedBy])).toEqual([
       ["c", { type: "event", event: "github.pull_request_merged" }],
       ["b", { type: "run_now" }],
       ["a", { type: "schedule" }],

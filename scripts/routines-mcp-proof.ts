@@ -54,7 +54,12 @@ type Run = { id: string; status: string; startedBy: { type: string }; result: st
 // 1. Discover.
 const listed = await rpc("tools/list");
 const names = (listed.tools ?? []).map((tool) => tool.name);
-check("the MCP offers the routine and connection tools", ["routines.options", "routines.runs", "integrations.list", "integrations.connect"].every((name) => names.includes(name)), `${names.length} tools`);
+check("the MCP offers the routine, connection and activity tools", ["routines.options", "routines.runs", "integrations.list", "integrations.connect", "activity.list"].every((name) => names.includes(name)), `${names.length} tools`);
+
+const activity = await call<{ runs: Array<{ id: string }>; nextCursor: string | null }>("activity.list");
+check("activity.list returns the workspace's runs with a cursor for older ones", activity.ok && Array.isArray(activity.body.runs) && "nextCursor" in activity.body, `${activity.body.runs?.length} runs, nextCursor ${activity.body.nextCursor ?? "none"}`);
+const badCursor = await call("activity.list", { cursor: "nope" });
+check("activity.list refuses a cursor it didn't hand out", !badCursor.ok && badCursor.text.includes("invalid_cursor"));
 
 const integrations = (await call<{ integrations: Integration[] }>("integrations.list")).body.integrations ?? [];
 check("integrations.list returns every provider", integrations.length === 6, integrations.map((item) => `${item.provider}:${item.status}`).join(" "));
@@ -88,6 +93,9 @@ const taskId = created.body.routine?.id;
 if (taskId) {
   const one = await call<{ routine: Routine }>("routines.list", { taskId });
   check("routines.list { taskId } shows its full settings", one.body.routine?.agent?.prompt === base.prompt && one.body.routine.agent.onSchedule === false);
+
+  const page = await call<{ runs: Run[]; nextCursor: string | null }>("routines.runs", { taskId });
+  check("routines.runs returns a page with nextCursor", page.ok && Array.isArray(page.body.runs) && "nextCursor" in page.body);
 
   const updated = await call<{ routine: Routine }>("routines.update", { taskId, patch: { title: "Proof: MCP routine (edited)", events: [] } });
   check("routines.update answers with the change saved", updated.body.routine?.title === "Proof: MCP routine (edited)" && !(updated.body.routine.agent.events?.length), updated.ok ? "" : updated.text);

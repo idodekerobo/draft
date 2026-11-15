@@ -378,9 +378,22 @@ describe("draft routines run and runs", () => {
     };
     const result = await runCli(["routines", "runs", ROUTINE_ID, "--run-id", RUN_ID, "--transcript", "--cursor", "20"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toEqual({ taskId: ROUTINE_ID, runId: RUN_ID, transcript: true, cursor: 20 });
+    expect(seen).toEqual({ taskId: ROUTINE_ID, runId: RUN_ID, transcript: true, cursor: "20" });
     expect(result.stdout).toContain("step one\nstep two");
     expect(result.stdout).toContain(`More: draft routines runs ${ROUTINE_ID} --run-id ${RUN_ID} --transcript --cursor 40`);
+  });
+
+  test("runs pages through older runs with the cursor the last page printed", async () => {
+    let seen: unknown;
+    const cursor = "2026-11-14T10:00:00.000Z|11111111-1111-4111-8111-111111111111";
+    backend.state.toolOutputs["routines.runs"] = (input) => {
+      seen = input;
+      return { runs: [{ id: RUN_ID, status: "completed", startedBy: { type: "schedule" }, startedAt: "t", endedAt: null, result: "ok" }], nextCursor: cursor };
+    };
+    const result = await runCli(["routines", "runs", ROUTINE_ID, "--cursor", "previous"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ taskId: ROUTINE_ID, cursor: "previous" });
+    expect(result.stdout).toContain(`Older runs: draft routines runs ${ROUTINE_ID} --cursor '${cursor}'`);
   });
 
   test("runs flag combinations that need each other are usage errors, exit 2", async () => {

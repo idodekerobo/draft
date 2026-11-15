@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ROUTINE_EVENT_NAMES, describeRoutineTriggers, routineProviders, type RoutineEventName } from "draft-core/routines";
 import { recordRouteError } from "../errors/route-error";
+import { formatCursor, olderThan, type Cursor } from "../activity/service";
 import { loadDisplayNames } from "../routes/session-display-names";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { computeNextDueAt } from "../scheduling/next-due-at";
@@ -482,8 +483,15 @@ function pickLogged(task: ScheduledTaskRow) {
 const RUN_HISTORY_LIMIT = 50;
 const MAX_AGENT_ROUTINES = 20;
 
-/** The newest runs of one routine, or null when the routine does not exist in this workspace. */
-export async function listRoutineRuns(workspaceId: string, taskId: string): Promise<RoutineRun[] | null> {
+/**
+ * One routine's runs, newest first, a page at a time; or, with `runId`, just that run, however old. Null when the
+ * routine does not exist in this workspace.
+ */
+export async function listRoutineRuns(
+  workspaceId: string,
+  taskId: string,
+  options: { before?: Cursor | null; runId?: string } = {},
+): Promise<{ runs: RoutineRun[]; nextCursor: string | null } | null> {
   const { data: task, error: taskError } = await serviceClient
     .from("scheduled_tasks")
     .select("id")
@@ -495,12 +503,12 @@ export async function listRoutineRuns(workspaceId: string, taskId: string): Prom
   if (taskError) throw taskError;
   if (!task) return null;
 
-  const { data, error } = await serviceClient
-    .from("sessions")
-    .select(RUN_COLUMNS)
-    .eq("workspace_id", workspaceId)
-    .eq("scheduled_task_id", taskId)
+  let query = serviceClient.from("sessions").select(RUN_COLUMNS).eq("workspace_id", workspaceId).eq("scheduled_task_id", taskId);
+  if (options.runId) query = query.eq("id", options.runId);
+  else if (options.before) query = query.or(olderThan("started_at", options.before));
+  const { data, error } = await query
     .order("started_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(RUN_HISTORY_LIMIT);
   if (error) throw error;
   const rows = (data ?? []) as RunRow[];
@@ -509,7 +517,11 @@ export async function listRoutineRuns(workspaceId: string, taskId: string): Prom
   const runRows = (runs ?? []) as Array<{ id: string; session_id: string; summary: string | null }>;
   const results = await loadRunResults(serviceClient, workspaceId, runRows.map(({ id, summary }) => ({ id, summary })));
   const runBySession = new Map(runRows.map((run) => [run.session_id, run.id]));
-  return withSkipReasons(workspaceId, rows.map((row) => ({ ...toRoutineRun(row), result: results.get(runBySession.get(row.id) ?? "") ?? null })));
+  const last = rows[rows.length - 1];
+  return {
+    runs: await withSkipReasons(workspaceId, rows.map((row) => ({ ...toRoutineRun(row), result: results.get(runBySession.get(row.id) ?? "") ?? null }))),
+    nextCursor: !options.runId && rows.length === RUN_HISTORY_LIMIT && last ? formatCursor(last.started_at, last.id) : null,
+  };
 }
 
 export async function createAgentRoutine(

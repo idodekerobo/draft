@@ -9,6 +9,7 @@ import { canEditSchedules } from "../schedules/permissions";
 import { parseAgentRoutineConfig } from "../routines/config";
 import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask, listRoutineRuns, listConnectedProviders, listRoutines, runRoutineNow, updateRoutine } from "../schedules/service";
 import { validateCreate } from "../schedules/validate-create";
+import { parseCursor } from "../activity/service";
 import { validatePatch } from "../schedules/validate-patch";
 
 type SchedulesRequest = Bun.BunRequest<"/workspaces/:id/schedules">;
@@ -132,9 +133,11 @@ export const RUNS = withAuth<RunsRequest>(async (req, caller) => {
   if (denied) return denied;
 
   try {
-    const runs = await listRoutineRuns(workspaceId, taskId);
-    if (!runs) return Response.json({ error: "not_found" }, { status: 404 });
-    return Response.json({ runs });
+    const before = parseCursor(new URL(req.url).searchParams.get("before"));
+    if (before === "invalid") return Response.json({ error: "invalid_cursor" }, { status: 400 });
+    const page = await listRoutineRuns(workspaceId, taskId, { before });
+    if (!page) return Response.json({ error: "not_found" }, { status: 404 });
+    return Response.json(page);
   } catch (error) {
     recordRouteError({ workspaceId, errorCode: "schedules_runs_failed", error });
     return Response.json({ error: "schedules_runs_failed" }, { status: 500 });

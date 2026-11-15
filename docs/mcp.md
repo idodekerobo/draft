@@ -32,7 +32,7 @@ A routine is an agent that runs on a schedule, when something happens (a meeting
 | `routines.update` | `{ taskId, patch }` | Change only the fields in `patch`; schedule fields are flat. `null` turns Slack posting or GitHub access off; `events: []` removes every trigger; `onSchedule: false` runs it only on triggers and Run now. Answers with the saved routine. |
 | `routines.delete` | `{ taskId }` | Delete a routine. Destructive: confirm with the person first. |
 | `routines.run` | `{ taskId }` | Start a run now. Answers with `runId`. |
-| `routines.runs` | `{ taskId, runId?, transcript?, cursor? }` | The newest runs: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. With `runId`, one run. Add `transcript: true` for what the agent did, a page at a time; pass the returned `nextCursor` for the next page. |
+| `routines.runs` | `{ taskId, cursor?, runId?, transcript? }` | The routine's runs, newest first, 50 at a time: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. Pass the returned `nextCursor` as `cursor` for older runs. With `runId`, one run, however old. Add `transcript: true` for what the agent did, a page at a time; then `cursor` is the transcript's `nextCursor`. |
 
 `create` and `update` refuse a setting that can't work yet, and say why:
 
@@ -45,6 +45,12 @@ A routine is an agent that runs on a schedule, when something happens (a meeting
 A routine runs as the person who created it. A run started by an event only sees that event's source if its creator can see it. Otherwise the run is recorded as skipped, with the reason.
 
 To follow a run, call `routines.runs` with its `runId` until the status is no longer `running`.
+
+### Activity
+
+| Tool | Input | Purpose |
+| --- | --- | --- |
+| `activity.list` | `{ cursor? }` | Everything the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions, with status, timing and result. Pass the returned `nextCursor` as `cursor` for older runs. This is the same list as the Activity page. |
 
 ### Connections
 

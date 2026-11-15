@@ -172,22 +172,31 @@ export function createRoutineTools(client: SupabaseClient) {
     name: "routines.runs", mcp: true, callers: ["user"],
     input: z.object({
       taskId: UUID,
-      runId: UUID.optional().describe("One run. Omit for the newest runs."),
+      runId: UUID.optional().describe("One run, however old. Omit for the newest runs."),
+      cursor: z.string().max(200).optional().describe("Without runId: the nextCursor of the previous page, for older runs. With transcript: the transcript's nextCursor."),
       transcript: z.boolean().optional().describe("With runId: include the run's transcript, a page at a time."),
-      cursor: z.number().int().min(0).optional().describe("With transcript: the nextCursor of the previous page."),
     }),
-    description: "A routine's newest runs: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. Pass runId for one run; add transcript: true for what the agent did, in pages.",
+    description: "A routine's runs, newest first, 50 at a time: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. Pass nextCursor back as cursor for older runs. Pass runId for one run; add transcript: true for what the agent did, in pages.",
     handler: async ({ caller, input }) => {
       const user = requireUser(caller, "routines.runs");
       try {
-        const result = await (await scheduleService()).listRoutineRuns(user.workspaceId, input.taskId);
-        if (!result) return refuse("not_found", "Routine not found.");
-        if (!input.runId) return { status: "ok", output: { runs: result } };
-        const one = result.find((item) => item.id === input.runId);
+        const svc = await scheduleService();
+        if (!input.runId) {
+          const { parseCursor } = await import("../../../activity/service");
+          const before = parseCursor(input.cursor);
+          if (before === "invalid") return refuse("invalid_cursor", "That cursor isn't one this tool returned. Pass nextCursor from the previous page.");
+          const page = await svc.listRoutineRuns(user.workspaceId, input.taskId, { before });
+          return page ? { status: "ok", output: page } : refuse("not_found", "Routine not found.");
+        }
+        const page = await svc.listRoutineRuns(user.workspaceId, input.taskId, { runId: input.runId });
+        if (!page) return refuse("not_found", "Routine not found.");
+        const one = page.runs[0];
         if (!one) return refuse("not_found", "Run not found for this routine.");
         if (!input.transcript) return { status: "ok", output: { run: one } };
+        const cursor = input.cursor ? Number(input.cursor) : 0;
+        if (!Number.isInteger(cursor) || cursor < 0) return refuse("invalid_cursor", "A transcript cursor is the nextCursor number from the previous page.");
         const { readRunTranscript } = await import("../../../schedules/routine-run-detail");
-        return { status: "ok", output: { run: one, transcript: await readRunTranscript(client, user.workspaceId, one.id, input.cursor ?? 0) } };
+        return { status: "ok", output: { run: one, transcript: await readRunTranscript(client, user.workspaceId, one.id, cursor) } };
       } catch (error) { return runError(error); }
     },
   });

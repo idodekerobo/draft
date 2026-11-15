@@ -150,7 +150,8 @@ draft routines create --title <t> (--prompt <text> | --prompt-file <path>) --har
 draft routines update <id> [options]       # change only the fields you pass
 draft routines delete <id>
 draft routines run <id> [--wait]           # start a run now; --wait waits and prints the result
-draft routines runs <id> [--run-id <id>] [--transcript] [--cursor <n>]
+draft routines runs <id> [--cursor <c>]     # 50 at a time; --cursor shows older runs
+draft routines runs <id> --run-id <id> [--transcript [--cursor <n>]]
 ~~~
 
 Options for `create` and `update`:
@@ -168,7 +169,18 @@ Options for `create` and `update`:
 
 A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft integrations connect linear`. A routine on an agent that isn't set up for routines in your workspace is refused too, with how to set it up.
 
-`list` shows each routine's agent, when it runs, its triggers, what it can reach in Slack and GitHub, any missing connection, its next run, and its last run. `runs` shows each run's status, what started it (the schedule, Run now, or an event), its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time.
+`list` shows each routine's agent, when it runs, its triggers, what it can reach in Slack and GitHub, any missing connection, its next run, and its last run. `runs` shows each run's status, what started it (the schedule, Run now, or an event), its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
+
+## Activity
+
+`draft activity list` shows everything the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions. It's the same list as the Activity page, and matches the MCP tool `activity.list`.
+
+~~~bash
+draft activity list [--json]
+draft activity list --cursor '<cursor from the last page>'
+~~~
+
+Each routine run includes the command that shows it, for example `draft routines runs <routine id> --run-id <run id>`.
 
 ## Project agent setup
 

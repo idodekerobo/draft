@@ -530,20 +530,20 @@ async function runRuns(args: string[]): Promise<number> {
   const json = flags.switches.has("json");
   if (flags.error) return usage(command, json, flags.error);
   const [id, ...extra] = flags.positionals;
-  const runsUsage = "usage: draft routines runs <id> [--run-id <id>] [--transcript] [--cursor <n>] [--json]";
+  const runsUsage = "usage: draft routines runs <id> [--cursor <c>] [--run-id <id> [--transcript [--cursor <n>]]] [--json]";
   if (!id || extra.length) return usage(command, json, runsUsage);
 
   const runId = flags.values["run-id"];
   const transcript = flags.switches.has("transcript");
   const cursor = flags.values.cursor;
   if (transcript && runId === undefined) return usage(command, json, "--transcript needs --run-id");
-  if (cursor !== undefined && !transcript) return usage(command, json, "--cursor needs --transcript");
-  if (cursor !== undefined && !/^\d+$/.test(cursor)) return usage(command, json, "--cursor must be a whole number");
+  if (cursor !== undefined && runId !== undefined && !transcript) return usage(command, json, "--cursor with --run-id needs --transcript");
+  if (cursor !== undefined && transcript && !/^\d+$/.test(cursor)) return usage(command, json, "a transcript --cursor is a whole number");
 
   const input: Record<string, unknown> = { taskId: id };
   if (runId !== undefined) input.runId = runId;
   if (transcript) input.transcript = true;
-  if (cursor !== undefined) input.cursor = Number(cursor);
+  if (cursor !== undefined) input.cursor = cursor;
   const result = await callTool(command, json, "routines.runs", input);
   if (typeof result === "number") return result;
   const output = asRecord(result.output);
@@ -561,11 +561,12 @@ async function runRuns(args: string[]): Promise<number> {
   } else {
     const runs = (output.runs as RoutineRun[] | undefined) ?? [];
     console.log(runs.length ? runs.map(formatRunRow).join("\n") : "No runs yet.");
+    if (typeof output.nextCursor === "string") console.log(dim(`Older runs: draft routines runs ${id} --cursor '${output.nextCursor}'`));
   }
   return EXIT_SUCCESS;
 }
 
-const TOP_HELP = `${bold("draft routines")} — scheduled background tasks in the workspace.
+const TOP_HELP = `${bold("draft routines")} — agents that run on a schedule, when something happens, or when you run them.
 
 Commands:
   list [<id>] [--json]      List routines, or show one with its full prompt
@@ -677,17 +678,19 @@ Examples:
   draft routines run <id>
   draft routines run <id> --wait`;
 
-const RUNS_HELP = `usage: draft routines runs <id> [--run-id <id>] [--transcript] [--cursor <n>] [--json]
+const RUNS_HELP = `usage: draft routines runs <id> [--cursor <c>] [--run-id <id> [--transcript [--cursor <n>]]] [--json]
 
-Lists the newest runs. Add --run-id to see one run.
+Lists the newest runs, 50 at a time. Add --run-id to see one run, however old.
 
+  --cursor <c>     Show older runs: pass the cursor printed after the last page.
   --run-id <id>    Show one run.
   --transcript     With --run-id: show what the agent did, a page at a time.
-  --cursor <n>     With --transcript: start at the cursor from the last page.
-  --json           Print the answer as JSON.
+                   --cursor <n> then starts at the transcript cursor from the last page.
+  --json           Print the answer as JSON, including nextCursor.
 
 Examples:
   draft routines runs <id>
+  draft routines runs <id> --cursor '<cursor from the last page>'
   draft routines runs <id> --run-id <run-id> --transcript`;
 
 const SUBCOMMANDS = new Map<string, { run: (args: string[]) => Promise<number>; help: string }>([

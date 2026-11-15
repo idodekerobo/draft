@@ -8,82 +8,22 @@ import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
 import { recordRouteError } from "../errors/route-error";
-import type { AgentRunRow } from "../types/tables";
-import { loadRunResults } from "../metaharness/runs/result-line";
-import { synthesisTriggerType } from "../synthesis/run-spec";
+import { listActivity, parseCursor } from "../activity/service";
 
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
-
-const RUNS_LIST_LIMIT = 50;
-const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2}))\|([0-9a-f-]{36})$/i;
-
-/** `before` is "<created_at>|<id>" of the last run already shown; the next page is the runs older than it. */
-function parseCursor(raw: string | null): { createdAt: string; id: string } | null | "invalid" {
-  if (!raw) return null;
-  const match = CURSOR.exec(raw);
-  return match ? { createdAt: match[1]!, id: match[2]! } : "invalid";
-}
-
-type SynthesisRunListRow = Pick<
-  AgentRunRow,
-  "id" | "kind" | "session_id" | "scheduled_task_id" | "status" | "outcome" | "trigger" | "summary" | "started_at" | "completed_at" | "created_at"
->;
 
 export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const cursor = parseCursor(new URL(req.url).searchParams.get("before"));
-  if (cursor === "invalid") return Response.json({ error: "invalid_cursor" }, { status: 400 });
-
-  let query = serviceClient
-    .from("agent_runs")
-    .select("id, kind, session_id, scheduled_task_id, status, outcome, trigger, summary, started_at, completed_at, created_at")
-    .eq("workspace_id", req.params.id);
-  // Ties on created_at are broken by id, so a page boundary never skips or repeats a run.
-  if (cursor) query = query.or(`created_at.lt."${cursor.createdAt}",and(created_at.eq."${cursor.createdAt}",id.lt.${cursor.id})`);
-  const { data, error } = await query
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(RUNS_LIST_LIMIT)
-    .returns<SynthesisRunListRow[]>();
-
-  if (error) {
-    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "synthesis_runs_read_failed", error });
-    return Response.json({ error: error.message }, { status: 500 });
-  }
-
-  const rows = data ?? [];
-  const taskIds = [...new Set(rows.flatMap((run) => run.scheduled_task_id ? [run.scheduled_task_id] : []))];
-  let titles = new Map<string, string>();
-  let results = new Map<string, string | null>();
+  const before = parseCursor(new URL(req.url).searchParams.get("before"));
+  if (before === "invalid") return Response.json({ error: "invalid_cursor" }, { status: 400 });
   try {
-    if (taskIds.length) {
-      const tasks = await serviceClient.from("scheduled_tasks").select("id, config_json")
-        .eq("workspace_id", req.params.id).in("id", taskIds);
-      if (tasks.error) throw tasks.error;
-      titles = new Map((tasks.data ?? []).map((task) => [task.id, typeof task.config_json?.title === "string" ? task.config_json.title : "Routine"]));
-    }
-    results = await loadRunResults(serviceClient, req.params.id, rows.filter((run) => run.kind === "routine"));
+    return Response.json(await listActivity(serviceClient, req.params.id, before));
   } catch (error) {
-    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "activity_results_read_failed", error });
+    recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "synthesis_runs_read_failed", error });
+    return Response.json({ error: "synthesis_runs_read_failed" }, { status: 500 });
   }
-  return Response.json({
-    runs: rows.map((run) => ({
-      id: run.id,
-      kind: run.kind,
-      sessionId: run.session_id,
-      routineId: run.scheduled_task_id,
-      routineTitle: run.scheduled_task_id ? titles.get(run.scheduled_task_id) ?? "Routine" : null,
-      status: run.status,
-      outcome: run.outcome,
-      triggerType: synthesisTriggerType(run.trigger),
-      resultSummary: results.get(run.id) ?? run.summary,
-      startedAt: run.started_at,
-      completedAt: run.completed_at,
-      createdAt: run.created_at,
-    })),
-  });
 });
 
 interface SynthesisRunsBody {
