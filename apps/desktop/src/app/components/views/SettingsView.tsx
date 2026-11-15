@@ -120,7 +120,7 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
       return "system";
     }
   });
-  const { cloudSignIn, cloudSignInError, handleCloudSignIn, handleCloudSignOut } = useCloudSignIn();
+  const { cloudSignIn, cloudSignInError, confirmCode, handleCloudSignIn, handleCloudSignOut } = useCloudSignIn();
 
   // ── Update events ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -205,7 +205,9 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
                 <span className="settings__row-label">Draft Cloud</span>
                 <span className="settings__row-desc">
                   {cloudSignIn === "awaiting_approval"
-                    ? "Finish signing in in your browser"
+                    ? confirmCode
+                      ? `Finish signing in in your browser. Type this code on the page: ${confirmCode}`
+                      : "Finish signing in in your browser"
                     : cloudSignIn === "complete"
                       ? "Signed in"
                       : cloudSignIn === "error"

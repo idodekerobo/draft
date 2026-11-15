@@ -1585,6 +1585,22 @@ describe("workspace connection routes", () => {
     });
   });
 
+  it("lists channels for a bot token that isn't saved yet, so the web app can pick channels while connecting", async () => {
+    const response = await routeModule.CHANNELS_POST(
+      request("POST", { id: workspaceId, provider: "slack" }, { bot_token: "xoxb-new" }) as never,
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).channels.map((channel: { id: string }) => channel.id)).toEqual(["C-other", "C-old"]);
+  });
+
+  it("refuses to list channels without a bot token", async () => {
+    const response = await routeModule.CHANNELS_POST(
+      request("POST", { id: workspaceId, provider: "slack" }, { bot_token: "xapp-wrong" }) as never,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_bot_token" });
+  });
+
   it("joins additions, leaves removals, and persists the converged Slack membership", async () => {
     const response = await routeModule.PATCH(
       request("PATCH", { id: workspaceId, provider: "slack" }, { channel_ids: ["C-new"] }) as never,

@@ -16,6 +16,7 @@ function setup(files: Record<string, string>, permissions: AnyDraftToolPermissio
     run: {
       id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
       kind: "routine",
+      network: "restricted",
       workspaceId: parseWorkspaceId(WS),
       trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
       actor: { type: "agent", runId: parseAgentRunId("22222222-2222-4222-8222-222222222222") }, onBehalfOf: null,
@@ -80,10 +81,10 @@ describe("context.list", () => {
 
 describe("tools that need a person", () => {
   it("are not offered to a run, and are refused if it asks", async () => {
-    const { call, deps, caller } = setup({ "a.md": "A" }, [{ tool: "sources.search" }, { tool: "sources.read" }, { tool: "context.export" }]);
+    const { call, deps, caller } = setup({ "a.md": "A" }, [{ tool: "people.approve" }, { tool: "people.reject" }, { tool: "context.export" }]);
     if (caller.type !== "run") throw new Error("unreachable");
     expect(deps.registry.listFor(caller.run)).toEqual([]);
-    for (const name of ["sources.search", "sources.read", "context.export"]) {
+    for (const name of ["people.approve", "people.reject", "context.export"]) {
       expect(await call(name, { query: "x", source_item_id: "11111111-1111-4111-8111-111111111111" })).toMatchObject({ status: "denied", code: "caller_not_authorized" });
     }
   });

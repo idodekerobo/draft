@@ -27,10 +27,24 @@ function bashCompletion(): string {
 # Add to ~/.bashrc:  draft completion >> ~/.bashrc && source ~/.bashrc
 
 _draft_completion() {
-  local cur prev commands
+  local cur prev commands flags
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context people routines sources sessions skills integrations update uninstall completion"
+  commands="add auth context people routines activity sources sessions skills integrations update uninstall completion"
+
+  if [[ "\$cur" == -* ]]; then
+    case "\${COMP_WORDS[1]}:\${COMP_WORDS[2]}" in
+      auth:login) flags="--force --json" ;;
+      integrations:connect) flags="--json --wait --no-open --workspace-key --credential-stdin --credential-fd" ;;
+      integrations:list) flags="--json" ;;
+      integrations:disconnect) flags="--json --workspace-key" ;;
+      activity:list) flags="--cursor --json" ;;
+      routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --run-id --transcript --cursor --json" ;;
+      *) flags="" ;;
+    esac
+    COMPREPLY=( $(compgen -W "\$flags" -- "\$cur") )
+    return 0
+  fi
 
   case "\$prev" in
     draft)
@@ -54,6 +68,10 @@ _draft_completion() {
       return 0
       ;;
     routines)
+      COMPREPLY=( $(compgen -W "list options create update delete run runs" -- "\$cur") )
+      return 0
+      ;;
+    activity)
       COMPREPLY=( $(compgen -W "list" -- "\$cur") )
       return 0
       ;;
@@ -70,12 +88,12 @@ _draft_completion() {
       return 0
       ;;
     integrations)
-      COMPREPLY=( $(compgen -W "list connect disconnect" -- "\$cur") )
+      COMPREPLY=( $(compgen -W "list connect disconnect slack" -- "\$cur") )
       return 0
       ;;
     connect)
       if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
-        COMPREPLY=( $(compgen -W "github" -- "\$cur") )
+        COMPREPLY=( $(compgen -W "github slack linear fireflies granola claude-code" -- "\$cur") )
         return 0
       fi
       ;;
@@ -119,7 +137,8 @@ _draft() {
         'auth:Authenticate with the Draft control plane'
         'context:Read workspace context'
         'people:Find, add and message the people in the workspace'
-        'routines:Read scheduled routines'
+        'routines:Manage routines'
+        'activity:What the workspace agents have run'
         'sources:Search and read cross-provider source evidence'
         'sessions:Manage coding session capture'
         'skills:Discover and manage the company skill marketplace'
@@ -137,8 +156,12 @@ _draft() {
           _describe 'tool' tools
           ;;
         auth)
-          local subcmds=('login:Sign in' 'logout:Sign out' 'whoami:Show the current identity')
-          _describe 'subcommand' subcmds
+          if (( CURRENT == 3 )); then
+            local subcmds=('login:Sign in' 'logout:Sign out' 'whoami:Show the current identity')
+            _describe 'subcommand' subcmds
+          else
+            _arguments '--json[Print machine-readable output]' '--force[Start a new sign-in even when a session exists]'
+          fi
           ;;
         context)
           local subcmds=('list:List available context dimensions' 'read:Print one or more context dimensions' 'export:Export the full context as markdown files')
@@ -148,9 +171,32 @@ _draft() {
           local subcmds=('find:Find people' 'create:Add a teammate' 'pending:List people waiting for approval' 'approve:Approve a pending person' 'reject:Reject a pending person' 'notify:Send a message to a person')
           _describe 'subcommand' subcmds
           ;;
-        routines)
-          local subcmds=('list:List scheduled routines')
+        activity)
+          local subcmds=('list:What the workspace agents have run')
           _describe 'subcommand' subcmds
+          ;;
+        routines)
+          if (( CURRENT == 3 )); then
+            local subcmds=('list:List scheduled routines' 'options:Show the options for routines' 'create:Create a routine' 'update:Update a routine' 'delete:Delete a routine' 'run:Run a routine now' 'runs:List the runs of a routine')
+            _describe 'subcommand' subcmds
+          else
+            _arguments \\
+              '--on=[Trigger event]:event:' \\
+              '--github=[GitHub repository]:repository:' \\
+              '--github-access=[GitHub access level]:access:' \\
+              '--no-github[Give the routine no GitHub access]' \\
+              '--schedule[Turn the schedule on]' \\
+              '--no-schedule[Run only on triggers and Run now]' \\
+              '--no-triggers[Remove the triggers]' \\
+              '--enable[Enable the routine]' \\
+              '--disable[Disable the routine]' \\
+              '--disabled[Save the routine turned off]' \\
+              '--wait[Wait for the run to finish]' \\
+              '--run-id=[Run id]:id:' \\
+              '--transcript[Show the run transcript]' \\
+              '--cursor=[Page cursor]:cursor:' \\
+              '--json[Print machine-readable output]'
+          fi
           ;;
         sources)
           local subcmds=('search:Search source evidence' 'read:Read one source representation')
@@ -166,11 +212,15 @@ _draft() {
           ;;
         integrations)
           if (( CURRENT == 3 )); then
-            local subcmds=('list:List hosted integrations' 'connect:Connect a hosted integration' 'disconnect:Disconnect a hosted integration')
+            local subcmds=('list:Show each integration and what it unlocks' 'connect:Connect a hosted integration' 'disconnect:Disconnect a hosted integration' 'slack:Manage Slack channels')
             _describe 'subcommand' subcmds
           elif [[ \$words[3] == 'connect' ]]; then
-            local providers=('github:GitHub')
-            _describe 'provider' providers
+            if [[ \$PREFIX == -* ]]; then
+              _arguments '--json[Print the link as one JSON line]' '--wait[Wait until connected]' '--no-open[Do not open a browser]'
+            else
+              local providers=('github:GitHub' 'slack:Slack' 'linear:Linear' 'fireflies:Fireflies' 'granola:Granola' 'claude-code:Claude Code')
+              _describe 'provider' providers
+            fi
           elif [[ \$words[3] == 'disconnect' ]]; then
             local providers=('github:GitHub' 'fireflies:Fireflies' 'linear:Linear' 'slack:Slack' 'granola:Granola')
             _describe 'provider' providers

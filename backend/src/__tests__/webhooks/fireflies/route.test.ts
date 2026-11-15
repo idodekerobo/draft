@@ -178,7 +178,7 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(started).toHaveLength(1);
-    expect(started[0]![2]).toEqual({ workspaceId: "ws-1", name: "fireflies.meeting_summarized", eventId: "meeting-123", sourceItemId: "item-1" });
+    expect(started[0]![2]).toEqual({ workspaceId: "ws-1", name: "fireflies.meeting_summarized", eventId: "meeting-123", sourceItemId: "item-1", facts: [{ label: "Fireflies meeting id", value: "meeting-123" }] });
   });
 
   it("starts no routine for a transcribed meeting", async () => {

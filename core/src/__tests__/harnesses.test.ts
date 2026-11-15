@@ -57,7 +57,7 @@ describe("cloudEnvironmentFor", () => {
   });
 
   it("adds what was chosen once, and never a tool outside the cloud list", () => {
-    const environment = cloudEnvironmentFor("claude", { nativeTools: ["WebSearch", "Read", "Bash"] });
+    const environment = cloudEnvironmentFor("claude", { nativeTools: ["WebSearch", "Read", "Write"] });
     expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
   });
 });

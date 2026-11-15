@@ -9,7 +9,7 @@ export interface RoutineLastRun {
   completedAt: string | null;
 }
 
-export type RoutineRunStatus = "running" | "completed" | "failed";
+export type RoutineRunStatus = "running" | "completed" | "failed" | "skipped";
 
 /** One run of an agent routine. The id opens the run in the session view. */
 export interface RoutineRun {
@@ -17,7 +17,13 @@ export interface RoutineRun {
   status: RoutineRunStatus;
   startedAt: string;
   endedAt: string | null;
+  result?: string | null;
+  /** Why a skipped run did not run, in words for people. */
+  skipReason?: string | null;
 }
+
+export type { RoutineEventName } from "draft-core/routines";
+import type { RoutineEventName } from "draft-core/routines";
 
 /** Opens one run of an agent routine. The routine tells the caller where to come back to. */
 export type OpenRun = (sessionId: string, routine: Pick<Routine, "id" | "title">) => void;
@@ -30,6 +36,11 @@ export interface AgentRoutine {
   model: string | null;
   createdByName: string | null;
   lastRun: RoutineRun | null;
+  canNotify?: boolean;
+  postChannels?: "joined" | string[] | null;
+  github?: { repos: string[]; access: "read" | "write" } | null;
+  events?: RoutineEventName[];
+  onSchedule?: false;
 }
 
 /** One row from GET /workspaces/:id/schedules. */
@@ -54,6 +65,7 @@ export interface Routine {
   lastRun: RoutineLastRun | null;
   updatedByName: string | null;
   agent: AgentRoutine | null;
+  canEdit?: boolean;
 }
 
 /** Whether the workspace's routines can run on an agent. A login that stopped working needs a new sign-in. */
@@ -64,6 +76,8 @@ export interface RoutinesResponse {
   canEdit: boolean;
   /** By harness id. An agent with no entry is treated as ready. */
   agents?: Partial<Record<string, RoutineAgentStatus>>;
+  /** Providers with a live connection, such as "slack". Missing means the form treats every connection as present. */
+  connectedProviders?: string[];
 }
 
 /** What a person can change on an agent routine. Send only the fields that changed. */
@@ -72,6 +86,11 @@ export interface AgentRoutineEdit {
   prompt?: string;
   harness?: HarnessId;
   model?: string | null;
+  canNotify?: boolean;
+  postChannels?: "joined" | string[] | null;
+  github?: { repos: string[]; access: "read" | "write" } | null;
+  events?: RoutineEventName[];
+  onSchedule?: boolean;
 }
 
 /** Body for PATCH /workspaces/:id/schedules/:taskId. */
@@ -89,4 +108,9 @@ export interface CreateRoutineInput {
   time?: string;
   weekday?: RoutineWeekday;
   timezone?: string;
+  canNotify?: boolean;
+  postChannels?: "joined" | string[] | null;
+  github?: { repos: string[]; access: "read" | "write" } | null;
+  events?: RoutineEventName[];
+  onSchedule?: boolean;
 }

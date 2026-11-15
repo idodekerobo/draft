@@ -1,6 +1,6 @@
 # Routines
 
-A routine is a background task that Draft runs on a schedule. You see them on the Routines tab in the web and desktop apps. You can also read them from the CLI and MCP.
+A routine is work Draft runs for your team: on a schedule, when something happens in a connected tool, or when someone presses Run now. Draft comes with built-in routines, and you can add your own, where an agent follows your instructions. You see them on the Routines tab in the web and desktop apps, and you can manage them from the CLI and MCP.
 
 ## Built-in routines
 
@@ -19,18 +19,18 @@ Editable routines use a preset: Draft default, hourly, daily, weekdays, or weekl
 - **Last ran** applies to "Update company context". It is the time the last synthesis run finished.
 - **Last checked** applies to the other routines. They record that Draft looked for work, not that a run happened.
 
-## Read routines from the CLI
+## Manage routines from the CLI or your agent
 
-~~~bash
-draft routines list [--json]
-~~~
+You can create, change, run and read routines from the CLI, or let an agent connected to Draft's MCP server do it for you. Each CLI command matches one MCP tool:
 
-Text output shows the title, schedule, cron expression, enabled state, and next run. `--json` prints `{ routines }` with every field, including `cron` and `intervalSeconds`.
+| CLI | MCP tool |
+| --- | --- |
+| `draft routines options` | `routines.options` |
+| `draft routines list [<id>]` | `routines.list` |
+| `draft routines create …` | `routines.create` |
+| `draft routines update <id> …` | `routines.update` |
+| `draft routines delete <id>` | `routines.delete` |
+| `draft routines run <id>` | `routines.run` |
+| `draft routines runs <id>` | `routines.runs` |
 
-## Read routines over MCP
-
-Call `routines.list`. It takes no arguments and returns `{ routines }`. It needs only the read scope.
-
-## Coming next
-
-Custom routines, and changing routines from the CLI and MCP. Today these surfaces only read.
+A routine can start on its schedule, when something happens in a connected tool, or when someone runs it. If a trigger needs a provider you haven't connected, Draft says so and how to connect it. See the [CLI reference](./cli.md#routines) and [MCP and agent connections](./mcp.md#routines) for every option.

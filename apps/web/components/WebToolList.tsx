@@ -8,6 +8,7 @@ import {
   GithubConnectPanel,
   GranolaConnectPanel,
   LinearConnectPanel,
+  SlackConnectPanel,
   ToolList,
   AGENT_SETUP_PROMPT,
   codingSessionsStatus,
@@ -29,7 +30,7 @@ import { webToolStatuses } from "@/lib/tool-statuses";
 import { useGithubInstall } from "@/lib/use-github-install";
 import { useWorkspace } from "@/lib/workspace";
 
-function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github"; query?: string }) {
+function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github" | "slack"; query?: string }) {
   const { workspaceId } = useWorkspace();
   const reloadConnections = useRefreshQuery(queryKeys.connections(workspaceId));
   const { track } = useIntegrationActions();
@@ -71,8 +72,8 @@ function GithubPanel({ onDone }: { onDone: () => void }) {
 
 const DEFAULT_UNAVAILABLE_HINT = "Ask your admin to connect this in the Draft desktop app.";
 
-/** Web connects personal tools, Linear, GitHub and coding sessions; Slack needs the desktop app for now. */
-function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?: ToolGroup[]; allowDisconnect: boolean; unavailableHint: string }) {
+/** Web connects every hosted tool and coding sessions. */
+function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { groups?: ToolGroup[]; allowDisconnect: boolean; unavailableHint: string; only?: ToolId }) {
   const { workspaceId } = useWorkspace();
   const { data: connections } = useSuspenseQuery(connectionsQueryOptions(workspaceId, apiFetch));
   const reposQuery = useQuery(sessionReposQueryOptions(workspaceId, apiFetch));
@@ -85,6 +86,10 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?
   const sessionsOn = baseStatuses["coding-sessions"]?.state === "connected";
   const statuses = { ...baseStatuses, "coding-sessions": codingSessionsStatus(sessionsOn, sessionRepos) };
   const refresh = () => reloadConnections();
+  const slackRow = (connections.connections as Array<{ provider?: string; channel_ids?: string[] }>).find((row) => row.provider === "slack");
+  const slackDetail = slackRow
+    ? { connected: baseStatuses.slack?.state === "connected", status: baseStatuses.slack?.state ?? "disconnected", channelIds: slackRow.channel_ids ?? [] }
+    : undefined;
 
   const sessionsPanel = () => (
     <CodingSessionsPanel
@@ -101,9 +106,18 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?
     granola: (close) => <GranolaConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     linear: (close) => <LinearConnectPanel detail={undefined} classPrefix="ui-panel" onConnected={async () => { await refresh(); close(); }} />,
     github: (close) => <GithubPanel onDone={close} />,
+    slack: (close) => <SlackConnectPanel detail={slackDetail} mode="connect" classPrefix="ui-panel" onMembershipUpdated={async () => { await refresh(); }} onConnected={async () => { await refresh(); close(); }} />,
     "coding-sessions": () => sessionsPanel(),
   };
-  const managePanels: Partial<Record<ToolId, ManagePanel>> = { "coding-sessions": { label: "View repos", render: () => sessionsPanel() } };
+  const managePanels: Partial<Record<ToolId, ManagePanel>> = {
+    "coding-sessions": { label: "View repos", render: () => sessionsPanel() },
+    slack: { label: "Manage channels", render: () => <SlackConnectPanel detail={slackDetail} mode="manage" classPrefix="ui-panel" onMembershipUpdated={async () => { await refresh(); }} onConnected={async () => { await refresh(); }} /> },
+  };
+
+  if (only) {
+    const renderPanel = panels[only];
+    return renderPanel ? <>{renderPanel(() => {})}</> : <p className="ui-muted">Connect this in the Draft desktop app.</p>;
+  }
 
   return (
     <ToolList
@@ -119,6 +133,7 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?
         fireflies: <DisconnectButton provider="fireflies" />,
         granola: <DisconnectButton provider="granola" query="?account_kind=personal" />,
         github: <DisconnectButton provider="github" />,
+        slack: <DisconnectButton provider="slack" />,
       } : {}}
       unavailableHint={unavailableHint}
       searchable
@@ -126,10 +141,11 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?
   );
 }
 
-export function WebToolList({ groups, allowDisconnect = false, unavailableHint = DEFAULT_UNAVAILABLE_HINT }: { groups?: ToolGroup[]; allowDisconnect?: boolean; unavailableHint?: string }) {
+/** `only` renders one provider's connect panel without the tool list, for single-purpose pages. */
+export function WebToolList({ groups, allowDisconnect = false, unavailableHint = DEFAULT_UNAVAILABLE_HINT, only }: { groups?: ToolGroup[]; allowDisconnect?: boolean; unavailableHint?: string; only?: ToolId }) {
   return (
     <DataBoundary fallback={<p className="ui-muted" role="status">Loading connections…</p>} errorMessage="Could not load your connections.">
-      <WebToolListBody groups={groups} allowDisconnect={allowDisconnect} unavailableHint={unavailableHint} />
+      <WebToolListBody groups={groups} allowDisconnect={allowDisconnect} unavailableHint={unavailableHint} only={only} />
     </DataBoundary>
   );
 }

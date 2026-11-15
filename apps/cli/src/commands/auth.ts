@@ -4,6 +4,7 @@ import { pairDevice, DevicePairingError } from "draft-core/device-pairing";
 import { clearCliAuthState, readCliAuthState, writeCliAuthState, type AuthState } from "draft-core/auth-state";
 import { refreshIdentity } from "../cloud-client.ts";
 import { getCliRuntimeConfig } from "../runtime-config.ts";
+import { CLI_VERSION } from "../version.ts";
 import { EXIT_INTERRUPTED, EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { dim, red } from "../utils/output.ts";
 
@@ -16,6 +17,34 @@ function parseFlags(args: string[], allowed: Set<string>): { flags: Set<string>;
     flags.add(name);
   }
   return { flags };
+}
+
+const PAIRING_EXPIRES_IN_SECONDS = 300;
+
+export function authLoginHelp(): string {
+  return `Usage: draft auth login [--force] [--json]
+
+Signs in through the browser. The terminal shows a code: type it on the
+sign-in page to confirm the sign-in is yours. Only approve a sign-in you started.
+
+Flags:
+  --force    Start a new sign-in even when a valid session exists
+  --json     Print the sign-in link as one JSON line first, then the result:
+             {"status":"action_required","action":"sign_in","url":...,"confirmCode":...,"expiresInSeconds":300}
+
+Examples:
+  draft auth login
+  draft auth login --json
+`;
+}
+
+function platformLabel(): string {
+  switch (process.platform) {
+    case "darwin": return "macOS";
+    case "win32": return "Windows";
+    case "linux": return "Linux";
+    default: return process.platform;
+  }
 }
 
 function attemptOpenBrowser(url: string): void {
@@ -36,6 +65,10 @@ function identityFields(identity: { organization_id: string | null; team_id: str
 }
 
 export async function runAuthLogin(args: string[]): Promise<number> {
+  if (args.includes("--help") || args.includes("-h")) {
+    process.stdout.write(authLoginHelp());
+    return EXIT_SUCCESS;
+  }
   const { flags, error } = parseFlags(args, new Set(["force", "json"]));
   const json = flags.has("json");
   if (error) {
@@ -85,12 +118,16 @@ export async function runAuthLogin(args: string[]): Promise<number> {
       appUrl: config.appUrl,
       fetch,
       signal: controller.signal,
-      onUrl: (url) => {
-        if (json) printJsonLine({ status: "pairing_required", url });
-        else {
-          console.log(`Open this URL to sign in: ${url}`);
-          attemptOpenBrowser(url);
+      client: `Draft CLI ${CLI_VERSION} on ${platformLabel()}`,
+      onUrl: (url, confirmCode) => {
+        if (json) {
+          printJsonLine({ status: "action_required", action: "sign_in", url, confirmCode, expiresInSeconds: PAIRING_EXPIRES_IN_SECONDS });
+          return;
         }
+        console.log(`Open this URL to sign in: ${url}`);
+        console.log(`Then type this code on the page: ${confirmCode}`);
+        console.log("Only approve a sign-in you started.");
+        attemptOpenBrowser(url);
       },
       onProgress: () => { /* human progress noise stays out of --json; the URL line is enough for both modes */ },
     });

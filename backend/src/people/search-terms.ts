@@ -11,10 +11,11 @@ const TRUSTED = ["confirmed", "from_connection"];
 export async function personSearchTerms(
   client: SupabaseClient,
   workspaceId: string,
-  callerUserId: string,
+  callerUserId: string | null,
   person: string,
 ): Promise<{ ok: true; terms: string[] } | { ok: false }> {
   let query = client.from("people").select("id").eq("workspace_id", workspaceId);
+  if (person === "me" && !callerUserId) return { ok: false };
   query = person === "me" ? query.eq("user_id", callerUserId) : query.eq("id", person);
   const { data: found, error } = await query.maybeSingle();
   if (error) throw error;

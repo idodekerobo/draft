@@ -42,6 +42,8 @@ export function sanitizedCodexEnv(env: NodeJS.ProcessEnv): Record<string, string
   };
   if (env.TZ) allowed.TZ = env.TZ;
   if (env.DRAFT_RUN_TOKEN) allowed.DRAFT_RUN_TOKEN = env.DRAFT_RUN_TOKEN;
+  // The git credential helper and the gh wrapper ask Draft for a GitHub token with these.
+  if (env.DRAFT_RUN_TOKEN && env.DRAFT_CALLBACK_URL && env.DRAFT_RUN_ID) Object.assign(allowed, { DRAFT_CALLBACK_URL: env.DRAFT_CALLBACK_URL, DRAFT_RUN_ID: env.DRAFT_RUN_ID });
   return allowed;
 }
 
@@ -82,7 +84,9 @@ export function readCodexAuth(): string | undefined {
 /** Codex reads the prompt from stdin. It may write inside its work folder only, and keeps no session on disk. */
 export function codexArgs(manifest: RunnerManifest): string[] {
   if (manifest.harness !== "codex") throw new Error("codexArgs needs a Codex manifest");
-  return ["exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "--ephemeral", ...(manifest.model ? ["-m", manifest.model] : []), "-"];
+  // workspace-write blocks the network for shell commands unless the run's network is open.
+  const network = manifest.network === "open" ? ["-c", "sandbox_workspace_write.network_access=true"] : [];
+  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", "--ephemeral", ...(manifest.model ? ["-m", manifest.model] : []), "-"];
 }
 
 /** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */

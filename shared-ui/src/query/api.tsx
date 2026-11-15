@@ -6,13 +6,18 @@ import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutinesRes
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
-  getRuns(): Promise<SynthesisRunSummary[]>;
+  /** The newest runs, a page at a time. `before` is a run's cursor (see runCursor); omit it for the first page. */
+  getRuns(before?: string): Promise<SynthesisRunSummary[]>;
   getRoutines(): Promise<RoutinesResponse>;
   updateRoutine(id: string, patch: RoutinePatch): Promise<Routine>;
   createRoutine(input: CreateRoutineInput): Promise<Routine>;
   /** Hides an agent routine and stops its runs. Its past runs stay. */
   deleteRoutine(id: string): Promise<void>;
-  getRoutineRuns(id: string): Promise<RoutineRun[]>;
+  /** One routine's runs, 50 at a time; `before` is the last shown run's cursor (see routineRunCursor). */
+  getRoutineRuns(id: string, before?: string): Promise<RoutineRun[]>;
+  runRoutine?(id: string): Promise<unknown>;
+  getRoutineSlackChannels?(): Promise<Array<{ id: string; name: string }>>;
+  getRoutineGithubRepos?(): Promise<string[]>;
 }
 
 const DraftApiContext = createContext<DraftApi | null>(null);

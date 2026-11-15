@@ -26,6 +26,11 @@ export interface InstallationInfo {
   suspendedAt: string | null;
 }
 
+export interface ScopedInstallationToken {
+  token: string;
+  expiresAt: string;
+}
+
 interface GithubClientDeps {
   appId: string;
   privateKeyPem: string;
@@ -82,6 +87,52 @@ export class GithubClient {
     });
     this.inFlight.set(installationId, mintPromise);
     return mintPromise;
+  }
+
+  async mintScopedInstallationToken(
+    installationId: string,
+    options: { repositories: ReadonlyArray<string>; permissions: { contents: "read" | "write"; pull_requests?: "write" } },
+  ): Promise<ScopedInstallationToken> {
+    if (!options.repositories.length || options.repositories.some((repo) => !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))) {
+      throw new GithubClientError("scoped token requires valid repositories", "permission");
+    }
+    const jwt = await this.signAppJwt();
+    const res = await this.fetchFn(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
+      method: "POST",
+      headers: { ...this.headers(`Bearer ${jwt}`), "Content-Type": "application/json" },
+      body: JSON.stringify({ repositories: [...options.repositories], permissions: options.permissions }),
+    });
+    if (res.status === 401) throw new GithubClientError("scoped installation token authorization failed", "permission");
+    if (res.status === 403 || res.status === 404) {
+      throw new GithubClientError(`scoped installation token mint failed (${res.status})`, res.status === 403 ? "permission" : "gone");
+    }
+    if (res.status === 429) throw new GithubClientError("rate limited minting scoped installation token", "rate_limited");
+    if (!res.ok) throw new GithubClientError(`scoped installation token mint failed (${res.status})`, "transient");
+    const body = (await res.json()) as { token?: unknown; expires_at?: unknown };
+    if (typeof body.token !== "string" || !body.token || typeof body.expires_at !== "string" || !Number.isFinite(Date.parse(body.expires_at))) {
+      throw new GithubClientError("invalid scoped installation token response", "transient");
+    }
+    return { token: body.token, expiresAt: body.expires_at };
+  }
+
+  async listInstallationRepositories(installationId: string): Promise<string[]> {
+    const token = await this.getInstallationToken(installationId);
+    const repositories: string[] = [];
+    for (let page = 1; page <= 100; page += 1) {
+      const res = await this.fetchFn(`https://api.github.com/installation/repositories?per_page=100&page=${page}`, {
+        headers: this.headers(`Bearer ${token}`),
+      });
+      if (!res.ok) throw new GithubClientError(`installation repository list failed (${res.status})`, res.status === 403 || res.status === 404 ? "permission" : "transient");
+      const body = (await res.json()) as { repositories?: unknown };
+      if (!Array.isArray(body.repositories)) throw new GithubClientError("invalid installation repository list", "transient");
+      const pageNames = body.repositories.flatMap((repo) => {
+        if (typeof repo !== "object" || repo === null || typeof (repo as { full_name?: unknown }).full_name !== "string") return [];
+        return [(repo as { full_name: string }).full_name];
+      });
+      repositories.push(...pageNames);
+      if (pageNames.length < 100) return [...new Set(repositories)];
+    }
+    return [...new Set(repositories)];
   }
 
   private async mintInstallationToken(installationId: string, isRetry = false): Promise<string> {

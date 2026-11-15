@@ -453,10 +453,36 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      listRoutineRuns: async ({ id }) => {
+      runRoutine: async ({ id }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, code: "signed_out" };
+        try {
+          await fetchServerJSON(`workspaces/${workspaceId}/schedules/${id}/run`, { method: "POST" });
+          return { ok: true };
+        } catch (err) {
+          return err instanceof ServerError
+            ? { ok: false, code: err.code, field: err.field }
+            : { ok: false, code: "network" };
+        }
+      },
+      getRoutineSlackChannels: async () => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
-        const { runs } = await fetchServerJSON<{ runs: RoutineRun[] }>(`workspaces/${workspaceId}/schedules/${id}/runs`);
+        const result = await fetchServerJSON<{ status: string; output?: Array<{ id: string; name: string }>; message?: string }>(`workspaces/${workspaceId}/tools/slack.list_channels`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+        });
+        if (result.status !== "ok" || !result.output) throw new Error(result.message ?? "Could not load Slack channels.");
+        return result.output;
+      },
+      getRoutineGithubRepos: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        return (await fetchServerJSON<{ repos: string[] }>(`workspaces/${workspaceId}/routine-repositories`)).repos;
+      },
+      listRoutineRuns: async ({ id, before }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        const { runs } = await fetchServerJSON<{ runs: RoutineRun[] }>(`workspaces/${workspaceId}/schedules/${id}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
         return runs;
       },
 
@@ -950,11 +976,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getWorkspaceRuns: async () => {
+      getWorkspaceRuns: async (params) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return [];
+        const before = params?.before;
         try {
-          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs`);
+          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
           return response.runs;
         } catch {
           return [];
@@ -964,6 +991,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       startBrowserSignIn: async () => {
         browserSignInController?.abort();
         browserSignInController = new AbortController();
+        const client = await Electrobun.Updater.getLocalInfo().then((info) => `Draft desktop ${info.version}`).catch(() => "Draft desktop dev");
         void startBrowserSignIn(browserSignInController.signal, {
           openUrl: (url) =>
             Bun.spawn(["open", url], {
@@ -978,7 +1006,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             // Sessions paused while signed out pick up again with the new login.
             if (value.phase === "complete") void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
           },
-        });
+        }, client);
         return { ok: true };
       },
       cancelBrowserSignIn: async () => {

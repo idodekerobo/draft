@@ -17,6 +17,7 @@ async function setup(permissions: AnyDraftToolPermission[], status = "running") 
   const spec: AgentRunSpec = {
     id: parseAgentRunId(RUN_ID),
     kind: "routine",
+    network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
     actor: { type: "agent", runId: parseAgentRunId(RUN_ID) }, onBehalfOf: null,

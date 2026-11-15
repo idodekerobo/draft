@@ -17,6 +17,19 @@ export const DRAFT_TOOLS = [
   { name: "skills.update", access: "write" },
   { name: "skills.delete", access: "write" },
   { name: "routines.list", access: "read" },
+  { name: "routines.create", access: "write" },
+  { name: "routines.update", access: "write" },
+  { name: "routines.delete", access: "write" },
+  { name: "routines.run", access: "write" },
+  { name: "routines.runs", access: "read" },
+  { name: "routines.options", access: "read" },
+  { name: "integrations.list", access: "read" },
+  { name: "integrations.connect", access: "write" },
+  { name: "activity.list", access: "read" },
+  { name: "slack.list_channels", access: "read" },
+  { name: "slack.read_channel", access: "read" },
+  { name: "slack.post_message", access: "write" },
+  { name: "github.credential", access: "read" },
   { name: "people.find", access: "read" },
   { name: "people.create", access: "write" },
   { name: "people.add_identity", access: "write" },
@@ -44,6 +57,19 @@ export interface DraftToolLimits {
   "skills.update": Record<string, never>;
   "skills.delete": Record<string, never>;
   "routines.list": Record<string, never>;
+  "routines.create": Record<string, never>;
+  "routines.update": Record<string, never>;
+  "routines.delete": Record<string, never>;
+  "routines.run": Record<string, never>;
+  "routines.runs": Record<string, never>;
+  "routines.options": Record<string, never>;
+  "integrations.list": Record<string, never>;
+  "integrations.connect": Record<string, never>;
+  "activity.list": Record<string, never>;
+  "slack.list_channels": Record<string, never>;
+  "slack.read_channel": Record<string, never>;
+  "slack.post_message": { channels?: "joined" | ReadonlyArray<string>; maxPerRun?: number };
+  "github.credential": { repos?: ReadonlyArray<string>; access?: "read" | "write" };
   "people.find": Record<string, never>;
   "people.create": { maxPerRun?: number };
   "people.add_identity": { maxPerRun?: number };
@@ -63,6 +89,12 @@ export type AnyDraftToolPermission = { [T in DraftToolName]: DraftToolPermission
 
 /** What a routine and a synthesis run may do with Draft's tools today: read any context and write any document. */
 export const CONTEXT_READ_WRITE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [{ tool: "context.read" }, { tool: "context.write" }];
+
+/** What a routine may read from the shared company brain. */
+export const ROUTINE_READ_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
+  { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
+  { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
+];
 
 /** What a synthesis run may do: read and write context, and note new teammates. It can never message anyone. */
 export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [

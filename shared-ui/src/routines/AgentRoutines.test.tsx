@@ -46,34 +46,37 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
-  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents };
+function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
+  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
   const deleteRoutine = mock(options.deleteRoutine ?? (async () => {}));
+  const runRoutine = mock(async (_id: string) => ({}));
+  const getRoutineSlackChannels = mock(async () => [{ id: "C1", name: "general" }, { id: "C2", name: "eng" }]);
+  const getRoutineGithubRepos = mock(async () => ["acme/app", "acme/site"]);
   const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns };
+  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels, getRoutineGithubRepos };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <DraftApiProvider api={api}>
         <Suspense fallback="loading">
-          <RoutinesPanel workspaceId="ws-1" onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} initialOpenId={options.initialOpenId} />
+          <RoutinesPanel workspaceId="ws-1" onReconnect={options.onReconnect} onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} initialOpenId={options.initialOpenId} />
         </Suspense>
       </DraftApiProvider>
     </QueryClientProvider>,
   );
-  return { createRoutine, updateRoutine, deleteRoutine, getRoutineRuns, onOpenRun, response };
+  return { createRoutine, updateRoutine, deleteRoutine, getRoutineRuns, runRoutine, onOpenRun, response };
 }
 
 const ready = () => screen.findByRole("button", { name: /^All/ });
 
 describe("agent routines in the list", () => {
-  it("shows the agent and model under the name and the newest run's outcome", async () => {
+  it("shows the agent, model and creator under the name and the newest run's outcome", async () => {
     setup();
     await ready();
-    expect(screen.getByText("Claude Code · Haiku")).toBeTruthy();
+    expect(screen.getByText("Claude Code · Haiku · by Maya")).toBeTruthy();
     expect(screen.getByText("Failed")).toBeTruthy();
   });
 
@@ -354,5 +357,124 @@ describe("deleting a routine", () => {
     fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByRole("button", { name: "Delete routine" })).toBeNull();
+  });
+});
+
+describe("run now and edit rights", () => {
+  it("starts a run from the row", async () => {
+    const { runRoutine } = setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /Run .* now/ }));
+    await waitFor(() => expect(runRoutine).toHaveBeenCalledWith("digest"));
+  });
+
+  it("hides Run now and editing for a person with view-only access", async () => {
+    setup({ routines: [agentRoutine({ canEdit: false })] });
+    await ready();
+    expect(screen.queryByRole("button", { name: /Run .* now/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    expect(await screen.findByText("You have view-only access to routines.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+});
+
+describe("what a routine can do", () => {
+  it("shows each run's result under its time", async () => {
+    const { getRoutineRuns } = setup();
+    getRoutineRuns.mockImplementation(async () => [{ ...runs[0]!, result: "Posted in #general" }]);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    expect(await screen.findByText("Posted in #general")).toBeTruthy();
+  });
+
+  it("turns posting off with null and keeps the other abilities", async () => {
+    const { updateRoutine } = setup({ routines: [agentRoutine({ agent: { ...agentRoutine().agent!, canNotify: true, postChannels: "joined" } })] });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit access" }));
+    fireEvent.click(screen.getByLabelText("Post in Slack"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { postChannels: null }));
+  });
+
+  it("will not save Only these channels with none picked", async () => {
+    setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit access" }));
+    fireEvent.click(screen.getByLabelText("Post in Slack"));
+    fireEvent.click(screen.getByLabelText("Only these channels"));
+    expect(await screen.findByText("Pick at least one channel.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(await screen.findByLabelText("#eng"));
+    expect((screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("grants write access to the picked GitHub repos", async () => {
+    const { updateRoutine } = setup();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit access" }));
+    fireEvent.click(screen.getByLabelText("Work in GitHub repos"));
+    fireEvent.click(screen.getByLabelText("Push branches and open pull requests"));
+    fireEvent.click(await screen.findByLabelText("acme/app"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { github: { repos: ["acme/app"], access: "write" } }));
+  });
+});
+
+describe("when a routine runs", () => {
+  afterEach(() => window.localStorage.clear());
+
+  async function openNew(options: Parameters<typeof setup>[0] = {}) {
+    const result = setup({ routines: [], ...options });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Meeting notes" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Send the action items." } });
+    return { ...result, dialog };
+  }
+
+  it("runs on a trigger instead of the schedule, and says so in the preview", async () => {
+    const { createRoutine, dialog } = await openNew({ connectedProviders: ["fireflies"] });
+    fireEvent.click(within(dialog).getByLabelText("When something happens"));
+    expect(within(dialog).getByText("Runs only when someone presses Run now")).toBeTruthy();
+    fireEvent.click(within(dialog).getByLabelText("A Fireflies meeting is summarized"));
+    expect(within(dialog).getByText("Starts after every Fireflies meeting is summarized")).toBeTruthy();
+    expect(within(dialog).queryByText(/email arrives/i)).toBeNull();
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ onSchedule: false, events: ["fireflies.meeting_summarized"] });
+  });
+
+  it("offers to connect Fireflies instead of a trigger that cannot fire", async () => {
+    const onReconnect = mock(() => {});
+    const { dialog } = await openNew({ connectedProviders: [], onReconnect });
+    fireEvent.click(within(dialog).getByLabelText("When something happens"));
+    expect(within(dialog).queryByLabelText("A Fireflies meeting is summarized")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Connect Fireflies" }));
+    expect(onReconnect).toHaveBeenCalled();
+  });
+
+  it("starts with the agent the person can use", async () => {
+    const { dialog } = await openNew({ agents: { claude: "not_connected", codex: "connected" } });
+    expect(within(dialog).getByRole("button", { name: "Agent and model" }).textContent).toMatch(/Codex/);
+  });
+
+  it("starts with what its connections allow, grouped by connection, and saves that", async () => {
+    const onReconnect = mock(() => {});
+    const { createRoutine, dialog } = await openNew({ connectedProviders: ["slack"], onReconnect });
+    expect(within(dialog).getByText("Slack · posts, messages")).toBeTruthy();
+    expect(within(dialog).getByText("GitHub not connected")).toBeTruthy();
+    expect(within(dialog).getByText("Posts in any Slack channel Draft is in")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit access" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Connect GitHub" }));
+    expect(onReconnect).toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByLabelText("Message teammates on Slack"));
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ postChannels: "joined" });
+    expect(createRoutine.mock.calls[0]![0]).not.toHaveProperty("canNotify");
   });
 });

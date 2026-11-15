@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChannelSendResult, NotifyMessage } from "draft-core/notify";
-import { resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
+import { resolveWorkspaceSlackBotToken } from "./slack-connection";
 import { openSlackDm, postSlackMessage } from "../ingestion/slack/post";
 import type { PersonIdentityRow } from "../types/tables";
 import type { NotifyChannel, ReachablePerson } from "./types";
@@ -18,8 +18,7 @@ export const renderSlackText = (message: NotifyMessage) => (message.link ? `${me
 
 /** Messages a person as a Slack direct message from the workspace's connected app. */
 export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}): NotifyChannel {
-  const resolveBotToken =
-    deps.resolveBotToken ?? (async (workspaceId, credentialId) => (await resolveProviderCredentialById(workspaceId, "slack", credentialId, client)).bot_token);
+  const resolveBotToken = deps.resolveBotToken ?? ((workspaceId, credentialId) => resolveWorkspaceSlackBotToken(client, workspaceId, credentialId));
   const openDm = deps.openDm ?? openSlackDm;
   const postMessage = deps.postMessage ?? postSlackMessage;
 

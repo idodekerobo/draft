@@ -33,15 +33,24 @@ export interface GithubPullRequestWebhookPayload {
     updated_at: string;
     html_url: string;
     user: { login: string };
-    base: { ref: string };
-    head: { ref: string };
+    base: { ref: string; sha?: string };
+    head: { ref: string; sha?: string };
     labels: Array<{ name: string }>;
+    merged?: boolean;
+    merged_at?: string | null;
+    merge_commit_sha?: string | null;
+    changed_files?: number;
+    additions?: number;
+    deletions?: number;
   };
   repository: { full_name: string };
 }
 
 export interface GithubPushWebhookPayload {
   ref: string;
+  before?: string;
+  after?: string;
+  compare?: string;
   repository: { full_name: string; default_branch: string };
   commits: Array<{
     id: string;
@@ -49,6 +58,9 @@ export interface GithubPushWebhookPayload {
     url: string;
     timestamp: string;
     author: { name: string; username?: string };
+    added?: string[];
+    removed?: string[];
+    modified?: string[];
   }>;
 }
 

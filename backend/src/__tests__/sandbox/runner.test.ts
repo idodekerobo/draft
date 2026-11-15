@@ -29,6 +29,7 @@ function manifestOf(overrides: Partial<RunnerManifest> = {}): RunnerManifest {
     tools: { native: ["Read", "Glob"], draftMcpUrl: null },
     output: { kind: "stream" },
     timeoutSeconds: 900,
+    network: "restricted",
     ...overrides,
   };
 }
@@ -597,7 +598,7 @@ describe("built-in tools of a run", () => {
   test("a tool outside the list for that harness is refused", () => {
     const withTools = (harness: "claude" | "codex", native: string[]) => validateRunnerManifest({ ...manifestOf({ harness }), tools: { native, draftMcpUrl: null } }, { callbackUrl: CALLBACK });
     expect(withTools("claude", ["Read", "Glob", "WebSearch"]).tools.native).toEqual(["Read", "Glob", "WebSearch"]);
-    expect(() => withTools("claude", ["Read", "Bash"])).toThrow("may not use");
+    expect(() => withTools("claude", ["Read", "Write"])).toThrow("may not use");
     expect(() => withTools("codex", ["shell", "WebSearch"])).toThrow("may not use");
     expect(withTools("claude", ["Read", "Read"]).tools.native).toEqual(["Read"]);
   });

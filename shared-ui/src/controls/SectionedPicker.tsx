@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { usePopover } from "../live-sessions/usePopover";
 
 export interface PickerOption {
@@ -18,13 +18,70 @@ export interface PickerSection {
   onChange: (value: string) => void;
   /** Leaves the panel open after a choice, for a section whose choice decides what the next section lists. */
   keepOpen?: boolean;
+  /** Adds a filter box, for a long list such as timezones. */
+  searchable?: boolean;
+}
+
+function SectionOptions({ section, showTitle, autoFocusSelected, onChoose }: {
+  section: PickerSection;
+  showTitle: boolean;
+  autoFocusSelected: boolean;
+  onChoose: (value: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const options = needle ? section.options.filter((option) => option.label.toLowerCase().includes(needle)) : section.options;
+  return (
+    <div className="ui-picker__section" role="group" aria-label={section.title}>
+      {showTitle && <p className="ui-picker__title">{section.title}</p>}
+      {section.searchable && (
+        <input
+          className="ui-picker__search"
+          type="search"
+          placeholder="Search"
+          aria-label={`Search ${section.title}`}
+          value={query}
+          autoFocus
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      )}
+      <div className="ui-picker__options">
+        {options.map((option) => {
+          const selected = option.value === section.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={selected}
+              className="ui-picker__option"
+              autoFocus={selected && autoFocusSelected && !section.searchable}
+              onClick={() => onChoose(option.value)}
+            >
+              <span>{option.label}</span>
+              {option.hint && <span className="ui-muted ui-picker__hint">{option.hint}</span>}
+              <span className="ui-picker__check" aria-hidden="true">{selected ? "✓" : ""}</span>
+            </button>
+          );
+        })}
+        {options.length === 0 && <p className="ui-picker__empty">No matches</p>}
+      </div>
+    </div>
+  );
 }
 
 /**
  * One button that opens a panel with several short lists side by side, each with its own title and
  * one selected value. The button shows what the caller passes as `children`.
  */
-export function SectionedPicker({ label, children, sections }: { label: string; children: ReactNode; sections: PickerSection[] }) {
+export function SectionedPicker({ label, children, sections, variant = "compact", disabled }: {
+  label: string;
+  children: ReactNode;
+  sections: PickerSection[];
+  /** "field" fills its form column and looks like the other form inputs. */
+  variant?: "compact" | "field";
+  disabled?: boolean;
+}) {
   const { open, setOpen, rootRef, triggerRef } = usePopover();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -45,17 +102,18 @@ export function SectionedPicker({ label, children, sections }: { label: string; 
   }
 
   return (
-    <div className="ui-picker" ref={rootRef}>
+    <div className={`ui-picker ui-picker--${variant}`} ref={rootRef}>
       <button
         ref={triggerRef}
         type="button"
         className="ui-picker__trigger"
+        disabled={disabled}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        {children}
+        <span className="ui-picker__value">{children}</span>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <path d="M3 4.5 6 7.5 9 4.5" />
         </svg>
@@ -63,27 +121,13 @@ export function SectionedPicker({ label, children, sections }: { label: string; 
       {open && (
         <div className="ui-picker__panel" role="menu" aria-label={label} ref={panelRef} onKeyDown={onPanelKeyDown}>
           {sections.map((section) => (
-            <div key={section.id} className="ui-picker__section" role="group" aria-label={section.title}>
-              <p className="ui-picker__title">{section.title}</p>
-              {section.options.map((option) => {
-                const selected = option.value === section.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    className="ui-picker__option"
-                    autoFocus={selected && section === sections.at(-1)}
-                    onClick={() => choose(section, option.value)}
-                  >
-                    <span>{option.label}</span>
-                    {option.hint && <span className="ui-muted ui-picker__hint">{option.hint}</span>}
-                    <span className="ui-picker__check" aria-hidden="true">{selected ? "✓" : ""}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <SectionOptions
+              key={section.id}
+              section={section}
+              showTitle={sections.length > 1}
+              autoFocusSelected={section === sections.at(-1)}
+              onChoose={(value) => choose(section, value)}
+            />
           ))}
         </div>
       )}

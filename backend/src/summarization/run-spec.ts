@@ -16,6 +16,7 @@ export function buildSummarizationRunSpec(input: SummarizationRunSpecInput): Age
   return {
     id: parseAgentRunId(input.id),
     kind: "summarization",
+    network: "restricted",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: cronTrigger(input.scheduledTaskId, input.occurrenceAt),
     actor: agentActor(parseAgentRunId(input.id)),

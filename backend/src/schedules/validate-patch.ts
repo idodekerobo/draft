@@ -1,9 +1,12 @@
 import { PRESETS, WEEKDAYS, type Preset, type ScheduleInput, type Weekday } from "../scheduling/presets";
 import { validateAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
 import type { RoutineEditability } from "../scheduling/routine-registry";
+import { RoutinePatch } from "draft-core/routines";
 
 const SCHEDULE_FIELDS = ["preset", "time", "weekday", "timezone"] as const;
-const AGENT_FIELDS = ["title", "prompt", "harness", "model"] as const;
+const AGENT_FIELDS = ["title", "prompt", "harness", "model", "events", "onSchedule", "canNotify", "postChannels", "github"] as const;
+/** Sending null for one of these turns that ability off. */
+const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github"]);
 const ALLOWED_FIELDS = new Set<string>(["enabled", ...SCHEDULE_FIELDS, ...AGENT_FIELDS]);
 const MAX_STRING_LENGTH = 64;
 
@@ -21,7 +24,10 @@ export type PatchValidation =
 /** The harness changes the model list, so a changed harness with no model drops the old model. */
 function mergeAgentConfig(current: AgentRoutineConfig, record: Record<string, unknown>) {
   const merged: Record<string, unknown> = { ...current };
-  for (const field of AGENT_FIELDS) if (record[field] !== undefined) merged[field] = record[field];
+  for (const field of AGENT_FIELDS) {
+    if (record[field] === null && CLEARABLE_FIELDS.has(field)) delete merged[field];
+    else if (record[field] !== undefined) merged[field] = record[field];
+  }
   if (record.harness !== undefined && record.harness !== current.harness && record.model === undefined) merged.model = null;
   return validateAgentRoutineConfig(merged);
 }
@@ -71,6 +77,8 @@ export function validatePatch(body: unknown, editable: RoutineEditability, agent
   const sentAgentFields = AGENT_FIELDS.filter((field) => record[field] !== undefined);
   if (sentAgentFields.length > 0) {
     if (!agentConfig || editable !== "full") return { ok: false, error: "field_not_editable", field: sentAgentFields[0] };
+    const checked = RoutinePatch.safeParse(Object.fromEntries(sentAgentFields.map((field) => [field, record[field]])));
+    if (!checked.success) return { ok: false, error: "invalid_body", field: String(checked.error.issues[0]?.path[0] ?? sentAgentFields[0]) };
     const merged = mergeAgentConfig(agentConfig, record);
     if (!merged.ok) return { ok: false, error: "invalid_body", field: merged.field };
     patch.agent = merged.config;

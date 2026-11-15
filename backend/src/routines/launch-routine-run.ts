@@ -15,8 +15,10 @@ export interface LaunchRoutineRunInput {
   run: AgentRunSpec;
   workspaceId: string;
   routine: AgentRoutineConfig;
-  /** When the routine runs, so the agent can know its own cadence. */
-  schedule: { description: string; timezone: string };
+  /** How the routine is set to run, in words, so the agent knows its own cadence. */
+  setup: { description: string; timezone: string };
+  /** True when a person pressed Run now. */
+  manual?: boolean;
   config: SandboxDeploymentConfig;
   client: SupabaseClient;
   /** What started this run, when it was an event. */
@@ -33,7 +35,7 @@ export class RoutineLeaseBusyError extends Error {
   }
 }
 
-export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, schedule, config, client, event }) => {
+export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, setup, manual, config, client, event }) => {
   const { data, error } = await client.from("workspaces").select("organization_id").eq("id", workspaceId).single();
   if (error) throw error;
   const organizationId = (data as { organization_id: string }).organization_id;
@@ -48,11 +50,13 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
       kind: "text" as const,
       text: renderRoutinePrompt(routine.prompt, {
         title: routine.title,
-        schedule: schedule.description,
-        timezone: schedule.timezone,
+        setup: setup.description,
+        timezone: setup.timezone,
         startedAt: new Date(),
         hasDraftTools: needsDraftToolServer(agentRun),
-        ...(event ? { event: { description: event.description, title: event.title, text: event.text } } : {}),
+        startedBy: event
+          ? { type: "event", description: event.description, providerLabel: event.providerLabel, sourceItemId: event.sourceItemId, facts: event.facts, title: event.title, text: event.text, truncated: event.truncated }
+          : { type: manual ? "manual" : "schedule" },
       }),
     },
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,

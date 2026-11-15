@@ -3,26 +3,31 @@ import { writeAuthState } from "draft-core/auth-state";
 
 export interface BrowserSignInEvents {
   openUrl(url: string): void;
-  progress(value: { phase: "awaiting_approval" | "complete" | "error"; error?: string }): void;
+  progress(value: { phase: "awaiting_approval" | "complete" | "error"; error?: string; confirmCode?: string }): void;
 }
 
-export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSignInEvents): Promise<void> {
+export async function startBrowserSignIn(signal: AbortSignal, events: BrowserSignInEvents, client: string): Promise<void> {
   const apiUrl = process.env.DRAFT_API_BASE_URL ?? "https://api.draftai.us";
   const appUrl = process.env.DRAFT_APP_URL ?? "https://app.draftai.us";
 
   let tokens;
+  let confirmCode: string | undefined;
   try {
     tokens = await pairDevice({
       apiUrl,
       appUrl,
       fetch,
       signal,
-      onUrl: events.openUrl,
+      client,
+      onUrl: (url, code) => {
+        confirmCode = code ?? undefined;
+        events.openUrl(url);
+      },
       // browser-sign-in only distinguishes "awaiting_approval" from
       // terminal outcomes — collapse the primitive's richer progress
       // events into the desktop UI's existing two-phase shape.
       onProgress: (event) => {
-        if (event.phase === "awaiting_approval") events.progress({ phase: "awaiting_approval" });
+        if (event.phase === "awaiting_approval") events.progress({ phase: "awaiting_approval", confirmCode });
       },
     });
   } catch (error) {

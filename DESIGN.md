@@ -59,7 +59,7 @@ Use `cubic-bezier(0.23, 1, 0.32, 1)`. Pointer press feedback is 120ms and scales
 
 ## Platform distinctions
 
-Web retains its Slack and GitHub restrictions. Desktop retains channel management, repository selection, editing, session mode, history, profile switching, and native window controls. Both Connections pages support client-side trimmed case-insensitive search through provider names and agent aliases. Search does not affect connection state or leave the client. Onboarding lists remain unfiltered.
+Web connects every hosted tool, including Slack and its channels. Desktop retains repository selection, editing, session mode, history, profile switching, and native window controls. Both Connections pages support client-side trimmed case-insensitive search through provider names and agent aliases. Search does not affect connection state or leave the client. Onboarding lists remain unfiltered.
 
 ## Decision log
 
@@ -68,4 +68,5 @@ Web retains its Slack and GitHub restrictions. Desktop retains channel managemen
 - Add opt-in shared `ToolList` search for Connections only.
 - Optimize web phone behavior without copying web navigation into the desktop shell.
 - Keep privacy defaults and consent promises unchanged; do not add a session replay setting.
+- Connect Slack on web as on desktop: Draft's backend lists channels, because Slack's API refuses browser calls.
 - Store provider artwork in `shared-ui/src/integrations/logos` and render it through shared `ProviderLogo`, with a fixed 28px slot and neutral icon fallback. The current preview assets have local provenance records, but upstream license terms remain unverified.

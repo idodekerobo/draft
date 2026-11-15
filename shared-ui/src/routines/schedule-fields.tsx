@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Select } from "../controls/Select";
 import type { RoutinePreset, RoutineWeekday } from "./types";
 
 type EditablePreset = Exclude<RoutinePreset, "custom">;
@@ -43,6 +44,18 @@ export interface ScheduleValue {
   timezone: string;
 }
 
+/** "Runs weekdays at 09:00" for the preview column. */
+export function scheduleSentence(value: { preset: RoutinePreset; time: string; weekday: RoutineWeekday }): string {
+  const at = value.time ? ` at ${value.time}` : "";
+  if (value.preset === "draft_default") return "Runs on Draft’s default schedule";
+  if (value.preset === "custom") return "Runs on a custom schedule";
+  if (value.preset === "hourly") return "Runs every hour";
+  if (value.preset === "daily") return `Runs every day${at}`;
+  if (value.preset === "weekdays") return `Runs on weekdays${at}`;
+  const day = WEEKDAYS.find(([key]) => key === value.weekday)?.[1] ?? "week";
+  return `Runs every ${day}${at}`;
+}
+
 /** Frequency, time, timezone and day for a schedule a person is building from nothing. */
 export function ScheduleFields({ value, onChange, disabled, fieldError, zones }: {
   value: ScheduleValue;
@@ -54,15 +67,17 @@ export function ScheduleFields({ value, onChange, disabled, fieldError, zones }:
   const usesTime = presetUsesTime(value.preset);
   return (
     <div className="ui-routines__fields">
-      <label className="ui-routines__field">
+      <div className="ui-routines__field">
         Frequency
-        <select value={value.preset} disabled={disabled} onChange={(event) => onChange({ ...value, preset: event.target.value as ScheduleValue["preset"] })}>
-          {SELECTABLE.map((option) => (
-            <option key={option} value={option}>{PRESET_LABELS[option]}</option>
-          ))}
-        </select>
+        <Select
+          label="Frequency"
+          value={value.preset}
+          disabled={disabled}
+          options={SELECTABLE.filter((option) => option !== "draft_default").map((option) => ({ value: option as ScheduleValue["preset"], label: PRESET_LABELS[option] }))}
+          onChange={(preset) => onChange({ ...value, preset })}
+        />
         {fieldError("preset")}
-      </label>
+      </div>
 
       {usesTime && (
         <label className="ui-routines__field">
@@ -72,26 +87,18 @@ export function ScheduleFields({ value, onChange, disabled, fieldError, zones }:
         </label>
       )}
 
-      <label className="ui-routines__field">
+      <div className="ui-routines__field">
         Timezone
-        <select value={value.timezone} disabled={disabled} onChange={(event) => onChange({ ...value, timezone: event.target.value })}>
-          {zones.map((zone) => (
-            <option key={zone} value={zone}>{zone}</option>
-          ))}
-        </select>
+        <Select label="Timezone" value={value.timezone} disabled={disabled} searchable options={zones.map((zone) => ({ value: zone, label: zone }))} onChange={(timezone) => onChange({ ...value, timezone })} />
         {fieldError("timezone")}
-      </label>
+      </div>
 
       {value.preset === "weekly" && (
-        <label className="ui-routines__field ui-routines__field--wide">
+        <div className="ui-routines__field ui-routines__field--wide">
           Day
-          <select value={value.weekday} disabled={disabled} onChange={(event) => onChange({ ...value, weekday: event.target.value as RoutineWeekday })}>
-            {WEEKDAYS.map(([day, label]) => (
-              <option key={day} value={day}>{label}</option>
-            ))}
-          </select>
+          <Select label="Day" value={value.weekday} disabled={disabled} options={WEEKDAYS.map(([day, label]) => ({ value: day, label }))} onChange={(weekday: RoutineWeekday) => onChange({ ...value, weekday })} />
           {fieldError("weekday")}
-        </label>
+        </div>
       )}
     </div>
   );

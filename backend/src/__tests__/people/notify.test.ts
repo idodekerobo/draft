@@ -72,6 +72,7 @@ function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel
 const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): AgentRunSpec => ({
   id: parseAgentRunId(RUN),
   kind: "routine",
+    network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   actor: agentActor(parseAgentRunId(RUN)),
@@ -115,6 +116,15 @@ describe("people.notify", () => {
     const eventRun: ToolCaller = { type: "run", run: { ...runSpec(toMembers), trigger: { type: "webhook", provider: "fireflies", eventId: "meeting-1" } } };
     await call(eventRun, "people.notify", { personId: IZA, text: "Your items." });
     expect(sent[0]!.message.text).toBe(`${LINE}\nYour items.`);
+  });
+
+  it("names the teammate who pressed Run now on someone else's routine, and not the owner who ran their own", async () => {
+    const { call, sent } = setup();
+    const manual = (requestedBy: string): ToolCaller => ({ type: "run", run: { ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } } });
+    await call(manual(ADMIN), "people.notify", { personId: IZA, text: "a" });
+    expect(sent[0]!.message.text.split("\n")[0]).toBe(`${LINE} · started by Ada`);
+    await call(manual(OWNER), "people.notify", { personId: IZA, text: "b" });
+    expect(sent[1]!.message.text.split("\n")[0]).toBe(LINE);
   });
 
   it("says a run with no routine title, or no owner, is still an agent", async () => {

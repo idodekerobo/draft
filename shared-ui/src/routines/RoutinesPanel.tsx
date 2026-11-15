@@ -37,8 +37,9 @@ function recentActivity(routine: Routine) {
       <div className="ui-routines__when" data-label="Last run">
         {run ? (
           <>
-            <RunStatus status={run.status} />
+            <RunStatus status={run.status} reason={run.skipReason} />
             <div className="ui-routines__secondary">{formatWhen(run.startedAt, routine.timezone)}</div>
+            {run.status === "skipped" && run.skipReason && <div className="ui-routines__secondary ui-routines__skip-reason">{run.skipReason}</div>}
           </>
         ) : (
           <>
@@ -95,6 +96,9 @@ function nextActivity(routine: Routine, onReconnect?: () => void) {
   } else if (!routine.enabled) {
     heading = "Paused";
     detail = "No upcoming activity";
+  } else if (routine.agent?.onSchedule === false) {
+    heading = "On trigger";
+    detail = routine.agent.events?.length ? "When something happens" : "When someone presses Run now";
   } else if (!routine.nextRunAt) {
     heading = "Not scheduled";
     detail = null;
@@ -129,7 +133,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
-  const { routines, canEdit, agents } = data;
+  const { routines, canEdit, agents, connectedProviders } = data;
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
@@ -137,7 +141,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const labelPrefix = useId();
 
-  const { toggle, save, create, remove } = useRoutineMutations(workspaceId, (error) =>
+  const { toggle, save, create, remove, run } = useRoutineMutations(workspaceId, (error) =>
     toast.error("Could not update the routine", { description: error.message }),
   );
 
@@ -173,7 +177,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
 
   // Runs load while the person is still reaching for the routine, so its dialog opens filled in.
   function warmRuns(routine: Routine) {
-    if (routine.agent) void queryClient.prefetchQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
+    if (routine.agent) void queryClient.prefetchInfiniteQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
   }
 
   async function onSave(routine: Routine, patch: RoutinePatch) {
@@ -186,6 +190,15 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
     await remove.mutateAsync(routine.id);
     toast.success(`${routine.title} deleted.`);
     setOpenId(null);
+  }
+
+  function onRunNow(routine: Routine) {
+    setPendingFor(routine.id, true);
+    run.mutate(routine.id, {
+      onSuccess: () => toast.success(`${routine.title} started.`, { description: "Its run shows in Recent activity." }),
+      onError: (error) => toast.error(`Could not start ${routine.title}`, { description: error.message }),
+      onSettled: () => setPendingFor(routine.id, false),
+    });
   }
 
   const refreshAgents = () => void queryClient.invalidateQueries({ queryKey: routinesQueryOptions(api, workspaceId).queryKey });
@@ -250,10 +263,12 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
             <span>Enabled</span>
             <span>Recent activity</span>
             <span>Next activity</span>
+            <span><span className="ui-routines__visually-hidden">Actions</span></span>
           </div>
           {visible.map((routine) => {
             const nameId = `${labelPrefix}-${routine.id}`;
             const managed = routine.editable === "toggle_only";
+            const editable = routine.canEdit ?? canEdit;
             const switchLabel = `${routine.title}${routine.connectionLabel ? ` ${routine.connectionLabel}` : ""} enabled`;
             return (
               <section key={routine.id} className="ui-routines__routine" aria-labelledby={nameId}>
@@ -270,7 +285,12 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                       {routine.title}
                     </button>
                     {routine.connectionLabel && <div className="ui-routines__secondary">{routine.connectionLabel}</div>}
-                    {routine.agent && <div className="ui-routines__secondary">{agentLabel(routine.agent)}</div>}
+                    {routine.agent && (
+                      <div className="ui-routines__secondary">
+                        {agentLabel(routine.agent)}
+                        {routine.agent.createdByName ? ` · by ${routine.agent.createdByName}` : ""}
+                      </div>
+                    )}
                   </div>
                   <div className="ui-routines__schedule">
                     <div className="ui-routines__secondary">{routine.scheduleDescription}</div>
@@ -285,7 +305,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                       className="ui-routines__switch"
                       aria-checked={routine.enabled}
                       aria-label={switchLabel}
-                      disabled={!canEdit || routine.needsReconnect || pending.has(routine.id)}
+                      disabled={!editable || routine.needsReconnect || pending.has(routine.id)}
                       onClick={() => onToggle(routine, !routine.enabled)}
                     >
                       <i />
@@ -293,6 +313,19 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                   </div>
                   {recentActivity(routine)}
                   {nextActivity(routine, onReconnect)}
+                  <div className="ui-routines__actions-cell">
+                    {routine.agent && editable && api.runRoutine && (
+                      <button
+                        type="button"
+                        className="ui-routines__btn ui-routines__btn--small"
+                        aria-label={`Run ${routine.title} now`}
+                        disabled={pending.has(routine.id) || routine.agent.lastRun?.status === "running"}
+                        onClick={() => onRunNow(routine)}
+                      >
+                        {pending.has(routine.id) ? "Starting…" : "Run now"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </section>
             );
@@ -309,12 +342,14 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           key={open.id}
           workspaceId={workspaceId}
           routine={open}
-          canEdit={canEdit}
+          canEdit={open.canEdit ?? canEdit}
           onClose={() => setOpenId(null)}
           onSave={(patch) => onSave(open, patch)}
           onDelete={open.agent ? () => onDelete(open) : undefined}
           onOpenRun={onOpenRun}
           agents={agents}
+          connectedProviders={connectedProviders}
+          onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
         />
@@ -325,6 +360,8 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onClose={() => setCreating(false)}
           onCreate={onCreate}
           agents={agents}
+          connectedProviders={connectedProviders}
+          onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
         />

@@ -8,48 +8,22 @@ import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
 import type { DimensionHint } from "../synthesis/types";
 import { recordRouteError } from "../errors/route-error";
-import type { AgentRunRow } from "../types/tables";
-import { synthesisTriggerType } from "../synthesis/run-spec";
+import { listActivity, parseCursor } from "../activity/service";
 
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
-
-const RUNS_LIST_LIMIT = 50;
-
-type SynthesisRunListRow = Pick<
-  AgentRunRow,
-  "id" | "status" | "outcome" | "trigger" | "summary" | "started_at" | "completed_at" | "created_at"
->;
 
 export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const { data, error } = await serviceClient
-    .from("agent_runs")
-    .select("id, status, outcome, trigger, summary, started_at, completed_at, created_at")
-    .eq("kind", "synthesis")
-    .eq("workspace_id", req.params.id)
-    .order("created_at", { ascending: false })
-    .limit(RUNS_LIST_LIMIT)
-    .returns<SynthesisRunListRow[]>();
-
-  if (error) {
+  const before = parseCursor(new URL(req.url).searchParams.get("before"));
+  if (before === "invalid") return Response.json({ error: "invalid_cursor" }, { status: 400 });
+  try {
+    return Response.json(await listActivity(serviceClient, req.params.id, before));
+  } catch (error) {
     recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "synthesis_runs_read_failed", error });
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: "synthesis_runs_read_failed" }, { status: 500 });
   }
-
-  return Response.json({
-    runs: (data ?? []).map((run) => ({
-      id: run.id,
-      status: run.status,
-      outcome: run.outcome,
-      triggerType: synthesisTriggerType(run.trigger),
-      resultSummary: run.summary,
-      startedAt: run.started_at,
-      completedAt: run.completed_at,
-      createdAt: run.created_at,
-    })),
-  });
 });
 
 interface SynthesisRunsBody {

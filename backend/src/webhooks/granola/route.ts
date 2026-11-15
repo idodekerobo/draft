@@ -1,3 +1,5 @@
+import { meetingFacts } from "../../routines/event-facts";
+import { fireRoutineEvent } from "../../routines/fire-event";
 import { ingestGranolaNote } from "../../ingestion/granola/normalize";
 import { authenticateGranolaWebhookRequest, GranolaWebhookAuthError } from "./request-auth";
 import { recordRouteError } from "../../errors/route-error";
@@ -23,8 +25,10 @@ export async function POST(
 
     // An unrecognized event type is a 2xx no-op, not an error -- otherwise
     // Granola retries and eventually disables the endpoint.
+    let generatedSourceItemId: string | null = null;
     if (HANDLED_EVENTS.has(eventType)) {
-      await ingestGranolaNote(connection, credentialId, noteId);
+      const ingested = await ingestGranolaNote(connection, credentialId, noteId);
+      if (eventType === "note.generated") generatedSourceItemId = ingested.sourceItemId;
     }
 
     const { error } = await serviceClient.rpc("mark_granola_webhook_success", {
@@ -34,6 +38,10 @@ export async function POST(
       p_succeeded_at: new Date().toISOString(),
     });
     if (error) throw error;
+
+    if (generatedSourceItemId) {
+      fireRoutineEvent({ workspaceId: connection.workspace_id, name: "granola.note_ready", eventId: noteId, sourceItemId: generatedSourceItemId, facts: meetingFacts("Granola note id", noteId) });
+    }
 
     return new Response(null, { status: 200 });
   } catch (error) {

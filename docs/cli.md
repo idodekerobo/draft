@@ -38,7 +38,13 @@ draft auth whoami
 draft auth logout
 ~~~
 
-Authentication uses browser/device pairing and stores the CLI session separately from desktop authentication.
+`draft auth login` prints a sign-in link and a short code, such as `K7M-4QX`. Open the link, sign in, and type the code on the page. The code proves the sign-in is the one you started, so only approve a sign-in you started yourself. The CLI session is stored separately from the desktop app's.
+
+With `--json` (for example, when an agent runs it for you), it prints one line first and then the result:
+
+~~~json
+{"status":"action_required","action":"sign_in","url":"https://app.draftai.us/link?code=…","confirmCode":"K7M-4QX","expiresInSeconds":300}
+~~~
 
 ## Context
 
@@ -96,7 +102,7 @@ Draft also exposes the same company brain through an OAuth-protected remote MCP 
 https://api.draftai.us/mcp
 ~~~
 
-The first connection uses Draft's browser sign-in and consent flow. The server is read-only except for `skills.add`, which needs the `write` OAuth scope. See [MCP and agent connections](./mcp.md) for the full tool list.
+The first connection uses Draft's browser sign-in and consent flow. Sign-in asks for read and write access, so your agent can read context and also manage routines, skills and connections for you. See [MCP and agent connections](./mcp.md) for the full tool list.
 
 Claude Code can register it with:
 
@@ -135,13 +141,46 @@ Content can come from a local file (`--file`), inline text (`--content`), or pip
 
 ## Routines
 
-Routines are scheduled background tasks. This command only reads them. See [Routines](./routines.md).
+A routine is an agent that runs on a schedule, when something happens (a meeting is summarized, a pull request is merged, a Linear issue is created), or when you run it. See [Routines](./routines.md). Each command matches one MCP tool of the same name (`draft routines list` is `routines.list`), and `--json` prints that tool's answer. Run `draft routines <command> --help` for every flag and example.
 
 ~~~bash
-draft routines list [--json]
+draft routines options                     # triggers, schedule presets, agents, Slack channels, GitHub repos
+draft routines list [<id>]                 # every routine with its settings, or one with its full instructions
+draft routines create --title <t> (--prompt <text> | --prompt-file <path>) --harness <claude|codex> --preset <preset> [options]
+draft routines update <id> [options]       # change only the fields you pass
+draft routines delete <id>
+draft routines run <id> [--wait]           # start a run now; --wait waits and prints the result
+draft routines runs <id> [--cursor <c>]     # 50 at a time; --cursor shows older runs
+draft routines runs <id> --run-id <id> [--transcript [--cursor <n>]]
 ~~~
 
-Text output shows each routine's title, schedule, cron expression, enabled state, and next run. `--json` prints `{ routines }`.
+Options for `create` and `update`:
+
+| Flag | Meaning |
+| --- | --- |
+| `--model <id>` | The agent's model. See `draft routines options`. |
+| `--preset`, `--time HH:MM`, `--weekday`, `--timezone` | The schedule. Presets: `draft_default`, `hourly`, `daily`, `weekdays`, `weekly`. |
+| `--no-schedule` / `--schedule` | Run only on triggers and Run now, or turn the schedule back on. The schedule is kept while it's off. |
+| `--on <trigger>` | Also run when this happens. Repeat the flag or pass a comma list. `--no-triggers` removes them all. |
+| `--notify` / `--no-notify` | Let the agent message teammates on Slack. |
+| `--post-channels joined\|#a,#b` / `--no-post` | Let the agent post in Slack: any channel Draft is in, or only these. |
+| `--github owner/repo[,…]`, `--github-access read\|write` / `--no-github` | Let the agent work in these repos. `write` lets it open pull requests. |
+| `--disabled` (create), `--enable` / `--disable` (update) | Save it turned off, or turn it on or off. |
+
+A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft integrations connect linear`. A routine on an agent that isn't set up for routines in your workspace is refused too, with how to set it up.
+
+`list` shows each routine's agent, when it runs, its triggers, what it can reach in Slack and GitHub, any missing connection, its next run, and its last run. `runs` shows each run's status, what started it (the schedule, Run now, or an event), its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
+
+## Activity
+
+`draft activity list` shows everything the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions. It's the same list as the Activity page, and matches the MCP tool `activity.list`.
+
+~~~bash
+draft activity list [--json]
+draft activity list --cursor '<cursor from the last page>'
+~~~
+
+Each routine run includes the command that shows it, for example `draft routines runs <routine id> --run-id <run id>`.
 
 ## Project agent setup
 
@@ -300,47 +339,42 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 
 ## Hosted integrations
 
-`draft integrations` connects and manages the hosted control plane's own data
-sources — GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is
-different from `draft add`: `add` points a coding agent *inside a project* at
-the CLI's read commands (`auth login`, `context list`, `context read`);
-`integrations` is workspace-level and has nothing to do with any one
-project's directory. Most `integrations connect` flows need a human at a
-terminal — a browser handoff, a hidden credential prompt, or both — so
-running them unattended (e.g. from an agent) usually isn't the right call
-unless you're prepared to babysit the prompts.
+`draft integrations` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `integrations` is workspace-level and has nothing to do with any one project's directory. Run `draft integrations <command> --help` for details.
 
 ### `draft integrations list [--json]`
 
-Lists all six providers and their status — `disconnected`, `pending`,
-`connected`, `degraded`, or `error`. Slack connections also report their
-current `channel_ids` and a `backfill` object (`status`, `cutoff`,
-`completed_at`, `last_error`) tracking the seven-day history backfill that
-starts automatically when a Slack connection activates. `status` is
-`in_progress` while paging through history/replies, `partial` if the last
-attempt hit a rate limit or error (retried automatically), and `completed`
-once every configured channel is covered back to the fixed `cutoff`.
-Granola is the one provider that can list more than one live connection at
-once: a personal row per connecting teammate, plus at most one
-workspace-key row (`account_kind: "workspace"`, no `is_mine`).
+Shows each provider: its status, what it brings into Draft, the routine triggers and abilities it unlocks, and how to connect it if it isn't connected. Status is one of:
 
-**Fireflies and Granola stay `pending` until they have proof the webhook
-actually works** — not just until credentials are stored. The backend flips
-each to `connected` only after the provider calls its webhook back for a
-real event (`meeting.transcribed`/`meeting.summarized` for Fireflies;
-`note.generated`/`note.edited`/`note.access_granted` for Granola). For
-Fireflies, pressing Enter to finish `connect fireflies` confirms you did the
-manual setup step but can't prove the webhook is live — expect `pending`
-until your next meeting is transcribed or summarized. Granola has no manual
-setup step (the CLI registers the webhook itself), so `pending` there just
-means no note has landed yet.
+- `connected`
+- `pending`: saved, waiting for its first event. Fireflies and Granola stay pending until the provider sends Draft its first meeting or note.
+- `needs_reconnect`: it stopped working and needs to be connected again.
+- `not_connected`
+
+`--json` prints the same answer as the MCP tool `integrations.list`. For Slack's channels, use `draft integrations slack channels list`.
 
 ```bash
 draft integrations list
 draft integrations list --json
 ```
 
+### Connect through a link
+
+When you run `connect` with `--json`, or without a terminal (for example, when an agent runs it for you), the CLI never asks for a key. It prints a link instead:
+
+```json
+{"status":"action_required","action":"connect_linear","provider":"linear","url":"https://app.draftai.us/connect/…","expiresAt":"…"}
+```
+
+Open the link and connect the provider on that page in the Draft app. The link works once, only for you, for 15 minutes, and your key never passes through the CLI or the agent. Add `--wait` to keep checking until the provider is connected.
+
+```bash
+draft integrations connect linear --json
+draft integrations connect linear --json --wait
+```
+
 ### `draft integrations connect <provider> [--json] ...`
+
+In an interactive terminal, without `--json`, `connect` runs each provider's own flow:
 
 | Provider | Extra flags | TTY-only? | Terminal status on success |
 | --- | --- | --- | --- |

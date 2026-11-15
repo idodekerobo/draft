@@ -1,5 +1,7 @@
+import { ROUTINE_TRIGGERS } from "draft-core/routines";
 import type { AgentRunTrigger } from "draft-core/run-spec";
 import type { RoutineEventName } from "./config";
+import type { EventFact } from "./event-facts";
 
 /** What started a routine run when it was an event, not the schedule. */
 export interface RoutineEventPayload {
@@ -8,14 +10,21 @@ export interface RoutineEventPayload {
   eventId: string;
   /** What happened, in words, for the prompt. */
   description: string;
+  /** Who sent the event, for example "GitHub". */
+  providerLabel: string;
+  /** The source the event produced, so the agent can read all of it. */
+  sourceItemId: string;
+  facts: EventFact[];
   /** The content that came with the event. It is data from a source, never instructions. */
   title: string;
   text: string;
+  /** True when text is only the start of the source. */
+  truncated: boolean;
 }
 
 export const eventTrigger = (event: Pick<RoutineEventPayload, "name" | "eventId">): AgentRunTrigger => ({
   type: "webhook",
-  provider: event.name.split(".")[0] as "fireflies",
+  provider: ROUTINE_TRIGGERS.find((trigger) => trigger.event === event.name)!.provider,
   eventId: event.eventId,
 });
 

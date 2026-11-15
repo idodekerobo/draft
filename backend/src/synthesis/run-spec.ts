@@ -42,6 +42,7 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
   return {
     id: parseAgentRunId(input.runId),
     kind: "synthesis",
+    network: "restricted",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
     actor: agentActor(parseAgentRunId(input.runId)),

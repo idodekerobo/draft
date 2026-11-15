@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readSource, searchSources } from "../../../services/sources";
 import { syncMembers } from "../../../people/sync-members";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { requireUser } from "./shared";
+import { callerWorkspaceId } from "./shared";
 
 /** The sources service names its own failures; a search or read that broke inside is not a refusal. */
 function sourceRefusal(error: { code: string; message: string }): ToolHandlerResult {
@@ -13,7 +13,7 @@ function sourceRefusal(error: { code: string; message: string }): ToolHandlerRes
 
 const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : undefined);
 
-/** The source tools. They need a person: sources are shown as that person may see them. */
+/** Run callers receive shared sources only; signed-in callers can also see their own private sources. */
 export function createSourceTools(client: SupabaseClient) {
   const searchInput = z.object({
     query: z.string().min(1).max(512).optional().describe("Keywords. Optional when person is set: then you get that person's sources, newest first."),
@@ -33,13 +33,15 @@ export function createSourceTools(client: SupabaseClient) {
       "Search current cross-provider source evidence using PostgreSQL keyword search. Search covers each source's stored default representation, which may be a summary, rendered source, or mixed content; original transcripts are not universally searchable. " +
       "Pass person (an id from people.find, or \"me\") to get only the sources that mention that person's email, Slack, Linear or other ids; the query is then optional. " +
       "A source that names someone only by first name, with no id, is not matched this way.",
-    callers: ["user"],
+    callers: ["user", "run"],
     input: searchInput,
     auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
     handler: async ({ input, caller }) => {
-      const user = requireUser(caller, "sources.search");
-      if (input.person) await syncMembers(client, user.workspaceId);
-      const result = await searchSources(client, user.workspaceId, user.userId, input);
+      const workspaceId = callerWorkspaceId(caller);
+      const viewerUserId = caller.type === "user" ? caller.userId : null;
+      if (input.person && caller.type === "user") await syncMembers(client, workspaceId);
+      const personUserId = caller.type === "user" ? caller.userId : caller.run.onBehalfOf;
+      const result = await searchSources(client, workspaceId, viewerUserId, input, personUserId);
       return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
     },
   });
@@ -55,12 +57,11 @@ export function createSourceTools(client: SupabaseClient) {
     mcp: true,
     description:
       "Read one authorized source by source_item_id. Default returns stored searchable content; request transcript, messages, or structured only when search reports that representation as available. Reads are bounded and version-bound.",
-    callers: ["user"],
+    callers: ["user", "run"],
     input: readInput,
     auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
     handler: async ({ input, caller }) => {
-      const user = requireUser(caller, "sources.read");
-      const result = await readSource(client, user.workspaceId, user.userId, input);
+      const result = await readSource(client, callerWorkspaceId(caller), caller.type === "user" ? caller.userId : null, input);
       return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
     },
   });

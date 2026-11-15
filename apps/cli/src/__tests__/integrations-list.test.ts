@@ -39,176 +39,93 @@ function providerRequests() {
   );
 }
 
+const SAMPLE_INTEGRATIONS = [
+  {
+    provider: "github",
+    label: "GitHub",
+    status: "connected",
+    connectedByYou: true,
+    ingests: "pull requests and commits",
+    triggers: [{ event: "github.pull_request", label: "Pull request opened" }],
+    abilities: ["A routine can read repos, or open pull requests in them"],
+    connect: { cli: "draft integrations connect github", mcp: 'integrations.connect {"provider":"github"}' },
+  },
+  {
+    provider: "slack",
+    label: "Slack",
+    status: "needs_reconnect",
+    connectedByYou: false,
+    ingests: "messages in the channels you pick",
+    triggers: [],
+    abilities: ["A routine can post in channels"],
+    connect: { cli: "draft integrations connect slack", mcp: 'integrations.connect {"provider":"slack"}' },
+  },
+  {
+    provider: "linear",
+    label: "Linear",
+    status: "not_connected",
+    connectedByYou: false,
+    ingests: "issues, comments and projects",
+    triggers: [],
+    abilities: [],
+    connect: { cli: "draft integrations connect linear", mcp: 'integrations.connect {"provider":"linear"}' },
+  },
+];
+
 describe("draft integrations list", () => {
-  it("returns the exact public JSON shape in fixed order and filters session, unknown, and internal fields", async () => {
-    backend.state.connectionsListResponse = () => Response.json({
-      connections: [
-        rawConnection("claude_session", "active", { display_name: "must-filter" }),
-        rawConnection("future_provider", "active", { secret: "unknown-canary" }),
-        rawConnection("fireflies", "active", { connection_key: "internal-canary" }),
-        rawConnection("linear", "degraded", { last_error_at: "2026-08-20T12:00:00Z" }),
-        rawConnection("github", "revoked", { display_name: "Acme", id: "internal-id" }),
-        rawConnection("claude_code", "error"),
-        rawConnection("slack", "active", {
-          display_name: "Workspace",
-          last_success_at: "2026-08-20T11:00:00Z",
-          channel_ids: ["C1", "C2"],
-          config_json: { token: "secret-canary" },
-          backfill: {
-            status: "partial",
-            cutoff: "2026-08-13T00:00:00Z",
-            completed_at: null,
-            last_error: "rate limited",
-            internal_debug_field: "must-filter-canary",
-          },
-        }),
-      ],
-    });
+  it("passes the integrations.list tool output through unchanged as JSON", async () => {
+    backend.state.toolOutputs["integrations.list"] = () => ({ integrations: SAMPLE_INTEGRATIONS });
 
     const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
-    expect(result.stdout).not.toContain("\x1b[");
-    expect(result.stdout).not.toContain("canary");
-    expect(JSON.parse(result.stdout)).toEqual({
-      schema_version: 1,
-      status: "ok",
-      connections: [
-        {
-          provider: "github",
-          status: "disconnected",
-          connected: false,
-          display_name: "Acme",
-          last_success_at: null,
-          last_error_at: null,
-        },
-        {
-          provider: "slack",
-          status: "connected",
-          connected: true,
-          display_name: "Workspace",
-          last_success_at: "2026-08-20T11:00:00Z",
-          last_error_at: null,
-          channel_ids: ["C1", "C2"],
-          backfill: {
-            status: "partial",
-            cutoff: "2026-08-13T00:00:00Z",
-            completed_at: null,
-            last_error: "rate limited",
-          },
-        },
-        {
-          provider: "linear",
-          status: "degraded",
-          connected: true,
-          display_name: null,
-          last_success_at: null,
-          last_error_at: "2026-08-20T12:00:00Z",
-        },
-        {
-          provider: "fireflies",
-          status: "pending",
-          connected: false,
-          display_name: null,
-          last_success_at: null,
-          last_error_at: null,
-        },
-        {
-          provider: "granola",
-          status: "disconnected",
-          connected: false,
-          display_name: null,
-          last_success_at: null,
-          last_error_at: null,
-        },
-        {
-          provider: "claude-code",
-          status: "error",
-          connected: false,
-          display_name: null,
-          last_success_at: null,
-          last_error_at: null,
-        },
-      ],
-    });
+    expect(result.stdout).toBe(JSON.stringify({ integrations: SAMPLE_INTEGRATIONS }));
+    expect(backend.state.requests.some((request) => new URL(request.url).pathname === "/workspaces/ws-1/tools/integrations.list")).toBe(true);
   });
 
-  it("synthesizes six disconnected entries when rows are missing", async () => {
-    const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-    const connections = JSON.parse(result.stdout).connections;
-    expect(connections.map((item: { provider: string }) => item.provider)).toEqual([
-      "github",
-      "slack",
-      "linear",
-      "fireflies",
-      "granola",
-      "claude-code",
-    ]);
-    expect(connections.every((item: { status: string; connected: boolean }) =>
-      item.status === "disconnected" && item.connected === false
-    )).toBe(true);
-  });
+  it("prints one block per provider with status, what it unlocks, and the connect command", async () => {
+    backend.state.toolOutputs["integrations.list"] = () => ({ integrations: SAMPLE_INTEGRATIONS });
 
-  it.each([
-    ["pending", "pending", false],
-    ["active", "connected", true],
-    ["degraded", "degraded", true],
-    ["error", "error", false],
-    ["revoked", "disconnected", false],
-  ] as const)("normalizes raw %s status", async (rawStatus, status, connected) => {
-    backend.state.connectionsListResponse = () => Response.json({
-      connections: [rawConnection("github", rawStatus)],
-    });
-    const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-    const github = JSON.parse(result.stdout).connections[0];
-    expect(github).toMatchObject({ provider: "github", status, connected });
-  });
-
-  it("uses Fireflies delivery evidence to distinguish pending from connected", async () => {
-    backend.state.connectionsListResponse = () => Response.json({
-      connections: [rawConnection("fireflies", "active")],
-    });
-    const pending = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-    expect(JSON.parse(pending.stdout).connections[3]).toMatchObject({ status: "pending", connected: false });
-
-    backend.state.connectionsListResponse = () => Response.json({
-      connections: [rawConnection("fireflies", "active", { last_success_at: "2026-08-20T12:00:00Z" })],
-    });
-    const connected = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-    expect(JSON.parse(connected.stdout).connections[3]).toMatchObject({ status: "connected", connected: true });
-
-    for (const [rawStatus, status, isConnected] of [
-      ["degraded", "degraded", true],
-      ["error", "error", false],
-      ["revoked", "disconnected", false],
-    ] as const) {
-      backend.state.connectionsListResponse = () => Response.json({
-        connections: [rawConnection("fireflies", rawStatus)],
-      });
-      const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-      expect(JSON.parse(result.stdout).connections[3]).toMatchObject({ status, connected: isConnected });
-    }
-  });
-
-  it("prints one stable human line per provider", async () => {
-    backend.state.connectionsListResponse = () => Response.json({
-      connections: [
-        rawConnection("slack", "active"),
-        rawConnection("fireflies", "active"),
-      ],
-    });
     const result = await runCli(["integrations", "list"], { home, apiUrl: backend.url });
+
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe([
-      "GitHub: disconnected",
-      "Slack: connected",
-      "Linear: disconnected",
-      "Fireflies: pending",
-      "Granola: disconnected",
-      "Claude Code: disconnected",
+      "GitHub: connected (you)",
+      "  brings in: pull requests and commits",
+      "  unlocks triggers: Pull request opened",
+      "  lets routines: A routine can read repos, or open pull requests in them",
+      "",
+      "Slack: needs reconnect",
+      "  brings in: messages in the channels you pick",
+      "  lets routines: A routine can post in channels",
+      "  connect: draft integrations connect slack",
+      "",
+      "Linear: not connected",
+      "  brings in: issues, comments and projects",
+      "  connect: draft integrations connect linear",
     ].join("\n"));
     expect(result.stderr).toBe("");
+  });
+
+  it("returns the tool's refusal as a safe error, without its raw text", async () => {
+    backend.state.toolOutputs["integrations.list"] = () => ({ __refusal: { code: "forbidden", message: "forbidden-canary-message" } });
+
+    const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "forbidden" });
+    expect(`${result.stdout}${result.stderr}`).not.toContain("canary");
+  });
+
+  it("reports a malformed tool output as malformed_response", async () => {
+    backend.state.toolOutputs["integrations.list"] = () => ({ integrations: "malformed-canary" });
+
+    const result = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "malformed_response" });
+    expect(`${result.stdout}${result.stderr}`).not.toContain("canary");
   });
 });
 
@@ -305,25 +222,6 @@ describe("draft integrations grammar and safe failures", () => {
     expect(noWorkspace.exitCode).toBe(1);
     expect(JSON.parse(noWorkspace.stdout)).toMatchObject({ status: "error", code: "no_workspace" });
   });
-
-  it("never exposes raw non-2xx or malformed response details", async () => {
-    backend.state.connectionsListResponse = () => Response.json({
-      error: "provider-canary-code",
-      message: "provider-canary-message",
-    }, { status: 500 });
-    const failed = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-    expect(failed.exitCode).toBe(1);
-    expect(JSON.parse(failed.stdout)).toMatchObject({ status: "error", code: "request_failed" });
-    expect(`${failed.stdout}${failed.stderr}`).not.toContain("canary");
-
-    backend.state.connectionsListResponse = () => Response.json({
-      connections: { raw: "malformed-canary" },
-    });
-    const malformed = await runCli(["integrations", "list", "--json"], { home, apiUrl: backend.url });
-    expect(malformed.exitCode).toBe(1);
-    expect(JSON.parse(malformed.stdout)).toMatchObject({ status: "error", code: "malformed_response" });
-    expect(`${malformed.stdout}${malformed.stderr}`).not.toContain("canary");
-  });
 });
 
 describe("integrations help and completion", () => {
@@ -333,14 +231,51 @@ describe("integrations help and completion", () => {
     expect(result.stdout).toContain("integrations list");
     expect(result.stdout).toContain("integrations connect <provider>");
     expect(result.stdout).toContain("integrations disconnect <provider>");
+    expect(result.stdout).toContain("integrations slack channels list|set");
+    expect(result.stdout).toContain("Connect github, slack, linear, fireflies, granola, or claude-code");
+  });
+
+  it("lists every integrations subcommand with a pointer to per-command help", async () => {
+    const result = await runCli(["integrations", "--help"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    for (const command of ["list", "connect <provider>", "disconnect <provider>", "slack channels list|set"]) {
+      expect(result.stdout).toContain(command);
+    }
+    expect(result.stdout).toContain("Run `draft integrations <command> --help` for details.");
+  });
+
+  it.each(["list", "connect", "disconnect", "slack"])("prints full usage for integrations %s --help", async (subcommand) => {
+    const result = await runCli(["integrations", subcommand, "--help"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`Usage: draft integrations ${subcommand}`);
+    expect(result.stdout).toContain("Examples:");
+  });
+
+  it("connect --help names every provider and explains the agent link flow", async () => {
+    const result = await runCli(["integrations", "connect", "--help"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("github, slack, linear, fireflies, granola, claude-code");
+    expect(result.stdout).toContain("With --json or without a terminal it prints a link for the person to open;");
+    expect(result.stdout).toContain("the key never passes through the CLI. Add --wait to wait until connected.");
+  });
+
+  it("auth login --help documents the sign-in code and JSON output", async () => {
+    const result = await runCli(["auth", "login", "--help"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Usage: draft auth login");
+    expect(result.stdout).toContain('"action":"sign_in"');
+    expect(result.stdout).toContain("type it on the");
   });
 
   it("includes current top-level commands and integrations choices in bash and zsh completion", async () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
-    expect(bash.stdout).toContain('commands="add auth context people routines sources sessions skills integrations update uninstall completion"');
-    expect(bash.stdout).toContain('compgen -W "list connect disconnect"');
-    expect(bash.stdout).toContain('compgen -W "github"');
+    expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills integrations update uninstall completion"');
+    expect(bash.stdout).toContain('compgen -W "list connect disconnect slack"');
+    expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code"');
+    expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');
+    expect(bash.stdout).toContain('integrations:connect) flags="--json --wait --no-open');
+    expect(bash.stdout).toContain('routines:*) flags="--on --github --github-access');
     expect(bash.stdout).toContain('compgen -W "github fireflies linear slack granola"');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
@@ -348,10 +283,14 @@ describe("integrations help and completion", () => {
     for (const command of ["add:", "auth:", "context:", "people:", "sources:", "sessions:", "skills:", "integrations:", "update:", "completion:"]) {
       expect(zsh.stdout).toContain(`'${command}`);
     }
-    expect(zsh.stdout).toContain("'list:List hosted integrations'");
+    expect(zsh.stdout).toContain("'list:Show each integration and what it unlocks'");
     expect(zsh.stdout).toContain("'connect:Connect a hosted integration'");
     expect(zsh.stdout).toContain("'disconnect:Disconnect a hosted integration'");
     expect(zsh.stdout).toContain("'github:GitHub'");
+    expect(zsh.stdout).toContain("'claude-code:Claude Code'");
+    expect(zsh.stdout).toContain("'--wait[Wait until connected]'");
+    expect(zsh.stdout).toContain("'runs:List the runs of a routine'");
+    expect(zsh.stdout).toContain("'--github-access=[GitHub access level]:access:'");
     expect(zsh.stdout).toContain("'fireflies:Fireflies'");
     expect(zsh.stdout).toContain("'linear:Linear'");
     expect(zsh.stdout).toContain("'slack:Slack'");

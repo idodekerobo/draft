@@ -277,7 +277,10 @@ export type AppRPCType = {
       deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
 
       /** The newest runs of one agent routine. */
-      listRoutineRuns: { params: { id: string }; response: RoutineRun[] };
+      runRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
+      getRoutineSlackChannels: { params: void; response: Array<{ id: string; name: string }> };
+      getRoutineGithubRepos: { params: void; response: string[] };
+      listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
 
       /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear"; accountKind?: "personal" | "workspace" }; response: ActionResult };
@@ -451,8 +454,8 @@ export type AppRPCType = {
       /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
       getAppVersion: { params: void; response: AppVersionInfo };
 
-      /** List the last 50 cloud synthesis runs for the active workspace. Returns [] if signed out or the request fails. */
-      getWorkspaceRuns: { params: void; response: WorkspaceRun[] };
+      /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Returns [] if signed out or the request fails. */
+      getWorkspaceRuns: { params: { before?: string } | void; response: WorkspaceRun[] };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };
@@ -519,6 +522,8 @@ export type AppRPCType = {
       signInProgress: {
         phase: "awaiting_approval" | "complete" | "error";
         error?: string;
+        /** Typed on the approval page to confirm the person started this sign-in. Formatted like "K7M-4QX". */
+        confirmCode?: string;
       };
 
       githubInstallProgress: {

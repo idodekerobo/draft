@@ -12,6 +12,8 @@
     "./harnesses":            "./src/harnesses/index.ts",
     "./harnesses/*":          "./src/harnesses/*.ts",
     "./run-spec":             "./src/run-spec.ts",
+    "./routines":             "./src/routines.ts",
+    "./routine-triggers":     "./src/routine-triggers.ts",
     "./tools":                "./src/tools.ts",
     "./notify":               "./src/notify.ts",
     "./run-manifest":         "./src/run-manifest.ts",
@@ -47,6 +49,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "zod": "^4.6.1",
     "js-yaml": "^4.1.1",
     "smol-toml": "^1.7.0",
     "tar-stream": "^3.2.0"

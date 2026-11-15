@@ -14,7 +14,7 @@ import type { AppRPCType } from "../rpc/schema";
 
 type EventMap = {
   githubInstallProgress: { phase: "awaiting_approval" | "connected" | "error"; error?: string };
-  signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string };
+  signInProgress: { phase: "awaiting_approval" | "complete" | "error"; error?: string; confirmCode?: string };
   authStateChanged: { signedIn: boolean };
   identityRefreshNeeded: Record<string, never>;
   liveSignal: { topic: string; event: string; payload?: unknown };

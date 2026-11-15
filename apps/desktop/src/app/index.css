@@ -2944,7 +2944,10 @@ button {
   flex: 1;
   overflow-y: auto;
 }
+/* A column, like .content, so the session view fits the pane instead of taking its own full-window height. */
 .routines-view--run {
   display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }

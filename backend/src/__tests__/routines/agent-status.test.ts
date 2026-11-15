@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { lacksRoutineLogin, routineAgentStatuses } from "../../routines/agent-status";
+import { routineAgentProblem, routineAgentStatuses } from "../../routines/agent-status";
 import { fakeClient, fakeDb } from "./fake-client";
 
 const WS = "ws-1";
@@ -26,14 +26,22 @@ describe("routineAgentStatuses", () => {
   });
 });
 
-describe("lacksRoutineLogin", () => {
-  it("holds a Codex routine to an active login", async () => {
-    expect(await lacksRoutineLogin(db(), WS, "codex")).toBe(true);
-    expect(await lacksRoutineLogin(db({ codex: "revoked" }), WS, "codex")).toBe(true);
-    expect(await lacksRoutineLogin(db({ codex: "active" }), WS, "codex")).toBe(false);
+describe("routineAgentProblem", () => {
+  it("lets a routine use an agent with an active login", async () => {
+    expect(await routineAgentProblem(db({ claude: "active", codex: "active" }), WS, "claude")).toBeNull();
+    expect(await routineAgentProblem(db({ claude: "active", codex: "active" }), WS, "codex")).toBeNull();
   });
 
-  it("does not hold a Claude routine to one, as before", async () => {
-    expect(await lacksRoutineLogin(db(), WS, "claude")).toBe(false);
+  it("refuses Claude with no token, saying why and how to fix it", async () => {
+    const problem = await routineAgentProblem(db({ codex: "active" }), WS, "claude");
+    expect(problem?.code).toBe("claude_not_connected");
+    expect(problem?.message).toContain("Claude Code isn't connected for routines in this workspace");
+    expect(problem?.message).toContain("claude setup-token");
+    expect(problem?.message).toContain("routines.options");
+  });
+
+  it("tells a login that stopped working apart from one that was never made", async () => {
+    expect((await routineAgentProblem(db({ codex: "revoked" }), WS, "codex"))?.code).toBe("codex_needs_reconnect");
+    expect((await routineAgentProblem(db(), WS, "codex"))?.code).toBe("codex_not_connected");
   });
 });

@@ -5,7 +5,7 @@ import { watchSignals } from "./liveSessionsApi";
 import { rpc } from "./rpc";
 
 const api: DraftApi = {
-  getRuns: () => rpc.request.getWorkspaceRuns(),
+  getRuns: (before) => rpc.request.getWorkspaceRuns(before ? { before } : undefined),
   getRoutines: () => rpc.request.listRoutines(),
   updateRoutine: async (id, patch) => {
     const result = await rpc.request.updateRoutine({ id, patch });
@@ -21,7 +21,13 @@ const api: DraftApi = {
     const result = await rpc.request.deleteRoutine({ id });
     if (!result.ok) throw toRoutineError(result.code, result.field);
   },
-  getRoutineRuns: (id) => rpc.request.listRoutineRuns({ id }),
+  runRoutine: async (id) => {
+    const result = await rpc.request.runRoutine({ id });
+    if (!result.ok) throw toRoutineError(result.code, result.field);
+  },
+  getRoutineSlackChannels: () => rpc.request.getRoutineSlackChannels(),
+  getRoutineGithubRepos: () => rpc.request.getRoutineGithubRepos(),
+  getRoutineRuns: (id, before) => rpc.request.listRoutineRuns(before ? { id, before } : { id }),
 };
 
 /** Query keys use the cloud workspace id; signed-out state shares one bucket. */

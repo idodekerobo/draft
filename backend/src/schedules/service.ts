@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { serviceClient } from "../db/client";
+import { ROUTINE_EVENT_NAMES, describeRoutineTriggers, routineProviders, type RoutineEventName } from "draft-core/routines";
 import { recordRouteError } from "../errors/route-error";
+import { formatCursor, olderThan, type Cursor } from "../activity/service";
 import { loadDisplayNames } from "../routes/session-display-names";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { computeNextDueAt } from "../scheduling/next-due-at";
@@ -24,6 +25,11 @@ import {
 } from "../scheduling/routine-registry";
 import type { AgentRunRow, ScheduledTaskRow, SessionRow, SourceConnectionRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
+import { canEditSchedules } from "./permissions";
+import { dispatchAgentRoutine, type RoutineDispatchOutcome } from "../routines/dispatch-routine";
+import { loadSandboxDeploymentConfig } from "../sandbox";
+import { loadRunResults } from "../metaharness/runs/result-line";
+import { serviceClient } from "../db/client";
 
 const LIVE_CONNECTION_STATUSES = new Set(["active", "degraded"]);
 
@@ -33,18 +39,26 @@ export interface RoutineLastRun {
   completedAt: string | null;
 }
 
-export type RoutineRunStatus = "running" | "completed" | "failed";
+export type RoutineRunStatus = "running" | "completed" | "failed" | "skipped";
+
+export type RoutineRunStart = { type: "schedule" } | { type: "run_now" } | { type: "event"; event: RoutineEventName };
 
 export interface RoutineRun {
   id: string;
   status: RoutineRunStatus;
+  startedBy: RoutineRunStart;
   startedAt: string;
   endedAt: string | null;
+  result: string | null;
+  /** Why a skipped run did not run, in words for people. */
+  skipReason?: string | null;
 }
 
 export interface AgentRoutineInfo extends Omit<AgentRoutineConfig, "title"> {
   createdByName: string | null;
   lastRun: RoutineRun | null;
+  /** Connections its triggers or access need that the workspace no longer has. Those triggers never fire. */
+  missingConnections: string[];
 }
 
 export interface Routine {
@@ -61,6 +75,7 @@ export interface Routine {
   intervalSeconds: number | null;
   enabled: boolean;
   editable: RoutineEditability;
+  canEdit: boolean;
   connectionLabel: string | null;
   needsReconnect: boolean;
   nextRunAt: string | null;
@@ -77,7 +92,7 @@ type RunInfo = Pick<AgentRunRow, "status" | "outcome" | "completed_at">;
 
 export class ScheduleServiceError extends Error {
   constructor(
-    readonly code: "not_found" | "invalid_schedule",
+    readonly code: "not_found" | "invalid_schedule" | "forbidden",
     readonly field?: string,
   ) {
     super(code);
@@ -117,6 +132,7 @@ function toRoutine(
     intervalSeconds: task.schedule_kind === "interval" ? task.interval_seconds : null,
     enabled: task.enabled,
     editable: definition.editable,
+    canEdit: false,
     connectionLabel: connection ? providerName(connection.provider) : null,
     needsReconnect,
     nextRunAt: task.enabled ? task.next_due_at : null,
@@ -133,14 +149,40 @@ function toRoutine(
   };
 }
 
-const RUN_COLUMNS = "id, status, end_reason, started_at, ended_at, scheduled_task_id";
+const RUN_COLUMNS = "id, status, end_reason, started_at, ended_at, scheduled_task_id, idempotency_key";
 
-type RunRow = Pick<SessionRow, "id" | "status" | "end_reason" | "started_at" | "ended_at"> & { scheduled_task_id: string };
+type RunRow = Pick<SessionRow, "id" | "status" | "end_reason" | "started_at" | "ended_at" | "idempotency_key"> & { scheduled_task_id: string };
+
+/** Read from the run's idempotency key, which dispatch writes as "<task>:<occurrence>", "<task>:manual:<id>" or "<task>:<event>:<id>". */
+function startedBy(row: RunRow): RoutineRunStart {
+  const rest = row.idempotency_key?.slice(row.scheduled_task_id.length + 1) ?? "";
+  if (rest.startsWith("manual:")) return { type: "run_now" };
+  const event = ROUTINE_EVENT_NAMES.find((name) => rest.startsWith(`${name}:`));
+  return event ? { type: "event", event } : { type: "schedule" };
+}
 
 function toRoutineRun(row: RunRow): RoutineRun {
   const status: RoutineRunStatus =
-    row.status !== "ended" ? "running" : row.end_reason === "completed" ? "completed" : "failed";
-  return { id: row.id, status, startedAt: row.started_at, endedAt: row.ended_at };
+    row.status !== "ended" ? "running" : row.end_reason === "completed" ? "completed" : row.end_reason === "skipped" ? "skipped" : "failed";
+  return { id: row.id, status, startedBy: startedBy(row), startedAt: row.started_at, endedAt: row.ended_at, result: null };
+}
+
+/** Adds the note each skipped run ended with, which says why it was skipped. */
+async function withSkipReasons(workspaceId: string, runs: RoutineRun[]): Promise<RoutineRun[]> {
+  const skipped = runs.filter((run) => run.status === "skipped").map((run) => run.id);
+  if (skipped.length === 0) return runs;
+  const { data, error } = await serviceClient
+    .from("session_events")
+    .select("session_id, payload")
+    .eq("workspace_id", workspaceId)
+    .eq("source_id", "routine:failed")
+    .in("session_id", skipped);
+  if (error) {
+    recordRouteError({ workspaceId, errorCode: "schedules_skip_reasons_failed", error });
+    return runs;
+  }
+  const notes = new Map(((data ?? []) as Array<{ session_id: string; payload: { text?: unknown } }>).map((row) => [row.session_id, typeof row.payload?.text === "string" ? row.payload.text : null]));
+  return runs.map((run) => (run.status === "skipped" ? { ...run, skipReason: notes.get(run.id) ?? null } : run));
 }
 
 async function loadTasks(workspaceId: string): Promise<ScheduledTaskRow[]> {
@@ -211,7 +253,9 @@ async function loadLastAgentRuns(workspaceId: string, taskIds: string[]): Promis
       return ((data ?? []) as RunRow[])[0] ?? null;
     }),
   );
-  return new Map(rows.flatMap((row) => (row ? [[row.scheduled_task_id, toRoutineRun(row)] as const] : [])));
+  const present = rows.filter((row): row is RunRow => row !== null);
+  const runs = await withSkipReasons(workspaceId, present.map(toRoutineRun));
+  return new Map(present.map((row, index) => [row.scheduled_task_id, runs[index]!] as const));
 }
 
 async function buildRoutines(
@@ -226,11 +270,12 @@ async function buildRoutines(
   const agentTaskIds = tasks.filter((task) => task.task_type === "agent_routine").map((task) => task.id);
   const hasSynthesis = tasks.some((task) => task.task_type === "synthesize_workspace");
 
-  const [connections, lastRun, names, lastAgentRuns] = await Promise.all([
+  const [connections, lastRun, names, lastAgentRuns, connectedProviders] = await Promise.all([
     knownConnections ?? loadConnections(workspaceId, connectionIds),
     hasSynthesis ? loadLastSynthesisRun(workspaceId) : Promise.resolve(null),
     loadUserNames(workspaceId, editorIds),
     loadLastAgentRuns(workspaceId, agentTaskIds),
+    agentTaskIds.length ? listConnectedProviders(workspaceId) : Promise.resolve([]),
   ]);
 
   return tasks.flatMap((task) => {
@@ -245,17 +290,17 @@ async function buildRoutines(
         ...agentConfig,
         createdByName: task.created_by_user_id ? (names.get(task.created_by_user_id) ?? null) : null,
         lastRun: lastAgentRuns.get(task.id) ?? null,
+        missingConnections: routineProviders(config).filter((provider) => !connectedProviders.includes(provider)),
       };
-      return [
-        toRoutine(
-          task,
-          agentRoutineDefinition(config.title),
-          undefined,
-          null,
-          task.updated_by_user_id ? (names.get(task.updated_by_user_id) ?? null) : null,
-          agent,
-        ),
-      ];
+      const routine = toRoutine(
+        task,
+        agentRoutineDefinition(config.title),
+        undefined,
+        null,
+        task.updated_by_user_id ? (names.get(task.updated_by_user_id) ?? null) : null,
+        agent,
+      );
+      return [config.onSchedule === false ? { ...routine, scheduleDescription: describeRoutineTriggers(config.events ?? []) } : routine];
     }
     const connection = task.source_connection_id ? connections.get(task.source_connection_id) : undefined;
     const definition = resolveRoutine(task.task_type, connection?.provider ?? null);
@@ -277,8 +322,12 @@ async function buildRoutines(
   });
 }
 
-export async function listRoutines(workspaceId: string): Promise<Routine[]> {
-  return buildRoutines(workspaceId, await loadTasks(workspaceId));
+export async function listRoutines(workspaceId: string, callerId?: string): Promise<Routine[]> {
+  const tasks = await loadTasks(workspaceId);
+  const routines = await buildRoutines(workspaceId, tasks);
+  if (!callerId) return routines;
+  const canEdit = await canEditSchedules(workspaceId, callerId);
+  return routines.map((routine) => ({ ...routine, canEdit }));
 }
 
 export interface RoutineTask {
@@ -311,6 +360,20 @@ export async function getRoutineTask(workspaceId: string, taskId: string): Promi
   return definition ? { task, definition, connection } : null;
 }
 
+/** Providers the workspace has a live connection to. The routine form offers triggers and abilities from these. */
+export async function listConnectedProviders(workspaceId: string): Promise<string[]> {
+  const { data, error } = await serviceClient.from("source_connections").select("provider, status").eq("workspace_id", workspaceId);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ provider: string; status: string }>;
+  // A pending connection has its credentials; Fireflies and Granola stay pending until their first webhook.
+  return [...new Set(rows.filter((row) => LIVE_CONNECTION_STATUSES.has(row.status) || row.status === "pending").map((row) => row.provider))].sort();
+}
+
+/** An agent routine whose schedule is off has no next run; only its triggers and Run now start it. */
+function runsOnSchedule(task: Pick<ScheduledTaskRow, "task_type" | "config_json">): boolean {
+  return task.task_type !== "agent_routine" || (task.config_json as { onSchedule?: unknown } | null)?.onSchedule !== false;
+}
+
 // A parse failure here means the stored schedule is bad (the patch itself was validated).
 function safeNextDueAt(task: ScheduledTaskRow, now: Date): string {
   try {
@@ -333,6 +396,7 @@ export async function updateRoutine(
   userId: string,
   now: Date = new Date(),
 ): Promise<Routine> {
+  if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
   const changes: Partial<ScheduledTaskRow> = {};
   if (patch.enabled !== undefined) changes.enabled = patch.enabled;
   if (patch.agent) changes.config_json = { ...patch.agent };
@@ -348,9 +412,9 @@ export async function updateRoutine(
 
   const next = { ...task, ...changes };
   const resumes = patch.enabled === true && !task.enabled;
-  if (next.enabled && (patch.schedule || resumes)) {
-    changes.next_due_at = safeNextDueAt(next, now);
-  }
+  const scheduleTurnedOn = runsOnSchedule(next) && !runsOnSchedule(task);
+  if (!runsOnSchedule(next)) changes.next_due_at = null;
+  else if (next.enabled && (patch.schedule || resumes || scheduleTurnedOn)) changes.next_due_at = safeNextDueAt(next, now);
 
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
@@ -380,6 +444,7 @@ export async function updateRoutine(
 
 /** Hides the routine and stops its runs. The row stays, because its past runs point at it. */
 export async function deleteRoutine({ task }: RoutineTask, userId: string, now: Date = new Date()): Promise<void> {
+  if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
     .update({ deleted_at: now.toISOString(), enabled: false, updated_by_user_id: userId })
@@ -394,6 +459,19 @@ export async function deleteRoutine({ task }: RoutineTask, userId: string, now: 
   console.log(JSON.stringify({ event: "schedule_deleted", workspaceId: task.workspace_id, taskId: task.id, userId }));
 }
 
+export async function runRoutineNow(workspaceId: string, taskId: string, userId: string): Promise<RoutineDispatchOutcome> {
+  const routine = await getRoutineTask(workspaceId, taskId);
+  if (!routine || routine.task.task_type !== "agent_routine") throw new ScheduleServiceError("not_found");
+  if (!(await canEditSchedules(workspaceId, userId))) throw new ScheduleServiceError("forbidden");
+  return dispatchAgentRoutine({
+    task: routine.task,
+    occurrenceAt: new Date().toISOString(),
+    manual: { requestedBy: userId },
+    config: loadSandboxDeploymentConfig(),
+    client: serviceClient,
+  });
+}
+
 function pickLogged(task: ScheduledTaskRow) {
   return {
     enabled: task.enabled,
@@ -405,8 +483,15 @@ function pickLogged(task: ScheduledTaskRow) {
 const RUN_HISTORY_LIMIT = 50;
 const MAX_AGENT_ROUTINES = 20;
 
-/** The newest runs of one routine, or null when the routine does not exist in this workspace. */
-export async function listRoutineRuns(workspaceId: string, taskId: string): Promise<RoutineRun[] | null> {
+/**
+ * One routine's runs, newest first, a page at a time; or, with `runId`, just that run, however old. Null when the
+ * routine does not exist in this workspace.
+ */
+export async function listRoutineRuns(
+  workspaceId: string,
+  taskId: string,
+  options: { before?: Cursor | null; runId?: string } = {},
+): Promise<{ runs: RoutineRun[]; nextCursor: string | null } | null> {
   const { data: task, error: taskError } = await serviceClient
     .from("scheduled_tasks")
     .select("id")
@@ -418,21 +503,31 @@ export async function listRoutineRuns(workspaceId: string, taskId: string): Prom
   if (taskError) throw taskError;
   if (!task) return null;
 
-  const { data, error } = await serviceClient
-    .from("sessions")
-    .select(RUN_COLUMNS)
-    .eq("workspace_id", workspaceId)
-    .eq("scheduled_task_id", taskId)
+  let query = serviceClient.from("sessions").select(RUN_COLUMNS).eq("workspace_id", workspaceId).eq("scheduled_task_id", taskId);
+  if (options.runId) query = query.eq("id", options.runId);
+  else if (options.before) query = query.or(olderThan("started_at", options.before));
+  const { data, error } = await query
     .order("started_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(RUN_HISTORY_LIMIT);
   if (error) throw error;
-  return ((data ?? []) as RunRow[]).map(toRoutineRun);
+  const rows = (data ?? []) as RunRow[];
+  const { data: runs, error: runsError } = await serviceClient.from("agent_runs").select("id, session_id, summary").eq("workspace_id", workspaceId).in("session_id", rows.map((row) => row.id));
+  if (runsError) throw runsError;
+  const runRows = (runs ?? []) as Array<{ id: string; session_id: string; summary: string | null }>;
+  const results = await loadRunResults(serviceClient, workspaceId, runRows.map(({ id, summary }) => ({ id, summary })));
+  const runBySession = new Map(runRows.map((run) => [run.session_id, run.id]));
+  const last = rows[rows.length - 1];
+  return {
+    runs: await withSkipReasons(workspaceId, rows.map((row) => ({ ...toRoutineRun(row), result: results.get(runBySession.get(row.id) ?? "") ?? null }))),
+    nextCursor: !options.runId && rows.length === RUN_HISTORY_LIMIT && last ? formatCursor(last.started_at, last.id) : null,
+  };
 }
 
 export async function createAgentRoutine(
   workspaceId: string,
   userId: string,
-  input: { config: AgentRoutineConfig; schedule: ScheduleInput },
+  input: { config: AgentRoutineConfig; schedule: ScheduleInput; enabled?: boolean },
   now: Date = new Date(),
 ): Promise<Routine> {
   const built = buildSchedule(input.schedule);
@@ -466,9 +561,9 @@ export async function createAgentRoutine(
       schedule_kind: "cron",
       cron_expression: built.cron,
       timezone: built.timezone,
-      enabled: true,
+      enabled: input.enabled ?? true,
       config_json: input.config,
-      next_due_at: safeNextDueAt(draft, now),
+      next_due_at: (input.enabled ?? true) && input.config.onSchedule !== false ? safeNextDueAt(draft, now) : null,
       created_by_user_id: userId,
       updated_by_user_id: userId,
     })

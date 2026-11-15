@@ -19,6 +19,7 @@ export interface RunnerManifest {
   tools: { native: string[]; draftMcpUrl: string | null };
   output: { kind: "stream" } | { kind: "structured"; schemaPath: string };
   timeoutSeconds: number;
+  network: "open" | "restricted";
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -56,14 +57,16 @@ export interface ManifestChecks {
 /** Checks a manifest strictly. Anything unknown is refused, because these values reach a command line. */
 export function validateRunnerManifest(value: unknown, checks: ManifestChecks): RunnerManifest {
   const inputRoot = checks.inputRoot ?? RUNNER_INPUT_ROOT;
-  const top = onlyKeys(value, ["version", "harness", "model", "prompt", "tools", "output", "timeoutSeconds"], "manifest");
+  const top = onlyKeys(value, ["version", "harness", "model", "prompt", "tools", "output", "timeoutSeconds", "network"], "manifest");
   if (top.version !== 1) throw new Error("run manifest: version must be 1");
   if (top.harness !== "claude" && top.harness !== "codex") throw new Error("run manifest: harness must be claude or codex");
   const harness = top.harness;
   if (top.model !== null && (typeof top.model !== "string" || !MODEL_PATTERN.test(top.model))) throw new Error("run manifest: model is invalid");
-  if (typeof top.timeoutSeconds !== "number" || !Number.isSafeInteger(top.timeoutSeconds) || top.timeoutSeconds < 1 || top.timeoutSeconds > 3600) {
-    throw new Error("run manifest: timeoutSeconds must be between 1 and 3600");
+  if (typeof top.timeoutSeconds !== "number" || !Number.isSafeInteger(top.timeoutSeconds) || top.timeoutSeconds < 1 || top.timeoutSeconds > 7200) {
+    throw new Error("run manifest: timeoutSeconds must be between 1 and 7200");
   }
+  const network = top.network === undefined ? "restricted" : top.network;
+  if (network !== "open" && network !== "restricted") throw new Error("run manifest: network must be open or restricted");
 
   const promptValue = isObject(top.prompt) ? top.prompt : null;
   let prompt: RunnerManifest["prompt"];
@@ -100,7 +103,7 @@ export function validateRunnerManifest(value: unknown, checks: ManifestChecks): 
   if (harness === "codex" && (output.kind === "structured" || prompt.kind === "items")) {
     throw new Error("run manifest: codex runs stream a single prompt");
   }
-  return { version: 1, harness, model: top.model as string | null, prompt, tools, output, timeoutSeconds: top.timeoutSeconds };
+  return { version: 1, harness, model: top.model as string | null, prompt, tools, output, timeoutSeconds: top.timeoutSeconds, network };
 }
 
 export function parseRunnerManifest(raw: string, checks: ManifestChecks): RunnerManifest {

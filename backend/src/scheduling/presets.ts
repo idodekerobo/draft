@@ -1,8 +1,10 @@
-export const PRESETS = ["draft_default", "hourly", "daily", "weekdays", "weekly"] as const;
+import { ROUTINE_PRESETS, ROUTINE_WEEKDAYS } from "draft-core/routines";
+
+export const PRESETS = ROUTINE_PRESETS;
 export type Preset = (typeof PRESETS)[number];
 export type ParsedPreset = Preset | "custom";
 
-export const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+export const WEEKDAYS = ROUTINE_WEEKDAYS;
 export type Weekday = (typeof WEEKDAYS)[number];
 
 export const DRAFT_DEFAULT_CRON = "0 0,4,8,9-18,22 * * *";

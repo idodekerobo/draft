@@ -1,6 +1,17 @@
-import { ingestLinearEvent } from "../../ingestion/linear/normalize";
+import { ingestLinearEvent, type LinearWebhookPayload } from "../../ingestion/linear/normalize";
+import { linearIssueFacts } from "../../routines/event-facts";
+import { fireRoutineEvent } from "../../routines/fire-event";
 import { authenticateLinearWebhookRequest, LinearWebhookAuthError } from "./request-auth";
 import { recordRouteError } from "../../errors/route-error";
+
+/** An issue created, or moved into a completed state by this update. */
+function linearTrigger(payload: LinearWebhookPayload): "linear.issue_created" | "linear.issue_completed" | null {
+  if (payload.type !== "Issue") return null;
+  if (payload.action === "create") return "linear.issue_created";
+  const state = payload.data.state as { type?: unknown } | undefined;
+  const stateChanged = !!(payload as { updatedFrom?: { stateId?: unknown } }).updatedFrom?.stateId;
+  return payload.action === "update" && state?.type === "completed" && stateChanged ? "linear.issue_completed" : null;
+}
 
 export async function POST(
   request: Bun.BunRequest<"/webhooks/linear/:connectionKey">,
@@ -15,9 +26,13 @@ export async function POST(
     workspaceId = connection.workspace_id;
     sourceConnectionId = connection.id;
 
-    console.log(`[linear webhook] ${payload.type}.${payload.action}`, JSON.stringify(payload, null, 2));
+    console.log(`[linear webhook] ${payload.type}.${payload.action}`);
 
-    await ingestLinearEvent(connection, payload);
+    const ingested = await ingestLinearEvent(connection, payload);
+    const name = linearTrigger(payload);
+    if (name && "sourceItemId" in ingested && typeof payload.data.id === "string") {
+      fireRoutineEvent({ workspaceId: connection.workspace_id, name, eventId: payload.data.id, sourceItemId: ingested.sourceItemId, facts: linearIssueFacts(payload) });
+    }
 
     return new Response(null, { status: 200 });
   } catch (error) {

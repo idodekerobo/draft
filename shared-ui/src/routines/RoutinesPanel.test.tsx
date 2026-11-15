@@ -169,7 +169,8 @@ describe("RoutinesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
     const dialog = await screen.findByRole("dialog", { hidden: true });
 
-    fireEvent.change(within(dialog).getByLabelText("Frequency"), { target: { value: "hourly" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Frequency" }));
+    fireEvent.click(within(dialog).getByRole("menuitemradio", { name: /Every hour/ }));
     expect(within(dialog).getByRole("status").textContent).toMatch(/processing usage/);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));

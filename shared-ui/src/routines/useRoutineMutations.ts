@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDraftApi } from "../query/api";
-import { queryKeys } from "../query/keys";
+import { queryKeys, routineRunsKey } from "../query/keys";
 import { useOptimisticMutation } from "../query/mutations";
 import type { CreateRoutineInput, Routine, RoutinePatch, RoutinesResponse } from "./types";
 
@@ -49,5 +49,17 @@ export function useRoutineMutations(workspaceId: string, onToggleError: (error: 
       queryClient.setQueryData<RoutinesResponse | undefined>(queryKey, (current) => current && { ...current, routines: current.routines.filter((row) => row.id !== id) }),
   });
 
-  return { toggle, save, create, remove };
+  const run = useMutation({
+    mutationFn: async (id: string) => {
+      if (!api.runRoutine) throw new Error("Run now is not available here.");
+      await api.runRoutine(id);
+    },
+    onSuccess: (_result, id) => {
+      void queryClient.invalidateQueries({ queryKey: routineRunsKey(workspaceId, id) });
+      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.runs(workspaceId) });
+    },
+  });
+
+  return { toggle, save, create, remove, run };
 }

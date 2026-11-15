@@ -42,6 +42,7 @@ function setup(db = newDb()) {
 const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): AgentRunSpec => ({
   id: parseAgentRunId(RUN),
   kind: "routine",
+    network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "system", reason: "manual" },
   actor: agentActor(parseAgentRunId(RUN)),

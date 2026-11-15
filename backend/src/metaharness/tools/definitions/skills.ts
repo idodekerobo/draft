@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { requireUser } from "./shared";
+import { callerWorkspaceId, requireUser } from "./shared";
 
 // Loaded on first use: the service opens the service database client, which a registry built for a test must not need.
 const skillsService = () => import("../../../services/skills");
@@ -39,11 +39,10 @@ export function createSkillTools(client: SupabaseClient) {
     name: "skills.list",
     mcp: true,
     description: "List the skills (reusable playbooks/templates) available in the caller's workspace.",
-    callers: ["user"],
+    callers: ["user", "run"],
     input: z.object({}),
     handler: async ({ caller }) => {
-      const user = requireUser(caller, "skills.list");
-      const result = await (await skillsService()).listSkills(user.workspaceId, client);
+      const result = await (await skillsService()).listSkills(callerWorkspaceId(caller), client);
       return result.ok ? { status: "ok", output: { skills: result.skills } } : skillRefusal(result);
     },
   });
@@ -52,11 +51,10 @@ export function createSkillTools(client: SupabaseClient) {
     name: "skills.read",
     mcp: true,
     description: "Read one skill's full content by name.",
-    callers: ["user"],
+    callers: ["user", "run"],
     input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list.") }),
     handler: async ({ input, caller }) => {
-      const user = requireUser(caller, "skills.read");
-      const result = await (await skillsService()).readSkill(user.workspaceId, input.name, client);
+      const result = await (await skillsService()).readSkill(callerWorkspaceId(caller), input.name, client);
       return result.ok ? { status: "ok", output: result.skill } : skillRefusal(result);
     },
   });

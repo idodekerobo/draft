@@ -1,10 +1,9 @@
+import { meetingFacts } from "../../routines/event-facts";
+import { fireRoutineEvent } from "../../routines/fire-event";
 import { ingestFirefliesMeeting } from "../../ingestion/fireflies/normalize";
 import { authenticateFirefliesWebhookRequest, FirefliesWebhookAuthError } from "./request-auth";
 import { recordRouteError } from "../../errors/route-error";
 import { serviceClient } from "../../db/client";
-import { recordError } from "../../errors/record-error";
-import { loadSandboxDeploymentConfig } from "../../sandbox";
-import { startEventRoutines } from "../../routines/start-event-routines";
 
 const HANDLED_EVENTS = new Set(["meeting.summarized", "meeting.transcribed"]);
 
@@ -35,13 +34,8 @@ export async function POST(
     });
     if (error) throw error;
 
-    // Starting a routine boots a sandbox, which takes a while. Fireflies gets its answer first, and a routine that
-    // fails to start is recorded and never turns a stored meeting into a failed webhook.
     if (summarizedSourceItemId) {
-      const startedFor = { workspaceId: connection.workspace_id, name: "fireflies.meeting_summarized" as const, eventId: meetingId, sourceItemId: summarizedSourceItemId };
-      void (async () => startEventRoutines(serviceClient, loadSandboxDeploymentConfig(), startedFor))().catch((cause) =>
-        recordError({ workspaceId: startedFor.workspaceId, operation: "scheduling", message: "Starting event routines failed", code: "event_routines_failed", error: cause }),
-      );
+      fireRoutineEvent({ workspaceId: connection.workspace_id, name: "fireflies.meeting_summarized", eventId: meetingId, sourceItemId: summarizedSourceItemId, facts: meetingFacts("Fireflies meeting id", meetingId) });
     }
 
     return new Response(null, { status: 200 });

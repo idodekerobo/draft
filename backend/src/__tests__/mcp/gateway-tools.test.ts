@@ -52,10 +52,17 @@ describe("MCP tools that go through the gateway", () => {
     audits.length = 0;
   });
 
+  it("marks reads as read-only and a delete as destructive, so a client can ask before it", async () => {
+    const result = await rpc("tools/list");
+    const tool = (name: string) => (result.tools as Array<{ name: string; annotations?: Record<string, unknown> }>).find((item) => item.name === name)!;
+    expect(tool("routines.list").annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    expect(tool("routines.delete").annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+  });
+
   it("registers the tools that run through the gateway, and no run-only tool", async () => {
     const result = await rpc("tools/list");
     const names = result.tools!.map((tool) => tool.name).sort();
-    expect(names).toEqual(["context.export", "context.list", "context.read", "people.add_identity", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "routines.list", "skills.add", "skills.list", "skills.read", "sources.read", "sources.search"]);
+    expect(names).toEqual(["activity.list", "context.export", "context.list", "context.read", "integrations.connect", "integrations.list", "people.add_identity", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "routines.create", "routines.delete", "routines.list", "routines.options", "routines.run", "routines.runs", "routines.update", "skills.add", "skills.list", "skills.read", "slack.list_channels", "slack.post_message", "slack.read_channel", "sources.read", "sources.search"]);
   });
 
   it("context.read returns the shape clients already read, and audits it as an MCP call by this person", async () => {

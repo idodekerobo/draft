@@ -1,16 +1,16 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseInfiniteQuery } from "@tanstack/react-query";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
 import { routineRunsQueryOptions } from "../query/options";
 import { formatDuration, formatWhen } from "./format";
 import type { OpenRun, Routine, RoutineRun, RoutineRunStatus } from "./types";
 
-const STATUS_LABEL: Record<RoutineRunStatus, string> = { running: "Running", completed: "Completed", failed: "Failed" };
+const STATUS_LABEL: Record<RoutineRunStatus, string> = { running: "Running", completed: "Completed", failed: "Failed", skipped: "Skipped" };
 
-export function RunStatus({ status }: { status: RoutineRunStatus }) {
-  return <span className={`ui-routines__status ui-routines__status--${status}`}>{STATUS_LABEL[status]}</span>;
+export function RunStatus({ status, reason }: { status: RoutineRunStatus; reason?: string | null }) {
+  return <span className={`ui-routines__status ui-routines__status--${status}`} title={reason ?? undefined}>{STATUS_LABEL[status]}</span>;
 }
 
 function RunsSkeleton() {
@@ -23,11 +23,15 @@ function RunsSkeleton() {
 }
 
 function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; onOpen?: (run: RoutineRun) => void }) {
-  const detail = run.endedAt ? formatDuration(run.startedAt, run.endedAt) : null;
+  const detail = run.endedAt && run.status !== "skipped" ? formatDuration(run.startedAt, run.endedAt) : null;
+  const note = run.status === "skipped" ? run.skipReason : run.result;
   const content = (
     <>
       <RunStatus status={run.status} />
-      <span className="ui-routines__run-when">{formatWhen(run.startedAt, timezone)}</span>
+      <span className="ui-routines__run-when">
+        {formatWhen(run.startedAt, timezone)}
+        {note && <span className="ui-routines__run-result">{note}</span>}
+      </span>
       <span className="ui-routines__secondary">{detail}</span>
     </>
   );
@@ -44,16 +48,28 @@ function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; 
 
 function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; routine: Routine; onOpenRun?: OpenRun }) {
   const api = useDraftApi();
-  const { data: runs } = useSuspenseQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
+  const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = useSuspenseInfiniteQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
+  // A run that started while older pages were open can shift one onto the next page; show it once.
+  const runs = [...new Map(data.pages.flat().map((run) => [run.id, run])).values()];
   if (runs.length === 0) {
-    return <p className="ui-routines__secondary">No runs yet. The first run starts at the next scheduled time.</p>;
+    return <p className="ui-routines__secondary">No runs yet. The first run starts at the next scheduled time, or when someone presses Run now.</p>;
   }
   return (
-    <ul className="ui-routines__runs">
-      {runs.map((run) => (
-        <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
-      ))}
-    </ul>
+    <>
+      <ul className="ui-routines__runs">
+        {runs.map((run) => (
+          <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
+        ))}
+      </ul>
+      {hasNextPage && (
+        <div className="ui-activity-more">
+          <button type="button" className="ui-btn" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+            {isFetchingNextPage ? "Loading…" : "Show older runs"}
+          </button>
+          {isFetchNextPageError && <p className="ui-error" role="alert">Could not load older runs. Try again.</p>}
+        </div>
+      )}
+    </>
   );
 }
 

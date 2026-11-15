@@ -38,6 +38,7 @@ async function setup(options: { named?: boolean } = {}) {
   const spec: AgentRunSpec = {
     id: parseAgentRunId(RUN_ID),
     kind: "routine",
+    network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
     actor: { type: "agent", runId: parseAgentRunId(RUN_ID) }, onBehalfOf: null,

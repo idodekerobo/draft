@@ -8,6 +8,7 @@ export function useCloudSignIn() {
   const { signedIn, hydrated } = useUserIdentity();
   const [cloudSignIn, setCloudSignIn] = useState<CloudSignInPhase>(signedIn ? "complete" : "idle");
   const [cloudSignInError, setCloudSignInError] = useState<string | null>(null);
+  const [confirmCode, setConfirmCode] = useState<string | null>(null);
   const phaseRef = useRef(cloudSignIn);
 
   useEffect(() => {
@@ -18,15 +19,17 @@ export function useCloudSignIn() {
     if (hydrated && signedIn) setCloudSignIn("complete");
   }, [signedIn, hydrated]);
 
-  useEffect(() => events.on("signInProgress", ({ phase, error }) => {
+  useEffect(() => events.on("signInProgress", ({ phase, error, confirmCode: nextCode }) => {
     setCloudSignIn(phase);
     setCloudSignInError(error ? error.replaceAll("_", " ") : null);
+    setConfirmCode(phase === "awaiting_approval" ? nextCode ?? null : null);
   }), []);
 
   useEffect(() => events.on("authStateChanged", ({ signedIn: nextSignedIn }) => {
     if (!nextSignedIn) {
       setCloudSignIn("idle");
       setCloudSignInError(null);
+      setConfirmCode(null);
     }
   }), []);
 
@@ -52,5 +55,5 @@ export function useCloudSignIn() {
     }
   }
 
-  return { cloudSignIn, cloudSignInError, handleCloudSignIn, handleCloudSignOut };
+  return { cloudSignIn, cloudSignInError, confirmCode, handleCloudSignIn, handleCloudSignOut };
 }

@@ -1,19 +1,20 @@
 import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
 import { getHarness, isKnownModel, type HarnessId } from "draft-core/harnesses";
+import { ROUTINE_EVENT_NAMES, type RoutineEventName } from "draft-core/routines";
 
 export const ROUTINE_RUN_ID_PREFIX = "routine:";
 const ROUTINE_HOST_PREFIX = "fly:";
 export const ROUTINE_HOST_NAME = "Draft cloud";
-export const ROUTINE_RUN_TIMEOUT_SECONDS = 15 * 60;
-export const ROUTINE_STALE_AFTER_MS = 20 * 60 * 1_000;
+export const ROUTINE_RUN_TIMEOUT_SECONDS = 2 * 60 * 60;
+export const ROUTINE_STALE_AFTER_MS = (ROUTINE_RUN_TIMEOUT_SECONDS + 10 * 60) * 1_000;
 
 const TITLE_MAX_CHARS = 120;
 const PROMPT_MAX_CHARS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Events that can start a routine, besides its schedule. One per provider event Draft listens for. */
-export const ROUTINE_EVENTS = ["fireflies.meeting_summarized"] as const;
-export type RoutineEventName = (typeof ROUTINE_EVENTS)[number];
+/** Events that can start a routine, besides its schedule. The list lives in core, with each event's connection. */
+export const ROUTINE_EVENTS = ROUTINE_EVENT_NAMES;
+export type { RoutineEventName };
 
 /** What a person lets a routine use beyond its defaults. */
 export interface RoutineEnvironmentConfig {
@@ -30,13 +31,18 @@ export interface AgentRoutineConfig {
   harness: HarnessId;
   model: string | null;
   environment?: RoutineEnvironmentConfig;
-  /** Also start a run when one of these happens. Not settable through the public routines API. */
+  /** Also start a run when one of these happens. */
   events?: RoutineEventName[];
-  /** Lets the run find people and message teammates. Fixed when the routine is saved, never by the model. Not settable through the public routines API. */
+  /** False when the schedule is off and only triggers and Run now start a run. */
+  onSchedule?: false;
+  /** Lets the run find people and message teammates. Fixed when the routine is saved, never by the model. */
   canNotify?: boolean;
+  /** Slack channels the run may post in. */
+  postChannels?: "joined" | string[];
+  github?: { repos: string[]; access: "read" | "write" };
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "environment" | "events" | "canNotify" | "body" };
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "environment" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
@@ -64,7 +70,7 @@ export function validateRoutineEnvironment(value: unknown, harness: HarnessId): 
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, environment, events, canNotify } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, environment, events, onSchedule, canNotify, postChannels, github } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
@@ -74,7 +80,14 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   const validEnvironment = environment == null ? undefined : validateRoutineEnvironment(environment, harnessId);
   if (environment != null && !validEnvironment) return { ok: false, field: "environment" };
   if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
+  if (onSchedule !== undefined && typeof onSchedule !== "boolean") return { ok: false, field: "onSchedule" };
   if (canNotify !== undefined && typeof canNotify !== "boolean") return { ok: false, field: "canNotify" };
+  if (postChannels !== undefined && postChannels !== "joined" && !(Array.isArray(postChannels) && postChannels.length <= 20 && postChannels.every((channel) => typeof channel === "string" && channel.trim().length > 0 && channel.trim().length <= 80))) return { ok: false, field: "postChannels" };
+  if (github !== undefined) {
+    if (!github || typeof github !== "object" || Array.isArray(github)) return { ok: false, field: "github" };
+    const config = github as Record<string, unknown>;
+    if (!Array.isArray(config.repos) || config.repos.length > 50 || !config.repos.every((repo) => typeof repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(repo)) || !["read", "write"].includes(config.access as string)) return { ok: false, field: "github" };
+  }
   return {
     ok: true,
     config: {
@@ -83,8 +96,11 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
       harness: harnessId,
       model,
       ...(validEnvironment ? { environment: validEnvironment } : {}),
-      ...(events && (events as string[]).length ? { events: [...new Set(events as RoutineEventName[])] } : {}),
-      ...(canNotify ? { canNotify: true } : {}),
+      ...(events !== undefined && (events as string[]).length ? { events: [...new Set(events as RoutineEventName[])] } : {}),
+      ...(onSchedule === false ? { onSchedule: false as const } : {}),
+      ...(canNotify !== undefined ? { canNotify: canNotify as boolean } : {}),
+      ...(postChannels !== undefined ? { postChannels: postChannels === "joined" ? "joined" : [...new Set((postChannels as string[]).map((channel) => channel.trim()))] } : {}),
+      ...(github !== undefined ? { github: { repos: [...new Set((github as { repos: string[] }).repos)], access: (github as { access: "read" | "write" }).access } } : {}),
     },
   };
 }

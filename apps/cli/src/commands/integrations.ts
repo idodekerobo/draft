@@ -1,7 +1,6 @@
-import { normalizeHostedConnections } from "draft-core/integrations/hosted-connections";
 import {
+  callPersonTool,
   disconnectIntegration,
-  listConnections,
 } from "../cloud-client.ts";
 import {
   BACKEND_PROVIDER_BY_CLI,
@@ -9,7 +8,9 @@ import {
   isNetworkDisconnectProvider,
   type DisconnectProvider,
 } from "../integrations/types.ts";
-import { createIntegrationOutput } from "../integrations/safe-output.ts";
+import { createIntegrationOutput, INTEGRATION_ERROR_REGISTRY, type IntegrationErrorCode } from "../integrations/safe-output.ts";
+import { isInteractiveTerminal, parseAgentConnectArgs, runAgentConnect } from "../integrations/agent.ts";
+import { integrationsGroupHelp, integrationsSubcommandHelp } from "../integrations/help.ts";
 import { runGithubConnect } from "../integrations/providers/github.ts";
 import { runLinearConnect } from "../integrations/providers/linear.ts";
 import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
@@ -197,6 +198,44 @@ function parseSlackChannelsSetArgs(args: string[]): ParsedSlackChannelsSetArgs {
   return { json, channelIds: positionals.length > 0 ? positionals : null };
 }
 
+interface ToolIntegration {
+  provider: string;
+  label: string;
+  status: "connected" | "pending" | "needs_reconnect" | "not_connected";
+  connectedByYou: boolean;
+  ingests: string;
+  triggers: Array<{ event: string; label: string }>;
+  abilities: string[];
+  connect: { cli: string; mcp: string };
+}
+
+const STATUS_TEXT: Record<ToolIntegration["status"], string> = {
+  connected: "connected",
+  pending: "connected, waiting for its first event",
+  needs_reconnect: "needs reconnect",
+  not_connected: "not connected",
+};
+
+function readToolIntegrations(output: unknown): ToolIntegration[] | null {
+  const list = (output as { integrations?: unknown } | null)?.integrations;
+  return Array.isArray(list) ? (list as ToolIntegration[]) : null;
+}
+
+function renderIntegrations(items: ToolIntegration[]): string {
+  return items.map((item) => {
+    const lines = [`${item.label}: ${STATUS_TEXT[item.status]}${item.connectedByYou ? " (you)" : ""}`];
+    lines.push(`  brings in: ${item.ingests}`);
+    if (item.triggers.length > 0) lines.push(`  unlocks triggers: ${item.triggers.map((trigger) => trigger.label).join(", ")}`);
+    if (item.abilities.length > 0) lines.push(`  lets routines: ${item.abilities.join("; ")}`);
+    if (item.status === "needs_reconnect" || item.status === "not_connected") lines.push(`  connect: ${item.connect.cli}`);
+    return lines.join("\n");
+  }).join("\n\n");
+}
+
+function toIntegrationErrorCode(code: string): IntegrationErrorCode {
+  return Object.prototype.hasOwnProperty.call(INTEGRATION_ERROR_REGISTRY, code) ? (code as IntegrationErrorCode) : "request_failed";
+}
+
 async function runIntegrationsList(args: string[]): Promise<number> {
   const parsed = parseListArgs(args);
   const output = createIntegrationOutput({ json: parsed.json });
@@ -204,13 +243,21 @@ async function runIntegrationsList(args: string[]): Promise<number> {
     return output.error("invalid_usage");
   }
 
-  const result = await listConnections();
+  const result = await callPersonTool("integrations.list", {});
   if (!result.ok) {
-    return output.error(result.code);
+    return output.error(toIntegrationErrorCode(result.refusal ?? result.code));
   }
 
-  const connections = normalizeHostedConnections(result.value.connections);
-  return output.event({ status: "ok", connections });
+  const items = readToolIntegrations(result.output);
+  if (!items) {
+    return output.error("malformed_response");
+  }
+  if (parsed.json) {
+    process.stdout.write(`${JSON.stringify(result.output)}\n`);
+    return 0;
+  }
+  process.stdout.write(`${renderIntegrations(items)}\n`);
+  return 0;
 }
 
 async function runIntegrationsDisconnect(args: string[]): Promise<number> {
@@ -237,6 +284,10 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
 
 const CONNECT_PROVIDERS = new Set(["github", "linear", "claude-code", "slack", "fireflies", "granola"]);
 
+function hasExplicitCredentialSource(args: string[]): boolean {
+  return args.some((arg) => arg.startsWith("--credential-"));
+}
+
 async function runIntegrationsConnect(args: string[]): Promise<number> {
   // Only short-circuit when no recognized provider appears anywhere in
   // args -- a misplaced flag ahead of a real provider name (e.g.
@@ -245,6 +296,14 @@ async function runIntegrationsConnect(args: string[]): Promise<number> {
   if (!args.some((arg) => CONNECT_PROVIDERS.has(arg))) {
     const json = args.includes("--json");
     return createIntegrationOutput({ json }).error("invalid_connect_usage");
+  }
+  // Agents and scripts get a link to open. An explicit credential flag keeps the
+  // existing key-reading flow, so a human who passes one still gets it.
+  const agentMode = !hasExplicitCredentialSource(args) && (args.includes("--json") || !isInteractiveTerminal());
+  if (agentMode) {
+    const parsed = parseAgentConnectArgs(args);
+    if (!parsed) return createIntegrationOutput({ json: args.includes("--json") }).error("invalid_usage");
+    return runAgentConnect(parsed);
   }
   if (args[0] === "linear") {
     const parsed = parseCredentialConnectArgs("linear", args);
@@ -304,6 +363,14 @@ async function runIntegrationsSlack(args: string[]): Promise<number> {
 
 export async function runIntegrations(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
+    process.stdout.write(integrationsGroupHelp());
+    return 0;
+  }
+  if (subcommand && (args.includes("--help") || args.includes("-h"))) {
+    process.stdout.write(integrationsSubcommandHelp(subcommand) ?? integrationsGroupHelp());
+    return 0;
+  }
   if (subcommand === "list") return runIntegrationsList(rest);
   if (subcommand === "disconnect") return runIntegrationsDisconnect(rest);
   if (subcommand === "connect") return runIntegrationsConnect(rest);

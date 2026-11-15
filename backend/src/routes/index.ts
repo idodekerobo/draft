@@ -26,6 +26,7 @@ import * as sessionTokensRotate from "./session-tokens-rotate";
 import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
 import * as schedules from "./schedules";
+import * as routineOptions from "./routine-options";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
 import * as whoami from "./whoami";
@@ -33,6 +34,7 @@ import * as waitlist from "./waitlist";
 import * as workspaceContextExport from "./workspace-context-export";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
+import * as connectRequests from "./connect-requests";
 import { OPTIONS, withCors } from "../auth/with-cors";
 import { AUTH_HANDLER, WELL_KNOWN_HANDLER } from "../auth/better-auth-routes";
 import * as oauthConsentRedirect from "../auth/oauth-consent-redirect";
@@ -52,11 +54,13 @@ export const routes = {
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
-  "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
+  "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), POST: withCors(connections.CHANNELS_POST), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
   "/workspaces/:id/schedules": { GET: withCors(schedules.GET), POST: withCors(schedules.POST), OPTIONS },
+  "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },
   "/workspaces/:id/schedules/:taskId": { PATCH: withCors(schedules.PATCH), DELETE: withCors(schedules.DELETE), OPTIONS },
   "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(schedules.RUNS), OPTIONS },
+  "/workspaces/:id/schedules/:taskId/run": { POST: withCors(schedules.RUN), OPTIONS },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/github/install-sessions": { POST: withCors(githubInstall.createPOST), OPTIONS },
   "/workspaces/:id/github/install-sessions/:code": { GET: withCors(githubInstall.pollGET), OPTIONS },
@@ -90,8 +94,11 @@ export const routes = {
   "/invites/mine": { GET: withCors(invites.mineGET), OPTIONS },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },
+  "/connect-requests/:token": { GET: withCors(connectRequests.GET), OPTIONS },
+  "/connect-requests/:token/complete": { POST: withCors(connectRequests.completePOST), OPTIONS },
   "/link": { POST: links.createPOST },
   "/link/:code": { GET: links.pollGET },
+  "/link/:code/info": { GET: withCors(links.infoGET), OPTIONS },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
   // Run-scoped: a run proves itself with its own token, not a person's login.

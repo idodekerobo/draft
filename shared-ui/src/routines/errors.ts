@@ -7,6 +7,10 @@ const FIELD_MESSAGES: Record<string, string> = {
   prompt: "Describe what the routine should do.",
   harness: "Choose an agent.",
   model: "Choose a model.",
+  events: "Choose a valid event.",
+  canNotify: "Choose whether it may message teammates.",
+  postChannels: "Choose up to 20 channels.",
+  github: "Choose repositories Draft can reach.",
   limit: "This workspace has reached its limit of routines. Delete one or ask Draft for more.",
 };
 
@@ -19,8 +23,13 @@ export class RoutineError extends Error {
 
 /** Turns an API error code (and optional field) into a message a member can act on. */
 export function toRoutineError(code: string, field?: string): RoutineError {
-  if (code === "codex_not_connected") return new RoutineError("Connect Codex for routines first.", "harness");
+  if (code === "codex_not_connected" || code === "codex_needs_reconnect") return new RoutineError("Connect Codex for routines first.", "harness");
+  if (code === "claude_not_connected" || code === "claude_needs_reconnect") return new RoutineError("Connect Claude Code for routines first.", "harness");
   if (field && FIELD_MESSAGES[field]) return new RoutineError(FIELD_MESSAGES[field], field);
+  if (code === "forbidden") return new RoutineError("You can’t change routines in this workspace.");
+  if (code === "already_running") return new RoutineError("This routine is already running.");
+  if (code === "codex_login_busy") return new RoutineError("Another Codex run is using the login. Try again when it finishes.");
+  if (code === "run_failed") return new RoutineError("The run could not start. Try again.");
   if (code === "not_found") return new RoutineError("This routine no longer exists. Refresh and try again.");
   if (code === "network") return new RoutineError("Could not reach Draft. Check your connection.");
   return new RoutineError("Could not save this schedule. Try again.");
