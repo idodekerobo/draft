@@ -72,7 +72,7 @@ function GithubPanel({ onDone }: { onDone: () => void }) {
 const DEFAULT_UNAVAILABLE_HINT = "Ask your admin to connect this in the Draft desktop app.";
 
 /** Web connects personal tools, Linear, GitHub and coding sessions; Slack needs the desktop app for now. */
-function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?: ToolGroup[]; allowDisconnect: boolean; unavailableHint: string }) {
+function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { groups?: ToolGroup[]; allowDisconnect: boolean; unavailableHint: string; only?: ToolId }) {
   const { workspaceId } = useWorkspace();
   const { data: connections } = useSuspenseQuery(connectionsQueryOptions(workspaceId, apiFetch));
   const reposQuery = useQuery(sessionReposQueryOptions(workspaceId, apiFetch));
@@ -105,6 +105,11 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?
   };
   const managePanels: Partial<Record<ToolId, ManagePanel>> = { "coding-sessions": { label: "View repos", render: () => sessionsPanel() } };
 
+  if (only) {
+    const renderPanel = panels[only];
+    return renderPanel ? <>{renderPanel(() => {})}</> : <p className="ui-muted">Connect this in the Draft desktop app.</p>;
+  }
+
   return (
     <ToolList
       platform="web"
@@ -126,10 +131,11 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint }: { groups?
   );
 }
 
-export function WebToolList({ groups, allowDisconnect = false, unavailableHint = DEFAULT_UNAVAILABLE_HINT }: { groups?: ToolGroup[]; allowDisconnect?: boolean; unavailableHint?: string }) {
+/** `only` renders one provider's connect panel without the tool list, for single-purpose pages. */
+export function WebToolList({ groups, allowDisconnect = false, unavailableHint = DEFAULT_UNAVAILABLE_HINT, only }: { groups?: ToolGroup[]; allowDisconnect?: boolean; unavailableHint?: string; only?: ToolId }) {
   return (
     <DataBoundary fallback={<p className="ui-muted" role="status">Loading connections…</p>} errorMessage="Could not load your connections.">
-      <WebToolListBody groups={groups} allowDisconnect={allowDisconnect} unavailableHint={unavailableHint} />
+      <WebToolListBody groups={groups} allowDisconnect={allowDisconnect} unavailableHint={unavailableHint} only={only} />
     </DataBoundary>
   );
 }
