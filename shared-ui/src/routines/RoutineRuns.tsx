@@ -1,6 +1,6 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseInfiniteQuery } from "@tanstack/react-query";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
 import { routineRunsQueryOptions } from "../query/options";
@@ -48,16 +48,28 @@ function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; 
 
 function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; routine: Routine; onOpenRun?: OpenRun }) {
   const api = useDraftApi();
-  const { data: runs } = useSuspenseQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
+  const { data, hasNextPage, fetchNextPage, isFetchingNextPage, isFetchNextPageError } = useSuspenseInfiniteQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
+  // A run that started while older pages were open can shift one onto the next page; show it once.
+  const runs = [...new Map(data.pages.flat().map((run) => [run.id, run])).values()];
   if (runs.length === 0) {
     return <p className="ui-routines__secondary">No runs yet. The first run starts at the next scheduled time, or when someone presses Run now.</p>;
   }
   return (
-    <ul className="ui-routines__runs">
-      {runs.map((run) => (
-        <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
-      ))}
-    </ul>
+    <>
+      <ul className="ui-routines__runs">
+        {runs.map((run) => (
+          <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
+        ))}
+      </ul>
+      {hasNextPage && (
+        <div className="ui-activity-more">
+          <button type="button" className="ui-btn" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>
+            {isFetchingNextPage ? "Loading…" : "Show older runs"}
+          </button>
+          {isFetchNextPageError && <p className="ui-error" role="alert">Could not load older runs. Try again.</p>}
+        </div>
+      )}
+    </>
   );
 }
 

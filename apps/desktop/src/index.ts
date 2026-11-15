@@ -479,10 +479,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
         return (await fetchServerJSON<{ repos: string[] }>(`workspaces/${workspaceId}/routine-repositories`)).repos;
       },
-      listRoutineRuns: async ({ id }) => {
+      listRoutineRuns: async ({ id, before }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
-        const { runs } = await fetchServerJSON<{ runs: RoutineRun[] }>(`workspaces/${workspaceId}/schedules/${id}/runs`);
+        const { runs } = await fetchServerJSON<{ runs: RoutineRun[] }>(`workspaces/${workspaceId}/schedules/${id}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
         return runs;
       },
 

@@ -13,7 +13,8 @@ export interface DraftApi {
   createRoutine(input: CreateRoutineInput): Promise<Routine>;
   /** Hides an agent routine and stops its runs. Its past runs stay. */
   deleteRoutine(id: string): Promise<void>;
-  getRoutineRuns(id: string): Promise<RoutineRun[]>;
+  /** One routine's runs, 50 at a time; `before` is the last shown run's cursor (see routineRunCursor). */
+  getRoutineRuns(id: string, before?: string): Promise<RoutineRun[]>;
   runRoutine?(id: string): Promise<unknown>;
   getRoutineSlackChannels?(): Promise<Array<{ id: string; name: string }>>;
   getRoutineGithubRepos?(): Promise<string[]>;

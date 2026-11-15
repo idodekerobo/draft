@@ -53,10 +53,15 @@ export const routinesQueryOptions = (api: Pick<DraftApi, "getRoutines">, workspa
         : false,
   });
 
+export const routineRunCursor = (run: Pick<RoutineRun, "startedAt" | "id">) => `${run.startedAt}|${run.id}`;
+
+/** One routine's runs, a page at a time. A run in progress on the first page is polled quickly. */
 export const routineRunsQueryOptions = (api: Pick<DraftApi, "getRoutineRuns">, workspaceId: string, routineId: string) =>
-  queryOptions({
+  infiniteQueryOptions({
     queryKey: routineRunsKey(workspaceId, routineId),
-    queryFn: () => api.getRoutineRuns(routineId),
+    queryFn: ({ pageParam }) => api.getRoutineRuns(routineId, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => (page.length === RUNS_PAGE_SIZE ? routineRunCursor(page[page.length - 1]!) : undefined),
     staleTime: ROUTINE_RUN_POLL_MS,
-    refetchInterval: (query) => (anyRunning(query.state.data) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS),
+    refetchInterval: (query) => (anyRunning(query.state.data?.pages[0]) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS),
   });

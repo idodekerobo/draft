@@ -177,7 +177,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
 
   // Runs load while the person is still reaching for the routine, so its dialog opens filled in.
   function warmRuns(routine: Routine) {
-    if (routine.agent) void queryClient.prefetchQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
+    if (routine.agent) void queryClient.prefetchInfiniteQuery(routineRunsQueryOptions(api, workspaceId, routine.id));
   }
 
   async function onSave(routine: Routine, patch: RoutinePatch) {

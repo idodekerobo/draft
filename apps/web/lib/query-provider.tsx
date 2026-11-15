@@ -54,7 +54,7 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
       return result.output;
     },
     getRoutineGithubRepos: async () => (await apiFetch<{ repos: string[] }>(`/workspaces/${workspaceId}/routine-repositories`)).repos,
-    getRoutineRuns: async (id) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs`)).runs,
+    getRoutineRuns: async (id, before) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`)).runs,
   };
   return <DraftQueryProvider api={api}>{children}</DraftQueryProvider>;
 }

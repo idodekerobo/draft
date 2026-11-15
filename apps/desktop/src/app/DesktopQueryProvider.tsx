@@ -27,7 +27,7 @@ const api: DraftApi = {
   },
   getRoutineSlackChannels: () => rpc.request.getRoutineSlackChannels(),
   getRoutineGithubRepos: () => rpc.request.getRoutineGithubRepos(),
-  getRoutineRuns: (id) => rpc.request.listRoutineRuns({ id }),
+  getRoutineRuns: (id, before) => rpc.request.listRoutineRuns(before ? { id, before } : { id }),
 };
 
 /** Query keys use the cloud workspace id; signed-out state shares one bucket. */
