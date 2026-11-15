@@ -76,9 +76,9 @@ export function ActivityList({ runs, onFixInConnections, onOpenRun }: { runs: Sy
               </span>
             </button>
             {state === "failed" && run.kind !== "routine" && (
-              <button type="button" className="ui-link ui-activity-row__fix" onClick={onFixInConnections}>Fix in Connections</button>
+              <button type="button" className="ui-link ui-activity-row__action" onClick={onFixInConnections}>Fix in Connections</button>
             )}
-            {run.kind === "routine" && run.sessionId && onOpenRun && <button type="button" className="ui-link" onClick={() => onOpenRun(run.sessionId!)}>Open run</button>}
+            {run.kind === "routine" && run.sessionId && onOpenRun && <button type="button" className="ui-link ui-activity-row__action" onClick={() => onOpenRun(run.sessionId!)}>Open run</button>}
             {open && (
               <dl className="ui-activity-row__detail">
                 <dt>Started</dt><dd>{formatWhen(run.startedAt ?? run.createdAt)}</dd>
