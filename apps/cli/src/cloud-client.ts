@@ -839,25 +839,46 @@ export async function fetchSessions(filters: ListSessionsFilters = {}): Promise<
   return { ok: true, value: body.sessions };
 }
 
+export interface RoutineRun {
+  id: string;
+  status: "running" | "completed" | "failed" | "skipped";
+  startedBy: { type: "schedule" } | { type: "run_now" } | { type: "event"; event: string };
+  startedAt: string;
+  endedAt: string | null;
+  result: string | null;
+  skipReason?: string | null;
+}
+
+/** The agent part of a routine. Built-in routines have no agent. */
+export interface RoutineAgent {
+  prompt: string;
+  harness: string;
+  model: string | null;
+  events?: string[];
+  onSchedule?: false;
+  canNotify?: boolean;
+  postChannels?: "joined" | string[];
+  github?: { repos: string[]; access: "read" | "write" };
+  createdByName: string | null;
+  missingConnections: string[];
+  lastRun: RoutineRun | null;
+}
+
 export interface RoutineSummary {
   id: string;
   taskType: string;
   title: string;
-  routineDescription: string;
+  enabled: boolean;
   scheduleDescription: string;
+  preset: string;
+  time: string | null;
+  weekday: string | null;
   timezone: string;
   cron: string | null;
-  intervalSeconds: number | null;
-  enabled: boolean;
   nextRunAt: string | null;
-  lastCheckedAt: string | null;
-}
-
-export async function fetchRoutines(): Promise<FetchResult<RoutineSummary[]>> {
-  return callTool("routines.list", {}, (value) => {
-    const routines = recordValue(value)?.routines;
-    return Array.isArray(routines) ? routines as RoutineSummary[] : null;
-  });
+  canEdit: boolean;
+  updatedByName: string | null;
+  agent: RoutineAgent | null;
 }
 
 export type SessionReadResult =

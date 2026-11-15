@@ -201,67 +201,62 @@ describe("draft integrations connect github", () => {
 
   afterEach(() => backend.stop());
 
-  it("uses one fresh coherent tuple per poll and only the origin workspace/code path", async () => {
-    let polls = 0;
-    backend.state.githubInstallPollResponse = () => {
-      polls++;
-      if (polls === 1) {
-        seedCliAuth(home, { access_token: "poll-token-2", refresh_token: "poll-refresh-2" });
-        return Response.json({ status: "pending" });
-      }
-      return Response.json({ status: "connected" });
+  it("with --json calls integrations.connect and prints the link, without touching the install-session routes", async () => {
+    const calls: unknown[] = [];
+    backend.state.toolOutputs["integrations.connect"] = (input) => {
+      calls.push(input);
+      return {
+        status: "action_required",
+        action: "connect_github",
+        provider: "github",
+        url: "https://draft.example/connect/token-1",
+        expiresAt: "2026-11-14T12:15:00.000Z",
+        message: "Ask the person to open this link and connect GitHub.",
+      };
     };
 
-    const result = await runCli(["integrations", "connect", "github", "--no-open", "--json"], {
-      home,
-      apiUrl: backend.url,
-      timeoutMs: 8_000,
-    });
+    const result = await runCli(["integrations", "connect", "github", "--json"], { home, apiUrl: backend.url });
+
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
-    expect(result.stdout.split("\n").map((line) => JSON.parse(line))).toEqual([
-      {
-        schema_version: 1,
-        status: "browser_required",
-        provider: "github",
-        url: installUrl,
-        expires_in_seconds: 300,
-      },
-      { schema_version: 1, status: "awaiting_install", provider: "github" },
-      { schema_version: 1, status: "connected", provider: "github" },
-    ]);
-    const pollRequests = backend.state.requests.filter((request) =>
-      new URL(request.url).pathname.includes("/github/install-sessions/install-code")
-    );
-    expect(pollRequests.map((request) => new URL(request.url).pathname)).toEqual([
-      "/workspaces/ws-1/github/install-sessions/install-code",
-      "/workspaces/ws-1/github/install-sessions/install-code",
-    ]);
-    expect(pollRequests.map((request) => request.headers.authorization)).toEqual([
-      "Bearer seed-at",
-      "Bearer poll-token-2",
-    ]);
-    expect(backend.state.requests.filter((request) => new URL(request.url).pathname === "/whoami")).toHaveLength(3);
+    expect(calls).toEqual([{ provider: "github" }]);
+    expect(JSON.parse(result.stdout)).toEqual({
+      schema_version: 1,
+      status: "action_required",
+      action: "connect_github",
+      provider: "github",
+      url: "https://draft.example/connect/token-1",
+      expiresAt: "2026-11-14T12:15:00.000Z",
+      message: "Ask the person to open this link and connect GitHub.",
+    });
+    expect(backend.state.requests.some((request) =>
+      new URL(request.url).pathname.includes("/github/install-sessions")
+    )).toBe(false);
   });
 
-  it("rejects a changed workspace before issuing the poll GET", async () => {
-    let identities = 0;
-    backend.state.whoamiResponse = () => Response.json({
-      organization_id: null,
-      primary_team_id: null,
-      workspace_id: ++identities === 1 ? "ws-1" : "ws-2",
-      onboarding_completed_at: null,
+  it("without a terminal prints a human link line and exits 0", async () => {
+    backend.state.toolOutputs["integrations.connect"] = () => ({
+      status: "action_required",
+      action: "connect_github",
+      provider: "github",
+      url: "https://draft.example/connect/token-2",
+      expiresAt: "2026-11-14T12:15:00.000Z",
+      message: "Ask the person to open this link.",
     });
-    const result = await runCli(["integrations", "connect", "github", "--no-open", "--json"], {
-      home,
-      apiUrl: backend.url,
-      timeoutMs: 5_000,
-    });
+
+    const result = await runCli(["integrations", "connect", "github"], { home, apiUrl: backend.url });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("Open this link to connect GitHub: https://draft.example/connect/token-2 (expires 2026-11-14T12:15:00.000Z)");
+  });
+
+  it("maps a refusal from integrations.connect to a safe error", async () => {
+    backend.state.toolOutputs["integrations.connect"] = () => ({ __refusal: { code: "too_many_requests", message: "Too many open connect links." } });
+
+    const result = await runCli(["integrations", "connect", "github", "--json"], { home, apiUrl: backend.url });
+
     expect(result.exitCode).toBe(1);
-    expect(JSON.parse(result.stdout.split("\n").at(-1)!)).toMatchObject({ status: "error", code: "workspace_changed" });
-    expect(backend.state.requests.some((request) =>
-      new URL(request.url).pathname.includes("/github/install-sessions/install-code")
-    )).toBe(false);
+    expect(JSON.parse(result.stdout)).toMatchObject({ schema_version: 1, status: "error", code: "too_many_requests", message: "Too many open connect links." });
   });
 
   it("rejects invalid grammar before any request", async () => {
@@ -269,9 +264,8 @@ describe("draft integrations connect github", () => {
       ["integrations", "connect"],
       ["integrations", "connect", "github", "extra"],
       ["integrations", "connect", "github", "--json", "--json"],
-      ["integrations", "connect", "github", "--no-open", "--no-open"],
-      ["integrations", "connect", "github", "--credential-stdin"],
-      ["integrations", "connect", "github", "--credential-fd", "3"],
+      ["integrations", "connect", "github", "--no-open"],
+      ["integrations", "connect", "github", "--credential-fd", "2"],
       ["integrations", "connect", "unknown-provider"],
       ["integrations", "connect", "--json", "github"],
     ];
@@ -301,72 +295,4 @@ describe("draft integrations connect github", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_usage" });
     expect(backend.state.requests).toEqual([]);
   });
-
-  it("handles SIGINT once and stops before a later poll request", async () => {
-    backend.state.githubInstallPollResponse = () => Response.json({ status: "pending" });
-    const cliEntry = join(import.meta.dir, "..", "index.ts");
-    const child = Bun.spawn({
-      cmd: ["bun", "run", cliEntry, "integrations", "connect", "github", "--no-open", "--json"],
-      stdout: "pipe",
-      stderr: "pipe",
-      env: {
-        ...process.env,
-        HOME: home,
-        DRAFT_API_BASE_URL: backend.url,
-        DRAFT_APP_URL: backend.url,
-        DRAFT_SUPABASE_URL: backend.url,
-        DRAFT_SUPABASE_PUBLISHABLE_KEY: "test-anon-key",
-      },
-    });
-    for (let attempt = 0; attempt < 100 && !backend.state.requests.some((request) => request.method === "POST" && new URL(request.url).pathname.endsWith("/github/install-sessions")); attempt++) {
-      await Bun.sleep(5);
-    }
-    await Bun.sleep(20);
-    child.kill("SIGINT");
-    expect(await child.exited).toBe(130);
-    const stdout = await new Response(child.stdout).text();
-    const lines = stdout.trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.map((line) => line.status)).toEqual(["browser_required", "awaiting_install", "error"]);
-    expect(lines.at(-1)).toMatchObject({ code: "aborted" });
-    await Bun.sleep(20);
-    expect(backend.state.requests.some((request) =>
-      new URL(request.url).pathname.includes("/github/install-sessions/install-code")
-    )).toBe(false);
-  });
-
-  it("does not hang forever when a mid-poll /whoami request never responds", async () => {
-    let whoamiCalls = 0;
-    let releaseHungWhoami: (() => void) | undefined;
-    backend.state.whoamiResponse = () => {
-      whoamiCalls++;
-      if (whoamiCalls === 1) return defaultWhoami();
-      return new Promise<Response>((resolve) => {
-        releaseHungWhoami = () => resolve(defaultWhoami());
-      });
-    };
-    backend.state.githubInstallPollResponse = () => Response.json({ status: "pending" });
-    const cliEntry = join(import.meta.dir, "..", "index.ts");
-    const child = Bun.spawn({
-      cmd: ["bun", "run", cliEntry, "integrations", "connect", "github", "--no-open", "--json"],
-      stdout: "pipe",
-      stderr: "pipe",
-      env: {
-        ...process.env,
-        HOME: home,
-        DRAFT_API_BASE_URL: backend.url,
-        DRAFT_APP_URL: backend.url,
-        DRAFT_SUPABASE_URL: backend.url,
-        DRAFT_SUPABASE_PUBLISHABLE_KEY: "test-anon-key",
-      },
-    });
-    for (let attempt = 0; attempt < 600 && whoamiCalls < 2; attempt++) await Bun.sleep(10);
-    expect(whoamiCalls).toBeGreaterThanOrEqual(2);
-    child.kill("SIGINT");
-    expect(await child.exited).toBe(130);
-    const stdout = await new Response(child.stdout).text();
-    const lines = stdout.trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.map((line) => line.status)).toEqual(["browser_required", "awaiting_install", "error"]);
-    expect(lines.at(-1)).toMatchObject({ code: "aborted" });
-    releaseHungWhoami?.();
-  }, 15_000);
 });
