@@ -454,8 +454,8 @@ export type AppRPCType = {
       /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
       getAppVersion: { params: void; response: AppVersionInfo };
 
-      /** List the last 50 cloud synthesis runs for the active workspace. Returns [] if signed out or the request fails. */
-      getWorkspaceRuns: { params: void; response: WorkspaceRun[] };
+      /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Returns [] if signed out or the request fails. */
+      getWorkspaceRuns: { params: { before?: string } | void; response: WorkspaceRun[] };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };

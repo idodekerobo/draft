@@ -6,7 +6,8 @@ import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutinesRes
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
-  getRuns(): Promise<SynthesisRunSummary[]>;
+  /** The newest runs, a page at a time. `before` is a run's cursor (see runCursor); omit it for the first page. */
+  getRuns(before?: string): Promise<SynthesisRunSummary[]>;
   getRoutines(): Promise<RoutinesResponse>;
   updateRoutine(id: string, patch: RoutinePatch): Promise<Routine>;
   createRoutine(input: CreateRoutineInput): Promise<Routine>;

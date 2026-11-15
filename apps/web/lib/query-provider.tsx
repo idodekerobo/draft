@@ -14,7 +14,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 
 export function WebQueryProvider({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
   const api: DraftApi = {
-    getRuns: async () => (await apiFetch<{ runs: SynthesisRunSummary[] }>(`/workspaces/${workspaceId}/synthesis-runs`)).runs,
+    getRuns: async (before) => (await apiFetch<{ runs: SynthesisRunSummary[] }>(`/workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`)).runs,
     getRoutines: () => apiFetch<RoutinesResponse>(`/workspaces/${workspaceId}/schedules`),
     updateRoutine: async (id, patch) => {
       try {

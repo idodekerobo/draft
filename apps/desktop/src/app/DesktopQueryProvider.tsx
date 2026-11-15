@@ -5,7 +5,7 @@ import { watchSignals } from "./liveSessionsApi";
 import { rpc } from "./rpc";
 
 const api: DraftApi = {
-  getRuns: () => rpc.request.getWorkspaceRuns(),
+  getRuns: (before) => rpc.request.getWorkspaceRuns(before ? { before } : undefined),
   getRoutines: () => rpc.request.listRoutines(),
   updateRoutine: async (id, patch) => {
     const result = await rpc.request.updateRoutine({ id, patch });

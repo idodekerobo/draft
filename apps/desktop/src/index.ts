@@ -976,11 +976,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      getWorkspaceRuns: async () => {
+      getWorkspaceRuns: async (params) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return [];
+        const before = params?.before;
         try {
-          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs`);
+          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
           return response.runs;
         } catch {
           return [];

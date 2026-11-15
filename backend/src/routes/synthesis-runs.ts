@@ -15,6 +15,14 @@ import { synthesisTriggerType } from "../synthesis/run-spec";
 type SynthesisRunsRequest = Bun.BunRequest<"/workspaces/:id/synthesis-runs">;
 
 const RUNS_LIST_LIMIT = 50;
+const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2}))\|([0-9a-f-]{36})$/i;
+
+/** `before` is "<created_at>|<id>" of the last run already shown; the next page is the runs older than it. */
+function parseCursor(raw: string | null): { createdAt: string; id: string } | null | "invalid" {
+  if (!raw) return null;
+  const match = CURSOR.exec(raw);
+  return match ? { createdAt: match[1]!, id: match[2]! } : "invalid";
+}
 
 type SynthesisRunListRow = Pick<
   AgentRunRow,
@@ -25,11 +33,18 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
 
-  const { data, error } = await serviceClient
+  const cursor = parseCursor(new URL(req.url).searchParams.get("before"));
+  if (cursor === "invalid") return Response.json({ error: "invalid_cursor" }, { status: 400 });
+
+  let query = serviceClient
     .from("agent_runs")
     .select("id, kind, session_id, scheduled_task_id, status, outcome, trigger, summary, started_at, completed_at, created_at")
-    .eq("workspace_id", req.params.id)
+    .eq("workspace_id", req.params.id);
+  // Ties on created_at are broken by id, so a page boundary never skips or repeats a run.
+  if (cursor) query = query.or(`created_at.lt."${cursor.createdAt}",and(created_at.eq."${cursor.createdAt}",id.lt.${cursor.id})`);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(RUNS_LIST_LIMIT)
     .returns<SynthesisRunListRow[]>();
 
