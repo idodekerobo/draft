@@ -220,6 +220,7 @@ function buildRemoteTool(client: SupabaseClient, connection: McpConnectionRow, s
     callers: ["run"],
     mcp: false,
     modelVisible: true,
+    destructive: false,
     inputSchema: input,
     // Held only by a cloud run whose environment names this connection and this tool.
     permission: (run) => {

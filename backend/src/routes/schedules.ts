@@ -4,7 +4,7 @@ import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import { isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
-import { lacksRoutineLogin, routineAgentStatuses } from "../routines/agent-status";
+import { routineAgentProblem, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../schedules/permissions";
 import { parseAgentRoutineConfig } from "../routines/config";
 import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask, listRoutineRuns, listConnectedProviders, listRoutines, runRoutineNow, updateRoutine } from "../schedules/service";
@@ -66,9 +66,8 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
       return Response.json({ error: validation.error, field: validation.field }, { status: 400 });
     }
     const harness = validation.patch.agent?.harness;
-    if (harness && harness !== current?.harness && (await lacksRoutineLogin(serviceClient, workspaceId, harness))) {
-      return Response.json({ error: "codex_not_connected", field: "harness" }, { status: 409 });
-    }
+    const agentProblem = harness && harness !== current?.harness ? await routineAgentProblem(serviceClient, workspaceId, harness) : null;
+    if (agentProblem) return Response.json({ error: agentProblem.code, message: agentProblem.message, field: "harness" }, { status: 409 });
     return Response.json(await updateRoutine(routineTask, validation.patch, caller.userId));
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
@@ -115,9 +114,8 @@ export const POST = withAuth<SchedulesRequest>(async (req, caller) => {
   if (!validation.ok) return Response.json({ error: "invalid_body", field: validation.field }, { status: 400 });
 
   try {
-    if (await lacksRoutineLogin(serviceClient, workspaceId, validation.config.harness)) {
-      return Response.json({ error: "codex_not_connected", field: "harness" }, { status: 409 });
-    }
+    const agentProblem = await routineAgentProblem(serviceClient, workspaceId, validation.config.harness);
+    if (agentProblem) return Response.json({ error: agentProblem.code, message: agentProblem.message, field: "harness" }, { status: 409 });
     return Response.json(await createAgentRoutine(workspaceId, caller.userId, validation), { status: 201 });
   } catch (error) {
     if (error instanceof ScheduleServiceError) {

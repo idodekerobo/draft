@@ -28,6 +28,8 @@ export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   mcp?: boolean;
   /** False for credentials and other HTTP-only tools that are not for model discovery. */
   modelVisible?: boolean;
+  /** True when the tool removes something, so a client should ask before calling it. */
+  destructive?: boolean;
   input: S;
   /** Returns a reason when the input is outside the run's limits for this tool, or null when it is inside. */
   checkLimits?: (limits: DraftToolLimits[N] | undefined, input: z.output<S>) => string | null;
@@ -57,6 +59,7 @@ export interface RegisteredTool {
   /** True when the person-facing MCP server offers this tool. */
   mcp: boolean;
   modelVisible: boolean;
+  destructive: boolean;
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
@@ -78,6 +81,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     callers: spec.callers ?? ["run", "user"],
     mcp: spec.mcp ?? false,
     modelVisible: spec.modelVisible ?? true,
+    destructive: spec.destructive ?? false,
     inputSchema: spec.input,
     permission: (run) => findToolPermission(run, spec.name),
     parse(raw) {

@@ -22,6 +22,9 @@ export const DRAFT_TOOLS = [
   { name: "routines.delete", access: "write" },
   { name: "routines.run", access: "write" },
   { name: "routines.runs", access: "read" },
+  { name: "routines.options", access: "read" },
+  { name: "integrations.list", access: "read" },
+  { name: "integrations.connect", access: "write" },
   { name: "slack.list_channels", access: "read" },
   { name: "slack.read_channel", access: "read" },
   { name: "slack.post_message", access: "write" },
@@ -58,6 +61,9 @@ export interface DraftToolLimits {
   "routines.delete": Record<string, never>;
   "routines.run": Record<string, never>;
   "routines.runs": Record<string, never>;
+  "routines.options": Record<string, never>;
+  "integrations.list": Record<string, never>;
+  "integrations.connect": Record<string, never>;
   "slack.list_channels": Record<string, never>;
   "slack.read_channel": Record<string, never>;
   "slack.post_message": { channels?: "joined" | ReadonlyArray<string>; maxPerRun?: number };

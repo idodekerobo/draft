@@ -50,6 +50,7 @@ function queryBuilder(table: string) {
     },
     order: () => builder,
     limit: () => builder,
+    single: () => builder.maybeSingle(),
     async maybeSingle() {
       if (updatePayload) {
         if (updateError) return { data: null, error: updateError };
@@ -257,7 +258,7 @@ describe("schedules routes", () => {
 
     it("returns an empty list for a workspace with no rows", async () => {
       tables.scheduled_tasks = [];
-      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true, connectedProviders: ["slack"] });
+      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true, connectedProviders: ["slack"], agents: { claude: "not_connected", codex: "not_connected" } });
     });
 
     it("passes through an access denial", async () => {

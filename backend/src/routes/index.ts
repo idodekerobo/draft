@@ -34,6 +34,7 @@ import * as waitlist from "./waitlist";
 import * as workspaceContextExport from "./workspace-context-export";
 import * as invites from "../auth/invite-routes";
 import * as links from "../auth/link-routes";
+import * as connectRequests from "./connect-requests";
 import { OPTIONS, withCors } from "../auth/with-cors";
 import { AUTH_HANDLER, WELL_KNOWN_HANDLER } from "../auth/better-auth-routes";
 import * as oauthConsentRedirect from "../auth/oauth-consent-redirect";
@@ -93,6 +94,8 @@ export const routes = {
   "/invites/mine": { GET: withCors(invites.mineGET), OPTIONS },
   "/invites/:token": { GET: withCors(invites.resolveGET), OPTIONS },
   "/invites/:token/accept": { POST: withCors(invites.acceptPOST), OPTIONS },
+  "/connect-requests/:token": { GET: withCors(connectRequests.GET), OPTIONS },
+  "/connect-requests/:token/complete": { POST: withCors(connectRequests.completePOST), OPTIONS },
   "/link": { POST: links.createPOST },
   "/link/:code": { GET: links.pollGET },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },

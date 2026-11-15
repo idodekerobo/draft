@@ -37,6 +37,7 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
   neq(column: string, value: unknown) { this.filters.push((r) => r[column] !== value); return this; }
   in(column: string, values: unknown[]) { this.filters.push((r) => values.includes(r[column])); return this; }
   is(column: string, value: unknown) { this.filters.push((r) => (r[column] ?? null) === value); return this; }
+  gt(column: string, value: string | number) { this.filters.push((r) => r[column] !== null && r[column] !== undefined && (r[column] as string | number) > value); return this; }
   lt(column: string, value: string) { this.filters.push((r) => typeof r[column] === "string" && (r[column] as string) < value); return this; }
   order(column: string, options?: { ascending?: boolean }) { this.sort = { column, ascending: options?.ascending ?? true }; return this; }
   limit(count: number) { this.cap = count; return this; }

@@ -23,7 +23,23 @@ export async function routineAgentStatuses(client: SupabaseClient, workspaceId: 
   return { claude: fromCredential(claude), codex: fromCredential(codex) };
 }
 
-/** True when a routine on this harness could not run for want of a login. Only Codex is held to it when a routine is saved. */
-export async function lacksRoutineLogin(client: SupabaseClient, workspaceId: string, harness: string): Promise<boolean> {
-  return harness === "codex" && (await codexCredentialStatus(client, workspaceId)) !== "active";
+const AGENT_SETUP: Record<"claude" | "codex", { label: string; how: string }> = {
+  claude: { label: "Claude Code", how: "Someone in the workspace runs `claude setup-token` and pastes the token under Routines in the Draft app" },
+  codex: { label: "Codex", how: "Someone in the workspace connects Codex under Routines in the Draft app" },
+};
+
+/**
+ * Why a routine on this agent could not run, or null when it can. Both the HTTP routes and Draft's tools refuse with this,
+ * so a person or an agent learns what is missing and how to fix it.
+ */
+export async function routineAgentProblem(client: SupabaseClient, workspaceId: string, harness: string): Promise<{ code: string; message: string } | null> {
+  if (harness !== "claude" && harness !== "codex") return null;
+  const status = (await routineAgentStatuses(client, workspaceId))[harness];
+  if (status === "connected") return null;
+  const { label, how } = AGENT_SETUP[harness];
+  const problem = status === "needs_reconnect" ? `${label}'s login for routines stopped working` : `${label} isn't connected for routines in this workspace`;
+  return {
+    code: `${harness}_${status}`,
+    message: `${problem}, so a routine on it can't run. ${how}, or pick an agent that routines.options lists as connected.`,
+  };
 }

@@ -77,6 +77,30 @@ describe("agent routines", () => {
     expect(runs!.map((r) => [r.id, r.status])).toEqual([["c", "running"], ["b", "failed"], ["a", "completed"]]);
   });
 
+  it("says what started each run, read from its idempotency key", async () => {
+    await createAgentRoutine("ws-1", "user-1", { config, schedule: { preset: "hourly" } });
+    const taskId = db.tables.scheduled_tasks![0]!.id as string;
+    const run = (id: string, startedAt: string, key: string) => ({ id, workspace_id: "ws-1", scheduled_task_id: taskId, status: "ended", end_reason: "completed", started_at: startedAt, ended_at: null, idempotency_key: key });
+    db.tables.sessions!.push(
+      run("a", "2026-10-27T08:00:00.000Z", `${taskId}:2026-10-27T08:00:00.000Z`),
+      run("b", "2026-10-27T09:00:00.000Z", `${taskId}:manual:99999999-9999-4999-8999-999999999999`),
+      run("c", "2026-10-27T10:00:00.000Z", `${taskId}:github.pull_request_merged:acme/app#7`),
+    );
+    const runs = await listRoutineRuns("ws-1", taskId);
+    expect(runs!.map((r) => [r.id, r.startedBy])).toEqual([
+      ["c", { type: "event", event: "github.pull_request_merged" }],
+      ["b", { type: "run_now" }],
+      ["a", { type: "schedule" }],
+    ]);
+  });
+
+  it("names connections a routine needs that the workspace no longer has", async () => {
+    await createAgentRoutine("ws-1", "user-1", { config: { ...config, events: ["linear.issue_created"], canNotify: true }, schedule: { preset: "hourly" } });
+    db.tables.source_connections!.push({ workspace_id: "ws-1", provider: "slack", status: "active" });
+    const [routine] = await listRoutines("ws-1");
+    expect(routine!.agent!.missingConnections).toEqual(["linear"]);
+  });
+
   it("returns null for a routine that is not in the workspace", async () => {
     expect(await listRoutineRuns("ws-1", "missing")).toBeNull();
   });
