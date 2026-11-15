@@ -180,7 +180,7 @@ describe("launchSandboxRun", () => {
 
     expect(launched!.image).toBe(image);
     expect(launched!.region).toBe("iad");
-    expect(launched!.guest).toEqual({ cpu_kind: "shared", cpus: 1, memory_mb: 4096 });
+    expect(launched!.guest).toEqual({ cpu_kind: "shared", cpus: 2, memory_mb: 4096 });
     expect(launched!.metadata).toEqual({ run_id: "run-123", bundle_hash: bundleHash });
     expect(Object.keys(launched!.env!).sort()).toEqual([
       "CLAUDE_CODE_OAUTH_TOKEN",

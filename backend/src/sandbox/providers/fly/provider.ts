@@ -10,9 +10,10 @@ import {
 } from "./fly-machines";
 
 const BOOT_TIMEOUT_MS = 60_000;
+// Fly caps memory by CPU count: one shared CPU allows at most 2048 MB, two allow 4096.
 const SANDBOX_GUEST = {
   cpu_kind: "shared" as const,
-  cpus: 1,
+  cpus: 2,
   memory_mb: 4096,
 };
 
