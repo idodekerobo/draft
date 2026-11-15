@@ -54,7 +54,7 @@ export const routes = {
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
-  "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), OPTIONS },
+  "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), POST: withCors(connections.CHANNELS_POST), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
   "/workspaces/:id/schedules": { GET: withCors(schedules.GET), POST: withCors(schedules.POST), OPTIONS },
   "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },

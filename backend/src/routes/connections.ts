@@ -426,6 +426,32 @@ export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, call
   }
 });
 
+/**
+ * Lists public channels for a bot token that isn't saved yet, so the web app can show the channel picker while
+ * connecting. A browser can't call Slack itself. The token is used for this call only and not stored.
+ */
+export const CHANNELS_POST = withAuth<ConnectionChannelsRequest>(async (req, caller) => {
+  if (req.params.provider !== "slack") return errorResponse("invalid_provider", 400);
+
+  const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
+  if (denied) return denied;
+
+  let botToken: unknown;
+  try {
+    botToken = ((await req.json()) as { bot_token?: unknown } | null)?.bot_token;
+  } catch {
+    return errorResponse("invalid_json", 400);
+  }
+  if (typeof botToken !== "string" || !botToken.startsWith("xoxb-")) return errorResponse("invalid_bot_token", 400);
+
+  try {
+    return Response.json({ ok: true, channels: await listPublicSlackChannels(botToken) });
+  } catch (error) {
+    const errorCode = error instanceof SlackProviderError ? error.code : "slack_channel_list_failed";
+    return errorResponse(errorCode, 502, error, req.params.id);
+  }
+});
+
 export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;

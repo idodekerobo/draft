@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { IntegrationActionsProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type TrackFn } from "draft-shared-ui";
+import { IntegrationActionsProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type SlackChannelsResult, type TrackFn } from "draft-shared-ui";
+import { buildSlackManifestUrl, validateSlackTokenFormat } from "draft-core/integrations/slack-hosted";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { watchSignals } from "@/lib/live-sessions-api";
@@ -99,11 +100,34 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
       connectFireflies: ({ apiKey }) => connect({ provider: "fireflies", api_token: apiKey.trim() }, "Could not connect Fireflies. Check your API key."),
       connectGranola: ({ apiKey, accountKind }) => connect({ provider: "granola", api_token: apiKey.trim(), account_kind: accountKind }, "Could not connect Granola. Check your API key."),
       connectLinear: ({ apiKey }) => connect({ provider: "linear", api_token: apiKey.trim() }, "Could not connect Linear. Check your API key."),
-      // Slack's API blocks browsers, and folder actions need a desktop.
-      getSlackManifestUrl: unavailable,
-      listSlackChannels: unavailable,
-      connectSlack: unavailable,
-      updateSlackChannels: async () => ({ ok: false, channelIds: [], failed: [], error: "Use the Draft desktop app for this." }),
+      getSlackManifestUrl: async () => buildSlackManifestUrl(),
+      // Slack's API refuses browser calls, so channels are listed through Draft's backend.
+      listSlackChannels: async ({ botToken }) => {
+        try {
+          return botToken
+            ? await apiFetch<SlackChannelsResult>(`/workspaces/${workspaceId}/connections/slack/channels`, { method: "POST", body: JSON.stringify({ bot_token: botToken }) })
+            : await apiFetch<SlackChannelsResult>(`/workspaces/${workspaceId}/connections/slack/channels`);
+        } catch (error) {
+          return { ok: false, error: errorMessage(error, "Could not load Slack channels. Check the bot token.") };
+        }
+      },
+      connectSlack: async ({ botToken, appToken, channelIds }) => {
+        const format = validateSlackTokenFormat(botToken, appToken);
+        if (!format.ok) return format;
+        return connect({ provider: "slack", bot_token: botToken, app_token: appToken, channel_ids: channelIds }, "Could not connect Slack. Check both tokens.");
+      },
+      updateSlackChannels: async ({ channelIds }) => {
+        try {
+          const result = await apiFetch<{ ok: boolean; channel_ids: string[]; failed: Array<{ channel_id: string; operation: "join" | "leave" }> }>(
+            `/workspaces/${workspaceId}/connections/slack`,
+            { method: "PATCH", body: JSON.stringify({ channel_ids: channelIds }) },
+          );
+          return { ok: result.ok, channelIds: result.channel_ids, failed: result.failed.map((failure) => ({ channelId: failure.channel_id, operation: failure.operation })) };
+        } catch (error) {
+          return { ok: false, channelIds: [], failed: [], error: errorMessage(error, "Could not update Slack channels.") };
+        }
+      },
+      // Folder actions need a desktop.
       connectSessionTracking: () => connect<{ ok: true }>({ provider: "claude_session" }, "Could not turn on coding sessions."),
       selectSessionRepoFolder: async () => ({}),
       enableSessionCaptureForRepo: unavailable,

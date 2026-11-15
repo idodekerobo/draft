@@ -353,7 +353,7 @@ When you run `connect` with `--json`, or without a terminal (for example, when a
 {"status":"action_required","action":"connect_linear","provider":"linear","url":"https://app.draftai.us/connect/…","expiresAt":"…"}
 ```
 
-Open the link and connect the provider on that page in the Draft app. The link works once, only for you, for 15 minutes, and your key never passes through the CLI or the agent. Add `--wait` to keep checking until the provider is connected. Slack can only be connected from the desktop app or an interactive terminal for now.
+Open the link and connect the provider on that page in the Draft app. The link works once, only for you, for 15 minutes, and your key never passes through the CLI or the agent. Add `--wait` to keep checking until the provider is connected.
 
 ```bash
 draft integrations connect linear --json

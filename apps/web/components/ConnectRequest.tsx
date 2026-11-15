@@ -20,6 +20,7 @@ interface ConnectRequestInfo {
 
 const TOOL_BY_PROVIDER: Partial<Record<Provider, ToolId>> = {
   github: "github",
+  slack: "slack",
   linear: "linear",
   fireflies: "fireflies",
   granola: "granola",
