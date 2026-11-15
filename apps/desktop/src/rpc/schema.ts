@@ -522,6 +522,8 @@ export type AppRPCType = {
       signInProgress: {
         phase: "awaiting_approval" | "complete" | "error";
         error?: string;
+        /** Typed on the approval page to confirm the person started this sign-in. Formatted like "K7M-4QX". */
+        confirmCode?: string;
       };
 
       githubInstallProgress: {

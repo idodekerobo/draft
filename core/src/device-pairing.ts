@@ -11,6 +11,8 @@
 const POLL_INTERVAL_MS = 2_000;
 const PAIRING_DEADLINE_MS = 300_000; // 5 minutes
 
+export const formatConfirmCode = (code: string) => (code.length === 6 ? `${code.slice(0, 3)}-${code.slice(3)}` : code);
+
 export interface PairedTokens {
   access_token: string;
   refresh_token: string;
@@ -29,7 +31,10 @@ export interface DevicePairingDeps {
   appUrl: string;
   fetch: typeof fetch;
   signal: AbortSignal;
-  onUrl(url: string): void;
+  /** Names the app asking, for example "Draft CLI 0.10.5 on macOS". The approval page shows it. */
+  client?: string;
+  /** The person types `confirmCode` on the approval page, so they can only approve a sign-in they started. Show it next to the URL. */
+  onUrl(url: string, confirmCode: string): void;
   onProgress(event: DevicePairingProgress): void;
   /** Overridable for tests; defaults to POLL_INTERVAL_MS. */
   pollIntervalMs?: number;
@@ -74,7 +79,12 @@ export async function pairDevice(deps: DevicePairingDeps): Promise<PairedTokens>
 
   let created: Response;
   try {
-    created = await deps.fetch(`${deps.apiUrl}/link`, { method: "POST", signal: deps.signal });
+    created = await deps.fetch(`${deps.apiUrl}/link`, {
+      method: "POST",
+      signal: deps.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(deps.client ? { client: deps.client } : {}),
+    });
   } catch (error) {
     if (deps.signal.aborted) throw new DevicePairingError("aborted");
     throw new DevicePairingError("pairing_failed", `POST ${deps.apiUrl}/link could not connect (${describeFetchError(error)})`);
@@ -82,16 +92,18 @@ export async function pairDevice(deps: DevicePairingDeps): Promise<PairedTokens>
   if (!created.ok) throw new DevicePairingError("pairing_failed", `POST ${deps.apiUrl}/link returned HTTP ${created.status}`);
 
   let code: string;
+  let confirmCode: string;
   try {
-    const body = await created.json() as { code?: unknown };
-    if (typeof body.code !== "string" || !body.code) throw new DevicePairingError("malformed_response");
+    const body = await created.json() as { code?: unknown; confirm_code?: unknown };
+    if (typeof body.code !== "string" || !body.code || typeof body.confirm_code !== "string" || !body.confirm_code) throw new DevicePairingError("malformed_response");
     code = body.code;
+    confirmCode = body.confirm_code;
   } catch (error) {
     if (error instanceof DevicePairingError) throw error;
     throw new DevicePairingError("malformed_response");
   }
 
-  deps.onUrl(`${deps.appUrl}/link?code=${encodeURIComponent(code)}`);
+  deps.onUrl(`${deps.appUrl}/link?code=${encodeURIComponent(code)}`, formatConfirmCode(confirmCode));
   deps.onProgress({ phase: "awaiting_approval" });
 
   const deadline = now() + deadlineMs;

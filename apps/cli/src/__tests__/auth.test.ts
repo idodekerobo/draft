@@ -21,7 +21,7 @@ function parseJsonLines(stdout: string): unknown[] {
 }
 
 describe("draft auth login", () => {
-  test("fresh pairing: JSONL — one pairing_required line, then one terminal authenticated line", async () => {
+  test("fresh pairing: JSONL — one action_required line, then one terminal authenticated line", async () => {
     backend.state.linkPollResponses = [() => Response.json({ access_token: "at", refresh_token: "rt", expires_in: 3600 })];
     backend.state.whoamiResponse = () => defaultWhoami({ organization_id: "org-1", primary_team_id: "team-1", workspace_id: "ws-1" });
 
@@ -30,7 +30,7 @@ describe("draft auth login", () => {
     expect(result.stdout).not.toContain("\x1b[");
     const lines = parseJsonLines(result.stdout);
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({ schema_version: 1, status: "pairing_required" });
+    expect(lines[0]).toMatchObject({ schema_version: 1, status: "action_required", action: "sign_in", confirmCode: "K7M-4QX", expiresInSeconds: 300 });
     expect((lines[0] as { url: string }).url).toContain("/link?code=");
     expect(lines[1]).toMatchObject({ schema_version: 1, status: "authenticated", organization_id: "org-1", team_id: "team-1", workspace_id: "ws-1" });
 
@@ -44,6 +44,8 @@ describe("draft auth login", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Open this URL to sign in:");
     expect(result.stdout).toContain("/link?code=");
+    expect(result.stdout).toContain("Then type this code on the page: K7M-4QX");
+    expect(result.stdout).toContain("Only approve a sign-in you started.");
   });
 
   test("expired pairing surfaces an error and exits nonzero", async () => {
@@ -70,7 +72,7 @@ describe("draft auth login", () => {
     const result = await runCli(["auth", "login", "--force", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     const lines = parseJsonLines(result.stdout);
-    expect(lines[0]).toMatchObject({ status: "pairing_required" });
+    expect(lines[0]).toMatchObject({ status: "action_required" });
     const stored = JSON.parse(readFileSync(join(home, ".draft", "personal", "cli-auth.json"), "utf8"));
     expect(stored.access_token).toBe("forced-at");
   });
@@ -82,7 +84,7 @@ describe("draft auth login", () => {
     backend.state.refreshResponse = () => new Response(null, { status: 401 }); // refresh also terminal
     const result = await runCli(["auth", "login", "--json"], { home, apiUrl: backend.url });
     const lines = parseJsonLines(result.stdout);
-    expect(lines.some((l) => (l as { status?: string }).status === "pairing_required")).toBe(true);
+    expect(lines.some((l) => (l as { status?: string }).status === "action_required")).toBe(true);
   });
 
   test("unknown flag is invalid usage, exit 2", async () => {
@@ -107,11 +109,11 @@ describe("draft auth login", () => {
       stderr: "pipe",
     });
 
-    // Wait for the pairing_required line to know polling has started.
+    // Wait for the action_required line to know polling has started.
     const reader = proc.stdout.getReader();
     let buffered = "";
     const decoder = new TextDecoder();
-    while (!buffered.includes("pairing_required")) {
+    while (!buffered.includes("action_required")) {
       const { value, done } = await reader.read();
       if (done) break;
       buffered += decoder.decode(value);

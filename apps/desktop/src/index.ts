@@ -990,6 +990,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       startBrowserSignIn: async () => {
         browserSignInController?.abort();
         browserSignInController = new AbortController();
+        const client = await Electrobun.Updater.getLocalInfo().then((info) => `Draft desktop ${info.version}`).catch(() => "Draft desktop dev");
         void startBrowserSignIn(browserSignInController.signal, {
           openUrl: (url) =>
             Bun.spawn(["open", url], {
@@ -1004,7 +1005,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
             // Sessions paused while signed out pick up again with the new login.
             if (value.phase === "complete") void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
           },
-        });
+        }, client);
         return { ok: true };
       },
       cancelBrowserSignIn: async () => {

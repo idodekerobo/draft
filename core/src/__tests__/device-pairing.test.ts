@@ -8,6 +8,7 @@ function harness(opts: {
   now?: () => number;
 }) {
   const urls: string[] = [];
+  const codes: string[] = [];
   const progress: string[] = [];
   const controller = new AbortController();
   const fetchImpl = ((input: string, init?: RequestInit) => Promise.resolve(opts.responses(input, init))) as typeof fetch;
@@ -16,21 +17,26 @@ function harness(opts: {
     appUrl: "https://app.test",
     fetch: fetchImpl,
     signal: controller.signal,
-    onUrl: (url) => urls.push(url),
+    onUrl: (url, confirmCode) => { urls.push(url); codes.push(confirmCode); },
     onProgress: (event) => progress.push(event.phase),
     pollIntervalMs: opts.pollIntervalMs ?? 1,
     deadlineMs: opts.deadlineMs ?? 50,
     now: opts.now,
   });
-  return { run, urls, progress, controller };
+  return { run, urls, codes, progress, controller };
 }
 
 describe("pairDevice", () => {
+  test("refuses a server that sends no confirmation code, since the person could not check the sign-in", async () => {
+    const h = harness({ responses: (url) => url.endsWith("/link") ? Response.json({ code: "x" }) : new Response(null, { status: 204 }) });
+    await expect(h.run()).rejects.toMatchObject({ kind: "malformed_response" });
+  });
+
   test("success: emits the pairing URL then resolves with tokens", async () => {
     let polls = 0;
     const h = harness({
       responses: (url) => {
-        if (url.endsWith("/link")) return Response.json({ code: "abc123" });
+        if (url.endsWith("/link")) return Response.json({ code: "abc123", confirm_code: "K7M4QX" });
         polls++;
         if (polls < 2) return new Response(null, { status: 204 });
         return Response.json({ access_token: "at", refresh_token: "rt", expires_in: 60 });
@@ -40,12 +46,13 @@ describe("pairDevice", () => {
     expect(tokens.access_token).toBe("at");
     expect(tokens.refresh_token).toBe("rt");
     expect(h.urls).toEqual(["https://app.test/link?code=abc123"]);
+    expect(h.codes).toEqual(["K7M-4QX"]);
     expect(h.progress).toEqual(["awaiting_approval", "authenticated"]);
   });
 
   test("refusal/expiry: 404 on poll rejects with expired", async () => {
     const h = harness({
-      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x" }) : new Response(null, { status: 404 }),
+      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x", confirm_code: "K7M4QX" }) : new Response(null, { status: 404 }),
     });
     await expect(h.run()).rejects.toMatchObject({ kind: "expired" });
     expect(h.progress).toContain("expired");
@@ -58,14 +65,14 @@ describe("pairDevice", () => {
 
   test("malformed response: missing tokens on poll", async () => {
     const h = harness({
-      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x" }) : Response.json({ foo: "bar" }),
+      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x", confirm_code: "K7M4QX" }) : Response.json({ foo: "bar" }),
     });
     await expect(h.run()).rejects.toMatchObject({ kind: "malformed_response" });
   });
 
   test("transient failure: non-ok poll response", async () => {
     const h = harness({
-      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x" }) : new Response(null, { status: 500 }),
+      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x", confirm_code: "K7M4QX" }) : new Response(null, { status: 500 }),
     });
     await expect(h.run()).rejects.toMatchObject({ kind: "pairing_failed" });
   });
@@ -83,7 +90,7 @@ describe("pairDevice", () => {
 
   test("timeout: deadline reached without approval", async () => {
     const h = harness({
-      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x" }) : new Response(null, { status: 204 }),
+      responses: (url) => url.endsWith("/link") ? Response.json({ code: "x", confirm_code: "K7M4QX" }) : new Response(null, { status: 204 }),
       pollIntervalMs: 1,
       deadlineMs: 5,
     });
@@ -95,7 +102,7 @@ describe("pairDevice", () => {
     let pollCount = 0;
     const h = harness({
       responses: (url) => {
-        if (url.endsWith("/link")) return Response.json({ code: "x" });
+        if (url.endsWith("/link")) return Response.json({ code: "x", confirm_code: "K7M4QX" });
         pollCount++;
         return new Response(null, { status: 204 });
       },

@@ -42,7 +42,7 @@ describe("startBrowserSignIn (desktop adapter)", () => {
       await startBrowserSignIn(controller.signal, {
         openUrl: (url) => opened.push(url),
         progress: (event) => progress.push(event),
-      });
+      }, "Draft desktop test");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -53,6 +53,29 @@ describe("startBrowserSignIn (desktop adapter)", () => {
     expect(writes[0]).toMatchObject({ access_token: "at", identity_resolved: false });
     expect(writes[1]).toMatchObject({ access_token: "at", identity_resolved: true, workspace_id: "ws" });
     expect(capturedDeps.apiUrl).toBeTruthy();
+  });
+
+  test("passes the client name and carries the confirm code to the awaiting_approval event", async () => {
+    writes = [];
+    const progress: { phase: string; confirmCode?: string }[] = [];
+    let capturedDeps: any;
+    pairDeviceImpl = async (deps) => {
+      capturedDeps = deps;
+      deps.onUrl("https://app.test/link?code=abc", "K7M-4QX");
+      deps.onProgress({ phase: "awaiting_approval" });
+      return { access_token: "at", refresh_token: "rt", expires_at: 999 };
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => Response.json({})) as unknown as typeof fetch;
+
+    try {
+      await startBrowserSignIn(new AbortController().signal, { openUrl: () => {}, progress: (event) => progress.push(event) }, "Draft desktop 0.10.5");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(capturedDeps.client).toBe("Draft desktop 0.10.5");
+    expect(progress[0]).toEqual({ phase: "awaiting_approval", confirmCode: "K7M-4QX" });
   });
 
   test("tolerates a failing whoami — sign-in still completes with uncached identity", async () => {
@@ -67,7 +90,7 @@ describe("startBrowserSignIn (desktop adapter)", () => {
 
     try {
       const controller = new AbortController();
-      await startBrowserSignIn(controller.signal, { openUrl: () => {}, progress: (event) => progress.push(event) });
+      await startBrowserSignIn(controller.signal, { openUrl: () => {}, progress: (event) => progress.push(event) }, "Draft desktop test");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -84,7 +107,7 @@ describe("startBrowserSignIn (desktop adapter)", () => {
       controller.abort();
       throw new FakeDevicePairingError("aborted");
     };
-    await startBrowserSignIn(controller.signal, { openUrl: () => {}, progress: (event) => progress.push(event) });
+    await startBrowserSignIn(controller.signal, { openUrl: () => {}, progress: (event) => progress.push(event) }, "Draft desktop test");
     expect(progress).toEqual([]);
   });
 
@@ -92,7 +115,7 @@ describe("startBrowserSignIn (desktop adapter)", () => {
     const progress: { phase: string; error?: string }[] = [];
     pairDeviceImpl = async () => { throw new FakeDevicePairingError("timed_out"); };
     const controller = new AbortController();
-    await startBrowserSignIn(controller.signal, { openUrl: () => {}, progress: (event) => progress.push(event) });
+    await startBrowserSignIn(controller.signal, { openUrl: () => {}, progress: (event) => progress.push(event) }, "Draft desktop test");
     expect(progress).toEqual([{ phase: "error", error: "timed_out" }]);
   });
 });

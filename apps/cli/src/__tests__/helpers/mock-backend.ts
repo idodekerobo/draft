@@ -175,7 +175,7 @@ export function createMockBackend() {
         headers,
         body: await req.clone().text(),
       });
-      if (req.method === "POST" && url.pathname === "/link") return Response.json({ code: state.linkCode });
+      if (req.method === "POST" && url.pathname === "/link") return Response.json({ code: state.linkCode, confirm_code: "K7M4QX" });
       if (req.method === "GET" && url.pathname === `/link/${state.linkCode}`) {
         const next = state.linkPollResponses.shift();
         return next ? next() : new Response(null, { status: 204 });

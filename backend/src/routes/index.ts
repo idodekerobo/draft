@@ -98,6 +98,7 @@ export const routes = {
   "/connect-requests/:token/complete": { POST: withCors(connectRequests.completePOST), OPTIONS },
   "/link": { POST: links.createPOST },
   "/link/:code": { GET: links.pollGET },
+  "/link/:code/info": { GET: withCors(links.infoGET), OPTIONS },
   "/link/:code/approve": { POST: withCors(links.approvePOST), OPTIONS },
   "/sandbox/callback": { POST: sandboxCallback.POST },
   // Run-scoped: a run proves itself with its own token, not a person's login.
