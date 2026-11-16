@@ -4,9 +4,9 @@ import type { RoutineEditability } from "../scheduling/routine-registry";
 import { RoutinePatch } from "draft-core/routines";
 
 const SCHEDULE_FIELDS = ["preset", "time", "weekday", "timezone"] as const;
-const AGENT_FIELDS = ["title", "prompt", "harness", "model", "events", "onSchedule", "canNotify", "postChannels", "github"] as const;
+const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "events", "onSchedule", "canNotify", "postChannels", "github"] as const;
 /** Sending null for one of these turns that ability off. */
-const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github"]);
+const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github", "reasoningEffort"]);
 const ALLOWED_FIELDS = new Set<string>(["enabled", ...SCHEDULE_FIELDS, ...AGENT_FIELDS]);
 const MAX_STRING_LENGTH = 64;
 
@@ -29,6 +29,9 @@ function mergeAgentConfig(current: AgentRoutineConfig, record: Record<string, un
     else if (record[field] !== undefined) merged[field] = record[field];
   }
   if (record.harness !== undefined && record.harness !== current.harness && record.model === undefined) merged.model = null;
+  // The model decides which efforts are valid, so a changed harness or model drops the old effort unless a new one comes with it.
+  const modelChanged = merged.harness !== current.harness || merged.model !== current.model;
+  if (modelChanged && record.reasoningEffort === undefined) delete merged.reasoningEffort;
   return validateAgentRoutineConfig(merged);
 }
 

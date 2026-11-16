@@ -60,6 +60,10 @@ class CodexConnection {
   rpc!: RpcClient;
   /** The model the thread runs, which a collaboration mode change must name. */
   model: string | null = null;
+  /** The reasoning effort the thread runs with; null leaves it to Codex. */
+  effort: string | null = null;
+  /** Turns send the model only after a person changed it; until then the thread keeps its own. */
+  modelChosen = false;
   collaboration: CodexCollaboration = DEFAULT_COLLABORATION;
   approval: CodexApproval = DEFAULT_APPROVAL;
   /** Until someone chooses, turns keep the thread's own approval settings. */
@@ -108,7 +112,7 @@ async function openServer(bin: string, sessionId: string) {
 }
 
 /** Starts a new app server and resumes a thread from disk on it. The thread keeps the folder it ran in. */
-async function resumeConnection(input: { bin: string; sessionId: string; threadId: string; folderPath: string; model: string | null }): Promise<CodexConnection> {
+async function resumeConnection(input: { bin: string; sessionId: string; threadId: string; folderPath: string; model: string | null; effort: string | null }): Promise<CodexConnection> {
   const { server, rpc, route } = await openServer(input.bin, input.sessionId);
   try {
     const resumed = await rpc.request<ThreadResumeResult>("thread/resume", {
@@ -121,6 +125,7 @@ async function resumeConnection(input: { bin: string; sessionId: string; threadI
     const connection = new CodexConnection(server, input.threadId, input.folderPath || resumed.cwd || "", input.bin);
     connection.rpc = rpc;
     connection.model = resumed.model ?? input.model;
+    connection.effort = input.effort;
     connection.hasTurned = true;
     connection.history = resumed.thread.turns ?? [];
     route.connection = connection;
@@ -204,7 +209,7 @@ export class CodexDriver implements HarnessDriver {
       const state = this.host.state();
       const bin = findRunnerBin("codex");
       if (!bin) throw new Error("Codex is not installed");
-      const connection = await resumeConnection({ bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null });
+      const connection = await resumeConnection({ bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null, effort: state.reasoningEffort ?? null });
       this.bind(connection);
       this.backfill(connection.threadId, connection.history);
       connection.history = [];
@@ -401,6 +406,29 @@ export class CodexDriver implements HarnessDriver {
     return null;
   }
 
+  /**
+   * Switches the model and effort for the turns that follow. Codex keeps what a turn sets for the turns after it.
+   * "Default" is looked up in Codex's own model list, so choosing it really goes back. Returns a note when it could not.
+   */
+  private async setAgent(connection: CodexConnection, payload: { model?: unknown; reasoningEffort?: unknown }): Promise<string | null> {
+    if (payload.model === undefined && payload.reasoningEffort === undefined) return null;
+    const model = typeof payload.model === "string" ? payload.model : null;
+    const effort = typeof payload.reasoningEffort === "string" ? payload.reasoningEffort : null;
+    try {
+      const listed = await connection.rpc.request<{ data: Array<{ id: string; isDefault?: boolean; defaultReasoningEffort?: string }> }>("model/list", {});
+      const entry = model ? listed.data.find((item) => item.id === model) : listed.data.find((item) => item.isDefault);
+      if (!entry) return "Codex does not list that model, so the model did not change.";
+      connection.model = entry.id;
+      connection.modelChosen = true;
+      connection.effort = effort ?? entry.defaultReasoningEffort ?? null;
+    } catch (error) {
+      console.error("[live-session] codex model change failed", error);
+      return `Codex did not list its models, so the model did not change: ${error instanceof Error ? error.message : "unknown error"}`;
+    }
+    this.host.reportAgent({ model, reasoningEffort: effort });
+    return null;
+  }
+
   private reportModes(connection: CodexConnection): void {
     this.host.reportModes({ permissionMode: connection.collaboration, approvalMode: connection.approval });
   }
@@ -417,7 +445,7 @@ export class CodexDriver implements HarnessDriver {
             this.broker.decide(requestId, decision, { userId: input.author_user_id, name: input.author_name });
           await this.host.setInputState(input.id, ["delivering"], decided ? "consumed" : "failed", decided ? undefined : "request_not_open");
         } else if (input.kind === "set_mode") {
-          const note = await this.setMode(connection, input.payload);
+          const note = (await this.setAgent(connection, input.payload)) ?? (await this.setMode(connection, input.payload));
           if (note) this.note(note);
           await this.host.setInputState(input.id, ["delivering"], note ? "failed" : "consumed", note ? "pane_unavailable" : undefined);
         } else {
@@ -452,6 +480,8 @@ export class CodexDriver implements HarnessDriver {
       const started = await connection.rpc.request<TurnStartResult>("turn/start", {
         threadId: connection.threadId,
         input: textInput(next),
+        ...(connection.effort ? { effort: connection.effort } : {}),
+        ...(connection.modelChosen && connection.model ? { model: connection.model } : {}),
         ...(connection.approvalChosen ? approvalOverrides(connection.approval) : {}),
       });
       connection.busy = true;
@@ -524,15 +554,15 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version: await readCodexVersion(bin) };
   },
   newNativeSessionId: () => "",
-  async resume({ sessionId, nativeSessionId, model, bin }) {
+  async resume({ sessionId, nativeSessionId, model, effort, bin }) {
     try {
-      const connection = await resumeConnection({ bin, sessionId, threadId: nativeSessionId, folderPath: "", model });
+      const connection = await resumeConnection({ bin, sessionId, threadId: nativeSessionId, folderPath: "", model, effort });
       return { folderPath: connection.folderPath };
     } catch (error) {
       throw new LaunchError(`Codex could not resume the session: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   },
-  async launch({ sessionId, folderPath, model, bin }) {
+  async launch({ sessionId, folderPath, model, effort, bin }) {
     const { server, rpc, route } = await openServer(bin, sessionId);
     try {
       const started = await rpc.request<ThreadStartResult>("thread/start", {
@@ -546,6 +576,7 @@ const launcher: HarnessLauncher = {
       const connection = new CodexConnection(server, started.thread.id, folderPath, bin);
       connection.rpc = rpc;
       connection.model = started.model ?? model;
+      connection.effort = effort;
       route.connection = connection;
       live.set(sessionId, connection);
       return { nativeSessionId: started.thread.id };

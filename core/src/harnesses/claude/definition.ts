@@ -1,14 +1,17 @@
-import type { HarnessDefinition } from "../types";
+import type { HarnessDefinition, ReasoningEffort } from "../types";
+
+/** Claude Code's `--effort` levels. Its own setting decides the default. */
+const CLAUDE_EFFORTS: ReadonlyArray<ReasoningEffort> = ["low", "medium", "high", "xhigh", "max"];
 
 export const claudeDefinition = {
   id: "claude",
   label: "Claude Code",
   models: [
-    { alias: null, label: "Default" },
-    { alias: "fable", label: "Fable" },
-    { alias: "opus", label: "Opus" },
-    { alias: "sonnet", label: "Sonnet" },
-    { alias: "haiku", label: "Haiku" },
+    { alias: null, label: "Default", efforts: CLAUDE_EFFORTS, defaultEffort: null },
+    { alias: "fable", label: "Fable", efforts: CLAUDE_EFFORTS, defaultEffort: null },
+    { alias: "opus", label: "Opus", efforts: CLAUDE_EFFORTS, defaultEffort: null },
+    { alias: "sonnet", label: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: null },
+    { alias: "haiku", label: "Haiku", efforts: CLAUDE_EFFORTS, defaultEffort: null },
   ],
   capabilities: { terminal: true, approvals: true, steer: false },
   modes: {

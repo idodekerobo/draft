@@ -57,6 +57,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
         prompt: agent.prompt.trim(),
         harness: agent.harness,
         model: agent.model,
+        reasoningEffort: agent.effort,
         // The schedule is saved even when it is off, so turning it on later starts from it.
         preset: schedule.preset,
         ...(usesTime ? { time: schedule.time } : {}),
@@ -67,7 +68,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
         ...(capabilities.github ? { github: capabilities.github } : {}),
       });
-      rememberAgent({ harness: agent.harness, model: agent.model });
+      rememberAgent({ harness: agent.harness, model: agent.model, effort: agent.effort });
     } catch (caught) {
       setError(
         caught instanceof RoutineError
@@ -126,7 +127,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
             )}
           </div>
 
-          <RoutinePreview when={when} agent={agentLabel(agent)} capabilities={capabilities} />
+          <RoutinePreview when={when} agent={agentLabel({ ...agent, effort: agent.effort })} capabilities={capabilities} />
         </div>
 
         <div className="ui-routines__actions">

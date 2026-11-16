@@ -62,8 +62,9 @@ export function SessionComposer({
   onEmptyEscape,
   onResume,
   modeControl,
+  agentControl,
   onCycleMode,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; onCycleMode?: () => void }) {
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -140,6 +141,7 @@ export function SessionComposer({
             }}
           />
           <div className="ui-composer__footer">
+            {agentControl}
             <button type="submit" className="ui-btn ui-btn--primary" disabled={!text.trim()}>
               Send
             </button>

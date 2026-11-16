@@ -1,4 +1,4 @@
-import { harnessModes } from "draft-core/harnesses";
+import { harnessModes, isEffortFor, isKnownModel } from "draft-core/harnesses";
 import { MAX_DECISION_MESSAGE_CHARS } from "draft-core/live-sessions";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
@@ -176,22 +176,34 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const name = authorName(caller.userId);
-  const { permissionMode, approvalMode } = parsed.body;
-  if (permissionMode === undefined && approvalMode === undefined) return errorResponse("invalid_mode", 400);
+  const { permissionMode, approvalMode, model, reasoningEffort } = parsed.body;
+  if (permissionMode === undefined && approvalMode === undefined && model === undefined && reasoningEffort === undefined) return errorResponse("invalid_mode", 400);
 
   const { data: session, error: lookupError } = await serviceClient
     .from("sessions")
-    .select("harness, status, session_type")
+    .select("harness, status, session_type, owner_user_id, model, reasoning_effort")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
-    .maybeSingle<{ harness: string; status: string; session_type: string }>();
+    .maybeSingle<{ harness: string; status: string; session_type: string; owner_user_id: string; model: string | null; reasoning_effort: string | null }>();
   if (lookupError) return errorResponse("mode_failed", 500, lookupError, workspaceId, sessionId);
   if (!session) return errorResponse("session_not_found", 404);
   if (session.session_type === "routine") return errorResponse("routine_read_only", 409);
   if (session.status === "ended") return errorResponse("session_ended", 409);
 
   const modes = harnessModes(session.harness);
-  const payload: Record<string, string> = {};
+  const payload: Record<string, string | null> = {};
+  if (model !== undefined || reasoningEffort !== undefined) {
+    // The model and effort run on the owner's subscription, so only the owner changes them.
+    if (session.owner_user_id !== caller.userId) return errorResponse("not_owner", 403);
+    if (model !== undefined && model !== null && (typeof model !== "string" || !isKnownModel(session.harness, model))) return errorResponse("unknown_model", 400);
+    if (reasoningEffort !== undefined && reasoningEffort !== null && typeof reasoningEffort !== "string") return errorResponse("unknown_reasoning_effort", 400);
+    const nextModel = model !== undefined ? model : session.model;
+    // A new model with no effort sent drops the old effort, since the new model may not accept it.
+    const nextEffort = reasoningEffort !== undefined ? reasoningEffort : model !== undefined && isEffortFor(session.harness, nextModel, session.reasoning_effort) ? session.reasoning_effort : null;
+    if (!isEffortFor(session.harness, nextModel, nextEffort)) return errorResponse("unknown_reasoning_effort", 400);
+    payload.model = nextModel;
+    payload.reasoningEffort = nextEffort;
+  }
   for (const [field, asked, options] of [["permissionMode", permissionMode, modes.permission], ["approvalMode", approvalMode, modes.approval]] as const) {
     if (asked === undefined) continue;
     if (typeof asked !== "string" || !options.some((m) => m.value === asked)) return errorResponse("invalid_mode", 400);

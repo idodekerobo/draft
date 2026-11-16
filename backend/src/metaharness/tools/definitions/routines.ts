@@ -76,7 +76,7 @@ export function createRoutineTools(client: SupabaseClient) {
           agents: HARNESSES.filter((harness) => harness.routineModes.length > 0).map((harness) => ({
             harness: harness.id,
             status: agents[harness.id as keyof typeof agents] ?? "not_connected",
-            models: harness.models.map((model) => ({ model: model.alias, label: model.label })),
+            models: harness.models.map((model) => ({ model: model.alias, label: model.label, reasoningEfforts: model.efforts, defaultReasoningEffort: model.defaultEffort })),
           })),
           access: {
             postChannels: "\"joined\" for any channel Draft's bot is in, or a list of channel names; null (update only) turns posting off",

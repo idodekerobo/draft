@@ -11,6 +11,7 @@ import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { appVersionQueryOptions } from "../../queries";
 import { rpc } from "../../rpc";
 
+const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ harness });
 const REVEAL_LABEL = /Windows/i.test(navigator.userAgent) ? "Open in Explorer" : "Reveal in Finder";
 
 /** The webview has no process.env, so a dev build is read from the app channel. */
@@ -76,6 +77,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
       track={track}
       shareBaseUrl={webAppUrl}
       devOnly={devOnlyVersionWarnings}
+      agentDefaults={loadAgentDefaults}
     />
   );
 }
@@ -107,10 +109,10 @@ export function SessionsView() {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
-  async function start({ harness, folderPath, text, model }: StartRequest): Promise<StartResult> {
-    const result = await rpc.request.startLiveSession({ harness, folderPath, model });
+  async function start({ harness, folderPath, text, model, effort }: StartRequest): Promise<StartResult> {
+    const result = await rpc.request.startLiveSession({ harness, folderPath, model, effort });
     if (!result.ok) return result;
-    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default" });
+    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default" });
     setRecentFolders(rememberFolder(window.localStorage, folderPath));
     // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
     await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
@@ -130,7 +132,7 @@ export function SessionsView() {
       onNew={() => setSelectedId(null)}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

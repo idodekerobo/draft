@@ -6,6 +6,8 @@ create table sessions (
                        check (session_type in ('interactive', 'routine')),
   harness            text not null default 'claude',
   model              text,
+  -- Plain text such as 'low' or 'xhigh'; null means the harness's own setting. Allowed values depend on the model (core/src/harnesses).
+  reasoning_effort   text,
   native_session_id  text,
   previous_session_id uuid references sessions(id) on delete set null,
   title              text,
@@ -75,6 +77,7 @@ create trigger sessions_signal_update
     old.status is distinct from new.status
     or old.title is distinct from new.title
     or old.model is distinct from new.model
+    or old.reasoning_effort is distinct from new.reasoning_effort
     or old.permission_mode is distinct from new.permission_mode
     or old.approval_mode is distinct from new.approval_mode
     or old.open_approval_count is distinct from new.open_approval_count

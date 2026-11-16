@@ -1,5 +1,5 @@
 import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
-import { getHarness, isKnownModel, type HarnessId } from "draft-core/harnesses";
+import { getHarness, isEffortFor, isKnownModel, type HarnessId } from "draft-core/harnesses";
 import { ROUTINE_EVENT_NAMES, type RoutineEventName } from "draft-core/routines";
 
 export const ROUTINE_RUN_ID_PREFIX = "routine:";
@@ -30,6 +30,8 @@ export interface AgentRoutineConfig {
   prompt: string;
   harness: HarnessId;
   model: string | null;
+  /** A reasoning effort the model accepts. Missing means the harness default. */
+  reasoningEffort?: string;
   environment?: RoutineEnvironmentConfig;
   /** Also start a run when one of these happens. */
   events?: RoutineEventName[];
@@ -42,7 +44,7 @@ export interface AgentRoutineConfig {
   github?: { repos: string[]; access: "read" | "write" };
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "environment" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "body" };
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "environment" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
@@ -70,13 +72,14 @@ export function validateRoutineEnvironment(value: unknown, harness: HarnessId): 
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, environment, events, onSchedule, canNotify, postChannels, github } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, reasoningEffort, environment, events, onSchedule, canNotify, postChannels, github } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
   if (!definition || definition.routineModes.length === 0) return { ok: false, field: "harness" };
   const harnessId = definition.id as HarnessId;
   if (model !== null && (typeof model !== "string" || !isKnownModel(definition.id, model))) return { ok: false, field: "model" };
+  if (reasoningEffort != null && (typeof reasoningEffort !== "string" || !isEffortFor(definition.id, model, reasoningEffort))) return { ok: false, field: "reasoningEffort" };
   const validEnvironment = environment == null ? undefined : validateRoutineEnvironment(environment, harnessId);
   if (environment != null && !validEnvironment) return { ok: false, field: "environment" };
   if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
@@ -95,6 +98,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
       prompt,
       harness: harnessId,
       model,
+      ...(typeof reasoningEffort === "string" ? { reasoningEffort } : {}),
       ...(validEnvironment ? { environment: validEnvironment } : {}),
       ...(events !== undefined && (events as string[]).length ? { events: [...new Set(events as RoutineEventName[])] } : {}),
       ...(onSchedule === false ? { onSchedule: false as const } : {}),

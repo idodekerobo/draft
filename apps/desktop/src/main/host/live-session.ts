@@ -2,7 +2,7 @@ import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
 import { getCachedWorkspaceId } from "draft-core/auth-state";
-import { DEFAULT_HARNESS_ID, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { DEFAULT_HARNESS_ID, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { SIGNAL_EVENTS } from "draft-core/live-sessions";
 import type { ApprovalResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-shared-ui";
 import { realtime } from "../realtime/instance";
@@ -67,6 +67,7 @@ class SessionRunner {
       },
       wake: () => this.wake(),
       reportModes: (modes) => this.reportModes(modes),
+      reportAgent: (agent) => this.reportAgent(agent),
     });
   }
 
@@ -134,11 +135,20 @@ class SessionRunner {
     if (changed) void this.sendHeartbeat();
   }
 
+  private agent: { model?: string | null; reasoningEffort?: string | null } = {};
+
+  private reportAgent(agent: { model: string | null; reasoningEffort: string | null }): void {
+    const changed = agent.model !== this.agent.model || agent.reasoningEffort !== this.agent.reasoningEffort;
+    this.agent = agent;
+    this.persist({ model: agent.model, reasoningEffort: agent.reasoningEffort });
+    if (changed) void this.sendHeartbeat();
+  }
+
   private async sendHeartbeat(): Promise<void> {
     try {
       await fetchServer(`${this.base}/heartbeat`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes }),
+        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes, ...this.agent }),
       });
       this.topics.open();
     } catch (error) {
@@ -263,7 +273,7 @@ class SessionRunner {
   }
 
   private async createSuccessor(nativeSessionId: string): Promise<HostSessionState> {
-    const { folderPath, hostMachineId, workspaceId, model = null, harnessVersion = null } = this.state;
+    const { folderPath, hostMachineId, workspaceId, model = null, reasoningEffort = null, harnessVersion = null } = this.state;
     const harness = this.state.harness ?? DEFAULT_HARNESS_ID;
     const created = await fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",
@@ -274,6 +284,7 @@ class SessionRunner {
         gitRemote: await gitRemote(folderPath),
         harness,
         model,
+        reasoningEffort,
         nativeSessionId,
         harnessVersion,
         previousSessionId: this.state.sessionId,
@@ -292,6 +303,7 @@ class SessionRunner {
       ended: false,
       hookId: this.state.hookId ?? this.state.sessionId,
       model,
+      reasoningEffort,
       harnessVersion,
     };
   }
@@ -330,7 +342,7 @@ class SessionRunner {
   }
 }
 
-export async function startLiveSession(input: { harness?: string; folderPath: string; model?: string | null }): Promise<StartLiveSessionResult> {
+export async function startLiveSession(input: { harness?: string; folderPath: string; model?: string | null; effort?: string | null }): Promise<StartLiveSessionResult> {
   const workspaceId = getCachedWorkspaceId();
   if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
 
@@ -345,10 +357,12 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   const checked = await launcher.check();
   if (!checked.ok) return { ok: false, error: checked.error };
   if (!isKnownModel(harness, input.model)) return { ok: false, error: "Choose a model from the list." };
+  if (!isEffortFor(harness, input.model, input.effort)) return { ok: false, error: "Choose a reasoning effort from the list." };
 
   const hostMachineId = getHostMachineId();
   const nativeSessionId = launcher.newNativeSessionId();
   const model = input.model ?? null;
+  const effort = input.effort ?? null;
   const harnessVersion = checked.version;
 
   let sessionId: string;
@@ -362,6 +376,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
         gitRemote: await remote,
         harness,
         model,
+        reasoningEffort: effort,
         nativeSessionId,
         harnessVersion,
       }),
@@ -382,11 +397,12 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
     rawUploads: {},
     ended: false,
     model,
+    reasoningEffort: effort,
     harnessVersion,
   };
 
   try {
-    state = { ...state, ...(await launcher.launch({ sessionId, folderPath, model, bin: checked.bin, nativeSessionId })) };
+    state = { ...state, ...(await launcher.launch({ sessionId, folderPath, model, effort, bin: checked.bin, nativeSessionId })) };
   } catch (error) {
     console.error("[live-session] launch failed", error);
     await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
@@ -442,10 +458,11 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
     rawUploads: {},
     ended: false,
     model: session.model ?? null,
+    reasoningEffort: session.reasoning_effort ?? null,
     harnessVersion: checked.version,
   };
   try {
-    state = { ...state, ...(await launcher.resume({ sessionId, nativeSessionId: session.native_session_id, model: state.model ?? null, bin: checked.bin })) };
+    state = { ...state, ...(await launcher.resume({ sessionId, nativeSessionId: session.native_session_id, model: state.model ?? null, effort: state.reasoningEffort ?? null, bin: checked.bin })) };
   } catch (error) {
     console.error("[live-session] resume failed", error);
     await fetchServer(`${sessionBase(sessionId)}/end`, { method: "POST", body: JSON.stringify({ hostMachineId, reason: "resume_failed" }) }).catch(() => {});
@@ -534,7 +551,7 @@ export async function decideLiveSessionApproval(
   }
 }
 
-export async function setLiveSessionMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function setLiveSessionMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string; model?: string | null; reasoningEffort?: string | null }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await fetchServer(`${sessionBase(sessionId)}/mode`, { method: "POST", body: JSON.stringify(change) });
     return { ok: true };

@@ -50,6 +50,7 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
     runtime: { type: "cloud", environment: cloudEnvironmentFor("claude") },
     harness: "claude",
     model: null,
+    reasoningEffort: null,
     instructions: "",
     inputs: { contextVersionId: parseContextVersionId(input.contextVersionId) },
     permissions: input.permissions ?? [],

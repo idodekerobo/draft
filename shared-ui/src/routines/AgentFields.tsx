@@ -1,8 +1,9 @@
 "use client";
 
-import { HARNESSES, getHarness, modelLabel, type HarnessId } from "draft-core/harnesses";
+import { HARNESSES, getHarness, type HarnessId } from "draft-core/harnesses";
 import type { ReactNode } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
+import { agentPickerSections, agentSummary } from "../controls/agent-picker";
 import type { RoutineAgentStatus } from "./types";
 
 /** What an agent routine does and which agent runs it. */
@@ -11,6 +12,7 @@ export interface AgentValue {
   prompt: string;
   harness: HarnessId;
   model: string | null;
+  effort: string | null;
 }
 
 export type AgentStatuses = Partial<Record<string, RoutineAgentStatus>>;
@@ -31,10 +33,9 @@ export function AgentFields({ value, onChange, disabled, autoFocus, agents, bloc
   refreshAgents?: () => void;
   fieldError: (field: string) => ReactNode;
 }) {
-  const { title, prompt, harness, model } = value;
+  const { title, prompt, harness, model, effort } = value;
   const status = agents[harness];
   const routineHarnesses = HARNESSES.filter((option) => option.routineModes.length > 0);
-  const models = getHarness(harness)?.models ?? [];
 
   return (
     <>
@@ -56,20 +57,24 @@ export function AgentFields({ value, onChange, disabled, autoFocus, agents, bloc
         {fieldError("prompt")}
       </label>
       <div className="ui-routines__field ui-routines__field--wide">
-        Agent and model
+        Agent, model and reasoning
         <div>
           <SectionedPicker
             label="Agent and model"
-            sections={[
-              { id: "harness", title: "Harnesses", value: harness, keepOpen: true, onChange: (next) => onChange({ ...value, harness: next as HarnessId, model: null }), options: routineHarnesses.map((option) => ({ value: option.id, label: option.label, hint: isDisconnected(agents[option.id]) ? "Connect" : undefined })) },
-              { id: "model", title: "Models", value: model ?? "", onChange: (next) => onChange({ ...value, model: next || null }), options: models.map((option) => ({ value: option.alias ?? "", label: option.label })) },
-            ]}
+            align="start"
+            sections={agentPickerSections({
+              value: { harness, model, effort },
+              onChange: (next) => onChange({ ...value, ...next }),
+              harnesses: routineHarnesses.map((option) => ({ value: option.id, label: option.label, hint: isDisconnected(agents[option.id]) ? "Connect" : undefined })),
+              topRow: false,
+            })}
           >
-            {getHarness(harness)?.label} · {modelLabel(harness, model)}
+            {agentSummary(harness, model, effort)}
           </SectionedPicker>
         </div>
         {fieldError("harness")}
         {fieldError("model")}
+        {fieldError("reasoningEffort")}
         {blocked && status && (
           (renderAgentSetup?.(harness, status, refreshAgents ?? (() => {})) ?? null) ?? (
             <p className="ui-routines__notice" role="status">

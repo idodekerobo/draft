@@ -31,6 +31,8 @@ export interface HostSessionState {
   /** Hook calls from the pane carry this id; it stays the first session's id after a /clear. */
   hookId?: string;
   model?: string | null;
+  /** Plain text such as "low"; null or missing means the harness's own setting. */
+  reasoningEffort?: string | null;
   harnessVersion?: string | null;
   /** Permission requests posted and not yet closed, so a restart can close them. */
   openRequests?: string[];

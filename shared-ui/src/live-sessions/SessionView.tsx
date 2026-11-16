@@ -13,7 +13,10 @@ import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
-import { getHarness, harnessModes } from "draft-core/harnesses";
+import { getHarness, harnessModes, type HarnessId } from "draft-core/harnesses";
+import { SectionedPicker } from "../controls/SectionedPicker";
+import { agentPickerSections, agentSummary } from "../controls/agent-picker";
+import { useAgentDefaults, type AgentDefaultsLoader } from "./useAgentDefaults";
 import { isPromptBlock } from "draft-core/live-sessions";
 import { agentLabel } from "../routines/agent-label";
 import { CheckIcon, LinkIcon } from "./MessageActions";
@@ -102,6 +105,8 @@ interface SessionViewProps {
   shareBaseUrl?: string;
   /** Show untested-version notices in development builds only. */
   devOnly?: boolean;
+  /** Says what "Default" means for a harness on this computer. Only the desktop app can. */
+  agentDefaults?: AgentDefaultsLoader;
   /** The message a link points at. The view scrolls to it and highlights it. */
   focusSeq?: number | null;
   /** Shown on the no-access page, such as who is signed in and how to switch. */
@@ -223,6 +228,7 @@ function LoadedSession({
   entry = "list",
   shareBaseUrl,
   devOnly = false,
+  agentDefaults,
   focusSeq = null,
 }: SessionViewProps) {
   const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
@@ -371,6 +377,40 @@ function LoadedSession({
   }, [modes.permission, session.permission_mode, permissionSwitch.target, changeMode]);
 
   const showModes = canAnswer && (modes.permission.length > 0 || modes.approval.length > 0);
+  const [pendingAgent, setPendingAgent] = useState<{ model: string | null; effort: string | null } | null>(null);
+  const savedAgent = { model: session.model ?? null, effort: session.reasoning_effort ?? null };
+  useEffect(() => {
+    if (pendingAgent && pendingAgent.model === savedAgent.model && pendingAgent.effort === savedAgent.effort) setPendingAgent(null);
+  }, [pendingAgent, savedAgent.model, savedAgent.effort]);
+  useEffect(() => {
+    if (!pendingAgent) return;
+    const timer = setTimeout(() => setPendingAgent(null), 20_000);
+    return () => clearTimeout(timer);
+  }, [pendingAgent]);
+  const agentDefaultsView = useAgentDefaults(agentDefaults, harnessId);
+  const shownAgent = pendingAgent ?? savedAgent;
+  const changeAgent = useCallback(
+    (next: { model: string | null; effort: string | null }) => {
+      setModeError(null);
+      setPendingAgent(next);
+      void api.setMode(sessionId, { model: next.model, reasoningEffort: next.effort }).catch(() => {
+        setPendingAgent(null);
+        setModeError("Could not change the model. Try again.");
+      });
+    },
+    [api, sessionId],
+  );
+  // Only the owner's subscription pays for it, so only the owner changes the model and effort.
+  const agentControl = canAnswer && session.mine === true && getHarness(harnessId) ? (
+    <SectionedPicker
+      label="Model and reasoning effort"
+      align="start"
+      direction="up"
+      sections={agentPickerSections({ value: { harness: harnessId as HarnessId, ...shownAgent }, defaults: agentDefaultsView, harnesses: [], lockHarness: true, onChange: (next) => changeAgent({ model: next.model, effort: next.effort }) })}
+    >
+      {agentSummary(harnessId, shownAgent.model, shownAgent.effort, agentDefaultsView, false)}
+    </SectionedPicker>
+  ) : undefined;
   const modeControl = !showModes ? undefined : (
     <>
       {modes.permission.length > 0 && (
@@ -440,7 +480,7 @@ function LoadedSession({
               {readOnly ? "Routine run" : (session.owner_name ?? "Someone")}{session.folder_name && <> · <span className="ui-session__folder">{session.folder_name}</span></>} · <StatusText session={session} />
               {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
             </span>
-            <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })}</span>
+            <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null, effort: session.reasoning_effort ?? null })}</span>
           </div>
         </Crumbs>
         <div className="ui-session__actions">
@@ -508,7 +548,7 @@ function LoadedSession({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

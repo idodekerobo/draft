@@ -2,9 +2,10 @@
 import { claudeDefinition } from "./claude/definition";
 import { codexDefinition } from "./codex/definition";
 import { isCloudNativeTool, type AgentRunEnvironment, type McpServerPermission, type NativeToolPermission } from "../run-spec";
-import type { HarnessDefinition, HarnessModel, HarnessModes } from "./types";
+import { REASONING_EFFORTS, type HarnessDefinition, type HarnessModel, type HarnessModes, type ReasoningEffort } from "./types";
 
-export type { HarnessDefinition, HarnessModel, HarnessModeOption, HarnessModes } from "./types";
+export { REASONING_EFFORTS } from "./types";
+export type { HarnessDefinition, HarnessModel, HarnessModeOption, HarnessModes, ReasoningEffort } from "./types";
 
 export const HARNESSES = [claudeDefinition, codexDefinition] as const satisfies ReadonlyArray<HarnessDefinition>;
 
@@ -50,6 +51,30 @@ export function isKnownModel(harnessId: string, alias: string | null | undefined
 export function modelLabel(harnessId: string, alias: string | null | undefined): string | null {
   if (!alias) return harnessModels(harnessId).find((model) => model.alias === null)?.label ?? null;
   return harnessModels(harnessId).find((model) => model.alias === alias)?.label ?? alias;
+}
+
+export const isReasoningEffort = (value: unknown): value is ReasoningEffort => (REASONING_EFFORTS as ReadonlyArray<unknown>).includes(value);
+
+const EFFORT_LABELS: Record<ReasoningEffort, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+
+/** "Extra high", or the raw value for one this build does not know. */
+export const effortLabel = (effort: string): string => (isReasoningEffort(effort) ? EFFORT_LABELS[effort] : effort);
+
+/** The efforts a model accepts. An alias this build does not know gets none. */
+export function modelEfforts(harnessId: string, alias: string | null | undefined): ReadonlyArray<ReasoningEffort> {
+  return harnessModels(harnessId).find((model) => model.alias === (alias ?? null))?.efforts ?? [];
+}
+
+/** True when the model accepts the effort. Null means no effort, which every model accepts. */
+export function isEffortFor(harnessId: string, alias: string | null | undefined, effort: string | null | undefined): boolean {
+  return effort == null || (modelEfforts(harnessId, alias) as ReadonlyArray<string>).includes(effort);
+}
+
+/** The effort to carry over when the model changes. Default stays Default; a set effort stays when the new model accepts it, else it becomes that model's default. */
+export function effortAfterModelChange(harnessId: string, alias: string | null | undefined, effort: string | null | undefined): ReasoningEffort | null {
+  if (!effort) return null;
+  if (isEffortFor(harnessId, alias, effort)) return effort as ReasoningEffort;
+  return harnessModels(harnessId).find((model) => model.alias === (alias ?? null))?.defaultEffort ?? null;
 }
 
 /** The version number in the output of a CLI's `--version`. */

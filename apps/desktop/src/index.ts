@@ -57,6 +57,7 @@ import {
   stopLiveSession,
   setLiveSessionMode,
 } from "./main/host/live-session";
+import { readAgentDefaults } from "./main/host/agent-defaults";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
 import { realtime, setSignalSender } from "./main/realtime/instance";
@@ -817,7 +818,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: ({ harness, folderPath, model }) => startLiveSession({ harness, folderPath, model }),
+      startLiveSession: ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort }),
 
       setSignalTopics: ({ topics }) => realtime.setWindowTopics(topics),
 
@@ -925,6 +926,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: false, error: err instanceof Error ? err.message : "Apply failed." };
         }
       },
+
+      getAgentDefaults: ({ harness }) => readAgentDefaults(harness),
 
       getAppVersion: async () => {
         try {

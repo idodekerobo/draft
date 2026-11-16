@@ -162,6 +162,8 @@ export interface AgentRunSpec {
   harness: HarnessId;
   /** A model alias of the harness, or null for the harness default. */
   model: string | null;
+  /** A reasoning effort the model accepts, or null for the harness default. */
+  reasoningEffort?: string | null;
   instructions: string;
   inputs: { contextVersionId: ContextVersionId };
   permissions: ReadonlyArray<AnyDraftToolPermission>;

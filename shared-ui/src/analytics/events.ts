@@ -35,7 +35,7 @@ export type SharedAnalyticsEvent =
   | { event: "integration_disconnected";   props: { source: string } }
   | { event: "integration_channels_updated"; props: { source: string } }
   | { event: "session_viewed";             props: { live_session_id: string; is_owner: boolean; entry: SessionEntry } }
-  | { event: "session_started";            props: { live_session_id: string; harness: HarnessId; model: string } }
+  | { event: "session_started";            props: { live_session_id: string; harness: HarnessId; model: string; effort: string } }
   | { event: "session_message_sent";       props: { live_session_id: string; is_owner: boolean } };
 
 export type SharedEventName = SharedAnalyticsEvent["event"];

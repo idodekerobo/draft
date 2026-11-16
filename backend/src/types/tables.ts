@@ -289,6 +289,7 @@ export interface SessionRow {
   session_type: "interactive" | "routine";
   harness: string;
   model: string | null;
+  reasoning_effort: string | null;
   native_session_id: string | null;
   previous_session_id: string | null;
   title: string | null;
@@ -353,6 +354,7 @@ export interface AgentRunRow {
   runtime: unknown;
   harness: string;
   model: string | null;
+  reasoning_effort: string | null;
   instructions: string;
   base_context_version_id: string;
   permissions: unknown[];

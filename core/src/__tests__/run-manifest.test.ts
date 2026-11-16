@@ -67,3 +67,15 @@ describe("the run manifest", () => {
     expect(() => parse({ ...codex, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } })).toThrow("codex runs stream");
   });
 });
+
+describe("the run manifest's reasoning effort", () => {
+  it("keeps a known effort and leaves the key out when none is set", () => {
+    expect(parse({ ...good, reasoningEffort: "xhigh" })).toEqual({ ...good, reasoningEffort: "xhigh" });
+    expect("reasoningEffort" in parse(good)).toBe(false);
+  });
+
+  it("refuses an effort it does not know, since it reaches a command line", () => {
+    expect(() => parse({ ...good, reasoningEffort: "extreme" })).toThrow("reasoningEffort is invalid");
+    expect(() => parse({ ...good, reasoningEffort: 'high"; rm -rf /' })).toThrow("reasoningEffort is invalid");
+  });
+});

@@ -287,7 +287,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                     {routine.connectionLabel && <div className="ui-routines__secondary">{routine.connectionLabel}</div>}
                     {routine.agent && (
                       <div className="ui-routines__secondary">
-                        {agentLabel(routine.agent)}
+                        {agentLabel({ ...routine.agent, effort: routine.agent.reasoningEffort })}
                         {routine.agent.createdByName ? ` · by ${routine.agent.createdByName}` : ""}
                       </div>
                     )}

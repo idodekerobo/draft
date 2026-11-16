@@ -17,6 +17,7 @@ export const RoutineInput = z.object({
   prompt: z.string().trim().min(1).max(20_000),
   harness: z.string().min(1),
   model: z.string().nullable().optional(),
+  reasoningEffort: z.string().nullable().optional(),
   schedule: scheduleSchema,
   canNotify: z.boolean().optional(),
   postChannels: z.union([z.literal("joined"), z.array(z.string().min(1).max(80).trim()).max(20)]).optional(),

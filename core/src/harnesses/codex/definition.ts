@@ -1,18 +1,22 @@
-import type { HarnessDefinition } from "../types";
+import type { HarnessDefinition, ReasoningEffort } from "../types";
+
+/** From Codex's `model/list` (`supportedReasoningEfforts`, codex-cli 0.169). The Luna models stop at max. */
+const UP_TO_MAX: ReadonlyArray<ReasoningEffort> = ["low", "medium", "high", "xhigh", "max"];
+const UP_TO_ULTRA: ReadonlyArray<ReasoningEffort> = [...UP_TO_MAX, "ultra"];
 
 export const codexDefinition = {
   id: "codex",
   label: "Codex",
   models: [
-    { alias: null, label: "Default" },
-    { alias: "gpt-6.1-sol", label: "GPT-6.1-Sol" },
-    { alias: "gpt-6-astra", label: "GPT-6-Astra" },
-    { alias: "gpt-6.1-terra", label: "GPT-6.1 Terra" },
-    { alias: "gpt-6-sol", label: "GPT-6-Sol" },
-    { alias: "gpt-6-luna", label: "GPT-6-Luna" },
-    { alias: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
-    { alias: "gpt-5.6-terra", label: "GPT-5.6-Terra" },
-    { alias: "gpt-5.6-luna", label: "GPT-5.6-Luna" },
+    { alias: null, label: "Default", efforts: UP_TO_MAX, defaultEffort: null },
+    { alias: "gpt-6.1-sol", label: "GPT-6.1-Sol", efforts: UP_TO_ULTRA, defaultEffort: "low" },
+    { alias: "gpt-6-astra", label: "GPT-6-Astra", efforts: UP_TO_ULTRA, defaultEffort: "low" },
+    { alias: "gpt-6.1-terra", label: "GPT-6.1 Terra", efforts: UP_TO_ULTRA, defaultEffort: "low" },
+    { alias: "gpt-6-sol", label: "GPT-6-Sol", efforts: UP_TO_ULTRA, defaultEffort: "medium" },
+    { alias: "gpt-6-luna", label: "GPT-6-Luna", efforts: UP_TO_MAX, defaultEffort: "medium" },
+    { alias: "gpt-5.6-sol", label: "GPT-5.6-Sol", efforts: UP_TO_ULTRA, defaultEffort: "low" },
+    { alias: "gpt-5.6-terra", label: "GPT-5.6-Terra", efforts: UP_TO_ULTRA, defaultEffort: "medium" },
+    { alias: "gpt-5.6-luna", label: "GPT-5.6-Luna", efforts: UP_TO_MAX, defaultEffort: "medium" },
   ],
   capabilities: { terminal: true, approvals: true, steer: true },
   modes: {

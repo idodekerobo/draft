@@ -587,6 +587,55 @@ describe("SessionView header", () => {
   });
 });
 
+describe("SessionView model and effort picker", () => {
+  const mine: LiveSession = { ...session, mine: true, harness: "codex", model: "gpt-6-sol", reasoning_effort: "high" };
+  const apiFor = (row: LiveSession, setMode: LiveSessionsApi["setMode"] = async () => {}): LiveSessionsApi => ({ ...api, setMode, fetchEvents: async () => ({ viewer, session: row, events: [], inputs: [] }) });
+
+  it("shows the owner the model and effort next to Send, and asks the host when an effort is chosen", async () => {
+    const setMode = mock(async (_id: string, _change: object) => {});
+    render(<SessionView api={apiFor(mine, setMode)} sessionId="s1" />);
+    const trigger = await screen.findByRole("button", { name: "Model and reasoning effort" });
+    expect(trigger.textContent).toContain("GPT-6-Sol · High");
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("group", { name: "Harnesses" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Extra high" }));
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { model: "gpt-6-sol", reasoningEffort: "xhigh" }));
+    expect(screen.getByRole("button", { name: "Model and reasoning effort" }).textContent).toContain("Extra high");
+  });
+
+  it("sends the model with the effort that still fits it, and drops one the model does not offer", async () => {
+    const setMode = mock(async (_id: string, _change: object) => {});
+    render(<SessionView api={apiFor({ ...mine, reasoning_effort: "ultra" }, setMode)} sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Model and reasoning effort" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { model: "gpt-6-luna", reasoningEffort: "medium" }));
+  });
+
+  it("shows nothing to a teammate, and nothing once the session has ended", async () => {
+    const { unmount } = render(<SessionView api={apiFor({ ...mine, mine: false })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Model and reasoning effort" })).toBeNull();
+    unmount();
+    render(<SessionView api={apiFor({ ...mine, status: "ended" })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Model and reasoning effort" })).toBeNull();
+  });
+
+  it("names what Default means on this computer when the app says", async () => {
+    const defaults = async () => ({ modelLabel: "Sonnet 5.5", effort: "low" });
+    render(<SessionView api={apiFor({ ...mine, harness: "claude", model: null, reasoning_effort: null })} agentDefaults={defaults} sessionId="s1" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Model and reasoning effort" }).textContent).toContain("Sonnet 5.5 · Low"));
+  });
+});
+
+describe("SessionView agent label", () => {
+  it("shows the effort next to the model", async () => {
+    const withEffort: LiveSession = { ...session, harness: "codex", model: "gpt-6-luna", reasoning_effort: "xhigh" };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: withEffort, events: [], inputs: [] }) }} sessionId="s1" />);
+    expect(await screen.findByText("Codex · GPT-6-Luna · Extra high")).toBeTruthy();
+  });
+});
+
 describe("SessionView for a routine run", () => {
   const routineSession: LiveSession = { ...session, session_type: "routine", title: "Weekly digest", folder_name: null };
   const routineApi: LiveSessionsApi = { ...api, fetchEvents: async () => ({ viewer, session: routineSession, events: [], inputs: [] }) };
