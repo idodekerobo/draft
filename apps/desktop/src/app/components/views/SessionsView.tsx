@@ -2,19 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isTestedVersion } from "draft-core/harnesses";
-import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
+import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { CodexSetupPanel } from "../connections/CodexSetupPanel";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
+import { appVersionQueryOptions } from "../../queries";
 import { rpc } from "../../rpc";
 
-const devOnlyVersionWarnings = process.env.DRAFT_DESKTOP_DEV === "1";
+/** The webview has no process.env, so a dev build is read from the app channel. */
+function useDevOnlyVersionWarnings(): boolean {
+  return useQuery(appVersionQueryOptions).data?.channel === "dev";
+}
 
 function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: string; onOpenSession: (id: string) => void; justStarted: boolean }) {
   const { track } = useAnalytics();
   const webAppUrl = useWebAppUrl();
+  const devOnlyVersionWarnings = useDevOnlyVersionWarnings();
   const [hostedHere, setHostedHere] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -67,6 +72,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
 }
 
 export function SessionsView() {
+  const devOnlyVersionWarnings = useDevOnlyVersionWarnings();
   const workspaceKey = useWorkspaceKey();
   const { track } = useAnalytics();
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
