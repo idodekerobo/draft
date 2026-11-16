@@ -11,6 +11,8 @@ import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { appVersionQueryOptions } from "../../queries";
 import { rpc } from "../../rpc";
 
+const REVEAL_LABEL = /Windows/i.test(navigator.userAgent) ? "Open in Explorer" : "Reveal in Finder";
+
 /** The webview has no process.env, so a dev build is read from the app channel. */
 function useDevOnlyVersionWarnings(): boolean {
   return useQuery(appVersionQueryOptions).data?.channel === "dev";
@@ -43,6 +45,12 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
     if (!result.ok) setNotice(result.error);
   }
 
+  async function revealFolder() {
+    setNotice(null);
+    const result = await rpc.request.revealLiveSessionFolder({ sessionId });
+    if (!result.ok) setNotice(result.error);
+  }
+
   async function endSession() {
     setNotice(null);
     const result = await rpc.request.endLiveSession({ sessionId });
@@ -56,6 +64,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
       menuItems={(session) =>
         hostedHere && session.status !== "ended"
           ? [
+              { label: REVEAL_LABEL, onSelect: revealFolder },
               { label: "Open in Terminal", onSelect: openInTerminal },
               { label: "End session", onSelect: endSession, confirm: "End this session? Claude exits and nobody can send to it again." },
             ]

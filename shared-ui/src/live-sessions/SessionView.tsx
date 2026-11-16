@@ -28,7 +28,6 @@ import { TeamStrip } from "./TeamStrip";
 import { teamRoster, type TeamMember } from "./team-roster";
 import { prependToDraft } from "./drafts";
 import { useSessionInputs } from "./useSessionInputs";
-import { useConnectionState } from "./useConnectionState";
 import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
 import { useLiveText } from "./useLiveText";
@@ -228,7 +227,6 @@ function LoadedSession({
 }: SessionViewProps) {
   const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
   const watchers = presenceLine(useSessionPresence(api, sessionId, viewer));
-  const connection = useConnectionState(api);
   const viewReported = useRef(false);
   useEffect(() => {
     if (viewReported.current) return;
@@ -439,9 +437,8 @@ function LoadedSession({
           <div className="ui-session__heading">
             <h1 className="ui-session__title">{sessionTitle(session)}</h1>
             <span className="ui-muted ui-session__meta">
-              {readOnly ? "Routine run" : (session.owner_name ?? "Someone")} · <StatusText session={session} />
+              {readOnly ? "Routine run" : (session.owner_name ?? "Someone")}{session.folder_name && <> · <span className="ui-session__folder">{session.folder_name}</span></>} · <StatusText session={session} />
               {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
-              {connection !== "live" && <> · <span className="ui-session__connection" role="status">{connection === "offline" ? "Offline" : "Reconnecting…"}</span></>}
             </span>
             <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null })}</span>
           </div>
@@ -511,7 +508,7 @@ function LoadedSession({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} folderName={session.folder_name} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { act, cleanup, fireEvent, render as renderUi, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderUi, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
@@ -63,11 +63,11 @@ const api: LiveSessionsApi = {
 };
 
 describe("SessionView", () => {
-  it("shows a breadcrumb with the clean title, the folder above the message box, and right-aligned human messages", async () => {
+  it("shows a breadcrumb with the clean title, no folder above the message box, and right-aligned human messages", async () => {
     const { container } = render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} />);
     expect((await screen.findByRole("heading", { name: "fix login" })).textContent).toBe("fix login");
     expect(screen.getByText("Sessions")).toBeTruthy();
-    expect(container.querySelector(".ui-composer__folder")?.textContent).toBe("marigold");
+    expect(container.querySelector(".ui-composer__folder")).toBeNull();
     expect(container.querySelector(".ui-stream__item--human .ui-stream__bubble")?.textContent).toBe("hello");
     expect(screen.getByText("Priya")).toBeTruthy();
     expect(container.querySelector(".ui-stream__item--assistant .ui-stream__who")).toBeNull();
@@ -575,6 +575,15 @@ describe("SessionView", () => {
     fireEvent.change(box, { target: { value: "" } });
     fireEvent.keyDown(box, { key: "Escape" });
     await waitFor(() => expect(stop).toHaveBeenCalledWith("s1"));
+  });
+});
+
+describe("SessionView header", () => {
+  it("shows the folder name next to the owner, with no connection text", async () => {
+    render(<SessionView api={api} sessionId="s1" />);
+    const header = (await screen.findByRole("heading", { name: /fix login/ })).closest("header")!;
+    expect(within(header).getByText("marigold")).toBeTruthy();
+    expect(screen.queryByText(/Reconnecting|Offline/)).toBeNull();
   });
 });
 

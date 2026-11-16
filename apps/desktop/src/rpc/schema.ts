@@ -385,6 +385,7 @@ export type AppRPCType = {
 
       /** Open the user's terminal app on a live session's pane. */
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+      revealLiveSessionFolder: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Detect which CLI runners are installed. */
       /** Whether Codex is installed and signed in on this computer. */

@@ -321,6 +321,10 @@ class SessionRunner {
     return this.driver.openInTerminal();
   }
 
+  folderPath(): string {
+    return this.state.folderPath;
+  }
+
   isAlive(): Promise<boolean> {
     return this.driver.isAlive();
   }
@@ -503,6 +507,15 @@ export async function openLiveSessionInTerminal(sessionId: string): Promise<{ ok
   const runner = running.get(sessionId);
   if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
   return runner.openInTerminal();
+}
+
+/** The folder a session on this computer works in, or an error when it is unknown. */
+export function liveSessionFolder(sessionId: string): { ok: true; folderPath: string } | { ok: false; error: string } {
+  const runner = running.get(sessionId);
+  if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
+  const folderPath = runner.folderPath();
+  if (!folderPath || !existsSync(folderPath)) return { ok: false, error: "The folder for this session was not found." };
+  return { ok: true, folderPath };
 }
 
 /** Sends a teammate's decision on an open permission request. */

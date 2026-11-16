@@ -48,6 +48,7 @@ import {
   getLiveSessionEvents,
   hostedLiveSessionIds,
   listLiveSessions,
+  liveSessionFolder,
   openLiveSessionInTerminal,
   resumeLiveSession,
   resumeLiveSessions,
@@ -842,6 +843,12 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getHostedLiveSessionIds: () => hostedLiveSessionIds(),
 
       openLiveSessionInTerminal: ({ sessionId }) => openLiveSessionInTerminal(sessionId),
+      revealLiveSessionFolder: ({ sessionId }) => {
+        const folder = liveSessionFolder(sessionId);
+        if (!folder.ok) return folder;
+        Utils.openPath(folder.folderPath);
+        return { ok: true as const };
+      },
 
       getCodexStatus: () => getCodexStatus(),
 

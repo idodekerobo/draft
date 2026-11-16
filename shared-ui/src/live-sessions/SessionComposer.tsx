@@ -4,7 +4,7 @@ import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sess
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { clearDraft, hasDraft, useDraft } from "./drafts";
 import { inputStatusLine } from "./input-status";
-import { FolderIcon, submitOnEnter, useAutoGrow } from "./message-box";
+import { submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 import { useTypeToFocus } from "./useTypeToFocus";
 
@@ -58,13 +58,12 @@ export function SessionComposer({
   ownerName,
   ended,
   hostOffline = false,
-  folderName,
   autoFocus = false,
   onEmptyEscape,
   onResume,
   modeControl,
   onCycleMode,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; folderName?: string | null; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; onCycleMode?: () => void }) {
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -120,12 +119,6 @@ export function SessionComposer({
       ) : (
         <>
         <form className="ui-composer__box" onSubmit={submit}>
-          {folderName && (
-            <div className="ui-composer__folder">
-              <FolderIcon />
-              <span>{folderName}</span>
-            </div>
-          )}
           <div className="ui-composer__row">
           <label className="ui-visually-hidden" htmlFor="session-message">Message to {ownerName}'s session</label>
           <textarea
