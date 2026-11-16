@@ -25,16 +25,16 @@ describe("harness registry", () => {
 
   it("reads a CLI version and accepts the tested minor of that harness only", () => {
     expect(parseCliVersion("2.1.311 (Claude Code)\n")).toBe("2.1.311");
-    expect(parseCliVersion("codex-cli 0.165.0")).toBe("0.165.0");
+    expect(parseCliVersion("codex-cli 0.169.0")).toBe("0.169.0");
     expect(parseCliVersion("no version")).toBeNull();
     expect(isTestedVersion("claude", "2.1.311")).toBe(true);
     expect(isTestedVersion("claude", "2.2.0")).toBe(false);
     expect(isTestedVersion("claude", "0.165.0")).toBe(false);
-    expect(isTestedVersion("codex", "0.165.0")).toBe(true);
-    expect(isTestedVersion("codex", "0.166.1")).toBe(false);
+    expect(isTestedVersion("codex", "0.169.0")).toBe(true);
+    expect(isTestedVersion("codex", "0.170.1")).toBe(false);
     expect(isTestedVersion("claude", null)).toBeNull();
     expect(isTestedVersion("nope", "1.0.0")).toBeNull();
-    expect(testedVersionLabel("codex")).toBe("0.165.x");
+    expect(testedVersionLabel("codex")).toBe("0.169.x");
   });
 
   it("gives the install page of a harness that has one", () => {

@@ -101,6 +101,8 @@ interface SessionViewProps {
   entry?: SessionEntry;
   /** The web app origin that shared links point to. Without it, links cannot be copied. */
   shareBaseUrl?: string;
+  /** Show untested-version notices in development builds only. */
+  devOnly?: boolean;
   /** The message a link points at. The view scrolls to it and highlights it. */
   focusSeq?: number | null;
   /** Shown on the no-access page, such as who is signed in and how to switch. */
@@ -221,6 +223,7 @@ function LoadedSession({
   track,
   entry = "list",
   shareBaseUrl,
+  devOnly = false,
   focusSeq = null,
 }: SessionViewProps) {
   const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
@@ -428,7 +431,7 @@ function LoadedSession({
 
   const readOnly = session.session_type === "routine";
   const running = !readOnly && (session.status === "live" || session.status === "starting");
-  const banner = sessionBanner(session);
+  const banner = sessionBanner(session, devOnly);
   return (
     <div className="ui-session">
       <header className="ui-session__header">

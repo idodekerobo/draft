@@ -10,6 +10,8 @@ import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { rpc } from "../../rpc";
 
+const devOnlyVersionWarnings = process.env.DRAFT_DESKTOP_DEV === "1";
+
 function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: string; onOpenSession: (id: string) => void; justStarted: boolean }) {
   const { track } = useAnalytics();
   const webAppUrl = useWebAppUrl();
@@ -59,6 +61,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
       autoFocusComposer={justStarted}
       track={track}
       shareBaseUrl={webAppUrl}
+      devOnly={devOnlyVersionWarnings}
     />
   );
 }
@@ -112,7 +115,7 @@ export function SessionsView() {
       onNew={() => setSelectedId(null)}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

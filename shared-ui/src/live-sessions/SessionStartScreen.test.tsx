@@ -121,7 +121,7 @@ describe("SessionStartScreen", () => {
   it("only warns for an untested version", () => {
     const { onStart } = setup();
     cleanup();
-    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ claude: "untested_version" }} />);
+    render(<SessionStartScreen devOnly recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ claude: "untested_version" }} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByRole("status").textContent).toContain("Some things may not work");

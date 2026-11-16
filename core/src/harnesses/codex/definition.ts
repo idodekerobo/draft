@@ -26,7 +26,7 @@ export const codexDefinition = {
       { value: "full-access", label: "Full access", description: "Runs everything with no prompts or sandbox" },
     ],
   },
-  testedVersion: { major: 0, minor: 165 },
+  testedVersion: { major: 0, minor: 169 },
   cloudStartingTools: ["shell"],
   routineModes: ["exec"],
   installUrl: "https://learn.chatgpt.com/docs/codex/cli#getting-started",

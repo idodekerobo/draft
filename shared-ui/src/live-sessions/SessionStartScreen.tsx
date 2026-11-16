@@ -28,10 +28,10 @@ const PROBLEM_HINTS: Record<HarnessProblem, string> = { missing: "Set up", signe
 /** Blocks Start. An untested version only warns. */
 const blocks = (problem: HarnessProblem | undefined) => problem === "missing" || problem === "signed_out";
 
-function problemLine(label: string, problem: HarnessProblem | undefined): string | null {
+function problemLine(label: string, problem: HarnessProblem | undefined, devOnly: boolean): string | null {
   if (problem === "missing") return `${label} is not installed on this computer.`;
   if (problem === "signed_out") return `${label} is not signed in. Run it in a terminal and sign in.`;
-  if (problem === "untested_version") return `This version of ${label} is newer or older than the one Draft was tested with. Some things may not work.`;
+  if (problem === "untested_version" && devOnly) return `[DEV ONLY] This version of ${label} is newer or older than the one Draft was tested with. Some things may not work.`;
   return null;
 }
 
@@ -41,10 +41,13 @@ export function SessionStartScreen({
   onBrowse,
   onStart,
   availability = {},
+  devOnly = false,
   renderSetup,
 }: {
   /** What is wrong with a harness on this computer, by harness id. A harness with no entry is ready. */
   availability?: Partial<Record<string, HarnessProblem>>;
+  /** Show untested-version notices in development builds only. */
+  devOnly?: boolean;
   /** Help to make a harness ready, shown in place of the problem line while it blocks Start. Null for a harness with none. */
   renderSetup?: (harness: HarnessId) => ReactNode;
   recentFolders: string[];
@@ -62,7 +65,7 @@ export function SessionStartScreen({
   useAutoGrow(inputRef, text);
   const folder = chosen ?? recentFolders[0] ?? null;
   const setup = blocks(availability[harness]) ? renderSetup?.(harness) : null;
-  const line = problemLine(getHarness(harness)?.label ?? harness, availability[harness]);
+  const line = problemLine(getHarness(harness)?.label ?? harness, availability[harness], devOnly);
 
   async function browse() {
     setOpen(false);

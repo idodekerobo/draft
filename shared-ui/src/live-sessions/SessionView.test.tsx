@@ -498,7 +498,7 @@ describe("SessionView", () => {
 
   it("warns about a Claude version outside the tested range", async () => {
     const old: LiveSession = { ...session, harness_version: "2.2.0" };
-    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: old, events: [], inputs: [] }) }} sessionId="s1" />);
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: old, events: [], inputs: [] }) }} sessionId="s1" devOnly />);
     expect((await screen.findByText(/Claude Code 2\.2\.0/)).textContent).toContain("tested with 2.1.x");
   });
 
