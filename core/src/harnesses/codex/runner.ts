@@ -86,7 +86,7 @@ export function codexArgs(manifest: RunnerManifest): string[] {
   if (manifest.harness !== "codex") throw new Error("codexArgs needs a Codex manifest");
   // workspace-write blocks the network for shell commands unless the run's network is open.
   const network = manifest.network === "open" ? ["-c", "sandbox_workspace_write.network_access=true"] : [];
-  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", "--ephemeral", ...(manifest.model ? ["-m", manifest.model] : []), "-"];
+  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", "--ephemeral", ...(manifest.model ? ["-m", manifest.model] : []), ...(manifest.reasoningEffort ? ["-c", `model_reasoning_effort="${manifest.reasoningEffort}"`] : []), "-"];
 }
 
 /** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */

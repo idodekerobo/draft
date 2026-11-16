@@ -89,7 +89,7 @@ export function claudeMcpConfigJson(mcpUrl: string): string {
 export function claudeArgs(manifest: RunnerManifest, prompt: string, schemaText: string | null): string[] {
   if (manifest.harness !== "claude") throw new Error("claudeArgs needs a Claude manifest");
   if (manifest.output.kind === "structured" && schemaText === null) throw new Error("structured output needs a schema");
-  const { model } = manifest;
+  const { model, reasoningEffort } = manifest;
   const { native, draftMcpUrl } = manifest.tools;
   // Claude Code turns dots in tool names into underscores, so Draft's tools are allowed by server name.
   const allowed = [...(draftMcpUrl ? ["mcp__draft"] : []), ...native.filter((tool) => !CLAUDE_READ_ONLY_TOOLS.includes(tool))];
@@ -97,6 +97,7 @@ export function claudeArgs(manifest: RunnerManifest, prompt: string, schemaText:
     "-p",
     prompt,
     ...(model ? ["--model", model] : []),
+    ...(reasoningEffort ? ["--effort", reasoningEffort] : []),
     "--tools",
     native.join(","),
     "--permission-mode",

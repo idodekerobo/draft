@@ -1,7 +1,9 @@
 import { liveTextTopic, LIVE_TEXT_EVENT, type LiveTextChunk } from "draft-core/live-sessions";
 import { ApprovalBroker } from "./approvals";
 import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
-import { ControlActions, type ControlInput } from "./controls";
+import { readAgentDefaults } from "./agent-defaults";
+import { switchClaudeAgent } from "./agent-switch";
+import { ControlActions, type ControlInput, type ModeChange } from "./controls";
 import { findRunnerBin } from "./find-bin";
 import { existsSync, readFileSync } from "fs";
 import { TranscriptForwarder, findTranscript, type ForwardedLine } from "./forwarder";
@@ -44,9 +46,16 @@ export class ClaudeDriver implements HarnessDriver {
   private caughtUp = false;
   private halted = false;
   private waiting = false;
+  /** Claude rewrites its saved default on every /model, so what "Default" means is read once, when the session starts. */
+  private readonly defaults = readAgentDefaults("claude");
+  /** The alias and effort the pane runs on. Null means not known yet, so the first change always types its command. */
+  private currentModel: string | null;
+  private currentEffort: string | null;
 
   constructor(private readonly host: DriverHost) {
     const state = host.state();
+    this.currentModel = state.model ?? this.defaults.model;
+    this.currentEffort = state.reasoningEffort ?? null;
     this.forwarder = new TranscriptForwarder({
       nativeSessionId: state.nativeSessionId,
       cursors: state.cursors,
@@ -91,7 +100,7 @@ export class ClaudeDriver implements HarnessDriver {
       decide: (requestId, decision, by, extras) => this.broker.decide(requestId, decision, by, extras),
       capture: () => capturePane(this.tmux),
       sendEscape: () => pressEscape(this.tmux),
-      setMode: (modes) => this.setMode(modes.permissionMode),
+      setMode: (change) => this.setMode(change),
       postEvents: (events) => host.postHostEvents(events),
     });
   }
@@ -177,7 +186,33 @@ export class ClaudeDriver implements HarnessDriver {
     if (mode) this.host.reportModes({ permissionMode: mode });
   }
 
-  private async setMode(target: string | undefined): Promise<{ ok: true } | { ok: false; note: string }> {
+  private async setMode(change: ModeChange): Promise<{ ok: true } | { ok: false; note: string }> {
+    if (change.agent) {
+      const switched = await this.setAgent(change.agent);
+      if (!switched.ok || !change.permissionMode) return switched;
+    }
+    return this.setPermissionMode(change.permissionMode);
+  }
+
+  /** Types /model and /effort when the pane is at its prompt, and tells the session what it now runs on. */
+  private async setAgent(agent: NonNullable<ModeChange["agent"]>): Promise<{ ok: true } | { ok: false; note: string }> {
+    const pane = classifyPane(await capturePane(this.tmux));
+    if (pane !== "ready" && pane !== "composer_busy") return { ok: false, note: "Claude is waiting on a prompt, so the model did not change. Answer it first." };
+    const model = agent.model ?? this.defaults.model;
+    if (!model) return { ok: false, note: "Claude has no saved default model, so choose a model." };
+    const effort = agent.reasoningEffort ?? (agent.model === null ? this.defaults.effort : null) ?? "auto";
+    const result = await switchClaudeAgent(
+      { model: model !== this.currentModel ? model : null, effort: effort !== this.currentEffort ? effort : null },
+      { capture: () => capturePane(this.tmux), paste: (text) => pasteIntoPane(this.tmux, text), pressEnter: () => pressEnter(this.tmux), sleep },
+    );
+    if (!result.ok) return result;
+    this.currentModel = model;
+    this.currentEffort = effort;
+    this.host.reportAgent({ model: agent.model, reasoningEffort: agent.reasoningEffort });
+    return { ok: true };
+  }
+
+  private async setPermissionMode(target: string | undefined): Promise<{ ok: true } | { ok: false; note: string }> {
     if (!target || !CYCLE_MODES.has(target)) return { ok: false, note: "That mode cannot be set from Draft." };
     const screen = await capturePane(this.tmux);
     const pane = classifyPane(screen);
@@ -279,7 +314,7 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version };
   },
   newNativeSessionId: () => crypto.randomUUID(),
-  async resume({ sessionId, nativeSessionId, model, bin }) {
+  async resume({ sessionId, nativeSessionId, model, effort, bin }) {
     // The transcript says which folder the conversation ran in, and Claude finds it only from there.
     const transcript = findTranscript(nativeSessionId);
     const folderPath = transcript ? folderOfTranscript(transcript) : null;
@@ -288,14 +323,14 @@ const launcher: HarnessLauncher = {
     if (await paneIsAlive(tmuxSession)) throw new LaunchError("This session is already running.");
     preTrustFolder(folderPath);
     const settingsPath = writeSessionSettings(sessionId);
-    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, settingsPath, resume: true });
+    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, resume: true });
     return { folderPath, tmuxSession };
   },
-  async launch({ sessionId, folderPath, model, bin, nativeSessionId }) {
+  async launch({ sessionId, folderPath, model, effort, bin, nativeSessionId }) {
     const tmuxSession = tmuxSessionName(sessionId);
     preTrustFolder(folderPath);
     const settingsPath = writeSessionSettings(sessionId);
-    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, settingsPath });
+    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath });
     return { tmuxSession };
   },
 };

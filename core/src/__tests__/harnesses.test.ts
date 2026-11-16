@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HARNESSES, cloudEnvironmentFor, getHarness, harnessInstallUrl, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
+import { HARNESSES, cloudEnvironmentFor, effortAfterModelChange, effortLabel, isEffortFor, modelEfforts, getHarness, harnessInstallUrl, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
 
 describe("harness registry", () => {
   it("has unique ids and a default model first for every harness", () => {
@@ -25,16 +25,16 @@ describe("harness registry", () => {
 
   it("reads a CLI version and accepts the tested minor of that harness only", () => {
     expect(parseCliVersion("2.1.311 (Claude Code)\n")).toBe("2.1.311");
-    expect(parseCliVersion("codex-cli 0.165.0")).toBe("0.165.0");
+    expect(parseCliVersion("codex-cli 0.169.0")).toBe("0.169.0");
     expect(parseCliVersion("no version")).toBeNull();
     expect(isTestedVersion("claude", "2.1.311")).toBe(true);
     expect(isTestedVersion("claude", "2.2.0")).toBe(false);
     expect(isTestedVersion("claude", "0.165.0")).toBe(false);
-    expect(isTestedVersion("codex", "0.165.0")).toBe(true);
-    expect(isTestedVersion("codex", "0.166.1")).toBe(false);
+    expect(isTestedVersion("codex", "0.169.0")).toBe(true);
+    expect(isTestedVersion("codex", "0.170.1")).toBe(false);
     expect(isTestedVersion("claude", null)).toBeNull();
     expect(isTestedVersion("nope", "1.0.0")).toBeNull();
-    expect(testedVersionLabel("codex")).toBe("0.165.x");
+    expect(testedVersionLabel("codex")).toBe("0.169.x");
   });
 
   it("gives the install page of a harness that has one", () => {
@@ -59,5 +59,38 @@ describe("cloudEnvironmentFor", () => {
   it("adds what was chosen once, and never a tool outside the cloud list", () => {
     const environment = cloudEnvironmentFor("claude", { nativeTools: ["WebSearch", "Read", "Write"] });
     expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
+  });
+});
+
+describe("reasoning efforts", () => {
+  it("lists efforts per model, and the Luna models stop at max", () => {
+    expect(modelEfforts("codex", "gpt-6.1-sol")).toEqual(["low", "medium", "high", "xhigh", "max", "ultra"]);
+    expect(modelEfforts("codex", "gpt-6-luna")).not.toContain("ultra");
+    expect(modelEfforts("claude", "opus")).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(modelEfforts("claude", "retired")).toEqual([]);
+  });
+
+  it("accepts no effort for every model, and an effort only where the model lists it", () => {
+    expect(isEffortFor("codex", "gpt-6-luna", null)).toBe(true);
+    expect(isEffortFor("codex", "gpt-6-luna", "ultra")).toBe(false);
+    expect(isEffortFor("codex", "gpt-6-sol", "ultra")).toBe(true);
+  });
+
+  it("keeps the effort across a model change when allowed, else uses the new model's default", () => {
+    expect(effortAfterModelChange("codex", "gpt-6-sol", "high")).toBe("high");
+    expect(effortAfterModelChange("codex", "gpt-6-luna", "ultra")).toBe("medium");
+    expect(effortAfterModelChange("claude", "sonnet", "ultra")).toBe(null);
+    expect(effortAfterModelChange("codex", "gpt-6-luna", null)).toBe(null);
+  });
+
+  it("labels efforts", () => {
+    expect(effortLabel("xhigh")).toBe("Extra high");
+    expect(effortLabel("weird")).toBe("weird");
+  });
+
+  it("gives every model a default effort it accepts", () => {
+    for (const harness of HARNESSES) {
+      for (const model of harness.models) if (model.defaultEffort) expect(model.efforts).toContain(model.defaultEffort);
+    }
   });
 });

@@ -27,6 +27,7 @@ const spec: AgentRunSpec = {
   },
   harness: "codex",
   model: "gpt-6-sol",
+  reasoningEffort: "ultra",
   instructions: "summarize the week",
   inputs: { contextVersionId: parseContextVersionId("44444444-4444-4444-8444-444444444444") },
   permissions: [{ tool: "context.write", limits: { pathPrefixes: ["memory/"] } }, { tool: "context.read" }],

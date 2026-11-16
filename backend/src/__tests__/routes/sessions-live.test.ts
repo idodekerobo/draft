@@ -384,6 +384,19 @@ describe("live session routes", () => {
     expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", model: "gpt-5; rm -rf /" }, { id: WS }))).status).toBe(400);
   });
 
+  it("stores the reasoning effort and rejects one the model does not list", async () => {
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "codex", model: "gpt-6-sol", reasoningEffort: "ultra" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ model: "gpt-6-sol", reasoning_effort: "ultra" });
+
+    await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "codex", model: "gpt-6-sol" }, { id: WS }));
+    expect(inserted.at(-1)).toMatchObject({ reasoning_effort: null });
+
+    const luna = await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "codex", model: "gpt-6-luna", reasoningEffort: "ultra" }, { id: WS }));
+    expect(luna.status).toBe(400);
+    expect(((await luna.json()) as { error: string }).error).toBe("unknown_reasoning_effort");
+    expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", harness: "claude", reasoningEffort: "ultra" }, { id: WS }))).status).toBe(400);
+  });
+
   it("fails the queued messages of a cleared session with their own reason", async () => {
     await routes.END(post("/x", { hostMachineId: "host-1", reason: "cleared" }));
     expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_cleared" });
@@ -396,6 +409,19 @@ describe("live session routes", () => {
 
     expect((await routes.CREATE(post("/x", { hostMachineId: "host-2", previousSessionId: SESSION }, { id: WS }))).status).toBe(403);
     expect((await routes.CREATE(post("/x", { hostMachineId: "host-1", previousSessionId: "other" }, { id: WS }))).status).toBe(404);
+  });
+
+  it("saves the model and effort a host reports, and ignores a pair the harness does not list", async () => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-1", host_machine_id: "host-1", harness: "codex", model: "gpt-6-sol", reasoning_effort: null }];
+    rpcResult = { data: "live", error: null };
+    await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", model: "gpt-6-luna", reasoningEffort: "xhigh" }));
+    expect(updates.find((u) => u.table === "sessions")?.payload).toEqual({ model: "gpt-6-luna", reasoning_effort: "xhigh" });
+
+    updates = [];
+    await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", model: "gpt-6-luna", reasoningEffort: "ultra" }));
+    expect(updates.filter((u) => u.table === "sessions")).toEqual([]);
+    await routes.HEARTBEAT(post("/x", { hostMachineId: "host-1", harnessVersion: "1.0.0" }));
+    expect(updates.filter((u) => u.table === "sessions")).toEqual([]);
   });
 
   it("passes a heartbeat to the database and maps its errors", async () => {

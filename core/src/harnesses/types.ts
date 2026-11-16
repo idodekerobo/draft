@@ -1,9 +1,15 @@
-import type { RunnerManifest } from "../run-manifest";
+import type { ReasoningEffort, RunnerManifest } from "../run-manifest";
+
+export { REASONING_EFFORTS, type ReasoningEffort } from "../run-manifest";
 
 export interface HarnessModel {
   /** Goes to the harness CLI as its model name. Null leaves the choice to the harness's own setting. */
   alias: string | null;
   label: string;
+  /** The efforts this model accepts, lowest first. */
+  efforts: ReadonlyArray<ReasoningEffort>;
+  /** The effort the model uses when none is set. Null when the harness's own setting decides. */
+  defaultEffort: ReasoningEffort | null;
 }
 
 /** One choice in a session's mode menu. `value` goes to the host. */

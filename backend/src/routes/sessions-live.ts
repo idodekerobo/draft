@@ -1,7 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
-import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { eventsForHarness } from "../ingestion/harness-lines";
@@ -71,6 +71,8 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   if (!isHarnessId(harness)) return errorResponse("unknown_harness", 400);
   const model = optionalString(body.model, 100);
   if (!isKnownModel(harness, model)) return errorResponse("unknown_model", 400);
+  const reasoningEffort = optionalString(body.reasoningEffort, 20);
+  if (!isEffortFor(harness, model, reasoningEffort)) return errorResponse("unknown_reasoning_effort", 400);
 
   const previousSessionId = optionalString(body.previousSessionId, 100);
   if (previousSessionId) {
@@ -92,6 +94,7 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
       folder_name: optionalString(body.folderName, 200),
       git_remote: optionalString(body.gitRemote, 500),
       model,
+      reasoning_effort: reasoningEffort,
       native_session_id: optionalString(body.nativeSessionId, 200),
     })
     .select(SESSION_COLUMNS)
@@ -292,6 +295,19 @@ const APPROVAL_MODES = harnessModeValues("codex", "approval");
 /** A mode the host reports, or null for anything unknown, which leaves the saved mode as it is. */
 const reportedMode = (value: unknown, allowed: string[]): string | null => (typeof value === "string" && allowed.includes(value) ? value : null);
 
+/** Saves the model and effort a host reports. Returns an error response, or null when nothing was wrong or sent. */
+async function reportedAgent(sessionId: string, workspaceId: string, hostMachineId: string, body: Record<string, unknown>): Promise<Response | null> {
+  if (!("model" in body) && !("reasoningEffort" in body)) return null;
+  const { data: session } = await serviceClient.from("sessions").select("harness, model, reasoning_effort").eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_machine_id", hostMachineId).maybeSingle<{ harness: string; model: string | null; reasoning_effort: string | null }>();
+  if (!session) return null;
+  const model = "model" in body ? optionalString(body.model, 100) : session.model;
+  const effort = "reasoningEffort" in body ? optionalString(body.reasoningEffort, 20) : session.reasoning_effort;
+  if (!isKnownModel(session.harness, model) || !isEffortFor(session.harness, model, effort)) return null;
+  if (model === session.model && effort === session.reasoning_effort) return null;
+  const { error } = await serviceClient.from("sessions").update({ model, reasoning_effort: effort }).eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_machine_id", hostMachineId);
+  return error ? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId) : null;
+}
+
 /** The host says it is alive. A session marked host_offline returns to live. */
 export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
@@ -312,6 +328,10 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
     p_approval_mode: reportedMode(parsed.body.approvalMode, APPROVAL_MODES),
   });
   if (error) return knownDbError(error.message) ?? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId);
+
+  // The host says which model and effort it ended up on. The session's own host machine is the only one that may.
+  const agent = await reportedAgent(sessionId, workspaceId, hostMachineId, parsed.body);
+  if (agent) return agent;
   return Response.json({ ok: true, status: data });
 });
 

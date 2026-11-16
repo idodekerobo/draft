@@ -5,6 +5,10 @@
  */
 import { CLOUD_NATIVE_TOOLS } from "./run-spec";
 
+/** Every reasoning effort any harness offers, lowest first. A model offers some of them. */
+export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 export const RUNNER_INPUT_ROOT = "/run/input";
 export const PROMPT_FILE = `${RUNNER_INPUT_ROOT}/prompt.md`;
 export const OUTPUT_SCHEMA_FILE = `${RUNNER_INPUT_ROOT}/output-schema.json`;
@@ -15,6 +19,8 @@ export interface RunnerManifest {
   version: 1;
   harness: "claude" | "codex";
   model: string | null;
+  /** Left out when the harness decides. An image built before efforts existed refuses a manifest that has this key. */
+  reasoningEffort?: ReasoningEffort;
   prompt: { kind: "file"; path: string } | { kind: "items"; manifestPath: string };
   tools: { native: string[]; draftMcpUrl: string | null };
   output: { kind: "stream" } | { kind: "structured"; schemaPath: string };
@@ -57,11 +63,12 @@ export interface ManifestChecks {
 /** Checks a manifest strictly. Anything unknown is refused, because these values reach a command line. */
 export function validateRunnerManifest(value: unknown, checks: ManifestChecks): RunnerManifest {
   const inputRoot = checks.inputRoot ?? RUNNER_INPUT_ROOT;
-  const top = onlyKeys(value, ["version", "harness", "model", "prompt", "tools", "output", "timeoutSeconds", "network"], "manifest");
+  const top = onlyKeys(value, ["version", "harness", "model", "reasoningEffort", "prompt", "tools", "output", "timeoutSeconds", "network"], "manifest");
   if (top.version !== 1) throw new Error("run manifest: version must be 1");
   if (top.harness !== "claude" && top.harness !== "codex") throw new Error("run manifest: harness must be claude or codex");
   const harness = top.harness;
   if (top.model !== null && (typeof top.model !== "string" || !MODEL_PATTERN.test(top.model))) throw new Error("run manifest: model is invalid");
+  if (top.reasoningEffort !== undefined && !(REASONING_EFFORTS as ReadonlyArray<unknown>).includes(top.reasoningEffort)) throw new Error("run manifest: reasoningEffort is invalid");
   if (typeof top.timeoutSeconds !== "number" || !Number.isSafeInteger(top.timeoutSeconds) || top.timeoutSeconds < 1 || top.timeoutSeconds > 7200) {
     throw new Error("run manifest: timeoutSeconds must be between 1 and 7200");
   }
@@ -103,7 +110,7 @@ export function validateRunnerManifest(value: unknown, checks: ManifestChecks): 
   if (harness === "codex" && (output.kind === "structured" || prompt.kind === "items")) {
     throw new Error("run manifest: codex runs stream a single prompt");
   }
-  return { version: 1, harness, model: top.model as string | null, prompt, tools, output, timeoutSeconds: top.timeoutSeconds, network };
+  return { version: 1, harness, model: top.model as string | null, ...(top.reasoningEffort !== undefined ? { reasoningEffort: top.reasoningEffort as ReasoningEffort } : {}), prompt, tools, output, timeoutSeconds: top.timeoutSeconds, network };
 }
 
 export function parseRunnerManifest(raw: string, checks: ManifestChecks): RunnerManifest {

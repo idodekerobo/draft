@@ -28,6 +28,7 @@ const host: DriverHost = {
   requestUpload: () => {},
   wake: () => {},
   reportModes: () => {},
+    reportAgent: () => {},
 };
 
 const message = (state: PendingInput["state"]): PendingInput => ({ id: `i-${state}`, kind: "message", state, delivered_text: "hi" });

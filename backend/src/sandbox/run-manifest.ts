@@ -1,4 +1,5 @@
 import type { AgentRunSpec } from "draft-core/run-spec";
+import type { ReasoningEffort } from "draft-core/harnesses";
 import { OUTPUT_SCHEMA_FILE, PROMPT_FILE, validateRunnerManifest, type RunnerManifest } from "draft-core/run-manifest";
 
 export type PromptSource = { kind: "text"; text: string } | { kind: "items"; manifestPath: string };
@@ -34,6 +35,7 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
     version: 1,
     harness: spec.harness,
     model: spec.model,
+    ...(spec.reasoningEffort ? { reasoningEffort: spec.reasoningEffort as ReasoningEffort } : {}),
     prompt: input.prompt.kind === "text" ? { kind: "file", path: PROMPT_FILE } : { kind: "items", manifestPath: itemsPath },
     tools: { native, draftMcpUrl: input.draftMcpUrl },
     output: spec.output.type === "text" ? { kind: "stream" } : { kind: "structured", schemaPath: OUTPUT_SCHEMA_FILE },

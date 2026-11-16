@@ -38,7 +38,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   const editable = canEdit && routine.editable === "full";
   const isSynthesis = routine.taskType === "synthesize_workspace";
   const original = useMemo<AgentValue | null>(
-    () => routine.agent && { title: routine.title, prompt: routine.agent.prompt, harness: routine.agent.harness, model: routine.agent.model },
+    () => routine.agent && { title: routine.title, prompt: routine.agent.prompt, harness: routine.agent.harness, model: routine.agent.model, effort: routine.agent.reasoningEffort ?? null },
     [routine],
   );
   const [agent, setAgent] = useState<AgentValue | null>(original);
@@ -82,6 +82,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     if (agent.prompt.trim() !== original.prompt) agentEdit.prompt = agent.prompt.trim();
     if (agent.harness !== original.harness) agentEdit.harness = agent.harness;
     if (agent.harness !== original.harness || agent.model !== original.model) agentEdit.model = agent.model;
+    if (agent.harness !== original.harness || agent.model !== original.model || agent.effort !== original.effort) agentEdit.reasoningEffort = agent.effort;
   }
   if (agent && original) {
     Object.assign(agentEdit, capabilityChanges(originalCapabilities, capabilities));
@@ -272,7 +273,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
               <p className="ui-routines__notice" role="status">Changes apply to the next run. Past runs keep the prompt and agent they ran with.</p>
             )}
           </div>
-          <RoutinePreview when={when} agent={agentLabel(agent ?? routine.agent)} capabilities={capabilities} />
+          <RoutinePreview when={when} agent={agentLabel(agent ?? { ...routine.agent, effort: routine.agent.reasoningEffort })} capabilities={capabilities} />
         </div>
         {actions}
       </form>

@@ -49,6 +49,7 @@ function SessionRow({ session, selected, now, onSelect }: { session: LiveSession
           <span className="ui-sessions__row-title">{sessionTitle(session)}</span>
           <span className="ui-muted ui-sessions__row-time">{relativeTime(lastActivityAt(session), { now, compact: true })}</span>
         </span>
+        {session.folder_name && <span className="ui-muted ui-sessions__row-sub ui-sessions__row-folder">{session.folder_name}</span>}
         <span className="ui-muted ui-sessions__row-sub">
           <span className="ui-sessions__row-owner">{session.owner_name ?? "Someone"}</span>
           <span aria-hidden="true" className="ui-sessions__row-fixed">·</span>

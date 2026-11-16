@@ -737,3 +737,11 @@ describe("the agent user's ids", () => {
     expect(parseAgentIds("")).toBeNull();
   });
 });
+
+test("the harness commands pass a reasoning effort only when one is set", () => {
+  expect(claudeArgs(manifestOf({ reasoningEffort: "high" }), "go", null)).toEqual(expect.arrayContaining(["--effort", "high"]));
+  expect(claudeArgs(manifestOf(), "go", null)).not.toContain("--effort");
+  const codex = codexArgs(manifestOf({ harness: "codex", reasoningEffort: "xhigh" }));
+  expect(codex).toEqual(expect.arrayContaining(["-c", 'model_reasoning_effort="xhigh"']));
+  expect(codexArgs(manifestOf({ harness: "codex" })).join(" ")).not.toContain("model_reasoning_effort");
+});

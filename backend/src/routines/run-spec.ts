@@ -61,6 +61,7 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
     },
     harness: input.routine.harness,
     model: input.routine.model,
+    reasoningEffort: input.routine.reasoningEffort ?? null,
     instructions: input.routine.prompt,
     inputs: { contextVersionId: parseContextVersionId(input.contextVersionId) },
     permissions: routinePermissions(input.routine),

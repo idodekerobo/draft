@@ -342,7 +342,7 @@ export type AppRPCType = {
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
       /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
-      startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
+      startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null; effort?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
 
       /** The whole list of signal topics the window wants. Main joins what is new and leaves what is gone. */
       setSignalTopics: { params: { topics: string[] }; response: void };
@@ -369,7 +369,7 @@ export type AppRPCType = {
       };
 
       /** Ask the host to switch a live session to other modes. */
-      setLiveSessionMode: { params: { sessionId: string; permissionMode?: string; approvalMode?: string }; response: { ok: true } | { ok: false; error: string } };
+      setLiveSessionMode: { params: { sessionId: string; permissionMode?: string; approvalMode?: string; model?: string | null; reasoningEffort?: string | null }; response: { ok: true } | { ok: false; error: string } };
 
       /** Ask the host to interrupt the running turn of a live session. `withdrawn` holds the caller's queued messages that were pulled back. */
       stopLiveSession: { params: { sessionId: string; keepQueued?: boolean }; response: { ok: true; withdrawn: string[] } | { ok: false; error: string } };
@@ -385,6 +385,7 @@ export type AppRPCType = {
 
       /** Open the user's terminal app on a live session's pane. */
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+      revealLiveSessionFolder: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Detect which CLI runners are installed. */
       /** Whether Codex is installed and signed in on this computer. */
@@ -453,6 +454,9 @@ export type AppRPCType = {
 
       /** Read version + channel from bundled version.json. Returns { version: "dev", channel: "dev" } in dev builds. */
       getAppVersion: { params: void; response: AppVersionInfo };
+
+      /** What "Default" model and effort mean for a harness on this computer, from the harness's own settings. */
+      getAgentDefaults: { params: { harness: string }; response: { model: string | null; modelLabel: string | null; effort: string | null } };
 
       /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Returns [] if signed out or the request fails. */
       getWorkspaceRuns: { params: { before?: string } | void; response: WorkspaceRun[] };

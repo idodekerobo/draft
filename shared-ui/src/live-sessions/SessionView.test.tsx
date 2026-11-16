@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { act, cleanup, fireEvent, render as renderUi, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderUi, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { SessionView } from "./SessionView";
@@ -63,11 +63,11 @@ const api: LiveSessionsApi = {
 };
 
 describe("SessionView", () => {
-  it("shows a breadcrumb with the clean title, the folder above the message box, and right-aligned human messages", async () => {
+  it("shows a breadcrumb with the clean title, no folder above the message box, and right-aligned human messages", async () => {
     const { container } = render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} />);
     expect((await screen.findByRole("heading", { name: "fix login" })).textContent).toBe("fix login");
     expect(screen.getByText("Sessions")).toBeTruthy();
-    expect(container.querySelector(".ui-composer__folder")?.textContent).toBe("marigold");
+    expect(container.querySelector(".ui-composer__folder")).toBeNull();
     expect(container.querySelector(".ui-stream__item--human .ui-stream__bubble")?.textContent).toBe("hello");
     expect(screen.getByText("Priya")).toBeTruthy();
     expect(container.querySelector(".ui-stream__item--assistant .ui-stream__who")).toBeNull();
@@ -498,7 +498,7 @@ describe("SessionView", () => {
 
   it("warns about a Claude version outside the tested range", async () => {
     const old: LiveSession = { ...session, harness_version: "2.2.0" };
-    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: old, events: [], inputs: [] }) }} sessionId="s1" />);
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: old, events: [], inputs: [] }) }} sessionId="s1" devOnly />);
     expect((await screen.findByText(/Claude Code 2\.2\.0/)).textContent).toContain("tested with 2.1.x");
   });
 
@@ -575,6 +575,64 @@ describe("SessionView", () => {
     fireEvent.change(box, { target: { value: "" } });
     fireEvent.keyDown(box, { key: "Escape" });
     await waitFor(() => expect(stop).toHaveBeenCalledWith("s1"));
+  });
+});
+
+describe("SessionView header", () => {
+  it("shows the folder name next to the owner, with no connection text", async () => {
+    render(<SessionView api={api} sessionId="s1" />);
+    const header = (await screen.findByRole("heading", { name: /fix login/ })).closest("header")!;
+    expect(within(header).getByText("marigold")).toBeTruthy();
+    expect(screen.queryByText(/Reconnecting|Offline/)).toBeNull();
+  });
+});
+
+describe("SessionView model and effort picker", () => {
+  const mine: LiveSession = { ...session, mine: true, harness: "codex", model: "gpt-6-sol", reasoning_effort: "high" };
+  const apiFor = (row: LiveSession, setMode: LiveSessionsApi["setMode"] = async () => {}): LiveSessionsApi => ({ ...api, setMode, fetchEvents: async () => ({ viewer, session: row, events: [], inputs: [] }) });
+
+  it("shows the owner the model and effort next to Send, and asks the host when an effort is chosen", async () => {
+    const setMode = mock(async (_id: string, _change: object) => {});
+    render(<SessionView api={apiFor(mine, setMode)} sessionId="s1" />);
+    const trigger = await screen.findByRole("button", { name: "Model and reasoning effort" });
+    expect(trigger.textContent).toContain("GPT-6-Sol · High");
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("group", { name: "Harnesses" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Extra high" }));
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { model: "gpt-6-sol", reasoningEffort: "xhigh" }));
+    expect(screen.getByRole("button", { name: "Model and reasoning effort" }).textContent).toContain("Extra high");
+  });
+
+  it("sends the model with the effort that still fits it, and drops one the model does not offer", async () => {
+    const setMode = mock(async (_id: string, _change: object) => {});
+    render(<SessionView api={apiFor({ ...mine, reasoning_effort: "ultra" }, setMode)} sessionId="s1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Model and reasoning effort" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
+    await waitFor(() => expect(setMode).toHaveBeenCalledWith("s1", { model: "gpt-6-luna", reasoningEffort: "medium" }));
+  });
+
+  it("shows nothing to a teammate, and nothing once the session has ended", async () => {
+    const { unmount } = render(<SessionView api={apiFor({ ...mine, mine: false })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Model and reasoning effort" })).toBeNull();
+    unmount();
+    render(<SessionView api={apiFor({ ...mine, status: "ended" })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Model and reasoning effort" })).toBeNull();
+  });
+
+  it("names what Default means on this computer when the app says", async () => {
+    const defaults = async () => ({ modelLabel: "Sonnet 5.5", effort: "low" });
+    render(<SessionView api={apiFor({ ...mine, harness: "claude", model: null, reasoning_effort: null })} agentDefaults={defaults} sessionId="s1" />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Model and reasoning effort" }).textContent).toContain("Sonnet 5.5 · Low"));
+  });
+});
+
+describe("SessionView agent label", () => {
+  it("shows the effort next to the model", async () => {
+    const withEffort: LiveSession = { ...session, harness: "codex", model: "gpt-6-luna", reasoning_effort: "xhigh" };
+    render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: withEffort, events: [], inputs: [] }) }} sessionId="s1" />);
+    expect(await screen.findByText("Codex · GPT-6-Luna · Extra high")).toBeTruthy();
   });
 });
 

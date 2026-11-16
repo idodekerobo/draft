@@ -122,6 +122,12 @@ describe("decisionExtras", () => {
     expect(log).toEqual(["m1:delivering", 'mode:{"permissionMode":"plan","approvalMode":"full-access"}', "m1:consumed"]);
   });
 
+  it("a model change passes the model and effort to the driver, with null for the harness default", async () => {
+    const { actions, log } = setup([setMode("m1", { model: "opus", reasoningEffort: "high" }), setMode("m2", { model: null, reasoningEffort: null })]);
+    await actions.tick();
+    expect(log).toEqual(["m1:delivering", 'mode:{"agent":{"model":"opus","reasoningEffort":"high"}}', "m1:consumed", "m2:delivering", 'mode:{"agent":{"model":null,"reasoningEffort":null}}', "m2:consumed"]);
+  });
+
   it("a mode switch that cannot be done leaves a note and fails the input", async () => {
     const posted: unknown[] = [];
     const { actions, log } = setup([setMode("m1", { permissionMode: "auto" })], READY, new Set(), posted, { ok: false, note: "Claude is waiting on a prompt." });

@@ -41,3 +41,27 @@ describe("validatePatch for an agent routine", () => {
     expect(validatePatch({ prompt: "New." }, "full", null)).toEqual({ ok: false, error: "field_not_editable", field: "prompt" });
   });
 });
+
+describe("validatePatch reasoning effort", () => {
+  const withEffort = { ...current, harness: "codex" as const, model: "gpt-6-sol", reasoningEffort: "ultra" };
+
+  it("accepts an effort the model lists and clears it with null", () => {
+    expect(validatePatch({ reasoningEffort: "high" }, "full", withEffort).ok && (validatePatch({ reasoningEffort: "high" }, "full", withEffort) as { patch: { agent: AgentRoutineConfig } }).patch.agent.reasoningEffort).toBe("high");
+    const cleared = validatePatch({ reasoningEffort: null }, "full", withEffort);
+    expect(cleared.ok && "reasoningEffort" in cleared.patch.agent!).toBe(false);
+  });
+
+  it("refuses an effort the model does not list", () => {
+    expect(validatePatch({ model: "gpt-6-luna", reasoningEffort: "ultra" }, "full", withEffort)).toEqual({ ok: false, error: "invalid_body", field: "reasoningEffort" });
+  });
+
+  it("drops the old effort when the model changes and no effort is sent", () => {
+    const result = validatePatch({ model: "gpt-6-luna" }, "full", withEffort);
+    expect(result.ok && "reasoningEffort" in result.patch.agent!).toBe(false);
+  });
+
+  it("keeps the effort when only the prompt changes", () => {
+    const result = validatePatch({ prompt: "Again." }, "full", withEffort);
+    expect(result.ok && result.patch.agent?.reasoningEffort).toBe("ultra");
+  });
+});

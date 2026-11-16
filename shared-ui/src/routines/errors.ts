@@ -7,6 +7,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   prompt: "Describe what the routine should do.",
   harness: "Choose an agent.",
   model: "Choose a model.",
+  reasoningEffort: "Choose a reasoning effort from the list.",
   events: "Choose a valid event.",
   canNotify: "Choose whether it may message teammates.",
   postChannels: "Choose up to 20 channels.",

@@ -205,6 +205,29 @@ describe("switching the mode", () => {
     expect(rpcCalls).toHaveLength(1);
   });
 
+  it("queues a model and effort change from the owner only, and checks the effort against the model", async () => {
+    setHarness("codex", { owner_user_id: "user-2", model: "gpt-6-sol", reasoning_effort: "ultra" });
+    rpcResult = { data: { id: "i1" }, error: null };
+    expect((await mode({ model: "gpt-6-luna" })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args.p_payload).toEqual({ model: "gpt-6-luna", reasoningEffort: null });
+    expect((await mode({ reasoningEffort: "high" })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args.p_payload).toEqual({ model: "gpt-6-sol", reasoningEffort: "high" });
+    expect((await mode({ model: null, reasoningEffort: null })).status).toBe(201);
+    expect(rpcCalls.at(-1)!.args.p_payload).toEqual({ model: null, reasoningEffort: null });
+
+    expect(((await (await mode({ model: "gpt-6-luna", reasoningEffort: "ultra" })).json()) as { error: string }).error).toBe("unknown_reasoning_effort");
+    expect(((await (await mode({ model: "gpt-9" })).json()) as { error: string }).error).toBe("unknown_model");
+
+    setHarness("codex", { owner_user_id: "user-9" });
+    expect(((await (await mode({ model: "gpt-6-sol" })).json()) as { error: string }).error).toBe("not_owner");
+  });
+
+  it("keeps the old effort when the new model accepts it", async () => {
+    setHarness("codex", { owner_user_id: "user-2", model: "gpt-6-sol", reasoning_effort: "high" });
+    await mode({ model: "gpt-6-luna" });
+    expect(rpcCalls.at(-1)!.args.p_payload).toEqual({ model: "gpt-6-luna", reasoningEffort: "high" });
+  });
+
   it("refuses a missing, ended or routine session", async () => {
     tables.sessions = [];
     expect((await mode({ permissionMode: "plan" })).status).toBe(404);

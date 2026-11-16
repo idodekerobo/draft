@@ -108,6 +108,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       session_type: "routine",
       harness: routine.harness,
       model: routine.model,
+      reasoning_effort: routine.reasoningEffort ?? null,
       title: routine.title,
       status: "starting",
       host_machine_id: routineHostMachineId(sessionId),

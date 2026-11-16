@@ -26,6 +26,8 @@ export interface LiveSession {
   harness?: string;
   /** Alias the harness CLI was started with; null for its own default. */
   model?: string | null;
+  /** Plain text such as "low" or "xhigh"; null for the harness's own setting. */
+  reasoning_effort?: string | null;
   /** The version of the harness CLI the host runs. */
   harness_version?: string | null;
   /** Claude: manual (default), acceptEdits, plan or auto. Codex: default or plan. Null until the host reports it. */
@@ -184,7 +186,7 @@ export interface LiveSessionsApi {
   /** `withdrawn` holds the caller's own messages that Claude had not taken. Stop pulled them back. */
   stop(sessionId: string, options?: { keepQueued?: boolean }): Promise<{ withdrawn: string[] }>;
   /** Asks the host to switch the session to these modes. It reports the mode it reaches, which the next poll shows. */
-  setMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string }): Promise<void>;
+  setMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string; model?: string | null; reasoningEffort?: string | null }): Promise<void>;
   /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
   resume?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */

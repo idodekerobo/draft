@@ -5,7 +5,7 @@ import { SessionStartScreen } from "./SessionStartScreen";
 afterEach(cleanup);
 
 function setup(recent: string[] = ["/work/marigold", "/work/other"]) {
-  const onStart = mock(async (_request: { harness: string; folderPath: string; text: string; model: string | null }) => ({ ok: true }) as { ok: true } | { ok: false; error: string });
+  const onStart = mock(async (_request: { harness: string; folderPath: string; text: string; model: string | null; effort: string | null }) => ({ ok: true }) as { ok: true } | { ok: false; error: string });
   const onBrowse = mock(async () => "/picked/project" as string | null);
   render(<SessionStartScreen recentFolders={recent} onBrowse={onBrowse} onStart={onStart} />);
   return { onStart, onBrowse };
@@ -22,7 +22,7 @@ describe("SessionStartScreen", () => {
     const { onStart } = setup();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "  fix the login bug  " } });
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
-    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/marigold", text: "fix the login bug", model: null }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/marigold", text: "fix the login bug", model: null, effort: null }));
   });
 
   it("starts in a recent folder picked from the menu", async () => {
@@ -31,7 +31,7 @@ describe("SessionStartScreen", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /other/ }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/other", text: "go", model: null }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/other", text: "go", model: null, effort: null }));
   });
 
   it("starts in a folder found with Browse", async () => {
@@ -42,7 +42,7 @@ describe("SessionStartScreen", () => {
     expect(onBrowse).toHaveBeenCalled();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/picked/project", text: "go", model: null }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/picked/project", text: "go", model: null, effort: null }));
   });
 
   it("asks for a folder when there is no recent one and blocks Start", () => {
@@ -64,7 +64,7 @@ describe("SessionStartScreen", () => {
   it("keeps the folder bar and puts one picker next to Start, listing the harnesses and the models of the chosen one", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
-    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent?.replace("✓", ""))).toEqual(["Claude Code", "Codex", "Default", "Fable", "Opus", "Sonnet", "Haiku"]);
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent?.replace("✓", ""))).toEqual(["Claude Code", "Codex", "Default", "Fable", "Opus", "Sonnet", "Haiku", "Default", "Low", "Medium", "High", "Extra high", "Max"]);
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
@@ -76,7 +76,49 @@ describe("SessionStartScreen", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "codex", folderPath: "/work/marigold", text: "go", model: "gpt-6-luna" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "codex", folderPath: "/work/marigold", text: "go", model: "gpt-6-luna", effort: null }));
+  });
+
+  it("keeps the picker open for harness and model, closes it on an effort, and lists only the efforts the model accepts", async () => {
+    const { onStart } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Sol" }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Ultra" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
+    expect(screen.queryByRole("menuitemradio", { name: "Ultra" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Extra high" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "codex", folderPath: "/work/marigold", text: "go", model: "gpt-6-luna", effort: "xhigh" }));
+  });
+
+  it("falls back to the new model's default effort when the chosen effort is not offered", async () => {
+    const { onStart } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Sol" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Ultra" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "GPT-6-Luna" }));
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "codex", folderPath: "/work/marigold", text: "go", model: "gpt-6-luna", effort: "medium" }));
+  });
+
+  it("shows what Default means on this computer, in the button and in the lists", async () => {
+    const agentDefaults = mock(async (_harness: string) => ({ modelLabel: "Sonnet 5.5", effort: "low" }));
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} agentDefaults={agentDefaults} />);
+    const trigger = screen.getByRole("button", { name: "Agent and model" });
+    await waitFor(() => expect(trigger.textContent).toContain("Claude Code · Sonnet 5.5 · Low"));
+    fireEvent.click(trigger);
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent?.replace("✓", ""))).toContain("DefaultSonnet 5.5");
+    expect(agentDefaults).toHaveBeenCalledWith("claude");
   });
 
   it("marks a harness that is not installed or signed out, and blocks Start for it", () => {
@@ -121,7 +163,7 @@ describe("SessionStartScreen", () => {
   it("only warns for an untested version", () => {
     const { onStart } = setup();
     cleanup();
-    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ claude: "untested_version" }} />);
+    render(<SessionStartScreen devOnly recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} availability={{ claude: "untested_version" }} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByRole("status").textContent).toContain("Some things may not work");
@@ -133,7 +175,7 @@ describe("SessionStartScreen", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Sonnet" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/marigold", text: "go", model: "sonnet" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/marigold", text: "go", model: "sonnet", effort: null }));
   });
 
   it("keeps the typed text when the screen remounts, and clears it after a start", async () => {

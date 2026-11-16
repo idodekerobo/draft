@@ -15,14 +15,14 @@ describe("sessionBanner", () => {
   });
 
   it("warns about an untested Claude version, but not for an ended session", () => {
-    expect(sessionBanner({ ...base, harness_version: "2.2.0" })).toContain("Claude Code 2.2.0");
-    expect(sessionBanner({ ...base, harness_version: "2.2.0", status: "ended" })).toBeNull();
+    expect(sessionBanner({ ...base, harness_version: "2.2.0" }, true)).toContain("[DEV ONLY] This session runs Claude Code 2.2.0");
+    expect(sessionBanner({ ...base, harness_version: "2.2.0", status: "ended" }, true)).toBeNull();
   });
 
   it("checks a Codex session against the Codex version, never the Claude one", () => {
-    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.165.0" })).toBeNull();
-    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.170.0" })).toContain("Codex 0.170.0");
-    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.170.0" })).toContain("0.165.x");
+    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.165.0" }, true)).toBeNull();
+    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.170.0" }, true)).toContain("[DEV ONLY] This session runs Codex 0.170.0");
+    expect(sessionBanner({ ...base, harness: "codex", harness_version: "0.170.0" }, true)).toContain("0.165.x");
   });
 
   it("puts Host offline before the version warning", () => {

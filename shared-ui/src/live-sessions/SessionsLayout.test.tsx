@@ -26,6 +26,11 @@ function setup(props: Partial<Parameters<typeof SessionsLayout>[0]> = {}) {
 }
 
 describe("SessionsLayout", () => {
+  it("shows the folder name in each row's caption", () => {
+    setup();
+    expect(screen.getAllByText("app")).toHaveLength(2);
+  });
+
   it("lists sessions in day groups with clean titles, owner and status words", () => {
     setup();
     expect(screen.getByRole("region", { name: "Today" })).toBeTruthy();

@@ -14,6 +14,8 @@ create table agent_runs (
   runtime                  jsonb not null,
   harness                  text not null,
   model                    text,
+  -- Plain text such as 'low' or 'xhigh'; null means the harness's own setting. Allowed values depend on the model (core/src/harnesses).
+  reasoning_effort         text,
   instructions             text not null default '',
   base_context_version_id  uuid not null,
   permissions              jsonb not null default '[]',

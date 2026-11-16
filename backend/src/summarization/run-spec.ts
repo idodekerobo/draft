@@ -24,6 +24,7 @@ export function buildSummarizationRunSpec(input: SummarizationRunSpecInput): Age
     runtime: { type: "cloud", environment: cloudEnvironmentFor("claude") },
     harness: "claude",
     model: null,
+    reasoningEffort: null,
     instructions: "",
     inputs: { contextVersionId: parseContextVersionId(input.contextVersionId) },
     permissions: [],

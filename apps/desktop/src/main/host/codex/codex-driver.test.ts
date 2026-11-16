@@ -29,6 +29,7 @@ const host: DriverHost = {
   requestUpload: () => {},
   wake: () => {},
   reportModes: () => {},
+    reportAgent: () => {},
 };
 
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));

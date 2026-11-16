@@ -8,7 +8,14 @@ export interface ControlInput {
   state: "queued" | "delivering";
   author_user_id: string;
   author_name: string;
-  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown; permissionMode?: unknown; approvalMode?: unknown };
+  payload: { requestId?: string; decision?: string; answers?: unknown; message?: unknown; scope?: unknown; permissionMode?: unknown; approvalMode?: unknown; model?: unknown; reasoningEffort?: unknown };
+}
+
+/** What a set_mode input asks for. `agent` is set when it carries a model or effort; null means the harness default. */
+export interface ModeChange {
+  permissionMode?: string;
+  approvalMode?: string;
+  agent?: { model: string | null; reasoningEffort: string | null };
 }
 
 export interface ControlDeps {
@@ -17,7 +24,7 @@ export interface ControlDeps {
   capture(): Promise<string>;
   sendEscape(): Promise<void>;
   /** Switches the session to the modes asked for. */
-  setMode(modes: { permissionMode?: string; approvalMode?: string }): Promise<{ ok: true } | { ok: false; note: string }>;
+  setMode(modes: ModeChange): Promise<{ ok: true } | { ok: false; note: string }>;
   postEvents(events: HostEvent[]): Promise<void>;
 }
 
@@ -72,10 +79,11 @@ export class ControlActions {
         return;
       }
       if (input.kind === "set_mode") {
-        const { permissionMode, approvalMode } = input.payload;
+        const { permissionMode, approvalMode, model, reasoningEffort } = input.payload;
         const result = await this.deps.setMode({
           ...(typeof permissionMode === "string" ? { permissionMode } : {}),
           ...(typeof approvalMode === "string" ? { approvalMode } : {}),
+          ...(model !== undefined || reasoningEffort !== undefined ? { agent: { model: typeof model === "string" ? model : null, reasoningEffort: typeof reasoningEffort === "string" ? reasoningEffort : null } } : {}),
         });
         if (!result.ok) {
           await this.deps.postEvents([{ sourceId: `mode:${input.id}`, kind: "session_note", payload: { text: result.note } }]);

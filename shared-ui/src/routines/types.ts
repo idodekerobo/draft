@@ -34,6 +34,8 @@ export interface AgentRoutine {
   harness: HarnessId;
   /** Alias the harness CLI takes as its model; null for the harness default. */
   model: string | null;
+  /** A reasoning effort the model accepts; null for the harness default. */
+  reasoningEffort?: string | null;
   createdByName: string | null;
   lastRun: RoutineRun | null;
   canNotify?: boolean;
@@ -86,6 +88,7 @@ export interface AgentRoutineEdit {
   prompt?: string;
   harness?: HarnessId;
   model?: string | null;
+  reasoningEffort?: string | null;
   canNotify?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
@@ -104,6 +107,7 @@ export interface CreateRoutineInput {
   prompt: string;
   harness: HarnessId;
   model: string | null;
+  reasoningEffort?: string | null;
   preset: Exclude<RoutinePreset, "custom" | "draft_default">;
   time?: string;
   weekday?: RoutineWeekday;

@@ -56,4 +56,38 @@ describe("SectionedPicker", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("puts a row section above the other lists and keeps the panel open for a keepOpen choice", () => {
+    const onHarness = mock((_value: string) => {});
+    const sections: PickerSection[] = [
+      { id: "harness", title: "Harnesses", row: true, keepOpen: true, value: "claude", onChange: onHarness, options: [{ value: "claude", label: "Claude Code" }, { value: "codex", label: "Codex" }] },
+      { id: "model", title: "Models", value: "", onChange: () => {}, options: [{ value: "", label: "Default" }] },
+    ];
+    render(<SectionedPicker label="Agent" sections={sections}>x</SectionedPicker>);
+    fireEvent.click(screen.getByRole("button", { name: "Agent" }));
+    const panel = screen.getByRole("menu");
+    expect(panel.className).toContain("ui-picker__panel--stacked");
+    expect(panel.firstElementChild?.className).toContain("ui-picker__section--row");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Codex/ }));
+    expect(onHarness).toHaveBeenCalledWith("codex");
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("leaves focus on the button after a mouse click, and moves it into the panel after a keyboard open", () => {
+    setup();
+    const trigger = screen.getByRole("button", { name: "Agent and model" });
+    fireEvent.click(trigger, { detail: 1 });
+    expect(document.activeElement).not.toBe(screen.getByRole("menuitemradio", { name: /Default/ }));
+    expect(screen.getAllByRole("menuitemradio").some((item) => item === document.activeElement)).toBe(false);
+    fireEvent.click(trigger, { detail: 1 });
+    fireEvent.click(trigger, { detail: 0 });
+    expect(screen.getAllByRole("menuitemradio").some((item) => item === document.activeElement)).toBe(true);
+  });
+
+  it("marks where the panel lines up and which way it opens", () => {
+    render(<SectionedPicker label="Agent" sections={[{ id: "m", title: "Models", value: "", onChange: () => {}, options: [{ value: "", label: "Default" }] }]} align="start" direction="up">x</SectionedPicker>);
+    const root = screen.getByRole("button", { name: "Agent" }).parentElement!;
+    expect(root.className).toContain("ui-picker--align-start");
+    expect(root.className).toContain("ui-picker--up");
+  });
 });
