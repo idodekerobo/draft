@@ -24,6 +24,7 @@ const api: DraftApi = {
   runRoutine: async (id) => {
     const result = await rpc.request.runRoutine({ id });
     if (!result.ok) throw toRoutineError(result.code, result.field);
+    return result.outcome;
   },
   getRoutineSlackChannels: () => rpc.request.getRoutineSlackChannels(),
   getRoutineGithubRepos: () => rpc.request.getRoutineGithubRepos(),

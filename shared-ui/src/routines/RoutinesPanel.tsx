@@ -195,7 +195,9 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   function onRunNow(routine: Routine) {
     setPendingFor(routine.id, true);
     run.mutate(routine.id, {
-      onSuccess: () => toast.success(`${routine.title} started.`, { description: "Its run shows in Recent activity." }),
+      onSuccess: (outcome) => {
+        if (outcome.status === "started") toast.success(`${routine.title} started.`, { description: "Its run shows in Recent activity." });
+      },
       onError: (error) => toast.error(`Could not start ${routine.title}`, { description: error.message }),
       onSettled: () => setPendingFor(routine.id, false),
     });

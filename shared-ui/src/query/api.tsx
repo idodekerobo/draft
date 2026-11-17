@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { SynthesisRunSummary } from "../activity/ActivityList";
-import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "../routines/types";
+import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "../routines/types";
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
@@ -15,7 +15,7 @@ export interface DraftApi {
   deleteRoutine(id: string): Promise<void>;
   /** One routine's runs, 50 at a time; `before` is the last shown run's cursor (see routineRunCursor). */
   getRoutineRuns(id: string, before?: string): Promise<RoutineRun[]>;
-  runRoutine?(id: string): Promise<unknown>;
+  runRoutine?(id: string): Promise<RoutineRunOutcome>;
   getRoutineSlackChannels?(): Promise<Array<{ id: string; name: string }>>;
   getRoutineGithubRepos?(): Promise<string[]>;
 }

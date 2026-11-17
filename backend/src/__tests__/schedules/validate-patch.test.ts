@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { validatePatch } from "../../schedules/validate-patch";
-import type { AgentRoutineConfig } from "../../routines/config";
+import { parseAgentRoutineConfig, type AgentRoutineConfig } from "../../routines/config";
 
 const current: AgentRoutineConfig = { title: "Digest", prompt: "Summarize.", harness: "claude", model: null };
 
@@ -35,6 +35,12 @@ describe("validatePatch for an agent routine", () => {
   it("allows an agent field together with enabled", () => {
     const result = validatePatch({ enabled: false, prompt: "New." }, "full", current);
     expect(result.ok && result.patch).toMatchObject({ enabled: false, agent: { prompt: "New." } });
+  });
+
+  it("keeps events and canNotify through an edit of the title, since a patch merges onto the stored config", () => {
+    const stored = parseAgentRoutineConfig({ ...current, events: ["fireflies.meeting_summarized"], canNotify: true })!;
+    const result = validatePatch({ title: "Renamed" }, "full", stored);
+    expect(result).toMatchObject({ ok: true, patch: { agent: { title: "Renamed", events: ["fireflies.meeting_summarized"], canNotify: true } } });
   });
 
   it("refuses agent fields for a routine with no agent config", () => {

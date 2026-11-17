@@ -22,6 +22,9 @@ export interface RoutineRun {
   skipReason?: string | null;
 }
 
+/** What Run now answers. Queued means the run starts when the run in progress ends. */
+export type RoutineRunOutcome = { status: "started"; runId: string; sessionId: string } | { status: "queued" };
+
 export type { RoutineEventName } from "draft-core/routines";
 import type { RoutineEventName } from "draft-core/routines";
 

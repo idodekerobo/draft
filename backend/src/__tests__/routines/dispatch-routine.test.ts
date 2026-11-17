@@ -272,6 +272,79 @@ describe("dispatchAgentRoutine outcomes and keys", () => {
   });
 });
 
+describe("dispatchAgentRoutine for an event", () => {
+  const SOURCE = "99999999-9999-4999-8999-999999999999";
+  const eventTask = {
+    config_json: { title: "Meeting follow-up", prompt: "DM owners.", harness: "claude", model: null, events: ["fireflies.meeting_summarized"], onSchedule: false, canNotify: true },
+  };
+  const meeting = {
+    name: "fireflies.meeting_summarized" as const, eventId: "meeting-1", description: "a Fireflies meeting was summarized", providerLabel: "Fireflies",
+    sourceItemId: SOURCE, facts: [], title: "Standup", text: "notes", truncated: false,
+  };
+  const second = { ...meeting, eventId: "meeting-2", title: "Standup two", text: "more" };
+
+  it("records the agent events as the run's trigger, and gives the run its events on behalf of the owner", async () => {
+    const db = newDb();
+    const launch = okLaunch();
+    await dispatch(db, launch, undefined, eventTask, { kind: meeting.name, firstEventId: EVENT_A, concurrencyKey: null, eventIds: [EVENT_A], events: [meeting] });
+
+    expect(db.tables.agent_runs![0]).toMatchObject({
+      idempotency_key: `${TASK_ID}:fireflies.meeting_summarized:${EVENT_A}`,
+      trigger: { type: "event", eventIds: [EVENT_A] },
+      on_behalf_of_user_id: OWNER_ID,
+    });
+    expect(db.tables.agent_runs![0]!.permissions).toContainEqual(expect.objectContaining({ tool: "people.notify" }));
+    expect(launch.mock.calls[0]![0].events).toMatchObject([{ title: "Standup", text: "notes" }]);
+    expect(launch.mock.calls[0]![0].setup.description).toBe("When a Fireflies meeting is summarized");
+  });
+
+  it("makes one run for a batch of events, oldest first", async () => {
+    const db = newDb();
+    const launch = okLaunch();
+    await dispatch(db, launch, undefined, eventTask, { kind: meeting.name, firstEventId: EVENT_A, concurrencyKey: null, eventIds: [EVENT_A, EVENT_B], events: [meeting, second] });
+
+    expect(db.tables.agent_runs).toHaveLength(1);
+    expect(launch.mock.calls[0]![0].events!.map((event) => event.title)).toEqual(["Standup", "Standup two"]);
+  });
+
+  it("runs once per event, however many times the provider repeats it", async () => {
+    const db = newDb();
+    const launch = okLaunch();
+    const once = { kind: meeting.name, firstEventId: EVENT_A, concurrencyKey: null, eventIds: [EVENT_A], events: [meeting] };
+    await dispatch(db, launch, "2026-11-11T09:00:00.000Z", eventTask, once);
+    db.tables.sessions![0]!.status = "ended";
+    await dispatch(db, launch, "2026-11-11T09:05:00.000Z", eventTask, once);
+
+    expect(db.tables.agent_runs).toHaveLength(1);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives each of two meetings its own run, even while the first still runs", async () => {
+    const db = newDb();
+    const launch = okLaunch();
+    await dispatch(db, launch, undefined, eventTask, { kind: meeting.name, firstEventId: EVENT_A, concurrencyKey: null, eventIds: [EVENT_A], events: [meeting] });
+    await dispatch(db, launch, undefined, eventTask, { kind: meeting.name, firstEventId: EVENT_B, concurrencyKey: null, eventIds: [EVENT_B], events: [second] });
+
+    expect(db.tables.agent_runs).toHaveLength(2);
+    expect(launch).toHaveBeenCalledTimes(2);
+  });
+
+  it("ends a skipped event as skipped, without launching it or writing an error", async () => {
+    const db = newDb();
+    const launch = okLaunch();
+    const skipped = {
+      kind: meeting.name, firstEventId: EVENT_A, concurrencyKey: null, eventIds: [EVENT_A], events: [meeting],
+      skip: { code: "routine_source_not_visible", note: "Skipped: a Fireflies meeting was summarized, but that Fireflies item is private." },
+    };
+    await dispatch(db, launch, undefined, eventTask, skipped);
+    await dispatch(db, launch, undefined, eventTask, skipped);
+
+    expect(launch).not.toHaveBeenCalled();
+    expect(db.tables.sessions).toEqual([expect.objectContaining({ status: "ended", end_reason: "skipped" })]);
+    expect(db.tables.errors).toEqual([]);
+  });
+});
+
 describe("failStaleRoutineSessions", () => {
   const now = new Date("2026-10-27T12:00:00.000Z");
   const staleStart = new Date(now.getTime() - ROUTINE_STALE_AFTER_MS - 60_000).toISOString();

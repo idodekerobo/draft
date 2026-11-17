@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { ROUTINE_EVENT_NAMES, describeRoutineTriggers, routineProviders, type RoutineEventName } from "draft-core/routines";
+import { recordError } from "../errors/record-error";
 import { recordRouteError } from "../errors/route-error";
+import { drainEventInbox } from "../events/drain";
+import { enqueueEvent } from "../events/enqueue";
+import type { AgentEventRow } from "../events/types";
 import { formatCursor, olderThan, type Cursor } from "../activity/service";
 import { loadDisplayNames } from "../routes/session-display-names";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
@@ -26,8 +31,6 @@ import {
 import type { AgentRunRow, ScheduledTaskRow, SessionRow, SourceConnectionRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
 import { canEditSchedules } from "./permissions";
-import { dispatchAgentRoutine, type RoutineDispatchOutcome } from "../routines/dispatch-routine";
-import { loadSandboxDeploymentConfig } from "../sandbox";
 import { loadRunResults } from "../metaharness/runs/result-line";
 import { serviceClient } from "../db/client";
 
@@ -197,9 +200,9 @@ async function loadTasks(workspaceId: string): Promise<ScheduledTaskRow[]> {
   return (data ?? []) as ScheduledTaskRow[];
 }
 
-async function loadConnections(workspaceId: string, ids: string[]): Promise<Map<string, ConnectionInfo>> {
+async function loadConnections(workspaceId: string, ids: string[], client: SupabaseClient = serviceClient): Promise<Map<string, ConnectionInfo>> {
   if (ids.length === 0) return new Map();
-  const { data, error } = await serviceClient
+  const { data, error } = await client
     .from("source_connections")
     .select("id, provider, status")
     .eq("workspace_id", workspaceId)
@@ -336,8 +339,8 @@ export interface RoutineTask {
   connection: ConnectionInfo | undefined;
 }
 
-export async function getRoutineTask(workspaceId: string, taskId: string): Promise<RoutineTask | null> {
-  const { data, error } = await serviceClient
+export async function getRoutineTask(workspaceId: string, taskId: string, client: SupabaseClient = serviceClient): Promise<RoutineTask | null> {
+  const { data, error } = await client
     .from("scheduled_tasks")
     .select("*")
     .eq("id", taskId)
@@ -350,7 +353,7 @@ export async function getRoutineTask(workspaceId: string, taskId: string): Promi
   const task = data as ScheduledTaskRow;
 
   const connection = task.source_connection_id
-    ? (await loadConnections(workspaceId, [task.source_connection_id])).get(task.source_connection_id)
+    ? (await loadConnections(workspaceId, [task.source_connection_id], client)).get(task.source_connection_id)
     : undefined;
   if (task.task_type === "agent_routine") {
     const config = parseAgentRoutineConfig(task.config_json);
@@ -459,20 +462,91 @@ export async function deleteRoutine({ task }: RoutineTask, userId: string, now: 
   console.log(JSON.stringify({ event: "schedule_deleted", workspaceId: task.workspace_id, taskId: task.id, userId }));
 }
 
-export async function runRoutineNow(workspaceId: string, taskId: string, userId: string): Promise<RoutineDispatchOutcome> {
-  const routine = await getRoutineTask(workspaceId, taskId);
+/** `queued` means the run starts when the run in progress ends, or when the inbox next drains. */
+export type RunNowOutcome =
+  | { status: "started"; runId: string; sessionId: string }
+  | { status: "queued" }
+  | { status: "failed"; code: string };
+
+export interface RunNowDeps {
+  client?: SupabaseClient;
+  enqueue?: typeof enqueueEvent;
+  drain?: () => Promise<void>;
+}
+
+interface RunNowScope {
+  client: SupabaseClient;
+  workspaceId: string;
+  taskId: string;
+}
+
+type RunNowEvent = Pick<AgentEventRow, "status" | "claimed_by_run_id" | "failure_code">;
+type RunNowDetails = { error?: unknown; detail?: Record<string, unknown>; agentRunId?: string };
+
+async function recordRunNow(scope: RunNowScope, code: string, message: string, details: RunNowDetails = {}): Promise<void> {
+  await recordError({ client: scope.client, workspaceId: scope.workspaceId, scheduledTaskId: scope.taskId, operation: "scheduling", code, message, ...details });
+}
+
+/** Records a failure this call found and reports it. A dispatch that failed has its own error row and is not passed here. */
+async function failRunNow(scope: RunNowScope, code: string, message: string, details: RunNowDetails = {}): Promise<RunNowOutcome> {
+  await recordRunNow(scope, code, message, details);
+  return { status: "failed", code };
+}
+
+/**
+ * Puts one manual event in the inbox and drains it. The event then says whether the run started or waits
+ * behind a run in progress. A failed drain is recorded, and the event still says where the run stands.
+ */
+export async function runRoutineNow(workspaceId: string, taskId: string, userId: string, deps: RunNowDeps = {}): Promise<RunNowOutcome> {
+  const client = deps.client ?? serviceClient;
+  const routine = await getRoutineTask(workspaceId, taskId, client);
   if (!routine || routine.task.task_type !== "agent_routine") throw new ScheduleServiceError("not_found");
   if (!(await canEditSchedules(workspaceId, userId))) throw new ScheduleServiceError("forbidden");
-  return dispatchAgentRoutine({
-    task: routine.task,
-    occurrenceAt: new Date().toISOString(),
-    kind: "manual",
-    firstEventId: randomUUID(),
-    concurrencyKey: routine.task.id,
-    manual: { requestedBy: userId },
-    config: loadSandboxDeploymentConfig(),
-    client: serviceClient,
-  });
+  const scope: RunNowScope = { client, workspaceId, taskId };
+
+  // The drain below runs the event, so the enqueue must not start a drain of its own.
+  let eventId: string | null = null;
+  try {
+    eventId = (
+      await (deps.enqueue ?? enqueueEvent)(
+        client,
+        {
+          workspaceId,
+          scheduledTaskId: taskId,
+          origin: "manual",
+          eventName: "manual",
+          dedupeKey: `${taskId}:manual:${randomUUID()}`,
+          concurrencyKey: taskId,
+          payload: { type: "manual", requestedBy: userId },
+        },
+        { drain: async () => {} },
+      )
+    ).id;
+  } catch (error) {
+    return failRunNow(scope, "event_enqueue_failed", "Storing the run request failed", { error });
+  }
+  if (!eventId) return failRunNow(scope, "event_enqueue_failed", "The run request was not stored", { detail: { duplicate: true } });
+
+  try {
+    await (deps.drain ?? (() => drainEventInbox()))();
+  } catch (error) {
+    await recordRunNow(scope, "event_drain_failed", "Draining the event inbox failed during Run now", { error, detail: { event_id: eventId } });
+  }
+
+  const { data, error } = await client.from("agent_events").select("status, claimed_by_run_id, failure_code").eq("id", eventId).maybeSingle();
+  const event = data as RunNowEvent | null;
+  if (error || !event) return failRunNow(scope, "event_read_failed", "Reading the run request back failed", { error, detail: { event_id: eventId } });
+
+  if (event.status === "pending" || event.status === "claimed") return { status: "queued" };
+  if (event.status === "done") {
+    const runId = event.claimed_by_run_id;
+    if (!runId) return { status: "queued" };
+    const { data: run, error: runError } = await client.from("agent_runs").select("session_id").eq("id", runId).eq("workspace_id", workspaceId).maybeSingle();
+    const sessionId = (run as Pick<AgentRunRow, "session_id"> | null)?.session_id;
+    if (runError || !sessionId) return failRunNow(scope, "run_lookup_failed", "Reading the started run failed", { error: runError, agentRunId: runId, detail: { event_id: eventId } });
+    return { status: "started", runId, sessionId };
+  }
+  return { status: "failed", code: event.failure_code ?? "run_failed" };
 }
 
 function pickLogged(task: ScheduledTaskRow) {

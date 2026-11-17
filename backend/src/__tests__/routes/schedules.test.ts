@@ -89,6 +89,7 @@ const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
 afterAll(() => queryLogSpy.mockRestore());
 
 const routeModule = await import("../../routes/schedules");
+const schedulesService = await import("../../schedules/service");
 
 function task(overrides: Row): Row {
   return {
@@ -423,6 +424,60 @@ describe("schedules routes", () => {
         Object.assign(new Request("http://internal.test"), { params: { id: "ws-1", taskId: "task-gone" } }) as never,
       );
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe("RUN", () => {
+    const runNow = spyOn(schedulesService, "runRoutineNow");
+    afterAll(() => runNow.mockRestore());
+    beforeEach(() => runNow.mockReset());
+
+    const postRun = (taskId = "task-1") =>
+      routeModule.RUN(
+        Object.assign(new Request("http://internal.test", { method: "POST" }), { params: { id: "ws-1", taskId } }) as never,
+      );
+
+    it("answers 202 with a queued outcome when a run is in progress", async () => {
+      runNow.mockResolvedValueOnce({ status: "queued" });
+      const response = await postRun();
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ outcome: { status: "queued" } });
+    });
+
+    it("answers 202 with the run that started", async () => {
+      runNow.mockResolvedValueOnce({ status: "started", runId: "run-1", sessionId: "s-1" });
+      const response = await postRun();
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ outcome: { status: "started", runId: "run-1", sessionId: "s-1" } });
+    });
+
+    it("answers 409 codex_login_busy when another Codex run holds the login", async () => {
+      runNow.mockResolvedValueOnce({ status: "failed", code: "routine_lease_busy" });
+      const response = await postRun();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: "codex_login_busy" });
+    });
+
+    it("answers 502 run_failed for a run that could not start", async () => {
+      runNow.mockResolvedValueOnce({ status: "failed", code: "routine_launch_failed" });
+      const response = await postRun();
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({ error: "run_failed" });
+    });
+
+    it("answers 404 for a routine that does not exist", async () => {
+      runNow.mockRejectedValueOnce(new schedulesService.ScheduleServiceError("not_found"));
+      expect((await postRun("task-gone")).status).toBe(404);
+    });
+
+    it("answers 500 and records an unexpected failure", async () => {
+      runNow.mockRejectedValueOnce(new Error("db down"));
+      const response = await postRun();
+      expect(response.status).toBe(500);
+      await Bun.sleep(10);
+      expect(errorRows).toHaveLength(1);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", operation: "commit" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_run_now_failed" });
     });
   });
 });

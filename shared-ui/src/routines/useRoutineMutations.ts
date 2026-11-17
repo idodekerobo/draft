@@ -4,7 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDraftApi } from "../query/api";
 import { queryKeys, routineRunsKey } from "../query/keys";
 import { useOptimisticMutation } from "../query/mutations";
-import type { CreateRoutineInput, Routine, RoutinePatch, RoutinesResponse } from "./types";
+import { toast } from "../toast";
+import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRunOutcome, RoutinesResponse } from "./types";
 
 function mapRoutine(
   current: RoutinesResponse | undefined,
@@ -50,11 +51,12 @@ export function useRoutineMutations(workspaceId: string, onToggleError: (error: 
   });
 
   const run = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (id: string): Promise<RoutineRunOutcome> => {
       if (!api.runRoutine) throw new Error("Run now is not available here.");
-      await api.runRoutine(id);
+      return api.runRoutine(id);
     },
-    onSuccess: (_result, id) => {
+    onSuccess: (outcome, id) => {
+      if (outcome.status === "queued") toast.info("Queued. It runs when the current run ends.");
       void queryClient.invalidateQueries({ queryKey: routineRunsKey(workspaceId, id) });
       void queryClient.invalidateQueries({ queryKey });
       void queryClient.invalidateQueries({ queryKey: queryKeys.runs(workspaceId) });

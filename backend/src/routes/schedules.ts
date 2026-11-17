@@ -24,10 +24,16 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
   try {
     const [routines, connectedProviders, agents] = await Promise.all([
       listRoutines(req.params.id, caller.userId),
-      // A failed lookup leaves the list working. The form then treats every connection as present.
-      listConnectedProviders(req.params.id).catch(() => undefined),
-      // A failed lookup leaves the list working. The page then offers every agent as ready.
-      routineAgentStatuses(serviceClient, req.params.id).catch(() => undefined),
+      // A failed lookup is recorded and leaves the list working. The form then treats every connection as present.
+      listConnectedProviders(req.params.id).catch((error) => {
+        recordRouteError({ workspaceId: req.params.id, errorCode: "schedules_connections_lookup_failed", error });
+        return undefined;
+      }),
+      // A failed lookup is recorded and leaves the list working. The page then offers every agent as ready.
+      routineAgentStatuses(serviceClient, req.params.id).catch((error) => {
+        recordRouteError({ workspaceId: req.params.id, errorCode: "schedules_agent_status_failed", error });
+        return undefined;
+      }),
     ]);
     const canEdit = await canEditSchedules(req.params.id, caller.userId);
     const body = JSON.stringify({ routines, canEdit, agents, connectedProviders });
@@ -150,10 +156,9 @@ export const RUN = withAuth<RunRequest>(async (req, caller) => {
   if (denied) return denied;
   try {
     const outcome = await runRoutineNow(workspaceId, taskId, caller.userId);
-    if (outcome.status === "busy") return Response.json({ error: "already_running", outcome }, { status: 409 });
     if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return Response.json({ error: "codex_login_busy", outcome }, { status: 409 });
     if (outcome.status === "failed") return Response.json({ error: "run_failed", outcome }, { status: 502 });
-    return Response.json({ outcome }, { status: outcome.status === "started" ? 202 : 200 });
+    return Response.json({ outcome }, { status: 202 });
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
       if (error.code === "not_found") return Response.json({ error: "not_found" }, { status: 404 });

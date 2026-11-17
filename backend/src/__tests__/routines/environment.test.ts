@@ -77,6 +77,20 @@ describe("a routine run's environment", () => {
   });
 });
 
+describe("routine config: events and canNotify", () => {
+  it("accepts a known event and canNotify, and leaves them out when not set", () => {
+    expect(validateAgentRoutineConfig({ ...base, events: ["fireflies.meeting_summarized"], canNotify: true })).toMatchObject({ ok: true, config: { events: ["fireflies.meeting_summarized"], canNotify: true } });
+    const plain = validateAgentRoutineConfig(base);
+    expect(plain.ok && "events" in plain.config).toBe(false);
+    expect(plain.ok && "canNotify" in plain.config).toBe(false);
+  });
+
+  it("rejects an unknown event or a canNotify that is not a boolean", () => {
+    expect(validateAgentRoutineConfig({ ...base, events: ["slack.message"] })).toEqual({ ok: false, field: "events" });
+    expect(validateAgentRoutineConfig({ ...base, canNotify: "yes" })).toEqual({ ok: false, field: "canNotify" });
+  });
+});
+
 describe("dispatch resolves a routine's connections", () => {
   const task = {
     id: TASK, workspace_id: WS, task_type: "agent_routine", created_by_user_id: OWNER,

@@ -2,15 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
 import { ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutinePatch, routineProviders } from "draft-core/routines";
 import { z } from "zod";
+import { recordError } from "../../../errors/record-error";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { requireUser } from "./shared";
 import { createSlackTools } from "./slack";
 
 const scheduleService = () => import("../../../schedules/service");
 const UUID = z.string().uuid();
-const runError = (error: unknown) => error instanceof Error && error.message === "forbidden"
-  ? refuse("not_permitted", "You can't change routines in this workspace.")
-  : refuse("routine_failed", "The routine operation could not be completed.");
+/** A forbidden caller is a refusal. Anything else is unexpected, so it is recorded before the generic refusal. */
+async function runError(error: unknown, workspaceId: string, tool: string, scheduledTaskId?: string): Promise<ToolHandlerResult> {
+  if (error instanceof Error && error.message === "forbidden") return refuse("not_permitted", "You can't change routines in this workspace.");
+  await recordError({ workspaceId, scheduledTaskId, operation: "execution", code: "routine_tool_failed", message: `${tool} failed`, detail: { tool }, error });
+  return refuse("routine_failed", "The routine operation could not be completed.");
+}
 
 const PRESET_MEANINGS: Record<(typeof ROUTINE_PRESETS)[number], string> = {
   draft_default: "Draft's default cadence",
@@ -107,7 +111,7 @@ export function createRoutineTools(client: SupabaseClient) {
         if (agentProblem) return refuse(agentProblem.code, agentProblem.message);
         const created = await (await scheduleService()).createAgentRoutine(user.workspaceId, user.userId, checked);
         return { status: "ok", output: { routine: (await savedRoutine(user.workspaceId, user.userId, created.id)) ?? created } };
-      } catch (error) { return runError(error); }
+      } catch (error) { return runError(error, user.workspaceId, "routines.create"); }
     },
   });
 
@@ -134,7 +138,7 @@ export function createRoutineTools(client: SupabaseClient) {
         }
         const updated = await svc.updateRoutine(task, patch.patch, user.userId);
         return { status: "ok", output: { routine: (await savedRoutine(user.workspaceId, user.userId, input.taskId)) ?? updated } };
-      } catch (error) { return runError(error); }
+      } catch (error) { return runError(error, user.workspaceId, "routines.update"); }
     },
   });
 
@@ -149,22 +153,25 @@ export function createRoutineTools(client: SupabaseClient) {
         if (!task || task.task.task_type !== "agent_routine") return refuse("not_found", "Routine not found.");
         await svc.deleteRoutine(task, user.userId);
         return { status: "ok", output: { deleted: true } };
-      } catch (error) { return runError(error); }
+      } catch (error) { return runError(error, user.workspaceId, "routines.delete"); }
     },
   });
 
   const run = defineTool({
     name: "routines.run", mcp: true, callers: ["user"], input: z.object({ taskId: UUID }),
-    description: "Start a run of a routine now. Answers with the run's id; poll routines.runs with that runId for its status and result.",
+    description: "Start a run of a routine now. Answers with the run's id; poll routines.runs with that runId for its status and result. If a run is already in progress, this run is queued: it starts when that run ends, and the answer has queued: true and no runId.",
     handler: async ({ caller, input }) => {
       const user = requireUser(caller, "routines.run");
       try {
         const outcome = await (await scheduleService()).runRoutineNow(user.workspaceId, input.taskId, user.userId);
-        if (outcome.status === "busy") return refuse("already_running", "This routine already has a run in progress.");
+        if (outcome.status === "queued") return { status: "ok", output: { runId: null, queued: true, message: "Queued. It runs when the current run ends." } };
         if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return refuse("codex_login_busy", "Another Codex run is using the login. Try again when it finishes.");
-        if (outcome.status === "failed") return refuse(outcome.code ?? "run_failed", "The routine could not start.");
-        return { status: "ok", output: { runId: outcome.sessionId ?? null, outcome } };
-      } catch (error) { return runError(error); }
+        if (outcome.status === "failed") return refuse(outcome.code, "The routine could not start.");
+        return { status: "ok", output: { runId: outcome.sessionId, outcome } };
+      } catch (error) {
+        if (error instanceof Error && error.message === "not_found") return refuse("not_found", "Routine not found.");
+        return runError(error, user.workspaceId, "routines.run", input.taskId);
+      }
     },
   });
 
@@ -197,7 +204,7 @@ export function createRoutineTools(client: SupabaseClient) {
         if (!Number.isInteger(cursor) || cursor < 0) return refuse("invalid_cursor", "A transcript cursor is the nextCursor number from the previous page.");
         const { readRunTranscript } = await import("../../../schedules/routine-run-detail");
         return { status: "ok", output: { run: one, transcript: await readRunTranscript(client, user.workspaceId, one.id, cursor) } };
-      } catch (error) { return runError(error); }
+      } catch (error) { return runError(error, user.workspaceId, "routines.runs"); }
     },
   });
 

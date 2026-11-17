@@ -1,5 +1,5 @@
 import { githubPullRequestFacts, githubPushFacts } from "../../routines/event-facts";
-import { fireRoutineEvent } from "../../routines/fire-event";
+import { fireEnqueueRoutineEvents } from "../../events/enqueue-routine-events";
 import { authenticateGithubWebhookRequest, GithubWebhookAuthError } from "./request-auth";
 import {
   ingestGithubPullRequestEvent,
@@ -37,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
         const ingested = await ingestGithubPullRequestEvent(connection, pr);
         const name = pr.action === "opened" ? "github.pull_request_opened" : pr.action === "closed" && pr.pull_request.merged ? "github.pull_request_merged" : null;
         if (name && "sourceItemId" in ingested) {
-          fireRoutineEvent({ workspaceId: connection.workspace_id, name, eventId: `${pr.repository.full_name}#${pr.pull_request.number}`, sourceItemId: ingested.sourceItemId, facts: githubPullRequestFacts(pr) });
+          fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name, eventId: `${pr.repository.full_name}#${pr.pull_request.number}`, sourceItemId: ingested.sourceItemId, facts: githubPullRequestFacts(pr), concurrencyKey: `github:${pr.repository.full_name}#${pr.pull_request.number}` });
         }
         break;
       }
@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
         const ingested = await ingestGithubPushEvent(connection, push);
         // One run per push, read from its newest commit.
         const head = "sourceItemIds" in ingested ? ingested.sourceItemIds.at(-1) : undefined;
-        if (head) fireRoutineEvent({ workspaceId: connection.workspace_id, name: "github.push", eventId: `${push.repository.full_name}@${push.commits.at(-1)!.id}`, sourceItemId: head, facts: githubPushFacts(push) });
+        if (head) fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name: "github.push", eventId: `${push.repository.full_name}@${push.commits.at(-1)!.id}`, sourceItemId: head, facts: githubPushFacts(push), concurrencyKey: `github:${push.repository.full_name}@${push.ref.replace(/^refs\/heads\//, "")}` });
         break;
       }
       case "installation":

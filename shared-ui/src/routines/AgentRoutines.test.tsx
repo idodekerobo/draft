@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Suspense, type ReactNode } from "react";
 import { DraftApiProvider, type DraftApi } from "../query/api";
+import { toast } from "../toast";
 import { RoutineError } from "./errors";
 import { RoutinesPanel } from "./RoutinesPanel";
-import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutineRun, RoutinesResponse } from "./types";
+import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "./types";
 
 afterEach(cleanup);
 
@@ -46,13 +47,13 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
+function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string; runRoutine?: (id: string) => Promise<RoutineRunOutcome> } = {}) {
   const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
   const deleteRoutine = mock(options.deleteRoutine ?? (async () => {}));
-  const runRoutine = mock(async (_id: string) => ({}));
+  const runRoutine = mock(options.runRoutine ?? (async (_id: string): Promise<RoutineRunOutcome> => ({ status: "started", runId: "run-1", sessionId: "s-1" })));
   const getRoutineSlackChannels = mock(async () => [{ id: "C1", name: "general" }, { id: "C2", name: "eng" }]);
   const getRoutineGithubRepos = mock(async () => ["acme/app", "acme/site"]);
   const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
@@ -375,6 +376,28 @@ describe("run now and edit rights", () => {
     fireEvent.click(screen.getByRole("button", { name: agentRoutine().title }));
     expect(await screen.findByText("You have view-only access to routines.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  });
+});
+
+describe("the run-now toast", () => {
+  afterEach(() => mock.restore());
+
+  it("says the run is queued, and does not say it started, when a run is in progress", async () => {
+    const info = spyOn(toast, "info");
+    const success = spyOn(toast, "success");
+    setup({ runRoutine: async () => ({ status: "queued" }) });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /Run .* now/ }));
+    await waitFor(() => expect(info).toHaveBeenCalledWith("Queued. It runs when the current run ends."));
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it("says the routine started when its run starts now", async () => {
+    const success = spyOn(toast, "success");
+    setup({ runRoutine: async () => ({ status: "started", runId: "run-1", sessionId: "s-1" }) });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /Run .* now/ }));
+    await waitFor(() => expect(success).toHaveBeenCalledWith("Weekly digest started.", expect.anything()));
   });
 });
 

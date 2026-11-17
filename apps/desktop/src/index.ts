@@ -28,7 +28,7 @@ import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
 import { removeLegacyDaemon } from "./main/legacyDaemon";
 import { setNotificationsEnabled } from "./main/notifications";
 import { applyLoginItem } from "./main/loginItem";
-import type { Routine, RoutineRun, RoutinesResponse } from "draft-shared-ui";
+import type { Routine, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "draft-shared-ui";
 import type {
   AppRPCType,
   IntegrationDetail,
@@ -459,8 +459,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { ok: false, code: "signed_out" };
         try {
-          await fetchServerJSON(`workspaces/${workspaceId}/schedules/${id}/run`, { method: "POST" });
-          return { ok: true };
+          const { outcome } = await fetchServerJSON<{ outcome: RoutineRunOutcome }>(`workspaces/${workspaceId}/schedules/${id}/run`, { method: "POST" });
+          return { ok: true, outcome };
         } catch (err) {
           return err instanceof ServerError
             ? { ok: false, code: err.code, field: err.field }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderRoutinePrompt } from "../../routines/build-bundle";
-import { buildRoutineRunSpec, ROUTINE_PERMISSIONS } from "../../routines/run-spec";
+import { buildRoutineRunSpec, ROUTINE_PERMISSIONS, routinePermissions } from "../../routines/run-spec";
 
 const input = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -39,6 +39,28 @@ describe("buildRoutineRunSpec", () => {
   it("rejects ids that are not UUIDs", () => {
     expect(() => buildRoutineRunSpec({ ...input, workspaceId: "ws-1" })).toThrow("Invalid WorkspaceId");
     expect(() => buildRoutineRunSpec({ ...input, occurrenceAt: "soon" })).toThrow("Invalid IsoTimestamp");
+  });
+});
+
+describe("routine permissions", () => {
+  it("gives a plain routine only context, and a canNotify routine people.find and a capped notify to members", () => {
+    expect(routinePermissions({})).toEqual(ROUTINE_PERMISSIONS);
+    expect(routinePermissions({ canNotify: true })).toEqual([
+      ...ROUTINE_PERMISSIONS,
+      { tool: "people.find" },
+      { tool: "people.notify", limits: { recipients: "members", maxPerRun: 15 } },
+    ]);
+  });
+
+  it("builds a routine spec with those permissions and the webhook trigger", () => {
+    const spec = buildRoutineRunSpec({
+      ...input,
+      trigger: { type: "webhook", provider: "fireflies", eventId: "m-1" },
+      routine: { ...input.routine, canNotify: true },
+    });
+    expect(spec.trigger).toEqual({ type: "webhook", provider: "fireflies", eventId: "m-1" });
+    expect(spec.onBehalfOf as string).toBe(input.ownerUserId);
+    expect(spec.permissions.map((permission) => permission.tool as string)).toContain("people.notify");
   });
 });
 

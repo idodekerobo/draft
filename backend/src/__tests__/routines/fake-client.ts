@@ -19,10 +19,12 @@ export interface FakeDb {
   rpcCalls: Array<{ name: string; args: Record<string, unknown> }>;
   /** Tables whose new rows get a UUID id instead of `table-n`. */
   uuidTables: string[];
+  /** Column values a new row takes when its insert leaves them out, as the table's column defaults would. */
+  defaults: Record<string, Row>;
 }
 
-export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<FakeDb, "unique" | "rpcs" | "uuidTables">> = {}): FakeDb {
-  return { tables, unique: extra.unique ?? {}, rpcs: extra.rpcs ?? {}, rpcCalls: [], uuidTables: extra.uuidTables ?? [] };
+export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<FakeDb, "unique" | "rpcs" | "uuidTables" | "defaults">> = {}): FakeDb {
+  return { tables, unique: extra.unique ?? {}, rpcs: extra.rpcs ?? {}, rpcCalls: [], uuidTables: extra.uuidTables ?? [], defaults: extra.defaults ?? {} };
 }
 
 class Query implements PromiseLike<{ data: unknown; error: unknown }> {
@@ -75,7 +77,8 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
       }
     }
     if (this.mode === "insert" || this.mode === "upsert") {
-      const inserts = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((input) => ({ ...input }));
+      const defaults = this.db.defaults[this.table] ?? {};
+      const inserts = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((input) => ({ ...defaults, ...input }));
       for (const [at, row] of inserts.entries()) {
         for (const entry of this.db.unique[this.table] ?? []) {
           const index: UniqueIndex = Array.isArray(entry) ? { name: entry.join(","), columns: entry } : entry;

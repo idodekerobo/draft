@@ -34,7 +34,9 @@ export async function endRoutineSession(
   if (error) throw error;
   const ended = (data as Array<{ harness: string }> | null)?.[0];
   // A Codex run holds its workspace's login until it ends, however it ends.
-  if (ended?.harness === "codex") await releaseCodexLeaseForRun(client, session.workspace_id, session.id).catch(() => undefined);
+  if (ended?.harness === "codex") await releaseCodexLeaseForRun(client, session.workspace_id, session.id).catch((error) =>
+      recordError({ client, workspaceId: session.workspace_id, sessionId: session.id, operation: "scheduling", code: "codex_lease_release_failed", message: "Releasing the Codex login after a routine session ended failed", error }),
+    );
   if (ended) {
     const outcome: AgentRunOutcome =
       endReason === "completed"

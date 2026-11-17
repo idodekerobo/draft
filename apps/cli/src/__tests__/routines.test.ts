@@ -326,6 +326,22 @@ describe("draft routines run and runs", () => {
     expect(result.stdout).toContain(`draft routines runs ${ROUTINE_ID} --run-id ${RUN_ID}`);
   });
 
+  test("run says a queued run starts when the current one ends, and exits 0 without waiting", async () => {
+    backend.state.toolOutputs["routines.run"] = () => ({ runId: null, queued: true, message: "Queued. It runs when the current run ends." });
+    backend.state.requests.length = 0;
+    const result = await runCli(["routines", "run", ROUTINE_ID, "--wait"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Queued: runs when the current run ends.");
+    expect(backend.state.requests.some((request) => request.url.includes("routines.runs"))).toBe(false);
+  });
+
+  test("run --json prints a queued answer as JSON", async () => {
+    backend.state.toolOutputs["routines.run"] = () => ({ runId: null, queued: true, message: "Queued. It runs when the current run ends." });
+    const result = await runCli(["routines", "run", ROUTINE_ID, "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ runId: null, queued: true });
+  });
+
   test("run --wait prints the final status and result, and exits 0 when completed", async () => {
     backend.state.toolOutputs["routines.run"] = () => ({ runId: RUN_ID, outcome: { status: "started" } });
     backend.state.toolOutputs["routines.runs"] = () => ({ run: { id: RUN_ID, status: "completed", startedBy: { type: "run_now" }, startedAt: "t", endedAt: "t", result: "All done" } });

@@ -24,10 +24,9 @@ function bunRequest(connectionKey: string): Bun.BunRequest<"/webhooks/fireflies/
 const realRequestAuthModule = await import("../../../webhooks/fireflies/request-auth");
 const realNormalizeModule = await import("../../../ingestion/fireflies/normalize");
 const realDbClientModule = await import("../../../db/client");
-const realSandboxModule = await import("../../../sandbox");
-const realLoadSandboxDeploymentConfig = realSandboxModule.loadSandboxDeploymentConfig;
-const realStartEventRoutinesModule = await import("../../../routines/start-event-routines");
-const realStartEventRoutines = realStartEventRoutinesModule.startEventRoutines;
+const realEnqueueModule = await import("../../../events/enqueue-routine-events");
+const realEnqueueRoutineEvents = realEnqueueModule.enqueueRoutineEvents;
+const realFireEnqueueRoutineEvents = realEnqueueModule.fireEnqueueRoutineEvents;
 const RealFirefliesWebhookAuthError = realRequestAuthModule.FirefliesWebhookAuthError;
 const realAuthenticateFirefliesWebhookRequest = realRequestAuthModule.authenticateFirefliesWebhookRequest;
 const realIngestFirefliesMeeting = realNormalizeModule.ingestFirefliesMeeting;
@@ -42,16 +41,18 @@ function mockEvidenceClient(
     updateAttempts: number;
     currentCredentialId: string;
     rpcCalls: Array<{ functionName: string; params: Record<string, unknown> }>;
+    errors: Array<Record<string, unknown>>;
   } = {
     lastSuccessAt: null,
     updateAttempts: 0,
     currentCredentialId: "credential-1",
     rpcCalls: [],
+    errors: [],
   };
   mock.module("../../../db/client", () => ({
     serviceClient: {
       from(table: string) {
-        if (table === "errors") return { insert: async () => ({ error: null }) };
+        if (table === "errors") return { insert: async (row: Record<string, unknown>) => { state.errors.push(row); return { error: null }; } };
         throw new Error(`Unexpected table: ${table}`);
       },
       async rpc(functionName: string, params: Record<string, unknown>) {
@@ -70,6 +71,10 @@ function mockEvidenceClient(
   return state;
 }
 
+async function until(check: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100 && !check(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function restoreRealModules() {
   mock.module("../../../webhooks/fireflies/request-auth", () => ({
     FirefliesWebhookAuthError: RealFirefliesWebhookAuthError,
@@ -79,8 +84,10 @@ function restoreRealModules() {
     ingestFirefliesMeeting: realIngestFirefliesMeeting,
   }));
   mock.module("../../../db/client", () => ({ serviceClient: realServiceClient }));
-  mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: realStartEventRoutines }));
-  mock.module("../../../sandbox", () => ({ ...realSandboxModule, loadSandboxDeploymentConfig: realLoadSandboxDeploymentConfig }));
+  mock.module("../../../events/enqueue-routine-events", () => ({
+    enqueueRoutineEvents: realEnqueueRoutineEvents,
+    fireEnqueueRoutineEvents: realFireEnqueueRoutineEvents,
+  }));
 }
 
 describe("POST /webhooks/fireflies/:connectionKey", () => {
@@ -153,9 +160,7 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
   });
 
   function summarizedEvent(event: string) {
-    mockEvidenceClient("active");
-    // The test environment has no Fly settings, so the sandbox config loader is replaced for these tests only.
-    mock.module("../../../sandbox", () => ({ ...realSandboxModule, loadSandboxDeploymentConfig: () => ({}) }));
+    const evidence = mockEvidenceClient("active");
     mock.module("../../../webhooks/fireflies/request-auth", () => ({
       FirefliesWebhookAuthError: RealFirefliesWebhookAuthError,
       authenticateFirefliesWebhookRequest: async () => ({
@@ -166,39 +171,50 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
       }),
     }));
     mock.module("../../../ingestion/fireflies/normalize", () => ({ ingestFirefliesMeeting: async () => ({ sourceItemId: "item-1" }) }));
+    return evidence;
   }
 
-  it("starts the routines that listen for a summarized meeting, after the meeting is stored", async () => {
+  it("queues the routine events for a summarized meeting, keyed to the meeting, after the meeting is stored", async () => {
     summarizedEvent("meeting.summarized");
-    const started: unknown[][] = [];
-    mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: async (...args: unknown[]) => { started.push(args); return 1; } }));
+    const fired: unknown[] = [];
+    mock.module("../../../events/enqueue-routine-events", () => ({ fireEnqueueRoutineEvents: (input: unknown) => fired.push(input) }));
 
     const { POST } = await import("../../../webhooks/fireflies/route");
     expect((await POST(bunRequest("acme-fireflies"))).status).toBe(200);
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(started).toHaveLength(1);
-    expect(started[0]![2]).toEqual({ workspaceId: "ws-1", name: "fireflies.meeting_summarized", eventId: "meeting-123", sourceItemId: "item-1", facts: [{ label: "Fireflies meeting id", value: "meeting-123" }] });
+    expect(fired).toEqual([
+      {
+        workspaceId: "ws-1",
+        sourceConnectionId: "conn-1",
+        name: "fireflies.meeting_summarized",
+        eventId: "meeting-123",
+        sourceItemId: "item-1",
+        facts: [{ label: "Fireflies meeting id", value: "meeting-123" }],
+        concurrencyKey: "fireflies:meeting-123",
+      },
+    ]);
   });
 
-  it("starts no routine for a transcribed meeting", async () => {
+  it("queues no routine event for a transcribed meeting", async () => {
     summarizedEvent("meeting.transcribed");
-    const started: unknown[][] = [];
-    mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: async (...args: unknown[]) => { started.push(args); return 1; } }));
+    const fired: unknown[] = [];
+    mock.module("../../../events/enqueue-routine-events", () => ({ fireEnqueueRoutineEvents: (input: unknown) => fired.push(input) }));
 
     const { POST } = await import("../../../webhooks/fireflies/route");
     expect((await POST(bunRequest("acme-fireflies"))).status).toBe(200);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(started).toHaveLength(0);
+    expect(fired).toHaveLength(0);
   });
 
-  it("still answers 200 when starting a routine fails", async () => {
-    summarizedEvent("meeting.summarized");
-    mock.module("../../../routines/start-event-routines", () => ({ startEventRoutines: async () => { throw new Error("fly is down"); } }));
+  it("still answers 200, and records the error, when queueing the routine events fails", async () => {
+    const evidence = summarizedEvent("meeting.summarized");
 
     const { POST } = await import("../../../webhooks/fireflies/route");
     expect((await POST(bunRequest("acme-fireflies"))).status).toBe(200);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await until(() => evidence.errors.length > 0);
+
+    expect(evidence.errors).toEqual([
+      expect.objectContaining({ workspace_id: "ws-1", source_connection_id: "conn-1", operation: "scheduling", detail_json: expect.objectContaining({ code: "event_enqueue_failed" }) }),
+    ]);
   });
 
   it("advances readiness on an authenticated unrecognized-event no-op", async () => {

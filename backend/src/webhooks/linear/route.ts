@@ -1,6 +1,6 @@
 import { ingestLinearEvent, type LinearWebhookPayload } from "../../ingestion/linear/normalize";
 import { linearIssueFacts } from "../../routines/event-facts";
-import { fireRoutineEvent } from "../../routines/fire-event";
+import { fireEnqueueRoutineEvents } from "../../events/enqueue-routine-events";
 import { authenticateLinearWebhookRequest, LinearWebhookAuthError } from "./request-auth";
 import { recordRouteError } from "../../errors/route-error";
 
@@ -31,7 +31,7 @@ export async function POST(
     const ingested = await ingestLinearEvent(connection, payload);
     const name = linearTrigger(payload);
     if (name && "sourceItemId" in ingested && typeof payload.data.id === "string") {
-      fireRoutineEvent({ workspaceId: connection.workspace_id, name, eventId: payload.data.id, sourceItemId: ingested.sourceItemId, facts: linearIssueFacts(payload) });
+      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name, eventId: payload.data.id, sourceItemId: ingested.sourceItemId, facts: linearIssueFacts(payload), concurrencyKey: `linear:${payload.data.id}` });
     }
 
     return new Response(null, { status: 200 });

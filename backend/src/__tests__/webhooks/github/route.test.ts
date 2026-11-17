@@ -16,6 +16,9 @@ const realIngestGithubPullRequestEvent = realNormalizeModule.ingestGithubPullReq
 const realIngestGithubPushEvent = realNormalizeModule.ingestGithubPushEvent;
 const realHandleInstallationEvent = realInstallationSyncModule.handleInstallationEvent;
 const realHandleInstallationRepositoriesEvent = realInstallationSyncModule.handleInstallationRepositoriesEvent;
+const realEnqueueModule = await import("../../../events/enqueue-routine-events");
+const realEnqueueRoutineEvents = realEnqueueModule.enqueueRoutineEvents;
+const realFireEnqueueRoutineEvents = realEnqueueModule.fireEnqueueRoutineEvents;
 
 function restoreRealModules() {
   mock.module("../../../webhooks/github/request-auth", () => ({
@@ -29,6 +32,10 @@ function restoreRealModules() {
   mock.module("../../../ingestion/github/installation-sync", () => ({
     handleInstallationEvent: realHandleInstallationEvent,
     handleInstallationRepositoriesEvent: realHandleInstallationRepositoriesEvent,
+  }));
+  mock.module("../../../events/enqueue-routine-events", () => ({
+    enqueueRoutineEvents: realEnqueueRoutineEvents,
+    fireEnqueueRoutineEvents: realFireEnqueueRoutineEvents,
   }));
 }
 
@@ -201,7 +208,7 @@ describe("POST /webhooks/github", () => {
   it("starts the routines waiting for an opened or merged pull request, and not for an edit", async () => {
     const connection = { id: "conn-1", workspace_id: "ws-1" };
     const fired: unknown[] = [];
-    mock.module("../../../routines/fire-event", () => ({ fireRoutineEvent: (input: unknown) => fired.push(input) }));
+    mock.module("../../../events/enqueue-routine-events", () => ({ fireEnqueueRoutineEvents: (input: unknown) => fired.push(input) }));
     mock.module("../../../ingestion/github/normalize", () => ({
       ingestGithubPullRequestEvent: async () => ({ sourceItemId: "item-1" }),
       ingestGithubPushEvent: async () => ({ sourceItemIds: [] }),
@@ -216,8 +223,48 @@ describe("POST /webhooks/github", () => {
       expect((await POST(bunRequest())).status).toBe(200);
     }
     expect(fired).toEqual([
-      { workspaceId: "ws-1", name: "github.pull_request_opened", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Pull request", value: "#7" }]) },
-      { workspaceId: "ws-1", name: "github.pull_request_merged", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Repository", value: "acme/app" }]) },
+      { workspaceId: "ws-1", sourceConnectionId: "conn-1", name: "github.pull_request_opened", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Pull request", value: "#7" }]), concurrencyKey: "github:acme/app#7" },
+      { workspaceId: "ws-1", sourceConnectionId: "conn-1", name: "github.pull_request_merged", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Repository", value: "acme/app" }]), concurrencyKey: "github:acme/app#7" },
+    ]);
+  });
+
+  it("queues the push routine event keyed to its branch, and reads it from the newest commit", async () => {
+    const connection = { id: "conn-1", workspace_id: "ws-1" };
+    const fired: unknown[] = [];
+    mock.module("../../../events/enqueue-routine-events", () => ({ fireEnqueueRoutineEvents: (input: unknown) => fired.push(input) }));
+    mock.module("../../../ingestion/github/normalize", () => ({
+      ingestGithubPullRequestEvent: async () => ({ skipped: true }),
+      ingestGithubPushEvent: async () => ({ sourceItemIds: ["item-a", "item-b"] }),
+    }));
+    const payload = {
+      ref: "refs/heads/main",
+      before: "0000",
+      after: "c2",
+      compare: "https://github.example.test/compare",
+      repository: { full_name: "acme/app" },
+      commits: [
+        { id: "c1", message: "First", author: { name: "Uzo" } },
+        { id: "c2", message: "Second", author: { name: "Uzo" } },
+      ],
+    };
+    mock.module("../../../webhooks/github/request-auth", () => ({
+      GithubWebhookAuthError: RealGithubWebhookAuthError,
+      authenticateGithubWebhookRequest: async () => ({ eventType: "push", payload, connection }),
+    }));
+
+    const { POST } = await import("../../../webhooks/github/route");
+    expect((await POST(bunRequest())).status).toBe(200);
+
+    expect(fired).toEqual([
+      {
+        workspaceId: "ws-1",
+        sourceConnectionId: "conn-1",
+        name: "github.push",
+        eventId: "acme/app@c2",
+        sourceItemId: "item-b",
+        facts: expect.arrayContaining([{ label: "Branch", value: "main" }]),
+        concurrencyKey: "github:acme/app@main",
+      },
     ]);
   });
 });

@@ -227,7 +227,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
+import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -276,8 +276,8 @@ export type AppRPCType = {
       /** Delete an agent routine: it leaves the list and stops running. Its past runs stay. */
       deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
 
-      /** The newest runs of one agent routine. */
-      runRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
+      /** Start a run of one agent routine now, or queue it behind the run in progress. Failures carry the API error code and offending field. */
+      runRoutine: { params: { id: string }; response: { ok: true; outcome: RoutineRunOutcome } | { ok: false; code: string; field?: string } };
       getRoutineSlackChannels: { params: void; response: Array<{ id: string; name: string }> };
       getRoutineGithubRepos: { params: void; response: string[] };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };

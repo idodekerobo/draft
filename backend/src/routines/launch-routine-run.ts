@@ -8,6 +8,7 @@ import { resolveInferenceCredential } from "../synthesis/resolve-credential";
 import { buildRoutineBundle, renderRoutinePrompt } from "./build-bundle";
 import { ROUTINE_RUN_TIMEOUT_SECONDS, type AgentRoutineConfig } from "./config";
 import type { RoutineEventPayload } from "./event";
+import { recordError } from "../errors/record-error";
 
 export interface LaunchRoutineRunInput {
   sessionId: string;
@@ -79,7 +80,9 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
     const receipt = await launchSandboxRun({ ...launch, credentials: { codexAuthJson: authJson } });
     return { machineId: receipt.machineId };
   } catch (launchError) {
-    await releaseCodexLease(client, credentialId, sessionId).catch(() => undefined);
+    await releaseCodexLease(client, credentialId, sessionId).catch((releaseError) =>
+      recordError({ client, workspaceId, sessionId, operation: "scheduling", code: "codex_lease_release_failed", message: "Releasing the Codex login after a failed launch failed", error: releaseError }),
+    );
     throw launchError;
   }
 };

@@ -16,7 +16,7 @@ import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
 import { buildRoutineRunSpec } from "./run-spec";
-import { eventTrigger, type RoutineEventPayload } from "./event";
+import type { RoutineEventPayload } from "./event";
 
 const UNIQUE_VIOLATION = "23505";
 const LIVE_KEY_INDEX = "sessions_one_live_per_key_idx";
@@ -126,14 +126,11 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
   try {
     const contextVersionId = await resolveBaseContextVersionId(client, task.workspace_id);
     const mcpServers = await usableMcpServersFor(client, task, routine);
-    // Until events carry agent_events ids, a run started by a webhook keeps its webhook trigger.
     const trigger = eventIds?.length
       ? { type: "event" as const, eventIds: eventIds.map(parseAgentEventId) }
-      : events?.length
-        ? eventTrigger(events[0]!)
-        : manual
-          ? { type: "manual" as const, requestedBy: parseUserId(manual.requestedBy) }
-          : undefined;
+      : manual
+        ? { type: "manual" as const, requestedBy: parseUserId(manual.requestedBy) }
+        : undefined;
     const run = buildRoutineRunSpec({
       mcpServers,
       id: randomUUID(),

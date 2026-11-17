@@ -483,9 +483,12 @@ async function runRun(args: string[]): Promise<number> {
   if (typeof result === "number") return result;
   const output = asRecord(result.output);
   const runId = typeof output.runId === "string" ? output.runId : null;
+  const queued = output.queued === true;
 
-  if (!wait) {
+  // A queued run has no run id yet, so there is nothing for --wait to follow.
+  if (!wait || queued) {
     if (json) printJsonLine(output);
+    else if (queued) console.log("Queued: runs when the current run ends.");
     else if (runId) console.log(`Started run ${runId} of ${id}. Check it with: draft routines runs ${id} --run-id ${runId}`);
     else console.log(`Started a run of ${id}.`);
     return EXIT_SUCCESS;
@@ -666,7 +669,8 @@ Example:
 
 const RUN_HELP = `usage: draft routines run <id> [--wait] [--json]
 
-Starts a run now and prints the run id.
+Starts a run now and prints the run id. If a run is already in progress, this run
+is queued: it starts when that run ends, and --wait does not wait for it.
 
   --wait    Wait for the run to finish, then print its status and result.
             Checks every 5 seconds, for up to 30 minutes. Exits 1 if the run failed.

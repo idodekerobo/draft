@@ -23,6 +23,9 @@ const RealGranolaWebhookAuthError = realRequestAuthModule.GranolaWebhookAuthErro
 const realAuthenticateGranolaWebhookRequest = realRequestAuthModule.authenticateGranolaWebhookRequest;
 const realIngestGranolaNote = realNormalizeModule.ingestGranolaNote;
 const realServiceClient = realDbClientModule.serviceClient;
+const realEnqueueModule = await import("../../../events/enqueue-routine-events");
+const realEnqueueRoutineEvents = realEnqueueModule.enqueueRoutineEvents;
+const realFireEnqueueRoutineEvents = realEnqueueModule.fireEnqueueRoutineEvents;
 
 function mockEvidenceClient(
   status: "active" | "degraded" | "revoked" = "active",
@@ -63,6 +66,10 @@ function restoreRealModules() {
     ingestGranolaNote: realIngestGranolaNote,
   }));
   mock.module("../../../db/client", () => ({ serviceClient: realServiceClient }));
+  mock.module("../../../events/enqueue-routine-events", () => ({
+    enqueueRoutineEvents: realEnqueueRoutineEvents,
+    fireEnqueueRoutineEvents: realFireEnqueueRoutineEvents,
+  }));
 }
 
 describe("POST /webhooks/granola/:connectionKey", () => {
@@ -125,6 +132,38 @@ describe("POST /webhooks/granola/:connectionKey", () => {
       functionName: "mark_granola_webhook_success",
       params: { p_connection_id: "conn-1", p_workspace_id: "ws-1", p_credential_id: "credential-1" },
     });
+  });
+
+  it("queues the routine events for a generated note, keyed to the note", async () => {
+    mockEvidenceClient("active");
+    mock.module("../../../webhooks/granola/request-auth", () => ({
+      GranolaWebhookAuthError: RealGranolaWebhookAuthError,
+      authenticateGranolaWebhookRequest: async () => ({
+        connection: { id: "conn-1", workspace_id: "ws-1" },
+        credentialId: "credential-1",
+        eventId: "evt-1",
+        eventType: "note.generated",
+        noteId: "not_123",
+      }),
+    }));
+    mock.module("../../../ingestion/granola/normalize", () => ({ ingestGranolaNote: async () => ({ sourceItemId: "item-1" }) }));
+    const fired: unknown[] = [];
+    mock.module("../../../events/enqueue-routine-events", () => ({ fireEnqueueRoutineEvents: (input: unknown) => fired.push(input) }));
+
+    const { POST } = await import("../../../webhooks/granola/route");
+    expect((await POST(bunRequest("acme-granola"))).status).toBe(200);
+
+    expect(fired).toEqual([
+      {
+        workspaceId: "ws-1",
+        sourceConnectionId: "conn-1",
+        name: "granola.note_ready",
+        eventId: "not_123",
+        sourceItemId: "item-1",
+        facts: [{ label: "Granola note id", value: "not_123" }],
+        concurrencyKey: "granola:not_123",
+      },
+    ]);
   });
 
   it("ingests on note.access_granted just like note.generated", async () => {
