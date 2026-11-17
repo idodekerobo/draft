@@ -52,10 +52,10 @@ export function drainEventInbox(deps: Partial<DrainDeps> = {}): Promise<void> {
   }
   running = (async () => {
     try {
-      const resolved = await resolveDeps(deps);
+      const client = deps.client ?? (await import("../db/client")).serviceClient;
       do {
         again = false;
-        await drainOnce(resolved);
+        await drainOnce(client, deps);
       } while (again);
     } finally {
       running = null;
@@ -69,23 +69,32 @@ export function __resetDrainForTests(): void {
   again = false;
 }
 
-/** Defaults load lazily, so importing this module needs no runtime env. */
-async function resolveDeps(deps: Partial<DrainDeps>): Promise<DrainDeps> {
+/** Defaults load lazily, and only once there is an event to run, so an empty drain needs no sandbox env. */
+async function resolveDeps(client: SupabaseClient, deps: Partial<DrainDeps>): Promise<DrainDeps> {
   return {
-    client: deps.client ?? (await import("../db/client")).serviceClient,
+    client,
     config: deps.config ?? (await import("../sandbox")).loadSandboxDeploymentConfig(),
     dispatch: deps.dispatch ?? (await import("../routines/dispatch-routine")).dispatchAgentRoutine,
     now: deps.now ?? (() => new Date()),
   };
 }
 
-async function drainOnce(deps: DrainDeps): Promise<void> {
-  const { data, error } = await deps.client.rpc("claim_agent_events", {
+async function drainOnce(client: SupabaseClient, partial: Partial<DrainDeps>): Promise<void> {
+  const { data, error } = await client.rpc("claim_agent_events", {
     p_limit: EVENT_CLAIM_LIMIT,
     p_lease_seconds: EVENT_LEASE_SECONDS,
   });
   if (error) throw error;
-  for (const group of groupEvents((data ?? []) as AgentEventRow[])) {
+  const claimed = (data ?? []) as AgentEventRow[];
+  if (claimed.length === 0) return;
+  let deps: DrainDeps;
+  try {
+    deps = await resolveDeps(client, partial);
+  } catch (cause) {
+    await releaseRows({ client, now: partial.now ?? (() => new Date()) } as DrainDeps, claimed);
+    throw cause;
+  }
+  for (const group of groupEvents(claimed)) {
     try {
       await processGroup(deps, group);
     } catch (cause) {
@@ -225,6 +234,18 @@ async function retryOrDead(deps: DrainDeps, task: ScheduledTaskRow, rows: AgentE
   const dead = rows.filter((event) => event.attempts >= EVENT_MAX_ATTEMPTS);
   await setRows(deps, retry, { status: "pending", failure_code: "dispatch_error" });
   await setRows(deps, dead, { status: "dead", failure_code: "dispatch_error" });
+  if (retry.length > 0) {
+    await recordError({
+      client: deps.client,
+      workspaceId: task.workspace_id,
+      scheduledTaskId: task.id,
+      operation: "scheduling",
+      message: "An event could not start its routine; it will retry",
+      code: "agent_event_dispatch_failed",
+      error: cause,
+      detail: { event_ids: retry.map((event) => event.id), attempts: retry.map((event) => event.attempts) },
+    });
+  }
   if (dead.length > 0) {
     await recordError({
       client: deps.client,

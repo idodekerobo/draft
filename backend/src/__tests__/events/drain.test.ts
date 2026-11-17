@@ -201,13 +201,23 @@ describe("event inbox drain", () => {
     expect(eventRow(db, `e${EVENTS_PER_RUN}`)).toMatchObject({ status: "pending", attempts: 0 });
   });
 
-  it("returns an event to pending when its dispatch throws before the last attempt", async () => {
+  it("returns an event to pending when its dispatch throws before the last attempt, and records the error", async () => {
     const { db, client } = setup([webhook("e1", KEY, 1)]);
 
     await drain(client, throwing);
 
     expect(eventRow(db, "e1")).toMatchObject({ status: "pending", attempts: 1, lease_until: null, failure_code: "dispatch_error" });
-    expect(db.tables.errors).toHaveLength(0);
+    expect(db.tables.errors).toHaveLength(1);
+    expect(db.tables.errors![0]).toMatchObject({ scheduled_task_id: TASK, detail_json: { code: "agent_event_dispatch_failed" } });
+  });
+
+  it("releases its claimed events and throws when the drain can't load its dependencies", async () => {
+    const { db, client } = setup([webhook("e1", KEY, 1)]);
+    const broken = { client, now: () => new Date(), dispatch: undefined as never, get config(): never { throw new Error("no sandbox env"); } };
+
+    await expect(drainEventInbox(broken)).rejects.toThrow("no sandbox env");
+
+    expect(eventRow(db, "e1")).toMatchObject({ status: "pending", attempts: 0, lease_until: null });
   });
 
   it("marks an event dead when its dispatch throws on the last attempt, and records the error", async () => {

@@ -1,5 +1,5 @@
 -- Claims up to p_limit inbox events: pending, or claimed with an expired lease.
--- Events whose lease expired after 3 attempts are marked dead first.
+-- Events whose lease expired after 3 attempts are marked dead first, each with an errors row.
 create or replace function claim_agent_events(
   p_limit int,
   p_lease_seconds int
@@ -12,13 +12,21 @@ as $$
 declare
   v_ids uuid[];
 begin
-  update agent_events
-  set status = 'dead',
-      failure_code = coalesce(failure_code, 'lease_expired'),
-      updated_at = now()
-  where status = 'claimed'
-    and lease_until < now()
-    and attempts >= 3;
+  with dead as (
+    update agent_events
+    set status = 'dead',
+        failure_code = coalesce(failure_code, 'lease_expired'),
+        updated_at = now()
+    where status = 'claimed'
+      and lease_until < now()
+      and attempts >= 3
+    returning id, workspace_id, scheduled_task_id, attempts, failure_code
+  )
+  insert into errors (workspace_id, scheduled_task_id, operation, message, detail_json)
+  select workspace_id, scheduled_task_id, 'scheduling',
+         'An inbox event''s lease expired after ' || attempts || ' attempts, so it will not run',
+         jsonb_build_object('code', 'agent_event_dead', 'event_id', id, 'failure_code', failure_code)
+  from dead;
 
   select array_agg(id) into v_ids
   from (

@@ -183,6 +183,12 @@ describeWithDatabase("always-on claim functions", () => {
 
     const [row] = await db()<[AgentEventRow]>`select * from agent_events where id = ${eventId}`;
     expect(row).toMatchObject({ status: "dead", failure_code: "lease_expired", attempts: 3 });
+
+    const errors = await db()<{ scheduled_task_id: string; detail_json: Record<string, unknown> }[]>`
+      select scheduled_task_id, detail_json from errors where detail_json->>'event_id' = ${eventId}
+    `;
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ scheduled_task_id: taskId, detail_json: { code: "agent_event_dead" } });
   });
 
   test("a due once routine fires one event and then disables itself", async () => {
