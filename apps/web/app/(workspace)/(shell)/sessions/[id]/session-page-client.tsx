@@ -10,7 +10,7 @@ import { useSessionEntry } from "@/lib/session-entry";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace";
 
-export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
+export function SessionPageClient({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { api } = useWebLiveSessions();
   const router = useRouter();

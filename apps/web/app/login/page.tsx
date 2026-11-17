@@ -1,5 +1,14 @@
+import type { Metadata } from "next";
 import { FlowShell } from "draft-shared-ui";
 import { AuthForm } from "@/components/AuthForm";
+import { sessionIdFromNext, sessionPageTitle } from "@/lib/session-title";
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ next?: string }> }): Promise<Metadata> {
+  const sessionId = sessionIdFromNext((await searchParams).next);
+  if (!sessionId) return {};
+  const title = await sessionPageTitle(sessionId);
+  return { title, openGraph: { title } };
+}
+
 export default async function Login({
   searchParams,
 }: {
