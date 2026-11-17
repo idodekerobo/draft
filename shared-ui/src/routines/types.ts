@@ -22,8 +22,8 @@ export interface RoutineRun {
   skipReason?: string | null;
 }
 
-/** What Run now answers. Queued means the run starts when the run in progress ends. */
-export type RoutineRunOutcome = { status: "started"; runId: string; sessionId: string } | { status: "queued" };
+/** What Run now answers. Queued means the run starts when the run in progress ends. Failed means nothing started. */
+export type RoutineRunOutcome = { status: "started"; runId: string; sessionId: string } | { status: "queued" } | { status: "failed" };
 
 export type { RoutineEventName } from "draft-core/routines";
 import type { RoutineEventName, RoutineListFilter, RoutineWhen } from "draft-core/routines";
@@ -77,6 +77,7 @@ export interface Routine {
   firedAt: string | null;
   madeByAgent: boolean;
   createdByRunId: string | null;
+  createdBySessionId: string | null;
   visibility: "shared" | "private";
   canEdit?: boolean;
 }

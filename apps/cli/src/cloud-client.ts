@@ -889,6 +889,7 @@ export interface RoutineSummary {
   madeByAgent: boolean;
   createdVia: string;
   createdByRunId: string | null;
+  createdBySessionId: string | null;
   visibility: "shared" | "private";
   canEdit: boolean;
   updatedByName: string | null;

@@ -553,6 +553,24 @@
 .ui-routines__routine { border-top: 1px solid var(--color-border); }
 .ui-routines__row { align-items: center; min-height: 76px; padding: 14px 0; }
 .ui-routines__identity .ui-routines__secondary { font-size: 12px; }
+.ui-routines__made-by {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.ui-routines__made-by--link {
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ui-routines__made-by--link:hover { color: var(--color-text-primary); border-color: var(--color-border-strong); }
+}
 .ui-routines__link {
   min-height: 32px;
   padding: 4px 0;

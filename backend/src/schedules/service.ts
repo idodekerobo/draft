@@ -86,6 +86,8 @@ export interface Routine {
   firedAt: string | null;
   createdVia: ScheduledTaskRow["created_via"];
   createdByRunId: string | null;
+  /** The creating run's session, for a link to it. Null when no run made it or the run has no session. */
+  createdBySessionId: string | null;
   /** Made through MCP or by a Draft run, not by a person in the app. */
   madeByAgent: boolean;
   visibility: ScheduledTaskRow["visibility"];
@@ -164,6 +166,7 @@ function toRoutine(
     firedAt: task.fired_at ?? null,
     createdVia: task.created_via,
     createdByRunId: task.created_by_run_id ?? null,
+    createdBySessionId: null,
     madeByAgent: task.created_via === "mcp" || task.created_via === "run",
     visibility: task.visibility,
     editable: definition.editable,
@@ -293,6 +296,17 @@ async function loadLastAgentRuns(workspaceId: string, taskIds: string[]): Promis
   return new Map(present.map((row, index) => [row.scheduled_task_id, runs[index]!] as const));
 }
 
+/** Session ids of the runs that made routines. A failed read is recorded and leaves the labels unlinked. */
+async function loadCreatorSessions(workspaceId: string, runIds: string[]): Promise<Map<string, string>> {
+  if (runIds.length === 0) return new Map();
+  const { data, error } = await serviceClient.from("agent_runs").select("id, session_id").eq("workspace_id", workspaceId).in("id", runIds);
+  if (error) {
+    await recordError({ workspaceId, operation: "read", code: "routine_creator_sessions_failed", message: "Loading the sessions of the runs that made routines failed", error });
+    return new Map();
+  }
+  return new Map(((data ?? []) as Array<{ id: string; session_id: string | null }>).flatMap((row) => (row.session_id ? [[row.id, row.session_id] as [string, string]] : [])));
+}
+
 async function buildRoutines(
   workspaceId: string,
   tasks: ScheduledTaskRow[],
@@ -305,15 +319,17 @@ async function buildRoutines(
   const agentTaskIds = tasks.filter((task) => task.task_type === "agent_routine").map((task) => task.id);
   const hasSynthesis = tasks.some((task) => task.task_type === "synthesize_workspace");
 
-  const [connections, lastRun, names, lastAgentRuns, connectedProviders] = await Promise.all([
+  const creatorRunIds = [...new Set(tasks.flatMap((task) => (task.created_by_run_id ? [task.created_by_run_id] : [])))];
+  const [connections, lastRun, names, lastAgentRuns, connectedProviders, creatorSessions] = await Promise.all([
     knownConnections ?? loadConnections(workspaceId, connectionIds),
     hasSynthesis ? loadLastSynthesisRun(workspaceId) : Promise.resolve(null),
     loadUserNames(workspaceId, editorIds),
     loadLastAgentRuns(workspaceId, agentTaskIds),
     agentTaskIds.length ? listConnectedProviders(workspaceId) : Promise.resolve([]),
+    loadCreatorSessions(workspaceId, creatorRunIds),
   ]);
 
-  return tasks.flatMap((task) => {
+  return tasks.flatMap((task): Routine[] => {
     if (task.task_type === "agent_routine") {
       const config = parseAgentRoutineConfig(task.config_json);
       if (!config) {
@@ -335,7 +351,8 @@ async function buildRoutines(
         task.updated_by_user_id ? (names.get(task.updated_by_user_id) ?? null) : null,
         agent,
       );
-      return [config.onSchedule === false ? { ...routine, scheduleDescription: describeRoutineTriggers(config.events ?? []) } : routine];
+      const linked = { ...routine, createdBySessionId: task.created_by_run_id ? (creatorSessions.get(task.created_by_run_id) ?? null) : null };
+      return [config.onSchedule === false ? { ...linked, scheduleDescription: describeRoutineTriggers(config.events ?? []) } : linked];
     }
     const connection = task.source_connection_id ? connections.get(task.source_connection_id) : undefined;
     const definition = resolveRoutine(task.task_type, connection?.provider ?? null);

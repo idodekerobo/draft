@@ -2,11 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRunResults } from "../metaharness/runs/result-line";
 import { synthesisTriggerType } from "../synthesis/run-spec";
 import { recordRouteError } from "../errors/route-error";
+import { loadDisplayNames } from "../routes/session-display-names";
 import { routineKind } from "../schedules/kind";
 import type { AgentRunRow, ScheduledTaskRow } from "../types/tables";
 
 /** How many runs a page holds. A shorter page is the last one. */
 export const ACTIVITY_PAGE_SIZE = 50;
+const UPCOMING_LIMIT = 50;
 
 /** A position in a time-ordered list: "<timestamp>|<id>" of the last item already shown. */
 export type Cursor = { at: string; id: string };
@@ -47,12 +49,32 @@ export interface ActivityRun {
   createdRoutines: CreatedRoutine[];
 }
 
+/** A one-time routine that has not run yet. setBy is the routine whose run made it, or else the person who set it. */
+export interface UpcomingRoutine {
+  id: string;
+  title: string;
+  runAt: string;
+  timezone: string;
+  setBy: { type: "person"; name: string } | { type: "routine"; routineId: string; title: string };
+}
+
+export interface ActivityPage {
+  runs: ActivityRun[];
+  nextCursor: string | null;
+  /** First page only. */
+  upcoming?: UpcomingRoutine[];
+  /** Set when the upcoming read failed. upcoming is then empty. */
+  upcomingError?: true;
+}
+
 type Row = Pick<AgentRunRow, "id" | "kind" | "session_id" | "scheduled_task_id" | "status" | "outcome" | "trigger" | "summary" | "started_at" | "completed_at" | "created_at">;
 type TaskRow = Pick<ScheduledTaskRow, "id" | "config_json" | "schedule_kind">;
 type TitleTaskRow = TaskRow & Pick<ScheduledTaskRow, "visibility" | "created_by_user_id">;
 type CreatedTaskRow = TitleTaskRow & Pick<ScheduledTaskRow, "created_by_run_id">;
+type UpcomingRow = Pick<ScheduledTaskRow, "id" | "config_json" | "run_at" | "timezone" | "created_via" | "created_by_run_id" | "created_by_user_id">;
+const UPCOMING_COLUMNS = "id, config_json, run_at, timezone, created_via, created_by_run_id, created_by_user_id";
 
-const titleOf = (task: TaskRow) => (typeof task.config_json.title === "string" ? task.config_json.title : "Routine");
+const titleOf = (task: Pick<ScheduledTaskRow, "config_json">) => (typeof task.config_json.title === "string" ? task.config_json.title : "Routine");
 
 const routineKindOf = (task: TaskRow): ActivityRun["routineKind"] => (task.schedule_kind === "once" ? "once" : "rule");
 
@@ -89,8 +111,71 @@ async function loadCreatedRoutines(client: SupabaseClient, workspaceId: string, 
   }
 }
 
-/** Everything the workspace's agents ran, newest first, a page at a time: routines, synthesis, summaries and sessions. */
-export async function listActivity(client: SupabaseClient, workspaceId: string, before: Cursor | null, viewerId: string | null): Promise<{ runs: ActivityRun[]; nextCursor: string | null }> {
+/** The titles and visibility of these routines, unfiltered. Callers decide what the viewer may see. */
+async function loadRoutineTasks(client: SupabaseClient, workspaceId: string, taskIds: string[]): Promise<TitleTaskRow[]> {
+  if (!taskIds.length) return [];
+  const { data, error } = await client
+    .from("scheduled_tasks")
+    .select("id, config_json, schedule_kind, visibility, created_by_user_id")
+    .eq("workspace_id", workspaceId)
+    .in("id", taskIds)
+    .returns<TitleTaskRow[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Pending one-time routines, soonest first. Throws on a failed read; listActivity records it. */
+async function listUpcoming(client: SupabaseClient, workspaceId: string, viewerId: string | null): Promise<UpcomingRoutine[]> {
+  let query = client
+    .from("scheduled_tasks")
+    .select(UPCOMING_COLUMNS)
+    .eq("workspace_id", workspaceId)
+    .eq("task_type", "agent_routine")
+    .eq("schedule_kind", "once")
+    .eq("enabled", true)
+    .is("fired_at", null)
+    .is("deleted_at", null);
+  // Filtering in the query keeps the page full when a teammate's private routines sort first.
+  query = viewerId ? query.or(`visibility.eq.shared,created_by_user_id.eq.${viewerId}`) : query.eq("visibility", "shared");
+  const { data, error } = await query.order("run_at", { ascending: true }).limit(UPCOMING_LIMIT).returns<UpcomingRow[]>();
+  if (error) throw error;
+  const tasks = data ?? [];
+
+  const runIds = [...new Set(tasks.flatMap((task) => (task.created_by_run_id ? [task.created_by_run_id] : [])))];
+  const routineByRun = new Map<string, string | null>();
+  if (runIds.length) {
+    const { data: runs, error: runsError } = await client
+      .from("agent_runs")
+      .select("id, scheduled_task_id")
+      .eq("workspace_id", workspaceId)
+      .in("id", runIds)
+      .returns<Array<Pick<AgentRunRow, "id" | "scheduled_task_id">>>();
+    if (runsError) throw runsError;
+    for (const run of runs ?? []) routineByRun.set(run.id, run.scheduled_task_id);
+  }
+  const parentIds = [...new Set([...routineByRun.values()].flatMap((id) => (id ? [id] : [])))];
+  const parents = new Map((await loadRoutineTasks(client, workspaceId, parentIds)).map((task) => [task.id, task]));
+
+  const userIds = [...new Set(tasks.flatMap((task) => (task.created_by_user_id ? [task.created_by_user_id] : [])))];
+  const names = await loadDisplayNames(client, userIds, []);
+  if (!names.ok) throw names.detail;
+
+  return tasks.map((task): UpcomingRoutine => {
+    const parentId = task.created_by_run_id ? routineByRun.get(task.created_by_run_id) : null;
+    const parent = parentId ? parents.get(parentId) : undefined;
+    const setBy: UpcomingRoutine["setBy"] = parentId
+      ? { type: "routine", routineId: parentId, title: parent && viewerMaySee(parent, viewerId) ? titleOf(parent) : "Routine" }
+      : { type: "person", name: (task.created_by_user_id && names.users.get(task.created_by_user_id)) || "Someone" };
+    // The schema's schedule_shape check makes run_at non-null for a once routine.
+    return { id: task.id, title: titleOf(task), runAt: task.run_at!, timezone: task.timezone, setBy };
+  });
+}
+
+/**
+ * Everything the workspace's agents ran, newest first, a page at a time: routines, synthesis, summaries and sessions.
+ * The first page also lists upcoming one-time routines.
+ */
+export async function listActivity(client: SupabaseClient, workspaceId: string, before: Cursor | null, viewerId: string | null): Promise<ActivityPage> {
   let query = client
     .from("agent_runs")
     .select("id, kind, session_id, scheduled_task_id, status, outcome, trigger, summary, started_at, completed_at, created_at")
@@ -109,12 +194,8 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
   let results = new Map<string, string | null>();
   // A failed lookup only hides titles and results; the runs still list.
   try {
-    if (taskIds.length) {
-      const found = await client.from("scheduled_tasks").select("id, config_json, schedule_kind, visibility, created_by_user_id").eq("workspace_id", workspaceId).in("id", taskIds).returns<TitleTaskRow[]>();
-      if (found.error) throw found.error;
-      // Another person's private routine stays a plain "Routine" with no details.
-      tasks = new Map((found.data ?? []).filter((task) => viewerMaySee(task, viewerId)).map((task) => [task.id, task]));
-    }
+    // Another person's private routine stays a plain "Routine" with no details.
+    tasks = new Map((await loadRoutineTasks(client, workspaceId, taskIds)).filter((task) => viewerMaySee(task, viewerId)).map((task) => [task.id, task]));
     results = await loadRunResults(client, workspaceId, rows.filter((run) => run.kind === "routine"));
   } catch (error) {
     recordRouteError({ workspaceId, operation: "read", errorCode: "activity_results_read_failed", error });
@@ -122,7 +203,7 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
   const created = await loadCreatedRoutines(client, workspaceId, rows.map((run) => run.id), viewerId);
 
   const last = rows[rows.length - 1];
-  return {
+  const page: ActivityPage = {
     runs: rows.map((run) => {
       const routine = run.scheduled_task_id ? tasks.get(run.scheduled_task_id) : undefined;
       return {
@@ -144,4 +225,11 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
     }),
     nextCursor: rows.length === ACTIVITY_PAGE_SIZE && last ? formatCursor(last.created_at, last.id) : null,
   };
+  if (before) return page;
+  try {
+    return { ...page, upcoming: await listUpcoming(client, workspaceId, viewerId) };
+  } catch (error) {
+    recordRouteError({ workspaceId, operation: "read", errorCode: "activity_upcoming_failed", error });
+    return { ...page, upcoming: [], upcomingError: true };
+  }
 }

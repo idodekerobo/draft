@@ -133,7 +133,9 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
-  const { routines, canEdit, agents, connectedProviders } = data;
+  const { canEdit, agents, connectedProviders } = data;
+  // One-time routines are not listed here; the backend leaves them out by default too.
+  const routines = data.routines.filter((routine) => routine.kind !== "once");
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
@@ -305,6 +307,13 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                         {routine.agent.createdByName ? ` · by ${routine.agent.createdByName}` : ""}
                       </div>
                     )}
+                    {routine.madeByAgent && (routine.createdBySessionId && onOpenRun ? (
+                      <button type="button" className="ui-routines__made-by ui-routines__made-by--link" aria-label={`Made by an agent: open the run that made ${routine.title}`} onClick={() => onOpenRun(routine.createdBySessionId!, routine)}>
+                        Made by an agent
+                      </button>
+                    ) : (
+                      <span className="ui-routines__made-by">Made by an agent</span>
+                    ))}
                   </div>
                   <div className="ui-routines__schedule">
                     <div className="ui-routines__secondary">{routine.scheduleDescription}</div>

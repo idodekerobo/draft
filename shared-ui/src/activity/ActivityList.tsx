@@ -20,6 +20,23 @@ export interface SynthesisRunSummary {
   createdAt: string;
 }
 
+/** A one-time routine that has not run yet. Mirrors backend UpcomingRoutine. */
+export interface UpcomingRoutine {
+  id: string;
+  title: string;
+  runAt: string;
+  timezone: string;
+  setBy: { type: "person"; name: string } | { type: "routine"; routineId: string; title: string };
+}
+
+/** Shape of GET /workspaces/:id/synthesis-runs. upcoming and upcomingError come on the first page only. */
+export interface SynthesisRunsPage {
+  runs: SynthesisRunSummary[];
+  nextCursor: string | null;
+  upcoming?: UpcomingRoutine[];
+  upcomingError?: true;
+}
+
 type RunState = "in_progress" | "succeeded" | "failed";
 
 const IN_PROGRESS = new Set(["queued", "preparing", "running", "validating", "committing"]);

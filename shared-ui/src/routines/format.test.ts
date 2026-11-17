@@ -28,6 +28,7 @@ function routine(overrides: Partial<Routine>): Routine {
     firedAt: null,
     madeByAgent: false,
     createdByRunId: null,
+    createdBySessionId: null,
     visibility: "shared",
     agent: null,
     ...overrides,
