@@ -18,6 +18,12 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     next_due_at: null,
     deleted_at: null,
     last_enqueued_at: null,
+    run_at: null,
+    fired_at: null,
+    created_via: "app",
+    created_by_run_id: null,
+    trigger_depth: 0,
+    visibility: "private",
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     updated_by_user_id: null,
@@ -33,7 +39,7 @@ describe("computeNextDueAt", () => {
 
     const next = computeNextDueAt(task, from);
 
-    expect(next.toISOString()).toBe("2026-08-06T08:00:00.000Z");
+    expect(next?.toISOString()).toBe("2026-08-06T08:00:00.000Z");
   });
 
   it("respects a non-UTC timezone for cron schedules", () => {
@@ -49,7 +55,7 @@ describe("computeNextDueAt", () => {
     // 8am America/New_York on 2026-08-05 is 12:00 UTC (EDT, UTC-4) --
     // already past `from` (10:00 UTC), so the next occurrence is the
     // *same* day at noon UTC, not the next day.
-    expect(next.toISOString()).toBe("2026-08-05T12:00:00.000Z");
+    expect(next?.toISOString()).toBe("2026-08-05T12:00:00.000Z");
   });
 
   it("throws for a cron task with no cron_expression", () => {
@@ -67,7 +73,7 @@ describe("computeNextDueAt", () => {
 
     const next = computeNextDueAt(task, from);
 
-    expect(next.toISOString()).toBe("2026-08-05T10:05:00.000Z");
+    expect(next?.toISOString()).toBe("2026-08-05T10:05:00.000Z");
   });
 
   it("falls back to `from` when no prior next_due_at exists (first registration)", () => {
@@ -80,7 +86,7 @@ describe("computeNextDueAt", () => {
 
     const next = computeNextDueAt(task, from);
 
-    expect(next.toISOString()).toBe("2026-08-05T10:03:00.000Z");
+    expect(next?.toISOString()).toBe("2026-08-05T10:03:00.000Z");
   });
 
   it("catches up to `now` (not a catch-up storm) when interval math falls behind after downtime", () => {
@@ -96,11 +102,39 @@ describe("computeNextDueAt", () => {
 
     // previous(09:00) + 300s = 09:05, which is before `from` -- clamps to
     // `from` (fires once, immediately, not once per missed 5-minute tick).
-    expect(next.toISOString()).toBe(from.toISOString());
+    expect(next?.toISOString()).toBe(from.toISOString());
   });
 
   it("throws for an interval task with no interval_seconds", () => {
     const task = baseTask({ schedule_kind: "interval", interval_seconds: null });
     expect(() => computeNextDueAt(task, new Date())).toThrow();
+  });
+
+  it("returns run_at for a pending one-off task", () => {
+    const task = baseTask({
+      schedule_kind: "once",
+      run_at: "2026-08-05T12:00:00.000Z",
+      fired_at: null,
+    });
+
+    const next = computeNextDueAt(task, new Date("2026-08-05T10:00:00.000Z"));
+
+    expect(next?.toISOString()).toBe("2026-08-05T12:00:00.000Z");
+  });
+
+  it("returns null for a one-off task that has already fired", () => {
+    const task = baseTask({
+      schedule_kind: "once",
+      run_at: "2026-08-05T12:00:00.000Z",
+      fired_at: "2026-08-05T12:00:01.000Z",
+    });
+
+    expect(computeNextDueAt(task, new Date("2026-08-05T13:00:00.000Z"))).toBeNull();
+  });
+
+  it("returns null for a one-off task with no run_at", () => {
+    const task = baseTask({ schedule_kind: "once", run_at: null, fired_at: null });
+
+    expect(computeNextDueAt(task, new Date())).toBeNull();
   });
 });

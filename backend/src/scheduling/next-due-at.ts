@@ -4,7 +4,10 @@ import type { ScheduledTaskRow } from "../types/tables";
 // Interval schedules compute from the previous next_due_at, clamped to
 // `from`, to avoid a catch-up storm after downtime (fires once, not once
 // per missed interval). Cron doesn't have this problem.
-export function computeNextDueAt(task: ScheduledTaskRow, from: Date): Date {
+export function computeNextDueAt(task: ScheduledTaskRow, from: Date): Date | null {
+  // A pending one-off fires at run_at even when that time has passed.
+  if (task.schedule_kind === "once") return task.fired_at || !task.run_at ? null : new Date(task.run_at);
+
   if (task.schedule_kind === "cron") {
     if (!task.cron_expression) {
       throw new Error(`Task ${task.id} is schedule_kind="cron" but has no cron_expression`);

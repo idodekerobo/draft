@@ -375,9 +375,9 @@ function runsOnSchedule(task: Pick<ScheduledTaskRow, "task_type" | "config_json"
 }
 
 // A parse failure here means the stored schedule is bad (the patch itself was validated).
-function safeNextDueAt(task: ScheduledTaskRow, now: Date): string {
+function safeNextDueAt(task: ScheduledTaskRow, now: Date): string | null {
   try {
-    return computeNextDueAt(task, now).toISOString();
+    return computeNextDueAt(task, now)?.toISOString() ?? null;
   } catch (error) {
     recordRouteError({
       workspaceId: task.workspace_id,

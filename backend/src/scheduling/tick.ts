@@ -67,7 +67,7 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     const { error: advanceError } = await options.client
       .from("scheduled_tasks")
       .update({
-        next_due_at: nextDueAt.toISOString(),
+        next_due_at: nextDueAt ? nextDueAt.toISOString() : null,
         last_enqueued_at: now.toISOString(),
       })
       .eq("id", task.id)
