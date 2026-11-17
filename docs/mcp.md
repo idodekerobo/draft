@@ -22,35 +22,82 @@ Sign-in asks for the `read` and `write` OAuth scopes. Your agent works in your t
 
 ### Routines
 
-A routine is an agent that runs on a schedule, when something happens (a meeting is summarized, a pull request is merged, a Linear issue is created), or when someone presses Run now. See [Routines](./routines.md).
+A routine is work Draft runs once, on a repeating schedule, on events (such as a merged pull request or a new Linear issue), or when someone presses Run now. See [Routines](./routines.md) for how these appear in the app.
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `routines.options` | `{}` | What a routine can be set to: triggers and whether each one's provider is connected, schedule presets, agents and whether each can run, Slack channels and GitHub repos. Call it before `create` or `update`. |
-| `routines.list` | `{ taskId? }` | Every routine with its full settings (instructions, agent, schedule, triggers, Slack and GitHub access, last run), or one routine with `taskId`. `missingConnections` names a trigger or access that can't work until its provider is connected. |
-| `routines.create` | the routine | Create a routine. Answers with the saved routine. |
-| `routines.update` | `{ taskId, patch }` | Change only the fields in `patch`; schedule fields are flat. `null` turns Slack posting or GitHub access off; `events: []` removes every trigger; `onSchedule: false` runs it only on triggers and Run now. Answers with the saved routine. |
-| `routines.delete` | `{ taskId }` | Delete a routine. Destructive: confirm with the person first. |
-| `routines.run` | `{ taskId }` | Start a run now. Answers with `runId`. |
-| `routines.runs` | `{ taskId, cursor?, runId?, transcript? }` | The routine's runs, newest first, 50 at a time: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. Pass the returned `nextCursor` as `cursor` for older runs. With `runId`, one run, however old. Add `transcript: true` for what the agent did, a page at a time; then `cursor` is the transcript's `nextCursor`. |
+| `routines.options` | `{}` | Available triggers and provider connections, schedule presets, agents, Slack channels and GitHub repos. Call it before `create` or `update` from your MCP client. |
+| `routines.list` | `{ taskId?, kind?, status?, createdBy? }` | Routines with full settings, or one by `taskId`. `kind` is `once`, `recurring` or `event`; `status` is `upcoming` or `fired`; `createdBy` is `me` or `anyone`. One-time routines are hidden from the default list. |
+| `routines.create` | `{ title, prompt, harness, when, ... }` | Create a routine and return the saved routine. `harness` is required for a person; a routine run can inherit it from its parent. |
+| `routines.update` | `{ taskId, patch }` | Change only the supplied fields. Timing and triggers go under `patch.when`. `postChannels: null` and `github: null` remove that access. |
+| `routines.delete` | `{ taskId }` | Delete a routine, including cancelling a pending one-time routine. Destructive: confirm with the person first. |
+| `routines.run` | `{ taskId }` | Request an immediate run, including on paused routines and one-time routines that already fired. Returns `runId` when started, or `queued: true` and `runId: null` when queued behind active work. |
+| `routines.runs` | `{ taskId, cursor?, runId?, transcript? }` | Runs, newest first, 50 at a time: status, what started it, result and skip reason. Pass `nextCursor` as `cursor` for older runs. With `runId`, return one run; add `transcript: true` for its transcript, using the transcript's own `nextCursor` for more. |
 
-`create` and `update` refuse a setting that can't work yet, and say why:
+#### Set timing with `when`
+
+`when` takes one of these shapes:
+
+| Shape | Example | Meaning |
+| --- | --- | --- |
+| Delay | `{"in":"2h"}` | Run once after a positive whole number of minutes, hours or days (`m`, `h`, `d`). |
+| Timestamp | `{"at":"2026-12-01T09:00:00-05:00"}` | Run once at an ISO timestamp with a timezone offset. |
+| Preset schedule | `{"schedule":{"preset":"daily","time":"09:00","timezone":"America/New_York"}}` | Repeat on a preset schedule. |
+| Custom schedule | `{"schedule":{"cron":"0 9 * * 1-5","timezone":"America/New_York"}}` | Repeat using a cron expression and timezone. |
+| Events only | `{"schedule":null,"events":["linear.issue_created"]}` | Run on events, without a repeating schedule. |
+| Schedule and events | `{"schedule":{"preset":"hourly"},"events":["linear.issue_created"]}` | Run on either the schedule or matching events. |
+
+One-time runs must be in the future, at most 365 days away. A one-time `when` cannot include a schedule or events. On update, a rule's omitted `schedule` or `events` is unchanged. Send a complete schedule object to change it; use `when.schedule: null` to turn it off, or `when.events: []` to remove triggers. `enabled: false` pauses automatic runs. A fired one-time routine needs a new `when` time to be scheduled again.
+
+For example, call `routines.create` with:
+
+~~~json
+{
+  "title": "Check PR",
+  "prompt": "Check the review status of acme/api PR #42 and report remaining blockers.",
+  "harness": "claude",
+  "when": {"in": "2h"}
+}
+~~~
+
+To reschedule it, call `routines.update` with:
+
+~~~json
+{"taskId":"<routine id>","patch":{"when":{"in":"2h"}}}
+~~~
+
+To list your pending one-time routines, call `routines.list` with `{"kind":"once","status":"upcoming","createdBy":"me"}`. Returned routines include `kind`, `runAt`, `firedAt`, `madeByAgent`, `createdByRunId` and `visibility`. `missingConnections` names triggers or access that cannot work until their provider is connected.
+
+The old top-level schedule fields are no longer accepted. Send timing in `when`; update older CLI or desktop clients before creating or editing routines.
+
+#### Follow-ups from routine runs
+
+Routine runs can call `routines.create`, `update`, `delete`, `list`, `run` and `runs` under their granted permissions. `routines.options` is for people and their MCP clients. A child belongs to the parent run's person and inherits omitted settings from its parent routine; model and reasoning effort are inherited only when the harness matches. The prompt must be self-contained because the future run cannot see the scheduling conversation.
+
+Runs cannot grant wider access, change routines outside their permitted descendant chain, or start their own routine again. Limits include five creates and five Run now requests per run, three levels of nesting, at least an hour between repeats for schedules made by runs, and a cap of 20 pending one-time routines made through MCP or routine runs when a run creates another. The hourly rule limits frequency, not run duration; it does not apply to one-time delays or schedules people create.
+
+`create` and `update` refuse settings that cannot work yet, and explain why:
 
 | Code | Meaning |
 | --- | --- |
-| `<provider>_not_connected` | A trigger or access needs a provider the workspace hasn't connected, for example `linear_not_connected`. Your agent can offer to connect it with `integrations.connect`. |
-| `claude_not_connected`, `codex_not_connected` | That agent isn't connected for routines in this workspace, so the routine couldn't run. |
-| `claude_needs_reconnect`, `codex_needs_reconnect` | That agent's login for routines stopped working. |
+| `<provider>_not_connected` | A trigger or access needs a provider the workspace hasn't connected, for example `linear_not_connected`. Offer to connect it with `integrations.connect`. |
+| `claude_not_connected`, `codex_not_connected` | That agent isn't connected for routines in this workspace. |
+| `claude_needs_reconnect`, `codex_needs_reconnect` | That agent's routine login needs reconnecting. |
+| `too_far_ahead`, `in_the_past` | Choose a future one-time date within 365 days. |
+| `depth_limit`, `limit_reached`, `too_many_pending`, `too_frequent` | A routine run reached a follow-up limit. |
+| `no_owner`, `not_permitted` | The run has no person to act for, or lacks permission for that operation. |
 
-A routine runs as the person who created it. A run started by an event only sees that event's source if its creator can see it. Otherwise the run is recorded as skipped, with the reason.
+A routine runs as the person who created it. A run started by an event only sees that event's source if its creator can see it; otherwise the run is recorded as skipped, with a reason. Private routines are hidden from other people, including reads and changes by ID.
 
-To follow a run, call `routines.runs` with its `runId` until the status is no longer `running`.
+To follow a started run, call `routines.runs` with its returned `runId` until its status is no longer `running`. A queued response has no run ID yet; check the routine's runs for the new run after active work ends.
 
 ### Activity
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `activity.list` | `{ cursor? }` | Everything the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions, with status, timing and result. Pass the returned `nextCursor` as `cursor` for older runs. This is the same list as the Activity page. |
+| `activity.list` | `{ cursor? }` | Everything the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions, with status, timing and result. Pass the returned `nextCursor` as `cursor` for older runs. This is the same list as the Activity page. The first page also has `upcoming`: pending one-time routines ordered by their scheduled time, with who set each one. If that read fails, past runs still return with `upcomingError: true`. |
+
+Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`, the visible routines each run created. An Upcoming item includes `id`, `title`, `runAt`, `timezone` and `setBy`, which identifies a person or parent routine. Later pages omit Upcoming.
 
 ### Connections
 

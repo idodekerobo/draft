@@ -1,6 +1,8 @@
 # Routines
 
-A routine is work Draft runs for your team: on a schedule, when something happens in a connected tool, or when someone presses Run now. Draft comes with built-in routines, and you can add your own, where an agent follows your instructions. You see them on the Routines tab in the web and desktop apps, and you can manage them from the CLI and MCP.
+A routine is work Draft runs for your team: once at a chosen time, on a repeating schedule, when something happens in a connected tool, or when someone presses Run now. Draft comes with built-in routines, and you can add your own, where an agent follows your instructions.
+
+Repeating and event routines appear on the Routines tab in the web and desktop apps. One-time routines appear under Upcoming in Activity. You can manage both kinds from the CLI or an agent connected to Draft's MCP server.
 
 ## Built-in routines
 
@@ -10,9 +12,46 @@ A routine is work Draft runs for your team: on a schedule, when something happen
 | Summarize coding sessions | Turns newly captured coding sessions into summaries. Sessions already summarized are skipped. | Schedule and on/off |
 | Sync Slack | Imports new messages from the connected Slack channels. Pick the channels in Connections. | On/off only |
 
-## Schedules and timezone
+## Run something once
 
-Editable routines use a preset: Draft default, hourly, daily, weekdays, or weekly. Daily, weekdays, and weekly presets take a time. Weekly takes a weekday. Every schedule runs in the routine's timezone. Slack sync runs on a fixed interval, so it has no cron expression.
+Create a one-time routine from the CLI, through MCP, or by asking an agent to schedule a follow-up:
+
+~~~bash
+draft routines create --title "Check PR" --prompt "Check the review status of acme/api PR #42 and report any remaining blockers." --harness claude --in 2h
+~~~
+
+Use `--in` for a delay such as `10m`, `2h` or `3d`, or `--at` for an ISO timestamp with a timezone offset. The time must be in the future and at most 365 days away. One-time routines have no repeating schedule or event triggers.
+
+In Activity:
+
+- **Upcoming** lists pending one-time routines, soonest first, with who or which routine set them. Cancel stops a pending routine and removes it from Upcoming.
+- After it fires, its run appears under **Runs**. Open run shows what happened; Run again requests another run immediately. If work for that routine is already running, the new run is queued until it ends.
+- To schedule another future check after a one-time routine has fired, give it a new time with `draft routines update <id> --in 2h` or `--at`. Run again does not repeat the original delay.
+
+The Routines editor creates repeating and event routines. To find one-time routines in the CLI, use `draft routines list --once`, `--upcoming` or `--fired`; they are hidden from the default list.
+
+## Schedules, events and timezone
+
+Editable repeating routines use a preset: Draft default, hourly, daily, weekdays, or weekly. Daily, weekdays, and weekly presets take a time. Weekly takes a weekday. Every schedule runs in the routine's timezone. MCP also accepts a custom cron expression with its timezone. For a one-time `--at`, the timestamp's offset determines the instant. Slack sync runs on a fixed interval, so it has no cron expression.
+
+A routine can combine a repeating schedule with event triggers, such as a pull request being merged or a Linear issue being created. Turning the schedule off leaves event triggers active; pausing the routine stops its automatic runs. Run now still works on a paused routine or a one-time routine that already fired. If a trigger needs a provider you haven't connected, Draft explains how to connect it.
+
+Draft saves incoming events before starting their work. Repeated delivery of the same provider event is deduplicated, and events for the same subject that arrive while its run is active can be combined into a later run.
+
+## Follow-ups made by an agent
+
+A routine run can schedule a follow-up or create a repeating or event routine on your behalf. The new routine belongs to the same person. Settings it leaves out come from the parent routine; it cannot grant itself wider notification, Slack or GitHub access. Instructions must be self-contained: the future run cannot see the conversation that scheduled it.
+
+Activity shows a **Created** line under the run that made the routine. A pending one-time follow-up opens its Upcoming row; after it runs, the link opens its latest run. A repeating or event routine opens its Routines details. The Routines tab also marks these with **Made by an agent**, linked to the creating run when available.
+
+Routine runs have limits to prevent repeated follow-ups from running without a bound:
+
+- Up to five routines created and five Run now requests per run; a run cannot start its own routine again.
+- At most three levels of routines creating further routines.
+- Repeating schedules created by runs can run at most once an hour. This limits repetition frequency, not how long a run can take. It does not prevent a one-time check a few minutes away or limit schedules you create yourself.
+- A run cannot add a one-time routine when the workspace already has 20 pending one-time routines made through MCP or routine runs.
+
+A run can change or delete only routines in its permitted descendant chain. Other people cannot list or manage a private routine, or read its run history by routine ID. Private follow-ups stay private.
 
 ## Last ran and last checked
 
@@ -33,4 +72,4 @@ You can create, change, run and read routines from the CLI, or let an agent conn
 | `draft routines run <id>` | `routines.run` |
 | `draft routines runs <id>` | `routines.runs` |
 
-A routine can start on its schedule, when something happens in a connected tool, or when someone runs it. If a trigger needs a provider you haven't connected, Draft says so and how to connect it. See the [CLI reference](./cli.md#routines) and [MCP and agent connections](./mcp.md#routines) for every option.
+Add `--mine` to a CLI list to show only routines you created. See the [CLI reference](./cli.md#routines) and [MCP and agent connections](./mcp.md#routines) for every option.

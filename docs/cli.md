@@ -141,35 +141,66 @@ Content can come from a local file (`--file`), inline text (`--content`), or pip
 
 ## Routines
 
-A routine is an agent that runs on a schedule, when something happens (a meeting is summarized, a pull request is merged, a Linear issue is created), or when you run it. See [Routines](./routines.md). Each command matches one MCP tool of the same name (`draft routines list` is `routines.list`), and `--json` prints that tool's answer. Run `draft routines <command> --help` for every flag and example.
+Routines are work Draft runs once, on a repeating schedule, on events, or when you run them manually. See [Routines](./routines.md) for the app's Activity and Routines views. Each command matches one MCP tool of the same name (`draft routines list` is `routines.list`), and `--json` prints that tool's answer. Run `draft routines <command> --help` for every flag and example.
 
 ~~~bash
 draft routines options                     # triggers, schedule presets, agents, Slack channels, GitHub repos
-draft routines list [<id>]                 # every routine with its settings, or one with its full instructions
-draft routines create --title <t> (--prompt <text> | --prompt-file <path>) --harness <claude|codex> --preset <preset> [options]
+draft routines list [<id>]                 # repeating/event routines, or one routine by id
+draft routines list --once                 # one-time routines, including ones that already fired
+draft routines list --upcoming --mine      # your one-time routines that have not fired
+draft routines list --fired                # one-time routines that already fired
+draft routines create --title <t> (--prompt <text> | --prompt-file <path>) --harness <claude|codex> (--in <duration> | --at <iso-time> | --preset <preset> | --on <event>) [options]
 draft routines update <id> [options]       # change only the fields you pass
-draft routines delete <id>
-draft routines run <id> [--wait]           # start a run now; --wait waits and prints the result
+draft routines delete <id>                 # cancel a pending one-time routine, or delete a repeating/event routine
+draft routines run <id> [--wait]           # run now; --wait follows a started run and prints its result
 draft routines runs <id> [--cursor <c>]     # 50 at a time; --cursor shows older runs
 draft routines runs <id> --run-id <id> [--transcript [--cursor <n>]]
 ~~~
 
-Options for `create` and `update`:
+### Choose when it runs
 
-| Flag | Meaning |
+~~~bash
+# Once, two hours from now
+draft routines create --title "Check PR" --prompt "Check the review status of acme/api PR #42 and report remaining blockers." --harness claude --in 2h
+
+# Once, at a specific instant; include Z or an explicit timezone offset
+draft routines create --title "Release check" --prompt "Check the acme/api release status and report any failed checks." --harness claude --at 2026-12-01T09:00:00-05:00
+
+# Repeat daily, and also run when a Linear issue is created
+draft routines create --title "Triage" --prompt "Review newly created Linear issues and summarize urgent work." --harness claude --preset daily --time 09:00 --timezone America/New_York --on linear.issue_created
+
+# Events only, with no repeating schedule
+draft routines create --title "New issues" --prompt "Review each new Linear issue and summarize any missing information." --harness claude --on linear.issue_created
+
+# Schedule another future check, including after a one-time routine has fired
+draft routines update <id> --in 2h
+~~~
+
+`--in` accepts a positive whole number followed by `m`, `h` or `d`, such as `10m`, `2h` or `3d`. `--at` accepts an ISO timestamp with an offset. Both require a future time no more than 365 days away. They cannot be combined with each other or with schedule/event flags. Use `--preset` with `--on` to combine a repeating schedule and events; `--on` alone creates an event-only routine.
+
+Instructions must be a self-contained brief: what to do, why, and what done means. The future run cannot see the conversation that scheduled it.
+
+| Setting | Meaning |
 | --- | --- |
 | `--model <id>` | The agent's model. See `draft routines options`. |
-| `--preset`, `--time HH:MM`, `--weekday`, `--timezone` | The schedule. Presets: `draft_default`, `hourly`, `daily`, `weekdays`, `weekly`. |
-| `--no-schedule` / `--schedule` | Run only on triggers and Run now, or turn the schedule back on. The schedule is kept while it's off. |
-| `--on <trigger>` | Also run when this happens. Repeat the flag or pass a comma list. `--no-triggers` removes them all. |
-| `--notify` / `--no-notify` | Let the agent message teammates on Slack. |
-| `--post-channels joined\|#a,#b` / `--no-post` | Let the agent post in Slack: any channel Draft is in, or only these. |
-| `--github owner/repo[,…]`, `--github-access read\|write` / `--no-github` | Let the agent work in these repos. `write` lets it open pull requests. |
-| `--disabled` (create), `--enable` / `--disable` (update) | Save it turned off, or turn it on or off. |
+| `--in <duration>`, `--at <iso-time>` | Run once, or reschedule a one-time routine. |
+| `--preset <preset>` | `draft_default`, `hourly`, `daily`, `weekdays` or `weekly`. |
+| `--time HH:MM`, `--weekday <day>`, `--timezone <zone>` | Time on a 24-hour clock, weekday (`sun`…`sat`) and IANA timezone. Daily, weekdays and weekly use a time; weekly uses a weekday. |
+| `--on <trigger>` | Run on this event. Repeat the flag or pass a comma list. |
+| `--notify` / `--no-notify` | Allow or forbid the agent to message teammates on Slack. |
+| `--post-channels joined` or `--post-channels '#general,#eng'` | Where the agent can post on Slack. `--no-post` removes that access on update. |
+| `--github owner/repo[,owner/repo]` | GitHub repos the agent can use. `--github-access read` is the default; `write` lets it open pull requests. `--no-github` removes access on update. |
+| `--schedule` / `--no-schedule` | On update, turn the repeating schedule on or off. Event triggers remain active when the schedule is off. |
+| `--no-triggers` | On update, remove every event trigger. |
+| `--enable` / `--disable` | On update, enable or pause automatic runs. A fired one-time routine needs a new time to be scheduled again. |
 
-A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft integrations connect linear`. A routine on an agent that isn't set up for routines in your workspace is refused too, with how to set it up.
+One-time routines are hidden from `list` by default. `--once` selects them; `--upcoming` and `--fired` imply `--once` and cannot be combined. `--mine` shows routines created by you. Filters apply to the list, so do not combine them with an individual `<id>`.
 
-`list` shows each routine's agent, when it runs, its triggers, what it can reach in Slack and GitHub, any missing connection, its next run, and its last run. `runs` shows each run's status, what started it (the schedule, Run now, or an event), its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
+One-time rows show their scheduled time or when they fired. Routines an agent made have a “made by an agent” label. A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft integrations connect linear`. An agent that isn't set up for routines in your workspace is refused too, with how to set it up. Failed commands print the error and exit nonzero.
+
+`run <id>` requests an immediate run, including for a paused routine or a one-time routine that already fired. If work for it is in progress, the request is queued until that work ends; the response has `queued: true` and no run ID. In that case `--wait` returns the queued result rather than waiting. Otherwise, use the returned run ID with `runs`, or use `--wait` to follow it immediately. A manual run does not repeat the original one-time delay.
+
+`runs` lists status, what started each run, its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
 
 ## Activity
 
@@ -181,6 +212,8 @@ draft activity list --cursor '<cursor from the last page>'
 ~~~
 
 Each routine run includes the command that shows it, for example `draft routines runs <routine id> --run-id <run id>`.
+
+On the first page, `--json` also includes `upcoming`: pending one-time routines, soonest first, with their scheduled time and who set them. If that part cannot load, `upcomingError: true` is returned alongside the past runs. Run rows include `routineKind` and `createdRoutines` when applicable. The plain-text command prints past runs; use `draft routines list --upcoming` for a readable pending list. In the app, Activity also offers Cancel and Run again.
 
 ## Project agent setup
 
