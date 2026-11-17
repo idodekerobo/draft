@@ -9,7 +9,12 @@ export default function ActivityPage() {
   const { workspaceId } = useWorkspace();
   return (
     <div className="ui-page">
-      <ActivityPanel workspaceId={workspaceId} onFixInConnections={() => router.push("/connections")} onOpenRun={(sessionId) => router.push(`/routines/runs/${sessionId}`)} />
+      <ActivityPanel
+        workspaceId={workspaceId}
+        onFixInConnections={() => router.push("/connections")}
+        onOpenRoutine={(id) => router.push(`/routines?routine=${encodeURIComponent(id)}`)}
+        onOpenRun={(sessionId) => router.push(`/routines/runs/${sessionId}`)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
+import type { SynthesisRunsPage } from "draft-shared-ui";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, type AnalyticsConfig } from "draft-core/config";
@@ -34,7 +35,6 @@ import type {
   IntegrationDetail,
   SlackChannelOption,
   SlackMembershipReconcileResult,
-  WorkspaceRun,
 } from "./rpc/schema";
 import { startBrowserSignIn } from "./main/auth/browser-sign-in";
 import { startGithubInstall } from "./main/auth/github-install";
@@ -450,7 +450,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true };
         } catch (err) {
           return err instanceof ServerError
-            ? { ok: false, code: err.code, field: err.field }
+            ? { ok: false, code: err.code, field: err.field, message: typeof err.detail?.message === "string" ? err.detail.message : undefined }
             : { ok: false, code: err instanceof Error ? err.message : "unknown" };
         }
       },
@@ -463,7 +463,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           return { ok: true, outcome };
         } catch (err) {
           return err instanceof ServerError
-            ? { ok: false, code: err.code, field: err.field }
+            ? { ok: false, code: err.code, field: err.field, message: typeof err.detail?.message === "string" ? err.detail.message : undefined }
             : { ok: false, code: "network" };
         }
       },
@@ -988,14 +988,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       getWorkspaceRuns: async (params) => {
         const workspaceId = getCachedWorkspaceId();
-        if (!workspaceId) return [];
+        if (!workspaceId) return { runs: [], nextCursor: null };
         const before = params?.before;
-        try {
-          const response = await fetchServerJSON<{ runs: WorkspaceRun[] }>(`workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
-          return response.runs;
-        } catch {
-          return [];
-        }
+        return fetchServerJSON<SynthesisRunsPage>(`workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
       },
 
       startBrowserSignIn: async () => {

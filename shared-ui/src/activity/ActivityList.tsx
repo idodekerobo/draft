@@ -46,6 +46,8 @@ export function runState(run: SynthesisRunSummary): RunState {
   return run.status === "succeeded" ? "succeeded" : "failed";
 }
 
+const STATE_LABEL: Record<RunState, string> = { succeeded: "Completed", in_progress: "In progress", failed: "Failed" };
+
 const STATE_DOT: Record<RunState, string> = { succeeded: "connected", in_progress: "pending", failed: "error" };
 
 const OUTCOME_LABEL: Record<NonNullable<SynthesisRunSummary["outcome"]>, string> = {
@@ -75,7 +77,15 @@ function formatDuration(run: SynthesisRunSummary): string | null {
   return Number.isFinite(ms) && ms >= 0 ? `${(ms / 1000).toFixed(1)}s` : null;
 }
 
-export function ActivityList({ runs, onFixInConnections, onOpenRun }: { runs: SynthesisRunSummary[]; onFixInConnections: () => void; onOpenRun?: (sessionId: string) => void }) {
+export function ActivityList({ runs, onFixInConnections, onOpenRun, onOpenRoutine, onOpenCreatedOnce, onRunAgain, runningRoutineId }: {
+  runs: SynthesisRunSummary[];
+  onFixInConnections: () => void;
+  onOpenRun?: (sessionId: string) => void;
+  onOpenRoutine?: (routineId: string) => void;
+  onOpenCreatedOnce?: (routineId: string) => void;
+  onRunAgain?: (routineId: string) => void;
+  runningRoutineId?: string | null;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   if (runs.length === 0) return <p className="ui-muted">No activity yet. Draft will list your workspace runs here.</p>;
 
@@ -84,7 +94,7 @@ export function ActivityList({ runs, onFixInConnections, onOpenRun }: { runs: Sy
       {runs.map((run) => {
         const state = runState(run);
         const open = openId === run.id;
-        const meta = [formatWhen(run.startedAt ?? run.createdAt), formatDuration(run), state === "failed" ? run.resultSummary : null].filter(Boolean).join(", ");
+        const meta = [run.kind === "routine" ? STATE_LABEL[state] : null, formatWhen(run.startedAt ?? run.createdAt), formatDuration(run), state === "failed" ? run.resultSummary : null].filter(Boolean).join(", ");
         return (
           <li key={run.id} className="ui-activity-row">
             <button type="button" className="ui-activity-row__main" aria-expanded={open} onClick={() => setOpenId(open ? null : run.id)}>
@@ -94,10 +104,24 @@ export function ActivityList({ runs, onFixInConnections, onOpenRun }: { runs: Sy
                 <span className="ui-activity-row__meta">{meta}</span>
               </span>
             </button>
-            {state === "failed" && run.kind !== "routine" && (
-              <button type="button" className="ui-link ui-activity-row__action" onClick={onFixInConnections}>Fix in Connections</button>
+            <div className="ui-activity-row__actions">
+              {state === "failed" && run.kind !== "routine" && (
+                <button type="button" className="ui-link ui-activity-row__action" onClick={onFixInConnections}>Fix in Connections</button>
+              )}
+              {run.kind === "routine" && run.sessionId && onOpenRun && (
+                <button type="button" className="ui-link ui-activity-row__action" onClick={() => onOpenRun(run.sessionId!)}>Open run</button>
+              )}
+              {run.routineKind === "once" && run.routineId && onRunAgain && (
+                <button type="button" className="ui-link ui-activity-row__action" disabled={!!runningRoutineId} aria-busy={runningRoutineId === run.routineId} aria-label={`Run ${run.routineTitle ?? "routine"} again`} onClick={() => onRunAgain(run.routineId!)}>{runningRoutineId === run.routineId ? "Starting…" : "Run again"}</button>
+              )}
+            </div>
+            {!!run.createdRoutines?.length && (
+              <div className="ui-activity-row__created">
+                {run.createdRoutines.map((routine) => (
+                  <p key={routine.id}><span className="ui-activity-row__created-label">Created</span> {routine.kind === "once" && onOpenCreatedOnce ? <button type="button" className="ui-link" onClick={() => onOpenCreatedOnce(routine.id)}>{routine.title}</button> : onOpenRoutine ? <button type="button" className="ui-link" onClick={() => onOpenRoutine(routine.id)}>{routine.title}</button> : routine.title}</p>
+                ))}
+              </div>
             )}
-            {run.kind === "routine" && run.sessionId && onOpenRun && <button type="button" className="ui-link ui-activity-row__action" onClick={() => onOpenRun(run.sessionId!)}>Open run</button>}
             {open && (
               <dl className="ui-activity-row__detail">
                 <dt>Started</dt><dd>{formatWhen(run.startedAt ?? run.createdAt)}</dd>

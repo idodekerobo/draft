@@ -1,13 +1,13 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { SynthesisRunSummary } from "../activity/ActivityList";
+import type { SynthesisRunsPage } from "../activity/ActivityList";
 import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "../routines/types";
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
-  /** The newest runs, a page at a time. `before` is a run's cursor (see runCursor); omit it for the first page. */
-  getRuns(before?: string): Promise<SynthesisRunSummary[]>;
+  /** The newest runs, a page at a time. `before` is a run's cursor (see runCursor); omit it for the first page, which also carries upcoming routines. */
+  getRuns(before?: string): Promise<SynthesisRunsPage>;
   getRoutines(): Promise<RoutinesResponse>;
   updateRoutine(id: string, patch: RoutinePatch): Promise<Routine>;
   createRoutine(input: CreateRoutineInput): Promise<Routine>;

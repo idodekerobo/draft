@@ -8,14 +8,14 @@ import {
   type RoutineRun,
   type RoutineRunOutcome,
   type RoutinesResponse,
-  type SynthesisRunSummary,
+  type SynthesisRunsPage,
 } from "draft-shared-ui";
 import type { ReactNode } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 
 export function WebQueryProvider({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
   const api: DraftApi = {
-    getRuns: async (before) => (await apiFetch<{ runs: SynthesisRunSummary[] }>(`/workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`)).runs,
+    getRuns: (before) => apiFetch<SynthesisRunsPage>(`/workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`),
     getRoutines: () => apiFetch<RoutinesResponse>(`/workspaces/${workspaceId}/schedules`),
     updateRoutine: async (id, patch) => {
       try {
@@ -37,7 +37,7 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
       try {
         await apiFetch<null>(`/workspaces/${workspaceId}/schedules/${id}`, { method: "DELETE" });
       } catch (error) {
-        if (error instanceof ApiError) throw toRoutineError(error.code, error.field);
+        if (error instanceof ApiError) throw new Error(typeof error.detail?.message === "string" ? error.detail.message : toRoutineError(error.code, error.field).message);
         throw error;
       }
     },
@@ -45,7 +45,7 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
       try {
         return (await apiFetch<{ outcome: RoutineRunOutcome }>(`/workspaces/${workspaceId}/schedules/${id}/run`, { method: "POST" })).outcome;
       } catch (error) {
-        if (error instanceof ApiError) throw toRoutineError(error.code, error.field);
+        if (error instanceof ApiError) throw new Error(typeof error.detail?.message === "string" ? error.detail.message : toRoutineError(error.code, error.field).message);
         throw error;
       }
     },

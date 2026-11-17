@@ -10,6 +10,7 @@
 //   webview.requests  — bun calls → renderer responds
 //   webview.messages  — bun sends fire-and-forget → renderer handles
 
+import type { SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
 export interface UserIdentity {
@@ -274,10 +275,10 @@ export type AppRPCType = {
       createRoutine: { params: CreateRoutineInput; response: { ok: true; routine: Routine } | { ok: false; code: string; field?: string } };
 
       /** Delete an agent routine: it leaves the list and stops running. Its past runs stay. */
-      deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
+      deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string; message?: string } };
 
       /** Start a run of one agent routine now, or queue it behind the run in progress. Failures carry the API error code and offending field. */
-      runRoutine: { params: { id: string }; response: { ok: true; outcome: RoutineRunOutcome } | { ok: false; code: string; field?: string } };
+      runRoutine: { params: { id: string }; response: { ok: true; outcome: RoutineRunOutcome } | { ok: false; code: string; field?: string; message?: string } };
       getRoutineSlackChannels: { params: void; response: Array<{ id: string; name: string }> };
       getRoutineGithubRepos: { params: void; response: string[] };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
@@ -458,8 +459,8 @@ export type AppRPCType = {
       /** What "Default" model and effort mean for a harness on this computer, from the harness's own settings. */
       getAgentDefaults: { params: { harness: string }; response: { model: string | null; modelLabel: string | null; effort: string | null } };
 
-      /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Returns [] if signed out or the request fails. */
-      getWorkspaceRuns: { params: { before?: string } | void; response: WorkspaceRun[] };
+      /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Includes upcoming routines on the first page; request failures reject. */
+      getWorkspaceRuns: { params: { before?: string } | void; response: SynthesisRunsPage };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };

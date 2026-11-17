@@ -19,12 +19,14 @@ const anyRunning = (runs: RoutineRun[] | undefined) => runs?.some((run) => run.s
 const ACTIVE_RUN = ["queued", "preparing", "running", "validating", "committing"];
 const anyActive = (runs: SynthesisRunSummary[] | undefined) => runs?.some((run) => ACTIVE_RUN.includes(run.status)) ?? false;
 
+/** The newest runs as a plain list, for the status bar. */
 export const runsQueryOptions = (api: DraftApi, workspaceId: string) =>
   queryOptions({
     queryKey: queryKeys.runs(workspaceId),
     queryFn: () => api.getRuns(),
+    select: (page) => page.runs,
     staleTime: STALE_MS.runs,
-    refetchInterval: (query) => anyActive(query.state.data) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS,
+    refetchInterval: (query) => anyActive(query.state.data?.runs) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS,
   });
 
 /** How many runs the server sends per page. A shorter page is the last one. */
@@ -37,9 +39,9 @@ export const runHistoryQueryOptions = (api: DraftApi, workspaceId: string) =>
     queryKey: [...queryKeys.runs(workspaceId), "history"] as const,
     queryFn: ({ pageParam }) => api.getRuns(pageParam),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => (page.length === RUNS_PAGE_SIZE ? runCursor(page[page.length - 1]!) : undefined),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: STALE_MS.runs,
-    refetchInterval: (query) => anyActive(query.state.data?.pages[0]) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS,
+    refetchInterval: (query) => anyActive(query.state.data?.pages[0]?.runs) ? ROUTINE_RUN_POLL_MS : query.state.data?.pages[0]?.upcoming?.length ? POLL_MS : SAFETY_POLL_MS,
   });
 
 export const routinesQueryOptions = (api: Pick<DraftApi, "getRoutines">, workspaceId: string) =>

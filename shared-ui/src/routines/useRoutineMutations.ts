@@ -53,7 +53,9 @@ export function useRoutineMutations(workspaceId: string, onToggleError: (error: 
   const run = useMutation({
     mutationFn: async (id: string): Promise<RoutineRunOutcome> => {
       if (!api.runRoutine) throw new Error("Run now is not available here.");
-      return api.runRoutine(id);
+      const outcome = await api.runRoutine(id);
+      if (outcome.status === "failed") throw new Error("The run could not start. Try again.");
+      return outcome;
     },
     onSuccess: (outcome, id) => {
       if (outcome.status === "queued") toast.info("Queued. It runs when the current run ends.");
