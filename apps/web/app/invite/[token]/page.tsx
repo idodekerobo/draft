@@ -1,3 +1,5 @@
+import { cache } from "react";
+import type { Metadata } from "next";
 import { FlowShell } from "draft-shared-ui";
 import { API_URL } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
@@ -16,7 +18,7 @@ type InviteLookup =
   | { kind: "unavailable"; error: string }
   | { kind: "api_down" };
 
-async function lookupInvite(token: string): Promise<InviteLookup> {
+const lookupInvite = cache(async (token: string): Promise<InviteLookup> => {
   try {
     const response = await fetch(`${API_URL}/invites/${encodeURIComponent(token)}`, { cache: "no-store" });
     if (response.status >= 500) return { kind: "api_down" };
@@ -26,6 +28,13 @@ async function lookupInvite(token: string): Promise<InviteLookup> {
   } catch {
     return { kind: "api_down" };
   }
+});
+
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
+  const invite = await lookupInvite((await params).token);
+  if (invite.kind !== "ok") return { title: "Join on Draft" };
+  const title = `Join ${invite.organization_name}\u2019s workspace!`;
+  return { title, openGraph: { title } };
 }
 
 export default async function Invite({ params }: { params: Promise<{ token: string }> }) {
