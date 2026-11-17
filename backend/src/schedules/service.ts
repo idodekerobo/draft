@@ -466,6 +466,9 @@ export async function runRoutineNow(workspaceId: string, taskId: string, userId:
   return dispatchAgentRoutine({
     task: routine.task,
     occurrenceAt: new Date().toISOString(),
+    kind: "manual",
+    firstEventId: randomUUID(),
+    concurrencyKey: routine.task.id,
     manual: { requestedBy: userId },
     config: loadSandboxDeploymentConfig(),
     client: serviceClient,

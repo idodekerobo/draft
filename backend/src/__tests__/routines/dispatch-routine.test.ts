@@ -1,17 +1,20 @@
 import { describe, expect, it, mock } from "bun:test";
-import { dispatchAgentRoutine } from "../../routines/dispatch-routine";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { dispatchAgentRoutine, type DispatchAgentRoutineOptions } from "../../routines/dispatch-routine";
 import { failStaleRoutineSessions } from "../../routines/fail-stale-routine-sessions";
 import { CredentialError } from "../../credentials/crypto";
 import { ROUTINE_STALE_AFTER_MS } from "../../routines/config";
 import { RoutineLeaseBusyError, type LaunchRoutineRun } from "../../routines/launch-routine-run";
 import type { ScheduledTaskRow } from "../../types/tables";
-import { fakeClient, fakeDb } from "./fake-client";
+import { fakeClient, fakeDb, type UniqueIndex } from "./fake-client";
 
 const WS_ID = "11111111-1111-4111-8111-111111111111";
 const TASK_ID = "55555555-5555-4555-8555-555555555555";
 const VERSION_ID = "44444444-4444-4444-8444-444444444444";
 const OWNER_ID = "66666666-6666-4666-8666-666666666666";
 const TEAM_ID = "77777777-7777-4777-8777-777777777777";
+const EVENT_A = "12121212-1212-4212-8212-121212121212";
+const EVENT_B = "13131313-1313-4313-8313-131313131313";
 
 const task = {
   id: TASK_ID,
@@ -20,6 +23,13 @@ const task = {
   created_by_user_id: OWNER_ID,
   config_json: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" },
 } as unknown as ScheduledTaskRow;
+
+const IDEMPOTENCY_INDEX: UniqueIndex = { name: "sessions_idempotency_key_idx", columns: ["workspace_id", "idempotency_key"] };
+const LIVE_KEY_INDEX: UniqueIndex = {
+  name: "sessions_one_live_per_key_idx",
+  columns: ["scheduled_task_id", "concurrency_key"],
+  where: (row) => row.concurrency_key != null && ["starting", "live", "host_offline"].includes(row.status as string),
+};
 
 const newDb = (
   workspace: Record<string, unknown> | null = { id: WS_ID, team_id: TEAM_ID, timezone: "UTC", current_context_version_id: VERSION_ID },
@@ -35,15 +45,19 @@ const newDb = (
       workspace_context_versions: [{ id: VERSION_ID, version_number: 1, documents_json: { "a.md": { content: "A", sha256: "a".repeat(64) } } }],
     },
     {
-      unique: { sessions: [["workspace_id", "idempotency_key"]], agent_runs: [["workspace_id", "idempotency_key"]] },
+      unique: { sessions: [IDEMPOTENCY_INDEX, LIVE_KEY_INDEX], agent_runs: [["workspace_id", "idempotency_key"]] },
       rpcs: { commit_context_write: () => ({ data: { status: "committed", new_version_id: "99999999-9999-4999-8999-999999999999", version_number: 1 } }) },
     },
   );
 const sandboxConfig = {} as never;
 const okLaunch = () => mock<LaunchRoutineRun>(async () => {});
 
-function dispatch(db: ReturnType<typeof newDb>, launch: LaunchRoutineRun, occurrenceAt = "2026-10-27T09:00:00.000Z", overrides: Partial<ScheduledTaskRow> = {}) {
-  return dispatchAgentRoutine({ task: { ...task, ...overrides }, occurrenceAt, config: sandboxConfig, client: fakeClient(db), launch });
+/** A timer occurrence. Its time stands in for the agent_events id that the timer would have written. */
+function dispatch(db: ReturnType<typeof newDb>, launch: LaunchRoutineRun, occurrenceAt = "2026-10-27T09:00:00.000Z", overrides: Partial<ScheduledTaskRow> = {}, rest: Partial<DispatchAgentRoutineOptions> = {}) {
+  return dispatchAgentRoutine({
+    task: { ...task, ...overrides }, occurrenceAt, config: sandboxConfig, client: fakeClient(db), launch,
+    kind: "timer", firstEventId: occurrenceAt, concurrencyKey: TASK_ID, ...rest,
+  });
 }
 
 describe("dispatchAgentRoutine", () => {
@@ -61,7 +75,8 @@ describe("dispatchAgentRoutine", () => {
       status: "starting",
       title: "Weekly digest",
       model: "haiku",
-      idempotency_key: `${TASK_ID}:2026-10-27T09:00:00.000Z`,
+      idempotency_key: `${TASK_ID}:timer:2026-10-27T09:00:00.000Z`,
+      concurrency_key: TASK_ID,
     });
     expect(db.tables.sessions![0]!.host_machine_id).toBe(`fly:${db.tables.sessions![0]!.id}`);
   });
@@ -77,12 +92,13 @@ describe("dispatchAgentRoutine", () => {
     expect(db.tables.sessions).toHaveLength(1);
   });
 
-  it("skips while the previous run is still going, and does not catch up", async () => {
+  it("reports busy while a run with the same concurrency key is still live, and does not catch up", async () => {
     const db = newDb();
     const launch = okLaunch();
     await dispatch(db, launch, "2026-10-27T09:00:00.000Z");
-    await dispatch(db, launch, "2026-10-27T10:00:00.000Z");
+    const second = await dispatch(db, launch, "2026-10-27T10:00:00.000Z");
 
+    expect(second).toEqual({ status: "busy" });
     expect(launch).toHaveBeenCalledTimes(1);
     expect(db.tables.sessions).toHaveLength(1);
   });
@@ -124,7 +140,7 @@ describe("dispatchAgentRoutine", () => {
       instructions: "Summarize the week.",
       base_context_version_id: VERSION_ID,
       session_id: db.tables.sessions![0]!.id,
-      idempotency_key: `${TASK_ID}:2026-10-27T09:00:00.000Z`,
+      idempotency_key: `${TASK_ID}:timer:2026-10-27T09:00:00.000Z`,
       status: "running",
       sandbox_machine_id: "machine-9",
       trigger: { type: "cron", scheduledTaskId: TASK_ID, occurrenceAt: "2026-10-27T09:00:00.000Z" },
@@ -205,6 +221,54 @@ describe("dispatchAgentRoutine", () => {
     await expect(dispatch(db, okLaunch(), undefined, { created_by_user_id: null })).rejects.toThrow("no creator");
     await expect(dispatch(db, okLaunch(), undefined, { config_json: { title: "x" } })).rejects.toThrow("invalid config");
     expect(db.tables.sessions).toHaveLength(0);
+  });
+});
+
+describe("dispatchAgentRoutine outcomes and keys", () => {
+  const rejectingInsert = (message: string) =>
+    ({ from: () => ({ insert: async () => ({ data: null, error: { code: "23505", message } }) }) }) as unknown as SupabaseClient;
+  const input = { task, occurrenceAt: "2026-10-27T09:00:00.000Z", config: sandboxConfig, kind: "timer", firstEventId: "event-1", concurrencyKey: TASK_ID };
+
+  it("is busy when the live-key index rejects the session", async () => {
+    const outcome = await dispatchAgentRoutine({ ...input, client: rejectingInsert('duplicate key value violates unique constraint "sessions_one_live_per_key_idx"'), launch: okLaunch() });
+    expect(outcome).toEqual({ status: "busy" });
+  });
+
+  it("is already dispatched when the idempotency index rejects the session", async () => {
+    const outcome = await dispatchAgentRoutine({ ...input, client: rejectingInsert('duplicate key value violates unique constraint "sessions_idempotency_key_idx"'), launch: okLaunch() });
+    expect(outcome).toEqual({ status: "already_dispatched" });
+  });
+
+  it("returns the run's id once started, and no run id when skipped", async () => {
+    const db = newDb();
+    expect(await dispatch(db, okLaunch())).toEqual({ status: "started", sessionId: db.tables.sessions![0]!.id as string, runId: db.tables.agent_runs![0]!.id as string });
+
+    const skipDb = newDb();
+    const skipped = await dispatch(skipDb, okLaunch(), undefined, {}, { skip: { code: "routine_source_not_visible", note: "n" } });
+    expect(skipped).toEqual({ status: "skipped", sessionId: skipDb.tables.sessions![0]!.id as string, runId: null });
+  });
+
+  it("gives a skipped run no concurrency key, so it never holds one", async () => {
+    const db = newDb();
+    await dispatch(db, okLaunch(), undefined, {}, { skip: { code: "routine_source_not_visible", note: "n" } });
+    expect(db.tables.sessions![0]!.concurrency_key).toBeNull();
+    expect(await dispatch(db, okLaunch(), "2026-10-27T10:00:00.000Z")).toMatchObject({ status: "started" });
+  });
+
+  it("records a Run now under its own key, with a manual trigger", async () => {
+    const db = newDb();
+    const outcome = await dispatchAgentRoutine({ ...input, kind: "manual", firstEventId: EVENT_A, concurrencyKey: null, manual: { requestedBy: OWNER_ID }, client: fakeClient(db), launch: okLaunch() });
+    expect(outcome).toMatchObject({ status: "started" });
+    expect(db.tables.agent_runs![0]).toMatchObject({ idempotency_key: `${TASK_ID}:manual:${EVENT_A}`, trigger: { type: "manual", requestedBy: OWNER_ID } });
+  });
+
+  it("records the agent events a run consumed as its trigger", async () => {
+    const db = newDb();
+    await dispatch(db, okLaunch(), undefined, {}, { kind: "fireflies.meeting_summarized", firstEventId: EVENT_A, concurrencyKey: null, eventIds: [EVENT_A, EVENT_B] });
+    expect(db.tables.agent_runs![0]).toMatchObject({
+      idempotency_key: `${TASK_ID}:fireflies.meeting_summarized:${EVENT_A}`,
+      trigger: { type: "event", eventIds: [EVENT_A, EVENT_B] },
+    });
   });
 });
 

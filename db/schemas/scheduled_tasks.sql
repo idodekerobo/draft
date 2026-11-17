@@ -21,6 +21,8 @@ create table scheduled_tasks (
   -- Set when a person deletes the routine. The row stays for its past runs.
   deleted_at               timestamptz,
   last_enqueued_at        timestamptz,
+  -- Set by claim_due_scheduled_tasks and cleared when the tick writes the real next_due_at.
+  claimed_occurrence_at    timestamptz,
   -- once only: when it should run, and when it fired. A fired one-shot stays so it can be found and run again.
   run_at                   timestamptz,
   fired_at                 timestamptz,

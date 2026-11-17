@@ -105,14 +105,14 @@ describe("dispatch resolves a routine's connections", () => {
           connection(GONE, { status: "revoked" }),
         ],
       },
-      { unique: { sessions: [["workspace_id", "idempotency_key"]] } },
+      { unique: { sessions: [{ name: "sessions_idempotency_key_idx", columns: ["workspace_id", "idempotency_key"] }] } },
     );
   }
 
   it("gives the run its owner's and the shared connections, drops the rest, and reports them once", async () => {
     const db = newDb();
     const launch = mock<LaunchRoutineRun>(async () => ({ machineId: "m1" }));
-    await dispatchAgentRoutine({ task, occurrenceAt: "2026-11-09T09:00:00.000Z", config: {} as never, client: fakeClient(db), launch });
+    await dispatchAgentRoutine({ task, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch });
 
     const run = db.tables.agent_runs![0]!;
     const environment = (run.runtime as { environment: { nativeTools: Array<{ tool: string }>; mcpServers: Array<{ connectionId: string }> } }).environment;
@@ -129,7 +129,7 @@ describe("dispatch resolves a routine's connections", () => {
   it("starts a routine with no connections without looking any up or reporting anything", async () => {
     const db = newDb();
     const plain = { ...task, config_json: { ...base } } as unknown as ScheduledTaskRow;
-    await dispatchAgentRoutine({ task: plain, occurrenceAt: "2026-11-09T09:00:00.000Z", config: {} as never, client: fakeClient(db), launch: mock<LaunchRoutineRun>(async () => undefined) });
+    await dispatchAgentRoutine({ task: plain, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch: mock<LaunchRoutineRun>(async () => undefined) });
     expect(db.tables.errors).toHaveLength(0);
     expect((db.tables.agent_runs![0]!.runtime as { environment: { mcpServers: unknown[] } }).environment.mcpServers).toEqual([]);
   });

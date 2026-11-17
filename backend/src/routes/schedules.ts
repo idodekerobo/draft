@@ -150,7 +150,7 @@ export const RUN = withAuth<RunRequest>(async (req, caller) => {
   if (denied) return denied;
   try {
     const outcome = await runRoutineNow(workspaceId, taskId, caller.userId);
-    if (outcome.status === "already_running") return Response.json({ error: "already_running", outcome }, { status: 409 });
+    if (outcome.status === "busy") return Response.json({ error: "already_running", outcome }, { status: 409 });
     if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return Response.json({ error: "codex_login_busy", outcome }, { status: 409 });
     if (outcome.status === "failed") return Response.json({ error: "run_failed", outcome }, { status: 502 });
     return Response.json({ outcome }, { status: outcome.status === "started" ? 202 : 200 });

@@ -81,17 +81,19 @@ export async function startEventRoutines(
     note: `Skipped: ${description}, but that ${providerLabel} item is private, and this routine's owner can't see it. A routine only reads what its owner can see.`,
   };
 
+  // TODO: pass the agent_events id once webhooks write the event inbox. Until then the provider's id keys the run.
+  const dispatchInput = { kind: input.name, firstEventId: input.eventId, concurrencyKey: null, events: [event] };
   for (const task of matching) {
     // The run is on behalf of the routine's owner, so it may only read what the owner may read.
     const ownerMaySee = source.visibility === "shared" || (!!task.created_by_user_id && source.owner_user_id === task.created_by_user_id);
     if (!ownerMaySee) {
-      await dispatch({ task, occurrenceAt, config, client, event, skip: hidden }).catch((cause) =>
+      await dispatch({ task, occurrenceAt, config, client, ...dispatchInput, skip: hidden }).catch((cause) =>
         recordError({ client, workspaceId: input.workspaceId, scheduledTaskId: task.id, operation: "scheduling", message: "A skipped event run could not be recorded", code: "event_routine_skip_failed", error: cause }),
       );
       continue;
     }
     try {
-      await dispatch({ task, occurrenceAt, config, client, event });
+      await dispatch({ task, occurrenceAt, config, client, ...dispatchInput });
       started += 1;
     } catch (cause) {
       await recordError({

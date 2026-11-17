@@ -196,6 +196,7 @@ export interface ScheduledTaskRow {
   next_due_at: string | null;
   deleted_at: string | null;
   last_enqueued_at: string | null;
+  claimed_occurrence_at: string | null;
   run_at: string | null;
   fired_at: string | null;
   created_via: "app" | "cli" | "mcp" | "run" | "system";

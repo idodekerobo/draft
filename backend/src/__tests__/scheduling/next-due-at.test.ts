@@ -18,6 +18,7 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     next_due_at: null,
     deleted_at: null,
     last_enqueued_at: null,
+    claimed_occurrence_at: null,
     run_at: null,
     fired_at: null,
     created_via: "app",

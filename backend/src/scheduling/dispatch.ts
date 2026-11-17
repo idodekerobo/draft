@@ -8,7 +8,6 @@ import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { retryPlan } from "../synthesis/handle-run-failure";
 import { getLatestSynthesisRun } from "../synthesis/latest-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
-import { dispatchAgentRoutine } from "../routines/dispatch-routine";
 import { allowOncePer } from "../errors/throttle";
 import { syncPeopleInBackground } from "../people/sync";
 import type { SandboxDeploymentConfig } from "../sandbox";
@@ -23,7 +22,6 @@ export interface DispatchDependencies {
   getPendingSynthesisSourceItemIds: typeof getPendingSynthesisSourceItemIds;
   getLatestSynthesisRun: typeof getLatestSynthesisRun;
   launchSummarizationBatch: typeof launchSummarizationBatch;
-  dispatchAgentRoutine: typeof dispatchAgentRoutine;
 }
 
 const defaultDependencies: DispatchDependencies = {
@@ -33,7 +31,6 @@ const defaultDependencies: DispatchDependencies = {
   getPendingSynthesisSourceItemIds,
   getLatestSynthesisRun,
   launchSummarizationBatch,
-  dispatchAgentRoutine,
 };
 
 // No retry -- both handlers already re-run every interval_seconds, and both
@@ -227,13 +224,7 @@ export async function dispatchScheduledTask(
     return fresh;
   }
   if (fresh.task_type === "agent_routine") {
-    await deps.dispatchAgentRoutine({
-      task: fresh,
-      occurrenceAt: options.occurrenceAt,
-      config: options.config,
-      client: options.client,
-    });
-    return fresh;
+    throw new Error("agent_routine is dispatched from the event inbox");
   }
   // rebuild_projection: no projection exists yet -- fail loud, don't silently succeed.
   throw new Error(`Unsupported scheduled task_type "${fresh.task_type}" for task ${fresh.id}`);

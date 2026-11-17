@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { ACTIVE_AGENT_RUN_STATUSES, agentActor, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { ACTIVE_AGENT_RUN_STATUSES, agentActor, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isHarnessId } from "draft-core/harnesses";
 import { isLoggedCommand } from "../../observability/logged-commands";
@@ -11,6 +11,7 @@ import type { ToolCallRecord } from "../tools/invoke-tool";
 const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cron"), scheduledTaskId: z.string().transform(parseScheduledTaskId), occurrenceAt: z.string().transform(parseIsoTimestamp) }),
   z.object({ type: z.literal("webhook"), provider: z.enum(["slack", "github", "linear", "fireflies", "granola"]), eventId: z.string().min(1) }),
+  z.object({ type: z.literal("event"), eventIds: z.array(z.string().transform(parseAgentEventId)) }),
   z.object({ type: z.literal("system"), reason: z.enum(AGENT_RUN_SYSTEM_REASONS) }),
   z.object({ type: z.literal("manual"), requestedBy: z.string().transform(parseUserId) }),
   z.object({ type: z.literal("retry"), retryOf: z.string().transform(parseAgentRunId) }),

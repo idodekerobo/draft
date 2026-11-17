@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { AGENT_RUN_SYSTEM_REASONS, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseIsoTimestamp, parseWorkspaceId, type AgentRunSpec } from "../run-spec";
+import { AGENT_RUN_SYSTEM_REASONS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseIsoTimestamp, parseWorkspaceId, type AgentRunSpec } from "../run-spec";
 import { DRAFT_TOOLS, findToolPermission, isDraftToolName } from "../tools";
 
 const UUID_A = "11111111-1111-4111-8111-111111111111";
@@ -33,6 +33,18 @@ describe("agent run ids", () => {
   it("validates timestamps and host machine ids", () => {
     expect(() => parseIsoTimestamp("yesterday")).toThrow("Invalid IsoTimestamp");
     expect(() => parseHostMachineId("  ")).toThrow("Invalid HostMachineId");
+  });
+});
+
+describe("event triggers", () => {
+  it("accepts UUID agent event ids and rejects provider-style ids", () => {
+    expect(parseAgentEventId(UUID_A)).toBe(UUID_A as never);
+    expect(() => parseAgentEventId("evt_123")).toThrow("Invalid AgentEventId");
+  });
+
+  it("carries the agent events that woke a run", () => {
+    const run: AgentRunSpec = { ...spec([]), trigger: { type: "event", eventIds: [parseAgentEventId(UUID_A), parseAgentEventId(UUID_B)] } };
+    expect(run.trigger).toEqual({ type: "event", eventIds: [UUID_A, UUID_B] as never });
   });
 });
 

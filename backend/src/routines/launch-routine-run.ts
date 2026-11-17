@@ -21,11 +21,16 @@ export interface LaunchRoutineRunInput {
   manual?: boolean;
   config: SandboxDeploymentConfig;
   client: SupabaseClient;
-  /** What started this run, when it was an event. */
-  event?: RoutineEventPayload;
+  /** What started this run, when events did. Oldest first. */
+  events?: RoutineEventPayload[];
 }
 
 export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<{ machineId: string } | void>;
+
+/** The fields the prompt reads. The event's name and provider id stay out of it. */
+function toPromptEvent({ description, providerLabel, sourceItemId, facts, title, text, truncated }: RoutineEventPayload) {
+  return { description, providerLabel, sourceItemId, facts, title, text, truncated };
+}
 
 /** Another run holds the workspace's Codex login, and two runs at once would break its refresh token. */
 export class RoutineLeaseBusyError extends Error {
@@ -35,7 +40,7 @@ export class RoutineLeaseBusyError extends Error {
   }
 }
 
-export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, setup, manual, config, client, event }) => {
+export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, setup, manual, config, client, events }) => {
   const { data, error } = await client.from("workspaces").select("organization_id").eq("id", workspaceId).single();
   if (error) throw error;
   const organizationId = (data as { organization_id: string }).organization_id;
@@ -54,8 +59,8 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
         timezone: setup.timezone,
         startedAt: new Date(),
         hasDraftTools: needsDraftToolServer(agentRun),
-        startedBy: event
-          ? { type: "event", description: event.description, providerLabel: event.providerLabel, sourceItemId: event.sourceItemId, facts: event.facts, title: event.title, text: event.text, truncated: event.truncated }
+        startedBy: events?.length
+          ? { type: "event", events: events.map(toPromptEvent) }
           : { type: manual ? "manual" : "schedule" },
       }),
     },

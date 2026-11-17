@@ -160,7 +160,7 @@ export function createRoutineTools(client: SupabaseClient) {
       const user = requireUser(caller, "routines.run");
       try {
         const outcome = await (await scheduleService()).runRoutineNow(user.workspaceId, input.taskId, user.userId);
-        if (outcome.status === "already_running") return refuse("already_running", "This routine already has a run in progress.");
+        if (outcome.status === "busy") return refuse("already_running", "This routine already has a run in progress.");
         if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return refuse("codex_login_busy", "Another Codex run is using the login. Try again when it finishes.");
         if (outcome.status === "failed") return refuse(outcome.code ?? "run_failed", "The routine could not start.");
         return { status: "ok", output: { runId: outcome.sessionId ?? null, outcome } };

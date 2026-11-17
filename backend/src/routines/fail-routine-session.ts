@@ -41,6 +41,8 @@ export async function endRoutineSession(
         ? { status: "succeeded" }
         : { status: endReason === "skipped" || failure?.cancelled ? "cancelled" : "failed", failureCode: failure?.code, failureDetail: failure?.detail };
     await finishAgentRunForSession(client, session.id, outcome);
+    // Dynamic import: the drain loads only when a session ends. The caller's client keeps tests off the default DB client.
+    void import("../events/drain").then(({ drainEventInbox }) => drainEventInbox({ client })).catch(() => undefined);
   }
   return !!ended;
 }

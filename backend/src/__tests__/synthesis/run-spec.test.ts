@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { saveAgentRunSpec, specFromRow } from "../../metaharness/runs/agent-run-store";
 import { CONTEXT_READ_WRITE_PERMISSIONS } from "draft-core/tools";
-import { buildSynthesisRunSpec, synthesisTrigger } from "../../synthesis/run-spec";
+import { buildSynthesisRunSpec, synthesisTrigger, synthesisTriggerType } from "../../synthesis/run-spec";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "22222222-2222-4222-8222-222222222222";
@@ -28,6 +28,12 @@ describe("how a synthesis run started", () => {
 
   it("a scheduled run with no task, which the scheduler never makes, falls back to manual", () => {
     expect(synthesisTrigger({ triggerType: "schedule" }) as unknown).toEqual({ type: "system", reason: "manual" });
+  });
+});
+
+describe("what a person sees for a saved run", () => {
+  it("a run an agent event woke shows as an event", () => {
+    expect(synthesisTriggerType({ type: "event", eventIds: ["88888888-8888-4888-8888-888888888888"] })).toBe("event");
   });
 });
 

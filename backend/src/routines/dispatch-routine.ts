@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { parseUserId } from "draft-core/run-spec";
+import { parseAgentEventId, parseUserId } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
@@ -16,9 +16,10 @@ import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
 import { buildRoutineRunSpec } from "./run-spec";
-import { eventIdempotencyKey, eventTrigger, type RoutineEventPayload } from "./event";
+import { eventTrigger, type RoutineEventPayload } from "./event";
 
 const UNIQUE_VIOLATION = "23505";
+const LIVE_KEY_INDEX = "sessions_one_live_per_key_idx";
 
 export interface DispatchAgentRoutineOptions {
   task: ScheduledTaskRow;
@@ -26,15 +27,25 @@ export interface DispatchAgentRoutineOptions {
   config: SandboxDeploymentConfig;
   client: SupabaseClient;
   launch?: LaunchRoutineRun;
-  /** Set when an event started this run. It then runs once per event and does not wait for another run. */
-  event?: RoutineEventPayload;
-  /** Set when a person pressed Run now. It gets its own idempotency key, so it never collides with a schedule. */
+  /** Webhook events in this run, oldest first. The run's prompt carries every one of them. */
+  events?: RoutineEventPayload[];
+  /** "timer", "manual" or an event name. The middle part of the idempotency key. */
+  kind: string;
+  /** The id of the run's first event, or a unique id for a run that has none. The last part of the idempotency key. */
+  firstEventId: string;
+  /** Runs with the same key are serialized: one live run per (routine, key). Null lets runs overlap. */
+  concurrencyKey: string | null;
+  /** The agent_events ids this run consumed. They become the run's trigger. */
+  eventIds?: string[];
+  /** Set when a person pressed Run now. */
   manual?: { requestedBy: string };
   /** Records the occurrence as skipped instead of running it. The note says why, to anyone who can see the routine. */
   skip?: { code: string; note: string };
 }
 
-export type RoutineDispatchOutcome = { status: "started" | "skipped"; sessionId: string } | { status: "already_running" | "already_dispatched" | "failed"; sessionId?: string; code?: string };
+export type RoutineDispatchOutcome =
+  | { status: "started" | "skipped"; sessionId: string; runId: string | null }
+  | { status: "busy" | "already_dispatched" | "failed"; sessionId?: string; runId?: string; code?: string };
 
 /**
  * The connections a routine chose that its owner may use now. One that was revoked, or that belongs to
@@ -70,31 +81,16 @@ export function describeRoutineSetup(task: ScheduledTaskRow, routine: Pick<Agent
 }
 
 /**
- * Starts one run of a routine. It does nothing when the previous run is still going
- * (a missed occurrence is not caught up) or when this occurrence already has a session.
- * A run that fails to start ends as failed with one error and is not retried:
- * the next scheduled occurrence is the retry.
+ * Starts one run of a routine. The idempotency key stops the same kind of occurrence from running twice, and
+ * the concurrency key makes a run return busy while another run with that key is still live. A run that fails
+ * to start ends as failed with one error and is not retried: the next scheduled occurrence is the retry.
  */
 export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions): Promise<RoutineDispatchOutcome> {
-  const { task, occurrenceAt, config, client, event, manual, skip } = options;
-  const idempotencyKey = event ? eventIdempotencyKey(task.id, event) : manual ? `${task.id}:manual:${randomUUID()}` : `${task.id}:${occurrenceAt}`;
+  const { task, occurrenceAt, config, client, events, kind, firstEventId, concurrencyKey, eventIds, manual, skip } = options;
+  const idempotencyKey = `${task.id}:${kind}:${firstEventId}`;
   const routine = parseAgentRoutineConfig(task.config_json);
   if (!routine) throw new Error(`agent_routine task ${task.id} has an invalid config`);
   if (!task.created_by_user_id) throw new Error(`agent_routine task ${task.id} has no creator to own its sessions`);
-
-  // A scheduled occurrence or a Run now is skipped while the last one still runs. An event is its own occurrence: two meetings
-  // that end close together each get a run, and the idempotency key stops the same meeting from running twice.
-  if (!event && !skip) {
-    const { data: running, error: runningError } = await client
-      .from("sessions")
-      .select("id")
-      .eq("workspace_id", task.workspace_id)
-      .eq("scheduled_task_id", task.id)
-      .in("status", ["starting", "live"])
-      .limit(1);
-    if (runningError) throw runningError;
-    if (running?.length) return { status: "already_running" };
-  }
 
   // TODO: routine sessions never pass the capture hook, so the brain does not learn from them.
   // Revisit once routines take real actions (write code, send email).
@@ -115,20 +111,29 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       host_name: ROUTINE_HOST_NAME,
       scheduled_task_id: task.id,
       idempotency_key: idempotencyKey,
+      concurrency_key: skip ? null : concurrencyKey,
     });
   if (insertError) {
-    if (insertError.code === UNIQUE_VIOLATION) return { status: "already_dispatched" };
+    if (insertError.code === UNIQUE_VIOLATION) return insertError.message.includes(LIVE_KEY_INDEX) ? { status: "busy" } : { status: "already_dispatched" };
     throw insertError;
   }
   const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
   if (skip) {
     await failRoutineSession(client, session, { ...skip, message: `Routine ${task.id} was skipped`, silent: true });
-    return { status: "skipped", sessionId };
+    return { status: "skipped", sessionId, runId: null };
   }
 
   try {
     const contextVersionId = await resolveBaseContextVersionId(client, task.workspace_id);
     const mcpServers = await usableMcpServersFor(client, task, routine);
+    // Until events carry agent_events ids, a run started by a webhook keeps its webhook trigger.
+    const trigger = eventIds?.length
+      ? { type: "event" as const, eventIds: eventIds.map(parseAgentEventId) }
+      : events?.length
+        ? eventTrigger(events[0]!)
+        : manual
+          ? { type: "manual" as const, requestedBy: parseUserId(manual.requestedBy) }
+          : undefined;
     const run = buildRoutineRunSpec({
       mcpServers,
       id: randomUUID(),
@@ -136,7 +141,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       scheduledTaskId: task.id,
       ownerUserId: task.created_by_user_id,
       occurrenceAt,
-      ...(event ? { trigger: eventTrigger(event) } : manual ? { trigger: { type: "manual" as const, requestedBy: parseUserId(manual.requestedBy) } } : {}),
+      ...(trigger ? { trigger } : {}),
       routine,
       contextVersionId,
     });
@@ -149,12 +154,13 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       workspaceId: task.workspace_id,
       routine,
       setup: { description: describeRoutineSetup(task, routine), timezone: task.timezone },
-      ...(event ? { event } : manual ? { manual: true } : {}),
+      ...(events?.length ? { events } : {}),
+      ...(manual ? { manual: true } : {}),
       config,
       client,
     });
     await markAgentRunRunning(client, run.id, launched?.machineId);
-    return { status: "started", sessionId };
+    return { status: "started", sessionId, runId: run.id };
   } catch (error) {
     if (error instanceof RoutineLeaseBusyError) {
       await failRoutineSession(client, session, {

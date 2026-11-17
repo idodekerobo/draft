@@ -4,10 +4,17 @@ type Row = Record<string, unknown>;
 type Filter = (row: Row) => boolean;
 type RpcHandler = (args: Record<string, unknown>) => { data?: unknown; error?: { message: string } | null };
 
+/** A unique index. Its name appears in the 23505 message, and `where` limits it to a partial index's rows. */
+export interface UniqueIndex {
+  name: string;
+  columns: string[];
+  where?: (row: Row) => boolean;
+}
+
 export interface FakeDb {
   tables: Record<string, Row[]>;
   /** Column sets that must stay unique per table, as in the real indexes. */
-  unique: Record<string, string[][]>;
+  unique: Record<string, Array<string[] | UniqueIndex>>;
   rpcs: Record<string, RpcHandler>;
   rpcCalls: Array<{ name: string; args: Record<string, unknown> }>;
   /** Tables whose new rows get a UUID id instead of `table-n`. */
@@ -20,8 +27,10 @@ export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<F
 
 class Query implements PromiseLike<{ data: unknown; error: unknown }> {
   private filters: Filter[] = [];
-  private mode: "select" | "insert" | "update" = "select";
-  private payload: Row = {};
+  private mode: "select" | "insert" | "update" | "upsert" = "select";
+  private payload: Row | Row[] = {};
+  private conflict: string[] = [];
+  private ignoreDuplicates = false;
   private returning = false;
   private cap = Infinity;
   private sort: { column: string; ascending: boolean } | null = null;
@@ -31,7 +40,14 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
   }
 
   select() { this.returning = true; return this; }
-  insert(row: Row) { this.mode = "insert"; this.payload = row; return this; }
+  insert(row: Row | Row[]) { this.mode = "insert"; this.payload = row; return this; }
+  upsert(row: Row, options: { onConflict?: string; ignoreDuplicates?: boolean } = {}) {
+    this.mode = "upsert";
+    this.payload = row;
+    this.conflict = options.onConflict?.split(",") ?? [];
+    this.ignoreDuplicates = options.ignoreDuplicates ?? false;
+    return this;
+  }
   update(row: Row) { this.mode = "update"; this.payload = row; return this; }
   eq(column: string, value: unknown) { this.filters.push((r) => r[column] === value); return this; }
   neq(column: string, value: unknown) { this.filters.push((r) => r[column] !== value); return this; }
@@ -49,16 +65,29 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
 
   private async run(): Promise<{ data: unknown; error: unknown }> {
     const rows = this.db.tables[this.table]!;
-    if (this.mode === "insert") {
-      const row = { ...this.payload };
-      for (const columns of this.db.unique[this.table] ?? []) {
-        if (columns.every((c) => row[c] != null) && rows.some((r) => columns.every((c) => r[c] === row[c]))) {
-          return { data: null, error: { code: "23505", message: `duplicate key value violates unique constraint on ${columns.join(",")}` } };
-        }
+    if (this.mode === "upsert") {
+      const row = { ...(this.payload as Row) };
+      const existing = rows.find((r) => this.conflict.length > 0 && this.conflict.every((c) => r[c] === row[c]));
+      if (existing) {
+        if (this.ignoreDuplicates) return { data: [], error: null };
+        Object.assign(existing, row);
+        return { data: this.returning ? [existing] : null, error: null };
       }
-      if (row.id === undefined) row.id = this.db.uuidTables.includes(this.table) ? crypto.randomUUID() : `${this.table}-${rows.length + 1}`;
-      rows.push(row);
-      return { data: this.returning ? [row] : null, error: null };
+    }
+    if (this.mode === "insert" || this.mode === "upsert") {
+      const inserts = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((input) => ({ ...input }));
+      for (const [at, row] of inserts.entries()) {
+        for (const entry of this.db.unique[this.table] ?? []) {
+          const index: UniqueIndex = Array.isArray(entry) ? { name: entry.join(","), columns: entry } : entry;
+          const inIndex = (r: Row) => (index.where ? index.where(r) : true) && index.columns.every((c) => r[c] != null);
+          if (inIndex(row) && rows.some((r) => inIndex(r) && index.columns.every((c) => r[c] === row[c]))) {
+            return { data: null, error: { code: "23505", message: `duplicate key value violates unique constraint "${index.name}"` } };
+          }
+        }
+        if (row.id === undefined) row.id = this.db.uuidTables.includes(this.table) ? crypto.randomUUID() : `${this.table}-${rows.length + at + 1}`;
+      }
+      rows.push(...inserts);
+      return { data: this.returning ? inserts : null, error: null };
     }
     let matched = rows.filter((r) => this.filters.every((f) => f(r)));
     if (this.sort) {

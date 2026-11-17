@@ -235,6 +235,27 @@ describeWithDatabase("always-on claim functions", () => {
     expect(task.next_due_at.toISOString()).toBe(new Date(now.getTime() + 60_000).toISOString());
   });
 
+  test("a reclaim after a crash before the advance reuses the occurrence and adds no event", async () => {
+    const { workspaceId } = await createWorkspace();
+    const now = new Date();
+    const occurrence = hourBefore(now);
+    const taskId = await insertTask({
+      workspaceId,
+      taskType: "agent_routine",
+      scheduleKind: "cron",
+      cronExpression: "0 9 * * *",
+      nextDueAt: occurrence,
+    });
+
+    await claimDueTasks(now);
+    // The tick died before writing the real next_due_at, so the lease expires.
+    const later = new Date(now.getTime() + 120_000);
+    const reclaims = (await claimDueTasks(later)).filter((claim) => claim.task.id === taskId);
+    expect(reclaims).toHaveLength(1);
+    expect(reclaims[0]!.occurrence_at.toISOString()).toBe(occurrence);
+    expect(await countEvents(taskId)).toBe(1);
+  });
+
   test("a due system task is claimed without an agent event", async () => {
     const { workspaceId } = await createWorkspace();
     const now = new Date();

@@ -1,6 +1,8 @@
 -- Claims due timers with SKIP LOCKED. Agent routines get their agent_events row in this
 -- same transaction, so a crash after the claim can't lose a one-shot. Other tasks get a
 -- provisional next_due_at (p_now + lease) that the caller replaces; SQL can't parse cron.
+-- claimed_occurrence_at keeps the real occurrence until the caller advances the row, so a
+-- reclaim after a crash reuses it and the event's dedupe key, instead of firing again.
 create or replace function claim_due_scheduled_tasks(
   p_now timestamptz,
   p_limit int,
@@ -15,7 +17,7 @@ as $$
 begin
   return query
     with due as (
-      select s.id, s.next_due_at as occurrence_at
+      select s.id, coalesce(s.claimed_occurrence_at, s.next_due_at) as occurrence_at
       from scheduled_tasks s
       where s.enabled
         and s.deleted_at is null
@@ -42,6 +44,7 @@ begin
       last_enqueued_at = p_now,
       fired_at    = case when t.schedule_kind = 'once' then p_now else t.fired_at end,
       enabled     = case when t.schedule_kind = 'once' then false else t.enabled end,
+      claimed_occurrence_at = case when t.schedule_kind = 'once' then null else due.occurrence_at end,
       next_due_at = case when t.schedule_kind = 'once' then null
                          else p_now + make_interval(secs => p_lease_seconds) end
     from due

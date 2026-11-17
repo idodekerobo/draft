@@ -31,7 +31,7 @@ export interface WorkspaceRun {
   status: "queued" | "preparing" | "running" | "validating" | "committing" |
           "succeeded" | "failed" | "stale" | "cancelled";
   outcome: "changed" | "no_change" | "failure" | "stale" | null;
-  triggerType: "schedule" | "source_threshold" | "manual" | "retry" | "stale_requeue" | "seed_test";
+  triggerType: "schedule" | "source_threshold" | "manual" | "retry" | "stale_requeue" | "seed_test" | "event";
   resultSummary: string | null;
   startedAt: string | null; // ISO 8601
   completedAt: string | null;
