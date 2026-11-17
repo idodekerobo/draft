@@ -57,7 +57,7 @@ export interface DraftToolLimits {
   "skills.update": Record<string, never>;
   "skills.delete": Record<string, never>;
   "routines.list": Record<string, never>;
-  "routines.create": Record<string, never>;
+  "routines.create": { maxPerRun?: number };
   "routines.update": Record<string, never>;
   "routines.delete": Record<string, never>;
   "routines.run": Record<string, never>;

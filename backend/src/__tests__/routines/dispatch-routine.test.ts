@@ -151,6 +151,8 @@ describe("dispatchAgentRoutine", () => {
     expect(run.permissions).toEqual([
       { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
       { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
+      { tool: "routines.create", limits: { maxPerRun: 5 } }, { tool: "routines.update" }, { tool: "routines.delete" },
+      { tool: "routines.list" }, { tool: "routines.run" }, { tool: "routines.runs" },
     ]);
     expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }, { harness: "claude", tool: "Grep" }, { harness: "claude", tool: "Bash" }] } });
     expect(run.started_at).toBeTruthy();

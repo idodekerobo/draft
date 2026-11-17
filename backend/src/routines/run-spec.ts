@@ -15,9 +15,16 @@ export const ROUTINE_NATIVE_TOOLS: Record<AgentRoutineConfig["harness"], Readonl
 /** A routine that may message teammates: it can find people and notify any member, up to this many times a run. */
 export const ROUTINE_NOTIFY_MAX_PER_RUN = 15;
 
-/** What a routine may call. Messaging is off unless the routine was saved with canNotify. */
+/** How many routines one run may create. */
+export const ROUTINE_CREATE_MAX_PER_RUN = 5;
+
+/** What a routine may call. Messaging is off unless the routine was saved with canNotify. Routine tools are checked per call. */
 export function routinePermissions(routine: Pick<AgentRoutineConfig, "canNotify" | "postChannels" | "github">): ReadonlyArray<AnyDraftToolPermission> {
-  const permissions: AnyDraftToolPermission[] = [...ROUTINE_PERMISSIONS];
+  const permissions: AnyDraftToolPermission[] = [
+    ...ROUTINE_PERMISSIONS,
+    { tool: "routines.create", limits: { maxPerRun: ROUTINE_CREATE_MAX_PER_RUN } },
+    { tool: "routines.update" }, { tool: "routines.delete" }, { tool: "routines.list" }, { tool: "routines.run" }, { tool: "routines.runs" },
+  ];
   if (routine.canNotify) permissions.push({ tool: "people.find" }, { tool: "people.notify", limits: { recipients: "members", maxPerRun: ROUTINE_NOTIFY_MAX_PER_RUN } });
   if (routine.postChannels) permissions.push(
     { tool: "slack.list_channels" }, { tool: "slack.read_channel" },

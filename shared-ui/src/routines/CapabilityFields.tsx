@@ -247,12 +247,10 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
                   <p className="ui-routines__secondary">You can also name a channel in the instructions.</p>
                 </fieldset>
               )}
-              {fieldError("postChannels")}
               <label className="ui-routines__check">
                 <input type="checkbox" checked={value.canNotify} disabled={disabled} onChange={(event) => onChange({ ...value, canNotify: event.target.checked })} />
                 Message teammates on Slack
               </label>
-              {fieldError("canNotify")}
             </>
           ) : missing("Slack")}
         </div>
@@ -266,11 +264,14 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
                 Work in GitHub repos
               </label>
               {value.github && <GithubRepoPicker value={value.github} disabled={disabled} onChange={(github) => onChange({ ...value, github })} />}
-              {fieldError("github")}
             </>
           ) : missing("GitHub")}
         </div>
       </div>
+      {/* Outside the panel, so an error still shows while the panel is collapsed. */}
+      {fieldError("postChannels")}
+      {fieldError("canNotify")}
+      {fieldError("github")}
       {/* A collapsed section still has to say why Save is off. */}
       {!open && !capabilitiesValid(value) && <p className="ui-routines__error" role="alert">Open Edit access to finish choosing channels or repos.</p>}
     </div>

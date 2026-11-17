@@ -1,7 +1,7 @@
 "use client";
 
 import type { HarnessId } from "draft-core/harnesses";
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { AgentFields, isDisconnected, type AgentStatuses, type AgentValue } from "./AgentFields";
 import { Select } from "../controls/Select";
 import { AbilityFields, RoutinePreview, capabilitiesOf, capabilitiesValid, capabilityChanges, type CapabilityValue } from "./CapabilityFields";
@@ -10,11 +10,11 @@ import { agentLabel } from "./agent-label";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import { RoutineRuns } from "./RoutineRuns";
-import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, scheduleSentence, timezoneOptions } from "./schedule-fields";
-import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutineEventName, RoutinePatch, RoutinePreset, RoutinesResponse, RoutineWeekday } from "./types";
+import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions } from "./schedule-fields";
+import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutineEventName, RoutinePatch, RoutinePreset, RoutineRule, RoutinesResponse, RoutineWeekday } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
-export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onDelete, onOpenRun, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents }: {
+export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onDelete, onOpenRun, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
   workspaceId: string;
   routine: Routine;
   canEdit: boolean;
@@ -32,6 +32,8 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   /** Help to connect an agent, shown while it blocks Save. */
   renderAgentSetup?: (harness: HarnessId, status: RoutineAgentStatus, refresh: () => void) => ReactNode;
   refreshAgents?: () => void;
+  /** The button that opened the details. Focus returns to it on close. */
+  returnFocusTo?: RefObject<HTMLElement | null>;
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
@@ -83,19 +85,22 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     if (agent.harness !== original.harness) agentEdit.harness = agent.harness;
     if (agent.harness !== original.harness || agent.model !== original.model) agentEdit.model = agent.model;
     if (agent.harness !== original.harness || agent.model !== original.model || agent.effort !== original.effort) agentEdit.reasoningEffort = agent.effort;
-  }
-  if (agent && original) {
     Object.assign(agentEdit, capabilityChanges(originalCapabilities, capabilities));
-    if (mode !== originalMode) agentEdit.onSchedule = mode === "schedule";
-    // A routine runs on its schedule or on triggers, so going back to the schedule clears the triggers.
-    const nextEvents = mode === "events" ? events : [];
-    if (nextEvents.length !== originalEvents.length || nextEvents.some((event) => !originalEvents.includes(event))) agentEdit.events = nextEvents;
   }
+  // The rule sets the schedule (null when it is off) and the triggers. Parts that did not change are left out.
+  const rule: RoutineRule = {};
+  const scheduleSent = mode === "schedule" && (originalMode !== "schedule" || scheduleDirty);
+  if (scheduleSent && preset !== "custom") rule.schedule = scheduleInput({ preset, time, weekday, timezone });
+  else if (mode === "events" && originalMode === "schedule") rule.schedule = null;
+  // A routine runs on its schedule or on triggers, so going back to the schedule clears the triggers.
+  const nextEvents = mode === "events" ? events : [];
+  if (nextEvents.length !== originalEvents.length || nextEvents.some((event) => !originalEvents.includes(event))) rule.events = nextEvents;
+  const ruleDirty = Object.keys(rule).length > 0;
   const agentDirty = Object.keys(agentEdit).length > 0;
   const agentValid = !agent || (agent.title.trim() !== "" && agent.prompt.trim() !== "" && capabilitiesValid(capabilities));
   const blocked = !!agent && !!original && agent.harness !== original.harness && isDisconnected(agents[agent.harness]);
-  const scheduleOk = !scheduleDirty || (preset !== "custom" && (!usesTime || time !== ""));
-  const canSave = editable && (scheduleDirty || agentDirty) && scheduleOk && agentValid && !blocked && !saving && !deleting;
+  const scheduleOk = !scheduleSent || (preset !== "custom" && (!usesTime || time !== ""));
+  const canSave = editable && (agentDirty || ruleDirty) && scheduleOk && agentValid && !blocked && !saving && !deleting;
   const noun = isSynthesis || routine.agent ? "run" : "check";
 
   const nextRun =
@@ -106,12 +111,8 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   async function save() {
     setSaving(true);
     setError(null);
-    const schedule =
-      scheduleDirty && preset !== "custom"
-        ? { preset, ...(usesTime ? { time } : {}), ...(preset === "weekly" ? { weekday } : {}), ...(!isDefault ? { timezone } : {}) }
-        : {};
     try {
-      await onSave({ ...agentEdit, ...schedule });
+      await onSave({ ...agentEdit, ...(ruleDirty ? { when: rule } : {}) });
     } catch (caught) {
       setError(
         caught instanceof RoutineError
@@ -257,6 +258,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
                   connectedProviders={connectedProviders}
                   onConnect={onConnect}
                   disabled={busy}
+                  fieldError={fieldError}
                   schedule={scheduleFields}
                 />
                 <AbilityFields value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
@@ -269,7 +271,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
               </section>
             )}
             {scheduleNotices}
-            {agentDirty && (
+            {(agentDirty || ruleDirty) && (
               <p className="ui-routines__notice" role="status">Changes apply to the next run. Past runs keep the prompt and agent they ran with.</p>
             )}
           </div>
@@ -304,7 +306,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   }
 
   return (
-    <Dialog titleId={titleId} onClose={onClose} busy={busy} wide={!!routine.agent}>
+    <Dialog titleId={titleId} onClose={onClose} busy={busy} wide={!!routine.agent} returnFocusTo={returnFocusTo}>
       <header className="ui-dialog__header">
         <h2 id={titleId}>{routine.title}</h2>
         <button type="button" className="ui-routines__btn" aria-label="Close routine details" disabled={busy} onClick={onClose}>

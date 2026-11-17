@@ -2,7 +2,7 @@
 
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import type { HarnessId } from "draft-core/harnesses";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
 import { routineRunsQueryOptions, routinesQueryOptions } from "../query/options";
@@ -139,6 +139,8 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const [creating, setCreating] = useState(false);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  // The control a dialog opened from, so focus can go back to it on close.
+  const opener = useRef<HTMLElement | null>(null);
   const labelPrefix = useId();
 
   const { toggle, save, create, remove, run } = useRoutineMutations(workspaceId, (error) =>
@@ -230,7 +232,14 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onChange={(event) => setSearch(event.target.value)}
         />
         {canEdit && (
-          <button type="button" className="ui-routines__btn ui-routines__btn--primary" onClick={() => setCreating(true)}>
+          <button
+            type="button"
+            className="ui-routines__btn ui-routines__btn--primary"
+            onClick={(event) => {
+              opener.current = event.currentTarget;
+              setCreating(true);
+            }}
+          >
             New routine
           </button>
         )}
@@ -280,7 +289,10 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                       type="button"
                       id={nameId}
                       className="ui-routines__link"
-                      onClick={() => setOpenId(routine.id)}
+                      onClick={(event) => {
+                        opener.current = event.currentTarget;
+                        setOpenId(routine.id);
+                      }}
                       onPointerEnter={() => warmRuns(routine)}
                       onFocus={() => warmRuns(routine)}
                     >
@@ -354,6 +366,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
+          returnFocusTo={opener}
         />
       )}
 
@@ -366,6 +379,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
+          returnFocusTo={opener}
         />
       )}
     </>

@@ -30,6 +30,12 @@ function routine(overrides: Partial<Routine>): Routine {
     lastCheckedAt: null,
     lastRun: null,
     updatedByName: null,
+    kind: "recurring",
+    runAt: null,
+    firedAt: null,
+    madeByAgent: false,
+    createdByRunId: null,
+    visibility: "shared",
     agent: null,
     ...overrides,
   };
@@ -136,8 +142,8 @@ describe("RoutinesPanel", () => {
   it("opens details, closes with Escape and the Close button, and restores focus", async () => {
     setup();
     await ready();
+    // Clicked without focusing first, as WebKit does, so focus must come back from the recorded opener.
     const trigger = screen.getByRole("button", { name: "Update company context" });
-    trigger.focus();
     fireEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog", { hidden: true });
@@ -163,7 +169,7 @@ describe("RoutinesPanel", () => {
 
   it("saves a new schedule and warns about hourly cadence", async () => {
     const { updateRoutine } = setup({
-      updateRoutine: async (id, patch) => ({ ...routine({ id: "sessions" }), ...("preset" in patch ? { preset: patch.preset } : {}) }) as Routine,
+      updateRoutine: async () => routine({ id: "sessions", preset: "hourly" }),
     });
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
@@ -177,7 +183,7 @@ describe("RoutinesPanel", () => {
     await waitFor(() => expect(updateRoutine).toHaveBeenCalled());
     const [id, patch] = updateRoutine.mock.calls[0]!;
     expect(id).toBe("sessions");
-    expect(patch).toMatchObject({ preset: "hourly" });
+    expect(patch).toEqual({ when: { schedule: { preset: "hourly", timezone: "UTC" } } });
     await waitFor(() => expect(screen.queryByRole("dialog", { hidden: true })).toBeNull());
   });
 

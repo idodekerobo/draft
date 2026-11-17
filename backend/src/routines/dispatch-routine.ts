@@ -73,6 +73,7 @@ async function usableMcpServersFor(client: SupabaseClient, task: ScheduledTaskRo
 
 /** How the routine is set to run, in words, for example "Daily at 9:00 AM (UTC), and when a Linear issue is created". */
 export function describeRoutineSetup(task: ScheduledTaskRow, routine: Pick<AgentRoutineConfig, "onSchedule" | "events">): string {
+  if (task.schedule_kind === "once") return describeTaskSchedule(task);
   const parts: string[] = [];
   if (routine.onSchedule !== false) parts.push(`${describeTaskSchedule(task)} (${task.timezone})`);
   if (routine.events?.length) parts.push(describeRoutineTriggers(routine.events));

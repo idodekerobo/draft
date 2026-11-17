@@ -9,6 +9,8 @@ export interface SynthesisRunSummary {
   sessionId?: string | null;
   routineId?: string | null;
   routineTitle?: string | null;
+  routineKind?: "once" | "rule" | null;
+  createdRoutines?: Array<{ id: string; title: string; kind: "once" | "recurring" | "event" }>;
   status: string;
   outcome: "changed" | "no_change" | "failure" | "stale" | null;
   triggerType: string | null;

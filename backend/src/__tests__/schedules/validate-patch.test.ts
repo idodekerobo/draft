@@ -48,6 +48,47 @@ describe("validatePatch for an agent routine", () => {
   });
 });
 
+describe("validatePatch when", () => {
+  it("carries a rule's schedule and triggers through as one when", () => {
+    expect(validatePatch({ when: { schedule: null, events: ["github.push"] } }, "full", current)).toEqual({
+      ok: true,
+      patch: { when: { schedule: null, events: ["github.push"] } },
+    });
+  });
+
+  it("carries a once through as one when", () => {
+    expect(validatePatch({ when: { in: "1d" } }, "full", current)).toEqual({ ok: true, patch: { when: { in: "1d" } } });
+  });
+
+  it("applies a when and an agent field in one patch", () => {
+    const result = validatePatch({ when: { schedule: { preset: "hourly" } }, prompt: "Again." }, "full", current);
+    expect(result).toMatchObject({ ok: true, patch: { when: { schedule: { preset: "hourly" } }, agent: { prompt: "Again." } } });
+  });
+
+  it("refuses a when it cannot read, and names when", () => {
+    expect(validatePatch({ when: { schedule: { preset: "yearly" } } }, "full", current)).toEqual({ ok: false, error: "invalid_body", field: "when" });
+    expect(validatePatch({ when: { in: "soon" } }, "full", current)).toEqual({ ok: false, error: "invalid_body", field: "when" });
+  });
+
+  it("refuses the top-level schedule fields that a client used to send", () => {
+    expect(validatePatch({ preset: "hourly" }, "full", current)).toEqual({ ok: false, error: "invalid_body", field: "preset" });
+    expect(validatePatch({ onSchedule: false }, "full", current)).toEqual({ ok: false, error: "invalid_body", field: "onSchedule" });
+  });
+
+  it("refuses a when on a toggle-only routine", () => {
+    expect(validatePatch({ when: { schedule: { preset: "hourly" } } }, "toggle_only", null)).toEqual({ ok: false, error: "field_not_editable", field: "when" });
+  });
+
+  it("refuses triggers and an off schedule on a built-in routine, which has no config for them", () => {
+    expect(validatePatch({ when: { events: ["github.push"] } }, "full", null)).toEqual({ ok: false, error: "field_not_editable", field: "events" });
+    expect(validatePatch({ when: { schedule: null } }, "full", null)).toEqual({ ok: false, error: "field_not_editable", field: "schedule" });
+  });
+
+  it("lets a built-in routine change its schedule", () => {
+    expect(validatePatch({ when: { schedule: { preset: "hourly" } } }, "full", null)).toEqual({ ok: true, patch: { when: { schedule: { preset: "hourly" } } } });
+  });
+});
+
 describe("validatePatch reasoning effort", () => {
   const withEffort = { ...current, harness: "codex" as const, model: "gpt-6-sol", reasoningEffort: "ultra" };
 

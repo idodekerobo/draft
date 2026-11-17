@@ -13,7 +13,7 @@ export function createActivityTools(client: SupabaseClient) {
       const { listActivity, parseCursor } = await import("../../../activity/service");
       const before = parseCursor(input.cursor);
       if (before === "invalid") return refuse("invalid_cursor", "That cursor isn't one this tool returned. Pass nextCursor from the previous page.");
-      return { status: "ok", output: await listActivity(client, user.workspaceId, before) };
+      return { status: "ok", output: await listActivity(client, user.workspaceId, before, user.userId) };
     },
   });
   return [list];

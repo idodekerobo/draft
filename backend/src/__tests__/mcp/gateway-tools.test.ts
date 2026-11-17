@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import type { AuthorizationDenial, ToolCallRecord } from "../../metaharness/tools/invoke-tool";
 import { createDraftToolRegistry } from "../../metaharness/tools/definitions";
@@ -6,8 +6,23 @@ import { registerGatewayTools, type McpGateway } from "../../mcp/gateway-tools";
 import { createFakeContextDb } from "../metaharness/context/fake-context-db";
 import { sha256 } from "../../synthesis/context-version-files";
 
+const schedules = await import("../../schedules/service");
+const agentStatus = await import("../../routines/agent-status");
+
 const USER_ID = "33333333-3333-4333-8333-333333333333";
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
+
+// The routine store is not part of these tests: the gateway's routine tools are checked up to the save.
+const createRoutine = spyOn(schedules, "createAgentRoutine").mockImplementation(async (_workspaceId, _creator, input) =>
+  ({ id: "task-new", kind: "in" in input.when || "at" in input.when ? "once" : "recurring", title: input.config.title }) as never,
+);
+const listRoutines = spyOn(schedules, "listRoutines").mockResolvedValue([]);
+const agentProblem = spyOn(agentStatus, "routineAgentProblem").mockResolvedValue(null);
+afterAll(() => {
+  createRoutine.mockRestore();
+  listRoutines.mockRestore();
+  agentProblem.mockRestore();
+});
 
 let workspaceId: string | null = WORKSPACE_ID;
 let refusal: AuthorizationDenial | null = null;
@@ -25,10 +40,10 @@ function gateway(): McpGateway {
   };
 }
 
-async function rpc(method: string, params: Record<string, unknown> = {}) {
+async function rpc(method: string, params: Record<string, unknown> = {}, scopes: string[] = []) {
   const handler = createMcpHandler(() => {
     const server = new McpServer({ name: "draft", version: "1.0.0" });
-    registerGatewayTools(server, USER_ID, gateway());
+    registerGatewayTools(server, USER_ID, gateway(), scopes);
     return server;
   });
   const response = await handler.fetch(
@@ -44,6 +59,8 @@ async function rpc(method: string, params: Record<string, unknown> = {}) {
 }
 
 const call = (name: string, args: Record<string, unknown> = {}) => rpc("tools/call", { name, arguments: args });
+/** A call on a connection with write access, as a person approves at sign-in. */
+const writeCall = (name: string, args: Record<string, unknown> = {}) => rpc("tools/call", { name, arguments: args }, ["write"]);
 
 describe("MCP tools that go through the gateway", () => {
   beforeEach(() => {
@@ -114,5 +131,44 @@ describe("MCP tools that go through the gateway", () => {
     const result = await call("sources.read", { source_item_id: "not-a-uuid" });
     expect(result.isError).toBe(true);
     expect(audits).toHaveLength(0);
+  });
+
+  describe("routines with when", () => {
+    const routine = { title: "Check PR", prompt: "Look at the PR and say what is left.", harness: "claude" };
+
+    beforeEach(() => {
+      createRoutine.mockClear();
+      listRoutines.mockClear();
+    });
+
+    it("creates a one-shot from when.in, for this person, and answers with its kind", async () => {
+      const result = await writeCall("routines.create", { ...routine, when: { in: "2h" } });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({ routine: { id: "task-new", kind: "once", title: "Check PR" } });
+      expect(createRoutine).toHaveBeenCalledWith(
+        WORKSPACE_ID,
+        { userId: USER_ID, via: "mcp", runId: null, depth: 0, visibility: "shared" },
+        expect.objectContaining({ when: { in: "2h" } }),
+      );
+    });
+
+    it("refuses a time that has passed, with the code and message the client reads", async () => {
+      const result = await writeCall("routines.create", { ...routine, when: { at: "2020-01-01T00:00:00.000Z" } });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0]!.text)).toEqual({ error: "in_the_past", message: "That time has already passed (2020-01-01T00:00:00.000Z). Use a future time." });
+      expect(createRoutine).not.toHaveBeenCalled();
+    });
+
+    it("rejects the old schedule fields, which are not part of the input any more", async () => {
+      const result = await writeCall("routines.create", { ...routine, schedule: { preset: "daily", time: "09:00" } });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('Unrecognized key: "schedule"');
+      expect(createRoutine).not.toHaveBeenCalled();
+    });
+
+    it("lists one-shots only when the call asks for them by kind", async () => {
+      await call("routines.list", { kind: "once" });
+      expect(listRoutines).toHaveBeenLastCalledWith(WORKSPACE_ID, USER_ID, { kind: "once" });
+    });
   });
 });

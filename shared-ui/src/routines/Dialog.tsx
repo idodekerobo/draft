@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 /** Modal built on the native dialog: focus is contained and Escape closes it. */
-export function Dialog({ titleId, onClose, busy, wide, children }: {
+export function Dialog({ titleId, onClose, busy, wide, returnFocusTo, children }: {
   titleId: string;
   /** Room for a form and its preview side by side. */
   wide?: boolean;
   onClose: () => void;
   /** Blocks dismissal while a save is in flight. */
   busy?: boolean;
+  /** The control that opened the dialog, recorded at the click. Focus returns there on close. */
+  returnFocusTo?: RefObject<HTMLElement | null>;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -17,13 +19,15 @@ export function Dialog({ titleId, onClose, busy, wide, children }: {
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // WebKit does not focus a button on click, so the focused element can be the page body.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const returnTo = returnFocusTo?.current ?? opener;
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
     // Focus the dialog itself so no control shows a ring before the member tabs in.
     dialog.focus({ preventScroll: true });
     return () => {
-      if (trigger?.isConnected) trigger.focus();
+      if (returnTo?.isConnected) returnTo.focus();
     };
   }, []);
 

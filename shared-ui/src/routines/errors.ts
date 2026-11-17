@@ -1,4 +1,8 @@
+import { ROUTINE_ONCE_MAX_DAYS } from "draft-core/routines";
+
+/** Only the controls a form renders can take a field error. Anything else shows at the foot of the form. */
 const FIELD_MESSAGES: Record<string, string> = {
+  when: "Choose when it runs.",
   preset: "Choose a frequency.",
   time: "Enter a valid time.",
   weekday: "Choose a day.",
@@ -12,8 +16,12 @@ const FIELD_MESSAGES: Record<string, string> = {
   canNotify: "Choose whether it may message teammates.",
   postChannels: "Choose up to 20 channels.",
   github: "Choose repositories Draft can reach.",
-  limit: "This workspace has reached its limit of routines. Delete one or ask Draft for more.",
 };
+
+/** A field such as "when.schedule.time" belongs to its deepest part that has a control, here "time". */
+function controlFor(field: string): string | undefined {
+  return field.split(".").reverse().find((part) => Object.hasOwn(FIELD_MESSAGES, part));
+}
 
 /** Carries the offending field so the editor can show the message beside it. */
 export class RoutineError extends Error {
@@ -26,7 +34,12 @@ export class RoutineError extends Error {
 export function toRoutineError(code: string, field?: string): RoutineError {
   if (code === "codex_not_connected" || code === "codex_needs_reconnect") return new RoutineError("Connect Codex for routines first.", "harness");
   if (code === "claude_not_connected" || code === "claude_needs_reconnect") return new RoutineError("Connect Claude Code for routines first.", "harness");
-  if (field && FIELD_MESSAGES[field]) return new RoutineError(FIELD_MESSAGES[field], field);
+  if (code === "too_far_ahead") return new RoutineError(`That time is more than ${ROUTINE_ONCE_MAX_DAYS} days away. Pick a closer time.`, "when");
+  if (code === "in_the_past") return new RoutineError("That time has already passed. Pick a later time.", "when");
+  if (field === "limit") return new RoutineError("This workspace has reached its limit of routines. Delete one or ask Draft for more.");
+  const control = field ? controlFor(field) : undefined;
+  if (control) return new RoutineError(FIELD_MESSAGES[control]!, control);
+  if (code === "invalid_schedule") return new RoutineError("Choose a valid schedule and try again.", "when");
   if (code === "forbidden") return new RoutineError("You can’t change routines in this workspace.");
   if (code === "already_running") return new RoutineError("This routine is already running.");
   if (code === "codex_login_busy") return new RoutineError("Another Codex run is using the login. Try again when it finishes.");
