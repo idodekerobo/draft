@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createMockBackend, refusal } from "./helpers/mock-backend.ts";
+import { createMockBackend, invalidInput, refusal } from "./helpers/mock-backend.ts";
 import { makeHome, runCli, seedCliAuth } from "./helpers/cli-runner.ts";
 import { waitForRun } from "../commands/routines.ts";
 import type { RoutineRun, ToolCallResult } from "../cloud-client.ts";
@@ -80,6 +80,44 @@ describe("draft routines list", () => {
     expect(result.stdout).toContain("created by: Ada");
     expect(result.stdout).toContain("updated by: Ada");
     expect(result.stdout).toContain("    Line one\n    Line two");
+  });
+
+  test("the list switches map to the routines.list filter", async () => {
+    const seen: unknown[] = [];
+    backend.state.toolOutputs["routines.list"] = (input) => { seen.push(input); return { routines: [] }; };
+    await runCli(["routines", "list", "--once", "--upcoming"], { home, apiUrl: backend.url });
+    await runCli(["routines", "list", "--fired", "--mine"], { home, apiUrl: backend.url });
+    await runCli(["routines", "list", "--mine"], { home, apiUrl: backend.url });
+    expect(seen).toEqual([
+      { kind: "once", status: "upcoming" },
+      { kind: "once", status: "fired", createdBy: "me" },
+      { createdBy: "me" },
+    ]);
+  });
+
+  test("conflicting list filters, or a filter with an id, are usage errors, exit 2", async () => {
+    const cases: string[][] = [
+      ["routines", "list", "--upcoming", "--fired"],
+      ["routines", "list", ROUTINE_ID, "--once"],
+    ];
+    for (const args of cases) {
+      const result = await runCli(args, { home, apiUrl: backend.url });
+      expect(result.exitCode).toBe(2);
+    }
+  });
+
+  test("a one-shot shows when it runs, or when it fired, and a routine an agent made says so", async () => {
+    const upcoming = { ...agentRoutine, id: "55555555-5555-4555-8555-555555555555", title: "Check PR", kind: "once", runAt: "2026-12-01T14:00:00.000Z", firedAt: null, madeByAgent: true };
+    const fired = { ...upcoming, id: "66666666-6666-4666-8666-666666666666", title: "Old check", runAt: "2026-11-01T14:00:00.000Z", firedAt: "2026-11-01T14:00:03.000Z", madeByAgent: false };
+    backend.state.toolOutputs["routines.list"] = () => ({ routines: [upcoming, fired] });
+    const result = await runCli(["routines", "list", "--once"], { home, apiUrl: backend.url, env: { TZ: "UTC" } });
+    const local = (iso: string) => new Date(iso).toLocaleString("en-US", { timeZone: "UTC" });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Check PR");
+    expect(result.stdout).toContain("— enabled (made by an agent)");
+    expect(result.stdout).toContain(`when: Once · ${local("2026-12-01T14:00:00.000Z")}`);
+    expect(result.stdout).toContain(`when: Fired ${local("2026-11-01T14:00:03.000Z")}`);
+    expect(result.stdout).toContain("Old check\u001b[0m — enabled\n");
   });
 
   test("empty list reports no routines found", async () => {
@@ -186,17 +224,37 @@ describe("draft routines create", () => {
       prompt: "Summarize the day",
       harness: "claude",
       model: null,
-      schedule: { preset: "daily", time: "09:00", timezone: "UTC" },
+      when: { schedule: { preset: "daily", time: "09:00", timezone: "UTC" }, events: ["fireflies.meeting_summarized", "github.push"] },
       canNotify: true,
       postChannels: ["#general", "#eng"],
       github: { repos: ["acme/app", "acme/web"], access: "write" },
-      events: ["fireflies.meeting_summarized", "github.push"],
     });
     expect(result.stdout).toContain("Created routine.");
     expect(result.stdout).toContain("Summarize sessions");
   });
 
-  test("--no-schedule defaults the preset to daily and sends onSchedule false; --disabled sends enabled false", async () => {
+  test("--in sends a one-shot when with no preset, and --at sends its time", async () => {
+    const seen: Record<string, unknown>[] = [];
+    backend.state.toolOutputs["routines.create"] = (input) => { seen.push(input); return { routine: agentRoutine }; };
+    const inResult = await runCli(["routines", "create", "--title", "Check PR", "--prompt", "Review it", "--harness", "claude", "--in", "2h"], { home, apiUrl: backend.url });
+    const atResult = await runCli(["routines", "create", "--title", "Check PR", "--prompt", "Review it", "--harness", "claude", "--at", "2026-12-01T09:00:00-05:00"], { home, apiUrl: backend.url });
+    expect(inResult.exitCode).toBe(0);
+    expect(atResult.exitCode).toBe(0);
+    expect(seen[0]).toMatchObject({ when: { in: "2h" } });
+    expect(seen[0]).not.toHaveProperty("preset");
+    expect(seen[0]).not.toHaveProperty("schedule");
+    expect(seen[1]).toMatchObject({ when: { at: "2026-12-01T09:00:00-05:00" } });
+  });
+
+  test("--on alone sends a rule with no schedule, so it runs only on its triggers", async () => {
+    let seen: Record<string, unknown> | undefined;
+    backend.state.toolOutputs["routines.create"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    const result = await runCli(["routines", "create", "--title", "Triage", "--prompt", "Triage", "--harness", "claude", "--on", "linear.issue_created"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toMatchObject({ when: { schedule: null, events: ["linear.issue_created"] } });
+  });
+
+  test("--no-schedule sends schedule null with its triggers, and --disabled sends enabled false", async () => {
     let seen: Record<string, unknown> | undefined;
     backend.state.toolOutputs["routines.create"] = (input) => { seen = input; return { routine: agentRoutine }; };
     const result = await runCli([
@@ -204,7 +262,8 @@ describe("draft routines create", () => {
       "--no-schedule", "--disabled", "--on", "github.pull_request_opened", "--json",
     ], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toMatchObject({ schedule: { preset: "daily" }, onSchedule: false, enabled: false, events: ["github.pull_request_opened"] });
+    expect(seen).toMatchObject({ when: { schedule: null, events: ["github.pull_request_opened"] }, enabled: false });
+    expect(seen).not.toHaveProperty("onSchedule");
     expect(JSON.parse(result.stdout)).toEqual({ schema_version: 1, routine: agentRoutine });
   });
 
@@ -217,7 +276,21 @@ describe("draft routines create", () => {
       "routines", "create", "--title", "Digest", "--prompt-file", promptPath, "--harness", "claude", "--preset", "weekly", "--weekday", "fri",
     ], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toMatchObject({ prompt: "Write the weekly digest.", schedule: { preset: "weekly", weekday: "fri" } });
+    expect(seen).toMatchObject({ prompt: "Write the weekly digest.", when: { schedule: { preset: "weekly", weekday: "fri" } } });
+  });
+
+  test("a refusal from the tool prints its message and exits 1", async () => {
+    backend.state.toolOutputs["routines.create"] = () => refusal("too_far_ahead", "A routine can be set at most 365 days ahead. You asked for 2028-01-01T09:00:00.000Z.");
+    const result = await runCli(["routines", "create", "--title", "Far", "--prompt", "Later", "--harness", "claude", "--at", "2028-01-01T09:00:00Z"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("A routine can be set at most 365 days ahead. You asked for 2028-01-01T09:00:00.000Z.");
+  });
+
+  test("input the tool rejects prints the issues it names and exits 1, not a generic error", async () => {
+    backend.state.toolOutputs["routines.create"] = () => invalidInput("when: Invalid input");
+    const result = await runCli(["routines", "create", "--title", "T", "--prompt", "P", "--harness", "claude", "--in", "2h", "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_input", message: "when: Invalid input" });
   });
 
   test("a required flag that is missing is a usage error, exit 2", async () => {
@@ -242,6 +315,25 @@ describe("draft routines create", () => {
     }
   });
 
+  test("a when that mixes one-shot and rule flags, or has no when at all, is a usage error, exit 2", async () => {
+    const base = ["routines", "create", "--title", "T", "--prompt", "P", "--harness", "claude"];
+    const cases: [string[], string][] = [
+      [[...base, "--in", "2h", "--preset", "daily"], "--in runs once"],
+      [[...base, "--at", "2026-12-01T09:00:00Z", "--on", "github.push"], "--at runs once"],
+      [[...base, "--in", "2h", "--at", "2026-12-01T09:00:00Z"], "give --in or --at, not both"],
+      [[...base, "--in", "2x"], "--in needs a number"],
+      [[...base, "--at", "2026-12-01T09:00:00"], "--at needs an ISO time with an offset"],
+      [[...base, "--time", "10:00", "--on", "github.push"], "--time, --weekday and --timezone need --preset"],
+      [[...base, "--no-schedule", "--preset", "daily"], "--no-schedule can't be combined"],
+      [base, "usage: draft routines create"],
+    ];
+    for (const [args, message] of cases) {
+      const result = await runCli(args, { home, apiUrl: backend.url });
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain(message);
+    }
+  });
+
   test("a missing connection refusal names the integration to connect", async () => {
     backend.state.toolOutputs["routines.create"] = () => refusal("linear_not_connected", "linear is not connected.");
     const result = await runCli([
@@ -254,28 +346,79 @@ describe("draft routines create", () => {
 });
 
 describe("draft routines update", () => {
-  test("sends a flat patch, and --no-post sends postChannels null", async () => {
+  test("a schedule flag reads the routine's current schedule and sends the whole schedule, and --no-post sends postChannels null", async () => {
     let seen: unknown;
+    backend.state.toolOutputs["routines.list"] = () => ({ routine: agentRoutine });
     backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
     const result = await runCli(["routines", "update", ROUTINE_ID, "--time", "10:30", "--no-post"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { time: "10:30", postChannels: null } });
+    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { when: { schedule: { preset: "daily", time: "10:30", timezone: "UTC" } }, postChannels: null } });
     expect(result.stdout).toContain("Updated routine.");
+  });
+
+  test("--preset replaces the current preset and keeps the time it does not pass", async () => {
+    let seen: unknown;
+    backend.state.toolOutputs["routines.list"] = () => ({ routine: agentRoutine });
+    backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    const result = await runCli(["routines", "update", ROUTINE_ID, "--preset", "weekly", "--weekday", "fri"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { when: { schedule: { preset: "weekly", time: "03:00", weekday: "fri", timezone: "UTC" } } } });
+  });
+
+  test("a schedule change to a custom routine needs --preset, and sends nothing", async () => {
+    let updated = false;
+    backend.state.toolOutputs["routines.list"] = () => ({ routine: { ...agentRoutine, preset: "custom", time: null } });
+    backend.state.toolOutputs["routines.update"] = () => { updated = true; return { routine: agentRoutine }; };
+    const result = await runCli(["routines", "update", ROUTINE_ID, "--time", "10:30"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("Pass --preset to set one.");
+    expect(updated).toBe(false);
+  });
+
+  test("a failed read of the current schedule stops the update, prints the reason and exits 1", async () => {
+    let updated = false;
+    backend.state.toolOutputs["routines.list"] = () => refusal("not_found", "Routine not found.");
+    backend.state.toolOutputs["routines.update"] = () => { updated = true; return { routine: agentRoutine }; };
+    const result = await runCli(["routines", "update", ROUTINE_ID, "--time", "10:30"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Routine not found.");
+    expect(updated).toBe(false);
+  });
+
+  test("--in and --at reschedule a one-shot with no read of the schedule", async () => {
+    const requested: string[] = [];
+    let seen: unknown;
+    backend.state.toolOutputs["routines.list"] = () => { requested.push("list"); return { routine: agentRoutine }; };
+    backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    const result = await runCli(["routines", "update", ROUTINE_ID, "--in", "1d"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { when: { in: "1d" } } });
+    expect(requested).toEqual([]);
+  });
+
+  test("--no-schedule sends schedule null, keeps the trigger change, and --enable sends enabled true", async () => {
+    let seen: unknown;
+    backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    await runCli(["routines", "update", ROUTINE_ID, "--no-schedule", "--on", "github.push", "--enable"], { home, apiUrl: backend.url });
+    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { when: { schedule: null, events: ["github.push"] }, enabled: true } });
   });
 
   test("switches map to patch fields: no-github, no-triggers, schedule and disable", async () => {
     let seen: unknown;
+    backend.state.toolOutputs["routines.list"] = () => ({ routine: agentRoutine });
     backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
     const result = await runCli(["routines", "update", ROUTINE_ID, "--no-github", "--no-triggers", "--schedule", "--disable", "--no-notify"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { github: null, events: [], onSchedule: true, enabled: false, canNotify: false } });
+    expect(seen).toEqual({
+      taskId: ROUTINE_ID,
+      patch: { when: { schedule: { preset: "daily", time: "03:00", timezone: "UTC" }, events: [] }, github: null, enabled: false, canNotify: false },
+    });
   });
 
-  test("--no-schedule sends onSchedule false and keeps the preset", async () => {
-    let seen: unknown;
-    backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
-    await runCli(["routines", "update", ROUTINE_ID, "--no-schedule", "--on", "github.push", "--enable"], { home, apiUrl: backend.url });
-    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { onSchedule: false, events: ["github.push"], enabled: true } });
+  test("a one-shot and a rule flag together are a usage error, exit 2", async () => {
+    const result = await runCli(["routines", "update", ROUTINE_ID, "--in", "2h", "--no-triggers"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("--in runs once");
   });
 
   test("conflicting or empty updates are usage errors, exit 2", async () => {
@@ -469,5 +612,39 @@ describe("draft routines help", () => {
   test("run --help says --wait is CLI-only", async () => {
     const result = await runCli(["routines", "run", "--help"], { home, apiUrl: backend.url });
     expect(result.stdout).toContain("--wait is CLI-only");
+  });
+
+  test("routines --help shows one-shots with --in and says they are routines too", async () => {
+    const result = await runCli(["routines", "--help"], { home, apiUrl: backend.url });
+    expect(result.stdout).toContain("--in 2h");
+    expect(result.stdout).toContain("draft routines list --once");
+    expect(result.stdout).toContain("Routines: work Draft runs once");
+  });
+
+  test("create --help and update --help list --in and --at; list --help lists the filters", async () => {
+    const create = await runCli(["routines", "create", "--help"], { home, apiUrl: backend.url });
+    const update = await runCli(["routines", "update", "--help"], { home, apiUrl: backend.url });
+    const list = await runCli(["routines", "list", "--help"], { home, apiUrl: backend.url });
+    for (const flag of ["--in <duration>", "--at <iso-time>"]) {
+      expect(create.stdout).toContain(flag);
+      expect(update.stdout).toContain(flag);
+    }
+    expect(update.stdout).toContain("--in / --at reschedule a one-shot");
+    for (const flag of ["--once", "--upcoming", "--fired", "--mine"]) expect(list.stdout).toContain(flag);
+  });
+
+  test("the top-level help line for routines mentions once", async () => {
+    const result = await runCli(["--help"], { home, apiUrl: backend.url });
+    expect(result.stdout).toContain("Routines: work Draft runs once, on a schedule, or when something happens");
+  });
+
+  test("shell completion offers the one-shot flags", async () => {
+    const bash = await runCli(["completion"], { home, apiUrl: backend.url });
+    const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
+    for (const flag of ["--in", "--at", "--once", "--upcoming", "--fired", "--mine"]) {
+      expect(bash.stdout).toContain(flag);
+      expect(zsh.stdout).toContain(`'${flag}`);
+    }
+    expect(zsh.stdout).toContain("list:List routines, including one-shots with --once");
   });
 });

@@ -37,7 +37,7 @@ export function printHelp(): void {
     ["people approve <id|name>",   "Approve a pending person (admins)"],
     ["people reject <id|name>",    "Reject a pending person (admins)"],
     ["people notify <id|name> <message>", "Send a message to a person"],
-    ["routines list|options|create|update|delete|run|runs", "Manage routines (see routines --help)"],
+    ["routines list|options|create|update|delete|run|runs", "Routines: work Draft runs once, on a schedule, or when something happens"],
     ["activity list",              "What the workspace's agents have run, newest first"],
     ["sources search \"<query>\"", "Search cross-provider source evidence"],
     ["sources read <source_item_id>", "Read a source or an available original representation"],

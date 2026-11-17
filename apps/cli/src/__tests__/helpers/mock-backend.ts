@@ -6,6 +6,11 @@ export function refusal(code: string, message: string = code) {
   return { __refusal: { code, message } };
 }
 
+/** A tool hook returns this to answer that the input did not fit the tool, as the tools endpoint does with a 400. */
+export function invalidInput(...issues: string[]) {
+  return { __invalid: issues };
+}
+
 export interface CapturedRequest {
   method: string;
   url: string;
@@ -125,7 +130,8 @@ export function createMockBackend() {
   async function answerTool(workspaceId: string, name: string, input: Record<string, unknown>, origin: string): Promise<Response> {
     const direct = state.toolOutputs[name];
     if (direct) {
-      const answer = direct(input) as { __refusal?: { code: string; message: string } } | null;
+      const answer = direct(input) as { __refusal?: { code: string; message: string }; __invalid?: string[] } | null;
+      if (answer?.__invalid) return Response.json({ status: "invalid", issues: answer.__invalid }, { status: 400 });
       return answer?.__refusal ? Response.json({ status: "refused", ...answer.__refusal }) : Response.json({ status: "ok", output: answer });
     }
     const asEnvelope = (result: { output: unknown } | Response) => (result instanceof Response ? result : Response.json({ status: "ok", output: result.output }));

@@ -3,6 +3,7 @@
 // `--wait` is CLI-only. Over MCP, an agent polls routines.runs with the run id.
 
 import { readFile } from "node:fs/promises";
+import type { RoutineListFilter } from "draft-core/routines";
 import { ROUTINE_EVENT_NAMES, ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS } from "draft-core/routine-triggers";
 import { callPersonTool, type FetchErrorCode, type RoutineAgent, type RoutineRun, type RoutineSummary, type ToolCallResult } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine, type ErrorPayload } from "../utils/json-output.ts";
@@ -12,17 +13,22 @@ const HARNESSES = ["claude", "codex"];
 const GITHUB_ACCESS = ["read", "write"];
 const CONNECTABLE = new Set(["fireflies", "granola", "github", "linear", "slack", "claude-code"]);
 const SCHEDULE_KEYS = ["time", "weekday", "timezone"];
-const PATCH_KEYS = ["title", "harness", "model", "preset", ...SCHEDULE_KEYS];
+const SCHEDULE_FLAGS = ["preset", ...SCHEDULE_KEYS];
+const PATCH_KEYS = ["title", "harness", "model"];
 const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
+// The same rules as ROUTINE_DURATION and the datetime check in draft-core/routines. Kept here so the CLI does not load that module at startup.
+const DURATION = /^([1-9]\d{0,5})(m|h|d)$/;
+const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const WAIT_INTERVAL_MS = 5_000;
 const WAIT_TIMEOUT_MS = 30 * 60_000;
 
-const CREATE_VALUES = ["title", "prompt", "prompt-file", "harness", "model", "preset", "time", "weekday", "timezone", "on", "post-channels", "github", "github-access"];
+const CREATE_VALUES = ["title", "prompt", "prompt-file", "harness", "model", "preset", "time", "weekday", "timezone", "in", "at", "on", "post-channels", "github", "github-access"];
 const CREATE_SWITCHES = ["notify", "no-schedule", "disabled"];
 const UPDATE_SWITCHES = ["notify", "no-notify", "no-post", "no-github", "schedule", "no-schedule", "no-triggers", "enable", "disable"];
+const LIST_SWITCHES = ["once", "upcoming", "fired", "mine"];
 
-const LIST_USAGE = "usage: draft routines list [<id>] [--json]";
-const CREATE_USAGE = "usage: draft routines create --title <text> (--prompt <text> | --prompt-file <path>) --harness <claude|codex> --preset <preset> [options]. Run `draft routines create --help`.";
+const LIST_USAGE = "usage: draft routines list [<id>] [--once] [--upcoming | --fired] [--mine] [--json]";
+const CREATE_USAGE = "usage: draft routines create --title <text> (--prompt <text> | --prompt-file <path>) --harness <claude|codex> (--in <duration> | --at <iso-time> | --preset <preset> | --on <event>) [options]. Run `draft routines create --help`.";
 const UPDATE_USAGE = "usage: draft routines update <id> [options]. Run `draft routines update --help`.";
 
 interface FlagSpec {
@@ -133,13 +139,57 @@ function githubError(raw: string | undefined): string | undefined {
   return bad ? `--github must list owner/repo names. Got "${bad}".` : undefined;
 }
 
+function durationError(value: string | undefined): string | undefined {
+  if (value === undefined || DURATION.test(value)) return undefined;
+  return "--in needs a number and m, h or d, such as 10m, 2h or 3d.";
+}
+
+function atError(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return ISO_WITH_OFFSET.test(value) && !Number.isNaN(Date.parse(value)) ? undefined : "--at needs an ISO time with an offset, such as 2026-12-01T09:00:00-05:00.";
+}
+
 function checkChoices(flags: Flags): string | undefined {
   return choiceError("harness", flags.values.harness, HARNESSES)
     ?? choiceError("preset", flags.values.preset, ROUTINE_PRESETS)
     ?? choiceError("weekday", flags.values.weekday, ROUTINE_WEEKDAYS)
     ?? choiceError("github-access", flags.values["github-access"], GITHUB_ACCESS)
+    ?? durationError(flags.values.in)
+    ?? atError(flags.values.at)
     ?? eventsError(flags.events)
     ?? githubError(flags.values.github);
+}
+
+function hasScheduleFlags(flags: Flags): boolean {
+  return SCHEDULE_FLAGS.some((name) => flags.values[name] !== undefined);
+}
+
+/** Any flag that sets how a routine repeats or what starts it, as opposed to a one-shot time. */
+function hasRuleFlags(flags: Flags): boolean {
+  const s = flags.switches;
+  return hasScheduleFlags(flags) || flags.events.length > 0 || s.has("schedule") || s.has("no-schedule") || s.has("no-triggers");
+}
+
+function onceFlag(flags: Flags): { name: "in" | "at"; value: string } | undefined {
+  if (flags.values.in !== undefined) return { name: "in", value: flags.values.in };
+  if (flags.values.at !== undefined) return { name: "at", value: flags.values.at };
+  return undefined;
+}
+
+/** Conflicts between the flags that set when a routine runs. Create and update share these rules. */
+function whenProblem(flags: Flags): string | undefined {
+  if (flags.values.in !== undefined && flags.values.at !== undefined) return "give --in or --at, not both";
+  const once = onceFlag(flags);
+  if (once && hasRuleFlags(flags)) return `--${once.name} runs once, so it can't be combined with --preset, --time, --weekday, --timezone, --on, --no-schedule, --schedule or --no-triggers.`;
+  if (flags.switches.has("no-schedule") && hasScheduleFlags(flags)) return "--no-schedule can't be combined with --preset, --time, --weekday or --timezone.";
+  return undefined;
+}
+
+/** A create needs a one-shot time, a preset, a trigger or --no-schedule. Schedule fields alone have nothing to attach to. */
+function createRuleProblem(flags: Flags): string | undefined {
+  if (onceFlag(flags) || flags.values.preset !== undefined || flags.switches.has("no-schedule")) return undefined;
+  if (hasScheduleFlags(flags)) return "--time, --weekday and --timezone need --preset.";
+  return flags.events.length ? undefined : CREATE_USAGE;
 }
 
 function flagConflict(flags: Flags): string | undefined {
@@ -166,6 +216,53 @@ function postChannelsValue(raw: string): "joined" | string[] {
 
 function githubValue(flags: Flags): { repos: string[]; access: string } {
   return { repos: splitList(flags.values.github!), access: flags.values["github-access"] ?? "read" };
+}
+
+/** A create's when: a one-shot time, or a rule. A rule with no preset (triggers only) has no schedule. */
+function createWhen(flags: Flags): Record<string, unknown> {
+  const once = onceFlag(flags);
+  if (once) return { [once.name]: once.value };
+  const preset = flags.values.preset;
+  const schedule = preset === undefined || flags.switches.has("no-schedule") ? null : scheduleFields(flags.values, preset);
+  return { schedule, ...(flags.events.length ? { events: flags.events } : {}) };
+}
+
+async function readRoutine(command: string, json: boolean, id: string): Promise<RoutineSummary | number> {
+  const result = await callTool(command, json, "routines.list", { taskId: id });
+  if (typeof result === "number") return result;
+  return (asRecord(result.output).routine as RoutineSummary | undefined) ?? fail(command, json, errorPayload("not_found", "Routine not found."));
+}
+
+/** The schedule to save after a change. The API takes the whole schedule, so fields not passed come from the routine. */
+function mergedSchedule(values: Record<string, string>, current: RoutineSummary): Record<string, string> | string {
+  const preset = values.preset ?? current.preset;
+  if (preset === "custom") return "This routine's schedule is custom. Pass --preset to set one.";
+  const stored: Record<string, string | null> = { time: current.time, weekday: current.weekday, timezone: current.timezone };
+  const fields: Record<string, string> = { preset };
+  for (const key of SCHEDULE_KEYS) {
+    const value = values[key] ?? stored[key];
+    if (value) fields[key] = value;
+  }
+  return fields;
+}
+
+/** An update's when, or undefined when no flag touches it. A schedule change reads the routine's current schedule first. */
+async function updateWhen(command: string, json: boolean, id: string, flags: Flags): Promise<Record<string, unknown> | undefined | number> {
+  const once = onceFlag(flags);
+  if (once) return { [once.name]: once.value };
+  if (!hasRuleFlags(flags)) return undefined;
+  const when: Record<string, unknown> = {};
+  if (flags.switches.has("no-schedule")) when.schedule = null;
+  else if (hasScheduleFlags(flags) || flags.switches.has("schedule")) {
+    const current = await readRoutine(command, json, id);
+    if (typeof current === "number") return current;
+    const schedule = mergedSchedule(flags.values, current);
+    if (typeof schedule === "string") return usage(command, json, schedule);
+    when.schedule = schedule;
+  }
+  if (flags.switches.has("no-triggers")) when.events = [];
+  else if (flags.events.length) when.events = flags.events;
+  return when;
 }
 
 // Returns the prompt text from --prompt or --prompt-file. Both flags together is an error.
@@ -204,6 +301,15 @@ function whenText(routine: RoutineSummary): string {
   return `${routine.scheduleDescription}${zone}`;
 }
 
+function localTime(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleString() : "unknown time";
+}
+
+function whenLine(routine: RoutineSummary): string {
+  if (routine.kind !== "once") return whenText(routine);
+  return routine.firedAt ? `Fired ${localTime(routine.firedAt)}` : `Once · ${localTime(routine.runAt)}`;
+}
+
 function accessLines(agent: RoutineAgent): string[] {
   const posting = agent.postChannels === "joined"
     ? "any channel Draft's bot is in"
@@ -224,14 +330,15 @@ function missingLine(provider: string): string {
 
 function formatRoutine(routine: RoutineSummary, detail: boolean): string {
   const agent = routine.agent;
-  const lines = [`${bold(routine.title)} — ${routine.enabled ? "enabled" : "disabled"}`, `  id: ${routine.id}`];
+  const state = `${routine.enabled ? "enabled" : "disabled"}${routine.madeByAgent ? " (made by an agent)" : ""}`;
+  const lines = [`${bold(routine.title)} — ${state}`, `  id: ${routine.id}`];
   if (!agent) {
-    lines.push(`  built-in routine (${routine.taskType})`, `  when: ${whenText(routine)}`, `  next run: ${routine.nextRunAt ?? "none scheduled"}`);
+    lines.push(`  built-in routine (${routine.taskType})`, `  when: ${whenLine(routine)}`, `  next run: ${routine.nextRunAt ?? "none scheduled"}`);
     return lines.join("\n");
   }
   lines.push(
     `  agent: ${agent.harness}, ${agent.model ?? "default model"}`,
-    `  when: ${whenText(routine)}`,
+    `  when: ${whenLine(routine)}`,
     `  triggers: ${agent.events?.length ? agent.events.join(", ") : "none"}`,
     "  access:",
     ...accessLines(agent).map((line) => `    ${line}`),
@@ -255,15 +362,28 @@ function printSaved(output: unknown, json: boolean, heading: string): number {
   return EXIT_SUCCESS;
 }
 
+function listFilter(flags: Flags): RoutineListFilter {
+  const s = flags.switches;
+  const filter: RoutineListFilter = {};
+  if (s.has("once") || s.has("upcoming") || s.has("fired")) filter.kind = "once";
+  if (s.has("upcoming")) filter.status = "upcoming";
+  if (s.has("fired")) filter.status = "fired";
+  if (s.has("mine")) filter.createdBy = "me";
+  return filter;
+}
+
 async function runList(args: string[]): Promise<number> {
   const command = "draft routines list";
-  const flags = parseFlags(args, { values: [], switches: [] });
+  const flags = parseFlags(args, { values: [], switches: LIST_SWITCHES });
   const json = flags.switches.has("json");
   if (flags.error) return usage(command, json, flags.error);
   if (flags.positionals.length > 1) return usage(command, json, LIST_USAGE);
   const [taskId] = flags.positionals;
+  if (flags.switches.has("upcoming") && flags.switches.has("fired")) return usage(command, json, "give --upcoming or --fired, not both");
+  const filter = listFilter(flags);
+  if (taskId && Object.keys(filter).length) return usage(command, json, "list filters apply to all routines. Drop the id or the filter flag.");
 
-  const result = await callTool(command, json, "routines.list", taskId ? { taskId } : {});
+  const result = await callTool(command, json, "routines.list", taskId ? { taskId } : filter);
   if (typeof result === "number") return result;
   const output = asRecord(result.output);
   if (json) {
@@ -358,10 +478,8 @@ async function runCreate(args: string[]): Promise<number> {
   const prompt = await loadPrompt(flags);
   if (prompt.error) return usage(command, json, prompt.error);
   const { title, harness } = flags.values;
-  const noSchedule = flags.switches.has("no-schedule");
-  const preset = flags.values.preset ?? (noSchedule ? "daily" : undefined);
-  if (!title || !harness || !preset || !prompt.text) return usage(command, json, CREATE_USAGE);
-  const problem = checkChoices(flags) ?? flagConflict(flags);
+  if (!title || !harness || !prompt.text) return usage(command, json, CREATE_USAGE);
+  const problem = checkChoices(flags) ?? flagConflict(flags) ?? whenProblem(flags) ?? createRuleProblem(flags);
   if (problem) return usage(command, json, problem);
 
   const body: Record<string, unknown> = {
@@ -369,13 +487,11 @@ async function runCreate(args: string[]): Promise<number> {
     prompt: prompt.text,
     harness,
     model: flags.values.model ?? null,
-    schedule: scheduleFields(flags.values, preset),
+    when: createWhen(flags),
   };
   if (flags.switches.has("notify")) body.canNotify = true;
   if (flags.values["post-channels"] !== undefined) body.postChannels = postChannelsValue(flags.values["post-channels"]);
   if (flags.values.github !== undefined) body.github = githubValue(flags);
-  if (flags.events.length) body.events = flags.events;
-  if (noSchedule) body.onSchedule = false;
   if (flags.switches.has("disabled")) body.enabled = false;
 
   const result = await callTool(command, json, "routines.create", body);
@@ -383,10 +499,11 @@ async function runCreate(args: string[]): Promise<number> {
   return printSaved(result.output, json, "Created routine.");
 }
 
-function buildPatch(flags: Flags, promptText: string | undefined): Record<string, unknown> {
+function buildPatch(flags: Flags, promptText: string | undefined, when: Record<string, unknown> | undefined): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const key of PATCH_KEYS) if (flags.values[key] !== undefined) patch[key] = flags.values[key];
   if (promptText !== undefined) patch.prompt = promptText;
+  if (when) patch.when = when;
   const s = flags.switches;
   if (s.has("notify")) patch.canNotify = true;
   if (s.has("no-notify")) patch.canNotify = false;
@@ -394,10 +511,6 @@ function buildPatch(flags: Flags, promptText: string | undefined): Record<string
   else if (flags.values["post-channels"] !== undefined) patch.postChannels = postChannelsValue(flags.values["post-channels"]);
   if (s.has("no-github")) patch.github = null;
   else if (flags.values.github !== undefined) patch.github = githubValue(flags);
-  if (s.has("schedule")) patch.onSchedule = true;
-  if (s.has("no-schedule")) patch.onSchedule = false;
-  if (s.has("no-triggers")) patch.events = [];
-  else if (flags.events.length) patch.events = flags.events;
   if (s.has("enable")) patch.enabled = true;
   if (s.has("disable")) patch.enabled = false;
   return patch;
@@ -410,7 +523,7 @@ async function runUpdate(args: string[]): Promise<number> {
   if (flags.error) return usage(command, json, flags.error);
   const [id, ...extra] = flags.positionals;
   if (!id || extra.length) return usage(command, json, UPDATE_USAGE);
-  const conflict = flagConflict(flags);
+  const conflict = flagConflict(flags) ?? whenProblem(flags);
   if (conflict) return usage(command, json, conflict);
 
   const prompt = await loadPrompt(flags);
@@ -418,7 +531,9 @@ async function runUpdate(args: string[]): Promise<number> {
   const problem = checkChoices(flags);
   if (problem) return usage(command, json, problem);
 
-  const patch = buildPatch(flags, prompt.text);
+  const when = await updateWhen(command, json, id, flags);
+  if (typeof when === "number") return when;
+  const patch = buildPatch(flags, prompt.text, when);
   if (Object.keys(patch).length === 0) return usage(command, json, `nothing to change. ${UPDATE_USAGE}`);
   const result = await callTool(command, json, "routines.update", { taskId: id, patch });
   if (typeof result === "number") return result;
@@ -569,7 +684,13 @@ async function runRuns(args: string[]): Promise<number> {
   return EXIT_SUCCESS;
 }
 
-const TOP_HELP = `${bold("draft routines")} — agents that run on a schedule, when something happens, or when you run them.
+const TOP_HELP = `Routines: work Draft runs once, on a schedule, or when something happens.
+
+When a routine runs:
+  Once:      draft routines create --title "Check PR" --prompt "..." --harness claude --in 2h
+  Schedule:  draft routines create --title "Digest" --prompt "..." --harness claude --preset daily --time 22:00
+  Event:     draft routines create --title "Triage" --prompt "..." --harness claude --on linear.issue_created
+One-shots (--in / --at) are routines too. List them with \`draft routines list --once\`.
 
 Commands:
   list [<id>] [--json]      List routines, or show one with its full prompt
@@ -582,13 +703,20 @@ Commands:
 
 Run \`draft routines <command> --help\` for its flags.`;
 
-const LIST_HELP = `usage: draft routines list [<id>] [--json]
+const LIST_HELP = `${LIST_USAGE}
 
-  <id>      Show one routine, with its full prompt and who created or changed it.
-  --json    Print the answer as JSON.
+  <id>          Show one routine, with its full prompt and who created or changed it.
+  --once        Show the one-shot routines (--in or --at).
+  --upcoming    Show the one-shots that have not run yet. Implies --once.
+  --fired       Show the one-shots that have run. Implies --once.
+  --mine        Show only the routines you made.
+  --json        Print the answer as JSON.
+
+One-shots are hidden by default. --once shows them; --upcoming and --fired filter them; --mine shows only yours.
 
 Examples:
   draft routines list
+  draft routines list --once --upcoming
   draft routines list <id>`;
 
 const OPTIONS_HELP = `usage: draft routines options [--json]
@@ -609,6 +737,8 @@ const SHARED_FLAGS = `  --title <text>           Name of the routine. Up to 120 
   --prompt-file <path>     Read the prompt from a file. Use this or --prompt, not both.
   --harness <harness>      claude or codex.
   --model <id>             Model for the harness. See \`draft routines options\`.
+  --in <duration>          Run once after 10m, 2h or 3d (at most 365 days).
+  --at <iso-time>          Run once at this time, for example 2026-12-01T09:00:00-05:00.
   --preset <preset>        When it runs on its schedule: ${PRESET_LIST}.
   --time HH:MM             Time of day on a 24-hour clock. For daily, weekdays and weekly.
   --weekday <day>          sun, mon, tue, wed, thu, fri or sat. For weekly.
@@ -622,17 +752,17 @@ const SHARED_FLAGS = `  --title <text>           Name of the routine. Up to 120 
 const TRIGGERS_SECTION = `Triggers for --on:
 ${TRIGGER_LIST}`;
 
-const CREATE_HELP = `usage: draft routines create --title <text> (--prompt <text> | --prompt-file <path>) --harness <harness> --preset <preset> [options]
+const CREATE_HELP = `usage: draft routines create --title <text> (--prompt <text> | --prompt-file <path>) --harness <harness> (--in <duration> | --at <iso-time> | --preset <preset> | --on <event>) [options]
 
 ${SHARED_FLAGS}
-  --no-schedule            Run only on triggers and Run now. The schedule is kept for later.
-                           With this flag, --preset is optional and defaults to daily.
+  --no-schedule            Run only on triggers and Run now. Not with --preset or --time.
   --disabled               Save the routine turned off.
   --json                   Print the answer as JSON.
 
 ${TRIGGERS_SECTION}
 
 Examples:
+  draft routines create --title "Check PR" --prompt "Review the open pull request." --harness claude --in 2h
   draft routines create --title "Weekday digest" --prompt-file digest.md --harness claude --preset weekdays --time 09:00 --timezone America/New_York
   draft routines create --title "Review PRs" --prompt "Review each new pull request." --harness claude --no-schedule --on github.pull_request_opened --github acme/app`;
 
@@ -640,6 +770,7 @@ const UPDATE_HELP = `usage: draft routines update <id> [options]
 
 Changes only the fields you pass. Other fields stay as they are.
 --on replaces the whole trigger list. --github replaces the repo list.
+--in / --at reschedule a one-shot, including one that already ran.
 
 ${SHARED_FLAGS}
   --no-notify              Stop letting the agent message teammates on Slack.
