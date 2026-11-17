@@ -37,6 +37,7 @@
         "app_mention",
         "message.channels",
         "message.groups",
+        "message.im",
         "reaction_added"
       ]
     },
