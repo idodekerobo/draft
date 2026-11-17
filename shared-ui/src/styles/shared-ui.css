@@ -1166,6 +1166,8 @@
 .ui-activity-row__primary, .ui-activity-row__meta { overflow-wrap: anywhere; }
 .ui-activity-upcoming { padding: 12px 0; opacity: 1; transform: translateY(0); transition: opacity 200ms var(--motion-ease), transform 200ms var(--motion-ease); }
 .ui-activity-row--removing { opacity: 0; transform: translateY(-3px); }
+/* Upcoming rows have no status dot; inset their text to the run text column. */
+.ui-activity-upcoming .ui-activity-row__text { padding-left: 20px; }
 .ui-activity-row .ui-link { touch-action: manipulation; transition: transform 120ms var(--motion-ease); }
 .ui-activity-row .ui-link:active:not(:disabled) { transform: scale(0.98); }
 .ui-activity-row .ui-link:disabled { color: var(--color-text-secondary); cursor: default; }
