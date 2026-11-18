@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { SandboxProvider, SandboxRef, SandboxSpec } from "../../../sandbox/providers";
+import type { SandboxProvider, SandboxRef, SandboxSpec } from "../../../../metaharness/sandbox/providers";
 
 /**
  * Runs the lifecycle every provider must support: create with a volume, start, stop, start again, destroy.

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   loadSandboxDeploymentConfig,
   validateSandboxDeploymentConfig,
-} from "../../sandbox/config";
+} from "../../../metaharness/sandbox/config";
 
 const digest = `registry.fly.io/draft@sha256:${"a".repeat(64)}`;
 const environment = {

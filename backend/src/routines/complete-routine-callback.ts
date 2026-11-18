@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { authenticateSandboxCallbackRequest } from "../sandbox";
+import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { routineEventsForHarness } from "../ingestion/harness-lines";
 import { parseLiveLine } from "draft-core/harnesses/claude/parse-live-line";

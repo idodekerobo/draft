@@ -3,7 +3,7 @@ import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
 import {
   authenticateSandboxCallbackRequest,
   launchSandboxRun,
-} from "../sandbox";
+} from "../metaharness/sandbox";
 import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
 import { finalizeSynthesisResult, InvalidSynthesisResultError } from "./finalize-result";
 import { failSynthesisRun } from "./handle-run-failure";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createSandboxCallbackToken } from "../../sandbox/callback-token";
+import { createSandboxCallbackToken } from "../../metaharness/sandbox/callback-token";
 import {
   completeSummarizationRunCallback,
   parseAgentRunIdFromSummarizationRunId,

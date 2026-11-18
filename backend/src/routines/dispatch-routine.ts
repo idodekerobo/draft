@@ -7,7 +7,7 @@ import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
 import { OnBehalfOfInactiveError, assertOnBehalfOfActive } from "../metaharness/runs/on-behalf-of";
 import { usableMcpConnections } from "../metaharness/tools/remote-mcp";
 import { recordError } from "../errors/record-error";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { describeRoutineTriggers } from "draft-core/routines";
 import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostId, type AgentRoutineConfig } from "./config";

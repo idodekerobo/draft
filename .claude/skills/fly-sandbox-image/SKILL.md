@@ -28,8 +28,8 @@ Covers:
     `configure-egress.sh`)
 - Bumping `CLAUDE_CODE_VERSION` or `CODEX_VERSION` in the Dockerfile.
 - Any change to what the backend sends to the runner or expects back: env vars
-  or the manifest in `backend/src/sandbox/launch.ts` and
-  `backend/src/sandbox/run-manifest.ts`, bundle layout, callback body shape.
+  or the manifest in `backend/src/metaharness/sandbox/launch.ts` and
+  `backend/src/metaharness/sandbox/run-manifest.ts`, bundle layout, callback body shape.
   A test builds the bundle and fails if a backend-only module gets into it
   (`backend/src/__tests__/sandbox/runner-bundle.test.ts`).
 - Standing up a new deployment target (staging, a second prod region, a
@@ -37,7 +37,7 @@ Covers:
 
 ## Why this is required every time
 
-`backend/src/sandbox/providers/fly/config.ts` validates `FLY_SANDBOX_IMAGE` against:
+`backend/src/metaharness/sandbox/providers/fly/config.ts` validates `FLY_SANDBOX_IMAGE` against:
 
 ```
 registry.fly.io/<app>@sha256:<64-hex-digest>
@@ -71,7 +71,7 @@ New environment: pick a name and confirm it with the user before
 ### 1. Test first
 
 ```bash
-cd backend && bun test src/__tests__/sandbox src/__tests__/summarization src/__tests__/synthesis
+cd backend && bun test src/__tests__/sandbox src/__tests__/metaharness/sandbox src/__tests__/summarization src/__tests__/synthesis
 sh -n src/sandbox/image/entrypoint.sh src/sandbox/image/configure-egress.sh
 ```
 

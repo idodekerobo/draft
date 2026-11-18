@@ -1,7 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
-import { loadSandboxDeploymentConfig } from "../sandbox";
+import { loadSandboxDeploymentConfig } from "../metaharness/sandbox";
 import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";

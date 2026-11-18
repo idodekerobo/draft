@@ -3,7 +3,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { upsertConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
-import { loadSandboxDeploymentConfig } from "../sandbox";
+import { loadSandboxDeploymentConfig } from "../metaharness/sandbox";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { PILOT_RUN_BUNDLE_LIMITS } from "../synthesis/load-run-bundle";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";

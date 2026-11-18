@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { __resetDrainForTests, drainEventInbox } from "../../events/drain";
 import type { dispatchAgentRoutine } from "../../routines/dispatch-routine";
-import type { SandboxDeploymentConfig } from "../../sandbox";
+import type { SandboxDeploymentConfig } from "../../metaharness/sandbox";
 import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
 
 mock.module("../../db/client", () => ({ serviceClient: fakeClient(fakeDb()) }));

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SandboxRunReceipt } from "../sandbox";
+import type { SandboxRunReceipt } from "../metaharness/sandbox";
 import { ensureMemoryProvisioned, seedEmptyWorkspace } from "./provision-memory";
 import { sweepStaleSynthesisRuns } from "./reconcile-stale-runs";
 import { recordError } from "../errors/record-error";

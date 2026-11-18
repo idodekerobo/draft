@@ -4,9 +4,9 @@ import {
   FlyMachineWaitTimeoutError,
   type CreateFlyMachineInput,
   type CreateFlyVolumeInput,
-} from "../../../../sandbox/providers/fly/fly-machines";
-import { createFlyProvider, type FlyMachinesApi } from "../../../../sandbox/providers/fly/provider";
-import type { SandboxRef, SandboxSpec } from "../../../../sandbox/providers";
+} from "../../../../../metaharness/sandbox/providers/fly/fly-machines";
+import { createFlyProvider, type FlyMachinesApi } from "../../../../../metaharness/sandbox/providers/fly/provider";
+import type { SandboxRef, SandboxSpec } from "../../../../../metaharness/sandbox/providers";
 
 const config = {
   kind: "fly" as const,

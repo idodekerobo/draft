@@ -1,4 +1,4 @@
-import type { SandboxProvider, SandboxRef } from "../../../sandbox/providers";
+import type { SandboxProvider, SandboxRef } from "../../../../metaharness/sandbox/providers";
 import { runProviderConformance } from "./conformance";
 
 /** An in-memory provider. A start marks its machine running, and a destroy of a gone sandbox is not an error. */

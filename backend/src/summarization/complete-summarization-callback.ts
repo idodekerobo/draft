@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { finishAgentRun } from "../metaharness/runs/lifecycle";
 import { describeError } from "../errors/describe-error";
-import { authenticateSandboxCallbackRequest } from "../sandbox";
+import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
 import { validateSummarizationResult } from "./validate-result";
 import { materializeSessionSummary } from "./materialize-summary";
 import { recordError } from "../errors/record-error";

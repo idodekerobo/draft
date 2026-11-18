@@ -2,14 +2,14 @@
 // command the runner builds. These values are the contract with the image already deployed.
 // The expected values were recorded from the code before the runner read a manifest, and have not changed.
 import { describe, expect, it } from "bun:test";
-import { launchSandboxRun } from "../../sandbox/launch";
-import { createFlyProvider } from "../../sandbox/providers/fly/provider";
+import { launchSandboxRun } from "../../../metaharness/sandbox/launch";
+import { createFlyProvider } from "../../../metaharness/sandbox/providers/fly/provider";
 import { claudeArgs, sanitizedClaudeEnv } from "draft-core/harnesses/claude/runner";
 import { codexArgs, codexConfigToml, sanitizedCodexEnv } from "draft-core/harnesses/codex/runner";
 import { type RunnerManifest } from "draft-core/run-manifest";
-import { buildRoutineRunSpec } from "../../routines/run-spec";
-import { buildSummarizationRunSpec } from "../../summarization/run-spec";
-import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
+import { buildRoutineRunSpec } from "../../../routines/run-spec";
+import { buildSummarizationRunSpec } from "../../../summarization/run-spec";
+import { buildSynthesisRunSpec } from "../../../synthesis/run-spec";
 
 const MCP_URL = "https://api.example.test/runs/11111111-1111-4111-8111-111111111111/mcp";
 const SCHEMA = '{"type":"object","required":["outcome"]}';

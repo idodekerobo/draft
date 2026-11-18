@@ -1,5 +1,5 @@
-import { SandboxCallbackRequestError } from "../sandbox/callback-request";
-import { loadSandboxDeploymentConfig } from "../sandbox/config";
+import { SandboxCallbackRequestError } from "../metaharness/sandbox/callback-request";
+import { loadSandboxDeploymentConfig } from "../metaharness/sandbox/config";
 import { completeSynthesisRunCallback } from "../synthesis/orchestrate-run";
 import { completeSummarizationRunCallback } from "../summarization/complete-summarization-callback";
 import { completeRoutineRunCallback } from "../routines/complete-routine-callback";

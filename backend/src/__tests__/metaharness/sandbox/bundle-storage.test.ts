@@ -4,7 +4,7 @@ import {
   BUNDLE_SIGNED_URL_TTL_SECONDS,
   BUNDLE_STORAGE_BUCKET,
   uploadRunBundle,
-} from "../../sandbox/bundle-storage";
+} from "../../../metaharness/sandbox/bundle-storage";
 
 function fakeClient(overrides: {
   uploadError?: { message: string; name?: string; status?: number };

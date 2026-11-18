@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createSandboxCallbackToken,
   verifySandboxCallbackToken,
-} from "../../sandbox/callback-token";
+} from "../../../metaharness/sandbox/callback-token";
 
 const claims = {
   runId: "run-123",

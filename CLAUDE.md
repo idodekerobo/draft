@@ -92,7 +92,7 @@ from the runner:
 - `backend/src/sandbox/image/*` (Dockerfile, entrypoint, egress script)
 - `core/src/harnesses/*/runner.ts`, `core/src/harnesses/failure.ts`
 - `core/src/run-manifest.ts` and `core/src/run-spec.ts`
-- the manifest or environment in `backend/src/sandbox/launch.ts` and `run-manifest.ts`
+- the manifest or environment in `backend/src/metaharness/sandbox/launch.ts` and `run-manifest.ts`
 
 The change is not done until the skill's steps are complete. Switching an
 environment to a new image needs my explicit approval.

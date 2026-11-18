@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { buildSummarizationPrompt } from "./render-prompt";
-import { computeBundleHash } from "../sandbox/bundle-hash";
-import type { SandboxRunBundle } from "../sandbox";
+import { computeBundleHash } from "../metaharness/sandbox/bundle-hash";
+import type { SandboxRunBundle } from "../metaharness/sandbox";
 import type { CapturedSessionRow } from "../types/tables";
 
 export const MANIFEST_PATH = "input/manifest.json";

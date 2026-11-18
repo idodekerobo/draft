@@ -1,6 +1,6 @@
-import { computeBundleHash } from "../sandbox/bundle-hash";
+import { computeBundleHash } from "../metaharness/sandbox/bundle-hash";
 import { assertSafeDocumentPath } from "../synthesis/context-version-files";
-import type { SandboxRunBundle } from "../sandbox";
+import type { SandboxRunBundle } from "../metaharness/sandbox";
 import { visibleContext, type ContextAudience } from "../metaharness/context/visible-context";
 import type { EventFact } from "./event-facts";
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { loadRunnerManifest } from "../../sandbox/runner/manifest";
 import { validateRunnerManifest } from "draft-core/run-manifest";
-import { buildRunnerManifest, needsDraftToolServer } from "../../sandbox/run-manifest";
+import { buildRunnerManifest, needsDraftToolServer } from "../../metaharness/sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 

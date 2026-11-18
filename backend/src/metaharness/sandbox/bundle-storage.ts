@@ -32,7 +32,7 @@ export async function uploadRunBundle(
   client?: SupabaseClient,
   retryDelayMs: number = BUNDLE_UPLOAD_RETRY_DELAY_MS,
 ): Promise<UploadedBundle> {
-  const resolvedClient = client ?? (await import("../db/client")).serviceClient;
+  const resolvedClient = client ?? (await import("../../db/client")).serviceClient;
   const objectKey = `sandbox_uploads/${input.organizationId}/${input.workspaceId}/${input.runId}.json`;
 
   const body = JSON.stringify({ files: input.files });

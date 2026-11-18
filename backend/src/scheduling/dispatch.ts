@@ -10,7 +10,7 @@ import { getLatestSynthesisRun } from "../synthesis/latest-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
 import { allowOncePer } from "../errors/throttle";
 import { syncPeopleInBackground } from "../people/sync";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 
 // Injectable, defaulting to the real implementations, so tests can

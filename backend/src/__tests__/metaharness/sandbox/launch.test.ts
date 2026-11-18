@@ -1,20 +1,20 @@
 import { describe, expect, it } from "bun:test";
-import type { ValidatedRunBundle } from "../../synthesis/context-version-files";
+import type { ValidatedRunBundle } from "../../../synthesis/context-version-files";
 import type { AgentRunSpec } from "draft-core/run-spec";
-import { verifyAgentRunToken } from "../../metaharness/runs/run-token";
-import { buildRoutineRunSpec } from "../../routines/run-spec";
-import { verifySandboxCallbackToken } from "../../sandbox/callback-token";
+import { verifyAgentRunToken } from "../../../metaharness/runs/run-token";
+import { buildRoutineRunSpec } from "../../../routines/run-spec";
+import { verifySandboxCallbackToken } from "../../../metaharness/sandbox/callback-token";
 import {
   FlyMachineWaitTimeoutError,
   type CreateFlyMachineInput,
   type FlyMachine,
-} from "../../sandbox/providers/fly/fly-machines";
-import { launchSandboxRun } from "../../sandbox/launch";
-import type { SandboxProvider, SandboxSpec } from "../../sandbox/providers";
-import { createFlyProvider, type FlyMachinesApi } from "../../sandbox/providers/fly/provider";
+} from "../../../metaharness/sandbox/providers/fly/fly-machines";
+import { launchSandboxRun } from "../../../metaharness/sandbox/launch";
+import type { SandboxProvider, SandboxSpec } from "../../../metaharness/sandbox/providers";
+import { createFlyProvider, type FlyMachinesApi } from "../../../metaharness/sandbox/providers/fly/provider";
 import { validateRunnerManifest } from "draft-core/run-manifest";
-import { buildSummarizationRunSpec } from "../../summarization/run-spec";
-import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
+import { buildSummarizationRunSpec } from "../../../summarization/run-spec";
+import { buildSynthesisRunSpec } from "../../../synthesis/run-spec";
 
 const parseManifest = (value: unknown) => validateRunnerManifest(value, { callbackUrl: "https://api.example.test/sandbox/callback" });
 const bundleHash = "b".repeat(64);

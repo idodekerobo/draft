@@ -3,8 +3,8 @@ import {
   authenticateSandboxCallbackRequest,
   parseByteEnvVar,
   SandboxCallbackRequestError,
-} from "../../sandbox/callback-request";
-import { createSandboxCallbackToken } from "../../sandbox/callback-token";
+} from "../../../metaharness/sandbox/callback-request";
+import { createSandboxCallbackToken } from "../../../metaharness/sandbox/callback-token";
 
 const secret = "super-sensitive-callback-secret";
 const runId = "run-123";

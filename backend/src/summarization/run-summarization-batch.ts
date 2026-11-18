@@ -12,7 +12,7 @@ import { buildSummarizationBundle } from "./build-bundle";
 import { buildSummarizationRunSpec } from "./run-spec";
 import { summarizationJsonSchema } from "./render-prompt";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
-import { launchSandboxRun, type SandboxDeploymentConfig } from "../sandbox";
+import { launchSandboxRun, type SandboxDeploymentConfig } from "../metaharness/sandbox";
 
 const MAX_SESSIONS_PER_BATCH = 25;
 

@@ -4,7 +4,7 @@ import {
   FlyMachinesClient,
   FlyMachineWaitTimeoutError,
   assertRelativeGuestPath,
-} from "../../../../sandbox/providers/fly/fly-machines";
+} from "../../../../../metaharness/sandbox/providers/fly/fly-machines";
 
 function machine(id = "machine-1", state = "created"): Response {
   return Response.json({ id, state });
