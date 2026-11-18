@@ -14,15 +14,15 @@ import {
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
-import { findHarnessBin } from "./main/host/find-bin";
-import { shellQuote } from "./main/host/launch";
+import { findHarnessBin } from "draft-core/host/find-bin";
+import { shellQuote } from "draft-core/host/launch";
 import { openCommandInTerminal } from "./main/host/open-in-terminal";
-import { runningCodexTurns } from "./main/host/codex/codex-driver";
-import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
-import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "./main/host/codex/codex-login";
-import { cancelRoutineCodexLogin, getRoutineCodexStatus, pollRoutineCodexLogin, startRoutineCodexLogin } from "./main/host/codex/codex-routine-login";
-import { readClaudeAuth } from "./main/host/claude-check";
-import { readClaudeVersion } from "./main/host/version-check";
+import { runningCodexTurns } from "draft-core/host/drivers/codex/codex-driver";
+import { readCodexAuth, readCodexVersion } from "draft-core/host/drivers/codex/codex-check";
+import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "draft-core/host/drivers/codex/codex-login";
+import { cancelRoutineCodexLogin, getRoutineCodexStatus, pollRoutineCodexLogin, startRoutineCodexLogin } from "draft-core/host/drivers/codex/codex-routine-login";
+import { readClaudeAuth } from "draft-core/host/drivers/claude/claude-check";
+import { readClaudeVersion } from "draft-core/host/drivers/claude/version-check";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
@@ -44,21 +44,23 @@ import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
   actOnLiveSessionInput,
   decideLiveSessionApproval,
-  endLiveSession,
   getLiveSessionEvents,
-  hostedLiveSessionIds,
   listLiveSessions,
+  sendLiveSessionMessage,
+  setLiveSessionMode,
+  stopLiveSession,
+} from "./main/live-session-api";
+import {
+  endLiveSession,
+  hostedLiveSessionIds,
   liveSessionFolder,
   openLiveSessionInTerminal,
   deleteLiveSession,
   resumeLiveSession,
   resumeLiveSessions,
-  sendLiveSessionMessage,
   startLiveSession,
-  stopLiveSession,
-  setLiveSessionMode,
-} from "./main/host/live-session";
-import { readAgentDefaults } from "./main/host/agent-defaults";
+} from "draft-core/host/live-session";
+import { readAgentDefaults } from "draft-core/host/agent-defaults";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
 import { realtime, setSignalSender } from "./main/realtime/instance";

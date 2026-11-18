@@ -1,5 +1,4 @@
 import { chmodSync, mkdirSync, writeFileSync } from "fs";
-import { attachCommand, paneIsAlive } from "./launch";
 
 const SCRIPT_DIR = `${process.env.HOME}/.draft/host/attach`;
 
@@ -13,10 +12,4 @@ export async function openCommandInTerminal(name: string, command: string): Prom
   const proc = Bun.spawn(["open", path], { stdout: "ignore", stderr: "pipe" });
   if ((await proc.exited) !== 0) return { ok: false, error: "Could not open the terminal." };
   return { ok: true };
-}
-
-/** Runs `tmux attach` in the user's terminal app. */
-export async function openPaneInTerminal(tmuxSession: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await paneIsAlive(tmuxSession))) return { ok: false, error: "The session has already ended." };
-  return openCommandInTerminal(tmuxSession, `exec ${attachCommand(tmuxSession)}`);
 }

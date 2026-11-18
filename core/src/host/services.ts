@@ -25,6 +25,8 @@ export interface HostServices {
     send(topic: string, event: string, payload: unknown): void;
   };
   capture(argv: string[], options?: { timeoutMs?: number; env?: Record<string, string>; cwd?: string }): Promise<CaptureResult>;
+  /** Runs the command in the user's terminal app. `name` labels the script file. */
+  openInTerminal(name: string, command: string): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Null until someone signs in. */
   workspaceId(): string | null;
   hostId(): string;

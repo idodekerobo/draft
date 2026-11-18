@@ -1,0 +1,129 @@
+import { normalizeInputText, type InputBlockReason, type InputFailReason } from "../live-sessions";
+import { classifyPane, type PaneState } from "./pane-state";
+
+/*
+ * One teammate message, as the host sees it:
+ *
+ *   queued --pane ready, composer empty--> delivering --user turn in transcript--> consumed
+ *     |                                        |-- host restart, no matching turn --> uncertain --turn shows up late--> consumed
+ *     |                                        `-- pane gone or paste failed -------> failed(reason)
+ *     `-- pane busy or composer has text --> stays queued (with a reason)
+ *
+ * The host marks `delivering` before it pastes. The backend marks `consumed` when the
+ * transcript shows the message as a user turn. The host never clears the composer, because
+ * the owner may be typing in a terminal.
+ */
+
+export interface PendingInput {
+  id: string;
+  kind: "message";
+  state: "queued" | "delivering";
+  delivered_text: string;
+  /** Set when the sender asked to join the turn that is running. */
+  payload?: { steer?: boolean };
+}
+
+export interface DeliveryDeps {
+  /** Returns false when the input was no longer in one of the `from` states. */
+  setState(id: string, from: Array<"queued" | "delivering">, to: "queued" | "delivering" | "failed" | "uncertain", reason?: InputBlockReason | InputFailReason): Promise<boolean>;
+  capture(): Promise<string>;
+  paste(text: string): Promise<void>;
+  pressEnter(): Promise<void>;
+  sleep(ms: number): Promise<void>;
+}
+
+const BLOCK_REASONS: Record<Exclude<PaneState, "ready">, InputBlockReason> = {
+  composer_busy: "composer_busy",
+  permission: "permission_prompt",
+  question: "question_prompt",
+  dialog: "dialog",
+};
+
+const SUBMIT_POLL_MS = 100;
+const SUBMIT_POLLS = 24;
+const MAX_PER_PASS = 5;
+const MAX_PASTE_CHARS = 12_000;
+
+/** The backend already cleans text; this keeps the pane safe if it ever does not. */
+export function safePasteText(text: string): string {
+  return normalizeInputText(text).slice(0, MAX_PASTE_CHARS);
+}
+
+export class InputDelivery {
+  private busy = false;
+  private recovered = false;
+  private readonly reported = new Map<string, string>();
+  // The caller may pass a list fetched before a claim, so an input is claimed at most once.
+  private readonly claimed = new Set<string>();
+
+  constructor(private readonly deps: DeliveryDeps) {}
+
+  /** Inputs left `delivering` by an earlier run have no known outcome. Call after the transcript has caught up. */
+  private async recover(pending: PendingInput[]): Promise<void> {
+    for (const input of pending.filter((i) => i.state === "delivering")) {
+      await this.deps.setState(input.id, ["delivering"], "uncertain", "host_restarted");
+    }
+    this.recovered = true;
+  }
+
+  /** One pass over the pending messages: delivers the oldest queued inputs, one after another, while the pane stays ready. */
+  async tick(pending: PendingInput[]): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      if (!this.recovered) await this.recover(pending);
+      for (let delivered = 0; delivered < MAX_PER_PASS; delivered++) {
+        const next = pending.find((i) => i.state === "queued" && !this.claimed.has(i.id));
+        if (!next) return;
+
+        const state = classifyPane(await this.deps.capture());
+        if (state !== "ready") {
+          await this.report(next.id, BLOCK_REASONS[state]);
+          return;
+        }
+        const taken = await this.deps.setState(next.id, ["queued"], "delivering");
+        this.claimed.add(next.id);
+        if (!taken) return;
+        if (!(await this.deliver(next))) return;
+      }
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async report(id: string, reason: InputBlockReason): Promise<void> {
+    if (this.reported.get(id) === reason) return;
+    this.reported.set(id, reason);
+    await this.deps.setState(id, ["queued"], "queued", reason);
+  }
+
+  /** Returns true when the text left the composer. */
+  private async deliver(input: PendingInput): Promise<boolean> {
+    let pasted = false;
+    try {
+      await this.deps.paste(safePasteText(input.delivered_text));
+      pasted = true;
+      await this.deps.pressEnter();
+      if (await this.submitted()) return true;
+      await this.deps.pressEnter();
+      if (await this.submitted()) return true;
+      await this.deps.setState(input.id, ["delivering"], "uncertain", "not_submitted");
+      return false;
+    } catch (error) {
+      console.error("[live-session] delivery failed", input.id, error);
+      await this.deps
+        .setState(input.id, ["delivering"], pasted ? "uncertain" : "failed", pasted ? "delivery_interrupted" : "pane_unavailable")
+        .catch(() => {});
+      return false;
+    }
+  }
+
+  /** The text left the composer, so Claude took it. */
+  private async submitted(): Promise<boolean> {
+    for (let i = 0; i < SUBMIT_POLLS; i++) {
+      await this.deps.sleep(SUBMIT_POLL_MS);
+      if (classifyPane(await this.deps.capture()) !== "composer_busy") return true;
+    }
+    return false;
+  }
+}
