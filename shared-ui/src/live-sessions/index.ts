@@ -10,3 +10,5 @@ export { SessionView } from "./SessionView";
 export { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 export { MESSAGE_PARAM, parseMessageParam } from "./share-links";
 export { liveTextListener } from "./live-text";
+
+export { SessionViewStateProvider } from "./view-state";

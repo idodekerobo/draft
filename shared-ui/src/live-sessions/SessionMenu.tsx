@@ -1,5 +1,7 @@
 "use client";
 
+import { useSessionViewStates } from "./view-state";
+
 import { useCallback, useState, type ReactNode } from "react";
 import { Dialog } from "../routines/Dialog";
 import { usePopover } from "./usePopover";
@@ -70,6 +72,7 @@ export function useSessionMenu({ api, items, onDeleted }: UseSessionMenuOptions)
   choose: (item: SessionMenuItem) => void;
   dialog: ReactNode;
 } {
+  const viewStates = useSessionViewStates();
   const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,12 +90,13 @@ export function useSessionMenu({ api, items, onDeleted }: UseSessionMenuOptions)
           confirm: running ? DELETE_LIVE : DELETE_IDLE,
           onSelect: async () => {
             await api.deleteSession!(session.id);
+            viewStates.deleteSession(session.id);
             onDeleted?.(session.id);
           },
         },
       ];
     },
-    [api, items, onDeleted],
+    [api, items, onDeleted, viewStates],
   );
 
   const choose = useCallback((item: SessionMenuItem) => {
