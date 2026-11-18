@@ -106,7 +106,7 @@ export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
 
 /** Asks the host to put a waiting message into the turn that is running, instead of after it. */
 async function steerInput(workspaceId: string, sessionId: string, inputId: string, userId: string): Promise<Response> {
-  const { data: session } = await serviceClient.from("sessions").select("harness").eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle<{ harness: string }>();
+  const { data: session } = await serviceClient.from("sessions").select("harness").eq("id", sessionId).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<{ harness: string }>();
   if (!session) return errorResponse("session_not_found", 404);
   if (!getHarness(session.harness)?.capabilities.steer) return errorResponse("steer_not_supported", 409);
 

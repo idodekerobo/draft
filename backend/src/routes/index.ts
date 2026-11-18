@@ -74,6 +74,7 @@ export const routes = {
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
   "/live-session-titles/:sessionId": { GET: withCors(sessionsLiveTitle.TITLE), OPTIONS },
   "/workspaces/:id/live-sessions": { GET: withCors(sessionsLive.LIST), POST: withCors(sessionsLive.CREATE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId": { DELETE: withCors(sessionsLive.DELETE), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/events": { GET: withCors(sessionsLive.EVENTS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/lines": { POST: withCors(sessionsLive.LINES), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/heartbeat": { POST: withCors(sessionsLive.HEARTBEAT), OPTIONS },

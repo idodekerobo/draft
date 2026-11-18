@@ -17,6 +17,7 @@ type EventsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/ev
 type LinesRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/lines">;
 type HeartbeatRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/heartbeat">;
 type EndRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/end">;
+type DeleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
 type ReopenRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/reopen">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
@@ -47,6 +48,7 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
     .select(SESSION_COLUMNS)
     .eq("workspace_id", req.params.id)
     .eq("session_type", "interactive")
+    .is("deleted_at", null)
     .order("started_at", { ascending: false })
     .limit(LIST_LIMIT);
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
@@ -110,11 +112,11 @@ type SessionLink = Pick<SessionRow, "id" | "title" | "folder_name">;
 /** The session this one continues, and the one that continues it after a /clear. */
 async function loadSessionLinks(workspaceId: string, session: SessionRow) {
   const previous = session.previous_session_id
-    ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("id", session.previous_session_id).eq("workspace_id", workspaceId).maybeSingle<SessionLink>()
+    ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("id", session.previous_session_id).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<SessionLink>()
     : null;
   const next =
     session.status === "ended" && session.end_reason === "cleared"
-      ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("previous_session_id", session.id).eq("workspace_id", workspaceId).order("started_at", { ascending: false }).limit(1).maybeSingle<SessionLink>()
+      ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("previous_session_id", session.id).eq("workspace_id", workspaceId).is("deleted_at", null).order("started_at", { ascending: false }).limit(1).maybeSingle<SessionLink>()
       : null;
   const [previousResult, nextResult] = await Promise.all([previous, next]);
   const failed = previousResult?.error ?? nextResult?.error;
@@ -130,7 +132,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
 
   const [denied, { data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
     authorize(workspaceId, caller.userId),
-    serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle<SessionRow>(),
+    serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<SessionRow>(),
     serviceClient
       .from("session_events")
       .select("seq, source_id, kind, payload, created_at")
@@ -353,6 +355,25 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
   await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
+
+  return Response.json({ ok: true });
+});
+
+/**
+ * Hides the owner's session from every viewer. A live session ends first, so its host stops.
+ * Nothing on the owner's computer is removed.
+ */
+export const DELETE = withAuth<DeleteRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  if (!owned.ok) return owned.response;
+  if (owned.session.session_type !== "interactive") return errorResponse("routine_read_only", 409);
+
+  const now = new Date().toISOString();
+  const ending = owned.session.status === "ended" ? {} : { status: "ended", ended_at: now, end_reason: "deleted", open_approval_count: 0 };
+  const { error } = await serviceClient.from("sessions").update({ ...ending, deleted_at: now }).eq("id", sessionId).is("deleted_at", null);
+  if (error) return errorResponse("session_delete_failed", 500, error, workspaceId, sessionId);
+  await failQueuedInputs(sessionId, "session_ended");
 
   return Response.json({ ok: true });
 });
