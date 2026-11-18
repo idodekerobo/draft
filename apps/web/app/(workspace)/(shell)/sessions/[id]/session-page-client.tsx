@@ -34,6 +34,7 @@ export function SessionPageClient({ params }: { params: Promise<{ id: string }> 
         router.push(`/sessions/${sessionId}`);
       }}
       track={track}
+      onDeleted={() => router.push("/sessions")}
       entry={entryFor(id)}
       shareBaseUrl={typeof window === "undefined" ? undefined : window.location.origin}
       focusSeq={parseMessageParam(search.get(MESSAGE_PARAM))}
