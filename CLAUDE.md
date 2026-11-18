@@ -25,6 +25,10 @@ Key routing rules:
 - `// TODO:` comments are acceptable for future work or items that need to be picked up later.
 - Do not reference plan files, task numbers or ID's in the comments of code. Plan files are ephemeral and not tracked long term.
 
+## Naming
+`GLOSSARY.md` defines every domain word. Use those words in code, SQL, docs and UI. If a name disagrees with the
+glossary, fix the name or update the glossary in the same change. Add a new concept to the glossary first.
+
 ## Database changes (backend/Supabase)
 
 `supabase/migrations/` is the applied source of truth (the Supabase CLI
