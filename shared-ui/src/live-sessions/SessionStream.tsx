@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
+import { Disclosure } from "./view-state";
 import { cachedMarkdown } from "./markdown-cache";
 import { LiveText } from "./LiveText";
 import { MessageActions } from "./MessageActions";
@@ -85,10 +86,9 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
       return <LiveText text={item.text} />;
     case "thinking":
       return (
-        <details className="ui-stream__details">
-          <summary>Thinking</summary>
-          <p className="ui-stream__text ui-muted">{item.text}</p>
-        </details>
+        <Disclosure seq={item.seq} summary="Thinking">
+          {() => <p className="ui-stream__text ui-muted">{item.text}</p>}
+        </Disclosure>
       );
     case "note":
       if (item.interruptedBy) {
@@ -99,16 +99,17 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
     case "agent_message": {
       const preview = oneLine(item.text);
       return (
-        <details className="ui-stream__details">
-          <summary>
-            <span className="ui-stream__tool">Agent</span>
-            <span className="ui-stream__summary">
-              @{item.from} {item.kind === "idle" ? "finished" : item.kind === "handback" ? "reported back" : (item.summary ?? "sent a message")}
-              {preview && <span className="ui-muted"> · {preview}</span>}
-            </span>
-          </summary>
-          {item.text ? <div className="ui-prose ui-stream__agent-body" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} /> : <p className="ui-stream__text ui-muted">No details.</p>}
-        </details>
+        <Disclosure seq={item.seq} summary={<>
+          <span className="ui-stream__tool">Agent</span>
+          <span className="ui-stream__summary">
+            @{item.from} {item.kind === "idle" ? "finished" : item.kind === "handback" ? "reported back" : (item.summary ?? "sent a message")}
+            {preview && <span className="ui-muted"> · {preview}</span>}
+          </span>
+        </>}>
+          {() => item.text
+            ? <div className="ui-prose ui-stream__agent-body" dangerouslySetInnerHTML={{ __html: cachedMarkdown(item.text) }} />
+            : <p className="ui-stream__text ui-muted">No details.</p>}
+        </Disclosure>
       );
     }
     case "approval":
@@ -139,10 +140,9 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
     case "tool":
       if (item.name === "ExitPlanMode" && typeof (item.input as { plan?: unknown } | null)?.plan === "string") {
         return (
-          <details className="ui-stream__details" open>
-            <summary><span className="ui-stream__tool">Plan</span></summary>
-            <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown((item.input as { plan: string }).plan) }} />
-          </details>
+          <Disclosure seq={item.seq} initiallyOpen summary={<span className="ui-stream__tool">Plan</span>}>
+            {() => <div className="ui-plan__body ui-prose" dangerouslySetInnerHTML={{ __html: cachedMarkdown((item.input as { plan: string }).plan) }} />}
+          </Disclosure>
         );
       }
       if (item.children) {
@@ -150,49 +150,51 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         const agentName = typeof (item.input as { name?: unknown } | null)?.name === "string" ? (item.input as { name: string }).name : "";
         const steps = item.children.filter((child) => child.type === "tool").length;
         return (
-          <details className="ui-stream__details">
-            <summary>
-              <span className="ui-stream__tool">{item.name}</span>
-              {agentName && <span className="ui-stream__summary">@{agentName} </span>}
-              {title && <span className="ui-stream__summary ui-stream__summary--title">{title}</span>}
-              {item.result === null && <span className="ui-muted"> · running</span>}
-              {item.result?.isError && <span className="ui-error"> · failed</span>}
-              {steps > 0 && <span className="ui-muted"> · {steps} {steps === 1 ? "step" : "steps"}</span>}
-            </summary>
-            <ol className="ui-stream__nested">
-              {item.children.map((child) => (
-                <li key={keyOf(child)} id={child.type === "pending" || child.type === "live" ? undefined : messageDomId(child.seq)} className={`ui-stream__item ui-stream__item--${child.type}`}>
-                  <Item item={child} mine ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} />
-                </li>
-              ))}
-            </ol>
-            {item.result?.isError && <pre className="ui-stream__code ui-stream__code--error">{item.result.text || "(no output)"}</pre>}
-          </details>
+          <Disclosure seq={item.seq} summary={<>
+            <span className="ui-stream__tool">{item.name}</span>
+            {agentName && <span className="ui-stream__summary">@{agentName} </span>}
+            {title && <span className="ui-stream__summary ui-stream__summary--title">{title}</span>}
+            {item.result === null && <span className="ui-muted"> · running</span>}
+            {item.result?.isError && <span className="ui-error"> · failed</span>}
+            {steps > 0 && <span className="ui-muted"> · {steps} {steps === 1 ? "step" : "steps"}</span>}
+          </>}>
+            {() => <>
+              <ol className="ui-stream__nested">
+                {item.children!.map((child) => (
+                  <li key={keyOf(child)} id={child.type === "pending" || child.type === "live" ? undefined : messageDomId(child.seq)} className={`ui-stream__item ui-stream__item--${child.type}`}>
+                    <Item item={child} mine ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} />
+                  </li>
+                ))}
+              </ol>
+              {item.result?.isError && <pre className="ui-stream__code ui-stream__code--error">{item.result.text || "(no output)"}</pre>}
+            </>}
+          </Disclosure>
         );
       }
       return (
-        <details className="ui-stream__details">
-          <summary>
-            <span className="ui-stream__tool">{item.name}</span>
-            {item.summary && <span className="ui-stream__summary">{item.summary}</span>}
-            {item.result === null && <span className="ui-muted"> · running</span>}
-            {item.result?.isError && <span className="ui-error"> · failed</span>}
-          </summary>
-          <pre className="ui-stream__code">{formatInput(item.input)}</pre>
-          {item.result && (
-            <pre className={`ui-stream__code${item.result.isError ? " ui-stream__code--error" : ""}`}>
-              {item.result.text || "(no output)"}
-              {item.result.truncated ? "\n… output clipped" : ""}
-            </pre>
-          )}
-        </details>
+        <Disclosure seq={item.seq} summary={<>
+          <span className="ui-stream__tool">{item.name}</span>
+          {item.summary && <span className="ui-stream__summary">{item.summary}</span>}
+          {item.result === null && <span className="ui-muted"> · running</span>}
+          {item.result?.isError && <span className="ui-error"> · failed</span>}
+        </>}>
+          {() => <>
+            <pre className="ui-stream__code">{formatInput(item.input)}</pre>
+            {item.result && (
+              <pre className={`ui-stream__code${item.result.isError ? " ui-stream__code--error" : ""}`}>
+                {item.result.text || "(no output)"}
+                {item.result.truncated ? "\n… output clipped" : ""}
+              </pre>
+            )}
+          </>}
+        </Disclosure>
       );
   }
 }
 
 
 /** Open requests are shown in the approval panel, not in the stream. */
-export function SessionStream({
+const StreamList = memo(function StreamList({
   items: all,
   ownerName = "User",
   hostName = null,
@@ -207,6 +209,7 @@ export function SessionStream({
   onDismissPrompt,
   linkFor,
   highlightSeq = null,
+  showEmpty = true,
 }: {
   items: StreamItem[];
   ownerName?: string;
@@ -227,9 +230,10 @@ export function SessionStream({
   /** Builds the link to one message. Without it, the link action is hidden. */
   linkFor?: (seq: number) => string;
   highlightSeq?: number | null;
+  showEmpty?: boolean;
 }) {
   const items = all.filter((item) => item.type !== "approval" || item.resolved !== null);
-  if (items.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
+  if (items.length === 0) return showEmpty ? <p className="ui-muted" role="status">Waiting for the first message…</p> : null;
 
   return (
     <ol className="ui-stream">
@@ -248,4 +252,14 @@ export function SessionStream({
       })}
     </ol>
   );
+});
+
+export function SessionStream({ liveItems, ...props }: Parameters<typeof StreamList>[0] & { liveItems?: StreamItem[] }) {
+  if (!liveItems) return <StreamList {...props} />;
+  const { onSteer, onCancel, onShowRequest, onSkipQuestions, onDismissPrompt, ...history } = props;
+  const hasHistory = history.items.some((item) => item.type !== "approval" || item.resolved !== null);
+  return <>
+    <StreamList {...history} showEmpty={hasHistory || liveItems.length === 0} />
+    {liveItems.length > 0 && <StreamList {...props} items={liveItems} />}
+  </>;
 }

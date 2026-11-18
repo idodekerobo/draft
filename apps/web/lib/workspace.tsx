@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { IntegrationActionsProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type SlackChannelsResult, type TrackFn } from "draft-shared-ui";
+import { IntegrationActionsProvider, SessionViewStateProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type SlackChannelsResult, type TrackFn } from "draft-shared-ui";
 import { buildSlackManifestUrl, validateSlackTokenFormat } from "draft-core/integrations/slack-hosted";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
@@ -140,7 +140,9 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
 
   return (
     <WorkspaceContext.Provider value={value}>
-      <IntegrationActionsProvider actions={integrationActions}>{children}</IntegrationActionsProvider>
+      <SessionViewStateProvider scope={`${identity.id}:${workspaceId}`}>
+        <IntegrationActionsProvider actions={integrationActions}>{children}</IntegrationActionsProvider>
+      </SessionViewStateProvider>
     </WorkspaceContext.Provider>
   );
 }

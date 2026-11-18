@@ -1,4 +1,4 @@
-import { DraftQueryProvider, toRoutineError, useWorkspaceDataSignals, type DraftApi } from "draft-shared-ui";
+import { DraftQueryProvider, SessionViewStateProvider, toRoutineError, useWorkspaceDataSignals, type DraftApi } from "draft-shared-ui";
 import { type ReactNode } from "react";
 import { useUserIdentity } from "./identity/UserIdentityContext";
 import { watchSignals } from "./liveSessionsApi";
@@ -43,10 +43,14 @@ function WorkspaceDataSignals() {
 }
 
 export function DesktopQueryProvider({ children }: { children: ReactNode }) {
+  const identity = useUserIdentity();
+  const scope = `${identity.signedIn}:${identity.workspaceId ?? ""}`;
   return (
     <DraftQueryProvider api={api}>
-      <WorkspaceDataSignals />
-      {children}
+      <SessionViewStateProvider scope={scope}>
+        <WorkspaceDataSignals />
+        {children}
+      </SessionViewStateProvider>
     </DraftQueryProvider>
   );
 }

@@ -9,8 +9,8 @@ import type { LiveTextChunk } from "draft-core/live-sessions";
 
 afterEach(cleanup);
 
-const render = (ui: ReactElement) =>
-  renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
+const render = (ui: ReactElement, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) =>
+  renderUi(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 
 /** The test DOM has no layout: every element gets one scroll height and view, and scrollTop stops at the bottom. */
 function fakeScrollGeometry(height = 1000, view = 100) {
@@ -461,14 +461,15 @@ describe("SessionView", () => {
     it("returns to a session at the reader's saved position, not the bottom", async () => {
       const restore = fakeScrollGeometry();
       try {
-        const first = render(<SessionView api={api} sessionId="s-memory" />);
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        const first = render(<SessionView api={api} sessionId="s-memory" />, client);
         await screen.findByRole("heading", { name: "fix login" });
         moveTo(900);
         moveTo(400);
         await screen.findByRole("button", { name: "Jump to latest message" });
         first.unmount();
 
-        render(<SessionView api={api} sessionId="s-memory" />);
+        render(<SessionView api={api} sessionId="s-memory" />, client);
         await screen.findByRole("heading", { name: "fix login" });
         expect(scroller().scrollTop).toBe(400);
         expect(await screen.findByRole("button", { name: "Jump to latest message" })).toBeTruthy();
@@ -779,4 +780,59 @@ describe("SessionView live text", () => {
     await waitFor(() => expect(texts()).toEqual(["Hi there", "Let me check"]));
     expect(container.querySelectorAll(`#${messageDomId(3)}`).length).toBe(1);
   });
+});
+
+const nestedEvents: LiveSessionEvent[] = [
+  { seq: 1, source_id: "spawn", kind: "tool_use", payload: { name: "Agent", tool_use_id: "spawn", input: { name: "worker", description: "Inspect files" } }, created_at: "" },
+  { seq: 2, source_id: "spawn-result", kind: "tool_result", payload: { tool_use_id: "spawn", content: "agentId: worker-1" }, created_at: "" },
+  { seq: 3, source_id: "tool", kind: "tool_use", payload: { agent_id: "worker-1", name: "Bash", tool_use_id: "tool", input: { command: "ls" } }, created_at: "" },
+  { seq: 4, source_id: "result", kind: "tool_result", payload: { agent_id: "worker-1", tool_use_id: "tool", content: "private tool output" }, created_at: "" },
+];
+
+it("reveals a linked nested tool before scrolling to it", async () => {
+  const scrolled: string[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () { scrolled.push(this.id); };
+  try {
+    const nestedApi = { ...api, fetchEvents: async () => ({ session: { ...session, last_seq: 4 }, viewer, inputs: [], events: nestedEvents }) };
+    const { container } = render(<SessionView api={nestedApi} sessionId="linked-nested" focusSeq={3} />);
+    await waitFor(() => expect(scrolled).toEqual(["m-3"]));
+    expect(container.querySelector("#m-1 > details")?.hasAttribute("open")).toBe(true);
+    expect(container.querySelector("#m-3 > details")?.hasAttribute("open")).toBe(true);
+    expect(screen.getByText("private tool output")).toBeTruthy();
+  } finally { Element.prototype.scrollIntoView = original; }
+});
+
+it("restores expanded subagent work on a cached A to B to A switch", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const nestedApi = { ...api, fetchEvents: async (id: string, after: number) => ({ session: { ...session, id, last_seq: id === "a" ? 4 : 0 }, viewer, inputs: [], events: id === "a" ? nestedEvents.filter((e) => e.seq > after) : [] }) };
+  const tree = (id: string) => <QueryClientProvider client={client}><SessionView key={id} api={nestedApi} sessionId={id} /></QueryClientProvider>;
+  const { container, rerender } = renderUi(tree("a"));
+  await screen.findByRole("heading", { name: "fix login" });
+  const parent = container.querySelector<HTMLDetailsElement>("#m-1 > details")!;
+  expect(parent.querySelector(".ui-stream__nested")).toBeNull();
+  act(() => { parent.open = true; fireEvent(parent, new Event("toggle")); });
+  const tool = container.querySelector<HTMLDetailsElement>("#m-3 > details")!;
+  act(() => { tool.open = true; fireEvent(tool, new Event("toggle")); });
+  expect(screen.getByText("private tool output")).toBeTruthy();
+  rerender(tree("b"));
+  await waitFor(() => expect(screen.queryByText("private tool output")).toBeNull());
+  rerender(tree("a"));
+  await screen.findByText("private tool output");
+});
+
+it("keeps a missing linked target pending until its events arrive", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const scrolled: string[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () { scrolled.push(this.id); };
+  try {
+    const emptyApi = { ...api, fetchEvents: async () => ({ session: { ...session, last_seq: 0 }, viewer, inputs: [], events: [] }) };
+    render(<SessionView api={emptyApi} sessionId="late-target" focusSeq={3} />, client);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(scrolled).toEqual([]);
+    act(() => { client.setQueryData(["live-session", "late-target"], { session: { ...session, last_seq: 4 }, viewer, events: nestedEvents, inputs: [] }); });
+    await waitFor(() => expect(scrolled).toEqual(["m-3"]));
+    expect(screen.getByText("private tool output")).toBeTruthy();
+  } finally { Element.prototype.scrollIntoView = original; }
 });
