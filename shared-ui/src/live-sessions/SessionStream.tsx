@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Disclosure } from "./view-state";
 import { cachedMarkdown } from "./markdown-cache";
 import { LiveText } from "./LiveText";
@@ -194,7 +194,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
 
 
 /** Open requests are shown in the approval panel, not in the stream. */
-export function SessionStream({
+const StreamList = memo(function StreamList({
   items: all,
   ownerName = "User",
   hostName = null,
@@ -209,6 +209,7 @@ export function SessionStream({
   onDismissPrompt,
   linkFor,
   highlightSeq = null,
+  showEmpty = true,
 }: {
   items: StreamItem[];
   ownerName?: string;
@@ -229,9 +230,10 @@ export function SessionStream({
   /** Builds the link to one message. Without it, the link action is hidden. */
   linkFor?: (seq: number) => string;
   highlightSeq?: number | null;
+  showEmpty?: boolean;
 }) {
   const items = all.filter((item) => item.type !== "approval" || item.resolved !== null);
-  if (items.length === 0) return <p className="ui-muted" role="status">Waiting for the first message…</p>;
+  if (items.length === 0) return showEmpty ? <p className="ui-muted" role="status">Waiting for the first message…</p> : null;
 
   return (
     <ol className="ui-stream">
@@ -250,4 +252,14 @@ export function SessionStream({
       })}
     </ol>
   );
+});
+
+export function SessionStream({ liveItems, ...props }: Parameters<typeof StreamList>[0] & { liveItems?: StreamItem[] }) {
+  if (!liveItems) return <StreamList {...props} />;
+  const { onSteer, onCancel, onShowRequest, onSkipQuestions, onDismissPrompt, ...history } = props;
+  const hasHistory = history.items.some((item) => item.type !== "approval" || item.resolved !== null);
+  return <>
+    <StreamList {...history} showEmpty={hasHistory || liveItems.length === 0} />
+    {liveItems.length > 0 && <StreamList {...props} items={liveItems} />}
+  </>;
 }

@@ -254,6 +254,17 @@ describe("SessionStream", () => {
   });
 });
 
+it("does not revisit stored messages when a live preview changes", () => {
+  let reads = 0;
+  const items = [{ type: "assistant" as const, seq: 900, at: "", agentId: null,
+    get text() { reads++; return "stored history"; } }];
+  const { rerender } = render(<SessionStream items={items} liveItems={[]} />);
+  const before = reads;
+  rerender(<SessionStream items={items} liveItems={[{ type: "live", messageId: "live", text: "new preview" }]} />);
+  expect(reads).toBe(before);
+  expect(screen.getByText("new preview")).toBeTruthy();
+});
+
 it("leaves thinking bodies unmounted until opened", () => {
   const { container } = render(<Stream events={[event("thinking", { text: "hidden reasoning" })]} />);
   expect(screen.getByText("Thinking")).toBeTruthy();

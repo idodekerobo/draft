@@ -254,11 +254,10 @@ function SessionContents({
   const viewerName = viewer.name;
   const items = useMemo<StreamItem[]>(
     () => [
-      ...logItems,
       ...liveText.map((preview) => ({ type: "live" as const, messageId: preview.messageId, text: preview.text })),
       ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline }),
     ],
-    [logItems, liveText, inputs.inputs, events, viewerName, ownerName, hostOffline],
+    [liveText, inputs.inputs, events, viewerName, ownerName, hostOffline],
   );
   const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
@@ -492,7 +491,8 @@ function SessionContents({
         <div className="ui-session__column" ref={contentRef}>
           <DisclosureState.Provider value={disclosureState}>
             <SessionStream
-              items={items}
+              items={logItems}
+              liveItems={items}
               ownerName={session.owner_name ?? undefined}
               hostName={session.host_name}
               viewerId={viewer.id}
