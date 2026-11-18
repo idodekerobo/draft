@@ -1,4 +1,5 @@
-import { GUI_PATH, capture } from "../../../exec";
+import { GUI_PATH } from "draft-core/exec";
+import { hostServices } from "draft-core/host/services";
 import { findHarnessBin } from "../find-bin";
 import { readCodexAuth, readCodexVersion, type CodexAuth } from "./codex-check";
 
@@ -89,8 +90,9 @@ export async function codexLogout(): Promise<{ ok: true } | { ok: false; error: 
   const bin = findHarnessBin("codex");
   if (!bin) return { ok: false, error: "Codex is not installed on this computer." };
   cancelCodexLogin();
+  const services = hostServices();
   try {
-    const result = await capture([bin, "logout"], { timeoutMs: 10_000 });
+    const result = await services.capture([bin, "logout"], { timeoutMs: 10_000 });
     return result.exitCode === 0 ? { ok: true } : { ok: false, error: "Could not sign out of Codex." };
   } catch {
     return { ok: false, error: "Could not sign out of Codex." };

@@ -17,7 +17,7 @@ export { GUI_PATH } from "draft-core/exec";
 
 export function capture(
   cmd: string[],
-  opts?: { timeoutMs?: number; env?: Record<string, string> },
+  opts?: { timeoutMs?: number; env?: Record<string, string>; cwd?: string },
 ): ReturnType<typeof _capture> {
   return _capture(cmd, {
     ...opts,

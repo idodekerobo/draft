@@ -16,14 +16,13 @@ import { LeadInRelay } from "./lead-in";
 import { LiveTextRelay } from "./live-text-relay";
 import { capturePane, killPane, launchClaudeInTmux, paneIsAlive, pasteIntoPane, pressBackTab, pressEnter, pressEscape, restorePaneSize, tmuxSessionName } from "./launch";
 import { openPaneInTerminal } from "./open-in-terminal";
-import { realtime } from "../realtime/instance";
+import { hostServices } from "draft-core/host/services";
 import { CYCLE_MODES, modeFromScreen, switchMode, type ClaudeMode } from "./mode";
 import { classifyPane, isTurnRunning } from "./pane-state";
 import { preTrustFolder } from "./pre-trust";
 import { putSigned, uploadRawFiles } from "./raw-upload";
 import { rotationTarget } from "./rotation";
 import { readClaudeVersion } from "./version-check";
-import { fetchServer, fetchServerJSON } from "../server/server-client";
 
 const END_POLLS = 10;
 const END_POLL_MS = 1_000;
@@ -73,7 +72,7 @@ export class ClaudeDriver implements HarnessDriver {
     });
     this.leadIn = new LeadInRelay((events) => host.postHostEvents(events));
     this.relay = new LiveTextRelay({
-      send: (chunk: LiveTextChunk) => realtime.send(liveTextTopic(host.state().sessionId), LIVE_TEXT_EVENT, chunk),
+      send: (chunk: LiveTextChunk) => hostServices().realtime.send(liveTextTopic(host.state().sessionId), LIVE_TEXT_EVENT, chunk),
     });
     this.deltas = new DeltaTail({
       path: deltasPath(state.hookId ?? state.sessionId),
@@ -248,13 +247,13 @@ export class ClaudeDriver implements HarnessDriver {
     try {
       const rawUploads = await uploadRawFiles(this.forwarder.files(), this.host.state().rawUploads, {
         requestUrls: async (files) =>
-          (await fetchServerJSON<{ uploads: Array<{ file: string; signedUrl: string }> }>(`${this.host.base}/raw`, {
+          (await hostServices().fetchServerJSON<{ uploads: Array<{ file: string; signedUrl: string }> }>(`${this.host.base}/raw`, {
             method: "POST",
             body: JSON.stringify({ hostId: this.host.state().hostId, files }),
           })).uploads,
         put: putSigned,
         complete: async () => {
-          await fetchServer(`${this.host.base}/raw/complete`, {
+          await hostServices().fetchServer(`${this.host.base}/raw/complete`, {
             method: "POST",
             body: JSON.stringify({ hostId: this.host.state().hostId }),
           });

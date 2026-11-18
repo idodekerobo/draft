@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import type { LiveTextChunk } from "draft-core/live-sessions";
-import { realtime } from "../../realtime/instance";
+import { installHostServices } from "draft-core/host/services";
+import { fakeHostServices } from "../fake-host-services";
 import type { HostSessionState } from "../cursor-store";
 import type { DriverHost } from "../harness-driver";
 import { CodexDriver } from "./codex-driver";
@@ -38,14 +39,16 @@ type Notify = (method: string, params: unknown) => void;
 
 describe("CodexDriver live text", () => {
   let sent: Array<{ topic: string; event: string; chunk: LiveTextChunk }> = [];
-  const original = realtime.send;
 
   beforeEach(() => {
     sent = [];
-    realtime.send = (topic, event, payload) => void sent.push({ topic, event, chunk: payload as LiveTextChunk });
-  });
-  afterEach(() => {
-    realtime.send = original;
+    installHostServices(fakeHostServices({
+      realtime: {
+        connected: () => true,
+        watch: () => () => {},
+        send: (topic, event, payload) => void sent.push({ topic, event, chunk: payload as LiveTextChunk }),
+      },
+    }));
   });
 
   /** The driver reads notifications of its own thread; the connection is the fake a live app server would give it. */

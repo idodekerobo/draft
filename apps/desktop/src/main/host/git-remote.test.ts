@@ -1,11 +1,17 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { capture } from "draft-core/exec";
+import { installHostServices } from "draft-core/host/services";
+import { fakeHostServices } from "./fake-host-services";
 import { gitRemote } from "./git-remote";
 
 const dir = mkdtempSync(join(tmpdir(), "git-remote-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
+beforeAll(() => {
+  installHostServices(fakeHostServices({ capture }));
+});
 const git = (...args: string[]) => Bun.spawnSync(["git", "-C", dir, ...args]);
 
 describe("gitRemote", () => {

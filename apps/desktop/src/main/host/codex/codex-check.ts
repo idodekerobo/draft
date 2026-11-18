@@ -1,5 +1,5 @@
 import { harnessInstallUrl, parseCliVersion } from "draft-core/harnesses";
-import { capture } from "../../../exec";
+import { hostServices } from "draft-core/host/services";
 
 export type CodexAuth = "signed_in" | "signed_out" | "unknown";
 
@@ -10,8 +10,9 @@ export function parseCodexAuth(output: string): CodexAuth {
 }
 
 export async function readCodexAuth(codexBin: string): Promise<CodexAuth> {
+  const services = hostServices();
   try {
-    const result = await capture([codexBin, "login", "status"], { timeoutMs: 8000 });
+    const result = await services.capture([codexBin, "login", "status"], { timeoutMs: 8000 });
     return parseCodexAuth(`${result.stdout}\n${result.stderr}`);
   } catch {
     return "unknown";
@@ -19,8 +20,9 @@ export async function readCodexAuth(codexBin: string): Promise<CodexAuth> {
 }
 
 export async function readCodexVersion(codexBin: string): Promise<string | null> {
+  const services = hostServices();
   try {
-    const result = await capture([codexBin, "--version"], { timeoutMs: 5000 });
+    const result = await services.capture([codexBin, "--version"], { timeoutMs: 5000 });
     return result.exitCode === 0 ? parseCliVersion(result.stdout) : null;
   } catch {
     return null;

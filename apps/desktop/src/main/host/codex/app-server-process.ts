@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { randomBytes } from "crypto";
-import { GUI_PATH } from "../../../exec";
+import { GUI_PATH } from "draft-core/exec";
 
 const TOKEN_DIR = `${process.env.HOME}/.draft/host/codex`;
 

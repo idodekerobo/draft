@@ -1,4 +1,4 @@
-import { capture } from "../../exec";
+import { hostServices } from "draft-core/host/services";
 
 export type ClaudeAuth = "signed_in" | "signed_out" | "unknown";
 
@@ -13,8 +13,9 @@ export function parseClaudeAuth(output: string): ClaudeAuth {
 }
 
 export async function readClaudeAuth(claudeBin: string): Promise<ClaudeAuth> {
+  const services = hostServices();
   try {
-    const result = await capture([claudeBin, "auth", "status"], { timeoutMs: 8000 });
+    const result = await services.capture([claudeBin, "auth", "status"], { timeoutMs: 8000 });
     return parseClaudeAuth(result.stdout);
   } catch {
     return "unknown";

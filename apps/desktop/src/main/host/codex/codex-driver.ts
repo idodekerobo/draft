@@ -7,7 +7,7 @@ import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher,
 import type { PendingInput } from "../input-delivery";
 import { LiveTextRelay } from "../live-text-relay";
 import { openCommandInTerminal } from "../open-in-terminal";
-import { realtime } from "../../realtime/instance";
+import { hostServices } from "draft-core/host/services";
 import { shellQuote } from "../launch";
 import { codexRequest } from "./approvals";
 import { DEFAULT_APPROVAL, DEFAULT_COLLABORATION, approvalOverrides, collaborationUpdate, isApproval, isCollaboration, type CodexApproval, type CodexCollaboration } from "./modes";
@@ -163,7 +163,7 @@ export class CodexDriver implements HarnessDriver {
 
   constructor(private readonly host: DriverHost) {
     this.relay = new LiveTextRelay({
-      send: (chunk: LiveTextChunk) => realtime.send(liveTextTopic(host.state().sessionId), LIVE_TEXT_EVENT, chunk),
+      send: (chunk: LiveTextChunk) => hostServices().realtime.send(liveTextTopic(host.state().sessionId), LIVE_TEXT_EVENT, chunk),
     });
     this.broker = new ApprovalBroker({
       postEvents: (events) => host.postHostEvents(events),

@@ -1,8 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getCachedWorkspaceId } from "draft-core/auth-state";
-import { ServerError, fetchServer, fetchServerJSON } from "../../server/server-client";
+import { ServerError, hostServices } from "draft-core/host/services";
 import { cancelCodexLogin, startCodexLogin, type CodexLoginStart } from "./codex-login";
 
 export type RoutineCodexStatus = { ok: true; status: string | null } | { ok: false; error: string };
@@ -17,9 +16,9 @@ export interface RoutineLoginDeps {
 }
 
 const defaultDeps: RoutineLoginDeps = {
-  workspaceId: getCachedWorkspaceId,
+  workspaceId: () => hostServices().workspaceId(),
   save: async (workspaceId, authJson) => {
-    await fetchServer(`workspaces/${workspaceId}/codex-credential`, { method: "PUT", body: JSON.stringify({ auth_json: authJson }) });
+    await hostServices().fetchServer(`workspaces/${workspaceId}/codex-credential`, { method: "PUT", body: JSON.stringify({ auth_json: authJson }) });
   },
   start: startCodexLogin,
 };
@@ -28,10 +27,11 @@ const NOT_SIGNED_IN = "Sign in to Draft Cloud first.";
 
 /** Whether the workspace has a Codex login for routines. Never reads the login itself. */
 export async function getRoutineCodexStatus(): Promise<RoutineCodexStatus> {
-  const workspaceId = getCachedWorkspaceId();
+  const services = hostServices();
+  const workspaceId = services.workspaceId();
   if (!workspaceId) return { ok: false, error: NOT_SIGNED_IN };
   try {
-    const body = await fetchServerJSON<{ status: string | null }>(`workspaces/${workspaceId}/codex-credential`);
+    const body = await services.fetchServerJSON<{ status: string | null }>(`workspaces/${workspaceId}/codex-credential`);
     return { ok: true, status: body.status };
   } catch {
     return { ok: false, error: "Could not check Codex for routines." };

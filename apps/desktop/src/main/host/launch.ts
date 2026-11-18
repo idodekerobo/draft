@@ -1,4 +1,4 @@
-import { GUI_PATH } from "../../exec";
+import { GUI_PATH } from "draft-core/exec";
 
 export const TMUX_SOCKET = "draft";
 const PANE_COLUMNS = 200;

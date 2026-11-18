@@ -1,22 +1,10 @@
 import { decodeToolEnvelope } from "draft-core/tool-envelope";
 import { AuthRefreshError, getFreshAccessToken } from "draft-core/auth-state";
+import { ServerError, SessionExpiredError } from "draft-core/host/services";
+
+export { ServerError, SessionExpiredError };
 
 export const apiUrl = process.env.DRAFT_API_BASE_URL ?? "https://api.draftai.us";
-
-/** API failure with the server's error code and, for validation errors, the offending field. */
-export class ServerError extends Error {
-  constructor(readonly code: string, readonly field?: string, readonly detail?: Record<string, unknown>) {
-    super(code);
-  }
-}
-
-/** The login is dead and the user must sign in again. */
-export class SessionExpiredError extends Error {
-  constructor() {
-    super("session_expired");
-    this.name = "SessionExpiredError";
-  }
-}
 
 export interface SessionExpiredCause {
   error?: unknown;

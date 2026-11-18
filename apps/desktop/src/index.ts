@@ -65,6 +65,9 @@ import { realtime, setSignalSender } from "./main/realtime/instance";
 import { ServerError, apiUrl, callServerTool, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 import { logLoginCleared } from "./main/auth/auth-log";
 import { createSessionExpiredHandler } from "./main/auth/session-expired";
+import { installHostServices } from "draft-core/host/services";
+import { desktopHostServices } from "./main/host-services";
+installHostServices(desktopHostServices);
 const presenceHub = new PresenceHub(connectPresence);
 setSignalSender(
   (topic, event, payload) => {

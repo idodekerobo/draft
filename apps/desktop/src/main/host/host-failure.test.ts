@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ServerError, SessionExpiredError } from "../server/server-client";
+import { ServerError, SessionExpiredError } from "draft-core/host/services";
 import { hostFailureAction } from "./host-failure";
 
 describe("hostFailureAction", () => {

@@ -1,5 +1,5 @@
 import { hostErrorAction } from "draft-core/live-sessions";
-import { ServerError, SessionExpiredError } from "../server/server-client";
+import { ServerError, SessionExpiredError } from "draft-core/host/services";
 
 /**
  * What a session host does after a failure: stop for good, pause until the right login, or try again later.

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ServerError } from "../../server/server-client";
+import { ServerError } from "draft-core/host/services";
 import { cancelRoutineCodexLogin, pollRoutineCodexLogin, startRoutineCodexLogin, type RoutineLoginDeps } from "./codex-routine-login";
 
 const LOGIN = JSON.stringify({ auth_mode: "chatgpt", tokens: { refresh_token: "r1" } });
