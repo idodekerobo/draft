@@ -78,9 +78,9 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
 
     async start(ref) {
       try {
-        // Fly refuses start (412) on a machine that is booting from create, so only a stopped machine is started.
+        // A new machine boots on its own (state created, then starting); Fly answers 412 to start on it.
         const machine = await fly.get(ref.machine);
-        if (machine.state !== "starting" && machine.state !== "started") await fly.start(ref.machine);
+        if (machine.state === "stopped" || machine.state === "suspended") await fly.start(ref.machine);
         await fly.waitForState(ref.machine, "started", { timeoutMs: BOOT_TIMEOUT_MS });
       } catch (error) {
         return cleanUpOrThrow(error, () => destroyMachine(ref.machine));

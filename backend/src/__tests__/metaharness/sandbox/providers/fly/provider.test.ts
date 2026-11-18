@@ -193,11 +193,11 @@ describe("createFlyProvider.start", () => {
     expect(calls).toEqual(["get machine-1", "forceDelete machine-1"]);
   });
 
-  it("only waits for a machine that is already booting from create", async () => {
+  it.each(["created", "starting"])("only waits for a %s machine that is booting from create", async (state) => {
     const { api, calls } = fakeApi({
       get: async (machineId) => {
         calls.push(`get ${machineId}`);
-        return { id: machineId, state: "starting" };
+        return { id: machineId, state };
       },
     });
 
