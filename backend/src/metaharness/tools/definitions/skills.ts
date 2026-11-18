@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { ANY_RUN } from "draft-core/tools";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { callerWorkspaceId, requireUser } from "./shared";
 
@@ -39,7 +40,7 @@ export function createSkillTools(client: SupabaseClient) {
     name: "skills.list",
     mcp: true,
     description: "List the skills (reusable playbooks/templates) available in the caller's workspace.",
-    callers: ["user", "run"],
+    allowedOrigins: ["person", ...ANY_RUN],
     input: z.object({}),
     handler: async ({ caller }) => {
       const result = await (await skillsService()).listSkills(callerWorkspaceId(caller), client);
@@ -51,7 +52,7 @@ export function createSkillTools(client: SupabaseClient) {
     name: "skills.read",
     mcp: true,
     description: "Read one skill's full content by name.",
-    callers: ["user", "run"],
+    allowedOrigins: ["person", ...ANY_RUN],
     input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list.") }),
     handler: async ({ input, caller }) => {
       const result = await (await skillsService()).readSkill(callerWorkspaceId(caller), input.name, client);
@@ -64,7 +65,7 @@ export function createSkillTools(client: SupabaseClient) {
     mcp: true,
     description:
       "Create a new shared skill for the whole team. Use only when the user asks to save a skill. Write the description for a teammate who was not in this session. Fails with duplicate_name if the name exists; it cannot overwrite a skill.",
-    callers: ["user"],
+    allowedOrigins: ["person"],
     input: z.object({
       name: z.string().describe("Lowercase words joined by hyphens, e.g. weekly-customer-recap. Max 64 characters."),
       description: descriptionField,
@@ -81,7 +82,7 @@ export function createSkillTools(client: SupabaseClient) {
   const update = defineTool({
     name: "skills.update",
     description: "Replace an existing skill's content and fields. Fails with skill_not_found if the name does not exist.",
-    callers: ["user"],
+    allowedOrigins: ["person"],
     input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list."), description: descriptionField, ...skillFields }),
     auditArguments: skillAudit,
     handler: async ({ input, caller }) => {
@@ -95,7 +96,7 @@ export function createSkillTools(client: SupabaseClient) {
   const remove = defineTool({
     name: "skills.delete",
     description: "Remove a skill from the workspace. Fails with skill_not_found if the name does not exist.",
-    callers: ["user"],
+    allowedOrigins: ["person"],
     input: z.object({ name: z.string() }),
     handler: async ({ input, caller }) => {
       const user = requireUser(caller, "skills.delete");

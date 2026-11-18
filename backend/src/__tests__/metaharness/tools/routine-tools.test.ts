@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
-import type { ToolCaller } from "draft-core/tools";
+import { personCaller, runCaller, type ToolCaller } from "draft-core/tools";
 import type { AgentRoutineConfig } from "../../../routines/config";
 import { buildRoutineRunSpec } from "../../../routines/run-spec";
 import type { ScheduledTaskRow } from "../../../types/tables";
@@ -10,7 +10,7 @@ const db: FakeDb = fakeDb({}, { uuidTables: ["scheduled_tasks", "errors"] });
 mock.module("../../../db/client", () => ({ serviceClient: fakeClient(db) }));
 const { createRoutineTools } = await import("../../../metaharness/tools/definitions/routines");
 const { runMayManage, runVisibility, widerAccess } = await import("../../../routines/run-creator");
-const schedules = await import("../../../schedules/service");
+const schedules = await import("../../../routines/service");
 const agentStatus = await import("../../../routines/agent-status");
 
 const listConnected = spyOn(schedules, "listConnectedProviders").mockResolvedValue(["github", "slack"]);
@@ -54,7 +54,7 @@ const RUN_BROKEN = id(0x107);
 
 const PARENT: AgentRoutineConfig = {
   title: "Digest", prompt: "Summarize the week.", harness: "claude", model: "haiku", reasoningEffort: "low",
-  canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" }, environment: { nativeTools: ["WebSearch"], mcpServers: [] },
+  canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" }, toolset: { nativeTools: ["WebSearch"], mcpServers: [] },
 };
 const NO_ACCESS: AgentRoutineConfig = { title: "Quiet", prompt: "Look.", harness: "claude", model: null };
 
@@ -65,7 +65,7 @@ const asTask = (row: Row) => row as unknown as ScheduledTaskRow;
 
 function routineRow(taskId: string, config: object, extra: Row = {}): Row {
   return {
-    id: taskId, workspace_id: WS, source_connection_id: null, task_type: "agent_routine", task_key: taskId,
+    id: taskId, workspace_id: WS, connection_id: null, task_type: "agent_routine", task_key: taskId,
     schedule_kind: "cron", cron_expression: "0 9 * * *", interval_seconds: null, timezone: "UTC", enabled: true,
     config_json: config, next_due_at: null, deleted_at: null, last_enqueued_at: null, claimed_occurrence_at: null,
     run_at: null, fired_at: null, created_via: "app", created_by_run_id: null, trigger_depth: 0, visibility: "shared",
@@ -90,8 +90,7 @@ function runOf(runId: string, taskId: string | null, options: { owner?: string |
   return options.owner === null ? { ...spec, onBehalfOf: null } : spec;
 }
 
-const runCaller = (run: AgentRunSpec): ToolCaller => ({ type: "run", run });
-const personCaller: ToolCaller = { type: "user", userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "mcp" };
+const asOwner = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "mcp" });
 
 /** Parses the input the way the gateway does, then calls the tool. The gateway's limit checks do not run here. */
 async function call(name: string, caller: ToolCaller, input: Record<string, unknown>, client = fakeClient(db)) {
@@ -127,7 +126,7 @@ describe("routines.create from a run", () => {
     expect(row.config_json).toEqual({
       title: "Check the digest", prompt: "Check it.", harness: "claude", model: "haiku", reasoningEffort: "low",
       canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" },
-      environment: { nativeTools: ["WebSearch"], mcpServers: [] },
+      toolset: { nativeTools: ["WebSearch"], mcpServers: [] },
     });
     expect(output(result).routine!.id).toBe(row.id);
   });
@@ -283,7 +282,7 @@ describe("routines.create from a run", () => {
 
 describe("routines.create from a person", () => {
   it("makes the routine for the person, through the surface they used, at depth 0", async () => {
-    const result = await call("routines.create", personCaller, { title: "Standup", prompt: "Post it.", harness: "claude", model: "haiku", when: { schedule: { preset: "daily", time: "09:00", timezone: "UTC" } } });
+    const result = await call("routines.create", asOwner,{ title: "Standup", prompt: "Post it.", harness: "claude", model: "haiku", when: { schedule: { preset: "daily", time: "09:00", timezone: "UTC" } } });
     expect(result.status).toBe("ok");
     expect(table("scheduled_tasks").find((task) => task.created_via === "mcp")).toMatchObject({
       created_by_user_id: OWNER, created_by_run_id: null, trigger_depth: 0, visibility: "shared", schedule_kind: "cron",
@@ -292,19 +291,19 @@ describe("routines.create from a person", () => {
 
   it("refuses a past time and an unknown timezone, with the exact message", async () => {
     refusedWith(
-      await call("routines.create", personCaller, { title: "x", prompt: "y", harness: "claude", when: { at: "2020-01-01T00:00:00.000Z" } }),
+      await call("routines.create", asOwner,{ title: "x", prompt: "y", harness: "claude", when: { at: "2020-01-01T00:00:00.000Z" } }),
       "in_the_past",
       "That time has already passed (2020-01-01T00:00:00.000Z). Use a future time.",
     );
     refusedWith(
-      await call("routines.create", personCaller, { title: "x", prompt: "y", harness: "claude", when: { schedule: { cron: "0 9 * * *", timezone: "Mars/Olympus" } } }),
+      await call("routines.create", asOwner,{ title: "x", prompt: "y", harness: "claude", when: { schedule: { cron: "0 9 * * *", timezone: "Mars/Olympus" } } }),
       "invalid_schedule",
       "Unknown timezone",
     );
   });
 
   it("allows a cron more often than hourly, since the hourly floor is for agents only", async () => {
-    expect((await call("routines.create", personCaller, { title: "x", prompt: "y", harness: "claude", when: { schedule: { cron: "*/30 * * * *", timezone: "UTC" } } })).status).toBe("ok");
+    expect((await call("routines.create", asOwner,{ title: "x", prompt: "y", harness: "claude", when: { schedule: { cron: "*/30 * * * *", timezone: "UTC" } } })).status).toBe("ok");
   });
 });
 

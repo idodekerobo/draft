@@ -1,15 +1,15 @@
-export type SlackConfigEnvironment = Readonly<Record<string, string | undefined>>;
+export type SlackConfigEnv = Readonly<Record<string, string | undefined>>;
 
 // DRAFT_API_BASE_URL isn't needed by Socket Mode itself -- it's here for a
 // future webhook-URL display/health-check surface. It's also the backend's
 // own public base URL, shared with backend/src/config.ts and
-// backend/src/sandbox/config.ts.
+// backend/src/metaharness/sandbox/config.ts.
 
 export interface SlackListenerConfig {
   draftApiBaseUrl: string;
 }
 
-function required(env: SlackConfigEnvironment, name: string): string {
+function required(env: SlackConfigEnv, name: string): string {
   const value = env[name];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`${name} must not be empty`);
@@ -40,7 +40,7 @@ export function validateSlackListenerConfig(
 }
 
 export function loadSlackListenerConfig(
-  env: SlackConfigEnvironment = process.env,
+  env: SlackConfigEnv = process.env,
 ): SlackListenerConfig {
   return validateSlackListenerConfig({
     draftApiBaseUrl: required(env, "DRAFT_API_BASE_URL"),
@@ -63,7 +63,7 @@ export const DEFAULT_SLACK_BATCH_LIMITS: Readonly<SlackBatchLimits> = {
 };
 
 function optionalPositiveInt(
-  env: SlackConfigEnvironment,
+  env: SlackConfigEnv,
   name: string,
   fallback: number,
 ): number {
@@ -78,7 +78,7 @@ function optionalPositiveInt(
 
 /** Load Slack batch-cut thresholds, falling back to DEFAULT_SLACK_BATCH_LIMITS per-field. */
 export function loadSlackBatchLimits(
-  env: SlackConfigEnvironment = process.env,
+  env: SlackConfigEnv = process.env,
 ): SlackBatchLimits {
   return {
     maxSpanMs:

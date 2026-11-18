@@ -1,5 +1,5 @@
-import { cloudEnvironmentFor } from "draft-core/harnesses";
-import { agentActor, cronTrigger, parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
+import { cloudToolsetFor } from "draft-core/harnesses";
+import { cronTrigger, parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
 import { ROUTINE_READ_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
 import type { AgentRoutineConfig } from "./config";
 
@@ -57,13 +57,12 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
     network: "open",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: input.trigger ?? cronTrigger(input.scheduledTaskId, input.occurrenceAt),
-    actor: agentActor(parseAgentRunId(input.id)),
     onBehalfOf: parseUserId(input.ownerUserId),
     runtime: {
       type: "cloud",
-      environment: cloudEnvironmentFor(input.routine.harness, {
-        nativeTools: [...ROUTINE_NATIVE_TOOLS[input.routine.harness], ...(input.routine.environment?.nativeTools ?? [])],
-        mcpServers: (input.mcpServers ?? []).map((server) => ({ connectionId: parseSourceConnectionId(server.connectionId), tools: server.tools })),
+      toolset: cloudToolsetFor(input.routine.harness, {
+        nativeTools: [...ROUTINE_NATIVE_TOOLS[input.routine.harness], ...(input.routine.toolset?.nativeTools ?? [])],
+        mcpServers: (input.mcpServers ?? []).map((server) => ({ connectionId: parseConnectionId(server.connectionId), tools: server.tools })),
       }),
     },
     harness: input.routine.harness,

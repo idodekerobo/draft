@@ -39,6 +39,8 @@ export interface HarnessDefinition {
   cloudStartingTools: ReadonlyArray<string>;
   /** How a cloud routine runs this harness. Empty when routines do not support it yet. */
   routineModes: ReadonlyArray<"print" | "exec">;
+  /** Where the agent loop runs: beside the harness CLI in the sandbox, or in the backend. */
+  loop: "in-sandbox" | "in-backend";
   /** Where a person installs the harness's CLI. */
   installUrl?: string;
 }

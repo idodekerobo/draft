@@ -24,7 +24,7 @@ function callbackRequest(runId = "run-1"): Request {
 
 describe("POST /sandbox/callback", () => {
   it("returns 401 (no leaked detail) when completeSynthesisRunCallback throws SandboxCallbackRequestError", async () => {
-    const { SandboxCallbackRequestError } = await import("../../sandbox/callback-request");
+    const { SandboxCallbackRequestError } = await import("../../metaharness/sandbox/callback-request");
 
     mock.module("../../synthesis/orchestrate-run", () => ({
       completeSynthesisRunCallback: async () => {

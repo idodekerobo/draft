@@ -2,9 +2,9 @@ import { basename } from "node:path";
 import { publishableClient, serviceClient } from "../db/client";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { resolveIngestCredentialScope } from "../credentials/session-ingest-token";
-import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
 import { parseClaudeCodeJsonl } from "draft-core/harnesses/claude/parse-transcript";
-import { persistAgentSession } from "../ingestion/agent-sessions/persist-session";
+import { persistCapturedSession } from "../ingestion/captured-sessions/persist-session";
 import { recordRouteError } from "../errors/route-error";
 
 // The ingest route's `source` literal for Claude Code sessions -- same
@@ -14,7 +14,7 @@ const CLAUDE_CODE_SESSION_SOURCE = "claude-code-session";
 async function isSessionTrackingEnabled(workspaceId: string, source: string): Promise<boolean> {
   if (source !== CLAUDE_CODE_SESSION_SOURCE) return true;
   const { data } = await serviceClient
-    .from("source_connections")
+    .from("connections")
     .select("status")
     .eq("workspace_id", workspaceId)
     .eq("provider", "claude_session")
@@ -27,7 +27,7 @@ async function isSessionTrackingEnabled(workspaceId: string, source: string): Pr
 // to the tracking toggle, unlike the legacy path above.
 async function isSessionTrackingEnabledForScopedCredential(workspaceId: string): Promise<boolean> {
   const { data } = await serviceClient
-    .from("source_connections")
+    .from("connections")
     .select("status")
     .eq("workspace_id", workspaceId)
     .eq("provider", "claude_session")
@@ -159,7 +159,7 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
   const startedAt = parsed.startedAt ?? parsed.endedAt ?? new Date().toISOString();
 
   try {
-    const { sessionId: agentSessionId } = await persistAgentSession(serviceClient, {
+    const { sessionId: capturedSessionId } = await persistCapturedSession(serviceClient, {
       workspace_id: workspaceId,
       provider: source,
       external_session_id: sessionId,
@@ -173,7 +173,7 @@ export const POST = async (req: SessionsIngestRequest): Promise<Response> => {
       messages: parsed.messages,
       session_project_id: scope.sessionProjectId,
     });
-    return Response.json({ ok: true, sessionId: agentSessionId });
+    return Response.json({ ok: true, sessionId: capturedSessionId });
   } catch (err) {
     return errorResponse("persist_failed", 500, err, workspaceId);
   }

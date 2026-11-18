@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AgentRunStatus } from "draft-core/run-spec";
 import { recordError } from "../errors/record-error";
-import type { ErrorOperation, SynthesisRunStatus } from "../types/enums";
+import type { ErrorOperation } from "../types/enums";
 import type { AgentRunRow } from "../types/tables";
 
 // A run stuck in any of these forever (crashed sandbox, dead tunnel) blocks
 // every future run for its workspace until failed.
-export const ACTIVE_WRITER_STATUSES: SynthesisRunStatus[] = [
+export const ACTIVE_WRITER_STATUSES: AgentRunStatus[] = [
   "preparing",
   "running",
   "validating",

@@ -14,8 +14,8 @@ export type UserId = Brand<string, "UserId">;
 export type PersonId = Brand<string, "PersonId">;
 export type ContextVersionId = Brand<string, "ContextVersionId">;
 export type ScheduledTaskId = Brand<string, "ScheduledTaskId">;
-export type SourceConnectionId = Brand<string, "SourceConnectionId">;
-export type HostMachineId = Brand<string, "HostMachineId">;
+export type ConnectionId = Brand<string, "ConnectionId">;
+export type HostId = Brand<string, "HostId">;
 export type SkillId = Brand<string, "SkillId">;
 export type InstructionFileId = Brand<string, "InstructionFileId">;
 export type AgentEventId = Brand<string, "AgentEventId">;
@@ -37,16 +37,16 @@ export const parseUserId = uuidParser<UserId>("UserId");
 export const parsePersonId = /* @__PURE__ */ uuidParser<PersonId>("PersonId");
 export const parseContextVersionId = uuidParser<ContextVersionId>("ContextVersionId");
 export const parseScheduledTaskId = uuidParser<ScheduledTaskId>("ScheduledTaskId");
-export const parseSourceConnectionId = uuidParser<SourceConnectionId>("SourceConnectionId");
+export const parseConnectionId = uuidParser<ConnectionId>("ConnectionId");
 export const parseSkillId = uuidParser<SkillId>("SkillId");
 export const parseInstructionFileId = uuidParser<InstructionFileId>("InstructionFileId");
 /** Marked pure, like parsePersonId, so the sandbox runner bundle does not change when it does not use it. */
 export const parseAgentEventId = /* @__PURE__ */ uuidParser<AgentEventId>("AgentEventId");
 
-/** A host machine id comes from the desktop app and is not always a UUID. */
-export function parseHostMachineId(raw: string): HostMachineId {
-  if (!raw.trim()) throw new Error("Invalid HostMachineId: empty");
-  return raw as HostMachineId;
+/** A host id comes from the desktop app and is not always a UUID. */
+export function parseHostId(raw: string): HostId {
+  if (!raw.trim()) throw new Error("Invalid HostId: empty");
+  return raw as HostId;
 }
 
 export function parseIsoTimestamp(raw: string): IsoTimestamp {
@@ -93,15 +93,7 @@ export function cronTrigger(scheduledTaskId: string, occurrenceAt: string): Agen
   return { type: "cron", scheduledTaskId: parseScheduledTaskId(scheduledTaskId), occurrenceAt: parseIsoTimestamp(occurrenceAt) };
 }
 
-/**
- * Who did the thing. It is always the agent run, never a person: every write, message and tool call
- * a run makes is recorded against the run, so it is clear an agent did it.
- */
-export type AgentRunActor = { type: "agent"; runId: AgentRunId };
-
-export const agentActor = (runId: AgentRunId): AgentRunActor => ({ type: "agent", runId });
-
-/** Claude Code tools a run may be given. Which of them are safe in the cloud is decided by the cloud environment. */
+/** Claude Code tools a run may be given. Which of them are safe in the cloud is decided by the cloud toolset. */
 export const CLAUDE_NATIVE_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "Edit", "Write"] as const;
 export type ClaudeNativeTool = (typeof CLAUDE_NATIVE_TOOLS)[number];
 
@@ -128,11 +120,11 @@ export function isCloudNativeTool(permission: NativeToolPermission): boolean {
 
 /** An MCP server the person connected in Draft. Tool names come from the server at run time. */
 export interface McpServerPermission {
-  connectionId: SourceConnectionId;
+  connectionId: ConnectionId;
   tools: "all" | ReadonlyArray<string>;
 }
 
-export interface AgentRunEnvironment {
+export interface AgentRunToolset {
   nativeTools: ReadonlyArray<NativeToolPermission>;
   mcpServers: ReadonlyArray<McpServerPermission>;
   skills: ReadonlyArray<SkillId>;
@@ -140,8 +132,8 @@ export interface AgentRunEnvironment {
 }
 
 export type AgentRunRuntime =
-  | { type: "local"; hostMachineId: HostMachineId }
-  | { type: "cloud"; environment: AgentRunEnvironment };
+  | { type: "local"; hostId: HostId }
+  | { type: "cloud"; toolset: AgentRunToolset };
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
@@ -156,7 +148,6 @@ export interface AgentRunSpec {
   network: "open" | "restricted";
   workspaceId: WorkspaceId;
   trigger: AgentRunTrigger;
-  actor: AgentRunActor;
   /**
    * The user whose connections and context the run may use, and who "self" is. This is authority lent to
    * the run, not the actor. Null for a workspace run on shared sources, which has no self.

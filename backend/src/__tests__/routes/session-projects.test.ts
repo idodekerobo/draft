@@ -81,7 +81,7 @@ beforeEach(() => {
     { id: "p3", workspace_id: workspaceId, label: "old", status: "archived", created_at: "2026-08-01T00:00:00.000Z" },
   ];
   tables.credentials = [credential("p1"), credential("p2")];
-  tables.agent_sessions = [];
+  tables.captured_sessions =[];
   tables.users = [
     { id: "user-1", display_name: "Ana", email: "ana@example.com" },
     { id: "user-2", display_name: null, email: "kai@example.com" },
@@ -134,7 +134,7 @@ describe("GET /workspaces/:id/sessions/projects", () => {
   });
 
   it("aggregates contributors, last upload and session count, and marks the caller", async () => {
-    tables.agent_sessions = [
+    tables.captured_sessions =[
       session("p1", "2026-09-10T00:00:00.000Z", { user_id: "user-1" }),
       session("p1", "2026-09-12T00:00:00.000Z", { user_id: "user-2" }),
       session("p1", "2026-09-11T00:00:00.000Z", { contributor_id: "c1" }),
@@ -152,7 +152,7 @@ describe("GET /workspaces/:id/sessions/projects", () => {
   });
 
   it("sorts repos with uploads first, most recent first", async () => {
-    tables.agent_sessions = [session("p2", "2026-09-10T00:00:00.000Z", { user_id: "user-1" })];
+    tables.captured_sessions =[session("p2", "2026-09-10T00:00:00.000Z", { user_id: "user-1" })];
     const { body } = await list();
     expect(body.projects.map((p) => p.id)).toEqual(["p2", "p1"]);
     expect(body.projects[1]?.last_upload_at).toBeNull();

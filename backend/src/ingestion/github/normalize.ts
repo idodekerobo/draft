@@ -116,7 +116,7 @@ export async function ingestGithubPullRequestEvent(
   const { data: existing, error: lookupError } = await db
     .from("source_items")
     .select("external_version")
-    .eq("source_connection_id", connection.id)
+    .eq("connection_id", connection.id)
     .eq("external_id", externalId)
     .eq("lifecycle_status", "active")
     .maybeSingle();
@@ -130,7 +130,7 @@ export async function ingestGithubPullRequestEvent(
 
   const result = await upsertSourceItem(db, {
     workspace_id: connection.workspace_id,
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     item_type: "provider_event",
     external_id: externalId,
     external_version: externalVersion,
@@ -151,7 +151,7 @@ export async function ingestGithubPullRequestEvent(
 
   await insertEvent(db, connection.workspace_id, {
     event_type: "source_items_added",
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     summary: `PR #${payload.pull_request.number} ${payload.action}: ${payload.pull_request.title}`,
   });
 
@@ -177,7 +177,7 @@ export async function ingestGithubPushEvent(
     // insert-once, no supersession concept for this item type.
     const result = await upsertSourceItem(db, {
       workspace_id: connection.workspace_id,
-      source_connection_id: connection.id,
+      connection_id: connection.id,
       item_type: "provider_event",
       external_id: commit.id,
       external_version: commit.id,
@@ -201,7 +201,7 @@ export async function ingestGithubPushEvent(
   if (sourceItemIds.length > 0) {
     await insertEvent(db, connection.workspace_id, {
       event_type: "source_items_added",
-      source_connection_id: connection.id,
+      connection_id: connection.id,
       summary: `${sourceItemIds.length} commit(s) pushed to ${branch}`,
     });
   }

@@ -59,7 +59,7 @@ export function buildFirefliesExternalVersion(
 
 interface LiveFirefliesSourceItem {
   id: string;
-  source_connection_id: string;
+  connection_id: string;
   visibility: SourceItemVisibility;
 }
 
@@ -76,7 +76,7 @@ async function findLiveFirefliesSourceItem(
   meetingId: string,
 ): Promise<LiveFirefliesSourceItem | null> {
   const { data: connections, error: connectionsError } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id")
     .eq("workspace_id", workspaceId)
     .eq("provider", "fireflies");
@@ -87,11 +87,11 @@ async function findLiveFirefliesSourceItem(
 
   const { data, error } = await db
     .from("source_items")
-    .select("id, source_connection_id, visibility")
+    .select("id, connection_id, visibility")
     .eq("workspace_id", workspaceId)
     .eq("external_id", meetingId)
     .eq("lifecycle_status", "active")
-    .in("source_connection_id", connectionIds)
+    .in("connection_id", connectionIds)
     .maybeSingle();
   if (error) throw error;
   return data as LiveFirefliesSourceItem | null;
@@ -110,7 +110,7 @@ export async function ingestFirefliesMeeting(
   // no in-between state, so this widens private -> shared (clearing owner_user_id)
   // and never narrows the other way, same as Granola's cross-connection widen.
   const existing = await findLiveFirefliesSourceItem(db, connection.workspace_id, meetingId);
-  if (existing && existing.source_connection_id !== connection.id) {
+  if (existing && existing.connection_id !== connection.id) {
     if (existing.visibility === "private") {
       const { error } = await db
         .from("source_items")
@@ -137,7 +137,7 @@ export async function ingestFirefliesMeeting(
 
   const result = await upsertSourceItem(db, {
     workspace_id: connection.workspace_id,
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     item_type: "meeting_transcript",
     external_id: meetingId,
     // Fireflies gives no revision id, so include both synthesis content and
@@ -166,7 +166,7 @@ export async function ingestFirefliesMeeting(
 
   await insertEvent(db, connection.workspace_id, {
     event_type: "source_items_added",
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     summary: meeting.title,
   });
 

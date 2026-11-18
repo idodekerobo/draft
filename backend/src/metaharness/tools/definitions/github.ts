@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { ANY_RUN } from "draft-core/tools";
 import { githubClient } from "../../../ingestion/github/client-instance";
 import { defineTool, refuse } from "../tool-registry";
 import { callerWorkspaceId } from "./shared";
@@ -8,7 +9,7 @@ type GithubConnection = { connection_key: string };
 
 async function activeGithubConnection(client: SupabaseClient, workspaceId: string): Promise<GithubConnection | null> {
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select("connection_key")
     .eq("workspace_id", workspaceId)
     .eq("provider", "github")
@@ -29,14 +30,14 @@ export function createGithubTools(client: SupabaseClient) {
   const credential = defineTool({
     name: "github.credential",
     description: "Get a short-lived token scoped to the repositories and access configured for this routine.",
-    callers: ["run"],
+    allowedOrigins: ANY_RUN,
     mcp: false,
     modelVisible: false,
     input: z.object({}),
     auditArguments: () => ({}),
     handler: async ({ caller }) => {
-      if (caller.type !== "run") return refuse("not_allowed", "This tool is only available to routine runs.");
-      const permission = caller.run.permissions.find((entry) => entry.tool === "github.credential");
+      if (caller.origin.kind !== "run") return refuse("not_allowed", "This tool is only available to routine runs.");
+      const permission = caller.origin.run.permissions.find((entry) => entry.tool === "github.credential");
       const limits = permission?.limits as { repos?: unknown; access?: unknown } | undefined;
       const repos = limits?.repos;
       const access = limits?.access;

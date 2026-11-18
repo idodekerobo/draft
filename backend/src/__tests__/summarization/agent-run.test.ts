@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createSandboxCallbackToken } from "../../sandbox/callback-token";
+import { createSandboxCallbackToken } from "../../metaharness/sandbox/callback-token";
 import {
   completeSummarizationRunCallback,
   parseAgentRunIdFromSummarizationRunId,
@@ -23,7 +23,7 @@ function newDb() {
     workspaces: [{ id: WS, timezone: "UTC", current_context_version_id: VERSION }],
     workspace_context_versions: [{ id: VERSION, version_number: 1, documents_json: {} }],
     agent_runs: [],
-    agent_sessions: [
+    captured_sessions: [
       { id: "s1", workspace_id: WS, summary_status: "leased", summary_agent_run_id: null },
       { id: "s2", workspace_id: WS, summary_status: "leased", summary_agent_run_id: null },
       { id: "other", workspace_id: WS, summary_status: "pending", summary_agent_run_id: null },
@@ -39,7 +39,7 @@ describe("summarization run spec", () => {
       kind: "summarization",
       harness: "claude",
       permissions: [],
-      actor: { type: "agent", runId: RUN }, onBehalfOf: null,
+      onBehalfOf: null,
       trigger: { type: "cron", scheduledTaskId: TASK, occurrenceAt: schedule.occurrenceAt },
       output: { type: "structured" },
     });
@@ -54,9 +54,9 @@ describe("startSummarizationRun", () => {
 
     expect(db.tables.agent_runs).toHaveLength(1);
     expect(db.tables.agent_runs![0]).toMatchObject({ id: runId, kind: "summarization", status: "preparing", workspace_id: WS, base_context_version_id: VERSION });
-    const linked = db.tables.agent_sessions!.filter((session) => session.summary_agent_run_id === runId).map((session) => session.id);
+    const linked = db.tables.captured_sessions!.filter((session) => session.summary_agent_run_id === runId).map((session) => session.id);
     expect(linked).toEqual(["s1", "s2"]);
-    expect(db.tables.agent_sessions!.find((session) => session.id === "other")!.summary_agent_run_id).toBeNull();
+    expect(db.tables.captured_sessions!.find((session) => session.id === "other")!.summary_agent_run_id).toBeNull();
   });
 });
 

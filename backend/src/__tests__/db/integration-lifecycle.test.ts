@@ -67,7 +67,7 @@ async function createConnection(
 ): Promise<ConnectionFixture> {
   const fixture = await createWorkspace();
   const [connection] = await db()<[{ id: string }]>`
-    insert into source_connections (
+    insert into connections (
       workspace_id, provider, connection_key, status
     ) values (
       ${fixture.workspaceId}, ${provider}, ${randomUUID()}, ${status}
@@ -188,7 +188,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         and p.proname in (
           'upsert_source_item',
           'upsert_slack_message_if_connection_active',
-          'disconnect_source_connection',
+          'disconnect_connection',
           'commit_linear_connection_swap',
           'mark_fireflies_webhook_success',
           'rotate_fireflies_connection_credential'
@@ -198,7 +198,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
 
     expect(rows.map((row) => row.name)).toEqual([
       "commit_linear_connection_swap",
-      "disconnect_source_connection",
+      "disconnect_connection",
       "mark_fireflies_webhook_success",
       "rotate_fireflies_connection_credential",
       "upsert_slack_message_if_connection_active",
@@ -224,7 +224,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       returning id
     `;
     const [connection] = await db()<[{ id: string }]>`
-      insert into source_connections (
+      insert into connections (
         workspace_id, provider, connection_key, credential_id, status,
         last_success_at, last_error_at
       ) values (
@@ -261,7 +261,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         encode(current_credential.encrypted_payload, 'hex') as payload,
         current_credential.encryption_key_version as key_version,
         prior_credential.status as prior_status
-      from source_connections sc
+      from connections sc
       join credentials current_credential on current_credential.id = sc.credential_id
       join credentials prior_credential on prior_credential.id = ${priorCredential.id}
       where sc.id = ${connection.id}
@@ -300,7 +300,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         sc.status,
         sc.last_success_at::text as last_success_at,
         count(c.id)::int as credential_count
-      from source_connections sc
+      from connections sc
       join credentials c on c.workspace_id = sc.workspace_id and c.provider = 'fireflies'
       where sc.id = ${connection.id}
       group by sc.id
@@ -322,7 +322,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         sc.status,
         sc.last_success_at::text as last_success_at,
         count(c.id)::int as credential_count
-      from source_connections sc
+      from connections sc
       join credentials c on c.workspace_id = sc.workspace_id and c.provider = 'fireflies'
       where sc.id = ${connection.id}
       group by sc.id
@@ -333,20 +333,20 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
   test("allows only one non-revoked GitHub connection per workspace", async () => {
     const fixture = await createWorkspace();
     await db()`
-      insert into source_connections (workspace_id, provider, connection_key, status)
+      insert into connections (workspace_id, provider, connection_key, status)
       values (${fixture.workspaceId}, 'github', ${randomUUID()}, 'active')
     `;
 
     await expectPostgresError(
       db()`
-        insert into source_connections (workspace_id, provider, connection_key, status)
+        insert into connections (workspace_id, provider, connection_key, status)
         values (${fixture.workspaceId}, 'github', ${randomUUID()}, 'pending')
       `,
       { code: "23505" },
     );
 
     await db()`
-      insert into source_connections (workspace_id, provider, connection_key, status)
+      insert into connections (workspace_id, provider, connection_key, status)
       values (${fixture.workspaceId}, 'github', ${randomUUID()}, 'revoked')
     `;
   });
@@ -409,7 +409,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     const priorHash = "3".repeat(64);
     const priorRows = await db()<Array<{ id: string; external_version: string }>>`
       insert into source_items (
-        workspace_id, source_connection_id, item_type, external_id,
+        workspace_id, connection_id, item_type, external_id,
         external_version, lifecycle_status, occurred_at, normalized_at,
         content_markdown, content_hash
       ) values
@@ -442,7 +442,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     const rows = await db()<Array<{ id: string; lifecycle_status: string; supersedes_source_item_id: string | null }>>`
       select id, lifecycle_status, supersedes_source_item_id
       from source_items
-      where source_connection_id = ${connection.connectionId}
+      where connection_id = ${connection.connectionId}
         and external_id = ${externalId}
     `;
     const byId = new Map(rows.map((row) => [row.id, row]));
@@ -460,7 +460,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
 
     const [sourceItem] = await db()<[{ id: string }]>`
       insert into source_items (
-        workspace_id, source_connection_id, item_type, external_id,
+        workspace_id, connection_id, item_type, external_id,
         external_version, lifecycle_status, occurred_at, normalized_at,
         content_markdown, content_hash
       ) values (
@@ -472,7 +472,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     await db()`
       update slack_messages
       set source_item_id = ${sourceItem.id}
-      where source_connection_id = ${connection.connectionId}
+      where connection_id = ${connection.connectionId}
         and message_ts = ${messageTs}
     `;
 
@@ -480,13 +480,13 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     const [replayed] = await db()<[{ source_item_id: string | null }]>`
       select source_item_id
       from slack_messages
-      where source_connection_id = ${connection.connectionId}
+      where connection_id = ${connection.connectionId}
         and message_ts = ${messageTs}
     `;
     expect(replayed.source_item_id).toBe(sourceItem.id);
 
     await db()`
-      update source_connections set status = 'revoked'
+      update connections set status = 'revoked'
       where id = ${connection.connectionId}
     `;
     await expectPostgresError(
@@ -499,7 +499,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     const connection = await createConnection("fireflies", "active");
     await db()`
       insert into scheduled_tasks (
-        workspace_id, source_connection_id, task_type, task_key,
+        workspace_id, connection_id, task_type, task_key,
         schedule_kind, interval_seconds, timezone, enabled
       ) values (
         ${connection.workspaceId}, ${connection.connectionId}, 'ingest_source',
@@ -508,20 +508,20 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
     `;
 
     const [first] = await db()<[{ connection_id: string; outcome: string }]>`
-      select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
+      select * from disconnect_connection(${connection.workspaceId}, 'fireflies', null)
     `;
     expect(first).toEqual({ connection_id: connection.connectionId, outcome: 'disconnected' });
 
     const [state] = await db()<[{ status: string; enabled: boolean }]>`
       select sc.status, st.enabled
-      from source_connections sc
-      join scheduled_tasks st on st.source_connection_id = sc.id
+      from connections sc
+      join scheduled_tasks st on st.connection_id = sc.id
       where sc.id = ${connection.connectionId}
     `;
     expect(state).toEqual({ status: "revoked", enabled: false });
 
     const [second] = await db()<[{ connection_id: string | null; outcome: string }]>`
-      select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
+      select * from disconnect_connection(${connection.workspaceId}, 'fireflies', null)
     `;
     expect(second).toEqual({ connection_id: null, outcome: 'not_found' });
   });
@@ -547,7 +547,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       `;
 
       pending = waiter`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
+        select * from disconnect_connection(${connection.workspaceId}, 'fireflies', null)
       `.then((rows) => {
         settled = true;
         return rows;
@@ -570,8 +570,8 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         select
           count(si.id)::int as item_count,
           min(sc.status) as status
-        from source_connections sc
-        left join source_items si on si.source_connection_id = sc.id
+        from connections sc
+        left join source_items si on si.connection_id = sc.id
           and si.external_id = 'ingest-first'
         where sc.id = ${connection.connectionId}
       `;
@@ -597,7 +597,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       await blocker`begin`;
       blockerOpen = true;
       await blocker`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'fireflies', null)
+        select * from disconnect_connection(${connection.workspaceId}, 'fireflies', null)
       `;
 
       pending = waiter`
@@ -622,7 +622,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       const [count] = await db()<[{ count: number }]>`
         select count(*)::int as count
         from source_items
-        where source_connection_id = ${connection.connectionId}
+        where connection_id = ${connection.connectionId}
           and external_id = 'disconnect-first'
       `;
       expect(count.count).toBe(0);
@@ -656,7 +656,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       `;
 
       pending = waiter`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'slack', null)
+        select * from disconnect_connection(${connection.workspaceId}, 'slack', null)
       `.then((rows) => {
         settled = true;
         return rows;
@@ -674,8 +674,8 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         select
           count(sm.id)::int as message_count,
           min(sc.status) as status
-        from source_connections sc
-        left join slack_messages sm on sm.source_connection_id = sc.id
+        from connections sc
+        left join slack_messages sm on sm.connection_id = sc.id
           and sm.message_ts = '1724176800.000010'
         where sc.id = ${connection.connectionId}
       `;
@@ -701,7 +701,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       await blocker`begin`;
       blockerOpen = true;
       await blocker`
-        select * from disconnect_source_connection(${connection.workspaceId}, 'slack', null)
+        select * from disconnect_connection(${connection.workspaceId}, 'slack', null)
       `;
 
       pending = waiter`
@@ -727,7 +727,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       const [count] = await db()<[{ count: number }]>`
         select count(*)::int as count
         from slack_messages
-        where source_connection_id = ${connection.connectionId}
+        where connection_id = ${connection.connectionId}
           and message_ts = '1724176800.000011'
       `;
       expect(count.count).toBe(0);
@@ -753,14 +753,14 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       [{ id: string; credential_id: string; updated_at: string; config_json: Record<string, unknown> }]
     >`
       select id, credential_id, updated_at::text as updated_at, config_json
-      from source_connections
+      from connections
       where workspace_id = ${fixture.workspaceId} and provider = 'linear'
     `;
     expect(observed.config_json.linear_webhook_id).toBe("webhook-1");
     expect(observed.config_json).not.toHaveProperty("linear_cleanup_pending_webhook_ids");
 
     const [observedForSwap] = await db()<[{ updated_at: string }]>`
-      update source_connections
+      update connections
       set config_json = config_json || jsonb_build_object(
         'linear_cleanup_pending_webhook_ids',
         jsonb_build_array('webhook-1', 'webhook-other', 'webhook-1')
@@ -806,7 +806,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         sc.config_json ->> 'linear_webhook_id' as webhook_id,
         sc.config_json -> 'linear_cleanup_pending_webhook_ids' as pending_webhook_ids,
         encode(c.encrypted_payload, 'hex') as payload
-      from source_connections sc
+      from connections sc
       join credentials c on c.id = sc.credential_id
       where sc.id = ${observed.id}
     `;
@@ -832,15 +832,15 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
       [{ id: string; credential_id: string; updated_at: string }]
     >`
       select id, credential_id, updated_at::text as updated_at
-      from source_connections
+      from connections
       where workspace_id = ${fixture.workspaceId} and provider = 'linear'
     `;
 
     // This intentionally malformed second singleton is test-only. Its key
-    // collides during the final source_connections update, after the RPC has
+    // collides during the final connections update, after the RPC has
     // already mutated the first row's credential inside the same transaction.
     await db()`
-      insert into source_connections (
+      insert into connections (
         workspace_id, provider, connection_key, status, created_at
       ) values (
         ${fixture.workspaceId}, 'linear', 'linear-collision', 'revoked',
@@ -866,7 +866,7 @@ describeWithDatabase("hosted integration lifecycle migration", () => {
         sc.config_json ->> 'linear_webhook_id' as webhook_id,
         encode(c.encrypted_payload, 'hex') as payload,
         c.encryption_key_version as key_version
-      from source_connections sc
+      from connections sc
       join credentials c on c.id = sc.credential_id
       where sc.id = ${observed.id}
     `;

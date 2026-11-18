@@ -283,7 +283,7 @@ export type AppRPCType = {
       getRoutineGithubRepos: { params: void; response: string[] };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
 
-      /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
+      /** Disconnect an input source by revoking its cloud connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear"; accountKind?: "personal" | "workspace" }; response: ActionResult };
 
       /**
@@ -391,7 +391,7 @@ export type AppRPCType = {
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
       revealLiveSessionFolder: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
-      /** Detect which CLI runners are installed. */
+      /** Detect which CLI harnesses are installed. */
       /** Whether Codex is installed and signed in on this computer. */
       getCodexStatus: { params: void; response: { installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null } };
       /** Opens the browser sign-in, or with `deviceCode` returns a link and a one-time code to enter there. The caller polls getCodexStatus. */
@@ -406,7 +406,7 @@ export type AppRPCType = {
       cancelRoutineCodexLogin: { params: void; response: void };
       /** Opens the user's terminal app running `claude`, whose first run walks through signing in. */
       openClaudeSignIn: { params: void; response: ActionResult };
-      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
+      getAvailableHarnesses: { params: void; response: { harnesses: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
       getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };

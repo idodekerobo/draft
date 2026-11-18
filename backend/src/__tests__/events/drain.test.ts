@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { __resetDrainForTests, drainEventInbox, EVENT_MAX_ATTEMPTS, EVENTS_PER_RUN } from "../../events/drain";
 import type { dispatchAgentRoutine } from "../../routines/dispatch-routine";
 import type { RoutineEventPayload } from "../../routines/event";
-import type { SandboxDeploymentConfig } from "../../sandbox";
+import type { SandboxDeploymentConfig } from "../../metaharness/sandbox";
 import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
 
 type Dispatch = typeof dispatchAgentRoutine;

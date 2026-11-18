@@ -1,7 +1,7 @@
 export interface SlackMessageRow {
   id: string;
   workspace_id: string;
-  source_connection_id: string;
+  connection_id: string;
   source_item_id: string | null;
   channel_id: string;
   channel_name_snapshot: string | null;

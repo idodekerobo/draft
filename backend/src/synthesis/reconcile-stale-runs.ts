@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SynthesisRunStatus } from "../types/enums";
+import type { AgentRunStatus } from "draft-core/run-spec";
 import { ACTIVE_WRITER_STATUSES, failSynthesisRun } from "./handle-run-failure";
 
 // 10-minute margin past the sandbox's own 20-minute wall-clock timeout.
@@ -13,7 +13,7 @@ export interface StaleRunSweepOptions {
 export interface SweptRun {
   id: string;
   workspace_id: string;
-  status: SynthesisRunStatus;
+  status: AgentRunStatus;
 }
 
 // Fails any active-writer row older than the cutoff and logs one `errors` row

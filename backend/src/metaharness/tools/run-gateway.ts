@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
+import { runCaller } from "draft-core/tools";
 import { auditToDatabase, loadActiveAgentRunSpec } from "../runs/agent-run-store";
 import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
@@ -65,7 +66,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
     if (!auth.ok) return auth.response;
     const body = parseToolArgs(await request.text());
     if (!body.ok) return body.response;
-    const result = await invokeTool(await depsFor(auth.run), { type: "run", run: auth.run }, toolName, body.args);
+    const result = await invokeTool(await depsFor(auth.run), runCaller(auth.run), toolName, body.args);
     return toHttpResponse(result);
   }
 
@@ -81,7 +82,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
         server.registerTool(
           tool.name,
           { description: tool.description, inputSchema: tool.inputSchema as z.ZodObject },
-          async (args: unknown) => toMcpResult(await invokeTool(requestDeps, { type: "run", run }, tool.name, args)),
+          async (args: unknown) => toMcpResult(await invokeTool(requestDeps, runCaller(run), tool.name, args)),
         );
       }
       return server;

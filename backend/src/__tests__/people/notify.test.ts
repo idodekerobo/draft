@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelSendResult, NotifyChannelId, NotifyMessage } from "draft-core/notify";
-import { agentActor, parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
-import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
+import { parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
+import { personCaller, runCaller, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
@@ -38,7 +38,7 @@ const newDb = () =>
         { id: ADA, workspace_id: WS, display_name: "Ada", user_id: ADMIN, status: "active", affiliation: "member", notify_channels: ["slack"] },
       ],
       person_identities: [],
-      source_connections: [],
+      connections: [],
       source_items: [],
       scheduled_tasks: [{ id: TASK, workspace_id: WS, config_json: { title: "Meeting follow-up" } }],
       agent_run_tool_calls: [],
@@ -75,9 +75,8 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
     network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
-  actor: agentActor(parseAgentRunId(RUN)),
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude",
   model: null,
   instructions: "",
@@ -85,8 +84,8 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
   permissions,
   output: { type: "text" },
 });
-const asRun = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): ToolCaller => ({ type: "run", run: runSpec(permissions, onBehalfOf) });
-const asUser = (userId = OWNER): ToolCaller => ({ type: "user", userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" });
+const asRun = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): ToolCaller => runCaller(runSpec(permissions, onBehalfOf));
+const asUser = (userId = OWNER): ToolCaller => personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" });
 
 const toMembers: AnyDraftToolPermission[] = [{ tool: "people.notify", limits: { recipients: "members", maxPerRun: 3 } }];
 const LINE = `🤖 Draft agent · running Uzo's "Meeting follow-up" routine`;
@@ -113,14 +112,14 @@ describe("people.notify", () => {
 
   it("names the routine for a run an event started, whose trigger does not carry the task", async () => {
     const { call, sent } = setup();
-    const eventRun: ToolCaller = { type: "run", run: { ...runSpec(toMembers), trigger: { type: "webhook", provider: "fireflies", eventId: "meeting-1" } } };
+    const eventRun = runCaller({ ...runSpec(toMembers), trigger: { type: "webhook", provider: "fireflies", eventId: "meeting-1" } });
     await call(eventRun, "people.notify", { personId: IZA, text: "Your items." });
     expect(sent[0]!.message.text).toBe(`${LINE}\nYour items.`);
   });
 
   it("names the teammate who pressed Run now on someone else's routine, and not the owner who ran their own", async () => {
     const { call, sent } = setup();
-    const manual = (requestedBy: string): ToolCaller => ({ type: "run", run: { ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } } });
+    const manual = (requestedBy: string): ToolCaller => runCaller({ ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } });
     await call(manual(ADMIN), "people.notify", { personId: IZA, text: "a" });
     expect(sent[0]!.message.text.split("\n")[0]).toBe(`${LINE} · started by Ada`);
     await call(manual(OWNER), "people.notify", { personId: IZA, text: "b" });
@@ -222,7 +221,7 @@ describe("the Slack channel", () => {
   const seed = (identityStatus: string, connectionStatus = "active") => {
     const db = newDb();
     db.tables.person_identities!.push({ id: "i1", workspace_id: WS, person_id: IZA, provider: "slack", external_id: "U42", status: identityStatus });
-    db.tables.source_connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: connectionStatus, credential_id: "cred-1" });
+    db.tables.connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: connectionStatus, credential_id: "cred-1" });
     return db;
   };
   const deps = () => ({ resolveBotToken: mock(async () => "xoxb-test"), openDm: mock(async () => "D123"), postMessage: mock(async () => {}) });

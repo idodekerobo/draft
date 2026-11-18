@@ -12,7 +12,7 @@ import { buildSummarizationBundle } from "./build-bundle";
 import { buildSummarizationRunSpec } from "./run-spec";
 import { summarizationJsonSchema } from "./render-prompt";
 import { resolveInferenceCredential } from "../synthesis/resolve-credential";
-import { launchSandboxRun, type SandboxDeploymentConfig } from "../sandbox";
+import { launchSandboxRun, type SandboxDeploymentConfig } from "../metaharness/sandbox";
 
 const MAX_SESSIONS_PER_BATCH = 25;
 
@@ -79,7 +79,7 @@ export async function startSummarizationRun(
   });
   await createAgentRun(options.client, { spec, idempotencyKey: `summarize:${agentRunId}`, status: "preparing" });
   const { error: linkError } = await options.client
-    .from("agent_sessions")
+    .from("captured_sessions")
     .update({ summary_agent_run_id: agentRunId })
     .eq("workspace_id", options.workspaceId)
     .in("id", sessionIds);

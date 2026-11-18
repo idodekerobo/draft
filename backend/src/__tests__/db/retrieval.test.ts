@@ -10,7 +10,7 @@ async function createConnection(
   status: "pending" | "active" | "degraded" | "revoked" | "error" = "active",
 ): Promise<string> {
   const [connection] = await db()<[{ id: string }]>`
-    insert into source_connections (workspace_id, provider, connection_key, status)
+    insert into connections (workspace_id, provider, connection_key, status)
     values (${workspaceId}, ${provider}, ${randomUUID()}, ${status})
     returning id
   `;
@@ -62,7 +62,7 @@ async function insertSourceItem(
   } = options;
   const [row] = await db()<[{ id: string }]>`
     insert into source_items (
-      workspace_id, source_connection_id, item_type, external_id, external_version,
+      workspace_id, connection_id, item_type, external_id, external_version,
       lifecycle_status, occurred_at, content_markdown, content_hash, visibility, owner_user_id
     ) values (
       ${workspaceId}, ${connectionId}, ${itemType}, ${randomUUID()}, ${externalVersion},
@@ -285,7 +285,7 @@ describeWithDatabase("source retrieval migration", () => {
     ): Promise<string> {
       const [row] = await db()<[{ id: string }]>`
         insert into slack_messages (
-          workspace_id, source_connection_id, channel_id, channel_name_snapshot, message_ts,
+          workspace_id, connection_id, channel_id, channel_name_snapshot, message_ts,
           message_version, slack_user_id, user_name_snapshot, text
         ) values (
           ${workspaceId}, ${connectionId}, ${channelId}, 'general', ${messageTs},
@@ -355,7 +355,7 @@ describeWithDatabase("source retrieval migration", () => {
       const connectionId = await createConnection(workspaceId, "slack", "active");
       const messageId = await insertPendingSlackMessage(workspaceId, connectionId, "C3", "3000.000001");
 
-      await db()`update source_connections set status = 'revoked' where id = ${connectionId}`;
+      await db()`update connections set status = 'revoked' where id = ${connectionId}`;
 
       let threw = false;
       try {
@@ -388,7 +388,7 @@ describeWithDatabase("source retrieval migration", () => {
         const messageTs = `${channelId}-ts.000001`;
         await db()`
           insert into slack_messages (
-            workspace_id, source_connection_id, channel_id, channel_name_snapshot, message_ts,
+            workspace_id, connection_id, channel_id, channel_name_snapshot, message_ts,
             message_version, slack_user_id, user_name_snapshot, text
           ) values (
             ${workspaceId}, ${connectionId}, ${channelId}, ${channelId}, ${messageTs},
@@ -400,7 +400,7 @@ describeWithDatabase("source retrieval migration", () => {
       const linkedItem = await insertSourceItem(workspaceId, connectionId, { content: "linked" });
       await db()`
         insert into slack_messages (
-          workspace_id, source_connection_id, channel_id, channel_name_snapshot, message_ts,
+          workspace_id, connection_id, channel_id, channel_name_snapshot, message_ts,
           message_version, slack_user_id, user_name_snapshot, text, source_item_id
         ) values (
           ${workspaceId}, ${connectionId}, 'C-linked', 'C-linked', 'linked-ts.000002',
@@ -420,14 +420,14 @@ describeWithDatabase("source retrieval migration", () => {
     });
   });
 
-  describe("replace_agent_session_messages transcript_revision", () => {
+  describe("replace_captured_session_messages transcript_revision", () => {
     test("increments atomically and each replace fully supersedes the prior message set", async () => {
       const { workspaceId } = await createWorkspace();
       const externalSessionId = randomUUID();
       const contributorId = await createContributor(workspaceId);
 
       const [first] = await db()<[{ result: { session_id: string; transcript_revision: number } }]>`
-        select replace_agent_session_messages(
+        select replace_captured_session_messages(
           ${workspaceId}, 'claude-code', ${externalSessionId}, null, ${contributorId}, 'proj', '/tmp',
           now(), now(), 'completed',
           ${[{ role: "user", content: "first" }]}::jsonb
@@ -437,7 +437,7 @@ describeWithDatabase("source retrieval migration", () => {
       const sessionId = first.result.session_id;
 
       const [second] = await db()<[{ result: { session_id: string; transcript_revision: number } }]>`
-        select replace_agent_session_messages(
+        select replace_captured_session_messages(
           ${workspaceId}, 'claude-code', ${externalSessionId}, null, ${contributorId}, 'proj', '/tmp',
           now(), now(), 'completed',
           ${[{ role: "user", content: "second-a" }, { role: "assistant", content: "second-b" }]}::jsonb
@@ -447,12 +447,12 @@ describeWithDatabase("source retrieval migration", () => {
       expect(second.result.transcript_revision).toBe(2);
 
       const messages = await db()<Array<{ content: string }>>`
-        select content from agent_messages where session_id = ${sessionId} order by seq
+        select content from captured_session_messages where captured_session_id = ${sessionId} order by seq
       `;
       expect(messages.map((m) => m.content)).toEqual(["second-a", "second-b"]);
 
       const [sessionRow] = await db()<[{ transcript_revision: number }]>`
-        select transcript_revision from agent_sessions where id = ${sessionId}
+        select transcript_revision from captured_sessions where id = ${sessionId}
       `;
       expect(Number(sessionRow.transcript_revision)).toBe(2);
     });
@@ -463,7 +463,7 @@ describeWithDatabase("source retrieval migration", () => {
       const contributorId = await createContributor(workspaceId);
 
       await db()`
-        select replace_agent_session_messages(
+        select replace_captured_session_messages(
           ${workspaceId}, 'claude-code', ${externalSessionId}, null, ${contributorId}, 'proj', '/tmp',
           now(), now(), 'completed', ${[{ role: "user", content: "seed" }]}::jsonb
         )
@@ -471,7 +471,7 @@ describeWithDatabase("source retrieval migration", () => {
 
       const replaceWith = (label: string) =>
         db()`
-          select replace_agent_session_messages(
+          select replace_captured_session_messages(
             ${workspaceId}, 'claude-code', ${externalSessionId}, null, ${contributorId}, 'proj', '/tmp',
             now(), now(), 'completed', ${[{ role: "user", content: label }]}::jsonb
           )
@@ -480,14 +480,14 @@ describeWithDatabase("source retrieval migration", () => {
       await Promise.all([replaceWith("race-a"), replaceWith("race-b")]);
 
       const [sessionRow] = await db()<[{ id: string; transcript_revision: number }]>`
-        select id, transcript_revision from agent_sessions
+        select id, transcript_revision from captured_sessions
         where workspace_id = ${workspaceId} and provider = 'claude-code' and external_session_id = ${externalSessionId}
       `;
       // Started at revision 1; two more successful, serialized replaces land on 3 exactly (no lost update).
       expect(Number(sessionRow.transcript_revision)).toBe(3);
 
       const messages = await db()<Array<{ content: string }>>`
-        select content from agent_messages where session_id = ${sessionRow.id}
+        select content from captured_session_messages where captured_session_id = ${sessionRow.id}
       `;
       // Whichever writer went last, the message set is exactly its own -- never a merge of both.
       expect(messages).toHaveLength(1);

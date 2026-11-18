@@ -38,7 +38,7 @@ draft auth whoami
 draft auth logout
 ~~~
 
-`draft auth login` prints a sign-in link and a short code, such as `K7M-4QX`. Open the link, sign in, and type the code on the page. The code proves the sign-in is the one you started, so only approve a sign-in you started yourself. The CLI session is stored separately from the desktop app's.
+`draft auth login` prints a sign-in link and a short code, such as `K7M-4QX`. Open the link, sign in, and type the code on the page. The code proves the sign-in is the one you started, so only approve a sign-in you started yourself. The CLI sign-in is stored separately from the desktop app's.
 
 With `--json` (for example, when an agent runs it for you), it prints one line first and then the result:
 
@@ -154,7 +154,7 @@ draft routines update <id> [options]       # change only the fields you pass
 draft routines delete <id>                 # cancel a pending one-time routine, or delete a repeating/event routine
 draft routines run <id> [--wait]           # run now; --wait follows a started run and prints its result
 draft routines runs <id> [--cursor <c>]     # 50 at a time; --cursor shows older runs
-draft routines runs <id> --run-id <id> [--transcript [--cursor <n>]]
+draft routines runs <id> --session-id <id> [--transcript [--cursor <n>]]
 ~~~
 
 ### Choose when it runs
@@ -211,7 +211,7 @@ draft activity list [--json]
 draft activity list --cursor '<cursor from the last page>'
 ~~~
 
-Each routine run includes the command that shows it, for example `draft routines runs <routine id> --run-id <run id>`.
+Each routine run includes the command that shows it, for example `draft routines runs <routine id> --session-id <session id>`.
 
 On the first page, `--json` also includes `upcoming`: pending one-time routines, soonest first, with their scheduled time and who set them. If that part cannot load, `upcomingError: true` is returned alongside the past runs. Run rows include `routineKind` and `createdRoutines` when applicable. The plain-text command prints past runs; use `draft routines list --upcoming` for a readable pending list. In the app, Activity also offers Cancel and Run again.
 

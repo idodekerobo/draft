@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordError } from "../errors/record-error";
 import type { dispatchAgentRoutine } from "../routines/dispatch-routine";
 import type { RoutineEventPayload } from "../routines/event";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import type { AgentEventPayload, AgentEventRow } from "./types";
 
@@ -73,7 +73,7 @@ export function __resetDrainForTests(): void {
 async function resolveDeps(client: SupabaseClient, deps: Partial<DrainDeps>): Promise<DrainDeps> {
   return {
     client,
-    config: deps.config ?? (await import("../sandbox")).loadSandboxDeploymentConfig(),
+    config: deps.config ?? (await import("../metaharness/sandbox")).loadSandboxDeploymentConfig(),
     dispatch: deps.dispatch ?? (await import("../routines/dispatch-routine")).dispatchAgentRoutine,
     now: deps.now ?? (() => new Date()),
   };

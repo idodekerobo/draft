@@ -16,8 +16,8 @@ export function ClaudeAgentRow() {
   const routinesStatus = status("claude");
 
   useEffect(() => {
-    void rpc.request.getAvailableRunners().then(({ runners }) => {
-      const claude = runners.find((runner) => runner.name === "claude");
+    void rpc.request.getAvailableHarnesses().then(({ harnesses }) => {
+      const claude = harnesses.find((harness) => harness.name === "claude");
       setLocal(claude ? { installed: claude.installed, auth: claude.auth } : null);
     }).catch(() => {});
   }, []);

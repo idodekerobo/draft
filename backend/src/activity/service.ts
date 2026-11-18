@@ -3,7 +3,7 @@ import { loadRunResults } from "../metaharness/runs/result-line";
 import { synthesisTriggerType } from "../synthesis/run-spec";
 import { recordRouteError } from "../errors/route-error";
 import { loadDisplayNames } from "../routes/session-display-names";
-import { routineKind } from "../schedules/kind";
+import { routineKind } from "../routines/kind";
 import type { AgentRunRow, ScheduledTaskRow } from "../types/tables";
 
 /** How many runs a page holds. A shorter page is the last one. */

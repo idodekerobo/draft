@@ -67,7 +67,7 @@ describe("handleSlackMessageEvent — ordinary messages", () => {
     expect(functionName).toBe("upsert_slack_message_if_connection_active");
     expect(params).toMatchObject({
       p_workspace_id: "workspace-1",
-      p_source_connection_id: "conn-1",
+      p_connection_id: "conn-1",
       p_channel_id: "C123",
       p_message_ts: "1700000000.000100",
       p_message_version: "1700000000.000100",

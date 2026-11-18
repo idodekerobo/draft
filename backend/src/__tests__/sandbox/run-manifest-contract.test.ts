@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
 import { loadRunnerManifest } from "../../sandbox/runner/manifest";
 import { validateRunnerManifest } from "draft-core/run-manifest";
-import { buildRunnerManifest, needsDraftToolServer } from "../../sandbox/run-manifest";
+import { buildRunnerManifest, needsDraftToolServer } from "../../metaharness/sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
 
@@ -18,7 +18,7 @@ const when = "2026-11-09T03:00:00.000Z";
 const routine = (harness: "claude" | "codex", nativeTools: string[] = []) =>
   buildRoutineRunSpec({
     id: RUN, workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: when,
-    routine: { title: "t", prompt: "p", harness, model: harness === "claude" ? "haiku" : null, environment: { nativeTools, mcpServers: [] } },
+    routine: { title: "t", prompt: "p", harness, model: harness === "claude" ? "haiku" : null, toolset: { nativeTools, mcpServers: [] } },
     contextVersionId: VERSION,
   });
 

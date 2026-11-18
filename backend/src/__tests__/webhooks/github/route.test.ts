@@ -223,8 +223,8 @@ describe("POST /webhooks/github", () => {
       expect((await POST(bunRequest())).status).toBe(200);
     }
     expect(fired).toEqual([
-      { workspaceId: "ws-1", sourceConnectionId: "conn-1", name: "github.pull_request_opened", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Pull request", value: "#7" }]), concurrencyKey: "github:acme/app#7" },
-      { workspaceId: "ws-1", sourceConnectionId: "conn-1", name: "github.pull_request_merged", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Repository", value: "acme/app" }]), concurrencyKey: "github:acme/app#7" },
+      { workspaceId: "ws-1", connectionId: "conn-1", name: "github.pull_request_opened", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Pull request", value: "#7" }]), concurrencyKey: "github:acme/app#7" },
+      { workspaceId: "ws-1", connectionId: "conn-1", name: "github.pull_request_merged", eventId: "acme/app#7", sourceItemId: "item-1", facts: expect.arrayContaining([{ label: "Repository", value: "acme/app" }]), concurrencyKey: "github:acme/app#7" },
     ]);
   });
 
@@ -258,7 +258,7 @@ describe("POST /webhooks/github", () => {
     expect(fired).toEqual([
       {
         workspaceId: "ws-1",
-        sourceConnectionId: "conn-1",
+        connectionId: "conn-1",
         name: "github.push",
         eventId: "acme/app@c2",
         sourceItemId: "item-b",

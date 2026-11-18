@@ -8,14 +8,14 @@ import { join } from "path";
 import { homedir } from "os";
 import { parse as parseToml } from "smol-toml";
 import { atomicPatch, ParseError } from "../sync/atomic-write";
-import type { Agent } from "../sync/manifest";
+import type { AgentClientId } from "../sync/manifest";
 
 const DEFAULT_CLAUDE_JSON_PATH = join(homedir(), ".claude.json");
 const DEFAULT_CODEX_CONFIG_PATH = join(homedir(), ".codex", "config.toml");
 
 // ── Path helpers ───────────────────────────────────────────────────────────────
 
-function defaultConfigPath(agent: Agent): string {
+function defaultConfigPath(agent: AgentClientId): string {
   return agent === "claude-code" ? DEFAULT_CLAUDE_JSON_PATH : DEFAULT_CODEX_CONFIG_PATH;
 }
 
@@ -27,7 +27,7 @@ function defaultConfigPath(agent: Agent): string {
  * Throws ParseError if the file is malformed.
  */
 export function readAgentMcps(
-  agent: Agent,
+  agent: AgentClientId,
   configPath?: string,
 ): Record<string, Record<string, unknown>> {
   const path = configPath ?? defaultConfigPath(agent);
@@ -73,7 +73,7 @@ export function readAgentMcps(
  * `entry` is the agent-native config object (already serialized to the agent's format).
  */
 export async function writeAgentMcp(
-  agent: Agent,
+  agent: AgentClientId,
   name: string,
   entry: object,
   configPath?: string,
@@ -109,7 +109,7 @@ export async function writeAgentMcp(
  * Preserves all other content.
  */
 export async function removeAgentMcp(
-  agent: Agent,
+  agent: AgentClientId,
   name: string,
   configPath?: string,
 ): Promise<void> {

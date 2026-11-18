@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dispatchScheduledTask } from "./dispatch";
 import { computeNextDueAt } from "./next-due-at";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { recordError } from "../errors/record-error";
 import { sweepStaleSynthesisRuns } from "../synthesis/reconcile-stale-runs";

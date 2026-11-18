@@ -6,7 +6,7 @@ import { registerGatewayTools, type McpGateway } from "../../mcp/gateway-tools";
 import { createFakeContextDb } from "../metaharness/context/fake-context-db";
 import { sha256 } from "../../synthesis/context-version-files";
 
-const schedules = await import("../../schedules/service");
+const schedules = await import("../../routines/service");
 const agentStatus = await import("../../routines/agent-status");
 
 const USER_ID = "33333333-3333-4333-8333-333333333333";
@@ -92,7 +92,7 @@ describe("MCP tools that go through the gateway", () => {
     expect(audits[0]).toMatchObject({
       toolName: "context.read",
       status: "ok",
-      caller: { type: "user", userId: USER_ID, workspaceId: WORKSPACE_ID, via: "mcp" },
+      caller: { origin: { kind: "person", userId: USER_ID, via: "mcp" }, workspaceId: WORKSPACE_ID },
       arguments: { dimensions: ["memory"] },
     });
     expect(audits[0]!.resultBytes).toBeGreaterThan(0);

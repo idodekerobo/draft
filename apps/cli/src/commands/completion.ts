@@ -39,7 +39,7 @@ _draft_completion() {
       integrations:list) flags="--json" ;;
       integrations:disconnect) flags="--json --workspace-key" ;;
       activity:list) flags="--cursor --json" ;;
-      routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --run-id --transcript --cursor --in --at --once --upcoming --fired --mine --json" ;;
+      routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --session-id --transcript --cursor --in --at --once --upcoming --fired --mine --json" ;;
       *) flags="" ;;
     esac
     COMPREPLY=( $(compgen -W "\$flags" -- "\$cur") )
@@ -198,7 +198,7 @@ _draft() {
               '--disable[Disable the routine]' \\
               '--disabled[Save the routine turned off]' \\
               '--wait[Wait for the run to finish]' \\
-              '--run-id=[Run id]:id:' \\
+              '--session-id=[Session id]:id:' \\
               '--transcript[Show the run transcript]' \\
               '--cursor=[Page cursor]:cursor:' \\
               '--json[Print machine-readable output]'

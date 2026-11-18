@@ -10,7 +10,7 @@ export function latestNativeTitle(lines: IncomingLine[], maxChars: number): stri
   let custom: string | null = null;
   let generated: string | null = null;
   for (const line of lines) {
-    if (!("raw" in line) || line.file !== ROOT_FILE || !line.raw.includes("-title")) continue;
+    if (!("raw" in line) || line.stream !== ROOT_FILE || !line.raw.includes("-title")) continue;
     let record: { type?: unknown; customTitle?: unknown; aiTitle?: unknown };
     try {
       record = JSON.parse(line.raw);

@@ -26,7 +26,7 @@ describe("recordError", () => {
     await recordError({
       client,
       workspaceId: "ws-1",
-      sourceConnectionId: "conn-1",
+      connectionId: "conn-1",
       scheduledTaskId: "task-1",
       agentRunId: "run-1",
       operation: "execution",
@@ -55,7 +55,7 @@ describe("recordError", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       workspace_id: "ws-1",
-      source_connection_id: "conn-1",
+      connection_id: "conn-1",
       scheduled_task_id: "task-1",
       agent_run_id: "run-1",
       operation: "execution",
@@ -136,7 +136,7 @@ describe("recordError", () => {
       client,
       workspaceId: null,
       allowUnattributed: true,
-      sourceConnectionId: "conn-1",
+      connectionId: "conn-1",
       scheduledTaskId: "task-1",
       agentRunId: "run-1",
       operation: "ingestion",
@@ -146,7 +146,7 @@ describe("recordError", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({
       workspace_id: null,
-      source_connection_id: null,
+      connection_id: null,
       scheduled_task_id: null,
       agent_run_id: null,
       operation: "ingestion",

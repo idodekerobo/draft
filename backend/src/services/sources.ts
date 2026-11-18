@@ -37,7 +37,7 @@ interface SearchRow {
   metadata_json: Record<string, unknown>;
   content_markdown: string;
   sanitized_raw_json: unknown;
-  agent_session_id: string | null;
+  captured_session_id: string | null;
   excerpt: string;
   rank: number;
 }
@@ -164,7 +164,7 @@ function availableRepresentations(row: SearchRow): SourceRepresentation[] {
   if (row.content_markdown !== null) values.push("default");
   if (row.sanitized_raw_json !== null) values.push("structured");
   if (row.item_type === "meeting_transcript" || row.item_type === "meeting_notes" || row.item_type === "coding_session") {
-    if (row.sanitized_raw_json !== null || row.agent_session_id !== null) values.push("transcript");
+    if (row.sanitized_raw_json !== null || row.captured_session_id !== null) values.push("transcript");
   }
   if (row.item_type === "message") values.push("messages");
   return SOURCE_REPRESENTATIONS.filter((representation) => values.includes(representation));
@@ -322,7 +322,7 @@ export async function readSource(
   if (!maxBytesResult.ok) return maxBytesResult;
 
   let query = client.from("source_items")
-    .select("id, external_version, source_connection_id, item_type, representation_kind, occurred_at, source_time_start, source_time_end, metadata_json, content_markdown, sanitized_raw_json, agent_session_id, lifecycle_status, visibility, owner_user_id, source_connections(provider)")
+    .select("id, external_version, connection_id, item_type, representation_kind, occurred_at, source_time_start, source_time_end, metadata_json, content_markdown, sanitized_raw_json, captured_session_id, lifecycle_status, visibility, owner_user_id, connections(provider)")
     .eq("workspace_id", workspaceId).eq("id", input.source_item_id);
   query = callerUserId ? query.or(`visibility.eq.shared,owner_user_id.eq.${callerUserId}`) : query.eq("visibility", "shared");
   const { data, error } = await query.maybeSingle();
@@ -332,7 +332,7 @@ export async function readSource(
   if (item.lifecycle_status !== "active") {
     return failure(item.lifecycle_status === "superseded" ? "source_superseded" : "source_not_found", "Source is not active.");
   }
-  const connection = item.source_connections as { provider: string } | { provider: string }[] | null;
+  const connection = item.connections as { provider: string } | { provider: string }[] | null;
   const provider = Array.isArray(connection) ? connection[0]?.provider : connection?.provider;
   if (!provider) return failure("read_failed", "Source provider lookup failed.");
 
@@ -343,7 +343,7 @@ export async function readSource(
     representation_kind: item.representation_kind as SourceRepresentationKind, occurred_at: item.occurred_at as string,
     source_time_start: item.source_time_start as string | null, source_time_end: item.source_time_end as string | null,
     metadata_json: item.metadata_json as Record<string, unknown>, content_markdown: item.content_markdown as string,
-    sanitized_raw_json: item.sanitized_raw_json, agent_session_id: item.agent_session_id as string | null,
+    sanitized_raw_json: item.sanitized_raw_json, captured_session_id: item.captured_session_id as string | null,
     excerpt: "", rank: 0,
   };
 
@@ -366,13 +366,13 @@ export async function readSource(
       format = "json";
       content = JSON.stringify(messages ?? []);
     }
-  } else if (row.agent_session_id) {
-    const { data: session, error: sessionError } = await client.from("agent_sessions")
-      .select("transcript_revision").eq("workspace_id", workspaceId).eq("id", row.agent_session_id).single();
+  } else if (row.captured_session_id) {
+    const { data: session, error: sessionError } = await client.from("captured_sessions")
+      .select("transcript_revision").eq("workspace_id", workspaceId).eq("id", row.captured_session_id).single();
     if (sessionError) return failure("read_failed", "Coding transcript read failed.");
     representationVersion = `${row.source_version}:transcript:${(session as { transcript_revision: number }).transcript_revision}`;
-    const { data: messages, error: messagesError } = await client.from("agent_messages")
-      .select("seq, role, content").eq("workspace_id", workspaceId).eq("session_id", row.agent_session_id)
+    const { data: messages, error: messagesError } = await client.from("captured_session_messages")
+      .select("seq, role, content").eq("workspace_id", workspaceId).eq("captured_session_id", row.captured_session_id)
       .order("seq", { ascending: true });
     if (messagesError) return failure("read_failed", "Coding transcript read failed.");
     content = ((messages ?? []) as Array<{ role: string; content: string }>).map((message) => `${message.role}: ${message.content}`).join("\n\n");

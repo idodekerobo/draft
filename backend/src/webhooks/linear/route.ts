@@ -17,21 +17,21 @@ export async function POST(
   request: Bun.BunRequest<"/webhooks/linear/:connectionKey">,
 ): Promise<Response> {
   let workspaceId: string | null = null;
-  let sourceConnectionId: string | null = null;
+  let connectionId: string | null = null;
   try {
     const { connection, payload } = await authenticateLinearWebhookRequest(
       request,
       request.params.connectionKey,
     );
     workspaceId = connection.workspace_id;
-    sourceConnectionId = connection.id;
+    connectionId = connection.id;
 
     console.log(`[linear webhook] ${payload.type}.${payload.action}`);
 
     const ingested = await ingestLinearEvent(connection, payload);
     const name = linearTrigger(payload);
     if (name && "sourceItemId" in ingested && typeof payload.data.id === "string") {
-      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name, eventId: payload.data.id, sourceItemId: ingested.sourceItemId, facts: linearIssueFacts(payload), concurrencyKey: `linear:${payload.data.id}` });
+      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, connectionId: connection.id, name, eventId: payload.data.id, sourceItemId: ingested.sourceItemId, facts: linearIssueFacts(payload), concurrencyKey: `linear:${payload.data.id}` });
     }
 
     return new Response(null, { status: 200 });
@@ -42,7 +42,7 @@ export async function POST(
     }
     recordRouteError({
       workspaceId,
-      sourceConnectionId,
+      connectionId,
       operation: "ingestion",
       errorCode: "linear_webhook_failed",
       error,

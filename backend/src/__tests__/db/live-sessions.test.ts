@@ -21,13 +21,13 @@ async function removeObjects(...names: string[]) {
 
 afterEach(removeUsers);
 
-async function createSession(workspaceId: string, hostMachineId = "host-1"): Promise<string> {
+async function createSession(workspaceId: string, hostId = "host-1"): Promise<string> {
   const userId = randomUUID();
   userIds.push(userId);
   await db()`insert into auth.users (id, email) values (${userId}, ${`${userId}@example.test`})`;
   const [session] = await db()<[{ id: string }]>`
-    insert into sessions (workspace_id, owner_user_id, host_machine_id)
-    values (${workspaceId}, ${userId}, ${hostMachineId})
+    insert into sessions (workspace_id, owner_user_id, host_id)
+    values (${workspaceId}, ${userId}, ${hostId})
     returning id
   `;
   return session.id;

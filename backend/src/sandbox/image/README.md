@@ -24,7 +24,7 @@ A backend deploy does not rebuild this image. Rebuild and roll out the image
 
 ## Runtime environment
 
-Set by the backend in `backend/src/sandbox/launch.ts`:
+Set by the backend in `backend/src/metaharness/sandbox/launch.ts`:
 
 - `DRAFT_RUN_ID`, `DRAFT_BUNDLE_HASH`, `DRAFT_BUNDLE_URL`
 - `DRAFT_CALLBACK_URL`, `DRAFT_CALLBACK_TOKEN`
@@ -47,7 +47,7 @@ jobs.
 ## Local validation (from `backend`)
 
 ```sh
-bun test src/__tests__/sandbox
+bun test src/__tests__/sandbox src/__tests__/metaharness/sandbox
 bun run build:runner
 sh -n src/sandbox/image/entrypoint.sh src/sandbox/image/configure-egress.sh
 docker build src/sandbox/image

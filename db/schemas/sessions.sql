@@ -22,7 +22,7 @@ create table sessions (
   last_seen          timestamptz not null default now(),
   last_seq           bigint not null default 0,
   open_approval_count integer not null default 0,
-  host_machine_id    text not null,
+  host_id            text not null,
   host_name          text,
   harness_version    text,
   -- Claude: default, acceptEdits, plan, auto (and launch-only bypassPermissions, dontAsk). Codex: default, plan.

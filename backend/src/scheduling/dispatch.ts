@@ -10,7 +10,7 @@ import { getLatestSynthesisRun } from "../synthesis/latest-run";
 import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
 import { allowOncePer } from "../errors/throttle";
 import { syncPeopleInBackground } from "../people/sync";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 
 // Injectable, defaulting to the real implementations, so tests can
@@ -41,14 +41,14 @@ async function dispatchIngestSource(
   client: SupabaseClient,
   deps: DispatchDependencies,
 ): Promise<void> {
-  if (!task.source_connection_id) {
-    throw new Error(`ingest_source task ${task.id} has no source_connection_id`);
+  if (!task.connection_id) {
+    throw new Error(`ingest_source task ${task.id} has no connection_id`);
   }
 
   const { data: connectionData, error: connectionError } = await client
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id, provider, status")
-    .eq("id", task.source_connection_id)
+    .eq("id", task.connection_id)
     .eq("workspace_id", task.workspace_id)
     .single();
   if (connectionError) throw connectionError;
@@ -122,14 +122,14 @@ async function dispatchSlackBackfill(
   client: SupabaseClient,
   deps: DispatchDependencies,
 ): Promise<void> {
-  if (!task.source_connection_id) {
-    throw new Error(`slack_backfill task ${task.id} has no source_connection_id`);
+  if (!task.connection_id) {
+    throw new Error(`slack_backfill task ${task.id} has no connection_id`);
   }
 
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id, status, credential_id, config_json, cursor_json, workspaces!inner(organization_id)")
-    .eq("id", task.source_connection_id)
+    .eq("id", task.connection_id)
     .eq("workspace_id", task.workspace_id)
     .eq("provider", "slack")
     .maybeSingle();
@@ -167,7 +167,7 @@ async function dispatchSlackBackfill(
 }
 
 // No retry here either -- summarization sessions are individually leased
-// (agent_sessions.summary_status/summary_lease_until), so a crash just
+// (captured_sessions.summary_status/summary_lease_until), so a crash just
 // leaves them for the next tick's claim to pick back up.
 async function dispatchSummarizeSessions(
   task: ScheduledTaskRow,

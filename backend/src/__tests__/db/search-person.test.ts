@@ -9,7 +9,7 @@ const { describeWithDatabase, db, createWorkspace } = setupDbIntegrationTest("se
 async function addItem(workspaceId: string, connectionId: string, content: string, metadata: object = {}, occurredAt = new Date()): Promise<string> {
   const hash = createHash("sha256").update(content).digest("hex");
   const [row] = await db()<[{ id: string }]>`
-    insert into source_items (workspace_id, source_connection_id, item_type, external_id, external_version, lifecycle_status, occurred_at, content_markdown, content_hash, metadata_json, visibility)
+    insert into source_items (workspace_id, connection_id, item_type, external_id, external_version, lifecycle_status, occurred_at, content_markdown, content_hash, metadata_json, visibility)
     values (${workspaceId}, ${connectionId}, 'message', ${randomUUID()}, 'v1', 'active', ${occurredAt}, ${content}, ${hash}, ${JSON.stringify(metadata)}::jsonb, 'shared')
     returning id
   `;
@@ -31,7 +31,7 @@ async function search(workspaceId: string, args: { query?: string | null; terms?
 async function setup() {
   const { workspaceId } = await createWorkspace();
   const [connection] = await db()<[{ id: string }]>`
-    insert into source_connections (workspace_id, provider, connection_key, status) values (${workspaceId}, 'slack', ${randomUUID()}, 'active') returning id
+    insert into connections (workspace_id, provider, connection_key, status) values (${workspaceId}, 'slack', ${randomUUID()}, 'active') returning id
   `;
   return { workspaceId, connectionId: connection.id };
 }

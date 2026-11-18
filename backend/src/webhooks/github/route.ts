@@ -19,7 +19,7 @@ import { recordRouteError } from "../../errors/route-error";
 // unlike Linear/Fireflies) and disambiguates tenants via installation.id.
 export async function POST(request: Request): Promise<Response> {
   let workspaceId: string | null = null;
-  let sourceConnectionId: string | null = null;
+  let connectionId: string | null = null;
   try {
     const { eventType, payload, connection } = await authenticateGithubWebhookRequest(request);
 
@@ -29,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
       return new Response(null, { status: 200 });
     }
     workspaceId = connection.workspace_id;
-    sourceConnectionId = connection.id;
+    connectionId = connection.id;
 
     switch (eventType) {
       case "pull_request": {
@@ -37,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
         const ingested = await ingestGithubPullRequestEvent(connection, pr);
         const name = pr.action === "opened" ? "github.pull_request_opened" : pr.action === "closed" && pr.pull_request.merged ? "github.pull_request_merged" : null;
         if (name && "sourceItemId" in ingested) {
-          fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name, eventId: `${pr.repository.full_name}#${pr.pull_request.number}`, sourceItemId: ingested.sourceItemId, facts: githubPullRequestFacts(pr), concurrencyKey: `github:${pr.repository.full_name}#${pr.pull_request.number}` });
+          fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, connectionId: connection.id, name, eventId: `${pr.repository.full_name}#${pr.pull_request.number}`, sourceItemId: ingested.sourceItemId, facts: githubPullRequestFacts(pr), concurrencyKey: `github:${pr.repository.full_name}#${pr.pull_request.number}` });
         }
         break;
       }
@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
         const ingested = await ingestGithubPushEvent(connection, push);
         // One run per push, read from its newest commit.
         const head = "sourceItemIds" in ingested ? ingested.sourceItemIds.at(-1) : undefined;
-        if (head) fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name: "github.push", eventId: `${push.repository.full_name}@${push.commits.at(-1)!.id}`, sourceItemId: head, facts: githubPushFacts(push), concurrencyKey: `github:${push.repository.full_name}@${push.ref.replace(/^refs\/heads\//, "")}` });
+        if (head) fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, connectionId: connection.id, name: "github.push", eventId: `${push.repository.full_name}@${push.commits.at(-1)!.id}`, sourceItemId: head, facts: githubPushFacts(push), concurrencyKey: `github:${push.repository.full_name}@${push.ref.replace(/^refs\/heads\//, "")}` });
         break;
       }
       case "installation":
@@ -69,7 +69,7 @@ export async function POST(request: Request): Promise<Response> {
     }
     recordRouteError({
       workspaceId,
-      sourceConnectionId,
+      connectionId,
       operation: "ingestion",
       errorCode: "github_webhook_failed",
       error,

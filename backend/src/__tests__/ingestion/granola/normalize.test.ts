@@ -69,7 +69,7 @@ interface FakeClientOptions {
   // cross-connection dedup lookup. Empty by default so existing tests are
   // unaffected -- the dedup query short-circuits when there's nothing to find.
   granolaConnectionIds?: string[];
-  existingItem?: { id: string; source_connection_id: string; visibility: "private" | "shared" } | null;
+  existingItem?: { id: string; connection_id: string; visibility: "private" | "shared" } | null;
 }
 
 function createFakeClient(options: FakeClientOptions = {}) {
@@ -81,7 +81,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
   };
 
   function from(table: string) {
-    if (table === "source_connections") {
+    if (table === "connections") {
       return {
         select: () => ({
           eq: () => ({
@@ -96,7 +96,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
     if (table === "source_items") {
       return {
         select: (columns?: string) => {
-          if (columns?.includes("source_connection_id")) {
+          if (columns?.includes("connection_id")) {
             return {
               eq: () => ({
                 eq: () => ({
@@ -144,7 +144,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
     const priorIds = state.priorReadyRevisions.map((r) => r.id);
     state.upsertedItem = {
       workspace_id: params.p_workspace_id,
-      source_connection_id: params.p_source_connection_id,
+      connection_id: params.p_connection_id,
       item_type: params.p_item_type,
       external_id: params.p_external_id,
       external_version: params.p_external_version,
@@ -291,7 +291,7 @@ describe("ingestGranolaNote", () => {
     globalThis.fetch = (async () => { fetchCalled = true; throw new Error("should not fetch"); }) as unknown as typeof fetch;
     const { client, state } = createFakeClient({
       granolaConnectionIds: [ids.connection, "other-connection"],
-      existingItem: { id: "existing-item-id", source_connection_id: "other-connection", visibility: "shared" },
+      existingItem: { id: "existing-item-id", connection_id: "other-connection", visibility: "shared" },
     });
     const { ingestGranolaNote } = await import("../../../ingestion/granola/normalize");
 
@@ -311,7 +311,7 @@ describe("ingestGranolaNote", () => {
   it("widens visibility to shared when a workspace connection captures a note already owned by a personal connection", async () => {
     const { client, state } = createFakeClient({
       granolaConnectionIds: [ids.connection, "other-connection"],
-      existingItem: { id: "existing-item-id", source_connection_id: "other-connection", visibility: "private" },
+      existingItem: { id: "existing-item-id", connection_id: "other-connection", visibility: "private" },
     });
     const { ingestGranolaNote } = await import("../../../ingestion/granola/normalize");
 
@@ -329,7 +329,7 @@ describe("ingestGranolaNote", () => {
   it("never narrows an already-shared note back to private", async () => {
     const { client, state } = createFakeClient({
       granolaConnectionIds: [ids.connection, "other-connection"],
-      existingItem: { id: "existing-item-id", source_connection_id: "other-connection", visibility: "shared" },
+      existingItem: { id: "existing-item-id", connection_id: "other-connection", visibility: "shared" },
     });
     const { ingestGranolaNote } = await import("../../../ingestion/granola/normalize");
 
@@ -347,7 +347,7 @@ describe("ingestGranolaNote", () => {
     mockFetchSequence([{ status: 200, json: NOTE_FIXTURE }]);
     const { client, state } = createFakeClient({
       granolaConnectionIds: [ids.connection],
-      existingItem: { id: "existing-item-id", source_connection_id: ids.connection, visibility: "private" },
+      existingItem: { id: "existing-item-id", connection_id: ids.connection, visibility: "private" },
     });
     const { ingestGranolaNote } = await import("../../../ingestion/granola/normalize");
 

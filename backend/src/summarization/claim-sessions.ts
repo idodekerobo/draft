@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AgentSessionRow } from "../types/tables";
+import type { CapturedSessionRow } from "../types/tables";
 
 const DEFAULT_LEASE_SECONDS = 25 * 60;
 
@@ -8,12 +8,12 @@ export async function claimPendingSummarySessions(
   limit: number,
   client: SupabaseClient,
   leaseSeconds: number = DEFAULT_LEASE_SECONDS,
-): Promise<AgentSessionRow[]> {
+): Promise<CapturedSessionRow[]> {
   const { data, error } = await client.rpc("claim_pending_summary_sessions", {
     p_workspace_id: workspaceId,
     p_limit: limit,
     p_lease_seconds: leaseSeconds,
   });
   if (error) throw error;
-  return (data ?? []) as AgentSessionRow[];
+  return (data ?? []) as CapturedSessionRow[];
 }

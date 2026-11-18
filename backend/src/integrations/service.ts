@@ -35,7 +35,7 @@ export interface Integration {
 
 /** Every provider and its state in the workspace, with what it unlocks and how to connect it. */
 export async function listIntegrations(client: SupabaseClient, workspaceId: string, userId: string): Promise<Integration[]> {
-  const { data, error } = await client.from("source_connections").select("provider, status, connected_by_user_id").eq("workspace_id", workspaceId).in("provider", INTEGRATION_PROVIDERS);
+  const { data, error } = await client.from("connections").select("provider, status, connected_by_user_id").eq("workspace_id", workspaceId).in("provider", INTEGRATION_PROVIDERS);
   if (error) throw error;
   const rows = (data ?? []) as Array<{ provider: string; status: string; connected_by_user_id: string | null }>;
   return INTEGRATIONS.map((entry) => {

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type { AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId } from "draft-core/notify";
 import { attributionLine } from "../../../notify/attribution";
@@ -34,15 +35,16 @@ const identitySchema = z.object({
 });
 
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
-function runLimit(caller: Extract<ToolCaller, { type: "run" }>, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): number {
-  const limits = findToolPermission(caller.run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
+function runLimit(run: AgentRunSpec, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): number {
+  const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
   return limits?.maxPerRun ?? fallback;
 }
 
 async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
-  if (caller.type !== "run") return null;
-  const max = runLimit(caller, tool, fallback);
-  if ((await countRunToolCalls(client, caller.run.id, tool)) < max) return null;
+  if (caller.origin.kind !== "run") return null;
+  const { run } = caller.origin;
+  const max = runLimit(run, tool, fallback);
+  if ((await countRunToolCalls(client, run.id, tool)) < max) return null;
   return refuse("limit_reached", `This run has used ${tool} ${max} times, which is its limit. Stop and report what is left.`);
 }
 
@@ -71,7 +73,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
 
       let userId: string | undefined;
       if (input.me) {
-        const self = caller.type === "user" ? caller.userId : caller.run.onBehalfOf;
+        const self = caller.onBehalfOf;
         if (!self) return refuse("not_allowed", "This run acts for no one, so it has no self. Name the person instead.");
         userId = self;
       }
@@ -101,11 +103,11 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
       if (limited) return limited;
       await syncMembers(client, workspaceId);
 
-      const actor =
-        caller.type === "run"
-          ? ({ type: "run", runId: caller.run.id, onBehalfOf: caller.run.onBehalfOf } as const)
-          : ({ type: "user", userId: caller.userId, isAdmin: await isAdmin(client, caller.userId) } as const);
-      const result = await createPerson(client, workspaceId, actor, input);
+      const createdBy =
+        caller.origin.kind === "run"
+          ? ({ type: "run", runId: caller.origin.run.id, onBehalfOf: caller.origin.run.onBehalfOf } as const)
+          : ({ type: "user", userId: caller.origin.userId, isAdmin: await isAdmin(client, caller.origin.userId) } as const);
+      const result = await createPerson(client, workspaceId, createdBy, input);
       // A new pending person is news for the admins. A failed message never fails the add.
       if (result.created && result.person.status === "pending") {
         try {
@@ -170,10 +172,11 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
         return refuse("not_allowed", why);
       }
 
-      if (caller.type === "run") {
-        const limits = findToolPermission(caller.run, "people.notify")?.limits as DraftToolLimits["people.notify"] | undefined;
+      if (caller.origin.kind === "run") {
+        const { run } = caller.origin;
+        const limits = findToolPermission(run, "people.notify")?.limits as DraftToolLimits["people.notify"] | undefined;
         const recipients = limits?.recipients ?? "self";
-        const allowed = recipients === "members" || (recipients === "self" ? caller.run.onBehalfOf !== null && person.userId === caller.run.onBehalfOf : recipients.includes(person.id));
+        const allowed = recipients === "members" || (recipients === "self" ? run.onBehalfOf !== null && person.userId === run.onBehalfOf : recipients.includes(person.id));
         if (!allowed) return refuse("not_allowed", recipients === "self" ? "This run may only message the person it works for." : "This run may not message that person.");
         const limited = await overRunLimit(client, caller, "people.notify", DEFAULT_MAX_NOTIFIES_PER_RUN);
         if (limited) return limited;
@@ -189,7 +192,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     name: "people.approve",
     mcp: true,
     description: "Approve a pending person so they become an active teammate who can be messaged. Admins only. Only a person can do this, never an agent run.",
-    callers: ["user"],
+    allowedOrigins: ["person"],
     input: z.object({ personId: z.string().uuid() }),
     handler: async ({ input, caller }) => decide(caller, input.personId, "active"),
   });
@@ -198,7 +201,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     name: "people.reject",
     mcp: true,
     description: "Turn away a pending person. Draft remembers the name, so synthesis does not add them again. Admins only. Only a person can do this, never an agent run.",
-    callers: ["user"],
+    allowedOrigins: ["person"],
     input: z.object({ personId: z.string().uuid(), reason: z.string().max(500).optional() }),
     handler: async ({ input, caller }) => decide(caller, input.personId, "rejected", input.reason),
   });

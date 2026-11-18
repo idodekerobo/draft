@@ -11,8 +11,8 @@ function ClaudeSessionRow() {
   const [error, setError] = useState<string | null>(null);
 
   const check = useCallback(() => {
-    void rpc.request.getAvailableRunners().then(({ runners }) => {
-      const claude = runners.find((entry) => entry.name === "claude");
+    void rpc.request.getAvailableHarnesses().then(({ harnesses }) => {
+      const claude = harnesses.find((entry) => entry.name === "claude");
       setRunner(claude ? { installed: claude.installed, auth: claude.auth } : { installed: false, auth: "unknown" });
     }).catch(() => {});
   }, []);

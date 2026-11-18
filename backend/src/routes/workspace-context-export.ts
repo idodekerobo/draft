@@ -1,4 +1,5 @@
 import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
+import { personCaller } from "draft-core/tools";
 import { visibleContext } from "../metaharness/context/visible-context";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { contextExportSettings } from "../config";
@@ -17,7 +18,7 @@ async function zipResponse(workspaceId: string, userId: string, via: string, log
   let exported: ReturnType<typeof buildContextExport>;
   try {
     // The link is a person's access in an agent's hands, so it shows what that person may see.
-    const caller = { type: "user" as const, userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "cli" as const };
+    const caller = personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "cli" });
     exported = buildContextExport({ ...result.snapshot, documents: visibleContext(caller, result.snapshot.documents) });
   } catch (error) {
     console.error("context export: build failed", error);

@@ -42,7 +42,7 @@ export function buildGranolaExternalVersion(contentMarkdown: string, sanitizedRa
 
 interface LiveGranolaSourceItem {
   id: string;
-  source_connection_id: string;
+  connection_id: string;
   visibility: SourceItemVisibility;
 }
 
@@ -57,7 +57,7 @@ async function findLiveGranolaSourceItem(
   noteId: string,
 ): Promise<LiveGranolaSourceItem | null> {
   const { data: connections, error: connectionsError } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id")
     .eq("workspace_id", workspaceId)
     .eq("provider", "granola");
@@ -68,11 +68,11 @@ async function findLiveGranolaSourceItem(
 
   const { data, error } = await db
     .from("source_items")
-    .select("id, source_connection_id, visibility")
+    .select("id, connection_id, visibility")
     .eq("workspace_id", workspaceId)
     .eq("external_id", noteId)
     .eq("lifecycle_status", "active")
-    .in("source_connection_id", connectionIds)
+    .in("connection_id", connectionIds)
     .maybeSingle();
   if (error) throw error;
   return data as LiveGranolaSourceItem | null;
@@ -96,7 +96,7 @@ export async function ingestGranolaNote(
   const visibility: SourceItemVisibility = connection.connected_by_user_id ? "private" : "shared";
 
   const existing = await findLiveGranolaSourceItem(db, connection.workspace_id, noteId);
-  if (existing && existing.source_connection_id !== connection.id) {
+  if (existing && existing.connection_id !== connection.id) {
     if (existing.visibility === "private" && visibility === "shared") {
       const { error } = await db
         .from("source_items")
@@ -122,7 +122,7 @@ export async function ingestGranolaNote(
 
   const result = await upsertSourceItem(db, {
     workspace_id: connection.workspace_id,
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     item_type: "meeting_notes",
     external_id: noteId,
     external_version: externalVersion,
@@ -144,7 +144,7 @@ export async function ingestGranolaNote(
 
   await insertEvent(db, connection.workspace_id, {
     event_type: "source_items_added",
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     summary: note.title,
   });
 

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { ANY_RUN } from "draft-core/tools";
 import { createContextExportLink, exportInstructions } from "../../../context-export/link";
 import { getWorkspaceContext } from "../../../services/workspace-context";
 import { writeContext, type ContextConflict } from "../../context/context-store";
@@ -101,7 +102,7 @@ export function createContextTools(client: SupabaseClient) {
     mcp: true,
     description:
       "Get a short-lived download link to the full context as a zip of markdown files (all dimensions, including memory). Prefer this over context.read when the user wants the files on disk; the bytes skip your context window. Follow the returned instructions to fetch and unzip.",
-    callers: ["user"],
+    allowedOrigins: ["person"],
     input: z.object({}),
     handler: async ({ caller }) => {
       const user = requireUser(caller, "context.export");
@@ -113,7 +114,7 @@ export function createContextTools(client: SupabaseClient) {
 
   const write = defineTool({
     name: "context.write",
-    callers: ["run"],
+    allowedOrigins: ANY_RUN,
     description:
       "Write Markdown documents to the company's shared context. Each change is checked against that document only. " +
       "Changes that do not conflict are written. For each one that changed since you read it, you get its current content and sha back: merge your change and write again with that sha as baseSha, or drop it.",

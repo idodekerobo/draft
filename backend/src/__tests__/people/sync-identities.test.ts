@@ -22,7 +22,7 @@ const newDb = () =>
       users: [{ id: "u1", email: "uzo@example.com", display_name: "Uzo", status: "active", primary_team_id: TEAM }],
       people: [],
       person_identities: [],
-      source_connections: [],
+      connections: [],
     },
     { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] } },
   );

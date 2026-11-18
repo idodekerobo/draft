@@ -1,16 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { authenticateSandboxCallbackRequest } from "../sandbox";
-import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
+import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
+import type { IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { routineEventsForHarness } from "../ingestion/harness-lines";
 import { parseLiveLine } from "draft-core/harnesses/claude/parse-live-line";
 import { saveRefreshedCodexLogin } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
+import type { RoutineLine } from "../sandbox/runner/stream";
 import type { SessionRow } from "../types/tables";
 import { parseAgentRoutineConfig, parseRoutineSessionId } from "./config";
 import { endRoutineSession, failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 
 const MAX_LINES_PER_POST = 2000;
-const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_machine_id, scheduled_task_id, harness";
+const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_id, scheduled_task_id, harness";
 
 type RoutineSession = RoutineSessionRef & Pick<SessionRow, "session_type" | "status" | "last_seq" | "harness">;
 
@@ -28,6 +29,19 @@ const FAILURE_NOTES: Record<string, string> = {
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** The shape a runner sends, checked before its lines are trusted. */
+function isRunnerLine(value: unknown): value is RoutineLine {
+  if (!isObject(value) || typeof value.file !== "string" || !Number.isInteger(value.offset)) return false;
+  return typeof value.raw === "string" || Number.isInteger(value.oversizeBytes);
+}
+
+// TODO: drop this mapping once the runner image sends `stream` and `position`.
+export function fromRunnerLine(line: RoutineLine): IncomingLine {
+  return "raw" in line
+    ? { stream: line.file, position: line.offset, raw: line.raw }
+    : { stream: line.file, position: line.offset, oversizeBytes: line.oversizeBytes };
+}
+
 /** The prompt is not part of the agent's output, so the first batch carries it as the opening message. */
 async function promptEvent(client: SupabaseClient, session: RoutineSession) {
   const { data, error } = await client
@@ -40,7 +54,7 @@ async function promptEvent(client: SupabaseClient, session: RoutineSession) {
   const config = parseAgentRoutineConfig((data as { config_json: unknown } | null)?.config_json);
   if (!config) return [];
   if (session.harness === "codex") return [{ sourceId: `routine-prompt:${session.id}`, kind: "user_message" as const, payload: { text: config.prompt } }];
-  const line = { file: "root.jsonl", offset: -1, raw: JSON.stringify({ type: "user", uuid: `routine-prompt:${session.id}`, message: { role: "user", content: config.prompt } }) };
+  const line = { stream: "root.jsonl", position: -1, raw: JSON.stringify({ type: "user", uuid: `routine-prompt:${session.id}`, message: { role: "user", content: config.prompt } }) };
   return parseLiveLine(line);
 }
 
@@ -53,7 +67,7 @@ async function appendLines(client: SupabaseClient, session: RoutineSession, line
   const { error } = await client.rpc("append_session_events", {
     p_session_id: session.id,
     p_workspace_id: session.workspace_id,
-    p_host_machine_id: session.host_machine_id,
+    p_host_id: session.host_id,
     p_events: events,
   });
   // A late batch for a session the tick already failed is not an error.
@@ -108,8 +122,8 @@ export async function completeRoutineRunCallback(
   const result = authenticated.result;
   try {
     if (isObject(result) && result.kind === "lines" && Array.isArray(result.lines)) {
-      if (result.lines.length > MAX_LINES_PER_POST || !result.lines.every(isIncomingLine)) return new Response(null, { status: 400 });
-      await appendLines(db, session, result.lines as IncomingLine[]);
+      if (result.lines.length > MAX_LINES_PER_POST || !result.lines.every(isRunnerLine)) return new Response(null, { status: 400 });
+      await appendLines(db, session, result.lines.map(fromRunnerLine));
       return new Response(null, { status: 204 });
     }
     if (isObject(result) && result.kind === "end") {

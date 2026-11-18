@@ -33,5 +33,6 @@ export const codexDefinition = {
   testedVersion: { major: 0, minor: 169 },
   cloudStartingTools: ["shell"],
   routineModes: ["exec"],
+  loop: "in-sandbox",
   installUrl: "https://learn.chatgpt.com/docs/codex/cli#getting-started",
 } as const satisfies HarnessDefinition;

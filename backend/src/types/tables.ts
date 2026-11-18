@@ -1,6 +1,7 @@
 import type { AgentRunKind, AgentRunStatus } from "draft-core/run-spec";
 import type {
   AgentSessionSummaryStatus,
+  ConnectionProvider,
   ContextVersionCreationReason,
   CredentialProvider,
   CredentialStatus,
@@ -9,13 +10,11 @@ import type {
   OrganizationStatus,
   ScheduleKind,
   ScheduledTaskType,
-  SourceConnectionProvider,
-  SourceConnectionStatus,
+  ConnectionStatus,
   SourceItemLifecycleStatus,
   SourceItemType,
   SourceItemVisibility,
   SynthesisRunOutcome,
-  SynthesisRunStatus,
   SynthesisRunTriggerType,
   TeamStatus,
   UserOrgRole,
@@ -104,14 +103,14 @@ export interface CredentialRow {
   updated_at: string;
 }
 
-export interface SourceConnectionRow {
+export interface ConnectionRow {
   id: string;
   workspace_id: string;
-  provider: SourceConnectionProvider;
+  provider: ConnectionProvider;
   connection_key: string;
   display_name: string | null;
   external_account_id: string | null;
-  status: SourceConnectionStatus;
+  status: ConnectionStatus;
   credential_id: string | null;
   config_json: Record<string, unknown>;
   cursor_json: Record<string, unknown>;
@@ -125,7 +124,7 @@ export interface SourceConnectionRow {
 export interface SourceItemRow {
   id: string;
   workspace_id: string;
-  source_connection_id: string;
+  connection_id: string;
   item_type: SourceItemType;
   external_id: string;
   external_version: string;
@@ -141,7 +140,7 @@ export interface SourceItemRow {
   metadata_json: Record<string, unknown>;
   sanitized_raw_json: unknown | null;
   supersedes_source_item_id: string | null;
-  agent_session_id: string | null;
+  captured_session_id: string | null;
   visibility: SourceItemVisibility;
   owner_user_id: string | null;
   created_at: string;
@@ -157,7 +156,6 @@ export interface WorkspaceContextVersionRow {
   documents_json: Record<string, { content: string; sha256: string }>;
   content_hash: string;
   creation_reason: ContextVersionCreationReason;
-  synthesis_run_id: string | null;
   restored_from_version_id: string | null;
   agent_run_id: string | null;
   summary: string;
@@ -184,7 +182,7 @@ export interface SkillRow {
 export interface ScheduledTaskRow {
   id: string;
   workspace_id: string;
-  source_connection_id: string | null;
+  connection_id: string | null;
   task_type: ScheduledTaskType;
   task_key: string;
   schedule_kind: ScheduleKind;
@@ -215,9 +213,8 @@ export interface WorkspaceEventRow {
   workspace_id: string;
   sequence_number: number;
   event_type: WorkspaceEventType;
-  synthesis_run_id: string | null;
   agent_run_id: string | null;
-  source_connection_id: string | null;
+  connection_id: string | null;
   context_version_id: string | null;
   summary: string;
   payload_json: Record<string, unknown>;
@@ -236,7 +233,7 @@ export interface SessionContributorRow {
 }
 
 // Carries exactly one of user_id / contributor_id (XOR, not OR).
-export interface AgentSessionRow {
+export interface CapturedSessionRow {
   id: string;
   workspace_id: string;
   provider: string;
@@ -259,9 +256,9 @@ export interface AgentSessionRow {
 }
 
 // Immutable feed row: no updated_at.
-export interface AgentMessageRow {
+export interface CapturedSessionMessageRow {
   id: string;
-  session_id: string;
+  captured_session_id: string;
   workspace_id: string;
   seq: number;
   role: string;
@@ -273,9 +270,8 @@ export interface AgentMessageRow {
 export interface ErrorRow {
   id: string;
   workspace_id: string;
-  source_connection_id: string | null;
+  connection_id: string | null;
   scheduled_task_id: string | null;
-  synthesis_run_id: string | null;
   agent_run_id: string | null;
   session_id: string | null;
   operation: ErrorOperation;
@@ -310,7 +306,7 @@ export interface SessionRow {
   last_seen: string;
   last_seq: number;
   open_approval_count: number;
-  host_machine_id: string;
+  host_id: string;
   host_name: string | null;
   harness_version: string | null;
   raw_storage_path: string | null;
@@ -356,8 +352,6 @@ export interface AgentRunRow {
   workspace_id: string;
   kind: AgentRunKind;
   trigger: unknown;
-  /** Replaced by on_behalf_of_user_id. Nothing writes it now; a later migration drops it. */
-  principal: unknown;
   on_behalf_of_user_id: string | null;
   runtime: unknown;
   harness: string;
@@ -467,7 +461,7 @@ export interface PersonIdentityRow {
   external_id: string;
   handle: string | null;
   status: PersonIdentityStatus;
-  source_connection_id: string | null;
+  connection_id: string | null;
   evidence: Record<string, unknown>;
   created_at: string;
   updated_at: string;

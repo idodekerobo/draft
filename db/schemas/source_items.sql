@@ -1,7 +1,7 @@
 create table source_items (
   id                          uuid primary key default gen_random_uuid(),
   workspace_id                uuid not null references workspaces(id) on delete cascade,
-  source_connection_id        uuid not null,
+  connection_id               uuid not null,
   item_type                   text not null
                                  check (item_type in ('meeting_transcript', 'meeting_notes', 'message', 'coding_session', 'document', 'provider_event')),
   external_id                  text not null,
@@ -20,9 +20,9 @@ create table source_items (
   metadata_json                jsonb not null default '{}',
   sanitized_raw_json           jsonb,
   supersedes_source_item_id    uuid,
-  agent_session_id             uuid,
+  captured_session_id          uuid,
   -- Snapshotted at ingest, not a live join to
-  -- source_connections.connected_by_user_id (that FK is nullable and
+  -- connections.connected_by_user_id (that FK is nullable and
   -- cleared on user deletion). Only multi-account providers (fireflies)
   -- set visibility='private' today; every other provider stays 'shared'
   -- (workspace-wide), matching the pre-existing, unscoped read behavior.
@@ -32,14 +32,14 @@ create table source_items (
   created_at                   timestamptz not null default now(),
   updated_at                   timestamptz not null default now(),
 
-  unique (source_connection_id, external_id, external_version),
+  unique (connection_id, external_id, external_version),
   unique (id, workspace_id),
-  foreign key (source_connection_id, workspace_id)
-    references source_connections(id, workspace_id) on delete cascade,
+  foreign key (connection_id, workspace_id)
+    references connections(id, workspace_id) on delete cascade,
   foreign key (supersedes_source_item_id, workspace_id)
     references source_items(id, workspace_id) on delete restrict,
-  foreign key (agent_session_id, workspace_id)
-    references agent_sessions(id, workspace_id) on delete restrict,
+  foreign key (captured_session_id, workspace_id)
+    references captured_sessions(id, workspace_id) on delete restrict,
   check (source_time_start is null or source_time_end is null or source_time_start <= source_time_end),
   check (
     lifecycle_status not in ('normalized', 'active', 'superseded')
@@ -50,9 +50,9 @@ create table source_items (
 create index source_items_content_markdown_gin_idx
   on source_items using gin (to_tsvector('english', content_markdown));
 
-create index source_items_agent_session_idx
-  on source_items (workspace_id, agent_session_id)
-  where agent_session_id is not null;
+create index source_items_captured_session_idx
+  on source_items (workspace_id, captured_session_id)
+  where captured_session_id is not null;
 
 alter table source_items enable row level security;
 

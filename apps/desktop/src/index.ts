@@ -14,15 +14,15 @@ import {
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
-import { findRunnerBin } from "./main/host/find-bin";
-import { shellQuote } from "./main/host/launch";
+import { findHarnessBin } from "draft-core/host/find-bin";
+import { shellQuote } from "draft-core/host/launch";
 import { openCommandInTerminal } from "./main/host/open-in-terminal";
-import { runningCodexTurns } from "./main/host/codex/codex-driver";
-import { readCodexAuth, readCodexVersion } from "./main/host/codex/codex-check";
-import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "./main/host/codex/codex-login";
-import { cancelRoutineCodexLogin, getRoutineCodexStatus, pollRoutineCodexLogin, startRoutineCodexLogin } from "./main/host/codex/codex-routine-login";
-import { readClaudeAuth } from "./main/host/claude-check";
-import { readClaudeVersion } from "./main/host/version-check";
+import { runningCodexTurns } from "draft-core/host/drivers/codex/codex-driver";
+import { readCodexAuth, readCodexVersion } from "draft-core/host/drivers/codex/codex-check";
+import { cancelCodexLogin, codexLogout, getCodexStatus, startCodexLogin } from "draft-core/host/drivers/codex/codex-login";
+import { cancelRoutineCodexLogin, getRoutineCodexStatus, pollRoutineCodexLogin, startRoutineCodexLogin } from "draft-core/host/drivers/codex/codex-routine-login";
+import { readClaudeAuth } from "draft-core/host/drivers/claude/claude-check";
+import { readClaudeVersion } from "draft-core/host/drivers/claude/version-check";
 import { basename, extname, join, resolve } from "path";
 import { readLocalConfig, writeLocalConfig } from "draft-core/config";
 import { runInstall, syncExtractedBins, ensureOnPath } from "./main/installer";
@@ -44,27 +44,32 @@ import { getPrivacy, setPrivacy } from "./main/privacy";
 import {
   actOnLiveSessionInput,
   decideLiveSessionApproval,
-  endLiveSession,
   getLiveSessionEvents,
-  hostedLiveSessionIds,
   listLiveSessions,
+  sendLiveSessionMessage,
+  setLiveSessionMode,
+  stopLiveSession,
+} from "./main/live-session-api";
+import {
+  endLiveSession,
+  hostedLiveSessionIds,
   liveSessionFolder,
   openLiveSessionInTerminal,
   deleteLiveSession,
   resumeLiveSession,
   resumeLiveSessions,
-  sendLiveSessionMessage,
   startLiveSession,
-  stopLiveSession,
-  setLiveSessionMode,
-} from "./main/host/live-session";
-import { readAgentDefaults } from "./main/host/agent-defaults";
+} from "draft-core/host/live-session";
+import { readAgentDefaults } from "draft-core/host/agent-defaults";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
 import { realtime, setSignalSender } from "./main/realtime/instance";
 import { ServerError, apiUrl, callServerTool, fetchServer, fetchServerJSON, setSessionExpiredHandler } from "./main/server/server-client";
 import { logLoginCleared } from "./main/auth/auth-log";
 import { createSessionExpiredHandler } from "./main/auth/session-expired";
+import { installHostServices } from "draft-core/host/services";
+import { desktopHostServices } from "./main/host-services";
+installHostServices(desktopHostServices);
 const presenceHub = new PresenceHub(connectPresence);
 setSignalSender(
   (topic, event, payload) => {
@@ -324,7 +329,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           };
         }
 
-        // Integrations — every entry is now cloud-backed (source_connections),
+        // Integrations — every entry is now cloud-backed (connections),
         // fetched below in one round trip. No per-profile integrations.json
         // read remains for this list.
         let cloudConnections: unknown = null;
@@ -871,13 +876,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       cancelRoutineCodexLogin: () => cancelRoutineCodexLogin(),
 
       openClaudeSignIn: async () => {
-        const bin = findRunnerBin("claude");
+        const bin = findHarnessBin("claude");
         if (!bin) return { ok: false, error: "Claude Code is not installed on this computer." };
         return openCommandInTerminal("claude-sign-in", `exec ${shellQuote(bin)}`);
       },
-      getAvailableRunners: async () => {
-        const claudePath = findRunnerBin("claude");
-        const codexPath = findRunnerBin("codex");
+      getAvailableHarnesses: async () => {
+        const claudePath = findHarnessBin("claude");
+        const codexPath = findHarnessBin("codex");
         const [claudeAuth, claudeVersion, codexAuth, codexVersion] = await Promise.all([
           claudePath ? readClaudeAuth(claudePath) : ("unknown" as const),
           claudePath ? readClaudeVersion(claudePath) : null,
@@ -885,7 +890,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           codexPath ? readCodexVersion(codexPath) : null,
         ]);
         return {
-          runners: [
+          harnesses: [
             { name: "claude" as const, installed: claudePath !== null, auth: claudeAuth, version: claudeVersion },
             { name: "codex" as const, installed: codexPath !== null, auth: codexAuth, version: codexVersion },
           ],

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { completeSynthesisRunCallback } from "../../synthesis/orchestrate-run";
-import { createSandboxCallbackToken } from "../../sandbox/callback-token";
+import { createSandboxCallbackToken } from "../../metaharness/sandbox/callback-token";
 
 const secret = "super-sensitive-callback-secret";
 const runId = "55555555-5555-4555-8555-555555555555";

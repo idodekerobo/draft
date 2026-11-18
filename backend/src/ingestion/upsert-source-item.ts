@@ -1,33 +1,33 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
-  SourceConnectionProvider,
-  SourceConnectionStatus,
+  ConnectionProvider,
+  ConnectionStatus,
   SourceItemLifecycleStatus,
   SourceItemType,
   SourceItemVisibility,
 } from "../types/enums";
-import type { SourceConnectionRow, SourceItemRow } from "../types/tables";
+import type { ConnectionRow, SourceItemRow } from "../types/tables";
 import type { SourceRepresentationKind, SourceTimeBasis } from "draft-core/sources";
 
-export interface UpsertSourceConnectionInput {
+export interface UpsertConnectionInput {
   workspace_id: string;
-  provider: SourceConnectionProvider;
+  provider: ConnectionProvider;
   connection_key: string;
   display_name?: string | null;
   external_account_id?: string | null;
-  status?: SourceConnectionStatus;
+  status?: ConnectionStatus;
   credential_id?: string | null;
   config_json?: Record<string, unknown>;
   cursor_json?: Record<string, unknown>;
   connected_by_user_id?: string | null;
 }
 
-export async function upsertSourceConnection(
+export async function upsertConnection(
   client: SupabaseClient,
-  input: UpsertSourceConnectionInput,
-): Promise<SourceConnectionRow> {
+  input: UpsertConnectionInput,
+): Promise<ConnectionRow> {
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .upsert(
       {
         workspace_id: input.workspace_id,
@@ -48,12 +48,12 @@ export async function upsertSourceConnection(
     .select()
     .single();
   if (error) throw error;
-  return data as SourceConnectionRow;
+  return data as ConnectionRow;
 }
 
 export interface UpsertSourceItemInput {
   workspace_id: string;
-  source_connection_id: string;
+  connection_id: string;
   item_type: SourceItemType;
   external_id: string;
   // A provider revision id, or a content hash for providers that give none.
@@ -63,7 +63,7 @@ export interface UpsertSourceItemInput {
   source_time_end?: string | null;
   representation_kind?: SourceRepresentationKind;
   time_basis?: SourceTimeBasis;
-  agent_session_id?: string | null;
+  captured_session_id?: string | null;
   content_markdown: string;
   content_hash: string;
   metadata_json?: Record<string, unknown>;
@@ -101,7 +101,7 @@ export async function upsertSourceItem(
   const { data: rpcData, error: rpcError } = await client
     .rpc("upsert_source_item", {
       p_workspace_id: input.workspace_id,
-      p_source_connection_id: input.source_connection_id,
+      p_connection_id: input.connection_id,
       p_item_type: input.item_type,
       p_external_id: input.external_id,
       p_external_version: input.external_version,
@@ -119,7 +119,7 @@ export async function upsertSourceItem(
       p_representation_kind: input.representation_kind ?? "unknown",
       p_source_time_start: input.source_time_start ?? null,
       p_source_time_end: input.source_time_end ?? null,
-      p_agent_session_id: input.agent_session_id ?? null,
+      p_captured_session_id: input.captured_session_id ?? null,
     });
   if (rpcError) throw rpcError;
 

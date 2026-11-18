@@ -39,7 +39,7 @@ async function getPendingChannelIds(
   while (true) {
     const { data, error } = await client.rpc("get_pending_slack_channel_ids", {
       p_workspace_id: workspaceId,
-      p_source_connection_id: connectionId,
+      p_connection_id: connectionId,
       p_after_channel_id: after,
       p_limit: 100,
     });
@@ -62,7 +62,7 @@ async function getPendingMessages(
     .from("slack_messages")
     .select("*")
     .eq("workspace_id", workspaceId)
-    .eq("source_connection_id", connectionId)
+    .eq("connection_id", connectionId)
     .eq("channel_id", channelId)
     .is("source_item_id", null)
     .order("message_ts", { ascending: true })
@@ -96,7 +96,7 @@ async function commitBatch(
   const messageIds = batch.map((message) => message.id);
   const { data, error } = await client.rpc("commit_slack_source_batch", {
     p_workspace_id: connection.workspace_id,
-    p_source_connection_id: connection.id,
+    p_connection_id: connection.id,
     p_channel_id: channelId,
     p_message_ids: messageIds,
     p_external_id: externalId,
@@ -236,7 +236,7 @@ export async function registerSlackBatchMaterializationTask(
   const { error } = await db.from("scheduled_tasks").upsert(
     {
       workspace_id: connection.workspace_id,
-      source_connection_id: connection.id,
+      connection_id: connection.id,
       task_type: "ingest_source",
       task_key: connection.id,
       schedule_kind: "interval",

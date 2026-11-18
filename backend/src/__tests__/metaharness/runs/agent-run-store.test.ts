@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { personCaller, runCaller } from "draft-core/tools";
 import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import type { AgentRunRow } from "../../../types/tables";
@@ -14,13 +15,12 @@ const spec: AgentRunSpec = {
     scheduledTaskId: parseScheduledTaskId("55555555-5555-4555-8555-555555555555"),
     occurrenceAt: parseIsoTimestamp("2026-11-09T09:00:00.000Z"),
   },
-  actor: { type: "agent", runId: parseAgentRunId("11111111-1111-4111-8111-111111111111") },
   onBehalfOf: null,
   runtime: {
     type: "cloud",
-    environment: {
+    toolset: {
       nativeTools: [{ harness: "claude", tool: "WebSearch" }],
-      mcpServers: [{ connectionId: parseSourceConnectionId("66666666-6666-4666-8666-666666666666"), tools: ["search"] }],
+      mcpServers: [{ connectionId: parseConnectionId("66666666-6666-4666-8666-666666666666"), tools: ["search"] }],
       skills: [],
       instructions: [],
     },
@@ -65,7 +65,6 @@ describe("agent run store", () => {
     const asUser: AgentRunSpec = { ...spec, onBehalfOf: parseUserId("99999999-9999-4999-8999-999999999999") };
     await createAgentRun(client, { spec: asUser, idempotencyKey: "k-user" });
     expect(inserts[0].row.on_behalf_of_user_id).toBe(asUser.onBehalfOf);
-    expect(inserts[0].row).not.toHaveProperty("principal");
     expect(specFromRow(rowFrom(inserts[0].row))).toEqual(asUser);
   });
 
@@ -104,18 +103,14 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "event", eventIds: ["evt_123"] } })).toThrow();
-    expect(() => specFromRow({ ...good, runtime: { type: "local", hostMachineId: "" } })).toThrow();
+    expect(() => specFromRow({ ...good, runtime: { type: "local", hostId: "" } })).toThrow();
   });
 });
 
 describe("audit rows", () => {
   const base = { toolName: "context.read", arguments: { dimensions: ["memory"] }, status: "ok" as const, resultSummary: null, errorCode: null, durationMs: 3, resultBytes: 42 };
-  const user = (via: "mcp" | "cli" | "app") => ({
-    type: "user" as const,
-    userId: parseUserId("33333333-3333-4333-8333-333333333333"),
-    workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
-    via,
-  });
+  const user = (via: "mcp" | "cli" | "app") =>
+    personCaller({ userId: parseUserId("33333333-3333-4333-8333-333333333333"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"), via });
 
   it("writes a person's MCP call to the agent query log under the mcp command name", async () => {
     const { client, inserts } = fakeClient();
@@ -136,7 +131,7 @@ describe("audit rows", () => {
 
   it("writes a run's call to its own table", async () => {
     const { client, inserts } = fakeClient();
-    await auditToDatabase(client)({ ...base, caller: { type: "run", run: spec } } as ToolCallRecord);
+    await auditToDatabase(client)({ ...base, caller: runCaller(spec) } as ToolCallRecord);
     expect(inserts[0]).toMatchObject({ table: "agent_run_tool_calls", row: { agent_run_id: spec.id, tool_name: "context.read", status: "ok", duration_ms: 3 } });
   });
 });

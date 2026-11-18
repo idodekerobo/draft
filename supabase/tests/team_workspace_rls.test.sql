@@ -36,7 +36,7 @@ insert into workspaces (id, organization_id, team_id, slug, name, access_mode)
 values
   ('40000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', 'alpha-restricted-rls-test', 'Alpha Restricted', 'restricted');
 
-insert into source_connections (id, workspace_id, provider, connection_key)
+insert into connections (id, workspace_id, provider, connection_key)
 values
   ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'slack', 'alpha-rls-test'),
   ('50000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'slack', 'beta-rls-test'),
@@ -58,13 +58,13 @@ select is((select count(*) from organizations), 1::bigint, 'organization remains
 select is((select count(*) from teams), 1::bigint, 'only the primary team is visible');
 select is((select count(*) from users), 1::bigint, 'only users in the primary team are visible');
 select is((select count(*) from workspaces), 1::bigint, 'only primary-team workspaces are visible');
-select is((select count(*) from source_connections), 1::bigint, 'own-team descendants are visible');
+select is((select count(*) from connections), 1::bigint, 'own-team descendants are visible');
 select ok(exists(select 1 from workspaces where id = '40000000-0000-0000-0000-000000000001'), 'own-team workspace is visible');
 select ok(not exists(select 1 from workspaces where id = '40000000-0000-0000-0000-000000000002'), 'same-org other-team workspace is hidden');
 select ok(not exists(select 1 from workspaces where id = '40000000-0000-0000-0000-000000000003'), 'cross-org workspace is hidden');
 select ok(not exists(select 1 from workspaces where id = '40000000-0000-0000-0000-000000000004'), 'restricted workspace is hidden during the pilot');
-select ok(not exists(select 1 from source_connections where id = '50000000-0000-0000-0000-000000000002'), 'same-org other-team descendant is hidden');
-select ok(not exists(select 1 from source_connections where id = '50000000-0000-0000-0000-000000000003'), 'cross-org descendant is hidden');
+select ok(not exists(select 1 from connections where id = '50000000-0000-0000-0000-000000000002'), 'same-org other-team descendant is hidden');
+select ok(not exists(select 1 from connections where id = '50000000-0000-0000-0000-000000000003'), 'cross-org descendant is hidden');
 select ok(not has_table_privilege('authenticated', 'credentials', 'select'), 'credentials are not granted to authenticated users');
 select ok(not has_table_privilege('authenticated', 'scheduled_tasks', 'select'), 'scheduled tasks are not granted to authenticated users');
 select ok(not has_table_privilege('authenticated', 'synthesis_run_source_items', 'select'), 'run source items are not granted to authenticated users');
@@ -78,14 +78,14 @@ select ok(not has_table_privilege('anon', 'organizations', 'select'), 'anonymous
 select ok(not has_table_privilege('anon', 'teams', 'select'), 'anonymous users cannot read teams');
 select ok(not has_table_privilege('anon', 'users', 'select'), 'anonymous users cannot read users');
 select ok(not has_table_privilege('anon', 'workspaces', 'select'), 'anonymous users cannot read workspaces');
-select ok(not has_table_privilege('anon', 'source_connections', 'select'), 'anonymous users cannot read descendants');
+select ok(not has_table_privilege('anon', 'connections', 'select'), 'anonymous users cannot read descendants');
 
 reset role;
 set local role service_role;
 
 select throws_ok(
   $$insert into source_items (
-      workspace_id, source_connection_id, item_type, external_id,
+      workspace_id, connection_id, item_type, external_id,
       external_version, occurred_at
     ) values (
       '40000000-0000-0000-0000-000000000002',

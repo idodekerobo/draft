@@ -1,7 +1,7 @@
 import { getInstallSession, resolveInstallSession } from "../auth/github-install-store";
 import { githubClient } from "../ingestion/github/client-instance";
 import { GithubClientError } from "../ingestion/github/client";
-import { upsertSourceConnection } from "../ingestion/upsert-source-item";
+import { upsertConnection } from "../ingestion/upsert-source-item";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 
@@ -13,7 +13,7 @@ const OWNER_APPROVAL_MESSAGE =
 const INSTALLATION_CONFLICT_CODE = "github_installation_conflict";
 const INSTALLATION_CONFLICT_MESSAGE =
   "A GitHub installation is already connected to this workspace. Disconnect GitHub first, then try again.";
-const WORKSPACE_GITHUB_INDEX = "source_connections_one_live_github_per_workspace";
+const WORKSPACE_GITHUB_INDEX = "connections_one_live_github_per_workspace";
 
 function isWorkspaceGithubConflict(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -39,7 +39,7 @@ function installationConflict(code: string): Response {
 // The App's one configured Callback URL -- unauthenticated (a plain browser
 // redirect from GitHub, no bearer token available). Spoofable per GitHub's
 // own docs (anyone can hit this with an arbitrary installation_id), so
-// verifyInstallation runs before any source_connections write.
+// verifyInstallation runs before any connections write.
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const installationId = url.searchParams.get("installation_id");
@@ -82,7 +82,7 @@ export async function GET(request: Request): Promise<Response> {
 
   try {
     const { data: existing, error: existingError } = await serviceClient
-      .from("source_connections")
+      .from("connections")
       .select("connection_key")
       .eq("workspace_id", session.workspaceId)
       .eq("provider", "github")
@@ -95,7 +95,7 @@ export async function GET(request: Request): Promise<Response> {
 
     const installation = await githubClient.verifyInstallation(installationId);
 
-    await upsertSourceConnection(serviceClient, {
+    await upsertConnection(serviceClient, {
       workspace_id: session.workspaceId,
       provider: "github",
       connection_key: installationId,

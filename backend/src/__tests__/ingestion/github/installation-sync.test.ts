@@ -9,7 +9,7 @@ function createFakeClient(connection: { id: string; config_json: Record<string, 
   const updateCalls: Record<string, unknown>[] = [];
 
   function from(table: string) {
-    if (table !== "source_connections") throw new Error(`Unexpected table: ${table}`);
+    if (table !== "connections") throw new Error(`Unexpected table: ${table}`);
     return {
       update: (payload: Record<string, unknown>) => {
         updateCalls.push(payload);

@@ -11,14 +11,14 @@ export async function POST(
   request: Bun.BunRequest<"/webhooks/fireflies/:connectionKey">,
 ): Promise<Response> {
   let workspaceId: string | null = null;
-  let sourceConnectionId: string | null = null;
+  let connectionId: string | null = null;
   try {
     const { connection, credentialId, event, meetingId } = await authenticateFirefliesWebhookRequest(
       request,
       request.params.connectionKey,
     );
     workspaceId = connection.workspace_id;
-    sourceConnectionId = connection.id;
+    connectionId = connection.id;
 
     let summarizedSourceItemId: string | null = null;
     if (HANDLED_EVENTS.has(event)) {
@@ -35,7 +35,7 @@ export async function POST(
     if (error) throw error;
 
     if (summarizedSourceItemId) {
-      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name: "fireflies.meeting_summarized", eventId: meetingId, sourceItemId: summarizedSourceItemId, facts: meetingFacts("Fireflies meeting id", meetingId), concurrencyKey: `fireflies:${meetingId}` });
+      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, connectionId: connection.id, name: "fireflies.meeting_summarized", eventId: meetingId, sourceItemId: summarizedSourceItemId, facts: meetingFacts("Fireflies meeting id", meetingId), concurrencyKey: `fireflies:${meetingId}` });
     }
 
     return new Response(null, { status: 200 });
@@ -45,7 +45,7 @@ export async function POST(
     }
     recordRouteError({
       workspaceId,
-      sourceConnectionId,
+      connectionId,
       operation: "ingestion",
       errorCode: "fireflies_webhook_failed",
       error,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
 import { createMcpConnection, remoteToolsForRun, type ConnectRemoteMcp } from "../../../metaharness/tools/remote-mcp";
 import { createRunGateway } from "../../../metaharness/tools/run-gateway";
@@ -30,9 +30,9 @@ async function setup(options: { named?: boolean } = {}) {
     close: async () => undefined,
   });
 
-  const connectionsDb = fakeDb({ credentials: [], source_connections: [] });
+  const connectionsDb = fakeDb({ credentials: [], connections: [] });
   const created = await createMcpConnection(fakeClient(connectionsDb), { workspaceId: WS, userId: OWNER, url: "https://tools.example.com/mcp", token: TOKEN, displayName: "Linear" }, { connect });
-  connectionsDb.tables.source_connections!.find((row) => row.id === created.connectionId)!.id = CONNECTION_ID;
+  connectionsDb.tables.connections!.find((row) => row.id === created.connectionId)!.id = CONNECTION_ID;
 
   const db = createFakeContextDb({ "a.md": "A" });
   const spec: AgentRunSpec = {
@@ -41,10 +41,10 @@ async function setup(options: { named?: boolean } = {}) {
     network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
-    actor: { type: "agent", runId: parseAgentRunId(RUN_ID) }, onBehalfOf: null,
+    onBehalfOf: null,
     runtime: {
       type: "cloud",
-      environment: { nativeTools: [], mcpServers: options.named === false ? [] : [{ connectionId: parseSourceConnectionId(CONNECTION_ID), tools: "all" }], skills: [], instructions: [] },
+      toolset: { nativeTools: [], mcpServers: options.named === false ? [] : [{ connectionId: parseConnectionId(CONNECTION_ID), tools: "all" }], skills: [], instructions: [] },
     },
     harness: "claude",
     model: null,
@@ -109,7 +109,7 @@ describe("a run's remote tools through the gateway", () => {
     expect(call.isError).toBeUndefined();
   });
 
-  it("does not offer or run them for a run whose environment names no connection", async () => {
+  it("does not offer or run them for a run whose toolset names no connection", async () => {
     const { gateway, request, calls } = await setup({ named: false });
     const body = (await (await gateway.listTools(request("/x"), RUN_ID)).json()) as { tools: Array<{ name: string }> };
     expect(body.tools.map((tool) => tool.name)).toEqual(["context.read"]);

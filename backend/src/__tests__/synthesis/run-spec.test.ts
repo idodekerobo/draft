@@ -53,7 +53,7 @@ describe("the synthesis run spec", () => {
     const db = fakeDb({
       agent_runs: [{
         id: RUN, workspace_id: WS, kind: "synthesis", trigger: { type: "system", reason: "manual" }, on_behalf_of_user_id: null,
-        runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+        runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
         harness: "claude", model: null, instructions: "", base_context_version_id: VERSION, permissions: [], output: { type: "none" }, status: "preparing",
       }],
     });

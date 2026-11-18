@@ -11,7 +11,7 @@ export interface IdentityInput {
   externalId: string;
   handle?: string | null;
   status: PersonIdentityStatus;
-  sourceConnectionId?: string | null;
+  connectionId?: string | null;
   evidence?: Record<string, unknown>;
 }
 
@@ -65,7 +65,7 @@ export async function addIdentity(client: SupabaseClient, workspaceId: string, p
     external_id: input.externalId,
     handle: input.handle ?? null,
     status: input.status,
-    source_connection_id: input.sourceConnectionId ?? null,
+    connection_id: input.connectionId ?? null,
     evidence: input.evidence ?? {},
   });
   // Another sync added it first.
@@ -92,7 +92,7 @@ export async function matchOrCreateFromDirectory(
   client: SupabaseClient,
   workspaceId: string,
   entry: { provider: PersonIdentityProvider; externalId: string; handle: string | null; displayName: string; email: string },
-  sourceConnectionId: string,
+  connectionId: string,
 ): Promise<"matched" | "created" | "known"> {
   const email = normalizeEmail(entry.email);
   const provider = await findPersonByIdentity(client, workspaceId, entry.provider, entry.externalId);
@@ -103,14 +103,14 @@ export async function matchOrCreateFromDirectory(
   if (!personId) {
     personId = await createConnectionPerson(client, workspaceId, entry.displayName);
     outcome = "created";
-    await addIdentity(client, workspaceId, personId, { provider: "email", externalId: email, handle: email, status: "from_connection", sourceConnectionId });
+    await addIdentity(client, workspaceId, personId, { provider: "email", externalId: email, handle: email, status: "from_connection", connectionId });
   }
   await addIdentity(client, workspaceId, personId, {
     provider: entry.provider,
     externalId: entry.externalId,
     handle: entry.handle,
     status: "from_connection",
-    sourceConnectionId,
+    connectionId,
   });
   return outcome;
 }

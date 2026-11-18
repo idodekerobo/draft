@@ -6,7 +6,7 @@ import {
   WorkspaceRunAlreadyActiveError,
 } from "../../synthesis/prepare-run";
 import { MEMORY_INDEX_PATH, resolveMemoryPeriod } from "../../synthesis/memory-period";
-import type { SandboxRunReceipt } from "../../sandbox";
+import type { SandboxRunReceipt } from "../../metaharness/sandbox";
 
 // Matches whatever "today" the suite actually runs on, so the default fake
 // existing version already has this run's memory documents provisioned --

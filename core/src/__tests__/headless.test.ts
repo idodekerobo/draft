@@ -7,6 +7,8 @@ let mockCaptureImpl: () => Promise<{ exitCode: number; stdout: string; stderr: s
 mock.module("../exec", () => ({
   capture: (..._args: unknown[]) => mockCaptureImpl(),
   spawn:   (..._args: unknown[]) => Promise.resolve(0),
+  // Host modules import GUI_PATH from this module, and every core test shares one process.
+  GUI_PATH: "/usr/bin:/bin",
 }));
 
 const { classifyOutput, isClaudeAuthenticated } = await import("../agents/headless");

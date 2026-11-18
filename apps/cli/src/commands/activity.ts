@@ -51,7 +51,7 @@ function formatRun(run: ActivityRun): string {
   const what = run.kind === "routine" ? `${run.routineTitle ?? "Routine"} · routine` : KIND_LABEL[run.kind] ?? run.kind;
   const lines = [`${run.createdAt}  ${run.status.padEnd(10)}  ${what}${duration(run)}`];
   if (run.resultSummary) lines.push(`  ${run.resultSummary}`);
-  if (run.kind === "routine" && run.routineId && run.sessionId) lines.push(dim(`  draft routines runs ${run.routineId} --run-id ${run.sessionId}`));
+  if (run.kind === "routine" && run.routineId && run.sessionId) lines.push(dim(`  draft routines runs ${run.routineId} --session-id ${run.sessionId}`));
   return lines.join("\n");
 }
 

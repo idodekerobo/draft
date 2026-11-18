@@ -1,8 +1,8 @@
 import { stripPasteWrapper, type SessionEventKind } from "../../live-sessions";
 
 export interface LiveLineInput {
-  file: string;
-  offset: number;
+  stream: string;
+  position: number;
   raw: string;
 }
 
@@ -145,8 +145,8 @@ function pushAgentNotes(
 }
 
 /** The agent id for a sub-agent transcript file, or null for the root file. */
-export function agentIdFromFile(file: string): string | null {
-  return SUBAGENT_FILE.exec(file)?.[1] ?? null;
+export function agentIdFromFile(stream: string): string | null {
+  return SUBAGENT_FILE.exec(stream)?.[1] ?? null;
 }
 
 function clip(text: string, max: number): { text: string; truncated?: true } {
@@ -172,7 +172,7 @@ function toolInput(input: unknown): { input: unknown; input_truncated?: true } {
  * Maps one raw Claude Code JSONL line to the session events it shows. Sub-agent
  * transcripts pass their agent id; their lines are all marked as side chains.
  */
-export function parseLiveLine(line: LiveLineInput, agentId: string | null = agentIdFromFile(line.file)): ParsedLiveEvent[] {
+export function parseLiveLine(line: LiveLineInput, agentId: string | null = agentIdFromFile(line.stream)): ParsedLiveEvent[] {
   let parsed: LiveJsonlLine;
   try {
     parsed = JSON.parse(line.raw);
@@ -182,7 +182,7 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
   if (!parsed || parsed.isMeta || parsed.isCompactSummary) return [];
   if (parsed.isSidechain && agentId === null) return [];
 
-  const base = typeof parsed.uuid === "string" && parsed.uuid ? parsed.uuid : `${line.file}:${line.offset}`;
+  const base = typeof parsed.uuid === "string" && parsed.uuid ? parsed.uuid : `${line.stream}:${line.position}`;
   const timestamp = typeof parsed.timestamp === "string" ? parsed.timestamp : null;
   const common = { timestamp, ...(agentId ? { agent_id: agentId } : {}) };
   const out: Array<Pick<ParsedLiveEvent, "kind" | "payload">> = [];

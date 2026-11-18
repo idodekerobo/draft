@@ -1,6 +1,6 @@
 // commands/routines.ts — draft routines <command>. Each command calls one routines.* tool as the signed-in person.
 //
-// `--wait` is CLI-only. Over MCP, an agent polls routines.runs with the run id.
+// `--wait` is CLI-only. Over MCP, an agent polls routines.runs with the session id.
 
 import { readFile } from "node:fs/promises";
 import type { RoutineListFilter } from "draft-core/routines";
@@ -291,7 +291,7 @@ function describeRun(run: RoutineRun): string {
 
 function startedByLabel(start: RoutineRun["startedBy"]): string {
   if (start.type === "schedule") return "Schedule";
-  if (start.type === "run_now") return "Run now";
+  if (start.type === "manual") return "Run now";
   return ROUTINE_TRIGGERS.find((trigger) => trigger.event === start.event)?.label ?? start.event;
 }
 
@@ -558,28 +558,28 @@ async function runDelete(args: string[]): Promise<number> {
 export interface WaitOptions {
   intervalMs?: number;
   timeoutMs?: number;
-  readRun?: (taskId: string, runId: string) => Promise<ToolCallResult>;
+  readRun?: (taskId: string, sessionId: string) => Promise<ToolCallResult>;
 }
 
 /** Polls routines.runs until the run leaves "running". Returns the run, or the error that stopped the wait. */
 export async function waitForRun(
   taskId: string,
-  runId: string,
+  sessionId: string,
   options: WaitOptions = {},
 ): Promise<{ run: RoutineRun } | { error: ErrorPayload }> {
   const intervalMs = options.intervalMs ?? WAIT_INTERVAL_MS;
   const timeoutMs = options.timeoutMs ?? WAIT_TIMEOUT_MS;
-  const readRun = options.readRun ?? ((task, run) => callPersonTool("routines.runs", { taskId: task, runId: run }));
+  const readRun = options.readRun ?? ((task, session) => callPersonTool("routines.runs", { taskId: task, sessionId: session }));
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const result = await readRun(taskId, runId);
+    const result = await readRun(taskId, sessionId);
     if (!result.ok) return { error: failurePayload(result) };
     const run = asRecord(result.output).run as RoutineRun | undefined;
     if (!run) return { error: errorPayload("malformed_response", "Unexpected answer from routines.runs.") };
     if (run.status !== "running") return { run };
     if (Date.now() >= deadline) {
       const minutes = Math.round(timeoutMs / 60_000);
-      return { error: errorPayload("wait_timeout", `Run ${runId} is still running after ${minutes} minutes. Check it with: draft routines runs ${taskId} --run-id ${runId}`) };
+      return { error: errorPayload("wait_timeout", `Run ${sessionId} is still running after ${minutes} minutes. Check it with: draft routines runs ${taskId} --session-id ${sessionId}`) };
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
@@ -597,26 +597,26 @@ async function runRun(args: string[]): Promise<number> {
   const result = await callTool(command, json, "routines.run", { taskId: id });
   if (typeof result === "number") return result;
   const output = asRecord(result.output);
-  const runId = typeof output.runId === "string" ? output.runId : null;
+  const sessionId = typeof output.sessionId === "string" ? output.sessionId : null;
   const queued = output.queued === true;
 
-  // A queued run has no run id yet, so there is nothing for --wait to follow.
+  // A queued run has no session id yet, so there is nothing for --wait to follow.
   if (!wait || queued) {
     if (json) printJsonLine(output);
     else if (queued) console.log("Queued: runs when the current run ends.");
-    else if (runId) console.log(`Started run ${runId} of ${id}. Check it with: draft routines runs ${id} --run-id ${runId}`);
+    else if (sessionId) console.log(`Started run ${sessionId} of ${id}. Check it with: draft routines runs ${id} --session-id ${sessionId}`);
     else console.log(`Started a run of ${id}.`);
     return EXIT_SUCCESS;
   }
-  if (!runId) return fail(command, json, errorPayload("run_id_missing", "The run started, but no run id came back, so --wait cannot follow it."));
-  if (!json) console.error(dim(`Waiting for run ${runId}...`));
+  if (!sessionId) return fail(command, json, errorPayload("session_id_missing", "The run started, but no session id came back, so --wait cannot follow it."));
+  if (!json) console.error(dim(`Waiting for run ${sessionId}...`));
 
-  const waited = await waitForRun(id, runId);
+  const waited = await waitForRun(id, sessionId);
   if ("error" in waited) return fail(command, json, waited.error);
   if (json) {
     printJsonLine({ run: waited.run });
   } else {
-    console.log(`Run ${runId}: ${waited.run.status}`);
+    console.log(`Run ${sessionId}: ${waited.run.status}`);
     const detail = waited.run.status === "skipped" ? waited.run.skipReason : waited.run.result;
     if (detail) console.log(detail);
   }
@@ -644,22 +644,22 @@ function formatRun(run: RoutineRun): string {
 
 async function runRuns(args: string[]): Promise<number> {
   const command = "draft routines runs";
-  const flags = parseFlags(args, { values: ["run-id", "cursor"], switches: ["transcript"] });
+  const flags = parseFlags(args, { values: ["session-id", "cursor"], switches: ["transcript"] });
   const json = flags.switches.has("json");
   if (flags.error) return usage(command, json, flags.error);
   const [id, ...extra] = flags.positionals;
-  const runsUsage = "usage: draft routines runs <id> [--cursor <c>] [--run-id <id> [--transcript [--cursor <n>]]] [--json]";
+  const runsUsage = "usage: draft routines runs <id> [--cursor <c>] [--session-id <id> [--transcript [--cursor <n>]]] [--json]";
   if (!id || extra.length) return usage(command, json, runsUsage);
 
-  const runId = flags.values["run-id"];
+  const sessionId = flags.values["session-id"];
   const transcript = flags.switches.has("transcript");
   const cursor = flags.values.cursor;
-  if (transcript && runId === undefined) return usage(command, json, "--transcript needs --run-id");
-  if (cursor !== undefined && runId !== undefined && !transcript) return usage(command, json, "--cursor with --run-id needs --transcript");
+  if (transcript && sessionId === undefined) return usage(command, json, "--transcript needs --session-id");
+  if (cursor !== undefined && sessionId !== undefined && !transcript) return usage(command, json, "--cursor with --session-id needs --transcript");
   if (cursor !== undefined && transcript && !/^\d+$/.test(cursor)) return usage(command, json, "a transcript --cursor is a whole number");
 
   const input: Record<string, unknown> = { taskId: id };
-  if (runId !== undefined) input.runId = runId;
+  if (sessionId !== undefined) input.sessionId = sessionId;
   if (transcript) input.transcript = true;
   if (cursor !== undefined) input.cursor = cursor;
   const result = await callTool(command, json, "routines.runs", input);
@@ -673,8 +673,8 @@ async function runRuns(args: string[]): Promise<number> {
   if (transcript) {
     const { lines, nextCursor } = (output.transcript ?? { lines: [], nextCursor: null }) as { lines: string[]; nextCursor: number | null };
     console.log(lines.length ? lines.join("\n") : "No transcript lines.");
-    if (nextCursor !== null) console.log(dim(`More: draft routines runs ${id} --run-id ${runId} --transcript --cursor ${nextCursor}`));
-  } else if (runId !== undefined) {
+    if (nextCursor !== null) console.log(dim(`More: draft routines runs ${id} --session-id ${sessionId} --transcript --cursor ${nextCursor}`));
+  } else if (sessionId !== undefined) {
     console.log(formatRun(output.run as RoutineRun));
   } else {
     const runs = (output.runs as RoutineRun[] | undefined) ?? [];
@@ -807,26 +807,26 @@ is queued: it starts when that run ends, and --wait does not wait for it.
             Checks every 5 seconds, for up to 30 minutes. Exits 1 if the run failed.
   --json    Print the answer as JSON. With --wait, prints { run }.
 
---wait is CLI-only. Over MCP, an agent polls routines.runs with the run id.
+--wait is CLI-only. Over MCP, an agent polls routines.runs with the session id.
 
 Examples:
   draft routines run <id>
   draft routines run <id> --wait`;
 
-const RUNS_HELP = `usage: draft routines runs <id> [--cursor <c>] [--run-id <id> [--transcript [--cursor <n>]]] [--json]
+const RUNS_HELP = `usage: draft routines runs <id> [--cursor <c>] [--session-id <id> [--transcript [--cursor <n>]]] [--json]
 
-Lists the newest runs, 50 at a time. Add --run-id to see one run, however old.
+Lists the newest runs, 50 at a time. Add --session-id to see one run, however old.
 
   --cursor <c>     Show older runs: pass the cursor printed after the last page.
-  --run-id <id>    Show one run.
-  --transcript     With --run-id: show what the agent did, a page at a time.
+  --session-id <id>  Show one run.
+  --transcript     With --session-id: show what the agent did, a page at a time.
                    --cursor <n> then starts at the transcript cursor from the last page.
   --json           Print the answer as JSON, including nextCursor.
 
 Examples:
   draft routines runs <id>
   draft routines runs <id> --cursor '<cursor from the last page>'
-  draft routines runs <id> --run-id <run-id> --transcript`;
+  draft routines runs <id> --session-id <session-id> --transcript`;
 
 const SUBCOMMANDS = new Map<string, { run: (args: string[]) => Promise<number>; help: string }>([
   ["list", { run: runList, help: LIST_HELP }],

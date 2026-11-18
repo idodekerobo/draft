@@ -11,7 +11,7 @@ function baseRow(overrides: Partial<SlackMessageRow>): SlackMessageRow {
   return {
     id: overrides.id ?? "unknown-id",
     workspace_id: WORKSPACE_ID,
-    source_connection_id: CONNECTION_ID,
+    connection_id: CONNECTION_ID,
     source_item_id: null,
     channel_id: CHANNEL_ID,
     channel_name_snapshot: "product",

@@ -2,31 +2,32 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
 import { ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
 import type { AgentRunSpec } from "draft-core/run-spec";
-import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
+import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { z } from "zod";
 import { recordError } from "../../../errors/record-error";
 import { countRunToolCalls } from "../../../people/limits";
 import { parseAgentRoutineConfig, type AgentRoutineConfig } from "../../../routines/config";
 import { loadParentRoutine, MAX_PENDING_AGENT_ONE_SHOTS, pendingAgentOneShots, ROUTINE_MAX_DEPTH, runMayManage, runVisibility, widerAccess, type RoutineAccess } from "../../../routines/run-creator";
 import { ROUTINE_CREATE_MAX_PER_RUN } from "../../../routines/run-spec";
-import { personCreator, type RoutineCreator } from "../../../schedules/creator";
-import type { ResolvedWhen } from "../../../schedules/when";
-import { MIN_RUN_MADE_CRON_GAP_SECONDS, minCronGapSeconds, resolveWhen } from "../../../schedules/when";
+import { personCreator, type RoutineCreator } from "../../../routines/creator";
+import type { ResolvedWhen } from "../../../routines/when";
+import { MIN_RUN_MADE_CRON_GAP_SECONDS, minCronGapSeconds, resolveWhen } from "../../../routines/when";
 import type { ScheduledTaskRow } from "../../../types/tables";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { createSlackTools } from "./slack";
 
-const scheduleService = () => import("../../../schedules/service");
+const scheduleService = () => import("../../../routines/service");
 const UUID = z.string().uuid();
 
 /** Who a tool call acts for. A run acts for its owner, the person it works for. A run with no owner works for the workspace. */
-type Actor =
+type RoutineCaller =
   | { type: "user"; userId: string; workspaceId: string; via: "app" | "cli" | "mcp" }
   | { type: "run"; run: AgentRunSpec; userId: string | null; workspaceId: string };
 
-function resolveActor(caller: ToolCaller): Actor {
-  if (caller.type === "run") return { type: "run", run: caller.run, userId: caller.run.onBehalfOf, workspaceId: caller.run.workspaceId };
-  return { type: "user", userId: caller.userId, workspaceId: caller.workspaceId, via: caller.via };
+function resolveRoutineCaller(caller: ToolCaller): RoutineCaller {
+  const { origin } = caller;
+  if (origin.kind === "run") return { type: "run", run: origin.run, userId: caller.onBehalfOf, workspaceId: caller.workspaceId };
+  return { type: "user", userId: origin.userId, workspaceId: caller.workspaceId, via: origin.via };
 }
 
 /** Where a failure is recorded. Only ids that exist are named, because the errors table checks them. */
@@ -34,11 +35,11 @@ interface Scope {
   scheduledTaskId?: string;
 }
 
-function scopeOf(actor: Actor): Scope {
+function scopeOf(actor: RoutineCaller): Scope {
   return actor.type === "run" && actor.run.trigger.type === "cron" ? { scheduledTaskId: actor.run.trigger.scheduledTaskId } : {};
 }
 
-const agentRunOf = (actor: Actor) => (actor.type === "run" ? actor.run.id : undefined);
+const agentRunOf = (actor: RoutineCaller) =>(actor.type === "run" ? actor.run.id : undefined);
 
 const noOwner = (action: string) => refuse("no_owner", `This run works for the whole workspace, not a person, so it can't ${action} routines.`);
 const RUN_CHANGE_SCOPE = "This run can only change routines it or its own runs created.";
@@ -125,7 +126,7 @@ async function optionalPart<T>(workspaceId: string, part: string, read: () => Pr
  * Saves a routine for a person, or for a run's owner. A run's guards run first, and the settings it leaves out
  * come from its routine. Model and effort are copied only when the harness is the routine's, since they belong to one harness.
  */
-async function createRoutine(client: SupabaseClient, actor: Actor, input: RoutineInput, scope: Scope, now: Date): Promise<ToolHandlerResult> {
+async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input: RoutineInput, scope: Scope, now: Date): Promise<ToolHandlerResult> {
   const owner = actor.userId;
   if (!owner) return noOwner("create");
   const run = actor.type === "run" ? actor.run : null;
@@ -148,7 +149,7 @@ async function createRoutine(client: SupabaseClient, actor: Actor, input: Routin
   const model = input.model !== undefined ? input.model : inherit?.model;
   const reasoningEffort = input.reasoningEffort !== undefined ? input.reasoningEffort : inherit && model === inherit.model ? inherit.reasoningEffort : undefined;
 
-  const { validateCreate } = await import("../../../schedules/validate-create");
+  const { validateCreate } = await import("../../../routines/validate-create");
   const checked = validateCreate({
     ...input,
     harness,
@@ -159,7 +160,7 @@ async function createRoutine(client: SupabaseClient, actor: Actor, input: Routin
     github: input.github ?? from?.github,
   });
   if (!checked.ok) return refuse("invalid_input", `Invalid routine field: ${checked.field}`);
-  const config = inherit?.environment ? { ...checked.config, environment: inherit.environment } : checked.config;
+  const config = inherit?.toolset ? { ...checked.config, toolset: inherit.toolset } : checked.config;
 
   const missing = await refuseMissingConnections(actor.workspaceId, routineProvidersForWhen(checked.when, config));
   if (missing) return missing;
@@ -187,10 +188,10 @@ async function createRoutine(client: SupabaseClient, actor: Actor, input: Routin
 
 export function createRoutineTools(client: SupabaseClient) {
   const list = defineTool({
-    name: "routines.list", mcp: true, callers: ["run", "user"], input: RoutineListFilter,
+    name: "routines.list", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: RoutineListFilter,
     description: "List the workspace's routines with their full settings: instructions, agent, schedule, triggers, Slack and GitHub access, last run. Pass taskId for one. missingConnections names triggers or access that can't work until that provider is connected. One-shots are hidden unless kind: \"once\". Filter with status and createdBy.",
     handler: async ({ caller, input }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       try {
         const routines = await (await scheduleService()).listRoutines(actor.workspaceId, actor.userId ?? undefined, input);
         if (!input.taskId) return { status: "ok", output: { routines } };
@@ -201,11 +202,11 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const options = defineTool({
-    name: "routines.options", mcp: true, callers: ["user"],
+    name: "routines.options", mcp: true, allowedOrigins: ["person"],
     input: z.object({}),
     description: "What a routine can be set to: triggers (and whether each one's provider is connected), schedule presets, agents and whether each can run, Slack channels and GitHub repos it can be given. Call before routines.create or update.",
     handler: async ({ caller }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       try {
         const svc = await scheduleService();
         const slackList = createSlackTools(client).find((tool) => tool.name === "slack.list_channels")!;
@@ -245,10 +246,10 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const create = defineTool({
-    name: "routines.create", mcp: true, callers: ["run", "user"], input: RoutineInput,
+    name: "routines.create", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: RoutineInput,
     description: "Create a routine: work Draft runs later. `when` is once (`{in:\"2h\"}` or `{at: ISO}`, at most 365 days ahead), a schedule (`{schedule:{preset…}|{cron,timezone}}`), events (`{events:[…]}`), or a schedule plus events. Use it for follow-ups ('check back in 2 hours') and for recurring work. `prompt` must be a self-contained brief: what to do, why, and what done means. The run that fires can't see this conversation. From a run, settings you leave out are copied from your routine. Call routines.options (people only) for presets and triggers. Answers with the saved routine.",
     handler: async ({ caller, input }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       const scope = scopeOf(actor);
       try {
         return await createRoutine(client, actor, input, scope, new Date());
@@ -257,10 +258,10 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const update = defineTool({
-    name: "routines.update", mcp: true, callers: ["run", "user"], input: z.object({ taskId: UUID, patch: RoutinePatch }),
+    name: "routines.update", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: z.object({ taskId: UUID, patch: RoutinePatch }),
     description: "Change a routine. Send only the fields to change. Send `when` to reschedule; a schedule is sent whole, e.g. `{schedule:{preset:'daily',time:'09:00',timezone:'UTC'}}`. A fired one-shot given a new `when` runs again. null turns Slack posting or GitHub access off; `when.events: []` removes every trigger. A run can change only routines its own runs made. Answers with the saved routine.",
     handler: async ({ caller, input }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       const scope = scopeOf(actor);
       try {
         const owner = actor.userId;
@@ -274,7 +275,7 @@ export function createRoutineTools(client: SupabaseClient) {
         // Only what this change adds is checked, so editing the title of a routine with a lost connection still works.
         const missing = await refuseMissingConnections(actor.workspaceId, routineProvidersForWhen(input.patch.when ?? {}, input.patch));
         if (missing) return missing;
-        const { validatePatch } = await import("../../../schedules/validate-patch");
+        const { validatePatch } = await import("../../../routines/validate-patch");
         const config = task.task.task_type === "agent_routine" ? parseAgentRoutineConfig(task.task.config_json) : null;
         const patch = validatePatch(input.patch, task.definition.editable, config);
         if (!patch.ok) return refuse(patch.error === "field_not_editable" ? "not_permitted" : "invalid_input", patch.field ?? "Invalid routine patch.");
@@ -302,10 +303,10 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const remove = defineTool({
-    name: "routines.delete", mcp: true, callers: ["run", "user"], destructive: true, input: z.object({ taskId: UUID }),
+    name: "routines.delete", mcp: true, allowedOrigins: ["person", ...ANY_RUN], destructive: true, input: z.object({ taskId: UUID }),
     description: "Delete a routine. Confirm with the person first. Its past runs stay readable in the app. A run can delete only routines its own runs made.",
     handler: async ({ caller, input }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       const scope = scopeOf(actor);
       try {
         const owner = actor.userId;
@@ -322,10 +323,10 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const run = defineTool({
-    name: "routines.run", mcp: true, callers: ["run", "user"], input: z.object({ taskId: UUID }),
-    description: "Start a run of a routine now. Answers with the run's id; poll routines.runs with that runId for its status and result. If a run is already in progress, this run is queued: it starts when that run ends, and the answer has queued: true and no runId.",
+    name: "routines.run", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: z.object({ taskId: UUID }),
+    description: "Start a run of a routine now. Answers with the run's session id; poll routines.runs with that sessionId for its status and result. If a run is already in progress, this run is queued: it starts when that run ends, and the answer has queued: true and no sessionId.",
     handler: async ({ caller, input }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       try {
         const owner = actor.userId;
         if (!owner) return noOwner("run");
@@ -341,10 +342,10 @@ export function createRoutineTools(client: SupabaseClient) {
           }
         }
         const outcome = await svc.runRoutineNow(actor.workspaceId, input.taskId, owner);
-        if (outcome.status === "queued") return { status: "ok", output: { runId: null, queued: true, message: "Queued. It runs when the current run ends." } };
+        if (outcome.status === "queued") return { status: "ok", output: { sessionId: null, queued: true, message: "Queued. It runs when the current run ends." } };
         if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return refuse("codex_login_busy", "Another Codex run is using the login. Try again when it finishes.");
         if (outcome.status === "failed") return refuse(outcome.code, "The routine could not start.");
-        return { status: "ok", output: { runId: outcome.sessionId, outcome } };
+        return { status: "ok", output: { sessionId: outcome.sessionId, outcome } };
       } catch (error) {
         if (error instanceof Error && error.message === "not_found") return refuse("not_found", "Routine not found.");
         return runError(error, actor.workspaceId, "routines.run", input.taskId, agentRunOf(actor));
@@ -353,33 +354,33 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const runs = defineTool({
-    name: "routines.runs", mcp: true, callers: ["run", "user"],
+    name: "routines.runs", mcp: true, allowedOrigins: ["person", ...ANY_RUN],
     input: z.object({
       taskId: UUID,
-      runId: UUID.optional().describe("One run, however old. Omit for the newest runs."),
-      cursor: z.string().max(200).optional().describe("Without runId: the nextCursor of the previous page, for older runs. With transcript: the transcript's nextCursor."),
-      transcript: z.boolean().optional().describe("With runId: include the run's transcript, a page at a time."),
+      sessionId: UUID.optional().describe("The session id of one run, however old. Omit for the newest runs."),
+      cursor: z.string().max(200).optional().describe("Without sessionId: the nextCursor of the previous page, for older runs. With transcript: the transcript's nextCursor."),
+      transcript: z.boolean().optional().describe("With sessionId: include the run's transcript, a page at a time."),
     }),
-    description: "A routine's runs, newest first, 50 at a time: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. Pass nextCursor back as cursor for older runs. Pass runId for one run; add transcript: true for what the agent did, in pages.",
+    description: "A routine's runs, newest first, 50 at a time: status, what started it (schedule, Run now or an event), result, and why a skipped run was skipped. Pass nextCursor back as cursor for older runs. Pass sessionId for one run; add transcript: true for what the agent did, in pages.",
     handler: async ({ caller, input }) => {
-      const actor = resolveActor(caller);
+      const actor = resolveRoutineCaller(caller);
       try {
         const svc = await scheduleService();
-        if (!input.runId) {
+        if (!input.sessionId) {
           const { parseCursor } = await import("../../../activity/service");
           const before = parseCursor(input.cursor);
           if (before === "invalid") return refuse("invalid_cursor", "That cursor isn't one this tool returned. Pass nextCursor from the previous page.");
           const page = await svc.listRoutineRuns(actor.workspaceId, input.taskId, { before, viewerId: actor.userId });
           return page ? { status: "ok", output: page } : refuse("not_found", "Routine not found.");
         }
-        const page = await svc.listRoutineRuns(actor.workspaceId, input.taskId, { runId: input.runId, viewerId: actor.userId });
+        const page = await svc.listRoutineRuns(actor.workspaceId, input.taskId, { sessionId: input.sessionId, viewerId: actor.userId });
         if (!page) return refuse("not_found", "Routine not found.");
         const one = page.runs[0];
         if (!one) return refuse("not_found", "Run not found for this routine.");
         if (!input.transcript) return { status: "ok", output: { run: one } };
         const cursor = input.cursor ? Number(input.cursor) : 0;
         if (!Number.isInteger(cursor) || cursor < 0) return refuse("invalid_cursor", "A transcript cursor is the nextCursor number from the previous page.");
-        const { readRunTranscript } = await import("../../../schedules/routine-run-detail");
+        const { readRunTranscript } = await import("../../../routines/run-detail");
         return { status: "ok", output: { run: one, transcript: await readRunTranscript(client, actor.workspaceId, one.id, cursor) } };
       } catch (error) { return runError(error, actor.workspaceId, "routines.runs", undefined, agentRunOf(actor)); }
     },

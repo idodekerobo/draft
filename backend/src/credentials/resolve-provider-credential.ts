@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CredentialError, decryptCredentialPayload } from "./crypto";
-import type { SourceConnectionProvider } from "../types/enums";
+import type { CredentialSecretRow } from "./harness-credential";
+import type { ConnectionProvider } from "../types/enums";
 
 export interface FirefliesProviderCredential {
   api_token: string;
@@ -23,7 +24,7 @@ export interface GranolaProviderCredential {
   webhook_endpoint_id: string;
 }
 
-export type ProviderCredential<P extends SourceConnectionProvider> = P extends "fireflies"
+export type ProviderCredential<P extends ConnectionProvider> = P extends "fireflies"
   ? FirefliesProviderCredential
   : P extends "slack"
     ? SlackProviderCredential
@@ -33,23 +34,15 @@ export type ProviderCredential<P extends SourceConnectionProvider> = P extends "
         ? GranolaProviderCredential
         : string;
 
-interface SourceConnectionCredentialRow {
+interface ConnectionCredentialRow {
   id: string;
   credential_id: string | null;
   status: string;
 }
 
-interface CredentialSecretRow {
-  id: string;
-  status: string;
-  expires_at: string | null;
-  encrypted_payload: unknown;
-  encryption_key_version: string;
-}
+const NAMED_SECRET_PROVIDERS = new Set<ConnectionProvider>(["fireflies", "slack", "linear", "granola"]);
 
-const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack", "linear", "granola"]);
-
-async function resolveCredentialById<P extends SourceConnectionProvider>(
+async function resolveCredentialById<P extends ConnectionProvider>(
   workspaceId: string,
   provider: P,
   credentialId: string,
@@ -109,7 +102,7 @@ async function resolveCredentialById<P extends SourceConnectionProvider>(
   }
 }
 
-export async function resolveProviderCredentialById<P extends SourceConnectionProvider>(
+export async function resolveProviderCredentialById<P extends ConnectionProvider>(
   workspaceId: string,
   provider: P,
   credentialId: string,
@@ -119,9 +112,9 @@ export async function resolveProviderCredentialById<P extends SourceConnectionPr
   return resolveCredentialById(workspaceId, provider, credentialId, db);
 }
 
-// Assumes one active source_connection per (workspaceId, provider). Named-secret
+// Assumes one active connection per (workspaceId, provider). Named-secret
 // providers store encrypted_payload as a JSON object rather than one string.
-export async function resolveProviderCredential<P extends SourceConnectionProvider>(
+export async function resolveProviderCredential<P extends ConnectionProvider>(
   workspaceId: string,
   provider: P,
   client?: SupabaseClient,
@@ -129,14 +122,14 @@ export async function resolveProviderCredential<P extends SourceConnectionProvid
   const db = client ?? (await import("../db/client")).serviceClient;
 
   const { data: connectionData, error: connectionError } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, credential_id, status")
     .eq("workspace_id", workspaceId)
     .eq("provider", provider)
     .maybeSingle();
   if (connectionError) throw connectionError;
 
-  const connection = connectionData as SourceConnectionCredentialRow | null;
+  const connection = connectionData as ConnectionCredentialRow | null;
   if (!connection || !connection.credential_id) {
     throw new CredentialError(
       `Workspace ${workspaceId} has no ${provider} source connection with a credential configured`,

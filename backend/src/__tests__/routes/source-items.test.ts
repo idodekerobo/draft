@@ -15,7 +15,7 @@ interface SourceConnection {
 interface SourceItem {
   id: string;
   workspace_id: string;
-  source_connection_id: string;
+  connection_id: string;
   external_id: string;
   external_version: string;
   content_hash: string;
@@ -38,7 +38,7 @@ function createFakeClient() {
       }
 
       const execute = async () => {
-        if (table === "source_connections") {
+        if (table === "connections") {
           if (operation === "upsert") {
             const existing = state.connections.find((row) => row.workspace_id === payload.workspace_id && row.provider === payload.provider);
             if (existing) {
@@ -88,7 +88,7 @@ function createFakeClient() {
       const row: SourceItem = {
         id: `item-${++nextId}`,
         workspace_id: params.p_workspace_id as string,
-        source_connection_id: params.p_source_connection_id as string,
+        connection_id: params.p_connection_id as string,
         external_id: externalId,
         external_version: params.p_external_version as string,
         content_hash: params.p_content_hash as string,

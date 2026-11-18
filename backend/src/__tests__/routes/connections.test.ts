@@ -33,7 +33,7 @@ interface Credential {
 interface ScheduledTask {
   id?: string;
   workspace_id: string;
-  source_connection_id?: string;
+  connection_id?: string;
   task_type: string;
   task_key: string;
   enabled: boolean;
@@ -89,7 +89,7 @@ function createFakeClient() {
         && notNullFilters.every((key) => (row as Record<string, unknown>)[key] != null);
 
       const execute = async () => {
-        if (table === "source_connections") {
+        if (table === "connections") {
           if (operation === "select") {
             const rows = state.connections.filter(rowMatches).map((row) => ({ ...row }));
             return { data: returnSingle ? rows[0] ?? null : rows, error: null };
@@ -362,7 +362,7 @@ function createFakeClient() {
         };
       }
 
-      if (functionName === "disconnect_source_connection") {
+      if (functionName === "disconnect_connection") {
         if (disconnectRpcError) return { data: null, error: disconnectRpcError };
         const accountKind = params.p_account_kind as string | null | undefined;
         const connection = state.connections.find((candidate) =>
@@ -385,7 +385,7 @@ function createFakeClient() {
         connection.status = "revoked";
         for (const task of state.scheduledTasks) {
           if (task.workspace_id === connection.workspace_id &&
-              (task.source_connection_id === connection.id || task.task_key === connection.id)) {
+              (task.connection_id === connection.id || task.task_key === connection.id)) {
             task.enabled = false;
           }
         }
@@ -750,7 +750,7 @@ beforeEach(() => {
   state.scheduledTasks = [
     {
       workspace_id: workspaceId,
-      source_connection_id: "slack-connection",
+      connection_id: "slack-connection",
       task_type: "ingest_source",
       task_key: "slack-connection",
       enabled: true,
@@ -1531,7 +1531,7 @@ describe("workspace connection routes", () => {
     });
   });
 
-  it("stores a claude_code token as a workspace-level credential, not a source_connections row", async () => {
+  it("stores a claude_code token as a workspace-level credential, not a connections row", async () => {
     const response = await routeModule.POST(
       request("POST", { id: workspaceId }, { provider: "claude_code", token: "sk-ant-oat01-token" }) as never,
     );

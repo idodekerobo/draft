@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
 import { getPendingSynthesisSourceItemIds } from "./get-pending-source-items";
 import { MAX_FAST_RETRIES, retryPlan } from "./handle-run-failure";

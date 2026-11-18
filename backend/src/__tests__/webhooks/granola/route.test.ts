@@ -156,7 +156,7 @@ describe("POST /webhooks/granola/:connectionKey", () => {
     expect(fired).toEqual([
       {
         workspaceId: "ws-1",
-        sourceConnectionId: "conn-1",
+        connectionId: "conn-1",
         name: "granola.note_ready",
         eventId: "not_123",
         sourceItemId: "item-1",

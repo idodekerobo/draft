@@ -11,6 +11,7 @@
     "./live-sessions":        "./src/live-sessions.ts",
     "./harnesses":            "./src/harnesses/index.ts",
     "./harnesses/*":          "./src/harnesses/*.ts",
+    "./host/*":               "./src/host/*.ts",
     "./run-spec":             "./src/run-spec.ts",
     "./routines":             "./src/routines.ts",
     "./routine-triggers":     "./src/routine-triggers.ts",

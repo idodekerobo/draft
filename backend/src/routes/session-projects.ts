@@ -65,7 +65,7 @@ export const GET = withAuth<SessionProjectsRequest>(async (req, caller) => {
       .in("session_project_id", projectIds),
     // TODO: aggregate in SQL if a workspace's session volume makes this scan slow.
     serviceClient
-      .from("agent_sessions")
+      .from("captured_sessions")
       .select("session_project_id, user_id, contributor_id, started_at")
       .eq("workspace_id", workspaceId)
       .in("session_project_id", projectIds)

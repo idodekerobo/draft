@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CredentialError, resolveProviderCredential } from "../../credentials/resolve-provider-credential";
-import type { SourceConnectionRow } from "../../types/tables";
+import type { ConnectionRow } from "../../types/tables";
 import { readBoundedBody } from "../shared/read-bounded-body";
 import type { LinearWebhookPayload } from "../../ingestion/linear/normalize";
 
@@ -12,7 +12,7 @@ export interface AuthenticateLinearWebhookRequestOptions {
 }
 
 export interface AuthenticatedLinearWebhookRequest {
-  connection: Pick<SourceConnectionRow, "id" | "workspace_id">;
+  connection: Pick<ConnectionRow, "id" | "workspace_id">;
   payload: LinearWebhookPayload;
 }
 
@@ -106,7 +106,7 @@ export async function authenticateLinearWebhookRequest(
   const maximum = options.maxBodyBytes ?? DEFAULT_LINEAR_WEBHOOK_BODY_LIMIT_BYTES;
 
   const { data, error } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id")
     .eq("connection_key", connectionKey)
     .eq("provider", "linear")
@@ -114,7 +114,7 @@ export async function authenticateLinearWebhookRequest(
     .maybeSingle();
   if (error) reject("Linear webhook connection lookup failed");
 
-  const connection = data as Pick<SourceConnectionRow, "id" | "workspace_id"> | null;
+  const connection = data as Pick<ConnectionRow, "id" | "workspace_id"> | null;
   if (!connection) {
     reject(`Linear webhook has no matching connection for key "${connectionKey}"`);
   }

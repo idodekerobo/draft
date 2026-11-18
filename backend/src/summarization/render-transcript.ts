@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AgentMessageRow } from "../types/tables";
+import type { CapturedSessionMessageRow } from "../types/tables";
 
 // Conservative cap: keeps a transcript well within what fits in a single
 // `claude -p` prompt alongside the shared template and instructions.
 export const MAX_TRANSCRIPT_CHARS = 60_000;
 
-function renderTurns(messages: Pick<AgentMessageRow, "role" | "content">[]): string {
+function renderTurns(messages: Pick<CapturedSessionMessageRow, "role" | "content">[]): string {
   return messages
     .map((message) => `## ${message.role}\n\n${message.content}`)
     .join("\n\n");
@@ -27,12 +27,12 @@ export async function renderSessionTranscript(
   client: SupabaseClient,
 ): Promise<string> {
   const { data, error } = await client
-    .from("agent_messages")
+    .from("captured_session_messages")
     .select("role, content")
-    .eq("session_id", sessionId)
+    .eq("captured_session_id", sessionId)
     .eq("workspace_id", workspaceId)
     .order("seq", { ascending: true });
   if (error) throw error;
-  const messages = (data ?? []) as Pick<AgentMessageRow, "role" | "content">[];
+  const messages = (data ?? []) as Pick<CapturedSessionMessageRow, "role" | "content">[];
   return truncateTranscriptFromFront(renderTurns(messages));
 }

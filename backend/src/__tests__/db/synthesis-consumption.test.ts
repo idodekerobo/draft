@@ -6,7 +6,7 @@ const { describeWithDatabase, db, createWorkspace } = setupDbIntegrationTest("sy
 
 async function createConnection(workspaceId: string): Promise<string> {
   const [connection] = await db()<[{ id: string }]>`
-    insert into source_connections (workspace_id, provider, connection_key, status)
+    insert into connections (workspace_id, provider, connection_key, status)
     values (${workspaceId}, 'slack', ${randomUUID()}, 'active')
     returning id
   `;
@@ -31,7 +31,7 @@ async function insertSourceItem(
   } = options;
   const [row] = await db()<[{ id: string }]>`
     insert into source_items (
-      workspace_id, source_connection_id, item_type, external_id, external_version,
+      workspace_id, connection_id, item_type, external_id, external_version,
       lifecycle_status, occurred_at, content_markdown, content_hash
     ) values (
       ${workspaceId}, ${connectionId}, 'message', ${randomUUID()}, ${externalVersion},
@@ -71,7 +71,7 @@ async function createSynthesisRun(
       prompt_version, status, outcome
     ) values (
       ${workspaceId}, 'synthesis', '{"type": "system", "reason": "manual"}'::jsonb,
-      '{"type": "cloud", "environment": {"nativeTools": [], "mcpServers": [], "skills": [], "instructions": []}}'::jsonb,
+      '{"type": "cloud", "toolset": {"nativeTools": [], "mcpServers": [], "skills": [], "instructions": []}}'::jsonb,
       'claude', ${randomUUID()}, ${baseContextVersionId},
       'v1', ${status}, ${outcome}
     )

@@ -1,0 +1,543 @@
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import * as queryLog from "../../observability/record-query-log";
+
+const caller = { userId: "user-1", accessToken: "token-1" };
+let accessResult: Response | null = null;
+let runsError: { message: string } | null = null;
+let updateError: { message: string } | null = null;
+let errorRows: Row[] = [];
+let usersError: { message: string } | null = null;
+const logged: Array<{ command: string }> = [];
+
+type Row = Record<string, unknown>;
+let tables: Record<string, Row[]> = {};
+
+function queryBuilder(table: string) {
+  const eqs: [string, unknown][] = [];
+  const ins: [string, unknown[]][] = [];
+  const nulls: string[] = [];
+  let updatePayload: Row | undefined;
+
+  const matches = () =>
+    (tables[table] ?? []).filter(
+      (row) =>
+        eqs.every(([col, v]) => row[col] === v) &&
+        ins.every(([col, vs]) => vs.includes(row[col])) &&
+        nulls.every((col) => (row[col] ?? null) === null),
+    );
+
+  const builder = {
+    select: () => builder,
+    update: (payload: Row) => {
+      updatePayload = payload;
+      return builder;
+    },
+    eq: (col: string, value: unknown) => {
+      eqs.push([col, value]);
+      return builder;
+    },
+    is: (col: string) => {
+      nulls.push(col);
+      return builder;
+    },
+    in: (col: string, values: unknown[]) => {
+      ins.push([col, values]);
+      return builder;
+    },
+    insert: async (payload: Row) => {
+      if (table === "errors") errorRows.push(payload);
+      return { data: null, error: null };
+    },
+    order: () => builder,
+    limit: () => builder,
+    single: () => builder.maybeSingle(),
+    async maybeSingle() {
+      if (updatePayload) {
+        if (updateError) return { data: null, error: updateError };
+        const row = matches()[0];
+        if (!row) return { data: null, error: null };
+        Object.assign(row, updatePayload);
+        return { data: row, error: null };
+      }
+      return { data: matches()[0] ?? null, error: null };
+    },
+    then(resolve: (value: unknown) => unknown) {
+      if (table === "agent_runs" && runsError) return resolve({ data: null, error: runsError });
+      if (table === "users" && usersError) return resolve({ data: null, error: usersError });
+      return resolve({ data: matches(), error: null });
+    },
+  };
+  return builder;
+}
+
+mock.module("../../auth/withAuth", () => ({
+  withAuth: (handler: (request: Request, authenticatedCaller: typeof caller) => unknown) =>
+    (request: Request) => handler(request, caller),
+}));
+mock.module("../../auth/workspace-access", () => ({
+  assertWorkspaceAccess: async () => accessResult,
+}));
+mock.module("../../db/client", () => ({
+  serviceClient: { from: (table: string) => queryBuilder(table) },
+}));
+
+const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
+  async (_client: unknown, input: { command: string }) => {
+    logged.push(input);
+  },
+);
+afterAll(() => queryLogSpy.mockRestore());
+
+const routeModule = await import("../../routes/routines");
+const schedulesService = await import("../../routines/service");
+
+function task(overrides: Row): Row {
+  return {
+    id: "task-1",
+    workspace_id: "ws-1",
+    connection_id: null,
+    task_type: "synthesize_workspace",
+    task_key: "ws-1",
+    schedule_kind: "cron",
+    cron_expression: "0 0,4,8,9-18,22 * * *",
+    interval_seconds: null,
+    timezone: "UTC",
+    enabled: true,
+    config_json: {},
+    next_due_at: "2026-10-04T10:00:00.000Z",
+    deleted_at: null,
+    last_enqueued_at: "2026-10-04T09:00:00.000Z",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    updated_by_user_id: null,
+    created_by_user_id: null,
+    ...overrides,
+  };
+}
+
+function get(workspaceId = "ws-1", headers?: Record<string, string>, search = "") {
+  return routeModule.GET(
+    Object.assign(new Request(`http://internal.test${search}`, { headers }), { params: { id: workspaceId } }) as never,
+  );
+}
+
+function patch(taskId: string, body: unknown, workspaceId = "ws-1") {
+  return routeModule.PATCH(
+    Object.assign(new Request("http://internal.test", { method: "PATCH", body: JSON.stringify(body) }), {
+      params: { id: workspaceId, taskId },
+    }) as never,
+  );
+}
+
+function remove(taskId: string, workspaceId = "ws-1") {
+  return routeModule.DELETE(
+    Object.assign(new Request("http://internal.test", { method: "DELETE" }), {
+      params: { id: workspaceId, taskId },
+    }) as never,
+  );
+}
+
+const routineConfig = { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: null };
+
+describe("schedules routes", () => {
+  beforeEach(() => {
+    accessResult = null;
+    runsError = null;
+    updateError = null;
+    errorRows = [];
+    usersError = null;
+    logged.length = 0;
+    tables = {
+      scheduled_tasks: [
+        task({}),
+        task({ id: "task-2", task_type: "summarize_sessions", task_key: "ws-1", cron_expression: "0 3 * * *" }),
+        task({ id: "task-3", task_type: "slack_backfill", task_key: "conn-1", connection_id: "conn-1" }),
+        task({
+          id: "task-4",
+          task_type: "ingest_source",
+          task_key: "conn-1",
+          connection_id: "conn-1",
+          schedule_kind: "interval",
+          cron_expression: null,
+          interval_seconds: 3600,
+        }),
+        task({ id: "task-other", workspace_id: "ws-2" }),
+        task({ id: "task-agent", task_type: "agent_routine", task_key: "key-1", config_json: routineConfig, created_by_user_id: "user-1" }),
+        task({ id: "task-gone", task_type: "agent_routine", task_key: "key-2", config_json: routineConfig, deleted_at: "2026-10-30T00:00:00.000Z", enabled: false }),
+      ],
+      credentials: [],
+      workspaces: [{ id: "ws-1", inference_credential_id: null }],
+      sessions: [],
+      connections: [
+        { id: "conn-1", workspace_id: "ws-1", provider: "slack", status: "active", display_name: "Acme Slack" },
+      ],
+      agent_runs: [
+        {
+          workspace_id: "ws-1",
+          kind: "synthesis",
+          status: "succeeded",
+          outcome: "changed",
+          completed_at: "2026-10-04T08:05:00.000Z",
+        },
+      ],
+      users: [{ id: "user-1", display_name: "Ido", email: "ido@example.com" }],
+    };
+    spyOn(console, "log").mockImplementation(() => {});
+    spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  describe("GET", () => {
+    it("lists routines, hides one-time backfills, and attaches the synthesis result", async () => {
+      const response = await get();
+      const body = (await response.json()) as { routines: Row[]; canEdit: boolean };
+      expect(response.status).toBe(200);
+      expect(body.canEdit).toBe(true);
+      expect(body.routines.map((r) => r.id)).toEqual(["task-1", "task-2", "task-4", "task-agent"]);
+
+      const [synthesis, sessions, slack] = body.routines;
+      expect(synthesis).toMatchObject({
+        preset: "draft_default",
+        editable: "full",
+        lastRun: { status: "succeeded", outcome: "changed" },
+      });
+      expect(sessions).toMatchObject({ preset: "daily", time: "03:00", lastRun: null });
+      expect(slack).toMatchObject({ editable: "toggle_only", connectionLabel: "Slack", needsReconnect: false });
+    });
+
+    it("exposes cron for cron rows and intervalSeconds for interval rows", async () => {
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines[1]).toMatchObject({ cron: "0 3 * * *", intervalSeconds: null });
+      expect(body.routines[2]).toMatchObject({ cron: null, intervalSeconds: 3600 });
+    });
+
+    it("logs agent reads but not browser reads", async () => {
+      await get();
+      expect(logged.map((l) => l.command)).toEqual(["routines.list"]);
+      logged.length = 0;
+      await get("ws-1", { origin: "https://app.example.com" });
+      expect(logged).toEqual([]);
+    });
+
+    it("does not log reads from the desktop app or the web server's prefetch", async () => {
+      await get("ws-1", { "x-draft-client": "desktop" });
+      await get("ws-1", { "x-draft-client": "web" });
+      expect(logged).toEqual([]);
+    });
+
+    it("flags a disconnected Slack connection", async () => {
+      tables.connections![0]!.status = "revoked";
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines.find((r) => r.id === "task-4")).toMatchObject({ needsReconnect: true });
+    });
+
+    it("keeps the list when the run lookup fails, and records it", async () => {
+      runsError = { message: "boom" };
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines).toHaveLength(4);
+      expect(body.routines[0]).toMatchObject({ lastRun: null });
+      await Bun.sleep(10);
+      expect(errorRows).toHaveLength(1);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", operation: "read" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_last_run_failed" });
+    });
+
+    it("keeps the list when the editor name lookup fails, and records it", async () => {
+      tables.scheduled_tasks![1]!.updated_by_user_id = "user-1";
+      usersError = { message: "boom" };
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines[1]).toMatchObject({ updatedByName: null });
+      await Bun.sleep(10);
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_editor_names_failed" });
+    });
+
+    it("shows an unparseable or interval schedule as custom/managed", async () => {
+      tables.scheduled_tasks![1]!.cron_expression = "every day";
+      const body = (await (await get()).json()) as { routines: Row[] };
+      expect(body.routines[1]).toMatchObject({ preset: "custom" });
+      expect(body.routines[2]).toMatchObject({ scheduleDescription: "Every hour" });
+    });
+
+    it("returns an empty list for a workspace with no rows", async () => {
+      tables.scheduled_tasks = [];
+      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true, connectedProviders: ["slack"], agents: { claude: "not_connected", codex: "not_connected" } });
+    });
+
+    it("passes through an access denial", async () => {
+      accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+      expect((await get()).status).toBe(403);
+    });
+
+    describe("list filters in the query string", () => {
+      beforeEach(() => {
+        tables.scheduled_tasks!.push(
+          task({ id: "task-once-upcoming", task_type: "agent_routine", task_key: "key-once-1", config_json: routineConfig, schedule_kind: "once", cron_expression: null, run_at: "2026-12-01T09:00:00.000Z", fired_at: null, created_by_user_id: "user-1" }),
+          task({ id: "task-once-fired", task_type: "agent_routine", task_key: "key-once-2", config_json: routineConfig, schedule_kind: "once", cron_expression: null, run_at: "2026-11-01T09:00:00.000Z", fired_at: "2026-11-01T09:00:02.000Z", created_by_user_id: "user-2" }),
+        );
+      });
+
+      async function listedIds(search: string): Promise<string[]> {
+        const response = await get("ws-1", undefined, search);
+        expect(response.status).toBe(200);
+        return ((await response.json()) as { routines: Row[] }).routines.map((r) => r.id as string).sort();
+      }
+
+      it("hides one-shots unless kind is once, and keeps the default list unchanged", async () => {
+        expect(await listedIds("")).toEqual(["task-1", "task-2", "task-4", "task-agent"]);
+        expect(await listedIds("?kind=once")).toEqual(["task-once-fired", "task-once-upcoming"]);
+      });
+
+      it("filters one-shots by upcoming or fired", async () => {
+        expect(await listedIds("?kind=once&status=upcoming")).toEqual(["task-once-upcoming"]);
+        expect(await listedIds("?kind=once&status=fired")).toEqual(["task-once-fired"]);
+      });
+
+      it("filters by who made the routine", async () => {
+        expect(await listedIds("?kind=once&createdBy=me")).toEqual(["task-once-upcoming"]);
+        expect(await listedIds("?createdBy=me")).toEqual(["task-agent"]);
+      });
+
+      it("refuses a filter value the list does not take, without recording an error", async () => {
+        const response = await get("ws-1", undefined, "?kind=weekly");
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: "invalid_filter", field: "kind" });
+        await Bun.sleep(10);
+        expect(errorRows).toEqual([]);
+      });
+    });
+  });
+
+  describe("PATCH", () => {
+    it("toggles enabled and records the editor", async () => {
+      const response = await patch("task-2", { enabled: false });
+      expect(response.status).toBe(200);
+      expect(tables.scheduled_tasks![1]).toMatchObject({ enabled: false, updated_by_user_id: "user-1" });
+      expect(await response.json()).toMatchObject({ enabled: false, nextRunAt: null, updatedByName: "Ido" });
+    });
+
+    it("rebuilds cron and next_due_at when the schedule changes", async () => {
+      const response = await patch("task-2", { when: { schedule: { preset: "daily", time: "07:30", timezone: "Europe/London" } } });
+      expect(response.status).toBe(200);
+      expect(tables.scheduled_tasks![1]).toMatchObject({
+        cron_expression: "30 7 * * *",
+        timezone: "Europe/London",
+        schedule_kind: "cron",
+      });
+      expect(new Date(tables.scheduled_tasks![1]!.next_due_at as string).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("recomputes next_due_at when a stale paused row is enabled", async () => {
+      Object.assign(tables.scheduled_tasks![0]!, { enabled: false, next_due_at: "2025-01-01T00:00:00.000Z" });
+      expect((await patch("task-1", { enabled: true })).status).toBe(200);
+      expect(new Date(tables.scheduled_tasks![0]!.next_due_at as string).getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("restores the Draft default exactly", async () => {
+      await patch("task-1", { when: { schedule: { preset: "hourly", timezone: "UTC" } } });
+      await patch("task-1", { when: { schedule: { preset: "draft_default" } } });
+      expect(tables.scheduled_tasks![0]).toMatchObject({
+        cron_expression: "0 0,4,8,9-18,22 * * *",
+        timezone: "UTC",
+      });
+    });
+
+    it("rejects raw cron and unknown fields", async () => {
+      const response = await patch("task-1", { cron_expression: "* * * * *" });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "invalid_body", field: "cron_expression" });
+    });
+
+    it("rejects a when on a toggle-only routine", async () => {
+      const response = await patch("task-4", { when: { schedule: { preset: "hourly" } } });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "field_not_editable", field: "when" });
+      expect((await patch("task-4", { enabled: false })).status).toBe(200);
+    });
+
+    it("rejects bad time, timezone, and weekday", async () => {
+      expect((await patch("task-1", { when: { schedule: { preset: "daily", time: "99:99" } } })).status).toBe(400);
+      expect((await patch("task-1", { when: { schedule: { preset: "daily", time: "09:00", timezone: "Nope/Nope" } } })).status).toBe(400);
+      expect((await patch("task-1", { when: { schedule: { preset: "weekly", time: "09:00", weekday: "someday" } } })).status).toBe(400);
+    });
+
+    it("answers with the refusal code, message and field for a time too far ahead", async () => {
+      const response = await patch("task-agent", { when: { at: "2030-01-01T00:00:00.000Z" } });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "too_far_ahead",
+        field: "at",
+        message: "A routine can be set at most 365 days ahead. You asked for 2030-01-01T00:00:00.000Z.",
+      });
+    });
+
+    it("refuses a once on a repeating routine, and says why", async () => {
+      const response = await patch("task-agent", { when: { in: "1h" } });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "invalid_schedule",
+        field: "when",
+        message: "A routine can't change between once and repeating.",
+      });
+    });
+
+    it("returns 400 and records the task when a stored schedule cannot be parsed on enable", async () => {
+      Object.assign(tables.scheduled_tasks![1]!, { enabled: false, cron_expression: "not a cron" });
+      const response = await patch("task-2", { enabled: true });
+      expect(response.status).toBe(400);
+      await Bun.sleep(10);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", scheduled_task_id: "task-2", operation: "scheduling" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_invalid_stored_cron" });
+    });
+
+    it("returns 404 for another workspace's task and for backfill rows", async () => {
+      expect((await patch("task-other", { enabled: false })).status).toBe(404);
+      expect((await patch("task-3", { enabled: false })).status).toBe(404);
+    });
+
+    it("returns 500 and leaves the caller to roll back when the update fails, and records it", async () => {
+      updateError = { message: "db down" };
+      expect((await patch("task-2", { enabled: false })).status).toBe(500);
+      await Bun.sleep(10);
+      expect(errorRows.map((row) => (row.detail_json as Row).code)).toContain("routine_update_failed");
+    });
+
+    it("edits the prompt and title of an agent routine and keeps the rest of its config", async () => {
+      const response = await patch("task-agent", { title: "Monday digest", prompt: "Summarize Monday." });
+      expect(response.status).toBe(200);
+      expect(tables.scheduled_tasks!.find((row) => row.id === "task-agent")).toMatchObject({
+        config_json: { title: "Monday digest", prompt: "Summarize Monday.", harness: "claude", model: null },
+        updated_by_user_id: "user-1",
+      });
+      expect(await response.json()).toMatchObject({ title: "Monday digest", agent: { prompt: "Summarize Monday." } });
+    });
+
+    it("rejects an empty prompt and a model that the harness does not have", async () => {
+      expect(await (await patch("task-agent", { prompt: "  " })).json()).toMatchObject({ error: "invalid_body", field: "prompt" });
+      expect(await (await patch("task-agent", { model: "not-a-model" })).json()).toMatchObject({ error: "invalid_body", field: "model" });
+    });
+
+    it("rejects agent fields on a built-in routine", async () => {
+      const response = await patch("task-1", { prompt: "Do something else." });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: "field_not_editable", field: "prompt" });
+    });
+
+    it("refuses to switch to Codex when Codex is not connected, and leaves the routine as it was", async () => {
+      const response = await patch("task-agent", { harness: "codex" });
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: "codex_not_connected", field: "harness" });
+      expect(tables.scheduled_tasks!.find((row) => row.id === "task-agent")!.config_json).toMatchObject({ harness: "claude" });
+    });
+
+    it("switches to Codex when it is connected", async () => {
+      tables.credentials = [{ workspace_id: "ws-1", provider: "codex_chatgpt_auth", status: "active" }];
+      const response = await patch("task-agent", { harness: "codex" });
+      expect(response.status).toBe(200);
+      expect(tables.scheduled_tasks!.find((row) => row.id === "task-agent")!.config_json).toMatchObject({ harness: "codex", model: null });
+    });
+
+    it("does not edit a deleted routine", async () => {
+      expect((await patch("task-gone", { prompt: "Back again." })).status).toBe(404);
+    });
+
+    it("returns 400 on invalid JSON", async () => {
+      const response = await routeModule.PATCH(
+        Object.assign(new Request("http://internal.test", { method: "PATCH", body: "{" }), {
+          params: { id: "ws-1", taskId: "task-1" },
+        }) as never,
+      );
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe("DELETE", () => {
+    const find = (id: string) => tables.scheduled_tasks!.find((row) => row.id === id)!;
+
+    it("hides the routine, stops its runs and keeps the row", async () => {
+      const response = await remove("task-agent");
+      expect(response.status).toBe(204);
+      expect(find("task-agent")).toMatchObject({ enabled: false, updated_by_user_id: "user-1" });
+      expect(typeof find("task-agent").deleted_at).toBe("string");
+
+      const list = (await (await get()).json()) as { routines: Array<{ id: string }> };
+      expect(list.routines.map((routine) => routine.id)).not.toContain("task-agent");
+    });
+
+    it("never lists a routine that was deleted before", async () => {
+      const list = (await (await get()).json()) as { routines: Array<{ id: string }> };
+      expect(list.routines.map((routine) => routine.id)).not.toContain("task-gone");
+    });
+
+    it("returns 404 for a deleted routine, another workspace's routine and a missing one", async () => {
+      expect((await remove("task-gone")).status).toBe(404);
+      expect((await remove("task-other")).status).toBe(404);
+      expect((await remove("nope")).status).toBe(404);
+    });
+
+    it("does not delete a built-in routine", async () => {
+      const response = await remove("task-1");
+      expect(response.status).toBe(400);
+      expect(find("task-1").deleted_at).toBeNull();
+    });
+
+    it("answers 404 to the run history of a deleted routine", async () => {
+      const response = await routeModule.RUNS(
+        Object.assign(new Request("http://internal.test"), { params: { id: "ws-1", taskId: "task-gone" } }) as never,
+      );
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe("RUN", () => {
+    const runNow = spyOn(schedulesService, "runRoutineNow");
+    afterAll(() => runNow.mockRestore());
+    beforeEach(() => runNow.mockReset());
+
+    const postRun = (taskId = "task-1") =>
+      routeModule.RUN(
+        Object.assign(new Request("http://internal.test", { method: "POST" }), { params: { id: "ws-1", taskId } }) as never,
+      );
+
+    it("answers 202 with a queued outcome when a run is in progress", async () => {
+      runNow.mockResolvedValueOnce({ status: "queued" });
+      const response = await postRun();
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ outcome: { status: "queued" } });
+    });
+
+    it("answers 202 with the run that started", async () => {
+      runNow.mockResolvedValueOnce({ status: "started", runId: "run-1", sessionId: "s-1" });
+      const response = await postRun();
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ outcome: { status: "started", runId: "run-1", sessionId: "s-1" } });
+    });
+
+    it("answers 409 codex_login_busy when another Codex run holds the login", async () => {
+      runNow.mockResolvedValueOnce({ status: "failed", code: "routine_lease_busy" });
+      const response = await postRun();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: "codex_login_busy" });
+    });
+
+    it("answers 502 run_failed for a run that could not start", async () => {
+      runNow.mockResolvedValueOnce({ status: "failed", code: "routine_launch_failed" });
+      const response = await postRun();
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({ error: "run_failed" });
+    });
+
+    it("answers 404 for a routine that does not exist", async () => {
+      runNow.mockRejectedValueOnce(new schedulesService.ScheduleServiceError("not_found"));
+      expect((await postRun("task-gone")).status).toBe(404);
+    });
+
+    it("answers 500 and records an unexpected failure", async () => {
+      runNow.mockRejectedValueOnce(new Error("db down"));
+      const response = await postRun();
+      expect(response.status).toBe(500);
+      await Bun.sleep(10);
+      expect(errorRows).toHaveLength(1);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", operation: "commit" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_run_now_failed" });
+    });
+  });
+});

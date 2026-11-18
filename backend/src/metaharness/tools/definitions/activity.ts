@@ -5,7 +5,7 @@ import { requireUser } from "./shared";
 
 export function createActivityTools(client: SupabaseClient) {
   const list = defineTool({
-    name: "activity.list", mcp: true, callers: ["user"],
+    name: "activity.list", mcp: true, allowedOrigins: ["person"],
     input: z.object({ cursor: z.string().max(200).optional().describe("The nextCursor of the previous page, for older runs.") }),
     description: "What the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions, with status, timing and result. Pass nextCursor back as cursor for older runs. The first page also lists upcoming: one-time routines that have not run yet, soonest first, with who set each one (upcomingError true means that list failed to load). For one routine's runs, use routines.runs.",
     handler: async ({ caller, input }) => {

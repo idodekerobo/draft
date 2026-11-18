@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { codexExecEventsFor, parseCodexExecLine } from "../../../harnesses/codex/parse-exec-line";
 
 const recorded = readFileSync(new URL("./exec-run.jsonl", import.meta.url), "utf8").trim().split("\n");
-const lines = recorded.map((raw, offset) => ({ file: "exec.jsonl", offset, raw }));
+const lines = recorded.map((raw, position) => ({ stream: "exec.jsonl", position, raw }));
 
 describe("parseCodexExecLine", () => {
   const events = lines.flatMap(parseCodexExecLine);
@@ -31,18 +31,18 @@ describe("parseCodexExecLine", () => {
 
   it("flags a command that exits with an error", () => {
     const raw = JSON.stringify({ type: "item.completed", item: { id: "item_3", type: "command_execution", command: "false", aggregated_output: "", exit_code: 1, status: "failed" } });
-    const [, result] = parseCodexExecLine({ file: "exec.jsonl", offset: 7, raw });
+    const [, result] = parseCodexExecLine({ stream: "exec.jsonl", position: 7, raw });
     expect(result!.payload).toMatchObject({ is_error: true });
   });
 
   it("notes a failed turn and an error, and skips a line that is not JSON", () => {
-    const note = (event: unknown) => parseCodexExecLine({ file: "exec.jsonl", offset: 9, raw: JSON.stringify(event) });
+    const note = (event: unknown) => parseCodexExecLine({ stream: "exec.jsonl", position: 9, raw: JSON.stringify(event) });
     expect(note({ type: "turn.failed", error: { message: "rate limited" } })[0]).toMatchObject({ kind: "session_note", payload: { text: "rate limited" } });
     expect(note({ type: "error", message: "stream closed" })[0]).toMatchObject({ kind: "session_note", payload: { text: "stream closed" } });
-    expect(parseCodexExecLine({ file: "exec.jsonl", offset: 9, raw: "not json" })).toEqual([]);
+    expect(parseCodexExecLine({ stream: "exec.jsonl", position: 9, raw: "not json" })).toEqual([]);
   });
 
   it("notes a skipped oversize line", () => {
-    expect(codexExecEventsFor({ file: "exec.jsonl", offset: 3, oversizeBytes: 9_000_000 })[0]).toMatchObject({ kind: "session_note", payload: { reason: "too_large" } });
+    expect(codexExecEventsFor({ stream: "exec.jsonl", position: 3, oversizeBytes: 9_000_000 })[0]).toMatchObject({ kind: "session_note", payload: { reason: "too_large" } });
   });
 });

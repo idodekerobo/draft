@@ -31,8 +31,8 @@ A routine is work Draft runs once, on a repeating schedule, on events (such as a
 | `routines.create` | `{ title, prompt, harness, when, ... }` | Create a routine and return the saved routine. `harness` is required for a person; a routine run can inherit it from its parent. |
 | `routines.update` | `{ taskId, patch }` | Change only the supplied fields. Timing and triggers go under `patch.when`. `postChannels: null` and `github: null` remove that access. |
 | `routines.delete` | `{ taskId }` | Delete a routine, including cancelling a pending one-time routine. Destructive: confirm with the person first. |
-| `routines.run` | `{ taskId }` | Request an immediate run, including on paused routines and one-time routines that already fired. Returns `runId` when started, or `queued: true` and `runId: null` when queued behind active work. |
-| `routines.runs` | `{ taskId, cursor?, runId?, transcript? }` | Runs, newest first, 50 at a time: status, what started it, result and skip reason. Pass `nextCursor` as `cursor` for older runs. With `runId`, return one run; add `transcript: true` for its transcript, using the transcript's own `nextCursor` for more. |
+| `routines.run` | `{ taskId }` | Request an immediate run, including on paused routines and one-time routines that already fired. Returns `sessionId` when started, or `queued: true` and `sessionId: null` when queued behind active work. |
+| `routines.runs` | `{ taskId, cursor?, sessionId?, transcript? }` | Runs, newest first, 50 at a time: status, what started it, result and skip reason. Pass `nextCursor` as `cursor` for older runs. With `sessionId`, return one run; add `transcript: true` for its transcript, using the transcript's own `nextCursor` for more. |
 
 #### Set timing with `when`
 
@@ -89,7 +89,7 @@ Runs cannot grant wider access, change routines outside their permitted descenda
 
 A routine runs as the person who created it. A run started by an event only sees that event's source if its creator can see it; otherwise the run is recorded as skipped, with a reason. Private routines are hidden from other people, including reads and changes by ID.
 
-To follow a started run, call `routines.runs` with its returned `runId` until its status is no longer `running`. A queued response has no run ID yet; check the routine's runs for the new run after active work ends.
+To follow a started run, call `routines.runs` with its returned `sessionId` until its status is no longer `running`. A queued response has no session ID yet; check the routine's runs for the new run after active work ends.
 
 ### Activity
 

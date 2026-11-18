@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SandboxDeploymentConfig } from "../sandbox";
+import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { SynthesisRunTriggerType } from "../types/enums";
 
 export interface SynthesisResultNeedsInputItem {

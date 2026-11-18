@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
-import { upsertSourceConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
-import type { AgentSessionRow } from "../types/tables";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
+import { upsertConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
+import type { CapturedSessionRow } from "../types/tables";
 import type { SessionSummaryPayload } from "./types";
 
 const MAX_SUMMARY_ATTEMPTS = 3;
@@ -44,12 +44,12 @@ function errorMessage(error: unknown): string {
 // against a late/duplicate callback stomping a session a second worker
 // already reclaimed after lease expiry.
 export async function materializeSessionSummary(
-  session: AgentSessionRow,
+  session: CapturedSessionRow,
   result: MaterializeSummaryResult,
   client: SupabaseClient,
 ): Promise<void> {
   if (result.ok) {
-    const connection = await upsertSourceConnection(client, {
+    const connection = await upsertConnection(client, {
       workspace_id: session.workspace_id,
       provider: "claude_session",
       connection_key: CLAUDE_SESSION_CONNECTION_KEY,
@@ -60,7 +60,7 @@ export async function materializeSessionSummary(
 
     await upsertSourceItem(client, {
       workspace_id: session.workspace_id,
-      source_connection_id: connection.id,
+      connection_id: connection.id,
       item_type: "coding_session",
       external_id: session.external_session_id,
       // Claude sessions have no provider revision id, so the content hash
@@ -74,7 +74,7 @@ export async function materializeSessionSummary(
       source_time_start: session.started_at,
       source_time_end: session.ended_at ?? session.started_at,
       time_basis: "source_event",
-      agent_session_id: session.id,
+      captured_session_id: session.id,
       metadata_json: {
         agent_session_id: session.id,
         provider: session.provider,
@@ -86,7 +86,7 @@ export async function materializeSessionSummary(
     });
 
     const { error } = await client
-      .from("agent_sessions")
+      .from("captured_sessions")
       .update({ summary_status: "ok", summary_last_error: null })
       .eq("id", session.id)
       .eq("summary_status", "leased");
@@ -96,7 +96,7 @@ export async function materializeSessionSummary(
 
   const nextStatus = session.summary_attempts >= MAX_SUMMARY_ATTEMPTS ? "skipped" : "failed";
   const { error } = await client
-    .from("agent_sessions")
+    .from("captured_sessions")
     .update({
       summary_status: nextStatus,
       summary_last_error: errorMessage(result.error).slice(0, 2_000),

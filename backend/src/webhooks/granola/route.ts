@@ -14,14 +14,14 @@ export async function POST(
   request: Bun.BunRequest<"/webhooks/granola/:connectionKey">,
 ): Promise<Response> {
   let workspaceId: string | null = null;
-  let sourceConnectionId: string | null = null;
+  let connectionId: string | null = null;
   try {
     const { connection, credentialId, eventType, noteId } = await authenticateGranolaWebhookRequest(
       request,
       request.params.connectionKey,
     );
     workspaceId = connection.workspace_id;
-    sourceConnectionId = connection.id;
+    connectionId = connection.id;
 
     // An unrecognized event type is a 2xx no-op, not an error -- otherwise
     // Granola retries and eventually disables the endpoint.
@@ -40,7 +40,7 @@ export async function POST(
     if (error) throw error;
 
     if (generatedSourceItemId) {
-      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name: "granola.note_ready", eventId: noteId, sourceItemId: generatedSourceItemId, facts: meetingFacts("Granola note id", noteId), concurrencyKey: `granola:${noteId}` });
+      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, connectionId: connection.id, name: "granola.note_ready", eventId: noteId, sourceItemId: generatedSourceItemId, facts: meetingFacts("Granola note id", noteId), concurrencyKey: `granola:${noteId}` });
     }
 
     return new Response(null, { status: 200 });
@@ -50,7 +50,7 @@ export async function POST(
     }
     recordRouteError({
       workspaceId,
-      sourceConnectionId,
+      connectionId,
       operation: "ingestion",
       errorCode: "granola_webhook_failed",
       error,

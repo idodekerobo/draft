@@ -1,5 +1,5 @@
 import { serviceClient } from "../db/client";
-import { loadSandboxDeploymentConfig } from "../sandbox";
+import { loadSandboxDeploymentConfig } from "../metaharness/sandbox";
 import { runSchedulingTick } from "./tick";
 import { recordError } from "../errors/record-error";
 

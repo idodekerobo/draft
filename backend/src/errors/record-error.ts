@@ -17,7 +17,7 @@ export interface RecordErrorInput {
   error?: unknown;
   code?: string;
   detail?: Record<string, unknown>;
-  sourceConnectionId?: string | null;
+  connectionId?: string | null;
   scheduledTaskId?: string | null;
   agentRunId?: string | null;
   sessionId?: string | null;
@@ -96,7 +96,7 @@ function fallback(input: RecordErrorInput, reason: unknown): void {
     workspace_id: input.workspaceId,
     operation: input.operation,
     code: input.code ?? null,
-    source_connection_id: input.sourceConnectionId ?? null,
+    connection_id: input.connectionId ?? null,
     scheduled_task_id: input.scheduledTaskId ?? null,
     agent_run_id: input.agentRunId ?? null,
     session_id: input.sessionId ?? null,
@@ -122,7 +122,7 @@ export async function recordError(input: RecordErrorInput): Promise<void> {
     const client = input.client ?? (await import("../db/client")).serviceClient;
     const { error } = await client.from("errors").insert({
       workspace_id: input.workspaceId,
-      source_connection_id: input.workspaceId ? input.sourceConnectionId ?? null : null,
+      connection_id: input.workspaceId ? input.connectionId ?? null : null,
       scheduled_task_id: input.workspaceId ? input.scheduledTaskId ?? null : null,
       agent_run_id: input.workspaceId ? input.agentRunId ?? null : null,
       session_id: input.workspaceId ? input.sessionId ?? null : null,

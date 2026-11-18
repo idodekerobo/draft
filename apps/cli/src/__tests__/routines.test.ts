@@ -462,15 +462,15 @@ describe("draft routines delete", () => {
 
 describe("draft routines run and runs", () => {
   test("run prints the run id and how to check it", async () => {
-    backend.state.toolOutputs["routines.run"] = () => ({ runId: RUN_ID, outcome: { status: "started" } });
+    backend.state.toolOutputs["routines.run"] = () => ({ sessionId: RUN_ID, outcome: { status: "started" } });
     const result = await runCli(["routines", "run", ROUTINE_ID], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`Started run ${RUN_ID} of ${ROUTINE_ID}.`);
-    expect(result.stdout).toContain(`draft routines runs ${ROUTINE_ID} --run-id ${RUN_ID}`);
+    expect(result.stdout).toContain(`draft routines runs ${ROUTINE_ID} --session-id ${RUN_ID}`);
   });
 
   test("run says a queued run starts when the current one ends, and exits 0 without waiting", async () => {
-    backend.state.toolOutputs["routines.run"] = () => ({ runId: null, queued: true, message: "Queued. It runs when the current run ends." });
+    backend.state.toolOutputs["routines.run"] = () => ({ sessionId: null, queued: true, message: "Queued. It runs when the current run ends." });
     backend.state.requests.length = 0;
     const result = await runCli(["routines", "run", ROUTINE_ID, "--wait"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
@@ -479,15 +479,15 @@ describe("draft routines run and runs", () => {
   });
 
   test("run --json prints a queued answer as JSON", async () => {
-    backend.state.toolOutputs["routines.run"] = () => ({ runId: null, queued: true, message: "Queued. It runs when the current run ends." });
+    backend.state.toolOutputs["routines.run"] = () => ({ sessionId: null, queued: true, message: "Queued. It runs when the current run ends." });
     const result = await runCli(["routines", "run", ROUTINE_ID, "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ runId: null, queued: true });
+    expect(JSON.parse(result.stdout)).toMatchObject({ sessionId: null, queued: true });
   });
 
   test("run --wait prints the final status and result, and exits 0 when completed", async () => {
-    backend.state.toolOutputs["routines.run"] = () => ({ runId: RUN_ID, outcome: { status: "started" } });
-    backend.state.toolOutputs["routines.runs"] = () => ({ run: { id: RUN_ID, status: "completed", startedBy: { type: "run_now" }, startedAt: "t", endedAt: "t", result: "All done" } });
+    backend.state.toolOutputs["routines.run"] = () => ({ sessionId: RUN_ID, outcome: { status: "started" } });
+    backend.state.toolOutputs["routines.runs"] = () => ({ run: { id: RUN_ID, status: "completed", startedBy: { type: "manual" }, startedAt: "t", endedAt: "t", result: "All done" } });
     const result = await runCli(["routines", "run", ROUTINE_ID, "--wait"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`Run ${RUN_ID}: completed`);
@@ -495,8 +495,8 @@ describe("draft routines run and runs", () => {
   });
 
   test("run --wait --json prints the final run and exits 1 when it failed", async () => {
-    backend.state.toolOutputs["routines.run"] = () => ({ runId: RUN_ID, outcome: { status: "started" } });
-    backend.state.toolOutputs["routines.runs"] = () => ({ run: { id: RUN_ID, status: "failed", startedBy: { type: "run_now" }, startedAt: "t", endedAt: "t", result: "boom" } });
+    backend.state.toolOutputs["routines.run"] = () => ({ sessionId: RUN_ID, outcome: { status: "started" } });
+    backend.state.toolOutputs["routines.runs"] = () => ({ run: { id: RUN_ID, status: "failed", startedBy: { type: "manual" }, startedAt: "t", endedAt: "t", result: "boom" } });
     const result = await runCli(["routines", "run", ROUTINE_ID, "--wait", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ schema_version: 1, run: { status: "failed", result: "boom" } });
@@ -516,15 +516,15 @@ describe("draft routines run and runs", () => {
     expect(result.stdout).toContain("Source not visible");
   });
 
-  test("runs --run-id shows one run with its skip reason", async () => {
+  test("runs --session-id shows one run with its skip reason", async () => {
     let seen: unknown;
     backend.state.toolOutputs["routines.runs"] = (input) => {
       seen = input;
-      return { run: { id: RUN_ID, status: "skipped", startedBy: { type: "run_now" }, startedAt: "t", endedAt: null, result: null, skipReason: "Already ran today" } };
+      return { run: { id: RUN_ID, status: "skipped", startedBy: { type: "manual" }, startedAt: "t", endedAt: null, result: null, skipReason: "Already ran today" } };
     };
-    const result = await runCli(["routines", "runs", ROUTINE_ID, "--run-id", RUN_ID], { home, apiUrl: backend.url });
+    const result = await runCli(["routines", "runs", ROUTINE_ID, "--session-id", RUN_ID], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toEqual({ taskId: ROUTINE_ID, runId: RUN_ID });
+    expect(seen).toEqual({ taskId: ROUTINE_ID, sessionId: RUN_ID });
     expect(result.stdout).toContain("status: skipped");
     expect(result.stdout).toContain("skipped because: Already ran today");
   });
@@ -535,11 +535,11 @@ describe("draft routines run and runs", () => {
       seen = input;
       return { run: { id: RUN_ID }, transcript: { lines: ["step one", "step two"], nextCursor: 40 } };
     };
-    const result = await runCli(["routines", "runs", ROUTINE_ID, "--run-id", RUN_ID, "--transcript", "--cursor", "20"], { home, apiUrl: backend.url });
+    const result = await runCli(["routines", "runs", ROUTINE_ID, "--session-id", RUN_ID, "--transcript", "--cursor", "20"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(seen).toEqual({ taskId: ROUTINE_ID, runId: RUN_ID, transcript: true, cursor: "20" });
+    expect(seen).toEqual({ taskId: ROUTINE_ID, sessionId: RUN_ID, transcript: true, cursor: "20" });
     expect(result.stdout).toContain("step one\nstep two");
-    expect(result.stdout).toContain(`More: draft routines runs ${ROUTINE_ID} --run-id ${RUN_ID} --transcript --cursor 40`);
+    expect(result.stdout).toContain(`More: draft routines runs ${ROUTINE_ID} --session-id ${RUN_ID} --transcript --cursor 40`);
   });
 
   test("runs pages through older runs with the cursor the last page printed", async () => {
@@ -558,13 +558,13 @@ describe("draft routines run and runs", () => {
   test("runs flag combinations that need each other are usage errors, exit 2", async () => {
     const transcriptWithoutRun = await runCli(["routines", "runs", ROUTINE_ID, "--transcript"], { home, apiUrl: backend.url });
     expect(transcriptWithoutRun.exitCode).toBe(2);
-    const cursorWithoutTranscript = await runCli(["routines", "runs", ROUTINE_ID, "--run-id", RUN_ID, "--cursor", "3"], { home, apiUrl: backend.url });
+    const cursorWithoutTranscript = await runCli(["routines", "runs", ROUTINE_ID, "--session-id", RUN_ID, "--cursor", "3"], { home, apiUrl: backend.url });
     expect(cursorWithoutTranscript.exitCode).toBe(2);
   });
 });
 
 describe("waitForRun", () => {
-  const running: { run: RoutineRun } = { run: { id: RUN_ID, status: "running", startedBy: { type: "run_now" }, startedAt: "t", endedAt: null, result: null } };
+  const running: { run: RoutineRun } = { run: { id: RUN_ID, status: "running", startedBy: { type: "manual" }, startedAt: "t", endedAt: null, result: null } };
   const completed: { run: RoutineRun } = { run: { ...running.run, status: "completed", result: "ok" } };
 
   test("polls until the run leaves running", async () => {

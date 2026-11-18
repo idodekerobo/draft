@@ -7,8 +7,6 @@ create table agent_runs (
   kind                     text not null
                              check (kind in ('interactive', 'routine', 'synthesis', 'summarization')),
   trigger                  jsonb not null,
-  -- Replaced by on_behalf_of_user_id. Nothing writes it now; a later migration drops it.
-  principal                jsonb not null default '{"type": "workspace"}',
   -- The user whose connections and context the run may use. The actor is always the run itself.
   on_behalf_of_user_id     uuid references users(id) on delete set null,
   runtime                  jsonb not null,

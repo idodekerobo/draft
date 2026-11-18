@@ -25,7 +25,7 @@ returns table (
   metadata_json jsonb,
   content_markdown text,
   sanitized_raw_json jsonb,
-  agent_session_id uuid,
+  captured_session_id uuid,
   excerpt text,
   rank real
 )
@@ -53,14 +53,14 @@ as $$
       si.metadata_json,
       si.content_markdown,
       si.sanitized_raw_json,
-      si.agent_session_id,
+      si.captured_session_id,
       (case when p_query is null then 0 else ts_rank_cd(
         to_tsvector('english', coalesce(si.content_markdown, '')),
         websearch_to_tsquery('english', p_query)
       ) end)::real as rank
     from source_items si
-    join source_connections sc
-      on sc.id = si.source_connection_id
+    join connections sc
+      on sc.id = si.connection_id
      and sc.workspace_id = si.workspace_id
     where si.workspace_id = p_workspace_id
       and si.lifecycle_status = 'active'
@@ -102,7 +102,7 @@ as $$
     p.metadata_json,
     p.content_markdown,
     p.sanitized_raw_json,
-    p.agent_session_id,
+    p.captured_session_id,
     (case when p_query is null then left(coalesce(p.content_markdown, ''), 400) else ts_headline(
       'english', coalesce(p.content_markdown, ''), websearch_to_tsquery('english', p_query),
       'MaxFragments=2, MaxWords=35, MinWords=15, StartSel=**, StopSel=**'

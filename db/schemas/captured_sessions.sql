@@ -1,0 +1,64 @@
+create table captured_sessions (
+  id                    uuid primary key default gen_random_uuid(),
+  workspace_id          uuid not null references workspaces(id) on delete cascade,
+  provider              text not null,          -- claude-code | hermes | opencode | ...
+  user_id               uuid references users(id),                 -- authenticated path
+  contributor_id        uuid references session_contributors(id),  -- fallback path
+  external_session_id   text not null,           -- provider's own session id
+  project               text,
+  cwd                   text,
+  -- Set only when the ingesting credential is project-scoped; null for
+  -- legacy-credential-authored sessions -- not backfilled.
+  session_project_id    uuid,
+  started_at            timestamptz not null,
+  ended_at              timestamptz,
+  status                text not null,
+  transcript_revision   bigint not null default 1
+                          check (transcript_revision > 0),
+  -- Summarization lease + retry state. An attempt timestamp alone is a
+  -- lease with no expiry: a worker that dies mid-run would wedge the
+  -- session forever without summary_lease_until.
+  summary_status        text not null default 'pending'
+                          check (summary_status in ('pending', 'leased', 'ok', 'failed', 'skipped')),
+  summary_attempts      int not null default 0,
+  summary_lease_until   timestamptz,
+  summary_last_error    text,
+  -- The agent run that holds this session's summary lease, and so made its summary.
+  summary_agent_run_id  uuid,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+
+  check (num_nonnulls(user_id, contributor_id) = 1),
+  foreign key (contributor_id, workspace_id)
+    references session_contributors(id, workspace_id) on delete restrict,
+  foreign key (session_project_id, workspace_id)
+    references session_projects(id, workspace_id),
+  foreign key (summary_agent_run_id, workspace_id)
+    references agent_runs(id, workspace_id) on delete set null (summary_agent_run_id),
+  unique (workspace_id, provider, external_session_id),
+  unique (id, workspace_id)
+);
+
+create index captured_sessions_summary_agent_run_idx
+  on captured_sessions (summary_agent_run_id) where summary_agent_run_id is not null;
+
+create trigger captured_sessions_set_updated_at
+  before update on captured_sessions
+  for each row execute function set_updated_at();
+
+alter table captured_sessions enable row level security;
+
+create policy captured_sessions_select on captured_sessions
+  for select to authenticated
+  using (
+    exists (
+      select 1 from workspaces w
+      where w.id = captured_sessions.workspace_id
+        and w.organization_id = current_user_org_id()
+        and w.team_id = current_user_team_id()
+        and w.access_mode = 'team_default'
+    )
+  );
+
+grant select on table captured_sessions to authenticated;
+grant select, insert, update on table captured_sessions to service_role;

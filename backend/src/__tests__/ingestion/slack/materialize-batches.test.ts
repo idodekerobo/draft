@@ -28,7 +28,7 @@ function makeMessage(
   return {
     id: `msg-${channelId}-${n}`,
     workspace_id: WORKSPACE_ID,
-    source_connection_id: CONNECTION_ID,
+    connection_id: CONNECTION_ID,
     source_item_id: null,
     channel_id: channelId,
     channel_name_snapshot: channelId,
@@ -221,7 +221,7 @@ function createFakeClient(
   function execUpsertSourceItemRpc(params: Row) {
     const priorReady = store.sourceItems.filter(
       (r) =>
-        r.source_connection_id === params.p_source_connection_id &&
+        r.connection_id === params.p_connection_id &&
         r.external_id === params.p_external_id &&
         r.lifecycle_status === "active" &&
         r.external_version !== params.p_external_version,
@@ -230,14 +230,14 @@ function createFakeClient(
 
     const idx = store.sourceItems.findIndex(
       (r) =>
-        r.source_connection_id === params.p_source_connection_id &&
+        r.connection_id === params.p_connection_id &&
         r.external_id === params.p_external_id &&
         r.external_version === params.p_external_version,
     );
 
     const payload: Row = {
       workspace_id: params.p_workspace_id,
-      source_connection_id: params.p_source_connection_id,
+      connection_id: params.p_connection_id,
       item_type: params.p_item_type,
       external_id: params.p_external_id,
       external_version: params.p_external_version,
@@ -294,7 +294,7 @@ function createFakeClient(
       store.sourceConnections.push({ id: `task-${store.sourceConnections.length}`, ...qb.payload });
       return { data: qb.payload, error: null };
     }
-    throw new Error(`unsupported source_connections op: ${qb.type}`);
+    throw new Error(`unsupported connections op: ${qb.type}`);
   }
 
   function execScheduledTasks(qb: FakeQueryBuilder) {
@@ -310,7 +310,7 @@ function createFakeClient(
     if (qb.table === "slack_messages") return execSlackMessages(qb);
     if (qb.table === "source_items") return execSourceItems(qb);
     if (qb.table === "workspace_events") return execWorkspaceEvents(qb);
-    if (qb.table === "source_connections") return execSourceConnections(qb);
+    if (qb.table === "connections") return execSourceConnections(qb);
     if (qb.table === "scheduled_tasks") return execScheduledTasks(qb);
     throw new Error(`unexpected table: ${qb.table}`);
   }
@@ -323,7 +323,7 @@ function createFakeClient(
       if (fnName === "get_pending_slack_channel_ids") {
         const channels = [...new Set(store.slackMessages
           .filter((row) => row.workspace_id === params.p_workspace_id &&
-            row.source_connection_id === params.p_source_connection_id &&
+            row.connection_id === params.p_connection_id &&
             row.source_item_id === null &&
             (params.p_after_channel_id === null || row.channel_id > params.p_after_channel_id))
           .map((row) => row.channel_id as string))]
@@ -337,7 +337,7 @@ function createFakeClient(
         if (rpcError) return Promise.resolve({ data: null, error: rpcError });
         const rows = store.slackMessages.filter((row) =>
           params.p_message_ids.includes(row.id) && row.source_item_id === null &&
-          row.workspace_id === params.p_workspace_id && row.source_connection_id === params.p_source_connection_id &&
+          row.workspace_id === params.p_workspace_id && row.connection_id === params.p_connection_id &&
           row.channel_id === params.p_channel_id,
         );
         if (rows.length !== params.p_message_ids.length) {
@@ -345,7 +345,7 @@ function createFakeClient(
         }
         const upsert = execUpsertSourceItemRpc({
           p_workspace_id: params.p_workspace_id,
-          p_source_connection_id: params.p_source_connection_id,
+          p_connection_id: params.p_connection_id,
           p_item_type: "message",
           p_external_id: params.p_external_id,
           p_external_version: params.p_external_version,
@@ -585,7 +585,7 @@ describe("registerSlackBatchMaterializationTask", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
       workspace_id: WORKSPACE_ID,
-      source_connection_id: CONNECTION_ID,
+      connection_id: CONNECTION_ID,
       task_type: "ingest_source",
       task_key: CONNECTION_ID,
       schedule_kind: "interval",

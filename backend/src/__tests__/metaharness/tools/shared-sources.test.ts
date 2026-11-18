@@ -11,8 +11,8 @@ const source = (id: string, visibility: string) => ({
   id, workspace_id: WS, external_version: "v1", item_type: "document", representation_kind: "document",
   occurred_at: "2026-11-11T09:00:00.000Z", source_time_start: null, source_time_end: null,
   metadata_json: { title: "Team note" }, content_markdown: "Team note body", sanitized_raw_json: null,
-  agent_session_id: null, lifecycle_status: "active", visibility, owner_user_id: OWNER,
-  source_connections: { provider: "notion" },
+  captured_session_id: null, lifecycle_status: "active", visibility, owner_user_id: OWNER,
+  connections: { provider: "notion" },
 });
 
 describe("shared source access for runs", () => {

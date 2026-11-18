@@ -1,7 +1,7 @@
 /** The coding agents Draft can run for a session or a routine. The apps and the backend read only this list. */
 import { claudeDefinition } from "./claude/definition";
 import { codexDefinition } from "./codex/definition";
-import { isCloudNativeTool, type AgentRunEnvironment, type McpServerPermission, type NativeToolPermission } from "../run-spec";
+import { isCloudNativeTool, type AgentRunToolset, type McpServerPermission, type NativeToolPermission } from "../run-spec";
 import { REASONING_EFFORTS, type HarnessDefinition, type HarnessModel, type HarnessModes, type ReasoningEffort } from "./types";
 
 export { REASONING_EFFORTS } from "./types";
@@ -100,10 +100,10 @@ export function testedVersionLabel(harnessId: string): string | null {
  * What a cloud run may use: the harness's starting tools, the built-in tools a person added, and the
  * connections they chose. A tool outside the cloud list is dropped, even if it was saved earlier.
  */
-export function cloudEnvironmentFor(
+export function cloudToolsetFor(
   harness: HarnessId,
   chosen?: { nativeTools?: ReadonlyArray<string>; mcpServers?: ReadonlyArray<McpServerPermission> },
-): AgentRunEnvironment {
+): AgentRunToolset {
   const definition = HARNESSES.find((entry) => entry.id === harness)!;
   const nativeTools = definition.cloudStartingTools.map((tool) => ({ harness, tool }) as NativeToolPermission);
   for (const tool of chosen?.nativeTools ?? []) {

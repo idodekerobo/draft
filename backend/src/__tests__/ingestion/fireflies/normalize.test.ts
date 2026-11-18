@@ -73,7 +73,7 @@ interface FakeClientOptions {
   // cross-connection dedup lookup. Empty by default so existing tests are
   // unaffected -- the dedup query short-circuits when there's nothing to find.
   firefliesConnectionIds?: string[];
-  existingItem?: { id: string; source_connection_id: string; visibility: "private" | "shared" } | null;
+  existingItem?: { id: string; connection_id: string; visibility: "private" | "shared" } | null;
 }
 
 function createFakeClient(options: FakeClientOptions = {}) {
@@ -86,7 +86,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
   };
 
   function from(table: string) {
-    if (table === "source_connections") {
+    if (table === "connections") {
       return {
         select: () => ({
           eq: () => ({
@@ -102,7 +102,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
     if (table === "source_items") {
       return {
         select: (columns?: string) => {
-          if (columns?.includes("source_connection_id")) {
+          if (columns?.includes("connection_id")) {
             return {
               eq: () => ({
                 eq: () => ({
@@ -166,7 +166,7 @@ function createFakeClient(options: FakeClientOptions = {}) {
     const priorIds = state.priorReadyRevisions.map((r) => r.id);
     state.upsertedItem = {
       workspace_id: params.p_workspace_id,
-      source_connection_id: params.p_source_connection_id,
+      connection_id: params.p_connection_id,
       item_type: params.p_item_type,
       external_id: params.p_external_id,
       external_version: params.p_external_version,
@@ -225,7 +225,7 @@ describe("ingestFirefliesMeeting", () => {
     expect(result.sourceItemId).toBe("new-item-id");
 
     expect(state.upsertedItem?.workspace_id).toBe(ids.workspace);
-    expect(state.upsertedItem?.source_connection_id).toBe(ids.connection);
+    expect(state.upsertedItem?.connection_id).toBe(ids.connection);
     expect(state.upsertedItem?.item_type).toBe("meeting_transcript");
     expect(state.upsertedItem?.external_id).toBe("meeting-123");
     expect(state.upsertedItem?.occurred_at).toBe(new Date(1735689600000).toISOString());
@@ -263,7 +263,7 @@ describe("ingestFirefliesMeeting", () => {
     expect(state.upsertedItem?.metadata_json).toMatchObject({ attendee_emails: ["a@example.com"] });
 
     expect(state.eventInsertPayload?.event_type).toBe("source_items_added");
-    expect(state.eventInsertPayload?.source_connection_id).toBe(ids.connection);
+    expect(state.eventInsertPayload?.connection_id).toBe(ids.connection);
     expect(state.eventInsertPayload?.summary).toBe("Weekly Sync");
   });
 
@@ -306,7 +306,7 @@ describe("ingestFirefliesMeeting", () => {
     const existingItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const { client, state } = createFakeClient({
       firefliesConnectionIds: [ids.connection, otherConnectionId],
-      existingItem: { id: existingItemId, source_connection_id: otherConnectionId, visibility: "private" },
+      existingItem: { id: existingItemId, connection_id: otherConnectionId, visibility: "private" },
     });
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
@@ -329,7 +329,7 @@ describe("ingestFirefliesMeeting", () => {
     const existingItemId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const { client, state } = createFakeClient({
       firefliesConnectionIds: [ids.connection, otherConnectionId],
-      existingItem: { id: existingItemId, source_connection_id: otherConnectionId, visibility: "shared" },
+      existingItem: { id: existingItemId, connection_id: otherConnectionId, visibility: "shared" },
     });
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 

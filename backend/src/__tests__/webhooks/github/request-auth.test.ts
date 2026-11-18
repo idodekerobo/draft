@@ -36,7 +36,7 @@ function createFakeClient(
 ) {
   const calls: { connectionKey: string }[] = [];
   function from(table: string) {
-    if (table !== "source_connections") throw new Error(`Unexpected table: ${table}`);
+    if (table !== "connections") throw new Error(`Unexpected table: ${table}`);
     return {
       select: () => ({
         eq: (_col: string, value: string) => {

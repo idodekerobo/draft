@@ -12,7 +12,7 @@ const tokenOf = (url: string) => url.split("/connect/")[1]!;
 
 describe("listIntegrations", () => {
   it("gives every provider its state, what it unlocks and how to connect it", async () => {
-    const db = fakeDb({ source_connections: [connection("slack"), connection("linear", "error"), connection("github", "active", OTHER), connection("fireflies", "pending"), connection("granola", "revoked")] });
+    const db = fakeDb({ connections: [connection("slack"), connection("linear", "error"), connection("github", "active", OTHER), connection("fireflies", "pending"), connection("granola", "revoked")] });
     const list = await listIntegrations(fakeClient(db), WS, ME);
     const by = (provider: string) => list.find((item) => item.provider === provider)!;
     expect(by("slack")).toMatchObject({ status: "connected", connectedByYou: true });
@@ -27,7 +27,7 @@ describe("listIntegrations", () => {
 
 describe("connect links", () => {
   it("returns a link and stores only the token's hash", async () => {
-    const db = fakeDb({ source_connections: [] });
+    const db = fakeDb({ connections: [] });
     const result = await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "mcp" }, deps);
     expect(result).toMatchObject({ status: "action_required", action: "connect_linear", provider: "linear", expiresAt: "2026-11-14T12:15:00.000Z" });
     const token = tokenOf((result as { url: string }).url);
@@ -37,13 +37,13 @@ describe("connect links", () => {
   });
 
   it("makes no link for a provider that is already connected", async () => {
-    const db = fakeDb({ source_connections: [connection("linear")] });
+    const db = fakeDb({ connections: [connection("linear")] });
     expect(await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "cli" }, deps)).toEqual({ status: "connected", provider: "linear" });
     expect(db.tables.connection_requests ?? []).toHaveLength(0);
   });
 
   it("works only for the person who asked, and only until it expires", async () => {
-    const db = fakeDb({ source_connections: [] });
+    const db = fakeDb({ connections: [] });
     const { url } = (await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "mcp" }, deps)) as { url: string };
     const token = tokenOf(url);
     expect((await findConnectRequest(fakeClient(db), token, ME, NOW)).ok).toBe(true);
@@ -53,18 +53,18 @@ describe("connect links", () => {
   });
 
   it("closes only once the provider is connected, and can't be used again", async () => {
-    const db = fakeDb({ source_connections: [] });
+    const db = fakeDb({ connections: [] });
     const { url } = (await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "granola", via: "mcp" }, deps)) as { url: string };
     const found = await findConnectRequest(fakeClient(db), tokenOf(url), ME, NOW);
     if (!found.ok) throw new Error("expected the request");
     expect(await completeConnectRequest(fakeClient(db), found.request, NOW)).toBe(false);
-    db.tables.source_connections!.push(connection("granola"));
+    db.tables.connections!.push(connection("granola"));
     expect(await completeConnectRequest(fakeClient(db), found.request, NOW)).toBe(true);
     expect(await findConnectRequest(fakeClient(db), tokenOf(url), ME, NOW)).toEqual({ ok: false, error: "already_used" });
   });
 
   it("stops handing out links after ten open ones", async () => {
-    const db = fakeDb({ source_connections: [] });
+    const db = fakeDb({ connections: [] });
     for (let index = 0; index < 10; index++) await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "mcp" }, deps);
     expect(await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "mcp" }, deps)).toEqual({ status: "too_many_requests" });
   });

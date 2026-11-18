@@ -66,8 +66,8 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
 
-  const hostMachineId = optionalString(body.hostMachineId, 200);
-  if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
+  const hostId = optionalString(body.hostId, 200);
+  if (!hostId) return errorResponse("missing_host_id", 400);
 
   const harness = body.harness ?? DEFAULT_HARNESS_ID;
   if (!isHarnessId(harness)) return errorResponse("unknown_harness", 400);
@@ -80,7 +80,7 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   if (previousSessionId) {
     const previous = await loadOwnedSession(req.params.id, previousSessionId, caller.userId);
     if (!previous.ok) return previous.response;
-    if (previous.session.host_machine_id !== hostMachineId) return errorResponse("foreign_host", 403);
+    if (previous.session.host_id !== hostId) return errorResponse("foreign_host", 403);
   }
 
   const { data, error } = await serviceClient
@@ -88,7 +88,7 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
     .insert({
       workspace_id: req.params.id,
       owner_user_id: caller.userId,
-      host_machine_id: hostMachineId,
+      host_id: hostId,
       harness,
       harness_version: optionalString(body.harnessVersion, 100),
       previous_session_id: previousSessionId,
@@ -234,8 +234,8 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
 
-  const hostMachineId = optionalString(body.hostMachineId, 200);
-  if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
+  const hostId = optionalString(body.hostId, 200);
+  if (!hostId) return errorResponse("missing_host_id", 400);
   if (!Array.isArray(body.lines) || body.lines.length > MAX_LINES_PER_POST || !body.lines.every(isIncomingLine)) {
     return errorResponse("invalid_lines", 400);
   }
@@ -243,13 +243,14 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   const incoming = body.lines as IncomingLine[];
   for (const line of incoming) {
     if ("oversizeBytes" in line) {
+      // Stored error rows keep the `file` and `offset` keys they were written with.
       void recordError({
         workspaceId,
         sessionId,
         operation: "session",
         message: "Session line too large to forward",
         code: "line_too_large",
-        detail: { file: line.file, offset: line.offset, bytes: line.oversizeBytes },
+        detail: { file: line.stream, offset: line.position, bytes: line.oversizeBytes },
       });
     }
   }
@@ -264,7 +265,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
     const { data, error } = await serviceClient.rpc("append_session_events", {
       p_session_id: sessionId,
       p_workspace_id: workspaceId,
-      p_host_machine_id: hostMachineId,
+      p_host_id: hostId,
       p_events: events,
     });
     if (error) {
@@ -272,7 +273,7 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
     }
     ({ last_seq: lastSeq, inserted } = data as { last_seq: number; inserted: number });
     if (inserted > 0 && firstPrompt) await matchConsumedInputs(workspaceId, sessionId, owned.session.last_seq, lastSeq);
-  } else if (owned.session.host_machine_id !== hostMachineId) {
+  } else if (owned.session.host_id !== hostId) {
     return errorResponse("foreign_host", 403);
   }
 
@@ -298,15 +299,15 @@ const APPROVAL_MODES = harnessModeValues("codex", "approval");
 const reportedMode = (value: unknown, allowed: string[]): string | null => (typeof value === "string" && allowed.includes(value) ? value : null);
 
 /** Saves the model and effort a host reports. Returns an error response, or null when nothing was wrong or sent. */
-async function reportedAgent(sessionId: string, workspaceId: string, hostMachineId: string, body: Record<string, unknown>): Promise<Response | null> {
+async function reportedAgent(sessionId: string, workspaceId: string, hostId: string, body: Record<string, unknown>): Promise<Response | null> {
   if (!("model" in body) && !("reasoningEffort" in body)) return null;
-  const { data: session } = await serviceClient.from("sessions").select("harness, model, reasoning_effort").eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_machine_id", hostMachineId).maybeSingle<{ harness: string; model: string | null; reasoning_effort: string | null }>();
+  const { data: session } = await serviceClient.from("sessions").select("harness, model, reasoning_effort").eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_id", hostId).maybeSingle<{ harness: string; model: string | null; reasoning_effort: string | null }>();
   if (!session) return null;
   const model = "model" in body ? optionalString(body.model, 100) : session.model;
   const effort = "reasoningEffort" in body ? optionalString(body.reasoningEffort, 20) : session.reasoning_effort;
   if (!isKnownModel(session.harness, model) || !isEffortFor(session.harness, model, effort)) return null;
   if (model === session.model && effort === session.reasoning_effort) return null;
-  const { error } = await serviceClient.from("sessions").update({ model, reasoning_effort: effort }).eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_machine_id", hostMachineId);
+  const { error } = await serviceClient.from("sessions").update({ model, reasoning_effort: effort }).eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_id", hostId);
   return error ? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId) : null;
 }
 
@@ -318,13 +319,13 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
-  if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
+  const hostId = optionalString(parsed.body.hostId, 200);
+  if (!hostId) return errorResponse("missing_host_id", 400);
 
   const { data, error } = await serviceClient.rpc("heartbeat_session", {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
-    p_host_machine_id: hostMachineId,
+    p_host_id: hostId,
     p_harness_version: optionalString(parsed.body.harnessVersion, 100),
     p_permission_mode: reportedMode(parsed.body.permissionMode, REPORTED_PERMISSION_MODES),
     p_approval_mode: reportedMode(parsed.body.approvalMode, APPROVAL_MODES),
@@ -332,7 +333,7 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
   if (error) return knownDbError(error.message) ?? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId);
 
   // The host says which model and effort it ended up on. The session's own host machine is the only one that may.
-  const agent = await reportedAgent(sessionId, workspaceId, hostMachineId, parsed.body);
+  const agent = await reportedAgent(sessionId, workspaceId, hostId, parsed.body);
   if (agent) return agent;
   return Response.json({ ok: true, status: data });
 });
@@ -344,8 +345,8 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
-  if (hostMachineId !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+  const hostId = optionalString(parsed.body.hostId, 200);
+  if (hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const reason = optionalString(parsed.body.reason, 100) ?? "ended";
   const { error } = await serviceClient
@@ -386,7 +387,7 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const { session } = owned;
   if (session.session_type !== "interactive") return errorResponse("routine_read_only", 409);
@@ -411,7 +412,7 @@ export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const files = parsed.body.files;
   if (!Array.isArray(files) || files.length === 0 || files.length > 200 || !files.every((f) => typeof f === "string" && RAW_FILE.test(f))) {
@@ -435,7 +436,7 @@ export const RAW_UPLOAD_COMPLETE = withAuth<RawCompleteRequest>(async (req, call
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostMachineId, 200) !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const prefix = `${workspaceId}/${sessionId}`;
   const { data: objects, error: listError } = await serviceClient.storage.from(RAW_BUCKET).list(prefix);

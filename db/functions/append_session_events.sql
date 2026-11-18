@@ -11,7 +11,7 @@
 create or replace function append_session_events(
   p_session_id uuid,
   p_workspace_id uuid,
-  p_host_machine_id text,
+  p_host_id text,
   p_events jsonb -- array of {source_id, kind, payload}
 )
 returns jsonb
@@ -38,7 +38,7 @@ begin
   if v_session.status = 'ended' then
     raise exception 'session_ended';
   end if;
-  if v_session.host_machine_id is distinct from p_host_machine_id then
+  if v_session.host_id is distinct from p_host_id then
     raise exception 'foreign_host';
   end if;
 

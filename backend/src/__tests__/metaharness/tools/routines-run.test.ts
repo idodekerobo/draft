@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
-import type { ToolCaller } from "draft-core/tools";
+import { personCaller } from "draft-core/tools";
 import { fakeClient, fakeDb } from "../../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -11,7 +11,7 @@ const TASK = "33333333-3333-4333-8333-333333333333";
 const serviceDb = fakeDb({ errors: [] });
 mock.module("../../../db/client", () => ({ serviceClient: fakeClient(serviceDb) }));
 const { createRoutineTools } = await import("../../../metaharness/tools/definitions/routines");
-const schedules = await import("../../../schedules/service");
+const schedules = await import("../../../routines/service");
 
 const runNow = spyOn(schedules, "runRoutineNow");
 afterAll(() => runNow.mockRestore());
@@ -20,7 +20,7 @@ beforeEach(() => {
   serviceDb.tables.errors = [];
 });
 
-const caller: ToolCaller = { type: "user", userId: parseUserId(USER), workspaceId: parseWorkspaceId(WS), via: "mcp" };
+const caller = personCaller({ userId: parseUserId(USER), workspaceId: parseWorkspaceId(WS), via: "mcp" });
 const runRoutine = (input: { taskId: string } = { taskId: TASK }) => {
   const tool = createRoutineTools(fakeClient(fakeDb())).find((candidate) => candidate.name === "routines.run")!;
   return tool.run(caller, input);
@@ -32,17 +32,17 @@ describe("routines.run", () => {
 
     expect(await runRoutine()).toEqual({
       status: "ok",
-      output: { runId: null, queued: true, message: "Queued. It runs when the current run ends." },
+      output: { sessionId: null, queued: true, message: "Queued. It runs when the current run ends." },
     });
     expect(runNow).toHaveBeenCalledWith(WS, TASK, USER);
   });
 
-  it("answers with the session as the run id, for routines.runs, and the outcome", async () => {
+  it("answers with the session id, for routines.runs, and the outcome", async () => {
     runNow.mockResolvedValueOnce({ status: "started", runId: "run-1", sessionId: "s-1" });
 
     expect(await runRoutine()).toEqual({
       status: "ok",
-      output: { runId: "s-1", outcome: { status: "started", runId: "run-1", sessionId: "s-1" } },
+      output: { sessionId: "s-1", outcome: { status: "started", runId: "run-1", sessionId: "s-1" } },
     });
   });
 

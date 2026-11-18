@@ -112,7 +112,7 @@ async function insertRoutineSession(
 ): Promise<string> {
   const [row] = await db()<[{ id: string }]>`
     insert into sessions (
-      workspace_id, owner_user_id, host_machine_id, session_type, scheduled_task_id,
+      workspace_id, owner_user_id, host_id, session_type, scheduled_task_id,
       concurrency_key, status
     ) values (
       ${workspaceId}, ${ownerId}, 'host-1', 'routine', ${taskId}, ${concurrencyKey}, ${status}

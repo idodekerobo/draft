@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { agentActor, parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
-import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
-import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
+import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
@@ -25,7 +24,7 @@ const newDb = () =>
       ],
       people: [],
       person_identities: [],
-      source_connections: [],
+      connections: [],
       agent_run_tool_calls: [],
     },
     { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] }, uuidTables: ["people"] },
@@ -45,9 +44,8 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
     network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "system", reason: "manual" },
-  actor: agentActor(parseAgentRunId(RUN)),
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude",
   model: null,
   instructions: "",
@@ -55,8 +53,8 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
   permissions,
   output: { type: "text" },
 });
-const asRun = (permissions: ReadonlyArray<AnyDraftToolPermission> = SYNTHESIS_PERMISSIONS, onBehalfOf: string | null = OWNER): ToolCaller => ({ type: "run", run: runSpec(permissions, onBehalfOf) });
-const asUser = (userId = OWNER): ToolCaller => ({ type: "user", userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" });
+const asRun = (permissions: ReadonlyArray<AnyDraftToolPermission> = SYNTHESIS_PERMISSIONS, onBehalfOf: string | null = OWNER): ToolCaller => runCaller(runSpec(permissions, onBehalfOf));
+const asUser = (userId = OWNER): ToolCaller => personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" });
 
 const evidence = { quote: "Cory joined the standup as our new intern.", sourceItemId: SOURCE };
 
@@ -81,7 +79,7 @@ describe("people.find", () => {
     await call(asUser(), "people.find", {});
     const uzoId = db.tables.people!.find((p) => p.user_id === OWNER)!.id;
     db.tables.person_identities!.push({ id: "s1", workspace_id: WS, person_id: uzoId, provider: "slack", external_id: "U1", status: "inferred" });
-    db.tables.source_connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: "active" });
+    db.tables.connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: "active" });
     const guess = await call(asUser(), "people.find", { name: "uzo" });
     expect((guess as { output: { people: Array<{ reachable: { slack: boolean } }> } }).output.people[0]!.reachable.slack).toBe(false);
     db.tables.person_identities!.find((i) => i.provider === "slack")!.status = "from_connection";

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
+import { personCaller } from "draft-core/tools";
 import { auditToDatabase } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { isLoggedCommand } from "../../../observability/logged-commands";
@@ -8,7 +10,7 @@ const WS = "22222222-2222-4222-8222-222222222222";
 
 function record(toolName: string, via: "mcp" | "cli" | "app"): ToolCallRecord {
   return {
-    caller: { type: "user" as const, userId: USER, workspaceId: WS, via },
+    caller: personCaller({ userId: parseUserId(USER), workspaceId: parseWorkspaceId(WS), via }),
     toolName,
     resultBytes: 10,
     arguments: {},

@@ -1,15 +1,15 @@
 import type { HarnessCommand } from "draft-core/harnesses/types";
 import type { RunnerManifest } from "draft-core/run-manifest";
-import { runnerFaceFor } from "./faces";
 import { runnerLog } from "./log";
+import { runnerSideFor } from "./sides";
 
 export function harnessCommand(manifest: RunnerManifest, prompt: string, schemaText: string | null, env: NodeJS.ProcessEnv): HarnessCommand {
-  return runnerFaceFor(manifest.harness).command(manifest, prompt, schemaText, env);
+  return runnerSideFor(manifest.harness).command(manifest, prompt, schemaText, env);
 }
 
 /** Anything the harness needs on disk before it starts. For Codex that is its home: the login and its config. */
 export function prepareHarness(manifest: RunnerManifest, env: NodeJS.ProcessEnv): void {
-  runnerFaceFor(manifest.harness).prepare(manifest, env);
+  runnerSideFor(manifest.harness).prepare(manifest, env);
 }
 
 async function stopChild(child: ReturnType<typeof import("node:child_process")["spawn"]>): Promise<void> {
@@ -51,10 +51,10 @@ export async function runHarness(input: HarnessRun): Promise<{ exit: { code: num
     child.stdin?.on("error", () => undefined);
     child.stdin?.end(command.stdin);
   }
-  const face = runnerFaceFor(input.manifest.harness);
-  runnerLog(face.logNames.started, {
+  const side = runnerSideFor(input.manifest.harness);
+  runnerLog(side.logNames.started, {
     run_id: input.runId,
-    ...face.startedFields(input.manifest),
+    ...side.startedFields(input.manifest),
     draft_tools: input.manifest.tools.draftMcpUrl !== null,
     output: input.manifest.output.kind,
     timeout_ms: input.timeoutMs,

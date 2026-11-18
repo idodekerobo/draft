@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { AGENT_RUN_SYSTEM_REASONS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseIsoTimestamp, parseWorkspaceId, type AgentRunSpec } from "../run-spec";
+import { AGENT_RUN_SYSTEM_REASONS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseIsoTimestamp, parseWorkspaceId, type AgentRunSpec } from "../run-spec";
 import { DRAFT_TOOLS, findToolPermission, isDraftToolName } from "../tools";
 
 const UUID_A = "11111111-1111-4111-8111-111111111111";
@@ -12,8 +12,8 @@ function spec(permissions: AgentRunSpec["permissions"]): AgentRunSpec {
     network: "open",
     workspaceId: parseWorkspaceId(UUID_B),
     trigger: { type: "cron", scheduledTaskId: UUID_A as never, occurrenceAt: parseIsoTimestamp("2026-11-09T09:00:00Z") },
-    actor: { type: "agent", runId: parseAgentRunId(UUID_A) }, onBehalfOf: null,
-    runtime: { type: "local", hostMachineId: parseHostMachineId("mac-1") },
+    onBehalfOf: null,
+    runtime: { type: "local", hostId: parseHostId("mac-1") },
     harness: "claude",
     model: null,
     instructions: "do the thing",
@@ -30,9 +30,9 @@ describe("agent run ids", () => {
     expect(() => parseAgentRunId("")).toThrow("Invalid AgentRunId");
   });
 
-  it("validates timestamps and host machine ids", () => {
+  it("validates timestamps and host ids", () => {
     expect(() => parseIsoTimestamp("yesterday")).toThrow("Invalid IsoTimestamp");
-    expect(() => parseHostMachineId("  ")).toThrow("Invalid HostMachineId");
+    expect(() => parseHostId("  ")).toThrow("Invalid HostId");
   });
 });
 

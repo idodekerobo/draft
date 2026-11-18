@@ -128,7 +128,7 @@ describe("POST /webhooks/linear/:connectionKey", () => {
     expect(fired).toEqual([
       {
         workspaceId: "ws-1",
-        sourceConnectionId: "conn-1",
+        connectionId: "conn-1",
         name: "linear.issue_created",
         eventId: "issue-1",
         sourceItemId: "item-1",

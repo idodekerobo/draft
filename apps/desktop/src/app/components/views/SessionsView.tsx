@@ -104,12 +104,12 @@ export function SessionsView() {
 
   const [availability, setAvailability] = useState<Partial<Record<string, HarnessProblem>>>({});
   const loadAvailability = useCallback(() => {
-    void rpc.request.getAvailableRunners().then(({ runners }) => {
+    void rpc.request.getAvailableHarnesses().then(({ harnesses }) => {
       const next: Partial<Record<string, HarnessProblem>> = {};
-      for (const runner of runners) {
-        if (!runner.installed) next[runner.name] = "missing";
-        else if (runner.auth === "signed_out") next[runner.name] = "signed_out";
-        else if (isTestedVersion(runner.name, runner.version) === false) next[runner.name] = "untested_version";
+      for (const harness of harnesses) {
+        if (!harness.installed) next[harness.name] = "missing";
+        else if (harness.auth === "signed_out") next[harness.name] = "signed_out";
+        else if (isTestedVersion(harness.name, harness.version) === false) next[harness.name] = "untested_version";
       }
       setAvailability(next);
     }).catch(() => {});

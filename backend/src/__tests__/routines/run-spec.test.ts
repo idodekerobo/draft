@@ -18,7 +18,6 @@ describe("buildRoutineRunSpec", () => {
     const spec = buildRoutineRunSpec(input);
     expect(spec).toMatchObject({
       kind: "routine",
-      actor: { type: "agent", runId: input.id },
       onBehalfOf: input.ownerUserId,
       harness: "claude",
       model: null,

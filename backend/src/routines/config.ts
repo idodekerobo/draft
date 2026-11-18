@@ -17,7 +17,7 @@ export const ROUTINE_EVENTS = ROUTINE_EVENT_NAMES;
 export type { RoutineEventName };
 
 /** What a person lets a routine use beyond its defaults. */
-export interface RoutineEnvironmentConfig {
+export interface RoutineToolsetConfig {
   /** Built-in tools of the routine's harness, from the cloud list. */
   nativeTools: string[];
   /** Remote MCP servers the person connected, and which of their tools the routine may call. */
@@ -32,7 +32,7 @@ export interface AgentRoutineConfig {
   model: string | null;
   /** A reasoning effort the model accepts. Missing means the harness default. */
   reasoningEffort?: string;
-  environment?: RoutineEnvironmentConfig;
+  toolset?: RoutineToolsetConfig;
   /** Also start a run when one of these happens. */
   events?: RoutineEventName[];
   /** False when the schedule is off and only triggers and Run now start a run. */
@@ -44,13 +44,13 @@ export interface AgentRoutineConfig {
   github?: { repos: string[]; access: "read" | "write" };
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "environment" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "body" };
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
 
-/** Checks an environment against what a cloud run may be given. Null means it is not valid. */
-export function validateRoutineEnvironment(value: unknown, harness: HarnessId): RoutineEnvironmentConfig | null {
+/** Checks a toolset against what a cloud run may be given. Null means it is not valid. */
+export function validateRoutineToolset(value: unknown, harness: HarnessId): RoutineToolsetConfig | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const { nativeTools = [], mcpServers = [] } = value as Record<string, unknown>;
   if (!Array.isArray(nativeTools) || !Array.isArray(mcpServers) || mcpServers.length > MAX_MCP_SERVERS) return null;
@@ -58,7 +58,7 @@ export function validateRoutineEnvironment(value: unknown, harness: HarnessId): 
   const allowedNative = CLOUD_NATIVE_TOOLS[harness] as ReadonlyArray<string>;
   if (!nativeTools.every((tool) => typeof tool === "string" && allowedNative.includes(tool))) return null;
 
-  const servers: RoutineEnvironmentConfig["mcpServers"] = [];
+  const servers: RoutineToolsetConfig["mcpServers"] = [];
   for (const server of mcpServers) {
     if (!server || typeof server !== "object") return null;
     const { connectionId, tools } = server as Record<string, unknown>;
@@ -72,7 +72,7 @@ export function validateRoutineEnvironment(value: unknown, harness: HarnessId): 
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, reasoningEffort, environment, events, onSchedule, canNotify, postChannels, github } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, postChannels, github } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
@@ -80,8 +80,8 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   const harnessId = definition.id as HarnessId;
   if (model !== null && (typeof model !== "string" || !isKnownModel(definition.id, model))) return { ok: false, field: "model" };
   if (reasoningEffort != null && (typeof reasoningEffort !== "string" || !isEffortFor(definition.id, model, reasoningEffort))) return { ok: false, field: "reasoningEffort" };
-  const validEnvironment = environment == null ? undefined : validateRoutineEnvironment(environment, harnessId);
-  if (environment != null && !validEnvironment) return { ok: false, field: "environment" };
+  const validToolset = toolset == null ? undefined : validateRoutineToolset(toolset, harnessId);
+  if (toolset != null && !validToolset) return { ok: false, field: "toolset" };
   if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
   if (onSchedule !== undefined && typeof onSchedule !== "boolean") return { ok: false, field: "onSchedule" };
   if (canNotify !== undefined && typeof canNotify !== "boolean") return { ok: false, field: "canNotify" };
@@ -99,7 +99,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
       harness: harnessId,
       model,
       ...(typeof reasoningEffort === "string" ? { reasoningEffort } : {}),
-      ...(validEnvironment ? { environment: validEnvironment } : {}),
+      ...(validToolset ? { toolset: validToolset } : {}),
       ...(events !== undefined && (events as string[]).length ? { events: [...new Set(events as RoutineEventName[])] } : {}),
       ...(onSchedule === false ? { onSchedule: false as const } : {}),
       ...(canNotify !== undefined ? { canNotify: canNotify as boolean } : {}),
@@ -114,7 +114,7 @@ export function parseAgentRoutineConfig(value: unknown): AgentRoutineConfig | nu
   return result.ok ? result.config : null;
 }
 
-export const routineHostMachineId = (sessionId: string): string => `${ROUTINE_HOST_PREFIX}${sessionId}`;
+export const routineHostId = (sessionId: string): string => `${ROUTINE_HOST_PREFIX}${sessionId}`;
 
 // Routine runs reported as routine:<session id> before kind routing. Still read so a run started before the
 // change can finish. TODO: remove with the prefix once no such run can be in flight.

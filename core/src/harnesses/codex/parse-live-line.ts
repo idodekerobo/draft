@@ -108,10 +108,10 @@ export function parseCodexLine(line: LiveLineInput): ParsedLiveEvent[] {
   let base: string;
   let events: Pending[] = [];
   if (note.method === "item/completed" && params.item) {
-    base = `${params.threadId ?? line.file}:${params.item.id ?? line.offset}`;
+    base = `${params.threadId ?? line.stream}:${params.item.id ?? line.position}`;
     events = itemEvents(params.item);
   } else if (note.method === "turn/completed" && params.turn) {
-    base = `${params.threadId ?? line.file}:turn:${params.turn.id ?? line.offset}`;
+    base = `${params.threadId ?? line.stream}:turn:${params.turn.id ?? line.position}`;
     if (params.turn.status === "failed") events = [{ kind: "session_note", payload: { text: params.turn.error?.message ?? "The turn failed" } }];
     else if (params.turn.status === "interrupted") events = [{ kind: "session_note", payload: { text: "The turn was interrupted" } }];
   } else {
@@ -124,7 +124,7 @@ export function codexEventsFor(line: IncomingLine): ParsedLiveEvent[] {
   if ("raw" in line) return parseCodexLine(line);
   return [
     {
-      sourceId: `${line.file}:${line.offset}`,
+      sourceId: `${line.stream}:${line.position}`,
       kind: "session_note",
       payload: { text: "A very large item was skipped", reason: "too_large", bytes: line.oversizeBytes },
     },

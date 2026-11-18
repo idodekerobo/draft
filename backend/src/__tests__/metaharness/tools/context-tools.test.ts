@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId } from "draft-core/run-spec";
-import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
+import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { runCaller, type AnyDraftToolPermission } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context";
 import { sha256 } from "../../../synthesis/context-version-files";
@@ -11,30 +11,28 @@ const WS = "11111111-1111-4111-8111-111111111111";
 
 function setup(files: Record<string, string>, permissions: AnyDraftToolPermission[]) {
   const db = createFakeContextDb(files);
-  const caller: ToolCaller = {
-    type: "run",
-    run: {
-      id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
-      kind: "routine",
-      network: "restricted",
-      workspaceId: parseWorkspaceId(WS),
-      trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
-      actor: { type: "agent", runId: parseAgentRunId("22222222-2222-4222-8222-222222222222") }, onBehalfOf: null,
-      runtime: { type: "local", hostMachineId: parseHostMachineId("mac") },
-      harness: "claude",
-      model: null,
-      instructions: "",
-      inputs: { contextVersionId: parseContextVersionId(db.pointer()!) },
-      permissions,
-      output: { type: "text" },
-    },
+  const run: AgentRunSpec = {
+    id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
+    kind: "routine",
+    network: "restricted",
+    workspaceId: parseWorkspaceId(WS),
+    trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
+    onBehalfOf: null,
+    runtime: { type: "local", hostId: parseHostId("mac") },
+    harness: "claude",
+    model: null,
+    instructions: "",
+    inputs: { contextVersionId: parseContextVersionId(db.pointer()!) },
+    permissions,
+    output: { type: "text" },
   };
+  const caller = runCaller(run);
   const audits: ToolCallRecord[] = [];
   const deps = {
     registry: createDraftToolRegistry(db.client),
     audit: async (record: ToolCallRecord) => {
       audits.push(record);
-      if (record.caller.type === "run") db.toolCalls.push({ tool_name: record.toolName, status: record.status, agent_run_id: record.caller.run.id });
+      if (record.caller.origin.kind === "run") db.toolCalls.push({ tool_name: record.toolName, status: record.status, agent_run_id: record.caller.origin.run.id });
     },
   };
   return { db, caller, deps, audits, call: (name: string, args: unknown) => invokeTool(deps, caller, name, args) };
@@ -82,8 +80,8 @@ describe("context.list", () => {
 describe("tools that need a person", () => {
   it("are not offered to a run, and are refused if it asks", async () => {
     const { call, deps, caller } = setup({ "a.md": "A" }, [{ tool: "people.approve" }, { tool: "people.reject" }, { tool: "context.export" }]);
-    if (caller.type !== "run") throw new Error("unreachable");
-    expect(deps.registry.listFor(caller.run)).toEqual([]);
+    if (caller.origin.kind !== "run") throw new Error("unreachable");
+    expect(deps.registry.listFor(caller.origin.run)).toEqual([]);
     for (const name of ["people.approve", "people.reject", "context.export"]) {
       expect(await call(name, { query: "x", source_item_id: "11111111-1111-4111-8111-111111111111" })).toMatchObject({ status: "denied", code: "caller_not_authorized" });
     }
