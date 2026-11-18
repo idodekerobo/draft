@@ -177,4 +177,115 @@ describe("FlyMachinesClient", () => {
       "Bearer token",
     );
   });
+
+  it("creates a machine that stays unlaunched, with its volume mounted", async () => {
+    const bodies: unknown[] = [];
+    const client = new FlyMachinesClient({
+      app: "draft",
+      token: "token",
+      fetch: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return machine();
+      },
+    });
+
+    await client.create({
+      image: "registry.fly.io/draft@sha256:abc123",
+      files: {},
+      region: "iad",
+      skipLaunch: true,
+      mounts: [{ volume: "vol_123", path: "/data" }],
+    });
+
+    expect(bodies[0]).toEqual({
+      config: {
+        image: "registry.fly.io/draft@sha256:abc123",
+        env: {},
+        files: [],
+        auto_destroy: false,
+        restart: { policy: "no" },
+        mounts: [{ volume: "vol_123", path: "/data" }],
+      },
+      region: "iad",
+      skip_launch: true,
+    });
+  });
+
+  it("starts and stops a machine with POST to its action endpoints", async () => {
+    const calls: Array<{ url: string; method?: string }> = [];
+    const client = new FlyMachinesClient({
+      app: "draft",
+      token: "token",
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), method: init?.method });
+        return new Response(null, { status: 200 });
+      },
+    });
+
+    await client.start("machine/id");
+    await client.stop("machine-1");
+
+    expect(calls).toEqual([
+      { url: "https://api.machines.dev/v1/apps/draft/machines/machine%2Fid/start", method: "POST" },
+      { url: "https://api.machines.dev/v1/apps/draft/machines/machine-1/stop", method: "POST" },
+    ]);
+  });
+
+  it("creates a volume with Fly's field names and reads its region back", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const client = new FlyMachinesClient({
+      app: "draft",
+      token: "token",
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), init });
+        return Response.json({ id: "vol_123", name: "run_1", region: "iad" });
+      },
+    });
+
+    const volume = await client.createVolume({ name: "run_1", region: "iad", sizeGb: 3 });
+
+    expect(volume).toMatchObject({ id: "vol_123", region: "iad" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://api.machines.dev/v1/apps/draft/volumes");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ name: "run_1", region: "iad", size_gb: 3 });
+  });
+
+  it("rejects a volume name Fly does not accept before calling the API", async () => {
+    let requests = 0;
+    const client = new FlyMachinesClient({
+      app: "draft",
+      token: "token",
+      fetch: async () => {
+        requests += 1;
+        return Response.json({});
+      },
+    });
+
+    for (const name of ["Run-1", "run 1", "", "a".repeat(31)]) {
+      await expect(client.createVolume({ name, region: "iad", sizeGb: 1 })).rejects.toThrow("Fly volume name");
+    }
+    expect(requests).toBe(0);
+  });
+
+  it("gets and deletes a volume by its encoded id", async () => {
+    const calls: Array<{ url: string; method?: string }> = [];
+    const client = new FlyMachinesClient({
+      app: "draft",
+      token: "token",
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), method: init?.method });
+        return init?.method === "DELETE"
+          ? new Response(null, { status: 200 })
+          : Response.json({ id: "vol/1", region: "ord" });
+      },
+    });
+
+    expect(await client.getVolume("vol/1")).toMatchObject({ region: "ord" });
+    await client.deleteVolume("vol/1");
+    expect(calls).toEqual([
+      { url: "https://api.machines.dev/v1/apps/draft/volumes/vol%2F1", method: "GET" },
+      { url: "https://api.machines.dev/v1/apps/draft/volumes/vol%2F1", method: "DELETE" },
+    ]);
+  });
 });

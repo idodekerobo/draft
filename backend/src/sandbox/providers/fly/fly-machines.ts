@@ -2,6 +2,8 @@ const DEFAULT_BASE_URL = "https://api.machines.dev";
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
 const PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/;
+// Fly accepts only these characters and lengths for volume names.
+const VOLUME_NAME_PATTERN = /^[a-z0-9_]{1,30}$/;
 
 export type FetchLike = (
   input: string | URL | Request,
@@ -44,6 +46,24 @@ export interface FlyMachineFile {
   raw_value: string;
 }
 
+export interface FlyMachineMount {
+  volume: string;
+  path: string;
+}
+
+export interface FlyVolume {
+  id: string;
+  name?: string;
+  region: string;
+  [key: string]: unknown;
+}
+
+export interface CreateFlyVolumeInput {
+  name: string;
+  region: string;
+  sizeGb: number;
+}
+
 export type SandboxFileContents = string | Uint8Array;
 export type SandboxFiles = Readonly<Record<string, SandboxFileContents>>;
 
@@ -56,21 +76,26 @@ export interface CreateFlyMachineInput {
   guest?: FlyMachineGuest;
   metadata?: Readonly<Record<string, string>>;
   name?: string;
+  /** Creates the machine without booting it. Call start to boot it. */
+  skipLaunch?: boolean;
+  mounts?: readonly FlyMachineMount[];
 }
 
 export interface FlyMachineConfig {
   image: string;
   env: Record<string, string>;
   files: FlyMachineFile[];
-  auto_destroy: true;
+  auto_destroy: boolean;
   restart: { policy: "no" };
   guest?: FlyMachineGuest;
   metadata?: Record<string, string>;
+  mounts?: FlyMachineMount[];
 }
 
 export interface CreateFlyMachineRequest {
   name?: string;
   region?: string;
+  skip_launch?: true;
   config: FlyMachineConfig;
 }
 
@@ -174,6 +199,12 @@ function assertBoundedNumber(value: number, label: string, allowZero: boolean): 
   }
 }
 
+function assertVolumeName(name: string): void {
+  if (!VOLUME_NAME_PATTERN.test(name)) {
+    throw new Error(`Fly volume name must be 1 to 30 lowercase letters, digits or underscores: ${name}`);
+  }
+}
+
 function base64(contents: SandboxFileContents): string {
   return Buffer.from(contents).toString("base64");
 }
@@ -199,16 +230,21 @@ export function buildCreateFlyMachineRequest(
   return {
     ...(input.name === undefined ? {} : { name: input.name }),
     ...(input.region === undefined ? {} : { region: input.region }),
+    ...(input.skipLaunch === true ? { skip_launch: true } : {}),
     config: {
       image: input.image,
       env: { ...(input.env ?? {}) },
       files,
-      auto_destroy: true,
+      // A machine with a volume is stopped and started again, so only one-shot machines destroy themselves.
+      auto_destroy: input.mounts === undefined,
       restart: { policy: "no" },
       ...(input.guest === undefined ? {} : { guest: { ...input.guest } }),
       ...(input.metadata === undefined
         ? {}
         : { metadata: { ...input.metadata } }),
+      ...(input.mounts === undefined
+        ? {}
+        : { mounts: input.mounts.map((mount) => ({ ...mount })) }),
     },
   };
 }
@@ -298,6 +334,44 @@ export class FlyMachinesClient {
     await this.request(url, { method: "DELETE" });
   }
 
+  async start(machineId: string): Promise<void> {
+    assertNonEmpty(machineId, "machineId");
+    const url = `${this.appMachinesUrl()}/machines/${encodeURIComponent(machineId)}/start`;
+    await this.request(url, { method: "POST" });
+  }
+
+  async stop(machineId: string): Promise<void> {
+    assertNonEmpty(machineId, "machineId");
+    const url = `${this.appMachinesUrl()}/machines/${encodeURIComponent(machineId)}/stop`;
+    await this.request(url, { method: "POST" });
+  }
+
+  async createVolume(input: CreateFlyVolumeInput): Promise<FlyVolume> {
+    assertVolumeName(input.name);
+    assertNonEmpty(input.region, "region");
+    assertBoundedNumber(input.sizeGb, "sizeGb", false);
+    const url = `${this.appMachinesUrl()}/volumes`;
+    const response = await this.request(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: input.name, region: input.region, size_gb: input.sizeGb }),
+    });
+    return this.readVolume(response, "POST", url);
+  }
+
+  async getVolume(volumeId: string): Promise<FlyVolume> {
+    assertNonEmpty(volumeId, "volumeId");
+    const url = `${this.appMachinesUrl()}/volumes/${encodeURIComponent(volumeId)}`;
+    const response = await this.request(url, { method: "GET" });
+    return this.readVolume(response, "GET", url);
+  }
+
+  async deleteVolume(volumeId: string): Promise<void> {
+    assertNonEmpty(volumeId, "volumeId");
+    const url = `${this.appMachinesUrl()}/volumes/${encodeURIComponent(volumeId)}`;
+    await this.request(url, { method: "DELETE" });
+  }
+
   private appMachinesUrl(): string {
     return `${this.baseUrl}/v1/apps/${encodeURIComponent(this.app)}`;
   }
@@ -342,5 +416,27 @@ export class FlyMachinesClient {
       throw new Error(`Fly Machines API ${method} ${url} returned an invalid machine`);
     }
     return value as FlyMachine;
+  }
+
+  private async readVolume(
+    response: Response,
+    method: string,
+    url: string,
+  ): Promise<FlyVolume> {
+    let value: unknown;
+    try {
+      value = await response.json();
+    } catch {
+      throw new Error(`Fly Machines API ${method} ${url} returned invalid JSON`);
+    }
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      typeof (value as Record<string, unknown>).id !== "string" ||
+      typeof (value as Record<string, unknown>).region !== "string"
+    ) {
+      throw new Error(`Fly Machines API ${method} ${url} returned an invalid volume`);
+    }
+    return value as FlyVolume;
   }
 }

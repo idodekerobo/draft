@@ -10,6 +10,7 @@ import {
   type FlyMachine,
 } from "../../sandbox/providers/fly/fly-machines";
 import { launchSandboxRun } from "../../sandbox/launch";
+import type { SandboxProvider, SandboxSpec } from "../../sandbox/providers";
 import { createFlyProvider, type FlyMachinesApi } from "../../sandbox/providers/fly/provider";
 import { validateRunnerManifest } from "draft-core/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
@@ -88,14 +89,23 @@ function fakeFlyClient(overrides: {
   waitForState?: FlyMachinesApi["waitForState"];
 } = {}): { client: FlyMachinesApi; forceDeleted: string[] } {
   const forceDeleted: string[] = [];
+  const notCalled = async (): Promise<never> => {
+    throw new Error("a launch only creates and starts one machine");
+  };
   const client: FlyMachinesApi = {
     create: async () => ({ id: "machine-1", state: overrides.createState ?? "created" }),
+    get: async (machineId: string): Promise<FlyMachine> => ({ id: machineId, state: "started" }),
+    start: async () => undefined,
+    stop: notCalled,
     waitForState:
       overrides.waitForState ??
       (async (machineId: string): Promise<FlyMachine> => ({ id: machineId, state: "started" })),
     forceDelete: async (machineId: string) => {
       forceDeleted.push(machineId);
     },
+    createVolume: notCalled,
+    getVolume: notCalled,
+    deleteVolume: notCalled,
   };
   return { client, forceDeleted };
 }
@@ -435,25 +445,32 @@ describe("launchSandboxRun routine runs", () => {
   });
 });
 
-describe("the launch plan", () => {
-  it("holds no provider detail, and any provider can start it", async () => {
-    const started: unknown[] = [];
-    const provider = {
-      start: async (plan: unknown) => {
-        started.push(plan);
-        return { machineId: "box-1", state: "running" };
+describe("the sandbox spec", () => {
+  it("holds no provider detail, and any provider can create and start it", async () => {
+    const calls: string[] = [];
+    let created: SandboxSpec | undefined;
+    const provider: SandboxProvider = {
+      create: async (spec) => {
+        calls.push("create");
+        created = spec;
+        return { provider: "fake", machine: "box-1", volume: null };
+      },
+      start: async (ref) => {
+        calls.push(`start ${ref.machine}`);
       },
       stop: async () => undefined,
+      destroy: async () => undefined,
+      status: async () => "running",
     };
     const { uploader } = fakeBundleUploader();
     const receipt = await launchSandboxRun(
       { spec: routineSpec(), bundle: bundle(), prompt: text("p"), credentials: claudeLogin, config },
       { provider, bundleUploader: uploader, now: () => 1_000 },
     );
-    expect(receipt).toMatchObject({ machineId: "box-1", state: "running", bundleHash });
-    const plan = started[0] as { env: Record<string, string>; metadata: Record<string, string> };
-    expect(Object.keys(plan).sort()).toEqual(["bundleHash", "env", "metadata", "runId"]);
-    expect(JSON.stringify(plan)).not.toContain("registry.fly.io");
-    expect(JSON.stringify(plan)).not.toContain("fly-api-secret");
+    expect(receipt).toMatchObject({ machineId: "box-1", state: "started", bundleHash });
+    expect(calls).toEqual(["create", "start box-1"]);
+    expect(Object.keys(created!).sort()).toEqual(["env", "metadata", "runId"]);
+    expect(JSON.stringify(created)).not.toContain("registry.fly.io");
+    expect(JSON.stringify(created)).not.toContain("fly-api-secret");
   });
 });

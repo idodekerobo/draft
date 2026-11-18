@@ -172,8 +172,18 @@ async function launched(input: Record<string, unknown>) {
           env = machine.env ?? {};
           return { id: "m1", state: "created" } as never;
         },
+        get: async () => ({ id: "m1", state: "started" }) as never,
+        start: async () => undefined,
+        stop: async () => undefined,
         waitForState: async () => ({ id: "m1", state: "started" }) as never,
         forceDelete: async () => undefined,
+        createVolume: async () => {
+          throw new Error("golden runs create no volume");
+        },
+        getVolume: async () => {
+          throw new Error("golden runs create no volume");
+        },
+        deleteVolume: async () => undefined,
       }),
       bundleUploader: async (upload) => {
         uploaded.push(...Object.keys(upload.files));

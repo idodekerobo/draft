@@ -4,7 +4,7 @@ import { createAgentRunToken } from "../metaharness/runs/run-token";
 import { createSandboxCallbackToken } from "./callback-token";
 import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import { type SandboxDeploymentConfig, validateSandboxDeploymentConfig } from "./config";
-import { providerFor, type SandboxPlan, type SandboxProvider } from "./providers";
+import { providerFor, type SandboxProvider, type SandboxSpec } from "./providers";
 import { buildRunnerManifest, needsDraftToolServer, type PromptSource } from "./run-manifest";
 
 const PROMPT_PATH = "input/prompt.md";
@@ -78,13 +78,13 @@ function assertNonEmpty(value: string, label: string): void {
 }
 
 /**
- * Everything a provider needs to start the run: the bundle is uploaded, the tokens are minted, and the
+ * Everything a provider needs to create the run: the bundle is uploaded, the tokens are minted, and the
  * environment is built. Nothing here knows which provider will run it.
  */
-export async function buildSandboxPlan(
+export async function buildSandboxSpec(
   input: LaunchSandboxRunInput,
   dependencies: Omit<LaunchSandboxRunDependencies, "provider"> = {},
-): Promise<{ plan: SandboxPlan; callbackExpiresAt: number }> {
+): Promise<{ spec: SandboxSpec; callbackExpiresAt: number }> {
   const { spec } = input;
   if (input.prompt.kind === "text") assertNonEmpty(input.prompt.text, "prompt");
   const claudeToken = "claudeCodeOAuthToken" in input.credentials ? input.credentials.claudeCodeOAuthToken : undefined;
@@ -161,9 +161,8 @@ export async function buildSandboxPlan(
   }
 
   return {
-    plan: {
+    spec: {
       runId: input.bundle.runId,
-      bundleHash: input.bundle.bundleHash,
       env,
       metadata: { run_id: input.bundle.runId, bundle_hash: input.bundle.bundleHash },
     },
@@ -179,14 +178,15 @@ export async function launchSandboxRun(
   input: LaunchSandboxRunInput,
   dependencies: LaunchSandboxRunDependencies = {},
 ): Promise<SandboxRunReceipt> {
-  const { plan, callbackExpiresAt } = await buildSandboxPlan(input, dependencies);
+  const { spec, callbackExpiresAt } = await buildSandboxSpec(input, dependencies);
   const provider = dependencies.provider ?? providerFor(validateSandboxDeploymentConfig(input.config).provider);
-  const started = await provider.start(plan);
+  const ref = await provider.create(spec);
+  await provider.start(ref);
   return {
-    machineId: started.machineId,
-    state: started.state,
-    runId: plan.runId,
-    bundleHash: plan.bundleHash,
+    machineId: ref.machine,
+    state: "started",
+    runId: spec.runId,
+    bundleHash: input.bundle.bundleHash,
     callbackExpiresAt,
   };
 }
