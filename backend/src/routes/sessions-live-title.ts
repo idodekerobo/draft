@@ -17,6 +17,7 @@ export async function TITLE(req: TitleRequest): Promise<Response> {
     .select("title")
     .eq("id", sessionId)
     .eq("session_type", "interactive")
+    .is("deleted_at", null)
     .maybeSingle<{ title: string | null }>();
   if (error) return Response.json({ error: "title_lookup_failed" }, { status: 500 });
   return Response.json({ title: data?.title ?? null });

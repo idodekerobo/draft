@@ -47,6 +47,14 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
     },
     actOnInput: (sessionId, inputId, action) => post(`${base}/${sessionId}/inputs/${inputId}`, { action }),
     decideApproval: (sessionId, requestId, response) => decide(`${base}/${sessionId}/approvals/${encodeURIComponent(requestId)}/decision`, response),
+    deleteSession: async (sessionId) => {
+      try {
+        await apiFetch(`${base}/${sessionId}`, { method: "DELETE" });
+      } catch (error) {
+        if (error instanceof ApiError) throw new Error(error.code);
+        throw error;
+      }
+    },
     setMode: (sessionId, change) => post(`${base}/${sessionId}/mode`, change),
     stop: async (sessionId, options) => {
       try {

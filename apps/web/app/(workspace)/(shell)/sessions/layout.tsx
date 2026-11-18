@@ -18,10 +18,13 @@ export default function SessionsSectionLayout({ children }: { children: ReactNod
 function SessionsSection({ selectedId, children }: { selectedId: string | null; children: ReactNode }) {
   const router = useRouter();
   const { markInAppNavigation } = useSessionEntry();
-  const { sessions, isPending, isError } = useWebLiveSessions();
+  const { sessions, isPending, isError, api, refetch } = useWebLiveSessions();
 
   return (
-    <SessionsLayout sessions={sessions} loading={isPending} failed={isError} selectedId={selectedId} onSelect={(id) => {
+    <SessionsLayout sessions={sessions} loading={isPending} failed={isError} selectedId={selectedId} api={api} onDeleted={(id) => {
+        void refetch();
+        if (id === selectedId) router.push("/sessions");
+      }} onSelect={(id) => {
         markInAppNavigation();
         router.push(`/sessions/${id}`);
       }}>

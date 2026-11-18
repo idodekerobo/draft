@@ -191,8 +191,8 @@ class SessionRunner {
       });
       return true;
     } catch (error) {
-      // An already ended session is the outcome we wanted.
-      if (error instanceof ServerError && error.code === "session_ended") return true;
+      // An already ended or deleted session is the outcome we wanted.
+      if (error instanceof ServerError && (error.code === "session_ended" || error.code === "session_not_found")) return true;
       console.error("[live-session] end failed", this.state.sessionId, error);
       return false;
     }
@@ -217,6 +217,8 @@ class SessionRunner {
   private reportInputError(what: string, error: unknown): void {
     const action = hostFailureAction(error);
     if (action === "pause") this.suspend();
+    // Only a session that is gone stops the runner. Other stop codes can come from a mismatched login or host.
+    else if (action === "stop" && error instanceof ServerError && (error.code === "session_ended" || error.code === "session_not_found")) this.abandon();
     else if (action === "retry") console.error(`[live-session] ${what} failed`, error);
   }
 
@@ -481,6 +483,18 @@ export async function resumeLiveSessions(): Promise<void> {
     const runner = new SessionRunner(state);
     runner.start();
     if (!state.ended && (await runner.isAlive())) await runner.uploadIfChanged();
+  }
+}
+
+/** Hides the owner's session in Draft. A session that runs here ends first. Claude's own files stay. */
+export async function deleteLiveSession(sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const runner = running.get(sessionId);
+    if (runner && !runner.hasEnded()) await runner.endByOwner();
+    await fetchServer(sessionBase(sessionId), { method: "DELETE" });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "delete_failed" };
   }
 }
 

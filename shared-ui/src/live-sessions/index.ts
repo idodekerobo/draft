@@ -6,6 +6,7 @@ export { WORKSPACE_SIGNAL_DELAY_MS, useWorkspaceDataSignals, useSignals, type Wa
 export { readRecentFolders, rememberFolder } from "./column-state";
 export { SessionsLayout, ColumnToggleButton } from "./SessionsLayout";
 export { SessionStartScreen, type HarnessProblem, type StartRequest, type StartResult } from "./SessionStartScreen";
-export { SessionView, type SessionMenuItem } from "./SessionView";
+export { SessionView } from "./SessionView";
+export { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 export { MESSAGE_PARAM, parseMessageParam } from "./share-links";
 export { liveTextListener } from "./live-text";

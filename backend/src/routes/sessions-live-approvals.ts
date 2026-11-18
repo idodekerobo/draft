@@ -184,6 +184,7 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
     .select("harness, status, session_type, owner_user_id, model, reasoning_effort")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
     .maybeSingle<{ harness: string; status: string; session_type: string; owner_user_id: string; model: string | null; reasoning_effort: string | null }>();
   if (lookupError) return errorResponse("mode_failed", 500, lookupError, workspaceId, sessionId);
   if (!session) return errorResponse("session_not_found", 404);

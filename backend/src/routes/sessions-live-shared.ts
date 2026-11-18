@@ -76,6 +76,7 @@ export async function loadOwnedSession(workspaceId: string, sessionId: string, u
     .select(SESSION_COLUMNS)
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
     .maybeSingle<SessionRow>();
   if (error) return { ok: false, response: errorResponse("session_lookup_failed", 500, error, workspaceId, sessionId) };
   if (!data) return { ok: false, response: errorResponse("session_not_found", 404) };

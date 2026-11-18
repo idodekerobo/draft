@@ -189,6 +189,8 @@ export interface LiveSessionsApi {
   setMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string; model?: string | null; reasoningEffort?: string | null }): Promise<void>;
   /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
   resume?(sessionId: string): Promise<void>;
+  /** Hides the owner's session from everyone in Draft. A live session ends first. Absent where the app cannot delete. Throws on failure. */
+  deleteSession?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */
   watchPresence?(sessionId: string, viewer: LiveSessionViewer, onChange: (names: string[]) => void): () => void;
   /**

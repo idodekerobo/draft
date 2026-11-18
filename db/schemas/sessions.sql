@@ -36,6 +36,8 @@ create table sessions (
   -- Routine sessions only. idempotency_key is '<task>:<kind>:<agent_event id>', kind = timer, manual or an event name.
   scheduled_task_id  uuid,
   idempotency_key    text,
+  -- Soft delete by the owner. A deleted session is ended too, and no viewer query returns it.
+  deleted_at         timestamptz,
   -- Runs with the same key are serialized: one live run per (routine, key). Null for skipped runs.
   concurrency_key    text,
 
@@ -61,7 +63,8 @@ alter table sessions enable row level security;
 create policy sessions_select on sessions
   for select to authenticated
   using (
-    exists (
+    deleted_at is null
+    and exists (
       select 1 from workspaces w
       where w.id = sessions.workspace_id
         and w.organization_id = current_user_org_id()
@@ -87,6 +90,7 @@ create trigger sessions_signal_update
     or old.open_approval_count is distinct from new.open_approval_count
     or old.end_reason is distinct from new.end_reason
     or old.host_name is distinct from new.host_name
+    or old.deleted_at is distinct from new.deleted_at
   )
   execute function signal_session_row();
 

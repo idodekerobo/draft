@@ -6,8 +6,9 @@ import { relativeTime } from "../relative-time";
 import { displayStatus } from "./display-status";
 import { groupSessionsByDay, lastActivityAt } from "./session-groups";
 import { sessionTitle } from "./sessions-list";
+import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 import { useMinuteClock } from "./useMinuteClock";
-import type { LiveSession } from "./types";
+import type { LiveSession, LiveSessionsApi } from "./types";
 
 interface ColumnContext {
   open: boolean;
@@ -40,7 +41,7 @@ export function ColumnToggleButton({ where }: { where: "column" | "main" }) {
   );
 }
 
-function SessionRow({ session, selected, now, onSelect }: { session: LiveSession; selected: boolean; now: number; onSelect: (id: string) => void }) {
+function SessionRow({ session, selected, now, onSelect, menuItems, onMenuSelect }: { session: LiveSession; selected: boolean; now: number; onSelect: (id: string) => void; menuItems: SessionMenuItem[]; onMenuSelect: (item: SessionMenuItem) => void }) {
   const status = displayStatus(session, now);
   return (
     <li data-session-id={session.id}>
@@ -57,6 +58,7 @@ function SessionRow({ session, selected, now, onSelect }: { session: LiveSession
           <span className="ui-sessions__row-fixed">{status.label}</span>
         </span>
       </button>
+      <SessionMenu items={menuItems} onSelect={onMenuSelect} variant="row" />
     </li>
   );
 }
@@ -103,6 +105,9 @@ export function SessionsLayout({
   selectedId,
   onSelect,
   onNew,
+  api,
+  menuItems,
+  onDeleted,
   resizable = false,
   children,
 }: {
@@ -113,9 +118,15 @@ export function SessionsLayout({
   onSelect: (sessionId: string) => void;
   /** Present when this app can start sessions. */
   onNew?: () => void;
+  /** Gives each owned row a Delete item when the app can delete. */
+  api?: Pick<LiveSessionsApi, "deleteSession">;
+  /** The app's own items for a row, shown above Delete. */
+  menuItems?: (session: LiveSession) => SessionMenuItem[];
+  onDeleted?: (sessionId: string) => void;
   resizable?: boolean;
   children: ReactNode;
 }) {
+  const menu = useSessionMenu({ api: api ?? {}, items: menuItems, onDeleted });
   const [open, setOpen] = useState(true);
   const [width, setWidth] = useState(COLUMN_DEFAULT_PX);
   const [containerWidth, setContainerWidth] = useState(Infinity);
@@ -234,7 +245,7 @@ export function SessionsLayout({
                     <h3 className="ui-sessions__group">{group.label}</h3>
                     <ul className="ui-sessions__list">
                       {group.sessions.map((session) => (
-                        <SessionRow key={session.id} session={session} selected={session.id === selectedId} now={now} onSelect={onSelect} />
+                        <SessionRow key={session.id} session={session} selected={session.id === selectedId} now={now} onSelect={onSelect} menuItems={menu.itemsFor(session)} onMenuSelect={menu.choose} />
                       ))}
                     </ul>
                   </section>
@@ -257,6 +268,7 @@ export function SessionsLayout({
           />
         )}
         <div className="ui-sessions__main">{children}</div>
+        {menu.dialog}
       </div>
     </SessionsColumnContext.Provider>
   );

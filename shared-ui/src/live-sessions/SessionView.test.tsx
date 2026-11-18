@@ -318,6 +318,27 @@ describe("SessionView", () => {
     });
   });
 
+  it("lets the owner delete from the header menu, after a dialog", async () => {
+    const deleteSession = mock(async (_id: string) => {});
+    const onDeleted = mock((_id: string) => {});
+    const mine = { ...session, mine: true };
+    render(<SessionView api={{ ...api, deleteSession, fetchEvents: async () => ({ viewer, session: mine, events: [], inputs: [] }) }} sessionId="s1" onDeleted={onDeleted} menuItems={() => [{ label: "Open in Terminal", onSelect: () => {} }]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Session options" }));
+    const labels = screen.getAllByRole("menuitem").map((el) => el.textContent);
+    expect(labels).toEqual(["Open in Terminal", "Delete"]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(deleteSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("s1"));
+    expect(deleteSession).toHaveBeenCalledWith("s1");
+  });
+
+  it("offers no Delete on a session the viewer does not own", async () => {
+    render(<SessionView api={{ ...api, deleteSession: async () => {} }} sessionId="s1" />);
+    await screen.findByText(/Hi there/);
+    expect(screen.queryByRole("button", { name: "Session options" })).toBeNull();
+  });
+
   it("asks before a menu action that needs confirming", async () => {
     let ended = 0;
     render(<SessionView api={api} sessionId="s1" menuItems={() => [{ label: "End session", confirm: "End this session?", onSelect: () => ended++ }]} />);

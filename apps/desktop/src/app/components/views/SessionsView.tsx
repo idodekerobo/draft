@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isTestedVersion } from "draft-core/harnesses";
-import { SessionStartScreen, SessionView, SessionsLayout, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
+import { SessionStartScreen, SessionView, SessionsLayout, type LiveSession, type SessionMenuItem, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { CodexSetupPanel } from "../connections/CodexSetupPanel";
 import { liveSessionsApi } from "../../liveSessionsApi";
@@ -19,58 +19,24 @@ function useDevOnlyVersionWarnings(): boolean {
   return useQuery(appVersionQueryOptions).data?.channel === "dev";
 }
 
-function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: string; onOpenSession: (id: string) => void; justStarted: boolean }) {
+function SessionDetail({ sessionId, onOpenSession, justStarted, menuItems, notice, onDeleted }: {
+  sessionId: string;
+  onOpenSession: (id: string) => void;
+  justStarted: boolean;
+  menuItems: (session: LiveSession) => SessionMenuItem[];
+  notice: string | null;
+  onDeleted: () => void;
+}) {
   const { track } = useAnalytics();
   const webAppUrl = useWebAppUrl();
   const devOnlyVersionWarnings = useDevOnlyVersionWarnings();
-  const [hostedHere, setHostedHere] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const check = () =>
-      void rpc.request.getHostedLiveSessionIds().then((ids) => {
-        if (!cancelled) setHostedHere(ids.includes(sessionId));
-      });
-    check();
-    const timer = setInterval(check, 5_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [sessionId]);
-
-  async function openInTerminal() {
-    setNotice(null);
-    const result = await rpc.request.openLiveSessionInTerminal({ sessionId });
-    if (!result.ok) setNotice(result.error);
-  }
-
-  async function revealFolder() {
-    setNotice(null);
-    const result = await rpc.request.revealLiveSessionFolder({ sessionId });
-    if (!result.ok) setNotice(result.error);
-  }
-
-  async function endSession() {
-    setNotice(null);
-    const result = await rpc.request.endLiveSession({ sessionId });
-    if (!result.ok) setNotice(result.error);
-  }
 
   return (
     <SessionView
       api={liveSessionsApi}
       sessionId={sessionId}
-      menuItems={(session) =>
-        hostedHere && session.status !== "ended"
-          ? [
-              { label: REVEAL_LABEL, onSelect: revealFolder },
-              { label: "Open in Terminal", onSelect: openInTerminal },
-              { label: "End session", onSelect: endSession, confirm: "End this session? Claude exits and nobody can send to it again." },
-            ]
-          : []
-      }
+      menuItems={menuItems}
+      onDeleted={onDeleted}
       notice={notice}
       onOpenSession={onOpenSession}
       autoFocusComposer={justStarted}
@@ -82,6 +48,25 @@ function SessionDetail({ sessionId, onOpenSession, justStarted }: { sessionId: s
   );
 }
 
+/** The ids of the live sessions that run on this computer, checked every few seconds. */
+function useHostedSessionIds(): Set<string> {
+  const [ids, setIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    const check = () =>
+      void rpc.request.getHostedLiveSessionIds().then((hosted) => {
+        if (!cancelled) setIds(new Set(hosted));
+      }).catch(() => {});
+    check();
+    const timer = setInterval(check, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+  return ids;
+}
+
 export function SessionsView() {
   const devOnlyVersionWarnings = useDevOnlyVersionWarnings();
   const workspaceKey = useWorkspaceKey();
@@ -89,6 +74,32 @@ export function SessionsView() {
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [startedId, setStartedId] = useState<string | null>(null);
+  const hostedIds = useHostedSessionIds();
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const menuItems = useCallback(
+    (session: LiveSession): SessionMenuItem[] => {
+      if (!hostedIds.has(session.id) || session.status === "ended") return [];
+      const run = (request: () => Promise<{ ok: true } | { ok: false; error: string }>) => async () => {
+        setNotice(null);
+        const result = await request();
+        if (!result.ok) setNotice(result.error);
+      };
+      return [
+        { label: REVEAL_LABEL, onSelect: run(() => rpc.request.revealLiveSessionFolder({ sessionId: session.id })) },
+        { label: "Open in Terminal", onSelect: run(() => rpc.request.openLiveSessionInTerminal({ sessionId: session.id })) },
+        { label: "End session", onSelect: run(() => rpc.request.endLiveSession({ sessionId: session.id })), confirm: "End this session? Claude exits and nobody can send to it again." },
+      ];
+    },
+    [hostedIds],
+  );
+  const onDeleted = useCallback(
+    (id: string) => {
+      void refetch();
+      setSelectedId((current) => (current === id ? null : current));
+    },
+    [refetch],
+  );
   const [recentFolders, setRecentFolders] = useState(() => readRecentFolders(window.localStorage));
 
   const [availability, setAvailability] = useState<Partial<Record<string, HarnessProblem>>>({});
@@ -130,9 +141,12 @@ export function SessionsView() {
       selectedId={selectedId}
       onSelect={setSelectedId}
       onNew={() => setSelectedId(null)}
+      api={liveSessionsApi}
+      menuItems={menuItems}
+      onDeleted={onDeleted}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
     </SessionsLayout>
   );
 }

@@ -20,6 +20,7 @@ function queryBuilder(table: string) {
   const ins: [string, unknown[]][] = [];
   const ltes: [string, number][] = [];
   const nots: [string, unknown][] = [];
+  const iss: [string, unknown][] = [];
   let insertPayload: Row | undefined;
   let updatePayload: Row | undefined;
 
@@ -27,6 +28,7 @@ function queryBuilder(table: string) {
     (tables[table] ?? []).filter(
       (row) =>
         eqs.every(([col, v]) => row[col] === v) &&
+        iss.every(([col, v]) => (row[col] ?? null) === v) &&
         ins.every(([col, vs]) => vs.includes(row[col])) &&
         gts.every(([col, v]) => (row[col] as number) > v) &&
         ltes.every(([col, v]) => (row[col] as number) <= v) &&
@@ -51,7 +53,7 @@ function queryBuilder(table: string) {
     eq: (col: string, value: unknown) => (eqs.push([col, value]), builder),
     in: (col: string, values: unknown[]) => (ins.push([col, values]), builder),
     neq: () => builder,
-    is: () => builder,
+    is: (col: string, value: unknown) => (iss.push([col, value]), builder),
     gt: (col: string, value: number) => (gts.push([col, value]), builder),
     lte: (col: string, value: number) => (ltes.push([col, value]), builder),
     not: (col: string, _operator: string, value: unknown) => (nots.push([col, value]), builder),
@@ -448,6 +450,50 @@ describe("live session routes", () => {
     expect(ok.status).toBe(200);
     expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
     expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_ended" });
+  });
+
+  describe("deleting a session", () => {
+    const del = () => routes.DELETE(post("/x", {}));
+
+    it("ends a live session and hides it, and fails its queued messages", async () => {
+      tables.sessions = [session({ session_type: "interactive", status: "live" })];
+      expect((await del()).status).toBe(200);
+      expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "deleted", open_approval_count: 0, deleted_at: expect.any(String) });
+      expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_ended" });
+    });
+
+    it("keeps the end details of a session that already ended", async () => {
+      tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "exited" })];
+      expect((await del()).status).toBe(200);
+      const payload = updates.find((u) => u.table === "sessions")!.payload;
+      expect(payload.deleted_at).toEqual(expect.any(String));
+      expect(payload).not.toHaveProperty("end_reason");
+      expect(payload).not.toHaveProperty("status");
+    });
+
+    it("is owner only", async () => {
+      tables.sessions = [session({ session_type: "interactive", owner_user_id: "user-2" })];
+      expect((await del()).status).toBe(403);
+      expect(updates.find((u) => u.table === "sessions")).toBeUndefined();
+    });
+
+    it("answers not found for a session that is already deleted", async () => {
+      tables.sessions = [session({ session_type: "interactive", deleted_at: "t" })];
+      expect((await del()).status).toBe(404);
+    });
+
+    it("does not delete a routine session", async () => {
+      tables.sessions = [session({ session_type: "routine" })];
+      expect((await del()).status).toBe(409);
+    });
+
+    it("hides a deleted session from the list and the events route, and blocks reopening it", async () => {
+      tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "exited", deleted_at: "t" })];
+      const list = await routes.LIST(post("/x", {}, { id: WS }));
+      expect((await list.json()).sessions).toEqual([]);
+      expect((await routes.EVENTS(Object.assign(new Request("http://localhost/x"), { params: { id: WS, sessionId: SESSION } }) as never)).status).toBe(404);
+      expect((await routes.REOPEN(post("/x", { hostMachineId: "host-1" }))).status).toBe(404);
+    });
   });
 
   it("reopens an ended session as the same session, only on its own host", async () => {

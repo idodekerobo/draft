@@ -25,7 +25,6 @@ import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
 import { pendingItems } from "./pending-items";
 import { buildStreamItems, openApprovals, type StreamItem } from "./stream-items";
-import { usePopover } from "./usePopover";
 import { presenceLine } from "./presence-line";
 import { TeamStrip } from "./TeamStrip";
 import { teamRoster, type TeamMember } from "./team-roster";
@@ -35,14 +34,8 @@ import { useSessionPresence } from "./useSessionPresence";
 import { useSessionStream } from "./useSessionStream";
 import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
+import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
-
-export interface SessionMenuItem {
-  label: string;
-  onSelect: () => void;
-  /** Ask before running: a question, with the label as the confirm button. */
-  confirm?: string;
-}
 
 const SKIPPED_MESSAGE = "The user skipped this.";
 
@@ -54,44 +47,14 @@ const COPIED_MS = 1_500;
 
 const prefersReducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-function SessionMenu({ items, onSelect }: { items: SessionMenuItem[]; onSelect: (item: SessionMenuItem) => void }) {
-  const { open, setOpen, rootRef, triggerRef } = usePopover();
-  if (items.length === 0) return null;
-  return (
-    <div className="ui-session__menu" ref={rootRef}>
-      <button ref={triggerRef} type="button" className="ui-btn ui-session__menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-label="Session options" onClick={() => setOpen((v) => !v)}>
-        <span aria-hidden="true">…</span>
-      </button>
-      {open && (
-        <ul className="ui-session__menu-list" role="menu">
-          {items.map((item) => (
-            <li key={item.label} role="none">
-              <button
-                type="button"
-                role="menuitem"
-                className="ui-session__menu-item"
-                onClick={() => {
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                  onSelect(item);
-                }}
-              >
-                {item.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 interface SessionViewProps {
   api: LiveSessionsApi;
   sessionId: string;
   /** The "Sessions" crumb, for apps where the list is not always beside the session. */
   back?: ReactNode;
   menuItems?: (session: LiveSession) => SessionMenuItem[];
+  /** Called after the owner deletes this session, so the app can leave it. */
+  onDeleted?: (sessionId: string) => void;
   notice?: string | null;
   /** Opens a linked session, from the line under the header of a cleared session. */
   onOpenSession?: (sessionId: string) => void;
@@ -221,6 +184,7 @@ function LoadedSession({
   sessionId,
   back,
   menuItems,
+  onDeleted,
   notice,
   onOpenSession,
   autoFocusComposer,
@@ -249,7 +213,6 @@ function LoadedSession({
     resize: prefersReducedMotion() ? "instant" : undefined,
   });
   const [stopping, setStopping] = useState(false);
-  const [confirming, setConfirming] = useState<SessionMenuItem | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
   const logItems = useMemo(() => buildStreamItems(events), [events]);
@@ -456,10 +419,7 @@ function LoadedSession({
     return () => document.removeEventListener("keydown", onKey);
   }, [firstOpenRequest, blockedByPrompt, skipRequest, dismissPrompt]);
 
-  const chooseMenuItem = useCallback((item: SessionMenuItem) => {
-    if (item.confirm) setConfirming(item);
-    else item.onSelect();
-  }, []);
+  const menu = useSessionMenu({ api, items: menuItems, onDeleted });
 
   const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && session.end_reason !== "cleared";
   const resume = useCallback(async () => {
@@ -490,20 +450,10 @@ function LoadedSession({
             </button>
           )}
           {shareBaseUrl && <CopyLinkButton url={sessionUrl(shareBaseUrl, sessionId)} />}
-          {menuItems && <SessionMenu items={menuItems(session)} onSelect={chooseMenuItem} />}
+          <SessionMenu items={menu.itemsFor(session)} onSelect={menu.choose} />
         </div>
       </header>
-      {confirming && (
-        <div className="ui-session__confirm" role="group" aria-label="Confirm">
-          <p className="ui-session__confirm-text">{confirming.confirm}</p>
-          <div className="ui-session__confirm-actions">
-            <button type="button" className="ui-btn ui-btn--primary" onClick={() => { const item = confirming; setConfirming(null); item.onSelect(); }}>
-              {confirming.label}
-            </button>
-            <button type="button" className="ui-btn" onClick={() => setConfirming(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {menu.dialog}
       {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
       <SessionLinks session={session} onOpenSession={onOpenSession} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
