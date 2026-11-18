@@ -43,12 +43,7 @@ export async function loadParentRoutine(client: SupabaseClient, run: AgentRunSpe
 
 /** Private when any event that woke the run came from a private source. Otherwise shared. */
 export async function runVisibility(client: SupabaseClient, runId: string): Promise<"private" | "shared"> {
-  const { data: links, error: linkError } = await client.from("agent_run_events").select("agent_event_id").eq("agent_run_id", runId);
-  if (linkError) throw linkError;
-  const eventIds = ((links ?? []) as Array<{ agent_event_id: string }>).map((link) => link.agent_event_id);
-  if (eventIds.length === 0) return "shared";
-
-  const { data: events, error: eventError } = await client.from("agent_events").select("source_item_id").in("id", eventIds);
+  const { data: events, error: eventError } = await client.from("agent_event_inbox").select("source_item_id").eq("claimed_by_run_id", runId);
   if (eventError) throw eventError;
   const sourceIds = ((events ?? []) as Array<{ source_item_id: string | null }>).map((event) => event.source_item_id).filter((id): id is string => id !== null);
   if (sourceIds.length === 0) return "shared";

@@ -631,7 +631,7 @@ export async function runRoutineNow(workspaceId: string, taskId: string, userId:
     await recordRunNow(scope, "event_drain_failed", "Draining the event inbox failed during Run now", { error, detail: { event_id: eventId } });
   }
 
-  const { data, error } = await client.from("agent_events").select("status, claimed_by_run_id, failure_code").eq("id", eventId).maybeSingle();
+  const { data, error } = await client.from("agent_event_inbox").select("status, claimed_by_run_id, failure_code").eq("id", eventId).maybeSingle();
   const event = data as RunNowEvent | null;
   if (error || !event) return failRunNow(scope, "event_read_failed", "Reading the run request back failed", { error, detail: { event_id: eventId } });
 

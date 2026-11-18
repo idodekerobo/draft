@@ -81,10 +81,10 @@ const task = (fields: Row = {}): Row => ({
   ...fields,
 });
 
-/** Mirrors claim_agent_events for pending rows: oldest first, one attempt counted per claim. */
+/** Mirrors claim_agent_event_inbox for pending rows: oldest first, one attempt counted per claim. */
 function claimPending(db: FakeDb) {
   return (args: Record<string, unknown>) => {
-    const ready = db.tables.agent_events!
+    const ready = db.tables.agent_event_inbox!
       .filter((event) => event.status === "pending")
       .sort((a, b) => (a.created_at as string).localeCompare(b.created_at as string))
       .slice(0, args.p_limit as number);
@@ -97,10 +97,10 @@ function claimPending(db: FakeDb) {
 
 function setup(events: Row[], options: { tasks?: Row[]; sessions?: Row[] } = {}) {
   const db = fakeDb(
-    { scheduled_tasks: options.tasks ?? [task()], agent_events: events, sessions: options.sessions ?? [], agent_run_events: [], errors: [] },
-    { unique: { agent_events: [["workspace_id", "dedupe_key"]] } },
+    { scheduled_tasks: options.tasks ?? [task()], agent_event_inbox: events, sessions: options.sessions ?? [], errors: [] },
+    { unique: { agent_event_inbox: [["workspace_id", "dedupe_key"]] } },
   );
-  db.rpcs.claim_agent_events = claimPending(db);
+  db.rpcs.claim_agent_event_inbox = claimPending(db);
   return { db, client: fakeClient(db) };
 }
 
@@ -122,7 +122,7 @@ const throwing: Dispatch = async () => {
   throw new Error("sandbox unavailable");
 };
 
-const eventRow = (db: FakeDb, id: string) => db.tables.agent_events!.find((event) => event.id === id)!;
+const eventRow = (db: FakeDb, id: string) => db.tables.agent_event_inbox!.find((event) => event.id === id)!;
 
 async function until(check: () => boolean): Promise<void> {
   while (!check()) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -148,10 +148,6 @@ describe("event inbox drain", () => {
     expect(calls[0]!.events?.map((event) => event.eventId)).toEqual(["evt-e1", "evt-e2"]);
     expect(eventRow(db, "e1")).toMatchObject({ status: "done", claimed_by_run_id: "run-1" });
     expect(eventRow(db, "e2")).toMatchObject({ status: "done", claimed_by_run_id: "run-1" });
-    expect(db.tables.agent_run_events!.map((link) => [link.agent_run_id, link.agent_event_id])).toEqual([
-      ["run-1", "e1"],
-      ["run-1", "e2"],
-    ]);
   });
 
   it("leaves a group pending, with its attempt given back, while its routine has a live run", async () => {
@@ -317,7 +313,7 @@ describe("event inbox drain", () => {
 
     const first = drain(client, dispatch);
     await until(() => seen.length === 1);
-    db.tables.agent_events!.push(webhook("e2", "k-2", 2));
+    db.tables.agent_event_inbox!.push(webhook("e2", "k-2", 2));
     const second = drain(client, dispatch);
     expect(second).toBe(first);
 
@@ -326,7 +322,7 @@ describe("event inbox drain", () => {
 
     expect(seen).toEqual(["e1", "e2"]);
     expect(peak).toBe(1);
-    expect(db.rpcCalls.filter((call) => call.name === "claim_agent_events")).toHaveLength(2);
+    expect(db.rpcCalls.filter((call) => call.name === "claim_agent_event_inbox")).toHaveLength(2);
   });
 
   it("records a group that throws, leaves its events claimed, and still runs the other groups", async () => {

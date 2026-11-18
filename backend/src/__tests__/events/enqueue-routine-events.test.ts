@@ -38,10 +38,10 @@ function newDb(tasks: ScheduledTaskRow[], source: Record<string, unknown> | null
     {
       scheduled_tasks: tasks as unknown as Array<Record<string, unknown>>,
       source_items: source ? [{ id: SOURCE, workspace_id: WS, ...source }] : [],
-      agent_events: [],
+      agent_event_inbox: [],
       errors: [],
     },
-    { unique: { agent_events: [["workspace_id", "dedupe_key"]] }, uuidTables: ["agent_events"] },
+    { unique: { agent_event_inbox: [["workspace_id", "dedupe_key"]] }, uuidTables: ["agent_event_inbox"] },
   );
 }
 
@@ -67,7 +67,7 @@ describe("enqueueRoutineEvents", () => {
 
     expect(await enqueueRoutineEvents(fakeClient(db), input, { drain })).toBe(1);
 
-    expect(db.tables.agent_events).toEqual([
+    expect(db.tables.agent_event_inbox).toEqual([
       expect.objectContaining({
         workspace_id: WS,
         scheduled_task_id: LISTENING,
@@ -78,7 +78,7 @@ describe("enqueueRoutineEvents", () => {
         source_item_id: SOURCE,
       }),
     ]);
-    expect(db.tables.agent_events![0]!.payload).toEqual({
+    expect(db.tables.agent_event_inbox![0]!.payload).toEqual({
       type: "webhook",
       event: {
         name: "fireflies.meeting_summarized",
@@ -101,14 +101,14 @@ describe("enqueueRoutineEvents", () => {
     expect(await enqueueRoutineEvents(fakeClient(db), input, { drain })).toBe(1);
     expect(await enqueueRoutineEvents(fakeClient(db), input, { drain })).toBe(0);
 
-    expect(db.tables.agent_events).toHaveLength(1);
+    expect(db.tables.agent_event_inbox).toHaveLength(1);
   });
 
   it("kicks one drain after every row is stored", async () => {
     const db = newDb([taskRow(LISTENING, listen), taskRow(SECOND, listen)], shared);
     const storedWhenDrained: number[] = [];
     const drain = mock(async () => {
-      storedWhenDrained.push(db.tables.agent_events!.length);
+      storedWhenDrained.push(db.tables.agent_event_inbox!.length);
     });
 
     expect(await enqueueRoutineEvents(fakeClient(db), input, { drain })).toBe(2);
@@ -122,7 +122,7 @@ describe("enqueueRoutineEvents", () => {
 
     expect(await enqueueRoutineEvents(fakeClient(db), input, { drain: async () => {} })).toBe(2);
 
-    const payloadFor = (taskId: string) => db.tables.agent_events!.find((row) => row.scheduled_task_id === taskId)!.payload as { skip?: { code: string; note: string } };
+    const payloadFor = (taskId: string) => db.tables.agent_event_inbox!.find((row) => row.scheduled_task_id === taskId)!.payload as { skip?: { code: string; note: string } };
     expect(payloadFor(MINE)).not.toHaveProperty("skip");
     expect(payloadFor(THEIRS).skip).toEqual({ code: "routine_source_not_visible", note: expect.stringContaining("owner can't see it") });
     expect(payloadFor(THEIRS).skip!.note).not.toContain("Nov 9 standup");
@@ -136,8 +136,8 @@ describe("enqueueRoutineEvents", () => {
     expect(await enqueueRoutineEvents(fakeClient(notAsked), input, { drain })).toBe(0);
     expect(await enqueueRoutineEvents(fakeClient(noContent), input, { drain })).toBe(0);
 
-    expect(notAsked.tables.agent_events).toHaveLength(0);
-    expect(noContent.tables.agent_events).toHaveLength(0);
+    expect(notAsked.tables.agent_event_inbox).toHaveLength(0);
+    expect(noContent.tables.agent_event_inbox).toHaveLength(0);
     expect(drain).not.toHaveBeenCalled();
   });
 
@@ -147,7 +147,7 @@ describe("enqueueRoutineEvents", () => {
 
     await expect(enqueueRoutineEvents(failingReads(db, "scheduled_tasks"), input, { drain })).rejects.toThrow("scheduled_tasks read failed");
 
-    expect(db.tables.agent_events).toHaveLength(0);
+    expect(db.tables.agent_event_inbox).toHaveLength(0);
     expect(drain).not.toHaveBeenCalled();
   });
 
@@ -158,19 +158,19 @@ describe("enqueueRoutineEvents", () => {
     await expect(enqueueRoutineEvents(failingReads(db, "source_items"), input, { drain })).rejects.toThrow("source_items read failed");
     await expect(enqueueRoutineEvents(fakeClient(newDb([taskRow(LISTENING, listen)], null)), input, { drain })).rejects.toThrow(`Source item ${SOURCE} was not found`);
 
-    expect(db.tables.agent_events).toHaveLength(0);
+    expect(db.tables.agent_event_inbox).toHaveLength(0);
   });
 
   it("records a refused insert for one routine, and still queues the others", async () => {
     const db = newDb([taskRow(REFUSED, listen), taskRow(LISTENING, listen)], shared);
     // A unique index that already holds this routine's row makes its next insert fail, as a real constraint would.
-    db.tables.agent_events!.push({ id: "seeded", workspace_id: WS, scheduled_task_id: REFUSED, dedupe_key: "seeded" });
-    db.unique.agent_events!.push({ name: "one_row_per_refused_routine", columns: ["scheduled_task_id"], where: (row) => row.scheduled_task_id === REFUSED });
+    db.tables.agent_event_inbox!.push({ id: "seeded", workspace_id: WS, scheduled_task_id: REFUSED, dedupe_key: "seeded" });
+    db.unique.agent_event_inbox!.push({ name: "one_row_per_refused_routine", columns: ["scheduled_task_id"], where: (row) => row.scheduled_task_id === REFUSED });
     const drain = mock(async () => {});
 
     expect(await enqueueRoutineEvents(fakeClient(db), input, { drain })).toBe(1);
 
-    expect(db.tables.agent_events!.filter((row) => row.scheduled_task_id === LISTENING)).toHaveLength(1);
+    expect(db.tables.agent_event_inbox!.filter((row) => row.scheduled_task_id === LISTENING)).toHaveLength(1);
     expect(db.tables.errors).toEqual([
       expect.objectContaining({
         workspace_id: WS,
@@ -189,6 +189,6 @@ describe("enqueueRoutineEvents", () => {
     await until(() => (db.tables.errors ?? []).length > 0);
 
     expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: WS, operation: "scheduling", detail_json: expect.objectContaining({ code: "event_drain_failed" }) })]);
-    expect(db.tables.agent_events).toHaveLength(1);
+    expect(db.tables.agent_event_inbox).toHaveLength(1);
   });
 });

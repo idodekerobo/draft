@@ -234,8 +234,7 @@ describe("routines.create from a run", () => {
     await call("routines.create", runCaller(runOf(RUN_1, PRIVATE)), { title: "x", prompt: "y", when: { in: "2h" } });
     expect(table("scheduled_tasks").find((task) => task.created_by_run_id === RUN_1)).toMatchObject({ visibility: "private" });
 
-    seed("agent_run_events", [{ agent_run_id: RUN_2, agent_event_id: id(0x500), workspace_id: WS }]);
-    seed("agent_events", [{ id: id(0x500), workspace_id: WS, source_item_id: id(0x501) }]);
+    seed("agent_event_inbox", [{ id: id(0x500), workspace_id: WS, claimed_by_run_id: RUN_2, source_item_id: id(0x501) }]);
     seed("source_items", [{ id: id(0x501), workspace_id: WS, visibility: "private" }]);
     await call("routines.create", runCaller(runOf(RUN_2, P)), { title: "x", prompt: "y", when: { in: "2h" } });
     expect(table("scheduled_tasks").find((task) => task.created_by_run_id === RUN_2)).toMatchObject({ visibility: "private" });
@@ -354,8 +353,7 @@ describe("the checks behind what a run may manage", () => {
 
   it("marks a run private only when a source it was woken by is private", async () => {
     expect(await runVisibility(fakeClient(db), RUN_1)).toBe("shared");
-    seed("agent_run_events", [{ agent_run_id: RUN_1, agent_event_id: id(0x600), workspace_id: WS }]);
-    seed("agent_events", [{ id: id(0x600), workspace_id: WS, source_item_id: id(0x601) }]);
+    seed("agent_event_inbox", [{ id: id(0x600), workspace_id: WS, claimed_by_run_id: RUN_1, source_item_id: id(0x601) }]);
     seed("source_items", [{ id: id(0x601), workspace_id: WS, visibility: "shared" }]);
     expect(await runVisibility(fakeClient(db), RUN_1)).toBe("shared");
     table("source_items")[0]!.visibility = "private";

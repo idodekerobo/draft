@@ -24,7 +24,7 @@ export async function enqueueEvent(
   deps: { drain?: () => Promise<void> } = {},
 ): Promise<{ id: string | null; duplicate: boolean }> {
   const { data, error } = await client
-    .from("agent_events")
+    .from("agent_event_inbox")
     .upsert(
       {
         workspace_id: input.workspaceId,

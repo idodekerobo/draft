@@ -35,7 +35,7 @@ export interface DispatchAgentRoutineOptions {
   firstEventId: string;
   /** Runs with the same key are serialized: one live run per (routine, key). Null lets runs overlap. */
   concurrencyKey: string | null;
-  /** The agent_events ids this run consumed. They become the run's trigger. */
+  /** The agent_event_inbox ids this run consumed. They become the run's trigger. */
   eventIds?: string[];
   /** Set when a person pressed Run now. */
   manual?: { requestedBy: string };

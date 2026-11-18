@@ -13,7 +13,7 @@ const input: EnqueueEventInput = {
 };
 
 function setup() {
-  const db: FakeDb = fakeDb({ agent_events: [], errors: [] }, { unique: { agent_events: [["workspace_id", "dedupe_key"]] }, uuidTables: ["agent_events"] });
+  const db: FakeDb = fakeDb({ agent_event_inbox: [], errors: [] }, { unique: { agent_event_inbox: [["workspace_id", "dedupe_key"]] }, uuidTables: ["agent_event_inbox"] });
   return { db, client: fakeClient(db) };
 }
 
@@ -31,7 +31,7 @@ describe("enqueueEvent", () => {
 
     expect(first).toEqual({ id: expect.any(String), duplicate: false });
     expect(second).toEqual({ id: null, duplicate: true });
-    expect(db.tables.agent_events).toHaveLength(1);
+    expect(db.tables.agent_event_inbox).toHaveLength(1);
     expect(drain).toHaveBeenCalledTimes(2);
   });
 

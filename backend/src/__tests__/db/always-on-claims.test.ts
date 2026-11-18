@@ -63,7 +63,7 @@ function idleRoutine(workspaceId: string): Promise<string> {
 
 async function insertEvent(workspaceId: string, taskId: string): Promise<string> {
   const [row] = await db()<[{ id: string }]>`
-    insert into agent_events (
+    insert into agent_event_inbox (
       workspace_id, scheduled_task_id, origin, event_name, dedupe_key, concurrency_key
     ) values (
       ${workspaceId}, ${taskId}, 'manual', 'test.event', ${randomUUID()}, ${taskId}
@@ -75,7 +75,7 @@ async function insertEvent(workspaceId: string, taskId: string): Promise<string>
 
 async function claimWithExpiredLease(eventId: string, attempts: number): Promise<void> {
   await db()`
-    update agent_events
+    update agent_event_inbox
     set status = 'claimed', attempts = ${attempts}::int, lease_until = now() - interval '1 minute'
     where id = ${eventId}
   `;
@@ -91,7 +91,7 @@ async function claimDueTasks(now: Date): Promise<DueClaim[]> {
 
 async function countEvents(taskId: string): Promise<number> {
   const [row] = await db()<[{ count: number }]>`
-    select count(*)::int as count from agent_events where scheduled_task_id = ${taskId}
+    select count(*)::int as count from agent_event_inbox where scheduled_task_id = ${taskId}
   `;
   return row.count;
 }
@@ -139,7 +139,7 @@ describeWithDatabase("always-on claim functions", () => {
     await db()`delete from auth.users where id = any(${db().array(ids, "uuid")})`;
   });
 
-  test("parallel claim_agent_events calls return disjoint events that cover the pending set", async () => {
+  test("parallel claim_agent_event_inbox calls return disjoint events that cover the pending set", async () => {
     const { workspaceId } = await createWorkspace();
     const taskId = await idleRoutine(workspaceId);
     const eventIds = await Promise.all(
@@ -147,8 +147,8 @@ describeWithDatabase("always-on claim functions", () => {
     );
 
     const [first, second] = await Promise.all([
-      db()<AgentEventRow[]>`select * from claim_agent_events(10, 60)`,
-      db()<AgentEventRow[]>`select * from claim_agent_events(10, 60)`,
+      db()<AgentEventRow[]>`select * from claim_agent_event_inbox(10, 60)`,
+      db()<AgentEventRow[]>`select * from claim_agent_event_inbox(10, 60)`,
     ]);
 
     const returnedIds = [...first, ...second].map((row) => row.id);
@@ -166,7 +166,7 @@ describeWithDatabase("always-on claim functions", () => {
     const eventId = await insertEvent(workspaceId, taskId);
     await claimWithExpiredLease(eventId, 1);
 
-    const claimed = await db()<AgentEventRow[]>`select * from claim_agent_events(10, 60)`;
+    const claimed = await db()<AgentEventRow[]>`select * from claim_agent_event_inbox(10, 60)`;
     const ownRows = claimed.filter((row) => row.workspace_id === workspaceId);
     expect(ownRows).toHaveLength(1);
     expect(ownRows[0]).toMatchObject({ id: eventId, status: "claimed", attempts: 2 });
@@ -178,10 +178,10 @@ describeWithDatabase("always-on claim functions", () => {
     const eventId = await insertEvent(workspaceId, taskId);
     await claimWithExpiredLease(eventId, 3);
 
-    const claimed = await db()<{ id: string }[]>`select id from claim_agent_events(10, 60)`;
+    const claimed = await db()<{ id: string }[]>`select id from claim_agent_event_inbox(10, 60)`;
     expect(claimed.map((row) => row.id)).not.toContain(eventId);
 
-    const [row] = await db()<[AgentEventRow]>`select * from agent_events where id = ${eventId}`;
+    const [row] = await db()<[AgentEventRow]>`select * from agent_event_inbox where id = ${eventId}`;
     expect(row).toMatchObject({ status: "dead", failure_code: "lease_expired", attempts: 3 });
 
     const errors = await db()<{ scheduled_task_id: string; detail_json: Record<string, unknown> }[]>`

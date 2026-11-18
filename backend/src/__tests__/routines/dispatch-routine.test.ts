@@ -52,7 +52,7 @@ const newDb = (
 const sandboxConfig = {} as never;
 const okLaunch = () => mock<LaunchRoutineRun>(async () => {});
 
-/** A timer occurrence. Its time stands in for the agent_events id that the timer would have written. */
+/** A timer occurrence. Its time stands in for the agent_event_inbox id that the timer would have written. */
 function dispatch(db: ReturnType<typeof newDb>, launch: LaunchRoutineRun, occurrenceAt = "2026-10-27T09:00:00.000Z", overrides: Partial<ScheduledTaskRow> = {}, rest: Partial<DispatchAgentRoutineOptions> = {}) {
   return dispatchAgentRoutine({
     task: { ...task, ...overrides }, occurrenceAt, config: sandboxConfig, client: fakeClient(db), launch,

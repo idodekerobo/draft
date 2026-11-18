@@ -20,10 +20,10 @@ const NOW = new Date("2026-11-16T12:00:00.000Z");
 
 beforeEach(() => __resetDrainForTests());
 
-/** Mirrors claim_agent_events for pending rows: oldest first, one attempt counted per claim. */
+/** Mirrors claim_agent_event_inbox for pending rows: oldest first, one attempt counted per claim. */
 function claimPending(db: FakeDb) {
   return (args: Record<string, unknown>) => {
-    const ready = db.tables.agent_events!
+    const ready = db.tables.agent_event_inbox!
       .filter((event) => event.status === "pending")
       .sort((a, b) => (a.created_at as string).localeCompare(b.created_at as string))
       .slice(0, args.p_limit as number);
@@ -52,19 +52,18 @@ function setup(options: { sessions?: Row[]; agentRuns?: Row[] } = {}) {
           config_json: { title: "Digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" },
         },
       ],
-      agent_events: [],
+      agent_event_inbox: [],
       agent_runs: options.agentRuns ?? [],
       sessions: options.sessions ?? [],
-      agent_run_events: [],
       errors: [],
     },
     {
-      unique: { agent_events: [["workspace_id", "dedupe_key"]] },
-      uuidTables: ["agent_events"],
-      defaults: { agent_events: { status: "pending", attempts: 0, claimed_by_run_id: null, failure_code: null, created_at: NOW.toISOString() } },
+      unique: { agent_event_inbox: [["workspace_id", "dedupe_key"]] },
+      uuidTables: ["agent_event_inbox"],
+      defaults: { agent_event_inbox: { status: "pending", attempts: 0, claimed_by_run_id: null, failure_code: null, created_at: NOW.toISOString() } },
     },
   );
-  db.rpcs.claim_agent_events = claimPending(db);
+  db.rpcs.claim_agent_event_inbox = claimPending(db);
   return { db, client: fakeClient(db) };
 }
 
@@ -90,7 +89,7 @@ describe("runRoutineNow", () => {
     expect(outcome).toEqual({ status: "started", runId: "run-1", sessionId: "s-1" });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ kind: "manual", concurrencyKey: TASK, manual: { requestedBy: USER } });
-    expect(db.tables.agent_events![0]).toMatchObject({
+    expect(db.tables.agent_event_inbox![0]).toMatchObject({
       origin: "manual",
       event_name: "manual",
       concurrency_key: TASK,
@@ -98,7 +97,7 @@ describe("runRoutineNow", () => {
       claimed_by_run_id: "run-1",
       payload: { type: "manual", requestedBy: USER },
     });
-    expect(String(db.tables.agent_events![0]!.dedupe_key)).toMatch(new RegExp(`^${TASK}:manual:`));
+    expect(String(db.tables.agent_event_inbox![0]!.dedupe_key)).toMatch(new RegExp(`^${TASK}:manual:`));
     expect(db.tables.errors).toHaveLength(0);
   });
 
@@ -112,7 +111,7 @@ describe("runRoutineNow", () => {
 
     expect(outcome).toEqual({ status: "queued" });
     expect(calls).toHaveLength(0);
-    expect(db.tables.agent_events![0]).toMatchObject({ status: "pending" });
+    expect(db.tables.agent_event_inbox![0]).toMatchObject({ status: "pending" });
     expect(db.tables.errors).toHaveLength(0);
   });
 
@@ -132,7 +131,7 @@ describe("runRoutineNow", () => {
       workspace_id: WS,
       scheduled_task_id: TASK,
       operation: "scheduling",
-      detail_json: { code: "event_drain_failed", event_id: db.tables.agent_events![0]!.id },
+      detail_json: { code: "event_drain_failed", event_id: db.tables.agent_event_inbox![0]!.id },
     });
   });
 
@@ -143,7 +142,7 @@ describe("runRoutineNow", () => {
     const outcome = await runRoutineNow(WS, TASK, USER, { client, drain: drainWith(client, dispatch) });
 
     expect(outcome).toEqual({ status: "failed", code: "routine_launch_failed" });
-    expect(db.tables.agent_events![0]).toMatchObject({ status: "failed", failure_code: "routine_launch_failed" });
+    expect(db.tables.agent_event_inbox![0]).toMatchObject({ status: "failed", failure_code: "routine_launch_failed" });
     expect(db.tables.errors).toHaveLength(0);
   });
 
@@ -182,6 +181,6 @@ describe("runRoutineNow", () => {
     const { db, client } = setup();
 
     await expect(runRoutineNow(WS, "missing", USER, { client, drain: async () => {} })).rejects.toThrow("not_found");
-    expect(db.tables.agent_events).toHaveLength(0);
+    expect(db.tables.agent_event_inbox).toHaveLength(0);
   });
 });

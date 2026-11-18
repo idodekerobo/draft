@@ -1,4 +1,4 @@
--- Claims due timers with SKIP LOCKED. Agent routines get their agent_events row in this
+-- Claims due timers with SKIP LOCKED. Agent routines get their agent_event_inbox row in this
 -- same transaction, so a crash after the claim can't lose a one-shot. Other tasks get a
 -- provisional next_due_at (p_now + lease) that the caller replaces; SQL can't parse cron.
 -- claimed_occurrence_at keeps the real occurrence until the caller advances the row, so a
@@ -27,7 +27,7 @@ begin
       limit p_limit
       for update skip locked
     ), routine_events as (
-      insert into agent_events (workspace_id, scheduled_task_id, origin, event_name, dedupe_key, concurrency_key, payload)
+      insert into agent_event_inbox (workspace_id, scheduled_task_id, origin, event_name, dedupe_key, concurrency_key, payload)
       select t.workspace_id, t.id, 'schedule', 'timer.fired',
              t.id::text || ':timer:' || to_char(d.occurrence_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
              t.id::text,

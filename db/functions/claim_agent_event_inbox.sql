@@ -1,10 +1,10 @@
 -- Claims up to p_limit inbox events: pending, or claimed with an expired lease.
 -- Events whose lease expired after 3 attempts are marked dead first, each with an errors row.
-create or replace function claim_agent_events(
+create or replace function claim_agent_event_inbox(
   p_limit int,
   p_lease_seconds int
 )
-returns setof agent_events
+returns setof agent_event_inbox
 language plpgsql
 security definer
 set search_path = public
@@ -13,7 +13,7 @@ declare
   v_ids uuid[];
 begin
   with dead as (
-    update agent_events
+    update agent_event_inbox
     set status = 'dead',
         failure_code = coalesce(failure_code, 'lease_expired'),
         updated_at = now()
@@ -31,7 +31,7 @@ begin
   select array_agg(id) into v_ids
   from (
     select id
-    from agent_events
+    from agent_event_inbox
     where status = 'pending'
        or (status = 'claimed' and lease_until < now())
     order by created_at asc
@@ -44,7 +44,7 @@ begin
   end if;
 
   return query
-    update agent_events
+    update agent_event_inbox
     set status = 'claimed',
         lease_until = now() + make_interval(secs => p_lease_seconds),
         attempts = attempts + 1,
@@ -54,5 +54,5 @@ begin
 end;
 $$;
 
-revoke all on function claim_agent_events(int, int) from public;
-grant execute on function claim_agent_events(int, int) to service_role;
+revoke all on function claim_agent_event_inbox(int, int) from public;
+grant execute on function claim_agent_event_inbox(int, int) to service_role;

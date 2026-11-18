@@ -80,7 +80,7 @@ async function resolveDeps(client: SupabaseClient, deps: Partial<DrainDeps>): Pr
 }
 
 async function drainOnce(client: SupabaseClient, partial: Partial<DrainDeps>): Promise<void> {
-  const { data, error } = await client.rpc("claim_agent_events", {
+  const { data, error } = await client.rpc("claim_agent_event_inbox", {
     p_limit: EVENT_CLAIM_LIMIT,
     p_lease_seconds: EVENT_LEASE_SECONDS,
   });
@@ -214,7 +214,6 @@ async function applyOutcome(deps: DrainDeps, rows: AgentEventRow[], outcome: Dis
   switch (outcome.status) {
     case "started":
     case "skipped":
-      if (outcome.runId) await linkRuns(deps, rows, outcome.runId);
       await setRows(deps, rows, { status: settle.status, failure_code: settle.failureCode, claimed_by_run_id: outcome.runId });
       return;
     case "already_dispatched":
@@ -270,16 +269,9 @@ async function releaseRows(deps: DrainDeps, rows: AgentEventRow[]): Promise<void
 async function setRows(deps: DrainDeps, rows: AgentEventRow[], fields: Record<string, unknown>): Promise<void> {
   if (rows.length === 0) return;
   const { error } = await deps.client
-    .from("agent_events")
+    .from("agent_event_inbox")
     .update({ ...fields, lease_until: null, updated_at: deps.now().toISOString() })
     .in("id", rows.map((event) => event.id));
-  if (error) throw error;
-}
-
-async function linkRuns(deps: DrainDeps, rows: AgentEventRow[], runId: string): Promise<void> {
-  const { error } = await deps.client.from("agent_run_events").insert(
-    rows.map((event) => ({ agent_run_id: runId, agent_event_id: event.id, workspace_id: event.workspace_id })),
-  );
   if (error) throw error;
 }
 
