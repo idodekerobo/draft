@@ -9,9 +9,8 @@ create table workspace_events (
                               check (event_type in ('source_items_added', 'context_updated', 'no_change',
                                                      'needs_input', 'input_resolved', 'source_delayed',
                                                      'context_restored', 'manual_edit')),
-  synthesis_run_id         uuid,
   agent_run_id             uuid,
-  source_connection_id     uuid,
+  connection_id            uuid,
   context_version_id       uuid,
   summary                  text not null,
   payload_json             jsonb not null default '{}',
@@ -19,12 +18,10 @@ create table workspace_events (
   created_at               timestamptz not null default now(),
 
   unique (workspace_id, sequence_number),
-  foreign key (synthesis_run_id, workspace_id)
-    references synthesis_runs(id, workspace_id) on delete restrict,
   foreign key (agent_run_id, workspace_id)
     references agent_runs(id, workspace_id) on delete restrict,
-  foreign key (source_connection_id, workspace_id)
-    references source_connections(id, workspace_id) on delete restrict,
+  foreign key (connection_id, workspace_id)
+    references connections(id, workspace_id) on delete restrict,
   foreign key (context_version_id, workspace_id)
     references workspace_context_versions(id, workspace_id) on delete restrict
 );

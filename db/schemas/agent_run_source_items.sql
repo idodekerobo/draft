@@ -1,4 +1,4 @@
--- The sources a run was given, as synthesis_run_source_items holds them.
+-- The sources a run was given.
 create table agent_run_source_items (
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   agent_run_id             uuid not null,

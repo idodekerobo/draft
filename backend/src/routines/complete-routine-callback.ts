@@ -10,7 +10,7 @@ import { parseAgentRoutineConfig, parseRoutineSessionId } from "./config";
 import { endRoutineSession, failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 
 const MAX_LINES_PER_POST = 2000;
-const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_machine_id, scheduled_task_id, harness";
+const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_id, scheduled_task_id, harness";
 
 type RoutineSession = RoutineSessionRef & Pick<SessionRow, "session_type" | "status" | "last_seq" | "harness">;
 
@@ -53,7 +53,7 @@ async function appendLines(client: SupabaseClient, session: RoutineSession, line
   const { error } = await client.rpc("append_session_events", {
     p_session_id: session.id,
     p_workspace_id: session.workspace_id,
-    p_host_machine_id: session.host_machine_id,
+    p_host_id: session.host_id,
     p_events: events,
   });
   // A late batch for a session the tick already failed is not an error.

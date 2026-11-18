@@ -248,8 +248,8 @@ export const HOST_EVENTS = withAuth<HostEventsRequest>(async (req, caller) => {
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostMachineId = optionalString(parsed.body.hostMachineId, 200);
-  if (!hostMachineId) return errorResponse("missing_host_machine_id", 400);
+  const hostId = optionalString(parsed.body.hostId, 200);
+  if (!hostId) return errorResponse("missing_host_id", 400);
   const events = parsed.body.events;
   if (!Array.isArray(events) || events.length === 0 || events.length > MAX_HOST_EVENTS || !events.every(isHostEvent)) {
     return errorResponse("invalid_events", 400);
@@ -258,7 +258,7 @@ export const HOST_EVENTS = withAuth<HostEventsRequest>(async (req, caller) => {
   const { data, error } = await serviceClient.rpc("append_session_events", {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
-    p_host_machine_id: hostMachineId,
+    p_host_id: hostId,
     p_events: (events as HostEvent[]).map((e) => ({ source_id: e.sourceId, kind: e.kind, payload: e.payload })),
   });
   if (error) return knownDbError(error.message) ?? errorResponse("append_failed", 500, error, workspaceId, sessionId);

@@ -140,7 +140,7 @@ async function upsertSlackMessageRow(
 ): Promise<void> {
   const { error } = await client.rpc("upsert_slack_message_if_connection_active", {
     p_workspace_id: row.workspace_id,
-    p_source_connection_id: row.source_connection_id,
+    p_connection_id: row.connection_id,
     p_channel_id: row.channel_id,
     p_channel_name_snapshot: row.channel_name_snapshot,
     p_message_ts: row.message_ts,
@@ -195,7 +195,7 @@ export async function handleSlackMessageEvent(
 
   await upsertSlackMessageRow(db, {
     workspace_id: ctx.workspaceId,
-    source_connection_id: ctx.connectionId,
+    connection_id: ctx.connectionId,
     source_item_id: null,
     channel_id: channelId,
     channel_name_snapshot: ctx.channelName ?? null,

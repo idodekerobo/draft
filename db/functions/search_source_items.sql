@@ -1,6 +1,6 @@
 -- Backs `draft sessions search`. Filters directly on coding_session
 -- source_items' metadata_json (already denormalized by
--- materialize-summary.ts) rather than joining agent_sessions.
+-- materialize-summary.ts) rather than joining captured_sessions.
 create or replace function search_source_items(
   p_workspace_id uuid,
   p_query text,
@@ -14,7 +14,7 @@ create or replace function search_source_items(
 )
 returns table (
   source_item_id uuid,
-  agent_session_id uuid,
+  captured_session_id uuid,
   provider text,
   user_id uuid,
   contributor_id uuid,
@@ -26,25 +26,15 @@ security definer
 set search_path = public
 stable
 as $$
-  select
-    si.id as source_item_id,
-    (si.metadata_json->>'agent_session_id')::uuid as agent_session_id,
-    si.metadata_json->>'provider' as provider,
-    (si.metadata_json->>'user_id')::uuid as user_id,
-    (si.metadata_json->>'contributor_id')::uuid as contributor_id,
+  select si.id, si.captured_session_id, si.metadata_json->>'provider',
+    (si.metadata_json->>'user_id')::uuid, (si.metadata_json->>'contributor_id')::uuid,
     si.occurred_at,
-    ts_headline(
-      'english', si.content_markdown, websearch_to_tsquery('english', p_query),
-      'MaxFragments=2, MaxWords=35, MinWords=15'
-    ) as snippet
+    ts_headline('english', si.content_markdown, websearch_to_tsquery('english', p_query),
+      'MaxFragments=2, MaxWords=35, MinWords=15')
   from source_items si
   where si.workspace_id = p_workspace_id
     and si.item_type = 'coding_session'
     and si.lifecycle_status = 'active'
-    -- Defense-in-depth: coding_session items are always 'shared' today
-    -- (only fireflies sets 'private'), but this keeps a future item_type
-    -- expansion from silently reopening the visibility leak this plan
-    -- closes -- see eng review E1.
     and (si.visibility = 'shared' or si.owner_user_id = p_caller_user_id)
     and to_tsvector('english', si.content_markdown) @@ websearch_to_tsquery('english', p_query)
     and (p_since is null or si.occurred_at >= p_since)

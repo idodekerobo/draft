@@ -18,7 +18,7 @@ interface SessionRow {
 }
 
 interface MessageRow {
-  session_id: string;
+  captured_session_id: string;
   workspace_id: string;
   seq: number;
   role: string;
@@ -80,8 +80,8 @@ function createFakeClient() {
 
       async function execute() {
         const source =
-          table === "agent_sessions" ? state.sessions :
-          table === "agent_messages" ? state.messages :
+          table === "captured_sessions" ? state.sessions :
+          table === "captured_session_messages" ? state.messages :
           table === "source_items" ? state.sourceItems :
           table === "users" ? state.users :
           table === "session_contributors" ? state.contributors :
@@ -270,8 +270,8 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
 
   it("--transcript returns messages ordered by seq", async () => {
     state.messages.push(
-      { session_id: "s1", workspace_id: workspaceId, seq: 1, role: "assistant", content: "hello" },
-      { session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "hi" },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 1, role: "assistant", content: "hello" },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "hi" },
     );
     const response = await routeModule.READ(readRequest("s1", "?transcript") as never);
     const body = await response.json() as { messages: { seq: number }[] };
@@ -286,9 +286,9 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
 
   it("--grep filters to matching messages", async () => {
     state.messages.push(
-      { session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "please fix the database migration" },
-      { session_id: "s1", workspace_id: workspaceId, seq: 1, role: "assistant", content: "sure, looking now" },
-      { session_id: "s1", workspace_id: workspaceId, seq: 2, role: "user", content: "thanks" },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "please fix the database migration" },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 1, role: "assistant", content: "sure, looking now" },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 2, role: "user", content: "thanks" },
     );
     const response = await routeModule.READ(readRequest("s1", "?transcript&grep=migration") as never);
     const body = await response.json() as { messages: { seq: number }[]; windows: { start_seq: number; end_seq: number }[] };
@@ -298,7 +298,7 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
 
   it("--grep with --context merges overlapping windows", async () => {
     for (let seq = 0; seq < 5; seq++) {
-      state.messages.push({ session_id: "s1", workspace_id: workspaceId, seq, role: "user", content: seq === 1 || seq === 2 ? "error found here" : "filler" });
+      state.messages.push({ captured_session_id: "s1", workspace_id: workspaceId, seq, role: "user", content: seq === 1 || seq === 2 ? "error found here" : "filler" });
     }
     const response = await routeModule.READ(readRequest("s1", "?transcript&grep=error&context=1") as never);
     const body = await response.json() as { messages: { seq: number }[]; windows: { start_seq: number; end_seq: number }[] };
@@ -307,15 +307,15 @@ describe("GET /workspaces/:id/sessions/:sessionId", () => {
   });
 
   it("--grep with a malformed pattern returns 400, not 500", async () => {
-    state.messages.push({ session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "hi" });
+    state.messages.push({ captured_session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "hi" });
     const response = await routeModule.READ(readRequest("s1", "?transcript&grep=%5B") as never);
     expect(response.status).toBe(400);
   });
 
   it("--max-bytes truncates and reports truncated_bytes", async () => {
     state.messages.push(
-      { session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "a".repeat(100) },
-      { session_id: "s1", workspace_id: workspaceId, seq: 1, role: "assistant", content: "b".repeat(100) },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 0, role: "user", content: "a".repeat(100) },
+      { captured_session_id: "s1", workspace_id: workspaceId, seq: 1, role: "assistant", content: "b".repeat(100) },
     );
     const response = await routeModule.READ(readRequest("s1", "?transcript&maxBytes=300") as never);
     const body = await response.json() as { messages: { seq: number }[]; truncated_bytes: number };

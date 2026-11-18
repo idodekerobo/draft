@@ -5,7 +5,7 @@ import { authenticateSandboxCallbackRequest } from "../sandbox";
 import { validateSummarizationResult } from "./validate-result";
 import { materializeSessionSummary } from "./materialize-summary";
 import { recordError } from "../errors/record-error";
-import type { AgentSessionRow } from "../types/tables";
+import type { CapturedSessionRow } from "../types/tables";
 
 export const SUMMARIZATION_RUN_ID_PREFIX = "summarize:";
 
@@ -83,12 +83,12 @@ export async function completeSummarizationRunCallback(
     stage = "materialize";
     if (items.length > 0) {
       const { data, error } = await resolvedClient
-        .from("agent_sessions")
+        .from("captured_sessions")
         .select("*")
         .eq("workspace_id", workspaceId)
         .in("id", items.map((item) => item.sessionId));
       if (error) throw error;
-      const sessionsById = new Map(((data ?? []) as AgentSessionRow[]).map((session) => [session.id, session]));
+      const sessionsById = new Map(((data ?? []) as CapturedSessionRow[]).map((session) => [session.id, session]));
 
       for (const item of items) {
         const session = sessionsById.get(item.sessionId);

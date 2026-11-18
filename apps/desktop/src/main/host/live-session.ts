@@ -10,7 +10,7 @@ import { ServerError, fetchServer, fetchServerJSON } from "../server/server-clie
 import type { HostEvent } from "./approvals";
 import { deleteState, loadStates, saveState, type HostSessionState } from "./cursor-store";
 import { registrationFor } from "./drivers";
-import { getHostMachineId } from "./machine-id";
+import { getDesktopHostId } from "./machine-id";
 import { gitRemote } from "./git-remote";
 import { hostFailureAction } from "./host-failure";
 import { startHeartbeat } from "./heartbeat";
@@ -54,7 +54,7 @@ class SessionHost {
       postLines: async (lines) => {
         await fetchServer(`${this.base}/lines`, {
           method: "POST",
-          body: JSON.stringify({ hostMachineId: this.state.hostMachineId, nativeSessionId: this.state.nativeSessionId, lines }),
+          body: JSON.stringify({ hostId: this.state.hostId, nativeSessionId: this.state.nativeSessionId, lines }),
         });
       },
       postHostEvents: (events) => this.postHostEvents(events),
@@ -73,7 +73,7 @@ class SessionHost {
 
   /** Teammate messages, Stops and permission decisions that wait for this host, in one call. */
   private async fetchInputs(): Promise<HostInput[]> {
-    const query = `hostMachineId=${encodeURIComponent(this.state.hostMachineId)}&kinds=all`;
+    const query = `hostId=${encodeURIComponent(this.state.hostId)}&kinds=all`;
     return (await fetchServerJSON<{ inputs: HostInput[] }>(`${this.base}/inputs/pending?${query}`)).inputs;
   }
 
@@ -81,13 +81,13 @@ class SessionHost {
   private readonly setInputState = async (id: string, from: Array<"queued" | "delivering">, to: string, reason?: string): Promise<boolean> =>
     (await fetchServerJSON<{ changed: boolean }>(`${this.base}/inputs/${id}/state`, {
       method: "POST",
-      body: JSON.stringify({ hostMachineId: this.state.hostMachineId, from, to, reason }),
+      body: JSON.stringify({ hostId: this.state.hostId, from, to, reason }),
     })).changed;
 
   private async postHostEvents(events: HostEvent[]): Promise<void> {
     await fetchServer(`${this.base}/host-events`, {
       method: "POST",
-      body: JSON.stringify({ hostMachineId: this.state.hostMachineId, events }),
+      body: JSON.stringify({ hostId: this.state.hostId, events }),
     });
   }
 
@@ -148,7 +148,7 @@ class SessionHost {
     try {
       await fetchServer(`${this.base}/heartbeat`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes, ...this.agent }),
+        body: JSON.stringify({ hostId: this.state.hostId, harnessVersion: this.state.harnessVersion ?? null, ...this.modes, ...this.agent }),
       });
       this.topics.open();
     } catch (error) {
@@ -187,7 +187,7 @@ class SessionHost {
     try {
       await fetchServer(`${this.base}/end`, {
         method: "POST",
-        body: JSON.stringify({ hostMachineId: this.state.hostMachineId, reason: this.endReason }),
+        body: JSON.stringify({ hostId: this.state.hostId, reason: this.endReason }),
       });
       return true;
     } catch (error) {
@@ -275,12 +275,12 @@ class SessionHost {
   }
 
   private async createSuccessor(nativeSessionId: string): Promise<HostSessionState> {
-    const { folderPath, hostMachineId, workspaceId, model = null, reasoningEffort = null, harnessVersion = null } = this.state;
+    const { folderPath, hostId, workspaceId, model = null, reasoningEffort = null, harnessVersion = null } = this.state;
     const harness = this.state.harness ?? DEFAULT_HARNESS_ID;
     const created = await fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",
       body: JSON.stringify({
-        hostMachineId,
+        hostId,
         hostName: hostname(),
         folderName: basename(folderPath),
         gitRemote: await gitRemote(folderPath),
@@ -295,7 +295,7 @@ class SessionHost {
     return {
       sessionId: created.session.id,
       workspaceId,
-      hostMachineId,
+      hostId,
       nativeSessionId,
       folderPath,
       harness,
@@ -361,7 +361,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   if (!isKnownModel(harness, input.model)) return { ok: false, error: "Choose a model from the list." };
   if (!isEffortFor(harness, input.model, input.effort)) return { ok: false, error: "Choose a reasoning effort from the list." };
 
-  const hostMachineId = getHostMachineId();
+  const hostId = getDesktopHostId();
   const nativeSessionId = launcher.newNativeSessionId();
   const model = input.model ?? null;
   const effort = input.effort ?? null;
@@ -372,7 +372,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
     const created = await fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",
       body: JSON.stringify({
-        hostMachineId,
+        hostId,
         hostName: hostname(),
         folderName: basename(folderPath),
         gitRemote: await remote,
@@ -391,7 +391,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   let state: HostSessionState = {
     sessionId,
     workspaceId,
-    hostMachineId,
+    hostId,
     nativeSessionId,
     folderPath,
     harness,
@@ -409,7 +409,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
     console.error("[live-session] launch failed", error);
     await fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
       method: "POST",
-      body: JSON.stringify({ hostMachineId, reason: "launch_failed" }),
+      body: JSON.stringify({ hostId, reason: "launch_failed" }),
     }).catch(() => {});
     return { ok: false, error: error instanceof LaunchError ? error.message : launcher.launchFailedMessage };
   }
@@ -425,17 +425,17 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
   if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
   if (running.get(sessionId) && !running.get(sessionId)!.hasEnded()) return { ok: false, error: "This session is already running." };
 
-  let session: LiveSession & { native_session_id?: string | null; host_machine_id?: string; end_reason?: string | null };
+  let session: LiveSession & { native_session_id?: string | null; host_id?: string; end_reason?: string | null };
   try {
     session = (await fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=0&limit=1`)).session as typeof session;
   } catch {
     return { ok: false, error: "Could not load the session." };
   }
-  const hostMachineId = getHostMachineId();
+  const hostId = getDesktopHostId();
   if (!session.mine) return { ok: false, error: "Only the person who started a session can resume it." };
   if (session.status !== "ended") return { ok: false, error: "This session is not ended." };
   if (session.end_reason === "cleared") return { ok: false, error: "This conversation was cleared. Open the session that continued it." };
-  if (session.host_machine_id !== hostMachineId || !session.native_session_id) return { ok: false, error: "This session ran on another computer. Resume it there." };
+  if (session.host_id !== hostId || !session.native_session_id) return { ok: false, error: "This session ran on another computer. Resume it there." };
 
   const harness = session.harness ?? DEFAULT_HARNESS_ID;
   if (!isHarnessId(harness)) return { ok: false, error: "This session's agent is not supported by this version of Draft." };
@@ -444,7 +444,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
   if (!checked.ok) return { ok: false, error: checked.error };
 
   try {
-    await fetchServer(`${sessionBase(sessionId)}/reopen`, { method: "POST", body: JSON.stringify({ hostMachineId }) });
+    await fetchServer(`${sessionBase(sessionId)}/reopen`, { method: "POST", body: JSON.stringify({ hostId }) });
   } catch (error) {
     return { ok: false, error: error instanceof ServerError && error.code === "session_cleared" ? "This conversation was cleared." : "Could not reopen the session." };
   }
@@ -452,7 +452,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
   let state: HostSessionState = {
     sessionId,
     workspaceId,
-    hostMachineId,
+    hostId,
     nativeSessionId: session.native_session_id,
     folderPath: "",
     harness,
@@ -467,7 +467,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
     state = { ...state, ...(await launcher.resume({ sessionId, nativeSessionId: session.native_session_id, model: state.model ?? null, effort: state.reasoningEffort ?? null, bin: checked.bin })) };
   } catch (error) {
     console.error("[live-session] resume failed", error);
-    await fetchServer(`${sessionBase(sessionId)}/end`, { method: "POST", body: JSON.stringify({ hostMachineId, reason: "resume_failed" }) }).catch(() => {});
+    await fetchServer(`${sessionBase(sessionId)}/end`, { method: "POST", body: JSON.stringify({ hostId, reason: "resume_failed" }) }).catch(() => {});
     return { ok: false, error: error instanceof LaunchError ? error.message : "Could not resume the session." };
   }
 

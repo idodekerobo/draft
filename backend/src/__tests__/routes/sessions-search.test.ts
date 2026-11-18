@@ -5,7 +5,7 @@ const workspaceId = "workspace-1";
 
 interface SearchRow {
   source_item_id: string;
-  agent_session_id: string | null;
+  captured_session_id: string | null;
   provider: string | null;
   user_id: string | null;
   contributor_id: string | null;
@@ -99,7 +99,7 @@ describe("GET /workspaces/:id/sessions/search", () => {
 
   it("returns matches with resolved display names and never the full content_markdown", async () => {
     state.searchRows.push({
-      source_item_id: "item-1", agent_session_id: "session-1", provider: "claude-code-session",
+      source_item_id: "item-1", captured_session_id: "session-1", provider: "claude-code-session",
       user_id: "user-1", contributor_id: null, occurred_at: "2026-01-01T00:00:00Z", snippet: "...database <b>migration</b>...",
     });
     state.users.push({ id: "user-1", display_name: "Ada", email: "ada@example.com" });

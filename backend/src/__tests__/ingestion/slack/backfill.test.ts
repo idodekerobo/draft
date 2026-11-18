@@ -58,7 +58,7 @@ function fakeClient(): { client: SupabaseClient; updates: UpdateCall[] } {
 }
 
 function latestState(updates: UpdateCall[]): SlackBackfillState {
-  const relevant = updates.filter((u) => u.table === "source_connections");
+  const relevant = updates.filter((u) => u.table === "connections");
   const last = relevant[relevant.length - 1];
   return (last!.payload.cursor_json as { slack_backfill: SlackBackfillState }).slack_backfill;
 }

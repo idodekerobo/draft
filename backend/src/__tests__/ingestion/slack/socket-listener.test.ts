@@ -18,7 +18,7 @@ function statusClient(initialStatus: string) {
   let updatesApplied = 0;
   const client = {
     from(table: string) {
-      if (table !== "source_connections") throw new Error(`Unexpected table ${table}`);
+      if (table !== "connections") throw new Error(`Unexpected table ${table}`);
       return {
         select: () => ({
           eq: () => ({

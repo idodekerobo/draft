@@ -12,7 +12,7 @@ security definer
 set search_path = public
 as $$
 begin
-  update source_connections
+  update connections
   set last_success_at = p_succeeded_at
   where id = p_connection_id
     and workspace_id = p_workspace_id

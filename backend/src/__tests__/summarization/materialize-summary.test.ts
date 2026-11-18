@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { materializeSessionSummary } from "../../summarization/materialize-summary";
-import type { AgentSessionRow } from "../../types/tables";
+import type { CapturedSessionRow } from "../../types/tables";
 
-function baseSession(overrides: Partial<AgentSessionRow> = {}): AgentSessionRow {
+function baseSession(overrides: Partial<CapturedSessionRow> = {}): CapturedSessionRow {
   return {
     id: "session-1",
     workspace_id: "workspace-1",
@@ -31,7 +31,7 @@ function fakeClient() {
   const updates: Array<{ table: string; values: Record<string, unknown>; eq: [string, unknown][] }> = [];
   const client = {
     from: (table: string) => {
-      if (table === "source_connections") {
+      if (table === "connections") {
         return {
           upsert: () => ({
             select: () => ({
@@ -49,7 +49,7 @@ function fakeClient() {
           }),
         };
       }
-      if (table === "agent_sessions") {
+      if (table === "captured_sessions") {
         const eqs: [string, unknown][] = [];
         const builder = {
           update: (values: Record<string, unknown>) => {

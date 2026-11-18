@@ -8,7 +8,7 @@ import { CodexDriver } from "./codex-driver";
 const state: HostSessionState = {
   sessionId: "s1",
   workspaceId: "w1",
-  hostMachineId: "m1",
+  hostId: "m1",
   nativeSessionId: "t1",
   folderPath: "/tmp",
   cursors: {},

@@ -15,7 +15,7 @@ async function createSlackConnection(
   status: "pending" | "active" | "degraded" | "revoked" | "error" = "active",
 ): Promise<string> {
   const [connection] = await db()<[{ id: string }]>`
-    insert into source_connections (workspace_id, provider, connection_key, status)
+    insert into connections (workspace_id, provider, connection_key, status)
     values (${workspaceId}, 'slack', ${randomUUID()}, ${status})
     returning id
   `;
@@ -47,7 +47,7 @@ describeWithDatabase("slack backfill migration", () => {
       const connectionId = await createSlackConnection(workspaceId);
       const [row] = await db()<[{ id: string }]>`
         insert into scheduled_tasks (
-          workspace_id, source_connection_id, task_type, task_key,
+          workspace_id, connection_id, task_type, task_key,
           schedule_kind, interval_seconds, timezone
         ) values (
           ${workspaceId}, ${connectionId}, 'slack_backfill', ${connectionId},
@@ -65,7 +65,7 @@ describeWithDatabase("slack backfill migration", () => {
       try {
         await db()`
           insert into scheduled_tasks (
-            workspace_id, source_connection_id, task_type, task_key,
+            workspace_id, connection_id, task_type, task_key,
             schedule_kind, interval_seconds, timezone
           ) values (
             ${workspaceId}, ${connectionId}, 'not_a_real_task_type', ${connectionId},
@@ -95,7 +95,7 @@ describeWithDatabase("slack backfill migration", () => {
 
       const rows = await db()<Array<{ id: string }>>`
         select id from slack_messages
-        where source_connection_id = ${connectionId} and channel_id = 'C1' and message_ts = '1000.000001'
+        where connection_id = ${connectionId} and channel_id = 'C1' and message_ts = '1000.000001'
       `;
       expect(rows).toHaveLength(1);
     });
@@ -105,7 +105,7 @@ describeWithDatabase("slack backfill migration", () => {
       const connectionId = await createSlackConnection(workspaceId, "active");
       await captureSlackMessage(workspaceId, connectionId, "C1", "1000.000001");
 
-      await db()`update source_connections set status = 'revoked' where id = ${connectionId}`;
+      await db()`update connections set status = 'revoked' where id = ${connectionId}`;
 
       let threw = false;
       try {
@@ -117,7 +117,7 @@ describeWithDatabase("slack backfill migration", () => {
       expect(threw).toBe(true);
 
       const rows = await db()<Array<{ message_ts: string }>>`
-        select message_ts from slack_messages where source_connection_id = ${connectionId}
+        select message_ts from slack_messages where connection_id = ${connectionId}
       `;
       expect(rows.map((r) => r.message_ts)).toEqual(["1000.000001"]);
     });
@@ -142,7 +142,7 @@ describeWithDatabase("slack backfill migration", () => {
 
       const messages = await db()<Array<{ id: string }>>`
         select id from slack_messages
-        where source_connection_id = ${connectionId} and channel_id = 'C1'
+        where connection_id = ${connectionId} and channel_id = 'C1'
         order by message_ts
       `;
       const [commitResult] = await db()<[{ result: { status: string; item_id?: string } }]>`
@@ -161,7 +161,7 @@ describeWithDatabase("slack backfill migration", () => {
       expect(item.representation_kind).toBe("source");
 
       const linked = await db()<Array<{ source_item_id: string | null }>>`
-        select source_item_id from slack_messages where source_connection_id = ${connectionId} and channel_id = 'C1'
+        select source_item_id from slack_messages where connection_id = ${connectionId} and channel_id = 'C1'
       `;
       expect(linked.every((row) => row.source_item_id === item.id)).toBe(true);
 

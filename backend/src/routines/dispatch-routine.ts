@@ -10,7 +10,7 @@ import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { describeRoutineTriggers } from "draft-core/routines";
-import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostMachineId, type AgentRoutineConfig } from "./config";
+import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostId, type AgentRoutineConfig } from "./config";
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
@@ -52,7 +52,7 @@ export type RoutineDispatchOutcome =
  * someone else, is left out and reported once, so the run goes ahead with the tools it can have.
  */
 async function usableMcpServersFor(client: SupabaseClient, task: ScheduledTaskRow, routine: NonNullable<ReturnType<typeof parseAgentRoutineConfig>>) {
-  const chosen = routine.environment?.mcpServers ?? [];
+  const chosen = routine.toolset?.mcpServers ?? [];
   if (chosen.length === 0) return [];
   const usable = await usableMcpConnections(client, task.workspace_id, task.created_by_user_id, chosen.map((server) => server.connectionId));
   const usableIds = new Set(usable.map((connection) => connection.id));
@@ -108,7 +108,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       reasoning_effort: routine.reasoningEffort ?? null,
       title: routine.title,
       status: "starting",
-      host_machine_id: routineHostMachineId(sessionId),
+      host_id: routineHostId(sessionId),
       host_name: ROUTINE_HOST_NAME,
       scheduled_task_id: task.id,
       idempotency_key: idempotencyKey,
@@ -118,7 +118,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
     if (insertError.code === UNIQUE_VIOLATION) return insertError.message.includes(LIVE_KEY_INDEX) ? { status: "busy" } : { status: "already_dispatched" };
     throw insertError;
   }
-  const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_machine_id: routineHostMachineId(sessionId) };
+  const session: RoutineSessionRef = { id: sessionId, workspace_id: task.workspace_id, scheduled_task_id: task.id, host_id: routineHostId(sessionId) };
   if (skip) {
     await failRoutineSession(client, session, { ...skip, message: `Routine ${task.id} was skipped`, silent: true });
     return { status: "skipped", sessionId, runId: null };

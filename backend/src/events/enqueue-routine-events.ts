@@ -121,13 +121,13 @@ export async function enqueueRoutineEvents(
  * Queues the routine events for a webhook, after the webhook has stored its source. The provider gets its answer
  * first, and a failed enqueue is recorded instead of failing the webhook.
  */
-export function fireEnqueueRoutineEvents(input: StartEventRoutinesInput & { concurrencyKey: string; sourceConnectionId: string }): void {
-  const { sourceConnectionId, ...enqueue } = input;
+export function fireEnqueueRoutineEvents(input: StartEventRoutinesInput & { concurrencyKey: string; connectionId: string }): void {
+  const { connectionId, ...enqueue } = input;
   void (async () => {
     // Loaded lazily, so importing this module does not need the database env.
     const { serviceClient } = await import("../db/client");
     await enqueueRoutineEvents(serviceClient, enqueue);
   })().catch((cause) =>
-    recordError({ workspaceId: input.workspaceId, sourceConnectionId, operation: "scheduling", message: "Queueing routine events failed", code: "event_enqueue_failed", error: cause }),
+    recordError({ workspaceId: input.workspaceId, connectionId, operation: "scheduling", message: "Queueing routine events failed", code: "event_enqueue_failed", error: cause }),
   );
 }

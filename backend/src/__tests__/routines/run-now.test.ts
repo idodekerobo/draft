@@ -48,7 +48,7 @@ function setup(options: { sessions?: Row[]; agentRuns?: Row[] } = {}) {
           fired_at: null,
           created_by_user_id: USER,
           timezone: "UTC",
-          source_connection_id: null,
+          connection_id: null,
           config_json: { title: "Digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" },
         },
       ],

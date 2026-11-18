@@ -26,7 +26,7 @@ import {
   type RoutineDefinition,
   type RoutineEditability,
 } from "../scheduling/routine-registry";
-import type { AgentRunRow, ScheduledTaskRow, SessionRow, SourceConnectionRow } from "../types/tables";
+import type { AgentRunRow, ScheduledTaskRow, SessionRow, ConnectionRow } from "../types/tables";
 import type { SchedulePatch } from "./validate-patch";
 import { canEditSchedules } from "./permissions";
 import type { RoutineCreator } from "./creator";
@@ -104,7 +104,7 @@ export interface Routine {
   agent: AgentRoutineInfo | null;
 }
 
-type ConnectionInfo = Pick<SourceConnectionRow, "id" | "provider" | "status">;
+type ConnectionInfo = Pick<ConnectionRow, "id" | "provider" | "status">;
 type RunInfo = Pick<AgentRunRow, "status" | "outcome" | "completed_at">;
 
 export type ScheduleErrorCode = "not_found" | "forbidden" | WhenRefusal["code"];
@@ -146,7 +146,7 @@ function toRoutine(
 ): Routine {
   const parsed = parseOrCustom(task);
   const needsReconnect =
-    task.source_connection_id !== null && !LIVE_CONNECTION_STATUSES.has(connection?.status ?? "");
+    task.connection_id !== null && !LIVE_CONNECTION_STATUSES.has(connection?.status ?? "");
 
   return {
     id: task.id,
@@ -238,7 +238,7 @@ async function loadTasks(workspaceId: string): Promise<ScheduledTaskRow[]> {
 async function loadConnections(workspaceId: string, ids: string[], client: SupabaseClient = serviceClient): Promise<Map<string, ConnectionInfo>> {
   if (ids.length === 0) return new Map();
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select("id, provider, status")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
@@ -312,7 +312,7 @@ async function buildRoutines(
   tasks: ScheduledTaskRow[],
   knownConnections?: Map<string, ConnectionInfo>,
 ): Promise<Routine[]> {
-  const connectionIds = tasks.flatMap((task) => (task.source_connection_id ? [task.source_connection_id] : []));
+  const connectionIds = tasks.flatMap((task) => (task.connection_id ? [task.connection_id] : []));
   const editorIds = [
     ...new Set(tasks.flatMap((task) => [task.updated_by_user_id, task.created_by_user_id].filter((id): id is string => id !== null))),
   ];
@@ -354,7 +354,7 @@ async function buildRoutines(
       const linked = { ...routine, createdBySessionId: task.created_by_run_id ? (creatorSessions.get(task.created_by_run_id) ?? null) : null };
       return [config.onSchedule === false ? { ...linked, scheduleDescription: describeRoutineTriggers(config.events ?? []) } : linked];
     }
-    const connection = task.source_connection_id ? connections.get(task.source_connection_id) : undefined;
+    const connection = task.connection_id ? connections.get(task.connection_id) : undefined;
     const definition = resolveRoutine(task.task_type, connection?.provider ?? null);
     if (!definition) {
       console.warn(
@@ -420,8 +420,8 @@ export async function getRoutineTask(workspaceId: string, taskId: string, client
   const task = data as ScheduledTaskRow;
   if (viewerId !== undefined && !routineVisibleTo(task, viewerId)) return null;
 
-  const connection = task.source_connection_id
-    ? (await loadConnections(workspaceId, [task.source_connection_id], client)).get(task.source_connection_id)
+  const connection = task.connection_id
+    ? (await loadConnections(workspaceId, [task.connection_id], client)).get(task.connection_id)
     : undefined;
   if (task.task_type === "agent_routine") {
     const config = parseAgentRoutineConfig(task.config_json);
@@ -433,7 +433,7 @@ export async function getRoutineTask(workspaceId: string, taskId: string, client
 
 /** Providers the workspace has a live connection to. The routine form offers triggers and abilities from these. */
 export async function listConnectedProviders(workspaceId: string): Promise<string[]> {
-  const { data, error } = await serviceClient.from("source_connections").select("provider, status").eq("workspace_id", workspaceId);
+  const { data, error } = await serviceClient.from("connections").select("provider, status").eq("workspace_id", workspaceId);
   if (error) throw error;
   const rows = (data ?? []) as Array<{ provider: string; status: string }>;
   // A pending connection has its credentials; Fireflies and Granola stay pending until their first webhook.

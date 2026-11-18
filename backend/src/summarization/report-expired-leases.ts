@@ -14,7 +14,7 @@ export async function reportExpiredSummaryLeases(
 ): Promise<number> {
   try {
     const { data, error } = await client
-      .from("agent_sessions")
+      .from("captured_sessions")
       .select("id, summary_attempts, summary_agent_run_id")
       .eq("workspace_id", workspaceId)
       .eq("summary_status", "leased")

@@ -100,7 +100,7 @@ describe("cursor store", () => {
   const state = (id: string): HostSessionState => ({
     sessionId: id,
     workspaceId: "ws",
-    hostMachineId: "host",
+    hostId: "host",
     nativeSessionId: "native",
     folderPath: "/work/app",
     tmuxSession: `draft-${id}`,

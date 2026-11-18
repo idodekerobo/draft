@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
-import { upsertSourceConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
+import { upsertConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
 import { loadSandboxDeploymentConfig } from "../sandbox";
 import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { PILOT_RUN_BUNDLE_LIMITS } from "../synthesis/load-run-bundle";
@@ -102,7 +102,7 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
 
   let sourceConnection;
   try {
-    sourceConnection = await upsertSourceConnection(serviceClient, {
+    sourceConnection = await upsertConnection(serviceClient, {
       workspace_id: req.params.id,
       provider: "manual_upload",
       // Singleton per workspace — every upload batch upserts into the same row.
@@ -120,7 +120,7 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
     try {
       const { item } = await upsertSourceItem(serviceClient, {
         workspace_id: req.params.id,
-        source_connection_id: sourceConnection.id,
+        connection_id: sourceConnection.id,
         item_type: "document",
         external_id: file.path,
         external_version: file.contentHash,
@@ -135,7 +135,7 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
     } catch (err) {
       recordRouteError({
         workspaceId: req.params.id,
-        sourceConnectionId: sourceConnection.id,
+        connectionId: sourceConnection.id,
         operation: "ingestion",
         errorCode: "source_item_upsert_failed",
         error: err,

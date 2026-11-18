@@ -35,7 +35,7 @@ function mockPreflight(
         if (table === "errors") {
           return { insert: async () => ({ error: null }) };
         }
-        expect(table).toBe("source_connections");
+        expect(table).toBe("connections");
         let selected = "";
         const filters: Array<["eq" | "neq", string, unknown]> = [];
         const builder = {
@@ -81,7 +81,7 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async (_client: unknown, input: Record<string, unknown>) => {
+      upsertConnection: async (_client: unknown, input: Record<string, unknown>) => {
         upsertedInput = input;
         return { id: "conn-1" };
       },
@@ -116,7 +116,7 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async (_client: unknown, input: Record<string, unknown>) => {
+      upsertConnection: async (_client: unknown, input: Record<string, unknown>) => {
         upsertedInput = input;
         return { id: "conn-1" };
       },
@@ -136,7 +136,7 @@ describe("GET /workspaces/github/callback", () => {
     const code = createInstallSession("ws-1");
     let upsertCalled = false;
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async () => {
+      upsertConnection: async () => {
         upsertCalled = true;
         return { id: "conn-1" };
       },
@@ -166,7 +166,7 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async () => {
+      upsertConnection: async () => {
         upsertCalled = true;
         return { id: "conn-1" };
       },
@@ -196,7 +196,7 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async () => {
+      upsertConnection: async () => {
         upsertCalled = true;
         return { id: "conn-2" };
       },
@@ -236,7 +236,7 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async (_client: unknown, input: Record<string, unknown>) => {
+      upsertConnection: async (_client: unknown, input: Record<string, unknown>) => {
         upsertedConnectionKeys.push(String(input.connection_key));
         return { id: "conn-1" };
       },
@@ -264,10 +264,10 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async () => {
+      upsertConnection: async () => {
         throw {
           code: "23505",
-          message: 'duplicate key value violates unique constraint "source_connections_one_live_github_per_workspace"',
+          message: 'duplicate key value violates unique constraint "connections_one_live_github_per_workspace"',
           details: "workspace conflict raw detail",
         };
       },
@@ -297,10 +297,10 @@ describe("GET /workspaces/github/callback", () => {
       },
     }));
     mock.module("../../ingestion/upsert-source-item", () => ({
-      upsertSourceConnection: async () => {
+      upsertConnection: async () => {
         throw {
           code: "23505",
-          message: 'duplicate key value violates unique constraint "source_connections_github_installation_unique"',
+          message: 'duplicate key value violates unique constraint "connections_github_installation_unique"',
         };
       },
     }));

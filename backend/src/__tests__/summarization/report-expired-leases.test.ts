@@ -28,7 +28,7 @@ function createFakeClient(rows: FakeSession[], selectError?: Error) {
   const runUpdates: Array<{ id: string; values: Record<string, unknown> }> = [];
 
   function from(table: string) {
-    if (table === "agent_sessions") {
+    if (table === "captured_sessions") {
       return {
         select: () => {
           const filters: Filter[] = [];

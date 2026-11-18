@@ -40,12 +40,12 @@ describeWithDatabase("people schema", () => {
     const b = await createWorkspace();
     const personId = await addPerson(a.workspaceId, { createdBy: "connection" });
     const [connection] = await db()<[{ id: string }]>`
-      insert into source_connections (workspace_id, provider, connection_key, status) values (${b.workspaceId}, 'slack', ${randomUUID()}, 'active') returning id
+      insert into connections (workspace_id, provider, connection_key, status) values (${b.workspaceId}, 'slack', ${randomUUID()}, 'active') returning id
     `;
     const message = await rejects(
-      () => db()`insert into person_identities (workspace_id, person_id, provider, external_id, status, source_connection_id) values (${a.workspaceId}, ${personId}, 'slack', 'U1', 'from_connection', ${connection.id})`,
+      () => db()`insert into person_identities (workspace_id, person_id, provider, external_id, status, connection_id) values (${a.workspaceId}, ${personId}, 'slack', 'U1', 'from_connection', ${connection.id})`,
     );
-    expect(message).toContain("source_connection_id_workspace_id_fkey");
+    expect(message).toContain("connection_id_workspace_id_fkey");
   });
 
   test("one Slack user is exactly one person in a workspace, but may exist in another", async () => {

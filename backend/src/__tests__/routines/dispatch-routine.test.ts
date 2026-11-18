@@ -78,7 +78,7 @@ describe("dispatchAgentRoutine", () => {
       idempotency_key: `${TASK_ID}:timer:2026-10-27T09:00:00.000Z`,
       concurrency_key: TASK_ID,
     });
-    expect(db.tables.sessions![0]!.host_machine_id).toBe(`fly:${db.tables.sessions![0]!.id}`);
+    expect(db.tables.sessions![0]!.host_id).toBe(`fly:${db.tables.sessions![0]!.id}`);
   });
 
   it("dispatches a duplicate occurrence once", async () => {
@@ -154,7 +154,7 @@ describe("dispatchAgentRoutine", () => {
       { tool: "routines.create", limits: { maxPerRun: 5 } }, { tool: "routines.update" }, { tool: "routines.delete" },
       { tool: "routines.list" }, { tool: "routines.run" }, { tool: "routines.runs" },
     ]);
-    expect(run.runtime).toMatchObject({ type: "cloud", environment: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }, { harness: "claude", tool: "Grep" }, { harness: "claude", tool: "Bash" }] } });
+    expect(run.runtime).toMatchObject({ type: "cloud", toolset: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }, { harness: "claude", tool: "Grep" }, { harness: "claude", tool: "Bash" }] } });
     expect(run.started_at).toBeTruthy();
     const launchInput = launch.mock.calls[0]![0];
     expect(launchInput.run.id).toBe(run.id as never);
@@ -175,11 +175,11 @@ describe("dispatchAgentRoutine", () => {
     expect(db.tables.errors).toEqual([expect.objectContaining({ detail_json: expect.objectContaining({ code: "principal_inactive" }) })]);
   });
 
-  it("gives a Codex routine a Codex environment", async () => {
+  it("gives a Codex routine a Codex toolset", async () => {
     const db = newDb();
     await dispatch(db, okLaunch(), undefined, { config_json: { title: "t", prompt: "p", harness: "codex", model: null } });
     expect(db.tables.agent_runs![0]).toMatchObject({ harness: "codex", model: null });
-    expect(db.tables.agent_runs![0]!.runtime).toMatchObject({ environment: { nativeTools: [{ harness: "codex", tool: "shell" }] } });
+    expect(db.tables.agent_runs![0]!.runtime).toMatchObject({ toolset: { nativeTools: [{ harness: "codex", tool: "shell" }] } });
   });
 
   it("seeds a workspace with no context so the run has a base version", async () => {
@@ -353,7 +353,7 @@ describe("failStaleRoutineSessions", () => {
   const freshStart = new Date(now.getTime() - 5 * 60_000).toISOString();
   const session = (id: string, startedAt: string, extra: Record<string, unknown> = {}) => ({
     id, workspace_id: "ws-1", session_type: "routine", status: "starting", scheduled_task_id: TASK_ID,
-    host_machine_id: `fly:${id}`, started_at: startedAt, ...extra,
+    host_id: `fly:${id}`, started_at: startedAt, ...extra,
   });
 
   it("fails a silent machine once it is past the timeout, and leaves a fresh run alone", async () => {

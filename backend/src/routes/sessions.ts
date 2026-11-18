@@ -1,7 +1,7 @@
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
-import type { AgentMessageRow, AgentSessionRow, SourceItemRow } from "../types/tables";
+import type { CapturedSessionMessageRow, CapturedSessionRow, SourceItemRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { loadDisplayNames } from "./session-display-names";
@@ -27,7 +27,7 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
   const since = url.searchParams.get("since");
 
   let query = serviceClient
-    .from("agent_sessions")
+    .from("captured_sessions")
     .select("id, provider, user_id, contributor_id, project, cwd, started_at, ended_at, status, summary_status")
     .eq("workspace_id", req.params.id)
     .order("started_at", { ascending: false });
@@ -47,7 +47,7 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
 
   const rows = (data ?? []) as Array<
-    Pick<AgentSessionRow, "id" | "provider" | "user_id" | "contributor_id" | "project" | "cwd" | "started_at" | "ended_at" | "status" | "summary_status">
+    Pick<CapturedSessionRow, "id" | "provider" | "user_id" | "contributor_id" | "project" | "cwd" | "started_at" | "ended_at" | "status" | "summary_status">
   >;
 
   const userIds = [...new Set(rows.map((r) => r.user_id).filter((id): id is string => id !== null))];
@@ -88,17 +88,17 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
   return new Response(responseText, { headers: { "Content-Type": "application/json" } });
 });
 
-async function loadSession(workspaceId: string, sessionId: string): Promise<Pick<AgentSessionRow, "id" | "workspace_id"> | null> {
+async function loadSession(workspaceId: string, sessionId: string): Promise<Pick<CapturedSessionRow, "id" | "workspace_id"> | null> {
   const { data } = await serviceClient
-    .from("agent_sessions")
+    .from("captured_sessions")
     .select("id, workspace_id")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
-    .maybeSingle<Pick<AgentSessionRow, "id" | "workspace_id">>();
+    .maybeSingle<Pick<CapturedSessionRow, "id" | "workspace_id">>();
   return data ?? null;
 }
 
-type TranscriptMessage = Pick<AgentMessageRow, "seq" | "role" | "content" | "created_at">;
+type TranscriptMessage = Pick<CapturedSessionMessageRow, "seq" | "role" | "content" | "created_at">;
 
 interface Window {
   start_seq: number;
@@ -160,9 +160,9 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
 
     if (grep) {
       const { data: matchData, error: matchError } = await serviceClient
-        .from("agent_messages")
+        .from("captured_session_messages")
         .select("seq")
-        .eq("session_id", session.id)
+        .eq("captured_session_id", session.id)
         .eq("workspace_id", req.params.id)
         .filter("content", "imatch", grep);
       if (matchError) return errorResponse("invalid_grep_pattern", 400, matchError, req.params.id);
@@ -171,9 +171,9 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
       windows = mergeWindows(matchedSeqs, context);
 
       const { data: fullData, error: fullError } = await serviceClient
-        .from("agent_messages")
+        .from("captured_session_messages")
         .select("seq, role, content, created_at")
-        .eq("session_id", session.id)
+        .eq("captured_session_id", session.id)
         .eq("workspace_id", req.params.id)
         .order("seq", { ascending: true });
       if (fullError) return errorResponse("transcript_lookup_failed", 500, fullError, req.params.id);
@@ -182,9 +182,9 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
       messages = fullMessages.filter((m) => windows!.some((w) => m.seq >= w.start_seq && m.seq <= w.end_seq));
     } else {
       const { data, error } = await serviceClient
-        .from("agent_messages")
+        .from("captured_session_messages")
         .select("seq, role, content, created_at")
-        .eq("session_id", session.id)
+        .eq("captured_session_id", session.id)
         .eq("workspace_id", req.params.id)
         .order("seq", { ascending: true });
       if (error) return errorResponse("transcript_lookup_failed", 500, error, req.params.id);

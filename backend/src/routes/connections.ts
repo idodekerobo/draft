@@ -9,7 +9,7 @@ import {
 } from "../credentials/crypto";
 import { resolveProviderCredential, resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
 import { loadConfig } from "../config";
-import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/agent-sessions/constants";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
 import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
 import { syncPeopleInBackground } from "../people/sync";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
@@ -25,7 +25,7 @@ import {
   deleteLinearWebhook,
   LinearProviderError,
 } from "../ingestion/linear/provider";
-import { upsertSourceConnection } from "../ingestion/upsert-source-item";
+import { upsertConnection } from "../ingestion/upsert-source-item";
 import { fetchFirefliesAccountIdentity } from "../ingestion/fireflies/fetch-meeting";
 import {
   createGranolaWebhookEndpoint,
@@ -34,8 +34,8 @@ import {
 } from "../ingestion/granola/webhook-endpoints";
 import { listGranolaNotesSince } from "../ingestion/granola/fetch-note";
 import { ingestGranolaNote } from "../ingestion/granola/normalize";
-import type { SourceConnectionProvider } from "../types/enums";
-import type { SourceConnectionRow } from "../types/tables";
+import type { ConnectionProvider } from "../types/enums";
+import type { ConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
 import { registerSessionSummaryTask } from "../summarization/register-session-summaries";
 
@@ -46,8 +46,8 @@ import { registerSessionSummaryTask } from "../summarization/register-session-su
 // the existing row rather than create a second live one.
 // Granola is also a singleton for its separate workspace-key row
 // (connected_by_user_id null) -- see isGranolaWorkspaceKey below.
-const MULTI_ACCOUNT_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "granola"]);
-function isMultiAccountProvider(provider: SourceConnectionProvider): boolean {
+const MULTI_ACCOUNT_PROVIDERS = new Set<ConnectionProvider>(["fireflies", "granola"]);
+function isMultiAccountProvider(provider: ConnectionProvider): boolean {
   return MULTI_ACCOUNT_PROVIDERS.has(provider);
 }
 
@@ -145,7 +145,7 @@ const FOLDED_CONNECTION_PROVIDERS = SINGLETON_CONNECTION_PROVIDERS.filter(
 );
 
 type ListedConnectionRow = Pick<
-  SourceConnectionRow,
+  ConnectionRow,
   | "id"
   | "provider"
   | "status"
@@ -165,7 +165,7 @@ interface SlackBackfillSummary {
   last_error: string | null;
 }
 
-function slackBackfillSummary(cursorJson: SourceConnectionRow["cursor_json"]): SlackBackfillSummary | null {
+function slackBackfillSummary(cursorJson: ConnectionRow["cursor_json"]): SlackBackfillSummary | null {
   const raw = (cursorJson as { slack_backfill?: unknown } | null)?.slack_backfill;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const state = raw as Record<string, unknown>;
@@ -178,7 +178,7 @@ function slackBackfillSummary(cursorJson: SourceConnectionRow["cursor_json"]): S
   };
 }
 
-function connectionSelectionRank(status: SourceConnectionRow["status"]): number {
+function connectionSelectionRank(status: ConnectionRow["status"]): number {
   if (status === "active" || status === "degraded") return 0;
   if (status === "pending" || status === "error") return 1;
   if (status === "revoked") return 2;
@@ -282,7 +282,7 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
   // partitioned from the same result set below rather than fetched
   // separately, since it's the same table and workspace filter either way.
   const { data, error } = await serviceClient
-    .from("source_connections")
+    .from("connections")
     .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, cursor_json, updated_at, connected_by_user_id")
     .eq("workspace_id", req.params.id)
     .in("provider", [...SINGLETON_CONNECTION_PROVIDERS]);
@@ -402,12 +402,12 @@ export const CHANNELS_GET = withAuth<ConnectionChannelsRequest>(async (req, call
   if (denied) return denied;
 
   const { data: connection, error } = await serviceClient
-    .from("source_connections")
+    .from("connections")
     .select("config_json")
     .eq("workspace_id", req.params.id)
     .eq("provider", "slack")
     .eq("status", "active")
-    .maybeSingle<Pick<SourceConnectionRow, "config_json">>();
+    .maybeSingle<Pick<ConnectionRow, "config_json">>();
   if (error) return errorResponse("connection_lookup_failed", 500, error, req.params.id);
   if (!connection) return errorResponse("not_found", 404);
 
@@ -481,7 +481,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   }
 
   if (body.provider === "claude_code") {
-    // Workspace-level credential, not a source_connections row: no live probe,
+    // Workspace-level credential, not a connections row: no live probe,
     // no scheduled task — a bad token surfaces on the first real run via the
     // existing 401/pause/reconnect handling.
     const encryptedToken = encryptCredentialPayload(body.token, CURRENT_CREDENTIAL_KEY_VERSION);
@@ -537,7 +537,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     // connection_key materialize-summary.ts auto-creates.
     try {
       await registerSessionSummaryTask(req.params.id, serviceClient);
-      await upsertSourceConnection(serviceClient, {
+      await upsertConnection(serviceClient, {
         workspace_id: req.params.id,
         provider: "claude_session",
         connection_key: CLAUDE_SESSION_CONNECTION_KEY,
@@ -558,7 +558,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
   // Granola's workspace-key kind is a third shape: looks up by no-owner.
   const isGranolaWorkspaceKey = body.provider === "granola" && body.account_kind === "workspace";
   let existingQuery = serviceClient
-    .from("source_connections")
+    .from("connections")
     .select("id, credential_id, connection_key, config_json, updated_at")
     .eq("workspace_id", req.params.id)
     .eq("provider", body.provider);
@@ -584,7 +584,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       // meeting (cut from this slice). Reject before inserting a duplicate
       // that would double-ingest every meeting from that account.
       const { data: duplicate, error: duplicateError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .select("id, connected_by_user_id")
         .eq("workspace_id", req.params.id)
         .eq("provider", "fireflies")
@@ -726,7 +726,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         cleanupPending.push(webhookId);
         recordRouteError({
           workspaceId: req.params.id,
-          sourceConnectionId: commit.connection_id,
+          connectionId: commit.connection_id,
           operation: "auth",
           errorCode: "linear_webhook_cleanup_pending",
           error: cleanupError,
@@ -745,7 +745,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         nextConfig.linear_cleanup_pending_webhook_ids = cleanupPending;
       }
       const { data: cleanupState, error: cleanupStateError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .update({
           config_json: nextConfig,
           ...(cleanupPending.length > 0
@@ -761,7 +761,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
         cleanupStateFailed = true;
         recordRouteError({
           workspaceId: req.params.id,
-          sourceConnectionId: commit.connection_id,
+          connectionId: commit.connection_id,
           operation: "auth",
           errorCode: "linear_cleanup_state_failed",
           error: cleanupStateError ?? "linear_cleanup_state_conflict",
@@ -802,7 +802,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       // its notes. Scoped to personal rows: a workspace key from the same
       // person is a different resource, not a duplicate.
       const { data: duplicate, error: duplicateError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .select("id, connected_by_user_id")
         .eq("workspace_id", req.params.id)
         .eq("provider", "granola")
@@ -879,7 +879,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       credentialId = rotation.credential_id;
 
       const { error: identityError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .update({ external_account_id: externalAccountId, display_name: displayName })
         .eq("id", connectionId)
         .eq("workspace_id", req.params.id);
@@ -899,7 +899,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError, req.params.id);
 
       const { data: newConnection, error: connectionError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .insert({
           workspace_id: req.params.id,
           provider: "granola",
@@ -933,7 +933,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     } catch (backfillError) {
       recordRouteError({
         workspaceId: req.params.id,
-        sourceConnectionId: connectionId,
+        connectionId: connectionId,
         operation: "ingestion",
         errorCode: "granola_backfill_failed",
         error: backfillError,
@@ -987,7 +987,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
 
     if (firefliesAccountIdentity) {
       const { error: identityError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .update({
           external_account_id: firefliesAccountIdentity.externalAccountId,
           display_name: firefliesAccountIdentity.displayName,
@@ -1027,7 +1027,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
       if (credentialError || !newCredential) return errorResponse("credential_insert_failed", 500, credentialError, req.params.id);
 
       const { error: credentialLinkError } = await serviceClient
-        .from("source_connections")
+        .from("connections")
         .update({ credential_id: newCredential.id })
         .eq("id", existing.id)
         .eq("workspace_id", req.params.id);
@@ -1035,7 +1035,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     }
 
     const { error: connectionError } = await serviceClient
-      .from("source_connections")
+      .from("connections")
       .update({
         status: "active",
         last_error_at: null,
@@ -1062,7 +1062,7 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
 
     // A failed connection insert can leave an orphaned credential.
     const { data: newConnection, error: connectionError } = await serviceClient
-      .from("source_connections")
+      .from("connections")
       .insert({
         workspace_id: req.params.id,
         provider: body.provider,
@@ -1145,7 +1145,7 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
 
   for (let attempt = 0; attempt < MAX_SLACK_RECONCILE_ATTEMPTS; attempt += 1) {
     const { data: connection, error: connectionError } = await serviceClient
-      .from("source_connections")
+      .from("connections")
       .select("id, config_json, updated_at")
       .eq("workspace_id", req.params.id)
       .eq("provider", "slack")
@@ -1179,7 +1179,7 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
       ? connection.config_json
       : {};
     const { data: updatedConnection, error: updateError } = await serviceClient
-      .from("source_connections")
+      .from("connections")
       .update({
         config_json: { ...existingConfig, channel_ids: reconciliation.channelIds },
       })
@@ -1226,7 +1226,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   // p_connected_by_user_id and reports which case occurred, so there's no
   // need for a separate pre-check query that would just repeat the same
   // lookup.
-  const { data, error } = await serviceClient.rpc("disconnect_source_connection", {
+  const { data, error } = await serviceClient.rpc("disconnect_connection", {
     p_workspace_id: req.params.id,
     p_provider: req.params.provider,
     p_connected_by_user_id: caller.userId,
@@ -1251,7 +1251,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     // Best-effort: avoids the 4-day window before Granola auto-disables and
     // emails about a dead endpoint, but isn't fatal if it fails.
     const { data: revokedConnection } = await serviceClient
-      .from("source_connections")
+      .from("connections")
       .select("credential_id")
       .eq("id", result.connection_id)
       .eq("workspace_id", req.params.id)
@@ -1268,7 +1268,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
       } catch (cleanupError) {
         recordRouteError({
           workspaceId: req.params.id,
-          sourceConnectionId: result.connection_id,
+          connectionId: result.connection_id,
           operation: "auth",
           errorCode: "granola_webhook_cleanup_failed",
           error: cleanupError,

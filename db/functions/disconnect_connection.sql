@@ -9,7 +9,7 @@
 -- row live at once for the same (workspace, provider) -- every other
 -- provider has at most one live row and every existing caller omits this
 -- argument, keeping the prior "most recently updated" behavior unchanged.
-create or replace function disconnect_source_connection(
+create or replace function disconnect_connection(
   p_workspace_id uuid,
   p_provider text,
   p_connected_by_user_id uuid,
@@ -25,7 +25,7 @@ declare
   v_owner uuid;
 begin
   select sc.id, sc.connected_by_user_id into v_connection_id, v_owner
-  from source_connections sc
+  from connections sc
   where sc.workspace_id = p_workspace_id
     and sc.provider = p_provider
     and sc.status <> 'revoked'
@@ -51,14 +51,15 @@ begin
     return;
   end if;
 
-  update source_connections
+  update connections
   set status = 'revoked'
   where id = v_connection_id
     and workspace_id = p_workspace_id;
 
   update scheduled_tasks
   set enabled = false
-  where source_connection_id = v_connection_id
+  -- Qualified: the OUT column connection_id would otherwise be ambiguous with scheduled_tasks.connection_id.
+  where scheduled_tasks.connection_id = v_connection_id
     and workspace_id = p_workspace_id
     and enabled;
 
@@ -66,5 +67,5 @@ begin
 end;
 $$;
 
-revoke all on function disconnect_source_connection(uuid, text, uuid, text) from public;
-grant execute on function disconnect_source_connection(uuid, text, uuid, text) to service_role;
+revoke all on function disconnect_connection(uuid, text, uuid, text) from public;
+grant execute on function disconnect_connection(uuid, text, uuid, text) to service_role;

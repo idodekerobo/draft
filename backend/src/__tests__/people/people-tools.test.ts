@@ -25,7 +25,7 @@ const newDb = () =>
       ],
       people: [],
       person_identities: [],
-      source_connections: [],
+      connections: [],
       agent_run_tool_calls: [],
     },
     { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] }, uuidTables: ["people"] },
@@ -46,7 +46,7 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "system", reason: "manual" },
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude",
   model: null,
   instructions: "",
@@ -80,7 +80,7 @@ describe("people.find", () => {
     await call(asUser(), "people.find", {});
     const uzoId = db.tables.people!.find((p) => p.user_id === OWNER)!.id;
     db.tables.person_identities!.push({ id: "s1", workspace_id: WS, person_id: uzoId, provider: "slack", external_id: "U1", status: "inferred" });
-    db.tables.source_connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: "active" });
+    db.tables.connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: "active" });
     const guess = await call(asUser(), "people.find", { name: "uzo" });
     expect((guess as { output: { people: Array<{ reachable: { slack: boolean } }> } }).output.people[0]!.reachable.slack).toBe(false);
     db.tables.person_identities!.find((i) => i.provider === "slack")!.status = "from_connection";

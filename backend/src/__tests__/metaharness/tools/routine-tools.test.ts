@@ -54,7 +54,7 @@ const RUN_BROKEN = id(0x107);
 
 const PARENT: AgentRoutineConfig = {
   title: "Digest", prompt: "Summarize the week.", harness: "claude", model: "haiku", reasoningEffort: "low",
-  canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" }, environment: { nativeTools: ["WebSearch"], mcpServers: [] },
+  canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" }, toolset: { nativeTools: ["WebSearch"], mcpServers: [] },
 };
 const NO_ACCESS: AgentRoutineConfig = { title: "Quiet", prompt: "Look.", harness: "claude", model: null };
 
@@ -65,7 +65,7 @@ const asTask = (row: Row) => row as unknown as ScheduledTaskRow;
 
 function routineRow(taskId: string, config: object, extra: Row = {}): Row {
   return {
-    id: taskId, workspace_id: WS, source_connection_id: null, task_type: "agent_routine", task_key: taskId,
+    id: taskId, workspace_id: WS, connection_id: null, task_type: "agent_routine", task_key: taskId,
     schedule_kind: "cron", cron_expression: "0 9 * * *", interval_seconds: null, timezone: "UTC", enabled: true,
     config_json: config, next_due_at: null, deleted_at: null, last_enqueued_at: null, claimed_occurrence_at: null,
     run_at: null, fired_at: null, created_via: "app", created_by_run_id: null, trigger_depth: 0, visibility: "shared",
@@ -127,7 +127,7 @@ describe("routines.create from a run", () => {
     expect(row.config_json).toEqual({
       title: "Check the digest", prompt: "Check it.", harness: "claude", model: "haiku", reasoningEffort: "low",
       canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" },
-      environment: { nativeTools: ["WebSearch"], mcpServers: [] },
+      toolset: { nativeTools: ["WebSearch"], mcpServers: [] },
     });
     expect(output(result).routine!.id).toBe(row.id);
   });

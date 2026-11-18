@@ -10,7 +10,7 @@ create table person_identities (
   -- For display only. Handles change.
   handle               text,
   status               text not null check (status in ('confirmed', 'from_connection', 'inferred')),
-  source_connection_id uuid,
+  connection_id        uuid,
   evidence             jsonb not null default '{}',
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
@@ -18,8 +18,8 @@ create table person_identities (
   unique (workspace_id, provider, external_id),
   foreign key (person_id, workspace_id)
     references people(id, workspace_id) on delete cascade,
-  foreign key (source_connection_id, workspace_id)
-    references source_connections(id, workspace_id) on delete set null (source_connection_id)
+  foreign key (connection_id, workspace_id)
+    references connections(id, workspace_id) on delete set null (connection_id)
 );
 
 create index person_identities_workspace_person_idx on person_identities (workspace_id, person_id);

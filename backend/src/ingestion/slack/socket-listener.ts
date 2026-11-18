@@ -100,7 +100,7 @@ export async function isSlackConnectionIngestible(
 ): Promise<boolean> {
   const db = client ?? (await import("../../db/client")).serviceClient;
   const { data, error } = await db
-    .from("source_connections")
+    .from("connections")
     .select("status")
     .eq("id", connection.id)
     .eq("workspace_id", connection.workspace_id)
@@ -144,14 +144,14 @@ export function connectSlackSocketListener(
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   function record(code: string, message: string, error: unknown): void {
-    void recordError({ client, workspaceId: connection.workspace_id, sourceConnectionId: connection.id, operation: "ingestion", code, message, error });
+    void recordError({ client, workspaceId: connection.workspace_id, connectionId: connection.id, operation: "ingestion", code, message, error });
   }
 
   async function stopForTerminalFailure(err: unknown, status: "revoked" | "error"): Promise<void> {
     stopped = true;
     const db = client ?? (await import("../../db/client")).serviceClient;
     const { error } = await db
-      .from("source_connections")
+      .from("connections")
       .update({ status, last_error_at: new Date().toISOString() })
       .eq("id", connection.id)
       .eq("workspace_id", connection.workspace_id)

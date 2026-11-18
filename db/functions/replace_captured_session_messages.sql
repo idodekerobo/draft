@@ -1,5 +1,5 @@
 -- Replaces a session's full message set atomically: upsert the
--- agent_sessions row, then delete + reinsert agent_messages, all in one
+-- captured_sessions row, then delete + reinsert captured_session_messages, all in one
 -- transaction. Mirrors upsert_source_item.sql's shape (security definer,
 -- search_path locked, row locking before mutation, revoked from public).
 -- Attribution never regresses on re-ingest: once a session is linked to a
@@ -10,7 +10,7 @@
 -- credential is project-scoped; a legacy credential's ingest passes null
 -- and never overwrites an existing session_project_id (coalesce, not
 -- excluded-wins) -- no backfill for legacy-authored sessions.
-create or replace function replace_agent_session_messages(
+create or replace function replace_captured_session_messages(
   p_workspace_id uuid,
   p_provider text,
   p_external_session_id text,
@@ -34,13 +34,13 @@ declare
   v_transcript_revision bigint;
 begin
   perform 1
-  from agent_sessions
+  from captured_sessions
   where workspace_id = p_workspace_id
     and provider = p_provider
     and external_session_id = p_external_session_id
   for update;
 
-  insert into agent_sessions (
+  insert into captured_sessions (
     workspace_id, provider, external_session_id, user_id, contributor_id,
     project, cwd, started_at, ended_at, status, session_project_id
   ) values (
@@ -49,22 +49,22 @@ begin
   )
   on conflict (workspace_id, provider, external_session_id)
   do update set
-    user_id = coalesce(agent_sessions.user_id, excluded.user_id),
+    user_id = coalesce(captured_sessions.user_id, excluded.user_id),
     contributor_id = case
-      when agent_sessions.user_id is not null then null
+      when captured_sessions.user_id is not null then null
       else excluded.contributor_id
     end,
     project = excluded.project,
     cwd = excluded.cwd,
     ended_at = excluded.ended_at,
     status = excluded.status,
-    session_project_id = coalesce(excluded.session_project_id, agent_sessions.session_project_id),
-    transcript_revision = agent_sessions.transcript_revision + 1
+    session_project_id = coalesce(excluded.session_project_id, captured_sessions.session_project_id),
+    transcript_revision = captured_sessions.transcript_revision + 1
   returning id, transcript_revision into v_session_id, v_transcript_revision;
 
-  delete from agent_messages where session_id = v_session_id;
+  delete from captured_session_messages where captured_session_id = v_session_id;
 
-  insert into agent_messages (session_id, workspace_id, seq, role, content)
+  insert into captured_session_messages (captured_session_id, workspace_id, seq, role, content)
   select
     v_session_id,
     p_workspace_id,
@@ -80,9 +80,9 @@ begin
 end;
 $$;
 
-revoke all on function replace_agent_session_messages(
+revoke all on function replace_captured_session_messages(
   uuid, text, text, uuid, uuid, text, text, timestamptz, timestamptz, text, jsonb, uuid
 ) from public;
-grant execute on function replace_agent_session_messages(
+grant execute on function replace_captured_session_messages(
   uuid, text, text, uuid, uuid, text, text, timestamptz, timestamptz, text, jsonb, uuid
 ) to service_role;

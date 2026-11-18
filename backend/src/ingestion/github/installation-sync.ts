@@ -30,7 +30,7 @@ export async function handleInstallationEvent(
 
   const db = client ?? (await import("../../db/client")).serviceClient;
   const { error } = await db
-    .from("source_connections")
+    .from("connections")
     .update({ status })
     .eq("provider", "github")
     .eq("connection_key", String(payload.installation.id));
@@ -46,7 +46,7 @@ export async function handleInstallationRepositoriesEvent(
   const db = client ?? (await import("../../db/client")).serviceClient;
 
   const { data: connection, error: selectError } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, config_json")
     .eq("provider", "github")
     .eq("connection_key", String(payload.installation.id))
@@ -60,7 +60,7 @@ export async function handleInstallationRepositoriesEvent(
   for (const repo of payload.repositories_removed ?? []) repos.delete(repo.full_name);
 
   const { error: updateError } = await db
-    .from("source_connections")
+    .from("connections")
     .update({ config_json: { ...configJson, repos: [...repos] } })
     .eq("id", connection.id);
   if (updateError) throw updateError;

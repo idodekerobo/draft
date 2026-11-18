@@ -9,7 +9,7 @@ export async function failStaleRoutineSessions(client: SupabaseClient, now: Date
   const cutoff = new Date(now.getTime() - ROUTINE_STALE_AFTER_MS).toISOString();
   const { data, error } = await client
     .from("sessions")
-    .select("id, workspace_id, scheduled_task_id, host_machine_id")
+    .select("id, workspace_id, scheduled_task_id, host_id")
     .eq("session_type", "routine")
     .in("status", ["starting", "live"])
     .lt("started_at", cutoff)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { type AnyDraftToolPermission } from "draft-core/tools";
 import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
 import { createRunGateway } from "../../../metaharness/tools/run-gateway";
@@ -21,7 +21,7 @@ async function setup(permissions: AnyDraftToolPermission[], status = "running") 
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
     onBehalfOf: null,
-    runtime: { type: "local", hostMachineId: parseHostMachineId("mac") },
+    runtime: { type: "local", hostId: parseHostId("mac") },
     harness: "claude",
     model: null,
     instructions: "",

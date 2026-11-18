@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { upsertSourceConnection, upsertSourceItem } from "../../ingestion/upsert-source-item";
+import { upsertConnection, upsertSourceItem } from "../../ingestion/upsert-source-item";
 
 const ids = {
   workspace: "88888888-8888-4888-8888-888888888888",
@@ -30,7 +30,7 @@ function createFakeClient(rpcResult: RpcResult) {
   };
 
   function from(table: string) {
-    if (table === "source_connections") {
+    if (table === "connections") {
       return {
         upsert: (payload: Record<string, unknown>) => {
           state.connectionUpsertPayload = payload;
@@ -79,14 +79,14 @@ function createFakeClient(rpcResult: RpcResult) {
   return { client: { from, rpc } as unknown as SupabaseClient, state };
 }
 
-describe("upsertSourceConnection", () => {
+describe("upsertConnection", () => {
   it("upserts on (workspace_id, provider, connection_key)", async () => {
     const { client, state } = createFakeClient({
       item_id: "unused",
       changed: true,
       superseded_item_ids: [],
     });
-    const connection = await upsertSourceConnection(client, {
+    const connection = await upsertConnection(client, {
       workspace_id: ids.workspace,
       provider: "fireflies",
       connection_key: "founder-primary",
@@ -106,7 +106,7 @@ describe("upsertSourceConnection", () => {
       changed: true,
       superseded_item_ids: [],
     });
-    await upsertSourceConnection(client, {
+    await upsertConnection(client, {
       workspace_id: ids.workspace,
       provider: "claude_session",
       connection_key: "agent-sessions",
@@ -121,7 +121,7 @@ describe("upsertSourceConnection", () => {
       changed: true,
       superseded_item_ids: [],
     });
-    await upsertSourceConnection(client, {
+    await upsertConnection(client, {
       workspace_id: ids.workspace,
       provider: "manual_upload",
       connection_key: "manual-upload",
@@ -141,7 +141,7 @@ describe("upsertSourceItem", () => {
     });
     const result = await upsertSourceItem(client, {
       workspace_id: ids.workspace,
-      source_connection_id: ids.connection,
+      connection_id: ids.connection,
       item_type: "meeting_transcript",
       external_id: "meeting-1",
       external_version: "hash-a",
@@ -152,7 +152,7 @@ describe("upsertSourceItem", () => {
 
     expect(state.rpcParams).toMatchObject({
       p_workspace_id: ids.workspace,
-      p_source_connection_id: ids.connection,
+      p_connection_id: ids.connection,
       p_item_type: "meeting_transcript",
       p_external_id: "meeting-1",
       p_external_version: "hash-a",
@@ -174,7 +174,7 @@ describe("upsertSourceItem", () => {
 
     const result = await upsertSourceItem(client, {
       workspace_id: ids.workspace,
-      source_connection_id: ids.connection,
+      connection_id: ids.connection,
       item_type: "meeting_transcript",
       external_id: "meeting-1",
       external_version: "hash-new",

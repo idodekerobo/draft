@@ -8,7 +8,7 @@ type GithubConnection = { connection_key: string };
 
 async function activeGithubConnection(client: SupabaseClient, workspaceId: string): Promise<GithubConnection | null> {
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select("connection_key")
     .eq("workspace_id", workspaceId)
     .eq("provider", "github")

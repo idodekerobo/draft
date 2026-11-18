@@ -75,7 +75,7 @@ mock.module("../../db/client", () => ({
         const fail = (message: string) => ({ data: null, error: { message } });
         if (!session) return fail("session_not_found");
         if (session.owner_user_id !== args.p_owner_user_id) return fail("not_session_owner");
-        if (session.host_machine_id !== args.p_host_machine_id) return fail("foreign_host");
+        if (session.host_id !== args.p_host_id) return fail("foreign_host");
         const input = tables.session_inputs!.find((r) => r.id === args.p_input_id);
         if (args.p_to === "consumed" && (!input || input.kind === "message")) return fail("invalid_state");
       }
@@ -100,7 +100,7 @@ beforeEach(() => {
   rpcError = null;
   updates = [];
   tables = {
-    sessions: [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", status: "live", host_machine_id: "host-1", last_seq: 0 }],
+    sessions: [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", status: "live", host_id: "host-1", last_seq: 0 }],
     session_inputs: [],
     session_events: [],
     users: [{ id: "user-2", display_name: "Priya", email: "p@example.test" }],
@@ -140,7 +140,7 @@ describe("sending a message", () => {
   });
 
   it("lets any workspace member send, not only the owner", async () => {
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_machine_id: "host-1", last_seq: 0 }];
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_id: "host-1", last_seq: 0 }];
     const res = await routes.INPUTS_CREATE(request("POST", "/x", { text: "hello" }));
     expect(res.status).toBe(201);
   });
@@ -157,38 +157,38 @@ describe("host routes", () => {
 
   it("gives the host the exact text to paste, with the author in front", async () => {
     tables.session_inputs = [input];
-    const res = await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"));
+    const res = await routes.INPUTS_PENDING(request("GET", "/x?hostId=host-1"));
     const body = (await res.json()) as { inputs: Array<{ delivered_text: string }> };
     expect(body.inputs[0]!.delivered_text).toBe("[Dev via Draft] run tests");
   });
 
   it("puts the start of the input id in the tag", async () => {
     tables.session_inputs = [{ ...input, id: "ab12cd34-0000-4000-8000-000000000000" }];
-    const body = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as { inputs: Array<{ delivered_text: string }> };
+    const body = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostId=host-1"))).json()) as { inputs: Array<{ delivered_text: string }> };
     expect(body.inputs[0]!.delivered_text).toBe("[Dev via Draft #ab12cd34] run tests");
   });
 
   it("refuses pending inputs to a user who does not own the session and to another host", async () => {
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_machine_id: "host-1", last_seq: 0 }];
-    expect((await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).status).toBe(403);
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", status: "live", host_machine_id: "host-1", last_seq: 0 }];
-    expect((await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-9"))).status).toBe(403);
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_id: "host-1", last_seq: 0 }];
+    expect((await routes.INPUTS_PENDING(request("GET", "/x?hostId=host-1"))).status).toBe(403);
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", status: "live", host_id: "host-1", last_seq: 0 }];
+    expect((await routes.INPUTS_PENDING(request("GET", "/x?hostId=host-9"))).status).toBe(403);
   });
 
   const stateRequest = (body: unknown) => request("POST", "/x", body, { id: WS, sessionId: SESSION, inputId: "i1" });
 
   it("moves an input to delivering", async () => {
-    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["queued"], to: "delivering" }));
+    const res = await routes.INPUT_STATE(stateRequest({ hostId: "host-1", from: ["queued"], to: "delivering" }));
     expect(await res.json()).toEqual({ ok: true, changed: true });
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i1", p_from: ["queued"], p_to: "delivering" });
   });
 
   it("the host cannot mark a message consumed, but can mark a stop or a decision", async () => {
     tables.session_inputs = [input, { ...input, id: "i2", kind: "stop" }];
-    const message = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["delivering"], to: "consumed" }));
+    const message = await routes.INPUT_STATE(stateRequest({ hostId: "host-1", from: ["delivering"], to: "consumed" }));
     expect(message.status).toBe(400);
     rpcCalls = [];
-    const stop = await routes.INPUT_STATE(request("POST", "/x", { hostMachineId: "host-1", from: ["delivering"], to: "consumed" }, { id: WS, sessionId: SESSION, inputId: "i2" }));
+    const stop = await routes.INPUT_STATE(request("POST", "/x", { hostId: "host-1", from: ["delivering"], to: "consumed" }, { id: WS, sessionId: SESSION, inputId: "i2" }));
     expect(stop.status).toBe(200);
     expect(rpcCalls[0]!.args).toMatchObject({ p_input_id: "i2", p_to: "consumed" });
   });
@@ -201,25 +201,25 @@ describe("host routes", () => {
       { ...input, id: "i4", kind: "stop", state: "consumed" },
     ];
     type Pending = { inputs: Array<{ id: string; kind: string; delivered_text?: string; payload: unknown }> };
-    const all = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1&kinds=all"))).json()) as Pending;
+    const all = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostId=host-1&kinds=all"))).json()) as Pending;
     expect(all.inputs.map((i) => [i.id, i.kind])).toEqual([["i1", "message"], ["i2", "stop"], ["i3", "permission_decision"]]);
     expect(all.inputs[0]!.delivered_text).toBe("[Dev via Draft] run tests");
     expect(all.inputs[1]!.delivered_text).toBeUndefined();
     expect(all.inputs[2]!.payload).toEqual({ requestId: "r1", decision: "allow" });
 
-    const messagesOnly = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostMachineId=host-1"))).json()) as Pending;
+    const messagesOnly = (await (await routes.INPUTS_PENDING(request("GET", "/x?hostId=host-1"))).json()) as Pending;
     expect(messagesOnly.inputs.map((i) => i.id)).toEqual(["i1"]);
   });
 
   it("refuses a state change from a user who does not own the session", async () => {
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_machine_id: "host-1", last_seq: 0 }];
-    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-1", from: ["queued"], to: "delivering" }));
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", status: "live", host_id: "host-1", last_seq: 0 }];
+    const res = await routes.INPUT_STATE(stateRequest({ hostId: "host-1", from: ["queued"], to: "delivering" }));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ ok: false, error: "not_session_owner" });
   });
 
   it("refuses a state change from another host", async () => {
-    const res = await routes.INPUT_STATE(stateRequest({ hostMachineId: "host-9", from: ["queued"], to: "delivering" }));
+    const res = await routes.INPUT_STATE(stateRequest({ hostId: "host-9", from: ["queued"], to: "delivering" }));
     expect(res.status).toBe(403);
   });
 });

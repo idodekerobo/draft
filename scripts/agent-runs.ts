@@ -2,7 +2,7 @@
 //
 //   bun --env-file=.env.staging run scripts/agent-runs.ts runs --workspace <id> [--limit 10]
 //   bun --env-file=.env.staging run scripts/agent-runs.ts connect-mcp --workspace <id> --url <https url> --token <token> --name <name> [--user <user id>] [--allow-local]
-//   bun --env-file=.env.staging run scripts/agent-runs.ts set-environment --task <scheduled task id> [--native WebSearch,Grep] [--mcp <connection id>[:tool,tool]]...
+//   bun --env-file=.env.staging run scripts/agent-runs.ts set-toolset --task <scheduled task id> [--native WebSearch,Grep] [--mcp <connection id>[:tool,tool]]...
 //
 // It writes data, so it refuses to run against the production project.
 
@@ -74,7 +74,7 @@ if (command === "runs") {
   );
   console.log(`Connected. connection id: ${result.connectionId}`);
   console.log(`Tools: ${result.tools.map((tool) => tool.name).join(", ") || "(none)"}`);
-} else if (command === "set-environment") {
+} else if (command === "set-toolset") {
   const taskId = need(options, "task");
   const { data: task, error } = await db.from("scheduled_tasks").select("id, task_type, config_json").eq("id", taskId).single();
   if (error) throw error;
@@ -87,16 +87,16 @@ if (command === "runs") {
     return { connectionId: connectionId!, tools: tools ? tools.split(",") : ("all" as const) };
   });
   const nativeTools = (options.get("native")?.[0] ?? "").split(",").filter(Boolean);
-  const checked = validateAgentRoutineConfig({ ...current, environment: { nativeTools, mcpServers } });
+  const checked = validateAgentRoutineConfig({ ...current, toolset: { nativeTools, mcpServers } });
   if (!checked.ok) {
     console.error(`Not valid: ${checked.field}`);
     process.exit(1);
   }
   const { error: updateError } = await db.from("scheduled_tasks").update({ config_json: checked.config }).eq("id", taskId);
   if (updateError) throw updateError;
-  console.log("Saved:", JSON.stringify(checked.config.environment));
+  console.log("Saved:", JSON.stringify(checked.config.toolset));
 } else {
-  console.error("Commands: runs | connect-mcp | set-environment (see the top of this file)");
+  console.error("Commands: runs | connect-mcp | set-toolset (see the top of this file)");
   process.exit(2);
 }
 process.exit(0);

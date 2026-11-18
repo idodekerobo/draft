@@ -129,7 +129,7 @@ export async function ingestLinearEvent(
 
   const result: UpsertSourceItemResult = await upsertSourceItem(db, {
     workspace_id: connection.workspace_id,
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     item_type: "provider_event",
     external_id: externalId,
     external_version: externalVersion,
@@ -152,7 +152,7 @@ export async function ingestLinearEvent(
 
   await insertEvent(db, connection.workspace_id, {
     event_type: "source_items_added",
-    source_connection_id: connection.id,
+    connection_id: connection.id,
     summary: str(payload.data.title) ?? str(payload.data.name) ?? `${payload.type} ${payload.action}`,
   });
 

@@ -6,7 +6,7 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   return {
     id: "task-1",
     workspace_id: "workspace-1",
-    source_connection_id: null,
+    connection_id: null,
     task_type: "synthesize_workspace",
     task_key: "test",
     schedule_kind: "cron",

@@ -4,7 +4,7 @@
 create table scheduled_tasks (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
-  source_connection_id     uuid,
+  connection_id            uuid,
   task_type                text not null
                               check (task_type in ('ingest_source', 'synthesize_workspace', 'rebuild_projection', 'summarize_sessions', 'slack_backfill', 'agent_routine')),
   task_key                 text not null,
@@ -15,7 +15,7 @@ create table scheduled_tasks (
   interval_seconds         integer check (interval_seconds > 0),
   timezone                 text not null,
   enabled                  boolean not null default true,
-  -- agent_routine: prompt, harness, model and title.
+  -- agent_routine: prompt, harness, model, title and toolset.
   config_json              jsonb not null default '{}',
   next_due_at              timestamptz,
   -- Set when a person deletes the routine. The row stays for its past runs.
@@ -41,8 +41,8 @@ create table scheduled_tasks (
 
   unique (id, workspace_id),
   unique (workspace_id, task_type, task_key),
-  foreign key (source_connection_id, workspace_id)
-    references source_connections(id, workspace_id) on delete cascade,
+  foreign key (connection_id, workspace_id)
+    references connections(id, workspace_id) on delete cascade,
   foreign key (created_by_run_id, workspace_id) references agent_runs(id, workspace_id),
   constraint scheduled_tasks_schedule_shape check (
     (schedule_kind = 'cron' and cron_expression is not null and interval_seconds is null and run_at is null)
@@ -60,3 +60,7 @@ create index scheduled_tasks_created_by_run_idx on scheduled_tasks (created_by_r
 alter table scheduled_tasks enable row level security;
 
 grant select, insert, update on table scheduled_tasks to service_role;
+
+create trigger scheduled_tasks_set_updated_at
+  before update on scheduled_tasks
+  for each row execute function set_updated_at();

@@ -7,7 +7,7 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   return {
     id: "task-1",
     workspace_id: "workspace-1",
-    source_connection_id: null,
+    connection_id: null,
     task_type: "synthesize_workspace",
     task_key: "test",
     schedule_kind: "cron",
@@ -48,7 +48,7 @@ function fakeClient(scheduledTaskRow: ScheduledTaskRow | null, connectionRow?: R
           }),
         };
       }
-      if (table === "source_connections") {
+      if (table === "connections") {
         const chain = {
           eq: () => chain,
           single: async () => ({ data: connectionRow, error: null }),
@@ -132,7 +132,7 @@ describe("dispatchScheduledTask", () => {
   it("rejects an ingest_source task for an unsupported connection provider", async () => {
     const task = baseTask({
       task_type: "ingest_source",
-      source_connection_id: "conn-1",
+      connection_id: "conn-1",
       schedule_kind: "interval",
       cron_expression: null,
       interval_seconds: 900,
@@ -156,7 +156,7 @@ describe("dispatchScheduledTask", () => {
   it("routes ingest_source to the Slack handler based on connection provider", async () => {
     const task = baseTask({
       task_type: "ingest_source",
-      source_connection_id: "conn-2",
+      connection_id: "conn-2",
       schedule_kind: "interval",
       cron_expression: null,
       interval_seconds: 300,
@@ -179,7 +179,7 @@ describe("dispatchScheduledTask", () => {
   it("propagates an ingestion failure without retrying -- the next scheduled occurrence retries instead", async () => {
     const task = baseTask({
       task_type: "ingest_source",
-      source_connection_id: "conn-1",
+      connection_id: "conn-1",
       schedule_kind: "interval",
       cron_expression: null,
       interval_seconds: 900,
@@ -210,7 +210,7 @@ describe("dispatchScheduledTask", () => {
     async (status) => {
       const task = baseTask({
         task_type: "ingest_source",
-        source_connection_id: "conn-stale",
+        connection_id: "conn-stale",
         schedule_kind: "interval",
         cron_expression: null,
         interval_seconds: 300,
@@ -307,7 +307,7 @@ describe("dispatchScheduledTask", () => {
   it("routes slack_backfill to the backfill dispatcher with a resolved organization_id", async () => {
     const task = baseTask({
       task_type: "slack_backfill",
-      source_connection_id: "conn-3",
+      connection_id: "conn-3",
       schedule_kind: "interval",
       cron_expression: null,
       interval_seconds: 60,
@@ -338,7 +338,7 @@ describe("dispatchScheduledTask", () => {
   });
 
   it("skips a slack_backfill dispatch when the connection has no credential yet", async () => {
-    const task = baseTask({ task_type: "slack_backfill", source_connection_id: "conn-4" });
+    const task = baseTask({ task_type: "slack_backfill", connection_id: "conn-4" });
     const client = fakeClient(task, {
       id: "conn-4",
       workspace_id: task.workspace_id,
@@ -356,7 +356,7 @@ describe("dispatchScheduledTask", () => {
   });
 
   it("skips a slack_backfill dispatch for a revoked connection", async () => {
-    const task = baseTask({ task_type: "slack_backfill", source_connection_id: "conn-5" });
+    const task = baseTask({ task_type: "slack_backfill", connection_id: "conn-5" });
     const client = fakeClient(task, {
       id: "conn-5",
       workspace_id: task.workspace_id,

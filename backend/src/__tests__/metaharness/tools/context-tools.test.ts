@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parseWorkspaceId } from "draft-core/run-spec";
 import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context";
@@ -20,7 +20,7 @@ function setup(files: Record<string, string>, permissions: AnyDraftToolPermissio
       workspaceId: parseWorkspaceId(WS),
       trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
       onBehalfOf: null,
-      runtime: { type: "local", hostMachineId: parseHostMachineId("mac") },
+      runtime: { type: "local", hostId: parseHostId("mac") },
       harness: "claude",
       model: null,
       instructions: "",

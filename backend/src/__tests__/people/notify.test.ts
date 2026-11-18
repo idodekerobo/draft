@@ -38,7 +38,7 @@ const newDb = () =>
         { id: ADA, workspace_id: WS, display_name: "Ada", user_id: ADMIN, status: "active", affiliation: "member", notify_channels: ["slack"] },
       ],
       person_identities: [],
-      source_connections: [],
+      connections: [],
       source_items: [],
       scheduled_tasks: [{ id: TASK, workspace_id: WS, config_json: { title: "Meeting follow-up" } }],
       agent_run_tool_calls: [],
@@ -76,7 +76,7 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude",
   model: null,
   instructions: "",
@@ -221,7 +221,7 @@ describe("the Slack channel", () => {
   const seed = (identityStatus: string, connectionStatus = "active") => {
     const db = newDb();
     db.tables.person_identities!.push({ id: "i1", workspace_id: WS, person_id: IZA, provider: "slack", external_id: "U42", status: identityStatus });
-    db.tables.source_connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: connectionStatus, credential_id: "cred-1" });
+    db.tables.connections!.push({ id: "c1", workspace_id: WS, provider: "slack", status: connectionStatus, credential_id: "cred-1" });
     return db;
   };
   const deps = () => ({ resolveBotToken: mock(async () => "xoxb-test"), openDm: mock(async () => "D123"), postMessage: mock(async () => {}) });

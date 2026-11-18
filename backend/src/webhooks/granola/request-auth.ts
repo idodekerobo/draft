@@ -4,7 +4,7 @@ import {
   CredentialError,
   resolveProviderCredentialById,
 } from "../../credentials/resolve-provider-credential";
-import type { SourceConnectionRow } from "../../types/tables";
+import type { ConnectionRow } from "../../types/tables";
 import { readBoundedBody } from "../shared/read-bounded-body";
 
 export const DEFAULT_GRANOLA_WEBHOOK_BODY_LIMIT_BYTES = 1024 * 1024;
@@ -17,7 +17,7 @@ export interface AuthenticateGranolaWebhookRequestOptions {
 }
 
 export interface AuthenticatedGranolaWebhookRequest {
-  connection: Pick<SourceConnectionRow, "id" | "workspace_id" | "connected_by_user_id">;
+  connection: Pick<ConnectionRow, "id" | "workspace_id" | "connected_by_user_id">;
   credentialId: string;
   eventId: string;
   eventType: string;
@@ -122,7 +122,7 @@ export async function authenticateGranolaWebhookRequest(
   const now = options.now ?? Date.now;
 
   const { data, error } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id, credential_id, connected_by_user_id")
     .eq("connection_key", connectionKey)
     .eq("provider", "granola")
@@ -131,7 +131,7 @@ export async function authenticateGranolaWebhookRequest(
   if (error) reject("Granola webhook connection lookup failed");
 
   const connection = data as Pick<
-    SourceConnectionRow,
+    ConnectionRow,
     "id" | "workspace_id" | "credential_id" | "connected_by_user_id"
   > | null;
   if (!connection || !connection.credential_id) {

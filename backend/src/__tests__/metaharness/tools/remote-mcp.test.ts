@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseContextVersionId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import {
   assertSafeMcpUrl,
@@ -60,7 +60,7 @@ function fakeRemote(overrides: { tools?: typeof tools; failConnect?: boolean } =
 }
 
 function newDb() {
-  return fakeDb({ credentials: [], source_connections: [] });
+  return fakeDb({ credentials: [], connections: [] });
 }
 
 let nextId = 0;
@@ -71,9 +71,9 @@ async function connect(db: ReturnType<typeof newDb>, remote: FakeRemote, overrid
     { workspaceId: WS, userId: overrides.userId === undefined ? OWNER : overrides.userId, url: overrides.url ?? URL_A, token: TOKEN, displayName: overrides.displayName ?? "Linear" },
     { connect: remote.connect },
   );
-  // The fake database does not make UUIDs, and a run's environment needs one.
+  // The fake database does not make UUIDs, and a run's toolset needs one.
   const connectionId = `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`;
-  db.tables.source_connections!.find((row) => row.id === created.connectionId)!.id = connectionId;
+  db.tables.connections!.find((row) => row.id === created.connectionId)!.id = connectionId;
   return { ...created, connectionId };
 }
 
@@ -85,7 +85,7 @@ function runWith(connectionId: string, toolsAllowed: "all" | string[] = "all"): 
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
     onBehalfOf: null,
-    runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [{ connectionId: parseSourceConnectionId(connectionId), tools: toolsAllowed }], skills: [], instructions: [] } },
+    runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [{ connectionId: parseConnectionId(connectionId), tools: toolsAllowed }], skills: [], instructions: [] } },
     harness: "claude",
     model: null,
     instructions: "",
@@ -137,7 +137,7 @@ describe("createMcpConnection", () => {
     expect(credential).toMatchObject({ workspace_id: WS, provider: "mcp", label: "Linear", created_by_user_id: OWNER });
     expect(JSON.stringify(credential)).not.toContain(TOKEN);
 
-    const connection = db.tables.source_connections![0]!;
+    const connection = db.tables.connections![0]!;
     expect(connection).toMatchObject({ id: connectionId, provider: "mcp", connection_key: URL_A, display_name: "Linear", status: "active", credential_id: credential.id, connected_by_user_id: OWNER });
     expect((connection.config_json as { tools: unknown[] }).tools).toHaveLength(2);
     expect(JSON.stringify(connection)).not.toContain(TOKEN);
@@ -147,7 +147,7 @@ describe("createMcpConnection", () => {
     const db = newDb();
     await expect(connect(db, fakeRemote({ failConnect: true }))).rejects.toThrow("connection refused");
     expect(db.tables.credentials).toHaveLength(0);
-    expect(db.tables.source_connections).toHaveLength(0);
+    expect(db.tables.connections).toHaveLength(0);
   });
 
   it("stores nothing for an address it will not call", async () => {
@@ -165,7 +165,7 @@ describe("usableMcpConnections", () => {
     const shared = await connect(db, fakeRemote(), { userId: null, displayName: "Shared", url: "https://b.example.com/mcp" });
     const theirs = await connect(db, fakeRemote(), { userId: OTHER_PERSON, displayName: "Theirs", url: "https://c.example.com/mcp" });
     const revoked = await connect(db, fakeRemote(), { userId: OWNER, displayName: "Revoked", url: "https://d.example.com/mcp" });
-    db.tables.source_connections!.find((row) => row.id === revoked.connectionId)!.status = "revoked";
+    db.tables.connections!.find((row) => row.id === revoked.connectionId)!.status = "revoked";
 
     const usable = await usableMcpConnections(fakeClient(db), WS, OWNER, [own.connectionId, shared.connectionId, theirs.connectionId, revoked.connectionId]);
     expect(usable.map((row) => row.display_name).sort()).toEqual(["Mine", "Shared"]);
@@ -193,14 +193,14 @@ describe("remoteToolsForRun", () => {
     expect(offered.map((tool) => tool.name)).toEqual(["mcp.linear.search_issues"]);
   });
 
-  it("offers nothing for a run with no environment connections, a local run, or a revoked connection", async () => {
+  it("offers nothing for a run with no toolset connections, a local run, or a revoked connection", async () => {
     const db = newDb();
     const { connectionId } = await connect(db, fakeRemote());
     const none = runWith(connectionId);
     if (none.runtime.type !== "cloud") throw new Error("unreachable");
-    expect(await remoteToolsForRun(fakeClient(db), { ...none, runtime: { ...none.runtime, environment: { ...none.runtime.environment, mcpServers: [] } } })).toEqual([]);
-    expect(await remoteToolsForRun(fakeClient(db), { ...none, runtime: { type: "local", hostMachineId: "mac" as never } })).toEqual([]);
-    db.tables.source_connections![0]!.status = "revoked";
+    expect(await remoteToolsForRun(fakeClient(db), { ...none, runtime: { ...none.runtime, toolset: { ...none.runtime.toolset, mcpServers: [] } } })).toEqual([]);
+    expect(await remoteToolsForRun(fakeClient(db), { ...none, runtime: { type: "local", hostId: "mac" as never } })).toEqual([]);
+    db.tables.connections![0]!.status = "revoked";
     expect(await remoteToolsForRun(fakeClient(db), runWith(connectionId))).toEqual([]);
   });
 
@@ -210,7 +210,7 @@ describe("remoteToolsForRun", () => {
     const second = await connect(db, fakeRemote({ tools: [{ ...tools[0]!, name: "x".repeat(31) }, tools[0]!] }), { displayName: "Linear", url: "https://b.example.com/mcp" });
     const run = runWith(first.connectionId);
     if (run.runtime.type !== "cloud") throw new Error("unreachable");
-    const both = { ...run, runtime: { ...run.runtime, environment: { ...run.runtime.environment, mcpServers: [...run.runtime.environment.mcpServers, { connectionId: parseSourceConnectionId(second.connectionId), tools: "all" as const }] } } };
+    const both = { ...run, runtime: { ...run.runtime, toolset: { ...run.runtime.toolset, mcpServers: [...run.runtime.toolset.mcpServers, { connectionId: parseConnectionId(second.connectionId), tools: "all" as const }] } } };
     const names = (await remoteToolsForRun(fakeClient(db), both)).map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.some((name) => name.includes("x".repeat(31)))).toBe(false);
@@ -278,7 +278,7 @@ describe("remoteToolsForRun", () => {
     expect(JSON.parse((result as { output: string }).output)).toEqual([{ type: "image", data: "abc", mimeType: "image/png" }]);
   });
 
-  it("is refused to a run whose environment does not name it", async () => {
+  it("is refused to a run whose toolset does not name it", async () => {
     const db = newDb();
     const remote = fakeRemote();
     const { connectionId } = await connect(db, remote);

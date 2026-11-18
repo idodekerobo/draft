@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createSandboxCallbackToken } from "../../sandbox/callback-token";
 import { completeRoutineRunCallback } from "../../routines/complete-routine-callback";
 import { encryptCredentialPayload } from "../../credentials/crypto";
-import { routineHostMachineId } from "../../routines/config";
+import { routineHostId } from "../../routines/config";
 import { fakeClient, fakeDb, type FakeDb } from "./fake-client";
 
 process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64");
@@ -15,7 +15,7 @@ function seed(overrides: Record<string, unknown> = {}): FakeDb {
   return fakeDb({
     sessions: [{
       id: SESSION_ID, workspace_id: WORKSPACE_ID, session_type: "routine", status: "starting", last_seq: 0,
-      host_machine_id: routineHostMachineId(SESSION_ID), scheduled_task_id: "task-1", ...overrides,
+      host_id: routineHostId(SESSION_ID), scheduled_task_id: "task-1", ...overrides,
     }],
     scheduled_tasks: [{ id: "task-1", workspace_id: WORKSPACE_ID, config_json: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: null } }],
     errors: [],
@@ -52,7 +52,7 @@ describe("completeRoutineRunCallback", () => {
     const response = await completeRoutineRunCallback(post({ kind: "lines", lines: [assistantLine] }, AGENT_RUN), SECRET, fakeClient(db));
 
     expect(response.status).toBe(204);
-    expect(db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_host_machine_id).toBe(routineHostMachineId(SESSION_ID));
+    expect(db.rpcCalls.find((c) => c.name === "append_session_events")!.args.p_host_id).toBe(routineHostId(SESSION_ID));
   });
 
   it("answers 404 for an id that is not a routine run", async () => {
@@ -68,7 +68,7 @@ describe("completeRoutineRunCallback", () => {
 
     expect(response.status).toBe(204);
     const call = db.rpcCalls.find((c) => c.name === "append_session_events")!;
-    expect(call.args.p_host_machine_id).toBe(routineHostMachineId(SESSION_ID));
+    expect(call.args.p_host_id).toBe(routineHostId(SESSION_ID));
     expect((call.args.p_events as Array<{ kind: string }>).map((e) => e.kind)).toEqual(["user_message", "assistant_text"]);
   });
 

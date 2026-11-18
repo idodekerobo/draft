@@ -20,7 +20,7 @@ export function buildSummarizationRunSpec(input: SummarizationRunSpecInput): Age
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: cronTrigger(input.scheduledTaskId, input.occurrenceAt),
     onBehalfOf: null,
-    runtime: { type: "cloud", environment: cloudToolsetFor("claude") },
+    runtime: { type: "cloud", toolset: cloudToolsetFor("claude") },
     harness: "claude",
     model: null,
     reasoningEffort: null,

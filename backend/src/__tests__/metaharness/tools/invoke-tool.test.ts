@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { parseAgentRunId, parseContextVersionId, parseHostMachineId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { toHttpResponse } from "../../../metaharness/tools/http-result";
@@ -15,7 +15,7 @@ function runWith(permissions: AnyDraftToolPermission[]): ToolCaller {
     workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
     onBehalfOf: null,
-    runtime: { type: "local", hostMachineId: parseHostMachineId("mac") },
+    runtime: { type: "local", hostId: parseHostId("mac") },
     harness: "claude",
     model: null,
     instructions: "",

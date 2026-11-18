@@ -1,10 +1,10 @@
 -- Atomically verifies that Slack ingestion is still allowed and captures one
 -- message. The connection row lock serializes this final write with
--- disconnect_source_connection; source_item_id is deliberately not an input,
+-- disconnect_connection; source_item_id is deliberately not an input,
 -- so a repeated capture cannot clear a later materialization link.
 create or replace function upsert_slack_message_if_connection_active(
   p_workspace_id uuid,
-  p_source_connection_id uuid,
+  p_connection_id uuid,
   p_channel_id text,
   p_channel_name_snapshot text,
   p_message_ts text,
@@ -34,8 +34,8 @@ declare
   v_message_id uuid;
 begin
   select status into v_connection_status
-  from source_connections
-  where id = p_source_connection_id
+  from connections
+  where id = p_connection_id
     and workspace_id = p_workspace_id
     and provider = 'slack'
   for update;
@@ -47,19 +47,19 @@ begin
   end if;
 
   insert into slack_messages (
-    workspace_id, source_connection_id, channel_id, channel_name_snapshot,
+    workspace_id, connection_id, channel_id, channel_name_snapshot,
     message_ts, message_version, thread_ts, parent_user_id, slack_user_id,
     user_name_snapshot, text, subtype, is_deleted, edited_at, deleted_at,
     blocks_json, files_json, reactions_json, provider_metadata_json, captured_at
   ) values (
-    p_workspace_id, p_source_connection_id, p_channel_id,
+    p_workspace_id, p_connection_id, p_channel_id,
     p_channel_name_snapshot, p_message_ts, p_message_version, p_thread_ts,
     p_parent_user_id, p_slack_user_id, p_user_name_snapshot, p_text, p_subtype,
     p_is_deleted, p_edited_at, p_deleted_at, coalesce(p_blocks_json, '[]'::jsonb),
     coalesce(p_files_json, '[]'::jsonb), coalesce(p_reactions_json, '[]'::jsonb),
     coalesce(p_provider_metadata_json, '{}'::jsonb), p_captured_at
   )
-  on conflict (source_connection_id, channel_id, message_ts, message_version)
+  on conflict (connection_id, channel_id, message_ts, message_version)
   do update set
     channel_name_snapshot = excluded.channel_name_snapshot,
     thread_ts = excluded.thread_ts,

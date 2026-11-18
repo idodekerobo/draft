@@ -6,7 +6,7 @@ create or replace function host_transition_session_input(
   p_session_id uuid,
   p_workspace_id uuid,
   p_owner_user_id uuid,
-  p_host_machine_id text,
+  p_host_id text,
   p_from text[],
   p_to text,
   p_reason text
@@ -21,7 +21,7 @@ declare
   v_host text;
   v_kind text;
 begin
-  select owner_user_id, host_machine_id into v_owner, v_host
+  select owner_user_id, host_id into v_owner, v_host
   from sessions
   where id = p_session_id and workspace_id = p_workspace_id;
 
@@ -31,7 +31,7 @@ begin
   if v_owner is distinct from p_owner_user_id then
     raise exception 'not_session_owner';
   end if;
-  if v_host is distinct from p_host_machine_id then
+  if v_host is distinct from p_host_id then
     raise exception 'foreign_host';
   end if;
 

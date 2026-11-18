@@ -16,7 +16,7 @@ const run = (permissions: AnyDraftToolPermission[]): AgentRunSpec => ({
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   onBehalfOf: parseUserId(OWNER),
-  runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude", model: null, instructions: "", inputs: { contextVersionId: parseContextVersionId("77777777-7777-4777-8777-777777777777") },
   permissions, output: { type: "text" },
 });

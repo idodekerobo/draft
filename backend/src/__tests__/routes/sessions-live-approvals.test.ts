@@ -55,7 +55,7 @@ beforeEach(() => {
   rpcCalls = [];
   rpcResult = { data: null, error: null };
   tables = {
-    sessions: [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", host_machine_id: "host-1", status: "live", last_seq: 0 }],
+    sessions: [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", host_id: "host-1", status: "live", last_seq: 0 }],
     session_inputs: [],
     users: [{ id: "user-2", display_name: "Priya", email: "p@example.test" }],
   };
@@ -183,7 +183,7 @@ describe("Stop", () => {
 describe("switching the mode", () => {
   const mode = (body: unknown) => routes.MODE(request("/x", body));
   const setHarness = (harness: string, extra: Row = {}) => {
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-9", host_machine_id: "host-1", status: "live", session_type: "interactive", harness, ...extra }];
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-9", host_id: "host-1", status: "live", session_type: "interactive", harness, ...extra }];
   };
 
   it("queues a mode change from any member, with the author taken from the caller", async () => {
@@ -244,7 +244,7 @@ describe("host events", () => {
 
   it("appends permission events from the session's host", async () => {
     rpcResult = { data: { last_seq: 4, inserted: 1 }, error: null };
-    const res = await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [event] }));
+    const res = await routes.HOST_EVENTS(request("/x", { hostId: "host-1", events: [event] }));
     expect(await res.json()).toEqual({ ok: true, last_seq: 4, inserted: 1 });
     expect(rpcCalls[0]!.args.p_events).toEqual([{ source_id: "perm:r1", kind: "permission_request", payload: { requestId: "r1" } }]);
   });
@@ -252,19 +252,19 @@ describe("host events", () => {
   it("accepts the early copy of a message that ends in a request", async () => {
     rpcResult = { data: { last_seq: 5, inserted: 1 }, error: null };
     const lead = { sourceId: "lead:m1", kind: "assistant_text", payload: { text: "I will run the tests.", preview: true } };
-    expect((await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [lead] }))).status).toBe(200);
+    expect((await routes.HOST_EVENTS(request("/x", { hostId: "host-1", events: [lead] }))).status).toBe(200);
     expect(rpcCalls[0]!.args.p_events).toEqual([{ source_id: "lead:m1", kind: "assistant_text", payload: { text: "I will run the tests.", preview: true } }]);
   });
 
   it("refuses other event kinds, other users and other hosts", async () => {
-    const bad = await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [{ ...event, kind: "user_message" }] }));
+    const bad = await routes.HOST_EVENTS(request("/x", { hostId: "host-1", events: [{ ...event, kind: "user_message" }] }));
     expect(bad.status).toBe(400);
 
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", host_machine_id: "host-1" }];
-    expect((await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-1", events: [event] }))).status).toBe(403);
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "someone-else", host_id: "host-1" }];
+    expect((await routes.HOST_EVENTS(request("/x", { hostId: "host-1", events: [event] }))).status).toBe(403);
 
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", host_machine_id: "host-1" }];
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", host_id: "host-1" }];
     rpcResult = { data: null, error: { message: "foreign_host" } };
-    expect((await routes.HOST_EVENTS(request("/x", { hostMachineId: "host-9", events: [event] }))).status).toBe(403);
+    expect((await routes.HOST_EVENTS(request("/x", { hostId: "host-9", events: [event] }))).status).toBe(403);
   });
 });

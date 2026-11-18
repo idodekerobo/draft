@@ -7,7 +7,7 @@ import type { PendingInput } from "./input-delivery";
 const state: HostSessionState = {
   sessionId: "s1",
   workspaceId: "w1",
-  hostMachineId: "m1",
+  hostId: "m1",
   nativeSessionId: "n1",
   folderPath: "/tmp",
   cursors: {},

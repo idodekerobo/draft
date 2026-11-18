@@ -6,7 +6,7 @@
 // source_items to the existing materializer. It never writes source_items
 // directly.
 //
-// Progress is checkpointed into source_connections.cursor_json under a
+// Progress is checkpointed into connections.cursor_json under a
 // dedicated `slack_backfill` key so it survives restarts and resumes
 // exactly where it left off, one channel and one thread at a time.
 
@@ -120,7 +120,7 @@ export async function initializeSlackBackfillForConnection(
   client: SupabaseClient,
 ): Promise<void> {
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select("config_json, cursor_json")
     .eq("id", connection.id)
     .eq("workspace_id", connection.workspace_id)
@@ -130,7 +130,7 @@ export async function initializeSlackBackfillForConnection(
 
   const state = buildInitialSlackBackfillState(readSlackChannelIds(row.config_json));
   const { error: updateError } = await client
-    .from("source_connections")
+    .from("connections")
     .update({ cursor_json: { ...(row.cursor_json ?? {}), slack_backfill: state } })
     .eq("id", connection.id)
     .eq("workspace_id", connection.workspace_id);
@@ -147,7 +147,7 @@ export async function registerSlackBackfillTask(
   const { error } = await db.from("scheduled_tasks").upsert(
     {
       workspace_id: connection.workspace_id,
-      source_connection_id: connection.id,
+      connection_id: connection.id,
       task_type: "slack_backfill",
       task_key: connection.id,
       schedule_kind: "interval",
@@ -230,7 +230,7 @@ export async function runSlackBackfillDispatch(
 
   const persist = async (): Promise<void> => {
     const { error } = await client
-      .from("source_connections")
+      .from("connections")
       .update({ cursor_json: { ...(connection.cursor_json ?? {}), slack_backfill: state } })
       .eq("id", connection.id)
       .eq("workspace_id", connection.workspace_id);

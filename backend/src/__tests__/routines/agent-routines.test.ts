@@ -14,7 +14,7 @@ const ONCE_NOW = new Date("2026-11-16T12:00:00.000Z");
 const creator = personCreator("user-1", "app");
 
 beforeEach(() => {
-  db = fakeDb({ scheduled_tasks: [], sessions: [], users: [], source_connections: [] });
+  db = fakeDb({ scheduled_tasks: [], sessions: [], users: [], connections: [] });
 });
 
 describe("agent routines", () => {
@@ -67,7 +67,7 @@ describe("agent routines", () => {
 
   it("lists the providers the workspace has a live connection to", async () => {
     expect(await listConnectedProviders("ws-1")).toEqual([]);
-    db.tables.source_connections!.push(
+    db.tables.connections!.push(
       { id: "c1", workspace_id: "ws-1", provider: "slack", status: "active" },
       { id: "c2", workspace_id: "ws-1", provider: "github", status: "degraded" },
       { id: "c3", workspace_id: "ws-1", provider: "linear", status: "revoked" },
@@ -135,7 +135,7 @@ describe("agent routines", () => {
       config: { ...config, events: ["linear.issue_created"], canNotify: true },
       when: { schedule: { preset: "hourly" }, events: ["linear.issue_created"] },
     });
-    db.tables.source_connections!.push({ workspace_id: "ws-1", provider: "slack", status: "active" });
+    db.tables.connections!.push({ workspace_id: "ws-1", provider: "slack", status: "active" });
     const [routine] = await listRoutines("ws-1");
     expect(routine!.agent!.missingConnections).toEqual(["linear"]);
   });

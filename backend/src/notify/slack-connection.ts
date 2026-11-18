@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
 
 export async function workspaceSlackCredentialId(client: SupabaseClient, workspaceId: string): Promise<string | null> {
-  const { data, error } = await client.from("source_connections").select("credential_id")
+  const { data, error } = await client.from("connections").select("credential_id")
     .eq("workspace_id", workspaceId).eq("provider", "slack").eq("status", "active").maybeSingle();
   if (error) throw error;
   return (data as { credential_id: string | null } | null)?.credential_id ?? null;

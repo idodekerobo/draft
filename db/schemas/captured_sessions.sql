@@ -1,4 +1,4 @@
-create table agent_sessions (
+create table captured_sessions (
   id                    uuid primary key default gen_random_uuid(),
   workspace_id          uuid not null references workspaces(id) on delete cascade,
   provider              text not null,          -- claude-code | hermes | opencode | ...
@@ -39,26 +39,26 @@ create table agent_sessions (
   unique (id, workspace_id)
 );
 
-create index agent_sessions_summary_agent_run_idx
-  on agent_sessions (summary_agent_run_id) where summary_agent_run_id is not null;
+create index captured_sessions_summary_agent_run_idx
+  on captured_sessions (summary_agent_run_id) where summary_agent_run_id is not null;
 
-create trigger agent_sessions_set_updated_at
-  before update on agent_sessions
+create trigger captured_sessions_set_updated_at
+  before update on captured_sessions
   for each row execute function set_updated_at();
 
-alter table agent_sessions enable row level security;
+alter table captured_sessions enable row level security;
 
-create policy agent_sessions_select on agent_sessions
+create policy captured_sessions_select on captured_sessions
   for select to authenticated
   using (
     exists (
       select 1 from workspaces w
-      where w.id = agent_sessions.workspace_id
+      where w.id = captured_sessions.workspace_id
         and w.organization_id = current_user_org_id()
         and w.team_id = current_user_team_id()
         and w.access_mode = 'team_default'
     )
   );
 
-grant select on table agent_sessions to authenticated;
-grant select, insert, update on table agent_sessions to service_role;
+grant select on table captured_sessions to authenticated;
+grant select, insert, update on table captured_sessions to service_role;

@@ -11,7 +11,7 @@ const CALLER = UZO_USER;
 const row = (id: string) => ({
   source_item_id: id, source_version: "v1", title: "Standup", provider: "slack", item_type: "message", representation_kind: "source",
   occurred_at: "2026-11-09T10:00:00Z", source_time_start: null, source_time_end: null, metadata_json: {}, content_markdown: "text",
-  sanitized_raw_json: null, agent_session_id: null, excerpt: "text", rank: 0,
+  sanitized_raw_json: null, captured_session_id: null, excerpt: "text", rank: 0,
 });
 
 function setup(rows: unknown[] = [row("s1")]) {

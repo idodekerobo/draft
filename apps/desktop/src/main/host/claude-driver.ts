@@ -250,13 +250,13 @@ export class ClaudeDriver implements HarnessDriver {
         requestUrls: async (files) =>
           (await fetchServerJSON<{ uploads: Array<{ file: string; signedUrl: string }> }>(`${this.host.base}/raw`, {
             method: "POST",
-            body: JSON.stringify({ hostMachineId: this.host.state().hostMachineId, files }),
+            body: JSON.stringify({ hostId: this.host.state().hostId, files }),
           })).uploads,
         put: putSigned,
         complete: async () => {
           await fetchServer(`${this.host.base}/raw/complete`, {
             method: "POST",
-            body: JSON.stringify({ hostMachineId: this.host.state().hostMachineId }),
+            body: JSON.stringify({ hostId: this.host.state().hostId }),
           });
         },
       });

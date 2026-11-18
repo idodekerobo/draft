@@ -17,7 +17,7 @@ export interface RawUploadRecord {
 export interface HostSessionState {
   sessionId: string;
   workspaceId: string;
-  hostMachineId: string;
+  hostId: string;
   nativeSessionId: string;
   folderPath: string;
   /** Which harness runs the session. Files from before Codex have none and mean Claude. */
@@ -57,7 +57,9 @@ export function loadStates(dir = hostSessionsDir()): HostSessionState[] {
   for (const name of readdirSync(dir)) {
     if (!name.endsWith(".json")) continue;
     try {
-      states.push(JSON.parse(readFileSync(join(dir, name), "utf8")) as HostSessionState);
+      // Files saved before the rename carry hostMachineId.
+      const { hostMachineId, ...saved } = JSON.parse(readFileSync(join(dir, name), "utf8")) as Partial<HostSessionState> & { hostMachineId?: string };
+      states.push({ ...saved, hostId: saved.hostId ?? hostMachineId } as HostSessionState);
     } catch {
       console.error("[live-session] skipping unreadable state file", name);
     }

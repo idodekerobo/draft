@@ -201,7 +201,7 @@ const synthesisSpec = () =>
   buildSynthesisRunSpec({ runId: RUN, workspaceId: WS, triggerType: "manual", contextVersionId: VERSION, resultSchema: OBJECT_SCHEMA });
 const summarizationSpec = () =>
   buildSummarizationRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T03:00:00.000Z", contextVersionId: VERSION, resultSchema: OBJECT_SCHEMA });
-const routineSpec = (routine: { harness: "claude" | "codex"; model: string | null; environment?: { nativeTools: string[]; mcpServers: [] } }) =>
+const routineSpec = (routine: { harness: "claude" | "codex"; model: string | null; toolset?: { nativeTools: string[]; mcpServers: [] } }) =>
   buildRoutineRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: "2026-11-09T09:00:00.000Z", routine: { title: "t", prompt: "p", ...routine }, contextVersionId: VERSION });
 
 // The base variables plus the manifest, which holds everything else the runner needs.
@@ -232,7 +232,7 @@ describe("environments the launcher gives the machine", () => {
 
   it("Claude routine with Draft's tools", async () => {
     const result = await launched({
-      spec: routineSpec({ harness: "claude", model: "haiku", environment: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      spec: routineSpec({ harness: "claude", model: "haiku", toolset: { nativeTools: ["WebSearch"], mcpServers: [] } }),
       prompt: { kind: "text", text: "PROMPT" },
       timeoutSeconds: 900,
       credentials: { claudeCodeOAuthToken: "login" },
@@ -248,7 +248,7 @@ describe("environments the launcher gives the machine", () => {
 
   it("Codex routine", async () => {
     const result = await launched({
-      spec: routineSpec({ harness: "codex", model: null, environment: { nativeTools: ["web_search"], mcpServers: [] } }),
+      spec: routineSpec({ harness: "codex", model: null, toolset: { nativeTools: ["web_search"], mcpServers: [] } }),
       prompt: { kind: "text", text: "PROMPT" },
       timeoutSeconds: 900,
       credentials: { codexAuthJson: "{}" },

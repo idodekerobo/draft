@@ -20,7 +20,7 @@ export interface SyncDeps {
 const defaultDeps: SyncDeps = {
   resolveCredential: (workspaceId, provider, credentialId, client) => resolveProviderCredentialById(workspaceId, provider, credentialId, client) as unknown as Promise<Record<string, unknown>>,
   recordWarning: (connection, code, message) =>
-    recordError({ workspaceId: connection.workspace_id, operation: "ingestion", message, code, sourceConnectionId: connection.id }),
+    recordError({ workspaceId: connection.workspace_id, operation: "ingestion", message, code, connectionId: connection.id }),
 };
 
 /** Runs a sync after a response has gone out. A failure is recorded and never reaches the caller. */
@@ -39,7 +39,7 @@ export async function syncPeople(client: SupabaseClient, workspaceId: string, de
   await syncMembers(client, workspaceId);
 
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id, provider, credential_id")
     .eq("workspace_id", workspaceId)
     .in("provider", ["slack", "linear"])
@@ -60,7 +60,7 @@ export async function syncPeople(client: SupabaseClient, workspaceId: string, de
         message: `People sync failed for ${connection.provider}`,
         code: "people_sync_failed",
         error: cause,
-        sourceConnectionId: connection.id,
+        connectionId: connection.id,
       });
     }
   }

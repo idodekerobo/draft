@@ -16,7 +16,7 @@ export interface BuildRunnerManifestInput {
 
 /** True when the run needs Draft's tool server: it holds a Draft tool or a connection. */
 export function needsDraftToolServer(spec: AgentRunSpec): boolean {
-  return spec.permissions.length > 0 || (spec.runtime.type === "cloud" && spec.runtime.environment.mcpServers.length > 0);
+  return spec.permissions.length > 0 || (spec.runtime.type === "cloud" && spec.runtime.toolset.mcpServers.length > 0);
 }
 
 /** The one place a spec becomes what the sandbox does. Identity, tools and permissions reach every run through here. */
@@ -27,7 +27,7 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
   if (spec.harness === "codex" && (spec.output.type !== "text" || input.prompt.kind !== "text")) {
     throw new Error("A Codex run streams text from a single prompt");
   }
-  const native = spec.runtime.environment.nativeTools.filter((tool) => tool.harness === spec.harness).map((tool) => tool.tool as string);
+  const native = spec.runtime.toolset.nativeTools.filter((tool) => tool.harness === spec.harness).map((tool) => tool.tool as string);
   // The caller names the items file relative to the bundle. The runner reads it from /run.
   const itemsPath = input.prompt.kind === "items" ? (input.prompt.manifestPath.startsWith("/") ? input.prompt.manifestPath : `/run/${input.prompt.manifestPath}`) : "";
 

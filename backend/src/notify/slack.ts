@@ -34,7 +34,7 @@ export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}
     if (!trusted) return null;
 
     const { data: connection, error: connectionError } = await client
-      .from("source_connections")
+      .from("connections")
       .select("credential_id")
       .eq("workspace_id", person.workspaceId)
       .eq("provider", "slack")

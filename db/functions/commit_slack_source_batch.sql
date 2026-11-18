@@ -1,6 +1,6 @@
 create or replace function commit_slack_source_batch(
   p_workspace_id uuid,
-  p_source_connection_id uuid,
+  p_connection_id uuid,
   p_channel_id text,
   p_message_ids uuid[],
   p_external_id text,
@@ -26,8 +26,8 @@ declare
   v_now timestamptz := now();
 begin
   select status into v_connection_status
-  from source_connections
-  where id = p_source_connection_id and workspace_id = p_workspace_id
+  from connections
+  where id = p_connection_id and workspace_id = p_workspace_id
   for update;
 
   if not found or v_connection_status not in ('active', 'degraded') then
@@ -39,7 +39,7 @@ begin
     from slack_messages
     where id = any(p_message_ids)
       and workspace_id = p_workspace_id
-      and source_connection_id = p_source_connection_id
+      and connection_id = p_connection_id
       and channel_id = p_channel_id
       and source_item_id is null
     for update
@@ -51,7 +51,7 @@ begin
   end if;
 
   v_upsert := upsert_source_item(
-    p_workspace_id, p_source_connection_id, 'message', p_external_id,
+    p_workspace_id, p_connection_id, 'message', p_external_id,
     p_external_version, p_occurred_at, p_content_markdown, p_content_hash,
     p_metadata_json || jsonb_build_object('time_basis', 'source_event'), null,
     'active', 'shared', null, 'source', p_source_time_start, p_source_time_end, null
@@ -63,9 +63,9 @@ begin
   v_next_sequence := next_workspace_event_sequence(p_workspace_id);
 
   insert into workspace_events (
-    workspace_id, sequence_number, event_type, source_connection_id, summary, payload_json, occurred_at
+    workspace_id, sequence_number, event_type, connection_id, summary, payload_json, occurred_at
   ) values (
-    p_workspace_id, v_next_sequence, 'source_items_added', p_source_connection_id,
+    p_workspace_id, v_next_sequence, 'source_items_added', p_connection_id,
     format('Batched %s Slack message(s) from channel %s', cardinality(p_message_ids), p_channel_id),
     jsonb_build_object('channel_id', p_channel_id, 'message_count', cardinality(p_message_ids), 'source_item_id', v_item_id),
     v_now

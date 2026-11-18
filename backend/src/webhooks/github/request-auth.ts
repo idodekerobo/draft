@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SourceConnectionRow } from "../../types/tables";
+import type { ConnectionRow } from "../../types/tables";
 import { readBoundedBody } from "../shared/read-bounded-body";
 import { loadConfig } from "../../config";
 
@@ -43,12 +43,12 @@ function verifySignature(header: string | null, secret: string, bodyBytes: Uint8
 export interface AuthenticatedGithubWebhookRequest {
   eventType: string;
   payload: Record<string, unknown>;
-  connection: Pick<SourceConnectionRow, "id" | "workspace_id"> | null;
+  connection: Pick<ConnectionRow, "id" | "workspace_id"> | null;
 }
 
 // Order is reversed vs Linear: verify signature first (no connection lookup
 // needed yet, since GitHub's one App-level secret isn't per-connection),
-// then parse body, then resolve installation.id -> source_connections.
+// then parse body, then resolve installation.id -> connections.
 export async function authenticateGithubWebhookRequest(
   request: Request,
   client?: SupabaseClient,
@@ -79,7 +79,7 @@ export async function authenticateGithubWebhookRequest(
 
   const db = client ?? (await import("../../db/client")).serviceClient;
   const { data, error } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id")
     .eq("connection_key", String(installation.id))
     .eq("provider", "github")
@@ -87,5 +87,5 @@ export async function authenticateGithubWebhookRequest(
     .maybeSingle();
   if (error) reject("GitHub webhook connection lookup failed");
 
-  return { eventType, payload, connection: data as Pick<SourceConnectionRow, "id" | "workspace_id"> | null };
+  return { eventType, payload, connection: data as Pick<ConnectionRow, "id" | "workspace_id"> | null };
 }

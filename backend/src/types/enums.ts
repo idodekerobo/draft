@@ -38,7 +38,7 @@ export type CredentialStatus = "active" | "revoked" | "expired";
 // compares against, not display names.
 export type AgentSessionProvider = "claude-code-session" | "codex-session";
 
-export type SourceConnectionProvider =
+export type ConnectionProvider =
   | "fireflies"
   | "slack"
   | "granola"
@@ -49,7 +49,7 @@ export type SourceConnectionProvider =
   | "manual_upload"
   | "mcp";
 
-export type SourceConnectionStatus =
+export type ConnectionStatus =
   | "pending"
   | "active"
   | "degraded"

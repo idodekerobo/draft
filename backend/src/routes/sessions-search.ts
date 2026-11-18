@@ -12,7 +12,7 @@ type SessionsSearchRequest = Bun.BunRequest<"/workspaces/:id/sessions/search">;
 
 interface SearchRow {
   source_item_id: string;
-  agent_session_id: string | null;
+  captured_session_id: string | null;
   provider: string | null;
   user_id: string | null;
   contributor_id: string | null;
@@ -92,7 +92,7 @@ export const GET = withAuth<SessionsSearchRequest>(async (req, caller) => {
   const body = {
     sessions: rows.map((row) => ({
       session_id: row.source_item_id,
-      agent_session_id: row.agent_session_id,
+      agent_session_id: row.captured_session_id,
       provider: row.provider,
       verified: row.user_id !== null,
       display: row.user_id

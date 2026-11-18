@@ -1,4 +1,4 @@
-// organization_id isn't a column on source_connections (it lives on
+// organization_id isn't a column on connections (it lives on
 // workspaces), so this is the one place that resolves it via a join and
 // threads it through to each listener for the storage object key.
 
@@ -55,7 +55,7 @@ export async function restartSlackListener(
 ): Promise<void> {
   const db = client ?? (await import("../../db/client")).serviceClient;
   const { data, error } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id, credential_id, workspaces!inner(organization_id)")
     .eq("id", connectionId)
     .eq("provider", "slack")
@@ -76,7 +76,7 @@ export async function startSlackListeners(client?: SupabaseClient): Promise<void
   const db = client ?? (await import("../../db/client")).serviceClient;
 
   const { data, error } = await db
-    .from("source_connections")
+    .from("connections")
     .select("id, workspace_id, credential_id, workspaces!inner(organization_id)")
     .eq("provider", "slack")
     .eq("status", "active");

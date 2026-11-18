@@ -47,7 +47,7 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
     onBehalfOf: null,
-    runtime: { type: "cloud", environment: cloudToolsetFor("claude") },
+    runtime: { type: "cloud", toolset: cloudToolsetFor("claude") },
     harness: "claude",
     model: null,
     reasoningEffort: null,

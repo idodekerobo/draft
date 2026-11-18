@@ -42,7 +42,7 @@ const synthesisSpec = (): AgentRunSpec =>
 const batchSpec = (): AgentRunSpec =>
   buildSummarizationRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-09T03:00:00.000Z", contextVersionId: VERSION, resultSchema: jsonSchema });
 const routineSpec = (
-  routine: { harness?: "claude" | "codex"; model?: string | null; environment?: { nativeTools: string[]; mcpServers: [] } } = {},
+  routine: { harness?: "claude" | "codex"; model?: string | null; toolset?: { nativeTools: string[]; mcpServers: [] } } = {},
 ): AgentRunSpec =>
   buildRoutineRunSpec({
     id: RUN,
@@ -323,7 +323,7 @@ describe("launchSandboxRun", () => {
 describe("the run manifest the launcher sends", () => {
   it("is valid, holds no secret, and says what the spec says", async () => {
     const { env } = await launch({
-      spec: routineSpec({ model: "haiku", environment: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      spec: routineSpec({ model: "haiku", toolset: { nativeTools: ["WebSearch"], mcpServers: [] } }),
       prompt: text("Go.\n"),
       timeoutSeconds: 900,
       credentials: { claudeCodeOAuthToken: "login-secret" },
@@ -378,7 +378,7 @@ describe("launchSandboxRun routine runs", () => {
 
   it("tells the runner which built-in tools the run may use", async () => {
     const { env } = await launch({
-      spec: routineSpec({ environment: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      spec: routineSpec({ toolset: { nativeTools: ["WebSearch"], mcpServers: [] } }),
       prompt: text("Go.\n"),
       credentials: claudeLogin,
     });
@@ -430,7 +430,7 @@ describe("launchSandboxRun routine runs", () => {
       launchSandboxRun({ spec, bundle: bundle(), prompt: prompt as never, credentials: { claudeCodeOAuthToken: "t", codexAuthJson: "{}" }, config }, { provider: flyProvider(client), bundleUploader: uploader });
     await expect(run({ ...routineSpec({ harness: "codex" }), output: { type: "structured", schema: jsonSchema } })).rejects.toThrow("Codex run streams text");
     await expect(run({ ...routineSpec({ harness: "codex" }) }, { kind: "items", manifestPath: "input/manifest.json" })).rejects.toThrow("Codex run streams text");
-    await expect(run({ ...routineSpec(), runtime: { type: "local", hostMachineId: "mac" as never } })).rejects.toThrow("cloud runtime");
+    await expect(run({ ...routineSpec(), runtime: { type: "local", hostId: "mac" as never } })).rejects.toThrow("cloud runtime");
     await expect(run({ ...routineSpec(), output: { type: "none" } })).rejects.toThrow("text or structured output");
   });
 });

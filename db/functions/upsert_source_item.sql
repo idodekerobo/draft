@@ -5,7 +5,7 @@
 -- supersedes_source_item_id to the most recently normalized one.
 create or replace function upsert_source_item(
   p_workspace_id uuid,
-  p_source_connection_id uuid,
+  p_connection_id uuid,
   p_item_type text,
   p_external_id text,
   p_external_version text,
@@ -20,7 +20,7 @@ create or replace function upsert_source_item(
   p_representation_kind text default 'unknown',
   p_source_time_start timestamptz default null,
   p_source_time_end timestamptz default null,
-  p_agent_session_id uuid default null
+  p_captured_session_id uuid default null
 )
 returns jsonb
 language plpgsql
@@ -40,8 +40,8 @@ begin
   -- an in-flight ingest and disconnect serialize: whichever takes this lock
   -- first is the operation that truthfully completes first.
   select status into v_connection_status
-  from source_connections
-  where id = p_source_connection_id
+  from connections
+  where id = p_connection_id
     and workspace_id = p_workspace_id
   for update;
 
@@ -56,7 +56,7 @@ begin
   -- revision can't race each other.
   select content_hash into v_existing_hash
   from source_items
-  where source_connection_id = p_source_connection_id
+  where connection_id = p_connection_id
     and external_id = p_external_id
     and external_version = p_external_version
   for update;
@@ -71,7 +71,7 @@ begin
   with locked as (
     select id, normalized_at, created_at
     from source_items
-    where source_connection_id = p_source_connection_id
+    where connection_id = p_connection_id
       and external_id = p_external_id
       and lifecycle_status = 'active'
       and external_version <> p_external_version
@@ -84,19 +84,19 @@ begin
   v_supersede_id := v_prior_ids[1];
 
   insert into source_items (
-    workspace_id, source_connection_id, item_type, external_id,
+    workspace_id, connection_id, item_type, external_id,
     external_version, lifecycle_status, representation_kind, occurred_at,
     source_time_start, source_time_end, normalized_at, content_markdown,
     content_hash, metadata_json, sanitized_raw_json, supersedes_source_item_id,
-    visibility, owner_user_id, agent_session_id
+    visibility, owner_user_id, captured_session_id
   ) values (
-    p_workspace_id, p_source_connection_id, p_item_type, p_external_id,
+    p_workspace_id, p_connection_id, p_item_type, p_external_id,
     p_external_version, p_lifecycle_status, p_representation_kind, p_occurred_at,
     p_source_time_start, p_source_time_end, v_now, p_content_markdown,
     p_content_hash, p_metadata_json, p_sanitized_raw_json, v_supersede_id,
-    p_visibility, p_owner_user_id, p_agent_session_id
+    p_visibility, p_owner_user_id, p_captured_session_id
   )
-  on conflict (source_connection_id, external_id, external_version)
+  on conflict (connection_id, external_id, external_version)
   do update set
     item_type = excluded.item_type,
     lifecycle_status = excluded.lifecycle_status,
@@ -113,7 +113,7 @@ begin
       coalesce(source_items.supersedes_source_item_id, excluded.supersedes_source_item_id),
     visibility = excluded.visibility,
     owner_user_id = excluded.owner_user_id,
-    agent_session_id = excluded.agent_session_id
+    captured_session_id = excluded.captured_session_id
   returning id into v_item_id;
 
   if v_prior_ids is not null then

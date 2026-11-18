@@ -212,7 +212,7 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   // The read runs beside the access check, and its rows are used only after that check passes.
   const [owned, { data, error }] = await Promise.all([authorizeOwned(workspaceId, sessionId, caller.userId), query]);
   if (!owned.ok) return owned.response;
-  if (params.get("hostMachineId") !== owned.session.host_machine_id) return errorResponse("foreign_host", 403);
+  if (params.get("hostId") !== owned.session.host_id) return errorResponse("foreign_host", 403);
   if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
 
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
@@ -246,7 +246,7 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
     p_owner_user_id: caller.userId,
-    p_host_machine_id: optionalString(body.hostMachineId, 200),
+    p_host_id: optionalString(body.hostId, 200),
     p_from: from,
     p_to: to,
     p_reason: optionalString(body.reason, REASON_MAX_CHARS),

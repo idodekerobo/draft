@@ -324,7 +324,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           };
         }
 
-        // Integrations — every entry is now cloud-backed (source_connections),
+        // Integrations — every entry is now cloud-backed (connections),
         // fetched below in one round trip. No per-profile integrations.json
         // read remains for this list.
         let cloudConnections: unknown = null;

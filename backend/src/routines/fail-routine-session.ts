@@ -4,7 +4,7 @@ import { releaseCodexLeaseForRun } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
 import type { SessionRow } from "../types/tables";
 
-export type RoutineSessionRef = Pick<SessionRow, "id" | "workspace_id" | "scheduled_task_id" | "host_machine_id">;
+export type RoutineSessionRef = Pick<SessionRow, "id" | "workspace_id" | "scheduled_task_id" | "host_id">;
 
 export interface RoutineFailure {
   code: string;
@@ -69,7 +69,7 @@ export async function failRoutineSession(
     .rpc("append_session_events", {
       p_session_id: session.id,
       p_workspace_id: session.workspace_id,
-      p_host_machine_id: session.host_machine_id,
+      p_host_id: session.host_id,
       p_events: [{ source_id: "routine:failed", kind: "session_note", payload: { text: failure.note } }],
     })
     .then(() => undefined, () => undefined);

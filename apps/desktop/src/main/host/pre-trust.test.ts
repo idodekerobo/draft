@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { getHostMachineId } from "./machine-id";
+import { getDesktopHostId } from "./machine-id";
 import { preTrustFolder } from "./pre-trust";
 
 const dirs: string[] = [];
@@ -53,11 +53,11 @@ describe("preTrustFolder", () => {
   });
 });
 
-describe("getHostMachineId", () => {
+describe("getDesktopHostId", () => {
   it("creates an id once and returns the same one afterwards", () => {
     const path = join(tempDir(), "nested", "host-id");
-    const first = getHostMachineId(path);
+    const first = getDesktopHostId(path);
     expect(first).toMatch(/^[0-9a-f-]{36}$/);
-    expect(getHostMachineId(path)).toBe(first);
+    expect(getDesktopHostId(path)).toBe(first);
   });
 });

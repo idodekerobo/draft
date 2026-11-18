@@ -79,7 +79,7 @@ export async function startSummarizationRun(
   });
   await createAgentRun(options.client, { spec, idempotencyKey: `summarize:${agentRunId}`, status: "preparing" });
   const { error: linkError } = await options.client
-    .from("agent_sessions")
+    .from("captured_sessions")
     .update({ summary_agent_run_id: agentRunId })
     .eq("workspace_id", options.workspaceId)
     .in("id", sessionIds);

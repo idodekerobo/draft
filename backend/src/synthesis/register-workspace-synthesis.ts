@@ -30,7 +30,7 @@ export async function createInitialWorkspaceSynthesis(
   const { error } = await db.from("scheduled_tasks").upsert(
     {
       workspace_id: workspace.id,
-      source_connection_id: null,
+      connection_id: null,
       task_type: "synthesize_workspace",
       task_key: workspace.id,
       schedule_kind: "cron",

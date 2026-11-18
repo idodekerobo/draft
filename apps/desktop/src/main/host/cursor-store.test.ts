@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { hostSessionsDir, loadStates, saveState, type HostSessionState } from "./cursor-store";
 
-const state = (sessionId: string): HostSessionState => ({ sessionId, workspaceId: "w", hostMachineId: "h", nativeSessionId: "n", folderPath: "/f", cursors: {}, rawUploads: {}, ended: false });
+const state = (sessionId: string): HostSessionState => ({ sessionId, workspaceId: "w", hostId: "h", nativeSessionId: "n", folderPath: "/f", cursors: {}, rawUploads: {}, ended: false });
 
 describe("host sessions folder", () => {
   const roots: string[] = [];
@@ -21,5 +21,14 @@ describe("host sessions folder", () => {
     saveState(state("prod-session"), hostSessionsDir(home, false));
     expect(loadStates(hostSessionsDir(home, true))).toEqual([]);
     expect(loadStates(hostSessionsDir(home, false)).map((s) => s.sessionId)).toEqual(["prod-session"]);
+  });
+
+  test("a state saved before the rename keeps its host id", () => {
+    const home = mkdtempSync(join(tmpdir(), "cursor-store-"));
+    roots.push(home);
+    const dir = hostSessionsDir(home, false);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "old.json"), JSON.stringify({ ...state("old"), hostId: undefined, hostMachineId: "mac-1" }));
+    expect(loadStates(dir)[0]!.hostId).toBe("mac-1");
   });
 });

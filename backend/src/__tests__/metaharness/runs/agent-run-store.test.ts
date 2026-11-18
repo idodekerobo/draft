@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import type { AgentRunRow } from "../../../types/tables";
@@ -17,9 +17,9 @@ const spec: AgentRunSpec = {
   onBehalfOf: null,
   runtime: {
     type: "cloud",
-    environment: {
+    toolset: {
       nativeTools: [{ harness: "claude", tool: "WebSearch" }],
-      mcpServers: [{ connectionId: parseSourceConnectionId("66666666-6666-4666-8666-666666666666"), tools: ["search"] }],
+      mcpServers: [{ connectionId: parseConnectionId("66666666-6666-4666-8666-666666666666"), tools: ["search"] }],
       skills: [],
       instructions: [],
     },
@@ -64,7 +64,6 @@ describe("agent run store", () => {
     const asUser: AgentRunSpec = { ...spec, onBehalfOf: parseUserId("99999999-9999-4999-8999-999999999999") };
     await createAgentRun(client, { spec: asUser, idempotencyKey: "k-user" });
     expect(inserts[0].row.on_behalf_of_user_id).toBe(asUser.onBehalfOf);
-    expect(inserts[0].row).not.toHaveProperty("principal");
     expect(specFromRow(rowFrom(inserts[0].row))).toEqual(asUser);
   });
 
@@ -103,7 +102,7 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "event", eventIds: ["evt_123"] } })).toThrow();
-    expect(() => specFromRow({ ...good, runtime: { type: "local", hostMachineId: "" } })).toThrow();
+    expect(() => specFromRow({ ...good, runtime: { type: "local", hostId: "" } })).toThrow();
   });
 });
 

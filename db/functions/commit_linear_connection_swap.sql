@@ -2,7 +2,7 @@
 -- the upstream webhook first and compensates by deleting it if this function
 -- raises linear_connection_conflict. The workspace lock covers first connect
 -- (where no provider row exists yet); reconnects additionally compare the
--- source_connections.updated_at value observed before the network call.
+-- connections.updated_at value observed before the network call.
 create or replace function commit_linear_connection_swap(
   p_workspace_id uuid,
   p_expected_updated_at timestamptz,
@@ -18,7 +18,7 @@ security definer
 set search_path = public
 as $$
 declare
-  v_connection source_connections%rowtype;
+  v_connection connections%rowtype;
   v_credential_id uuid;
   v_prior_webhook_id text;
   v_pending_webhook_ids jsonb := '[]'::jsonb;
@@ -38,7 +38,7 @@ begin
   end if;
 
   select * into v_connection
-  from source_connections
+  from connections
   where workspace_id = p_workspace_id
     and provider = 'linear'
   order by created_at asc, id asc
@@ -96,7 +96,7 @@ begin
       end if;
     end if;
 
-    update source_connections
+    update connections
     set connection_key = p_connection_key,
         credential_id = v_credential_id,
         config_json = (coalesce(config_json, '{}'::jsonb) - 'linear_cleanup_pending_webhook_ids')
@@ -127,7 +127,7 @@ begin
     )
     returning id into v_credential_id;
 
-    insert into source_connections (
+    insert into connections (
       workspace_id, provider, connection_key, status, credential_id,
       config_json, connected_by_user_id, last_error_at
     ) values (

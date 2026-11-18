@@ -95,7 +95,7 @@ function task(overrides: Row): Row {
   return {
     id: "task-1",
     workspace_id: "ws-1",
-    source_connection_id: null,
+    connection_id: null,
     task_type: "synthesize_workspace",
     task_key: "ws-1",
     schedule_kind: "cron",
@@ -151,12 +151,12 @@ describe("schedules routes", () => {
       scheduled_tasks: [
         task({}),
         task({ id: "task-2", task_type: "summarize_sessions", task_key: "ws-1", cron_expression: "0 3 * * *" }),
-        task({ id: "task-3", task_type: "slack_backfill", task_key: "conn-1", source_connection_id: "conn-1" }),
+        task({ id: "task-3", task_type: "slack_backfill", task_key: "conn-1", connection_id: "conn-1" }),
         task({
           id: "task-4",
           task_type: "ingest_source",
           task_key: "conn-1",
-          source_connection_id: "conn-1",
+          connection_id: "conn-1",
           schedule_kind: "interval",
           cron_expression: null,
           interval_seconds: 3600,
@@ -168,7 +168,7 @@ describe("schedules routes", () => {
       credentials: [],
       workspaces: [{ id: "ws-1", inference_credential_id: null }],
       sessions: [],
-      source_connections: [
+      connections: [
         { id: "conn-1", workspace_id: "ws-1", provider: "slack", status: "active", display_name: "Acme Slack" },
       ],
       agent_runs: [
@@ -225,7 +225,7 @@ describe("schedules routes", () => {
     });
 
     it("flags a disconnected Slack connection", async () => {
-      tables.source_connections![0]!.status = "revoked";
+      tables.connections![0]!.status = "revoked";
       const body = (await (await get()).json()) as { routines: Row[] };
       expect(body.routines.find((r) => r.id === "task-4")).toMatchObject({ needsReconnect: true });
     });

@@ -26,7 +26,7 @@ export async function viewPeople(client: SupabaseClient, workspaceId: string, ro
     .in("person_id", rows.map((row) => row.id));
   if (identitiesError) throw identitiesError;
   const { data: connections, error: connectionsError } = await client
-    .from("source_connections")
+    .from("connections")
     .select("id")
     .eq("workspace_id", workspaceId)
     .eq("provider", "slack")

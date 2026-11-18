@@ -31,13 +31,13 @@ interface FakeScope {
 let ingestScope: FakeScope | null = { credentialId: "cred-1", workspaceId, sessionProjectId: null, allowedProviders: null };
 let userLookup: { userId: string } | null = null;
 let accessResult: Response | null = null;
-/** Mirrors source_connections' claude_session/agent-sessions row status. `undefined` = no row (opt-in default: blocked). */
+/** Mirrors connections' claude_session/agent-sessions row status. `undefined` = no row (opt-in default: blocked). */
 let sessionTrackingStatus: string | undefined = "active";
 
 function createFakeServiceClient() {
   return {
     from(table: string) {
-      if (table === "source_connections") {
+      if (table === "connections") {
         return {
           select() { return this; },
           eq() { return this; },
@@ -87,7 +87,7 @@ function createFakeServiceClient() {
       throw new Error(`Unexpected table: ${table}`);
     },
     async rpc(fnName: string, params: Record<string, unknown>) {
-      if (fnName !== "replace_agent_session_messages") throw new Error(`Unexpected rpc: ${fnName}`);
+      if (fnName !== "replace_captured_session_messages") throw new Error(`Unexpected rpc: ${fnName}`);
       const existing = state.sessions.find(
         (s) => s.workspace_id === params.p_workspace_id && s.provider === params.p_provider && s.external_session_id === params.p_external_session_id,
       );
@@ -233,7 +233,7 @@ describe("POST /sessions/ingest", () => {
     expect(response.status).toBe(400);
   });
 
-  it("rejects with session_tracking_disabled when no source_connections row exists (opt-in default)", async () => {
+  it("rejects with session_tracking_disabled when no connections row exists (opt-in default)", async () => {
     sessionTrackingStatus = undefined;
     const response = await routeModule.POST(ingestRequest({ ingestToken: "good" }) as never);
     expect(response.status).toBe(403);

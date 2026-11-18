@@ -35,7 +35,6 @@ function version(documents: ContextDocuments): WorkspaceContextVersionRow {
     documents_json: documents,
     content_hash: canonicalDocumentsHash(documents),
     creation_reason: "seed",
-    synthesis_run_id: null,
     restored_from_version_id: null,
     agent_run_id: null,
     summary: "test",

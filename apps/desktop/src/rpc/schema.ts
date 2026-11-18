@@ -283,7 +283,7 @@ export type AppRPCType = {
       getRoutineGithubRepos: { params: void; response: string[] };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
 
-      /** Disconnect an input source by revoking its cloud source_connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
+      /** Disconnect an input source by revoking its cloud connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
       disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear"; accountKind?: "personal" | "workspace" }; response: ActionResult };
 
       /**

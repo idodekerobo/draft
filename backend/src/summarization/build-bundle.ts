@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { buildSummarizationPrompt } from "./render-prompt";
 import { computeBundleHash } from "../sandbox/bundle-hash";
 import type { SandboxRunBundle } from "../sandbox";
-import type { AgentSessionRow } from "../types/tables";
+import type { CapturedSessionRow } from "../types/tables";
 
 export const MANIFEST_PATH = "input/manifest.json";
 
 export interface SummarizationSessionInput {
-  session: Pick<AgentSessionRow, "id">;
+  session: Pick<CapturedSessionRow, "id">;
   transcript: string;
 }
 

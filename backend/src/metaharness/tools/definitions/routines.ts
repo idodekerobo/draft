@@ -159,7 +159,7 @@ async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input
     github: input.github ?? from?.github,
   });
   if (!checked.ok) return refuse("invalid_input", `Invalid routine field: ${checked.field}`);
-  const config = inherit?.environment ? { ...checked.config, environment: inherit.environment } : checked.config;
+  const config = inherit?.toolset ? { ...checked.config, toolset: inherit.toolset } : checked.config;
 
   const missing = await refuseMissingConnections(actor.workspaceId, routineProvidersForWhen(checked.when, config));
   if (missing) return missing;

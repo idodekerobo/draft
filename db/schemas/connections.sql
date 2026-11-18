@@ -1,6 +1,6 @@
 -- provider 'mcp' is a remote MCP server a person connected: connection_key is its URL, the bearer token is
 -- the credential, and config_json.tools caches the tool list. connected_by_user_id null means shared.
-create table source_connections (
+create table connections (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   provider                 text not null
@@ -30,58 +30,58 @@ create table source_connections (
 -- workspaces from claiming the same GitHub installation_id. Scoped to
 -- non-revoked rows so an uninstalled-then-reinstalled-elsewhere installation
 -- can be re-bound later.
-create unique index source_connections_github_installation_unique
-  on source_connections (connection_key)
+create unique index connections_github_installation_unique
+  on connections (connection_key)
   where provider = 'github' and status <> 'revoked';
 
 -- A workspace may have only one live GitHub App installation. Keep this
 -- separate from the global installation-ID index above: the two indexes
 -- protect different ownership axes.
-create unique index source_connections_one_live_github_per_workspace
-  on source_connections (workspace_id)
+create unique index connections_one_live_github_per_workspace
+  on connections (workspace_id)
   where provider = 'github' and status <> 'revoked';
 
 -- Multi-account providers (fireflies): one row per connecting user, ever --
 -- revoke-then-reconnect rotates the same row rather than inserting a new
 -- one. Closes the TOCTOU race on two near-simultaneous connect requests
 -- from the same user.
-create unique index source_connections_one_per_connecting_user
-  on source_connections (workspace_id, provider, connected_by_user_id)
+create unique index connections_one_per_connecting_user
+  on connections (workspace_id, provider, connected_by_user_id)
   where provider = 'fireflies';
 
 -- Singleton providers going through the generic connect route (Slack,
 -- Linear, claude_session) may only ever have one live connection per
 -- workspace -- DB-level backstop for an assumption the app already made.
-create unique index source_connections_one_live_singleton_per_workspace
-  on source_connections (workspace_id, provider)
+create unique index connections_one_live_singleton_per_workspace
+  on connections (workspace_id, provider)
   where provider in ('slack', 'linear', 'claude_session') and status <> 'revoked';
 
 -- Granola is multi-account AND singleton at once, split by whether
 -- connected_by_user_id is set: a personal API key connects one row per
--- teammate (same shape as source_connections_one_per_connecting_user
+-- teammate (same shape as connections_one_per_connecting_user
 -- above), while a workspace API key connects at most one shared,
 -- null-owner row per workspace.
-create unique index source_connections_granola_personal_per_user
-  on source_connections (workspace_id, provider, connected_by_user_id)
+create unique index connections_granola_personal_per_user
+  on connections (workspace_id, provider, connected_by_user_id)
   where provider = 'granola' and connected_by_user_id is not null;
 
-create unique index source_connections_granola_one_workspace_key
-  on source_connections (workspace_id, provider)
+create unique index connections_granola_one_workspace_key
+  on connections (workspace_id, provider)
   where provider = 'granola' and connected_by_user_id is null and status <> 'revoked';
 
-alter table source_connections enable row level security;
+alter table connections enable row level security;
 
-create policy source_connections_select on source_connections
+create policy connections_select on connections
   for select to authenticated
   using (
     exists (
       select 1 from workspaces w
-      where w.id = source_connections.workspace_id
+      where w.id = connections.workspace_id
         and w.organization_id = current_user_org_id()
         and w.team_id = current_user_team_id()
         and w.access_mode = 'team_default'
     )
   );
 
-grant select on table source_connections to authenticated;
-grant select, insert, update on table source_connections to service_role;
+grant select on table connections to authenticated;
+grant select, insert, update on table connections to service_role;

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ParsedMessage } from "draft-core/harnesses/claude/parse-transcript";
 
-export interface PersistAgentSessionInput {
+export interface PersistCapturedSessionInput {
   workspace_id: string;
   provider: string;
   external_session_id: string;
@@ -17,17 +17,17 @@ export interface PersistAgentSessionInput {
   session_project_id: string | null;
 }
 
-interface ReplaceAgentSessionMessagesRpcResult {
+interface ReplaceCapturedSessionMessagesRpcResult {
   session_id: string;
 }
 
-// Atomicity lives in the replace_agent_session_messages Postgres function
-// (db/functions/replace_agent_session_messages.sql), not here.
-export async function persistAgentSession(
+// Atomicity lives in the replace_captured_session_messages Postgres function
+// (db/functions/replace_captured_session_messages.sql), not here.
+export async function persistCapturedSession(
   client: SupabaseClient,
-  input: PersistAgentSessionInput,
+  input: PersistCapturedSessionInput,
 ): Promise<{ sessionId: string }> {
-  const { data, error } = await client.rpc("replace_agent_session_messages", {
+  const { data, error } = await client.rpc("replace_captured_session_messages", {
     p_workspace_id: input.workspace_id,
     p_provider: input.provider,
     p_external_session_id: input.external_session_id,
@@ -43,6 +43,6 @@ export async function persistAgentSession(
   });
   if (error) throw error;
 
-  const result = data as ReplaceAgentSessionMessagesRpcResult;
+  const result = data as ReplaceCapturedSessionMessagesRpcResult;
   return { sessionId: result.session_id };
 }

@@ -115,7 +115,7 @@ export async function createMcpConnection(
   const credentialId = (credential as { id: string }).id;
 
   const { data: connection, error: connectionError } = await client
-    .from("source_connections")
+    .from("connections")
     .insert({
       workspace_id: input.workspaceId,
       provider: "mcp",
@@ -159,7 +159,7 @@ export async function usableMcpConnections(
 ): Promise<McpConnectionRow[]> {
   if (connectionIds.length === 0) return [];
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select(CONNECTION_COLUMNS)
     .eq("workspace_id", workspaceId)
     .eq("provider", "mcp")
@@ -171,7 +171,7 @@ export async function usableMcpConnections(
 
 /**
  * The tools a cloud run reaches through its connections, as registry entries. The gateway holds the token
- * and makes the call, so the sandbox never sees either. A run holds a tool only if its environment names the
+ * and makes the call, so the sandbox never sees either. A run holds a tool only if its toolset names the
  * connection and the tool.
  */
 export async function remoteToolsForRun(
@@ -179,11 +179,11 @@ export async function remoteToolsForRun(
   run: AgentRunSpec,
   options: { connect?: ConnectRemoteMcp } = {},
 ): Promise<RegisteredTool[]> {
-  if (run.runtime.type !== "cloud" || run.runtime.environment.mcpServers.length === 0) return [];
-  const permissions = new Map(run.runtime.environment.mcpServers.map((server) => [server.connectionId as string, server.tools]));
+  if (run.runtime.type !== "cloud" || run.runtime.toolset.mcpServers.length === 0) return [];
+  const permissions = new Map(run.runtime.toolset.mcpServers.map((server) => [server.connectionId as string, server.tools]));
 
   const { data, error } = await client
-    .from("source_connections")
+    .from("connections")
     .select(CONNECTION_COLUMNS)
     .eq("workspace_id", run.workspaceId)
     .eq("provider", "mcp")
@@ -222,10 +222,10 @@ function buildRemoteTool(client: SupabaseClient, connection: McpConnectionRow, s
     modelVisible: true,
     destructive: false,
     inputSchema: input,
-    // Held only by a cloud run whose environment names this connection and this tool.
+    // Held only by a cloud run whose toolset names this connection and this tool.
     permission: (run) => {
       if (run.runtime.type !== "cloud") return null;
-      const named = run.runtime.environment.mcpServers.find((server) => server.connectionId === connection.id);
+      const named = run.runtime.toolset.mcpServers.find((server) => server.connectionId === connection.id);
       return named && (named.tools === "all" || named.tools.includes(remote.name)) ? {} : null;
     },
     parse(raw) {

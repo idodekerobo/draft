@@ -36,7 +36,7 @@ interface FakeClientOptions {
 
 function createFakeClient(options: FakeClientOptions = {}) {
   function from(table: string) {
-    if (table === "source_connections") {
+    if (table === "connections") {
       return {
         select: (columns: string) => ({
           eq: () => ({

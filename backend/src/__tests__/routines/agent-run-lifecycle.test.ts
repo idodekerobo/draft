@@ -3,7 +3,7 @@ import { finishAgentRun, markAgentRunRunning } from "../../metaharness/runs/life
 import { endRoutineSession, failRoutineSession } from "../../routines/fail-routine-session";
 import { fakeClient, fakeDb } from "./fake-client";
 
-const session = { id: "s1", workspace_id: "ws-1", scheduled_task_id: "t1", host_machine_id: "fly:s1" };
+const session = { id: "s1", workspace_id: "ws-1", scheduled_task_id: "t1", host_id: "fly:s1" };
 
 function setup(runStatus = "running") {
   const db = fakeDb({

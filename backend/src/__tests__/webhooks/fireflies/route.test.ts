@@ -185,7 +185,7 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
     expect(fired).toEqual([
       {
         workspaceId: "ws-1",
-        sourceConnectionId: "conn-1",
+        connectionId: "conn-1",
         name: "fireflies.meeting_summarized",
         eventId: "meeting-123",
         sourceItemId: "item-1",
@@ -213,7 +213,7 @@ describe("POST /webhooks/fireflies/:connectionKey", () => {
     await until(() => evidence.errors.length > 0);
 
     expect(evidence.errors).toEqual([
-      expect.objectContaining({ workspace_id: "ws-1", source_connection_id: "conn-1", operation: "scheduling", detail_json: expect.objectContaining({ code: "event_enqueue_failed" }) }),
+      expect.objectContaining({ workspace_id: "ws-1", connection_id: "conn-1", operation: "scheduling", detail_json: expect.objectContaining({ code: "event_enqueue_failed" }) }),
     ]);
   });
 

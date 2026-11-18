@@ -13,12 +13,12 @@ security definer
 set search_path = public
 as $$
 declare
-  v_connection source_connections%rowtype;
+  v_connection connections%rowtype;
   v_prior_credential_id uuid;
   v_new_credential_id uuid;
 begin
   select * into v_connection
-  from source_connections
+  from connections
   where id = p_connection_id
     and workspace_id = p_workspace_id
     and provider = 'fireflies'
@@ -40,7 +40,7 @@ begin
   )
   returning id into v_new_credential_id;
 
-  update source_connections
+  update connections
   set credential_id = v_new_credential_id,
       status = 'active',
       connected_by_user_id = coalesce(p_connected_by_user_id, connected_by_user_id),

@@ -19,52 +19,52 @@ const GONE = "00000000-0000-4000-8000-000000000004";
 
 const base = { title: "Digest", prompt: "Summarize.", harness: "claude", model: null };
 
-describe("routine config environment", () => {
+describe("routine config toolset", () => {
   it("is optional, and a config without one stays as it was", () => {
     const result = validateAgentRoutineConfig(base);
     expect(result).toEqual({ ok: true, config: { title: "Digest", prompt: "Summarize.", harness: "claude", model: null } });
-    expect(validateAgentRoutineConfig({ ...base, environment: null })).toMatchObject({ ok: true });
+    expect(validateAgentRoutineConfig({ ...base, toolset: null })).toMatchObject({ ok: true });
   });
 
   it("accepts built-in tools from the cloud list for its harness, and connections with the tools allowed", () => {
     const result = validateAgentRoutineConfig({
       ...base,
-      environment: { nativeTools: ["WebSearch", "Grep", "WebSearch"], mcpServers: [{ connectionId: OWN, tools: ["search_issues"] }, { connectionId: SHARED, tools: "all" }] },
+      toolset: { nativeTools: ["WebSearch", "Grep", "WebSearch"], mcpServers: [{ connectionId: OWN, tools: ["search_issues"] }, { connectionId: SHARED, tools: "all" }] },
     });
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error("unreachable");
-    expect(result.config.environment).toEqual({
+    expect(result.config.toolset).toEqual({
       nativeTools: ["WebSearch", "Grep"],
       mcpServers: [{ connectionId: OWN, tools: ["search_issues"] }, { connectionId: SHARED, tools: "all" }],
     });
-    expect(validateAgentRoutineConfig({ ...base, harness: "codex", environment: { nativeTools: ["web_search"] } })).toMatchObject({ ok: true });
+    expect(validateAgentRoutineConfig({ ...base, harness: "codex", toolset: { nativeTools: ["web_search"] } })).toMatchObject({ ok: true });
   });
 
   it("refuses a tool that would widen the sandbox, or that belongs to the other harness", () => {
     for (const tool of ["Edit", "Write", "WebFetch", "shell"]) {
-      expect(validateAgentRoutineConfig({ ...base, environment: { nativeTools: [tool] } })).toEqual({ ok: false, field: "environment" });
+      expect(validateAgentRoutineConfig({ ...base, toolset: { nativeTools: [tool] } })).toEqual({ ok: false, field: "toolset" });
     }
-    expect(validateAgentRoutineConfig({ ...base, harness: "codex", environment: { nativeTools: ["WebSearch"] } })).toEqual({ ok: false, field: "environment" });
+    expect(validateAgentRoutineConfig({ ...base, harness: "codex", toolset: { nativeTools: ["WebSearch"] } })).toEqual({ ok: false, field: "toolset" });
   });
 
-  it("refuses a malformed environment", () => {
-    const bad = (environment: unknown) => validateAgentRoutineConfig({ ...base, environment });
-    expect(bad("tools")).toEqual({ ok: false, field: "environment" });
-    expect(bad({ nativeTools: "WebSearch" })).toEqual({ ok: false, field: "environment" });
-    expect(bad({ mcpServers: [{ connectionId: "not-a-uuid", tools: "all" }] })).toEqual({ ok: false, field: "environment" });
-    expect(bad({ mcpServers: [{ connectionId: OWN, tools: "some" }] })).toEqual({ ok: false, field: "environment" });
-    expect(bad({ mcpServers: [{ connectionId: OWN, tools: [""] }] })).toEqual({ ok: false, field: "environment" });
-    expect(bad({ mcpServers: Array.from({ length: 11 }, () => ({ connectionId: OWN, tools: "all" })) })).toEqual({ ok: false, field: "environment" });
+  it("refuses a malformed toolset", () => {
+    const bad = (toolset: unknown) => validateAgentRoutineConfig({ ...base, toolset });
+    expect(bad("tools")).toEqual({ ok: false, field: "toolset" });
+    expect(bad({ nativeTools: "WebSearch" })).toEqual({ ok: false, field: "toolset" });
+    expect(bad({ mcpServers: [{ connectionId: "not-a-uuid", tools: "all" }] })).toEqual({ ok: false, field: "toolset" });
+    expect(bad({ mcpServers: [{ connectionId: OWN, tools: "some" }] })).toEqual({ ok: false, field: "toolset" });
+    expect(bad({ mcpServers: [{ connectionId: OWN, tools: [""] }] })).toEqual({ ok: false, field: "toolset" });
+    expect(bad({ mcpServers: Array.from({ length: 11 }, () => ({ connectionId: OWN, tools: "all" })) })).toEqual({ ok: false, field: "toolset" });
   });
 
-  it("keeps the environment when a saved config is read back", () => {
-    const saved = { ...base, environment: { nativeTools: ["WebSearch"], mcpServers: [] } };
-    expect(parseAgentRoutineConfig(saved)?.environment).toEqual({ nativeTools: ["WebSearch"], mcpServers: [] });
+  it("keeps the toolset when a saved config is read back", () => {
+    const saved = { ...base, toolset: { nativeTools: ["WebSearch"], mcpServers: [] } };
+    expect(parseAgentRoutineConfig(saved)?.toolset).toEqual({ nativeTools: ["WebSearch"], mcpServers: [] });
   });
 });
 
-describe("a routine run's environment", () => {
-  const routine = { ...base, harness: "claude" as const, environment: { nativeTools: ["WebSearch"], mcpServers: [] } };
+describe("a routine run's toolset", () => {
+  const routine = { ...base, harness: "claude" as const, toolset: { nativeTools: ["WebSearch"], mcpServers: [] } };
 
   it("carries the chosen tools and connections into the spec", () => {
     const spec = buildRoutineRunSpec({
@@ -72,8 +72,8 @@ describe("a routine run's environment", () => {
       routine, contextVersionId: VERSION, mcpServers: [{ connectionId: OWN, tools: "all" }],
     });
     if (spec.runtime.type !== "cloud") throw new Error("unreachable");
-    expect(spec.runtime.environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
-    expect(spec.runtime.environment.mcpServers.map((server) => [server.connectionId as string, server.tools])).toEqual([[OWN, "all"]]);
+    expect(spec.runtime.toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
+    expect(spec.runtime.toolset.mcpServers.map((server) => [server.connectionId as string, server.tools])).toEqual([[OWN, "all"]]);
   });
 });
 
@@ -96,7 +96,7 @@ describe("dispatch resolves a routine's connections", () => {
     id: TASK, workspace_id: WS, task_type: "agent_routine", created_by_user_id: OWNER,
     config_json: {
       ...base,
-      environment: { nativeTools: ["WebSearch"], mcpServers: [OWN, SHARED, THEIRS, GONE].map((connectionId) => ({ connectionId, tools: "all" })) },
+      toolset: { nativeTools: ["WebSearch"], mcpServers: [OWN, SHARED, THEIRS, GONE].map((connectionId) => ({ connectionId, tools: "all" })) },
     },
   } as unknown as ScheduledTaskRow;
 
@@ -112,7 +112,7 @@ describe("dispatch resolves a routine's connections", () => {
         workspaces: [{ id: WS, team_id: TEAM, timezone: "UTC", current_context_version_id: VERSION }],
         users: [{ id: OWNER, status: "active", primary_team_id: TEAM }],
         workspace_context_versions: [{ id: VERSION, version_number: 1, documents_json: {} }],
-        source_connections: [
+        connections: [
           connection(OWN),
           connection(SHARED, { connected_by_user_id: null }),
           connection(THEIRS, { connected_by_user_id: STRANGER }),
@@ -129,9 +129,9 @@ describe("dispatch resolves a routine's connections", () => {
     await dispatchAgentRoutine({ task, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch });
 
     const run = db.tables.agent_runs![0]!;
-    const environment = (run.runtime as { environment: { nativeTools: Array<{ tool: string }>; mcpServers: Array<{ connectionId: string }> } }).environment;
-    expect(environment.mcpServers.map((server) => server.connectionId)).toEqual([OWN, SHARED]);
-    expect(environment.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
+    const toolset = (run.runtime as { toolset: { nativeTools: Array<{ tool: string }>; mcpServers: Array<{ connectionId: string }> } }).toolset;
+    expect(toolset.mcpServers.map((server) => server.connectionId)).toEqual([OWN, SHARED]);
+    expect(toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
     expect(run.status).toBe("running");
 
     expect(db.tables.errors).toHaveLength(1);
@@ -145,6 +145,6 @@ describe("dispatch resolves a routine's connections", () => {
     const plain = { ...task, config_json: { ...base } } as unknown as ScheduledTaskRow;
     await dispatchAgentRoutine({ task: plain, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch: mock<LaunchRoutineRun>(async () => undefined) });
     expect(db.tables.errors).toHaveLength(0);
-    expect((db.tables.agent_runs![0]!.runtime as { environment: { mcpServers: unknown[] } }).environment.mcpServers).toEqual([]);
+    expect((db.tables.agent_runs![0]!.runtime as { toolset: { mcpServers: unknown[] } }).toolset.mcpServers).toEqual([]);
   });
 });
