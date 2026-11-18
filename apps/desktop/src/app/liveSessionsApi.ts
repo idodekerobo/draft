@@ -42,6 +42,10 @@ export const liveSessionsApi: LiveSessionsApi = {
     const result = await rpc.request.resumeLiveSession({ sessionId });
     if (!result.ok) throw new Error(result.error);
   },
+  deleteSession: async (sessionId) => {
+    const result = await rpc.request.deleteLiveSession({ sessionId });
+    if (!result.ok) throw new Error(result.error);
+  },
   watchPresence: (sessionId, viewer, onChange) => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;

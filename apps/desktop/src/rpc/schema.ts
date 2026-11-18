@@ -381,6 +381,9 @@ export type AppRPCType = {
       /** Start an ended session of the owner again on this computer. */
       resumeLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
+      /** Hide the owner's session in Draft, ending it first if it is live. Nothing on this computer is removed. */
+      deleteLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+
       /** Ids of the live sessions that run on this computer. */
       getHostedLiveSessionIds: { params: void; response: string[] };
 
