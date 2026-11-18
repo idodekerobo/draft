@@ -1,4 +1,4 @@
-import { loadFlyConfig, validateFlyConfig, type FlyEnvironment, type FlyProviderConfig } from "./fly/config";
+import { loadFlyConfig, validateFlyConfig, type FlyEnv, type FlyProviderConfig } from "./fly/config";
 import { createFlyProvider } from "./fly/provider";
 import type { SandboxProvider } from "./types";
 
@@ -20,7 +20,7 @@ export function validateProviderConfig(config: SandboxProviderConfig): SandboxPr
 }
 
 /** Reads the provider settings from the environment. Fly is the only provider today. */
-export function loadProviderConfig(env: FlyEnvironment): SandboxProviderConfig {
+export function loadProviderConfig(env: FlyEnv): SandboxProviderConfig {
   return loadFlyConfig(env);
 }
 

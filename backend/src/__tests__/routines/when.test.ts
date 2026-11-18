@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { DRAFT_DEFAULT_CRON } from "../../scheduling/presets";
-import { minCronGapSeconds, resolveWhen } from "../../schedules/when";
+import { minCronGapSeconds, resolveWhen } from "../../routines/when";
 
 const NOW = new Date("2026-11-16T12:00:00.000Z");
 

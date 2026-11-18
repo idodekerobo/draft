@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateCreate } from "../../schedules/validate-create";
+import { validateCreate } from "../../routines/validate-create";
 
 const rule = { schedule: { preset: "weekly" as const, time: "09:00", weekday: "mon" as const, timezone: "America/New_York" } };
 const valid = { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku", when: rule };

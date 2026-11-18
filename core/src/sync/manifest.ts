@@ -6,7 +6,7 @@ import { homedir } from "os";
 import { createHash } from "crypto";
 import { getMcpManifestPath, getActiveProfile } from "../config";
 
-export type Agent = "claude-code" | "codex";
+export type AgentClientId = "claude-code" | "codex";
 
 export interface CanonicalMcp {
   type: "http";
@@ -27,12 +27,12 @@ export interface McpManifestSyncEntry {
 export interface McpManifestEntry {
   id: string;
   name: string;
-  source_agent: Agent;
+  source_agent: AgentClientId;
   sync_canonical: CanonicalMcp;
   sync_canonical_hash: string;
   source_snapshot: { original_config: Record<string, unknown> };
   env_var_mapping: Record<string, string>;
-  synced_to: Partial<Record<Agent, McpManifestSyncEntry>>;
+  synced_to: Partial<Record<AgentClientId, McpManifestSyncEntry>>;
   removed_at: string | null;
   /** Whether this entry was created by the user locally or shared via the team workspace. */
   kind: "personal" | "team";
@@ -47,9 +47,9 @@ export interface McpManifest {
   schema_version: 5;
   mcps: Record<string, McpManifestEntry>;
   name_conflicts: Record<string, {
-    agents: Agent[];
+    agents: AgentClientId[];
     resolved: boolean;
-    authoritative_agent: Agent | null;
+    authoritative_agent: AgentClientId | null;
   }>;
 }
 

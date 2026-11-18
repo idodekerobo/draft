@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CredentialError, decryptCredentialPayload } from "./crypto";
+import type { CredentialSecretRow } from "./harness-credential";
 import type { SourceConnectionProvider } from "../types/enums";
 
 export interface FirefliesProviderCredential {
@@ -37,14 +38,6 @@ interface SourceConnectionCredentialRow {
   id: string;
   credential_id: string | null;
   status: string;
-}
-
-interface CredentialSecretRow {
-  id: string;
-  status: string;
-  expires_at: string | null;
-  encrypted_payload: unknown;
-  encryption_key_version: string;
 }
 
 const NAMED_SECRET_PROVIDERS = new Set<SourceConnectionProvider>(["fireflies", "slack", "linear", "granola"]);

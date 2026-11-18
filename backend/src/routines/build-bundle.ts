@@ -16,7 +16,7 @@ export interface PromptEvent {
 }
 
 /** What started this run. Events are oldest first. */
-export type RoutineRunStart = { type: "schedule" } | { type: "manual" } | { type: "event"; events: PromptEvent[] };
+export type RoutinePromptStart = { type: "schedule" } | { type: "manual" } | { type: "event"; events: PromptEvent[] };
 
 /** The text of every event in one run together, shared out evenly, so a large batch cannot crowd out the rest of the prompt. */
 const TOTAL_EVENT_TEXT = 40_000;
@@ -27,7 +27,7 @@ export interface RoutinePromptContext {
   setup: string;
   timezone: string;
   startedAt: Date;
-  startedBy: RoutineRunStart;
+  startedBy: RoutinePromptStart;
   /** True when the run has Draft's tool server, so the prompt can say so. */
   hasDraftTools?: boolean;
 }
@@ -41,7 +41,7 @@ function startedAtIn(timezone: string, startedAt: Date): string {
   }
 }
 
-function startLine(start: RoutineRunStart, setup: string): string {
+function startLine(start: RoutinePromptStart, setup: string): string {
   if (start.type === "schedule") return `This run was started by the routine's schedule: ${setup}.`;
   if (start.type === "manual") return `A teammate started this run by pressing Run now. It did not come from the schedule or an event. The routine is set to run: ${setup}.`;
   const { events } = start;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validatePatch } from "../../schedules/validate-patch";
+import { validatePatch } from "../../routines/validate-patch";
 import { parseAgentRoutineConfig, type AgentRoutineConfig } from "../../routines/config";
 
 const current: AgentRoutineConfig = { title: "Digest", prompt: "Summarize.", harness: "claude", model: null };

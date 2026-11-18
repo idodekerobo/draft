@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelSendResult, NotifyChannelId, NotifyMessage } from "draft-core/notify";
-import { agentActor, parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
 import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
@@ -75,7 +75,6 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
     network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
-  actor: agentActor(parseAgentRunId(RUN)),
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
   runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude",

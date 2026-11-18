@@ -4,7 +4,7 @@ import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } fro
 import { readAgentDefaults } from "./agent-defaults";
 import { switchClaudeAgent } from "./agent-switch";
 import { ControlActions, type ControlInput, type ModeChange } from "./controls";
-import { findRunnerBin } from "./find-bin";
+import { findHarnessBin } from "./find-bin";
 import { existsSync, readFileSync } from "fs";
 import { TranscriptForwarder, findTranscript, type ForwardedLine } from "./forwarder";
 import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "./harness-driver";
@@ -307,7 +307,7 @@ const launcher: HarnessLauncher = {
   id: "claude",
   launchFailedMessage: "Could not start Claude Code.",
   async check() {
-    const bin = findRunnerBin("claude");
+    const bin = findHarnessBin("claude");
     if (!bin) return { ok: false, error: CLAUDE_MISSING_MESSAGE };
     const [auth, version] = await Promise.all([readClaudeAuth(bin), readClaudeVersion(bin)]);
     if (auth === "signed_out") return { ok: false, error: CLAUDE_SIGNED_OUT_MESSAGE };

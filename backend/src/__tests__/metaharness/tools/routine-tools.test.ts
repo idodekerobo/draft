@@ -10,7 +10,7 @@ const db: FakeDb = fakeDb({}, { uuidTables: ["scheduled_tasks", "errors"] });
 mock.module("../../../db/client", () => ({ serviceClient: fakeClient(db) }));
 const { createRoutineTools } = await import("../../../metaharness/tools/definitions/routines");
 const { runMayManage, runVisibility, widerAccess } = await import("../../../routines/run-creator");
-const schedules = await import("../../../schedules/service");
+const schedules = await import("../../../routines/service");
 const agentStatus = await import("../../../routines/agent-status");
 
 const listConnected = spyOn(schedules, "listConnectedProviders").mockResolvedValue(["github", "slack"]);

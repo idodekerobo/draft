@@ -15,7 +15,6 @@ import type {
   SourceItemType,
   SourceItemVisibility,
   SynthesisRunOutcome,
-  SynthesisRunStatus,
   SynthesisRunTriggerType,
   TeamStatus,
   UserOrgRole,

@@ -7,7 +7,7 @@ import {
   writeMcpManifest,
   tombstoneMcp,
   hashCanonical,
-  type Agent,
+  type AgentClientId,
   type CanonicalMcp,
   type McpManifestEntry,
   type McpManifestSyncEntry,
@@ -19,12 +19,12 @@ import type { AssetConflictReason } from "../scanner";
 
 export type { WorkspaceMcpEntry };
 
-export type { Agent, CanonicalMcp };
+export type { AgentClientId, CanonicalMcp };
 
 export interface PendingMcpEntry {
   id: string;
   name: string;
-  source_agent: Agent;
+  source_agent: AgentClientId;
   config: Record<string, unknown>;
   canonical: CanonicalMcp;
   /** True when both agents have an entry with the same name but different canonical forms. */
@@ -40,8 +40,8 @@ export interface McpConflict {
 export interface McpDriftEntry {
   id: string;
   name: string;
-  source_agent: Agent;
-  target_agent: Agent;
+  source_agent: AgentClientId;
+  target_agent: AgentClientId;
   expected: CanonicalMcp;
   observed: Record<string, unknown>;
 }
@@ -136,7 +136,7 @@ export function semanticEquals(a: CanonicalMcp, b: CanonicalMcp): boolean {
 }
 
 function nativeEntryEquals(
-  agent: Agent,
+  agent: AgentClientId,
   observed: Record<string, unknown>,
   canonical: CanonicalMcp,
   secrets: Record<string, string>,
@@ -285,7 +285,7 @@ export function detectMcpPending(opts?: McpSyncOpts): {
 export interface PersonalMcpInput {
   id: string;
   name: string;
-  source_agent: Agent;
+  source_agent: AgentClientId;
   canonical: CanonicalMcp;
   original_config: Record<string, unknown>;
 }
@@ -333,7 +333,7 @@ export async function installPersonalMcps(
   let dirty = false;
 
   for (const { id, name, source_agent, canonical, original_config } of mcps) {
-    const targetAgent: Agent = source_agent === "claude-code" ? "codex" : "claude-code";
+    const targetAgent: AgentClientId = source_agent === "claude-code" ? "codex" : "claude-code";
     const targetConfigPath = targetAgent === "claude-code" ? opts?.claudeConfigPath : opts?.codexConfigPath;
     const existing = manifest.mcps[id];
 
@@ -467,7 +467,7 @@ export async function uninstallPersonalMcps(
   for (const entry of Object.values(manifest.mcps)) {
     if (entry.kind !== "personal" || entry.removed_at !== null) continue;
 
-    for (const [agent, syncEntry] of Object.entries(entry.synced_to) as [Agent, McpManifestSyncEntry][]) {
+    for (const [agent, syncEntry] of Object.entries(entry.synced_to) as [AgentClientId, McpManifestSyncEntry][]) {
       if (agent === entry.source_agent) continue;
       const configPath = agent === "claude-code" ? opts?.claudeConfigPath : opts?.codexConfigPath;
       try {
@@ -559,7 +559,7 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
     if (entry.removed_at) {
       // Tombstoned — remove only from agents Draft wrote to (synced_to), never from source.
       // The source agent's config belongs to the user; Draft should not touch it on removal.
-      const syncedAgents = Object.keys(entry.synced_to) as Agent[];
+      const syncedAgents = Object.keys(entry.synced_to) as AgentClientId[];
       for (const agent of syncedAgents) {
         if (agent === entry.source_agent) continue; // never remove from source
         if (agent === "claude-code" && claudeBlocked) continue;
@@ -590,7 +590,7 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
       if (entry.install_state === "conflict") continue;
       const missingSecrets = (entry.pending_secrets ?? []).filter((env) => !secrets[env]);
       if (missingSecrets.length > 0) continue;
-      for (const targetAgent of ["claude-code", "codex"] as Agent[]) {
+      for (const targetAgent of ["claude-code", "codex"] as AgentClientId[]) {
         if (targetAgent === "claude-code" && claudeBlocked) continue;
         if (targetAgent === "codex" && codexBlocked) continue;
         const targetConfig = targetAgent === "claude-code" ? claudeMcps : codexMcps;
@@ -631,7 +631,7 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
 
     const sourcePresent = !!sourceMcp;
 
-    for (const targetAgent of ["claude-code", "codex"] as Agent[]) {
+    for (const targetAgent of ["claude-code", "codex"] as AgentClientId[]) {
       if (targetAgent === "claude-code" && claudeBlocked) continue;
       if (targetAgent === "codex" && codexBlocked) continue;
 
@@ -710,7 +710,7 @@ export async function reconcile(opts?: McpSyncOpts): Promise<McpReconcileResult>
  * mirror entry. Mirrors scanner.ts's inspectSymlinkTarget for skills.
  */
 export function inspectMcpTarget(
-  agent: Agent,
+  agent: AgentClientId,
   observed: Record<string, unknown> | undefined,
   expectedCanonical: CanonicalMcp,
   secrets: Record<string, string>,
@@ -723,7 +723,7 @@ export function inspectMcpTarget(
 
 export interface InstallTeamMcpsResult {
   installed: string[];
-  installed_targets: Array<{ name: string; agent: Agent }>;
+  installed_targets: Array<{ name: string; agent: AgentClientId }>;
   missing_secrets: Array<{ name: string; required_secrets: string[] }>;
   conflicts: Array<{ name: string; reason: "personal-name-collision" | "target-modified" }>;
   errors: string[];
@@ -807,7 +807,7 @@ export async function installTeamMcps(
       continue;
     }
 
-    const targetIsOwned = (agent: Agent, observed: Record<string, unknown> | undefined): boolean => {
+    const targetIsOwned = (agent: AgentClientId, observed: Record<string, unknown> | undefined): boolean => {
       if (!observed) return true;
       if (!previous || previous.removed_at || previous.kind !== "team") return false;
       return inspectMcpTarget(agent, observed, previous.sync_canonical, secrets) === "owned";
@@ -887,7 +887,7 @@ async function uninstallTeamMcpEntries(
     if (name !== undefined && entry.name !== name) continue;
     if (entry.removed_at !== null) continue;
 
-    for (const agent of Object.keys(entry.synced_to) as Agent[]) {
+    for (const agent of Object.keys(entry.synced_to) as AgentClientId[]) {
       try {
         const observed = readAgentMcps(
           agent,
@@ -961,7 +961,7 @@ export async function setTeamMcpSecret(
     synced_to: { ...entry.synced_to },
   };
 
-  for (const agent of ["claude-code", "codex"] as Agent[]) {
+  for (const agent of ["claude-code", "codex"] as AgentClientId[]) {
     try {
       const observed = readAgentMcps(
         agent,

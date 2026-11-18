@@ -88,8 +88,8 @@ const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
 );
 afterAll(() => queryLogSpy.mockRestore());
 
-const routeModule = await import("../../routes/schedules");
-const schedulesService = await import("../../schedules/service");
+const routeModule = await import("../../routes/routines");
+const schedulesService = await import("../../routines/service");
 
 function task(overrides: Row): Row {
   return {

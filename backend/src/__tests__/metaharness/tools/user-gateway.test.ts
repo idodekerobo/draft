@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { callPersonTool, listPersonTools } from "../../../metaharness/tools/person-gateway";
+import { callUserTool, listUserTools } from "../../../metaharness/tools/user-gateway";
 import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
 
 const USER = "11111111-1111-4111-8111-111111111111";
@@ -101,11 +101,11 @@ const deps = {
 };
 
 async function call(toolName: string, input?: unknown, workspaceId: string = WS) {
-  const response = await callPersonTool(deps, { userId: USER, workspaceId, via: "cli", toolName, bodyText: input === undefined ? "" : JSON.stringify(input) });
+  const response = await callUserTool(deps, { userId: USER, workspaceId, via: "cli", toolName, bodyText: input === undefined ? "" : JSON.stringify(input) });
   return { status: response.status, body: (await response.json()) as { status?: string; output?: any; issues?: string[]; error?: string; code?: string; message?: string } };
 }
 
-describe("person tool endpoint: skills", () => {
+describe("user tool endpoint: skills", () => {
   beforeEach(() => {
     refusal = null;
     rows = [];
@@ -192,14 +192,14 @@ describe("person tool endpoint: skills", () => {
   });
 });
 
-describe("person tool endpoint: the call itself", () => {
+describe("user tool endpoint: the call itself", () => {
   beforeEach(() => {
     refusal = null;
     rows = [];
   });
 
   it("answers 400 for a body that is not JSON, and for input that does not fit the tool", async () => {
-    const response = await callPersonTool(deps, { userId: USER, workspaceId: WS, via: "cli", toolName: "skills.list", bodyText: "{nope" });
+    const response = await callUserTool(deps, { userId: USER, workspaceId: WS, via: "cli", toolName: "skills.list", bodyText: "{nope" });
     expect(response.status).toBe(400);
     const invalid = await call("skills.read", { name: 5 });
     expect(invalid.status).toBe(400);
@@ -218,7 +218,7 @@ describe("person tool endpoint: the call itself", () => {
   });
 
   it("lists the tools a person may call, each with an input schema, and none that are run-only", async () => {
-    const { tools } = (await listPersonTools(deps).json()) as { tools: Array<{ name: string; inputSchema: { type: string } }> };
+    const { tools } = (await listUserTools(deps).json()) as { tools: Array<{ name: string; inputSchema: { type: string } }> };
     const names = tools.map((tool) => tool.name);
     for (const name of ["context.read", "context.list", "context.export", "sources.search", "sources.read", "skills.list", "skills.read", "skills.add", "skills.update", "skills.delete", "routines.list"]) {
       expect(names).toContain(name);

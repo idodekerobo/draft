@@ -32,7 +32,7 @@ test("activity list shows each run with its result, how to open a routine run, a
   expect(seen).toEqual({ cursor: "c-prev" });
   expect(result.stdout).toContain("Daily digest · routine (16.0s)");
   expect(result.stdout).toContain("Posted in #general");
-  expect(result.stdout).toContain("draft routines runs t1 --run-id s1");
+  expect(result.stdout).toContain("draft routines runs t1 --session-id s1");
   expect(result.stdout).toContain("Context update");
   expect(result.stdout).toContain("Older runs: draft activity list --cursor 'c-next'");
 });

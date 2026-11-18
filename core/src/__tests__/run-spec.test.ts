@@ -12,7 +12,7 @@ function spec(permissions: AgentRunSpec["permissions"]): AgentRunSpec {
     network: "open",
     workspaceId: parseWorkspaceId(UUID_B),
     trigger: { type: "cron", scheduledTaskId: UUID_A as never, occurrenceAt: parseIsoTimestamp("2026-11-09T09:00:00Z") },
-    actor: { type: "agent", runId: parseAgentRunId(UUID_A) }, onBehalfOf: null,
+    onBehalfOf: null,
     runtime: { type: "local", hostMachineId: parseHostMachineId("mac-1") },
     harness: "claude",
     model: null,

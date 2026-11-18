@@ -14,7 +14,7 @@ import {
 } from "draft-core/integrations/hosted-connections";
 import { homedir } from "os";
 import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
-import { findRunnerBin } from "./main/host/find-bin";
+import { findHarnessBin } from "./main/host/find-bin";
 import { shellQuote } from "./main/host/launch";
 import { openCommandInTerminal } from "./main/host/open-in-terminal";
 import { runningCodexTurns } from "./main/host/codex/codex-driver";
@@ -871,13 +871,13 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       cancelRoutineCodexLogin: () => cancelRoutineCodexLogin(),
 
       openClaudeSignIn: async () => {
-        const bin = findRunnerBin("claude");
+        const bin = findHarnessBin("claude");
         if (!bin) return { ok: false, error: "Claude Code is not installed on this computer." };
         return openCommandInTerminal("claude-sign-in", `exec ${shellQuote(bin)}`);
       },
-      getAvailableRunners: async () => {
-        const claudePath = findRunnerBin("claude");
-        const codexPath = findRunnerBin("codex");
+      getAvailableHarnesses: async () => {
+        const claudePath = findHarnessBin("claude");
+        const codexPath = findHarnessBin("codex");
         const [claudeAuth, claudeVersion, codexAuth, codexVersion] = await Promise.all([
           claudePath ? readClaudeAuth(claudePath) : ("unknown" as const),
           claudePath ? readClaudeVersion(claudePath) : null,
@@ -885,7 +885,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           codexPath ? readCodexVersion(codexPath) : null,
         ]);
         return {
-          runners: [
+          harnesses: [
             { name: "claude" as const, installed: claudePath !== null, auth: claudeAuth, version: claudeVersion },
             { name: "codex" as const, installed: codexPath !== null, auth: codexAuth, version: codexVersion },
           ],

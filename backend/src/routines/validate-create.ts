@@ -1,5 +1,5 @@
 import { RoutineInput, type RoutineEventName, type RoutineWhen } from "draft-core/routines";
-import { validateAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
+import { validateAgentRoutineConfig, type AgentRoutineConfig } from "./config";
 
 export type CreateValidation =
   | { ok: true; config: AgentRoutineConfig; when: RoutineWhen; enabled?: boolean }

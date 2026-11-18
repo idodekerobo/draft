@@ -849,7 +849,7 @@ export async function fetchSessions(filters: ListSessionsFilters = {}): Promise<
 export interface RoutineRun {
   id: string;
   status: "running" | "completed" | "failed" | "skipped";
-  startedBy: { type: "schedule" } | { type: "run_now" } | { type: "event"; event: string };
+  startedBy: { type: "schedule" } | { type: "manual" } | { type: "event"; event: string };
   startedAt: string;
   endedAt: string | null;
   result: string | null;

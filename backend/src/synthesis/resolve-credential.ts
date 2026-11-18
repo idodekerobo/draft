@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CredentialError } from "../credentials/crypto";
-import { secretFromRow } from "../credentials/harness-credential";
+import { secretFromRow, type CredentialSecretRow } from "../credentials/harness-credential";
 import type { CredentialErrorReason } from "../credentials/crypto";
 
 export { encryptCredentialPayload } from "../credentials/crypto";
@@ -9,15 +9,6 @@ export { encryptCredentialPayload } from "../credentials/crypto";
 export type InferenceCredentialErrorReason = CredentialErrorReason;
 export const InferenceCredentialError = CredentialError;
 export type InferenceCredentialError = CredentialError;
-
-interface CredentialSecretRow {
-  id: string;
-  workspace_id: string;
-  status: string;
-  expires_at: string | null;
-  encrypted_payload: unknown;
-  encryption_key_version: string;
-}
 
 // Always reads via the service-role client — credentials has RLS enabled
 // with zero policies (db/schemas/credentials.sql), so only the service role

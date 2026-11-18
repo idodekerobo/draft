@@ -14,7 +14,6 @@ const spec: AgentRunSpec = {
     scheduledTaskId: parseScheduledTaskId("55555555-5555-4555-8555-555555555555"),
     occurrenceAt: parseIsoTimestamp("2026-11-09T09:00:00.000Z"),
   },
-  actor: { type: "agent", runId: parseAgentRunId("11111111-1111-4111-8111-111111111111") },
   onBehalfOf: null,
   runtime: {
     type: "cloud",

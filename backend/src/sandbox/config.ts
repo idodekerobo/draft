@@ -10,9 +10,9 @@ export interface SandboxDeploymentConfig {
   provider: SandboxProviderConfig;
 }
 
-export type SandboxEnvironment = Readonly<Record<string, string | undefined>>;
+export type SandboxEnv = Readonly<Record<string, string | undefined>>;
 
-function required(env: SandboxEnvironment, name: string): string {
+function required(env: SandboxEnv, name: string): string {
   const value = env[name];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`${name} must not be empty`);
@@ -55,7 +55,7 @@ export function validateSandboxDeploymentConfig(
 
 /** Load only the configuration needed by the sandbox deployment boundary. */
 export function loadSandboxDeploymentConfig(
-  env: SandboxEnvironment = process.env,
+  env: SandboxEnv = process.env,
 ): SandboxDeploymentConfig {
   const baseUrl = required(env, "DRAFT_API_BASE_URL");
   let callbackUrl: string;

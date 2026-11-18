@@ -11,7 +11,7 @@ import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
 import * as organizations from "./organizations";
-import * as personTools from "./person-tools";
+import * as userTools from "./user-tools";
 import * as runs from "./runs";
 import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
@@ -26,7 +26,7 @@ import * as sessionTokens from "./session-tokens";
 import * as sessionTokensRotate from "./session-tokens-rotate";
 import * as sessionTokensRevoke from "./session-tokens-revoke";
 import * as sessions from "./sessions";
-import * as schedules from "./schedules";
+import * as routines from "./routines";
 import * as routineOptions from "./routine-options";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
@@ -49,19 +49,19 @@ export const routes = {
   "/onboarding-complete": { POST: onboarding.POST, OPTIONS },
   "/organizations": { POST: withCors(organizations.POST), OPTIONS },
   "/me/privacy": { PATCH: withCors(mePrivacy.PATCH), OPTIONS },
-  "/workspaces/:id/tools": { GET: withCors(personTools.toolsGET), OPTIONS },
-  "/workspaces/:id/tools/:name": { POST: withCors(personTools.toolPOST), OPTIONS },
+  "/workspaces/:id/tools": { GET: withCors(userTools.toolsGET), OPTIONS },
+  "/workspaces/:id/tools/:name": { POST: withCors(userTools.toolPOST), OPTIONS },
   "/context-exports/:token": { GET: workspaceContextExport.redeemGET },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
   "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), POST: withCors(connections.CHANNELS_POST), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
-  "/workspaces/:id/schedules": { GET: withCors(schedules.GET), POST: withCors(schedules.POST), OPTIONS },
+  "/workspaces/:id/schedules": { GET: withCors(routines.GET), POST: withCors(routines.POST), OPTIONS },
   "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },
-  "/workspaces/:id/schedules/:taskId": { PATCH: withCors(schedules.PATCH), DELETE: withCors(schedules.DELETE), OPTIONS },
-  "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(schedules.RUNS), OPTIONS },
-  "/workspaces/:id/schedules/:taskId/run": { POST: withCors(schedules.RUN), OPTIONS },
+  "/workspaces/:id/schedules/:taskId": { PATCH: withCors(routines.PATCH), DELETE: withCors(routines.DELETE), OPTIONS },
+  "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(routines.RUNS), OPTIONS },
+  "/workspaces/:id/schedules/:taskId/run": { POST: withCors(routines.RUN), OPTIONS },
   "/workspaces/:id/source-items": { POST: sourceItems.POST },
   "/workspaces/:id/github/install-sessions": { POST: withCors(githubInstall.createPOST), OPTIONS },
   "/workspaces/:id/github/install-sessions/:code": { GET: withCors(githubInstall.pollGET), OPTIONS },

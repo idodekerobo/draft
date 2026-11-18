@@ -13,14 +13,13 @@ import {
 import { join, resolve, dirname } from "path";
 import { homedir } from "os";
 import { getSkillManifestPath, getActiveProfile } from "./config";
+import type { AgentClientId } from "./sync/manifest";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export type Agent = "claude-code" | "codex";
-
 export interface ScannedSkill {
   name: string;
-  agent: Agent;
+  agent: AgentClientId;
   dirPath: string;
   files: string[];
   description: string;
@@ -30,7 +29,7 @@ export interface ScannedSkill {
 
 export interface ScannedMCP {
   name: string;
-  agent: Agent;
+  agent: AgentClientId;
   config: Record<string, unknown>;
 }
 
@@ -58,13 +57,13 @@ export interface SkillManifestSyncEntry {
 export interface SkillManifestEntry {
   id: string;
   name: string;
-  source_agent: Agent;
+  source_agent: AgentClientId;
   source_path: string;
   skill_dir_hash: string;
   added_at: string;
   approved_at: string | null;
   status: "pending" | "approved" | "conflict" | "tombstoned";
-  synced_to: Partial<Record<Agent, SkillManifestSyncEntry>>;
+  synced_to: Partial<Record<AgentClientId, SkillManifestSyncEntry>>;
   removed_at: string | null;
   /** Whether this entry was created by the user locally or shared via the team workspace. */
   kind: "personal" | "team";
@@ -78,16 +77,16 @@ export interface SkillManifest {
   min_reader_version: 1;
   skills: Record<string, SkillManifestEntry>;
   name_conflicts: Record<string, {
-    agents: Agent[];
+    agents: AgentClientId[];
     resolved: boolean;
-    authoritative_agent: Agent | null;
+    authoritative_agent: AgentClientId | null;
   }>;
 }
 
 export interface PendingSkillEntry {
   id: string;
   name: string;
-  source_agent: Agent;
+  source_agent: AgentClientId;
   source_path: string;
   skill_dir_hash: string;
   description: string;
@@ -140,7 +139,7 @@ export interface ScanResult {
 
 export interface ScanDirError {
   dir: string;
-  agent: Agent;
+  agent: AgentClientId;
   message: string;
 }
 
@@ -248,7 +247,7 @@ export function scanSkillDirectories(opts?: ScanSkillOpts): { skills: ScannedSki
   const skills: ScannedSkill[] = [];
   const errors: ScanDirError[] = [];
 
-  const scanDir = (dir: string, agent: Agent) => {
+  const scanDir = (dir: string, agent: AgentClientId) => {
     if (!existsSync(dir)) return;
     try {
       const entries = readdirSync(dir, { withFileTypes: true });
@@ -524,8 +523,8 @@ export function detectPending(opts?: ScanSkillOpts & { manifestPath?: string }):
   const conflicts: SameNameConflict[] = [];
   const conflictedNames = new Set<string>();
 
-  const check = (realDirs: Map<string, ScannedSkill>, agent: Agent) => {
-    const otherAgent: Agent = agent === "claude-code" ? "codex" : "claude-code";
+  const check = (realDirs: Map<string, ScannedSkill>, agent: AgentClientId) => {
+    const otherAgent: AgentClientId = agent === "claude-code" ? "codex" : "claude-code";
     const otherDirs = otherAgent === "claude-code" ? claudeRealDirs : codexRealDirs;
 
     for (const [name, skill] of realDirs) {
@@ -731,7 +730,7 @@ export function createSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
 
   const recordApprovedSkill = (
     skill: ScannedSkill,
-    targetAgent: Agent,
+    targetAgent: AgentClientId,
     linkPath: string,
     absoluteSource: string,
   ): void => {
@@ -762,7 +761,7 @@ export function createSymlinks(skills: ScannedSkill[], opts?: CreateSymlinksOpts
 
   for (const skill of skills) {
     const targetDir = skill.agent === "claude-code" ? codexDir : claudeDir;
-    const targetAgent: Agent = skill.agent === "claude-code" ? "codex" : "claude-code";
+    const targetAgent: AgentClientId = skill.agent === "claude-code" ? "codex" : "claude-code";
     const linkPath = join(targetDir, skill.name);
     const absoluteSource = resolve(skill.dirPath);
 
@@ -947,7 +946,7 @@ export function installTeamSkills(
   // silently adopt that slot, or the personal entry is left dangling
   // (approved, but its mirror reassigned) while the live symlink now belongs
   // to two manifest entries.
-  const isLivePersonalCollision = (name: string, linkPath: string, targetAgent: Agent): boolean => {
+  const isLivePersonalCollision = (name: string, linkPath: string, targetAgent: AgentClientId): boolean => {
     const checkEntry = (personalEntry: SkillManifestEntry | undefined): boolean => {
       if (!personalEntry || personalEntry.kind !== "personal" || personalEntry.status !== "approved" || personalEntry.removed_at !== null) return false;
       const personalSync = personalEntry.synced_to[targetAgent];
@@ -961,7 +960,7 @@ export function installTeamSkills(
     // Direct id lookup first, then a name scan — the `<agent>:<name>` id
     // convention isn't structurally guaranteed (same belt-and-suspenders
     // fallback isLiveTeamCollision uses).
-    const sourceAgent: Agent = targetAgent === "claude-code" ? "codex" : "claude-code";
+    const sourceAgent: AgentClientId = targetAgent === "claude-code" ? "codex" : "claude-code";
     if (checkEntry(manifest.skills[`${sourceAgent}:${name}`])) return true;
     for (const entry of Object.values(manifest.skills)) {
       if (entry.kind === "personal" && entry.name === name && checkEntry(entry)) return true;
@@ -1134,7 +1133,7 @@ function uninstallTeamSkillEntries(
 export interface PersonalSkillInput {
   name: string;
   /** The agent the skill is authored under (source side). */
-  agent: Agent;
+  agent: AgentClientId;
   sourcePath: string;
 }
 
@@ -1180,7 +1179,7 @@ export function installPersonalSkills(
   // enforced everywhere entries are written today, but isn't structurally
   // guaranteed, so fall back to a name-based scan before concluding "no
   // collision" (belt-and-suspenders).
-  const isLiveTeamCollision = (linkPath: string, name: string, targetAgent: Agent): boolean => {
+  const isLiveTeamCollision = (linkPath: string, name: string, targetAgent: AgentClientId): boolean => {
     const checkEntry = (teamEntry: SkillManifestEntry | undefined): boolean => {
       if (!teamEntry || teamEntry.kind !== "team" || teamEntry.status !== "approved" || teamEntry.removed_at !== null) return false;
       const teamSync = teamEntry.synced_to[targetAgent];
@@ -1202,7 +1201,7 @@ export function installPersonalSkills(
     const id = `${agent}:${name}`;
     const absoluteSource = resolve(sourcePath);
     const targetDir = agent === "claude-code" ? codexDir : claudeDir;
-    const targetAgent: Agent = agent === "claude-code" ? "codex" : "claude-code";
+    const targetAgent: AgentClientId = agent === "claude-code" ? "codex" : "claude-code";
     const linkPath = join(targetDir, name);
     const existing = manifest.skills[id];
 

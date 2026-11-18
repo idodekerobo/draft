@@ -17,7 +17,7 @@ export const ROUTINE_EVENTS = ROUTINE_EVENT_NAMES;
 export type { RoutineEventName };
 
 /** What a person lets a routine use beyond its defaults. */
-export interface RoutineEnvironmentConfig {
+export interface RoutineToolsetConfig {
   /** Built-in tools of the routine's harness, from the cloud list. */
   nativeTools: string[];
   /** Remote MCP servers the person connected, and which of their tools the routine may call. */
@@ -32,7 +32,7 @@ export interface AgentRoutineConfig {
   model: string | null;
   /** A reasoning effort the model accepts. Missing means the harness default. */
   reasoningEffort?: string;
-  environment?: RoutineEnvironmentConfig;
+  environment?: RoutineToolsetConfig;
   /** Also start a run when one of these happens. */
   events?: RoutineEventName[];
   /** False when the schedule is off and only triggers and Run now start a run. */
@@ -50,7 +50,7 @@ const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
 
 /** Checks an environment against what a cloud run may be given. Null means it is not valid. */
-export function validateRoutineEnvironment(value: unknown, harness: HarnessId): RoutineEnvironmentConfig | null {
+export function validateRoutineToolset(value: unknown, harness: HarnessId): RoutineToolsetConfig | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const { nativeTools = [], mcpServers = [] } = value as Record<string, unknown>;
   if (!Array.isArray(nativeTools) || !Array.isArray(mcpServers) || mcpServers.length > MAX_MCP_SERVERS) return null;
@@ -58,7 +58,7 @@ export function validateRoutineEnvironment(value: unknown, harness: HarnessId): 
   const allowedNative = CLOUD_NATIVE_TOOLS[harness] as ReadonlyArray<string>;
   if (!nativeTools.every((tool) => typeof tool === "string" && allowedNative.includes(tool))) return null;
 
-  const servers: RoutineEnvironmentConfig["mcpServers"] = [];
+  const servers: RoutineToolsetConfig["mcpServers"] = [];
   for (const server of mcpServers) {
     if (!server || typeof server !== "object") return null;
     const { connectionId, tools } = server as Record<string, unknown>;
@@ -80,7 +80,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   const harnessId = definition.id as HarnessId;
   if (model !== null && (typeof model !== "string" || !isKnownModel(definition.id, model))) return { ok: false, field: "model" };
   if (reasoningEffort != null && (typeof reasoningEffort !== "string" || !isEffortFor(definition.id, model, reasoningEffort))) return { ok: false, field: "reasoningEffort" };
-  const validEnvironment = environment == null ? undefined : validateRoutineEnvironment(environment, harnessId);
+  const validEnvironment = environment == null ? undefined : validateRoutineToolset(environment, harnessId);
   if (environment != null && !validEnvironment) return { ok: false, field: "environment" };
   if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
   if (onSchedule !== undefined && typeof onSchedule !== "boolean") return { ok: false, field: "onSchedule" };

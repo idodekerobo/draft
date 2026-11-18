@@ -93,15 +93,7 @@ export function cronTrigger(scheduledTaskId: string, occurrenceAt: string): Agen
   return { type: "cron", scheduledTaskId: parseScheduledTaskId(scheduledTaskId), occurrenceAt: parseIsoTimestamp(occurrenceAt) };
 }
 
-/**
- * Who did the thing. It is always the agent run, never a person: every write, message and tool call
- * a run makes is recorded against the run, so it is clear an agent did it.
- */
-export type AgentRunActor = { type: "agent"; runId: AgentRunId };
-
-export const agentActor = (runId: AgentRunId): AgentRunActor => ({ type: "agent", runId });
-
-/** Claude Code tools a run may be given. Which of them are safe in the cloud is decided by the cloud environment. */
+/** Claude Code tools a run may be given. Which of them are safe in the cloud is decided by the cloud toolset. */
 export const CLAUDE_NATIVE_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "Edit", "Write"] as const;
 export type ClaudeNativeTool = (typeof CLAUDE_NATIVE_TOOLS)[number];
 
@@ -132,7 +124,7 @@ export interface McpServerPermission {
   tools: "all" | ReadonlyArray<string>;
 }
 
-export interface AgentRunEnvironment {
+export interface AgentRunToolset {
   nativeTools: ReadonlyArray<NativeToolPermission>;
   mcpServers: ReadonlyArray<McpServerPermission>;
   skills: ReadonlyArray<SkillId>;
@@ -141,7 +133,7 @@ export interface AgentRunEnvironment {
 
 export type AgentRunRuntime =
   | { type: "local"; hostMachineId: HostMachineId }
-  | { type: "cloud"; environment: AgentRunEnvironment };
+  | { type: "cloud"; environment: AgentRunToolset };
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
@@ -156,7 +148,6 @@ export interface AgentRunSpec {
   network: "open" | "restricted";
   workspaceId: WorkspaceId;
   trigger: AgentRunTrigger;
-  actor: AgentRunActor;
   /**
    * The user whose connections and context the run may use, and who "self" is. This is authority lent to
    * the run, not the actor. Null for a workspace run on shared sources, which has no self.

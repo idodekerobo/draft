@@ -1,5 +1,5 @@
-import { agentActor, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type JsonSchema } from "draft-core/run-spec";
-import { cloudEnvironmentFor } from "draft-core/harnesses";
+import { cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type JsonSchema } from "draft-core/run-spec";
+import { cloudToolsetFor } from "draft-core/harnesses";
 
 export interface SummarizationRunSpecInput {
   id: string;
@@ -19,9 +19,8 @@ export function buildSummarizationRunSpec(input: SummarizationRunSpecInput): Age
     network: "restricted",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: cronTrigger(input.scheduledTaskId, input.occurrenceAt),
-    actor: agentActor(parseAgentRunId(input.id)),
     onBehalfOf: null,
-    runtime: { type: "cloud", environment: cloudEnvironmentFor("claude") },
+    runtime: { type: "cloud", environment: cloudToolsetFor("claude") },
     harness: "claude",
     model: null,
     reasoningEffort: null,

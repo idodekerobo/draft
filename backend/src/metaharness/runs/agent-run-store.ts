@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { ACTIVE_AGENT_RUN_STATUSES, agentActor, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostMachineId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isHarnessId } from "draft-core/harnesses";
 import { isLoggedCommand } from "../../observability/logged-commands";
@@ -22,7 +22,7 @@ const nativeToolSchema = z.discriminatedUnion("harness", [
   z.object({ harness: z.literal("codex"), tool: z.enum(CODEX_NATIVE_TOOLS) }),
 ]);
 
-const environmentSchema = z.object({
+const toolsetSchema = z.object({
   nativeTools: z.array(nativeToolSchema),
   mcpServers: z.array(
     z.object({
@@ -36,7 +36,7 @@ const environmentSchema = z.object({
 
 const runtimeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("local"), hostMachineId: z.string().transform(parseHostMachineId) }),
-  z.object({ type: z.literal("cloud"), environment: environmentSchema, network: z.enum(["open", "restricted"]).optional() }),
+  z.object({ type: z.literal("cloud"), environment: toolsetSchema, network: z.enum(["open", "restricted"]).optional() }),
 ]);
 
 const toolNames = DRAFT_TOOLS.map((tool) => tool.name) as [string, ...string[]];
@@ -120,7 +120,6 @@ export function specFromRow(row: AgentRunRow): AgentRunSpec {
     network: storedRuntime.type === "cloud" ? storedRuntime.network ?? "restricted" : "restricted",
     workspaceId: parseWorkspaceId(row.workspace_id),
     trigger: triggerSchema.parse(row.trigger),
-    actor: agentActor(parseAgentRunId(row.id)),
     onBehalfOf: row.on_behalf_of_user_id ? parseUserId(row.on_behalf_of_user_id) : null,
     runtime: storedRuntime.type === "cloud" ? { type: "cloud", environment: storedRuntime.environment } : storedRuntime,
     harness: row.harness,

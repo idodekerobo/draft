@@ -8,9 +8,9 @@ export interface FlyProviderConfig {
   region: string;
 }
 
-export type FlyEnvironment = Readonly<Record<string, string | undefined>>;
+export type FlyEnv = Readonly<Record<string, string | undefined>>;
 
-function required(env: FlyEnvironment, name: string): string {
+function required(env: FlyEnv, name: string): string {
   const value = env[name];
   if (value === undefined || value.trim().length === 0) throw new Error(`${name} must not be empty`);
   return value;
@@ -26,7 +26,7 @@ export function validateFlyConfig(config: FlyProviderConfig): FlyProviderConfig 
   return { ...config };
 }
 
-export function loadFlyConfig(env: FlyEnvironment): FlyProviderConfig {
+export function loadFlyConfig(env: FlyEnv): FlyProviderConfig {
   return validateFlyConfig({
     kind: "fly",
     apiToken: required(env, "FLY_API_TOKEN"),

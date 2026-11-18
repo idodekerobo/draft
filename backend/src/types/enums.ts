@@ -95,17 +95,6 @@ export type ScheduledTaskType =
 
 export type ScheduleKind = "cron" | "interval" | "once";
 
-export type SynthesisRunStatus =
-  | "queued"
-  | "preparing"
-  | "running"
-  | "validating"
-  | "committing"
-  | "succeeded"
-  | "failed"
-  | "stale"
-  | "cancelled";
-
 export type SynthesisRunTriggerType =
   | "schedule"
   | "source_threshold"

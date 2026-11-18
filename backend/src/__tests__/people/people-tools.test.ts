@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { agentActor, parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
@@ -45,7 +45,6 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
     network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "system", reason: "manual" },
-  actor: agentActor(parseAgentRunId(RUN)),
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
   runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude",

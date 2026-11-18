@@ -6,7 +6,7 @@ import type { SandboxDeploymentConfig } from "../../sandbox";
 import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
 
 mock.module("../../db/client", () => ({ serviceClient: fakeClient(fakeDb()) }));
-const { runRoutineNow } = await import("../../schedules/service");
+const { runRoutineNow } = await import("../../routines/service");
 
 type Dispatch = typeof dispatchAgentRoutine;
 type Outcome = Awaited<ReturnType<Dispatch>>;

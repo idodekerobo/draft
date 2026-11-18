@@ -2,7 +2,7 @@ import { liveTextTopic, LIVE_TEXT_EVENT, type LiveTextChunk } from "draft-core/l
 import { ApprovalBroker } from "../approvals";
 import type { ControlInput } from "../controls";
 import type { ForwardedLine } from "../forwarder";
-import { findRunnerBin } from "../find-bin";
+import { findHarnessBin } from "../find-bin";
 import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "../harness-driver";
 import type { PendingInput } from "../input-delivery";
 import { LiveTextRelay } from "../live-text-relay";
@@ -207,7 +207,7 @@ export class CodexDriver implements HarnessDriver {
     this.attachFailed = false;
     try {
       const state = this.host.state();
-      const bin = findRunnerBin("codex");
+      const bin = findHarnessBin("codex");
       if (!bin) throw new Error("Codex is not installed");
       const connection = await resumeConnection({ bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null, effort: state.reasoningEffort ?? null });
       this.bind(connection);
@@ -548,7 +548,7 @@ const launcher: HarnessLauncher = {
   id: "codex",
   launchFailedMessage: "Could not start Codex.",
   async check() {
-    const bin = findRunnerBin("codex");
+    const bin = findHarnessBin("codex");
     if (!bin) return { ok: false, error: CODEX_MISSING_MESSAGE };
     if ((await readCodexAuth(bin)) === "signed_out") return { ok: false, error: CODEX_SIGNED_OUT_MESSAGE };
     return { ok: true, bin, version: await readCodexVersion(bin) };

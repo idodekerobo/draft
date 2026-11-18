@@ -10,7 +10,7 @@ export interface NewIdentity {
 }
 
 /** Who is adding the person. A run is the actor and a user lent it authority. A person is both. */
-export type CreateActor =
+export type PersonCreator =
   | { type: "run"; runId: string; onBehalfOf: string | null }
   | { type: "user"; userId: string; isAdmin: boolean };
 
@@ -42,7 +42,7 @@ function closeName(a: string, b: string): boolean {
  * so synthesis cannot add them back every night; a close name among current people returns candidates unless
  * `force` is set. `force` never skips the identity or rejected checks.
  */
-export async function createPerson(client: SupabaseClient, workspaceId: string, actor: CreateActor, input: CreatePersonInput): Promise<CreatePersonResult> {
+export async function createPerson(client: SupabaseClient, workspaceId: string, createdBy: PersonCreator, input: CreatePersonInput): Promise<CreatePersonResult> {
   for (const identity of input.identities ?? []) {
     const known = await findPersonByIdentity(client, workspaceId, identity.provider, identity.externalId);
     if (!known) continue;
@@ -61,18 +61,18 @@ export async function createPerson(client: SupabaseClient, workspaceId: string, 
   const current = similar.filter((row) => row.status !== "rejected");
   if (current.length > 0 && !input.force) return { created: false, candidates: await viewPeople(client, workspaceId, current) };
 
-  const byRun = actor.type === "run";
+  const byRun = createdBy.type === "run";
   const { data, error } = await client
     .from("people")
     .insert({
       workspace_id: workspaceId,
       display_name: input.displayName.trim(),
       // A teammate's addition waits for an admin. An admin's addition is already approved.
-      status: !byRun && actor.isAdmin ? "active" : "pending",
+      status: !byRun && createdBy.isAdmin ? "active" : "pending",
       created_by: byRun ? "agent" : "user",
       ...(byRun
-        ? { created_by_run_id: actor.runId, on_behalf_of_user_id: actor.onBehalfOf }
-        : { created_by_user_id: actor.userId }),
+        ? { created_by_run_id: createdBy.runId, on_behalf_of_user_id: createdBy.onBehalfOf }
+        : { created_by_user_id: createdBy.userId }),
       evidence: input.evidence,
     })
     .select("*");

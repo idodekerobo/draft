@@ -22,10 +22,10 @@ const PANE_WATCH_MS = 2_000;
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
 
-const running = new Map<string, SessionRunner>();
+const running = new Map<string, SessionHost>();
 
 /** Keeps one session alive on this computer: heartbeat, inputs, posting. The driver does what is specific to the harness. */
-class SessionRunner {
+class SessionHost {
   private readonly driver: HarnessDriver;
   private stopHeartbeat: (() => void) | null = null;
   private successor: HostSessionState | null = null;
@@ -217,7 +217,7 @@ class SessionRunner {
   private reportInputError(what: string, error: unknown): void {
     const action = hostFailureAction(error);
     if (action === "pause") this.suspend();
-    // Only a session that is gone stops the runner. Other stop codes can come from a mismatched login or host.
+    // Only a session that is gone stops the host. Other stop codes can come from a mismatched login or host.
     else if (action === "stop" && error instanceof ServerError && (error.code === "session_ended" || error.code === "session_not_found")) this.abandon();
     else if (action === "retry") console.error(`[live-session] ${what} failed`, error);
   }
@@ -269,7 +269,7 @@ class SessionRunner {
     this.stopWatching();
     this.persist({ ended: true });
     saveState(this.successor);
-    new SessionRunner(this.successor).start();
+    new SessionHost(this.successor).start();
     this.driver.clearRotation();
     return true;
   }
@@ -415,7 +415,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   }
 
   saveState(state);
-  new SessionRunner(state).start();
+  new SessionHost(state).start();
   return { ok: true, sessionId };
 }
 
@@ -472,7 +472,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
   }
 
   saveState(state);
-  new SessionRunner(state).start();
+  new SessionHost(state).start();
   return { ok: true };
 }
 
@@ -480,7 +480,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
 export async function resumeLiveSessions(): Promise<void> {
   for (const state of loadStates()) {
     if (running.has(state.sessionId)) continue;
-    const runner = new SessionRunner(state);
+    const runner = new SessionHost(state);
     runner.start();
     if (!state.ended && (await runner.isAlive())) await runner.uploadIfChanged();
   }

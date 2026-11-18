@@ -5,6 +5,7 @@ import { CURRENT_CREDENTIAL_KEY_VERSION, CredentialError, decryptCredentialPaylo
 /** The columns of a credentials row that the status check and the decrypt need. */
 export interface CredentialSecretRow {
   id: string;
+  workspace_id?: string;
   status: string;
   expires_at: string | null;
   encrypted_payload: unknown;

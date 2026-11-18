@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { agentActor, parseAgentRunId, parseContextVersionId, parseScheduledTaskId, parseIsoTimestamp, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentRunId, parseContextVersionId, parseScheduledTaskId, parseIsoTimestamp, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
 import { createSlackTools } from "../../../metaharness/tools/definitions/slack";
 import { invokeTool } from "../../../metaharness/tools/invoke-tool";
@@ -15,7 +15,7 @@ const run = (permissions: AnyDraftToolPermission[]): AgentRunSpec => ({
   id: parseAgentRunId(RUN), kind: "routine", network: "open",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
-  actor: agentActor(parseAgentRunId(RUN)), onBehalfOf: parseUserId(OWNER),
+  onBehalfOf: parseUserId(OWNER),
   runtime: { type: "cloud", environment: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
   harness: "claude", model: null, instructions: "", inputs: { contextVersionId: parseContextVersionId("77777777-7777-4777-8777-777777777777") },
   permissions, output: { type: "text" },

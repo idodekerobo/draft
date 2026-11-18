@@ -2,9 +2,9 @@ import { StringDecoder } from "node:string_decoder";
 import { classifyFailureChunk } from "draft-core/harnesses/failure";
 import type { FailureCategory, RunnerFailureCode } from "draft-core/harnesses/types";
 import type { RunnerManifest } from "draft-core/run-manifest";
-import { runnerFaceFor } from "./faces";
 import { runnerLog, sanitizeReason } from "./log";
 import { runHarness } from "./process";
+import { runnerSideFor } from "./sides";
 
 // Routine runs stream every stream-json line to the backend as it appears, so
 // the session view fills in while the run is going.
@@ -63,7 +63,7 @@ export interface RoutineEnd {
 export type RoutinePost = (result: unknown) => Promise<void>;
 
 export function routineFailureCode(input: { timedOut: boolean; resultIsError: boolean; exitCode: number | null; signal: NodeJS.Signals | null; harness?: "claude" | "codex" }): RunnerFailureCode {
-  const codes = runnerFaceFor(input.harness ?? "claude").failureCodes;
+  const codes = runnerSideFor(input.harness ?? "claude").failureCodes;
   if (input.timedOut) return "timeout";
   if (input.resultIsError) return codes.error;
   if (input.exitCode !== 0 || input.signal !== null) return codes.exit;
@@ -79,7 +79,7 @@ export async function runStream(
   post: RoutinePost,
 ): Promise<RoutineEnd> {
   const { StringDecoder } = await import("node:string_decoder");
-  const face = runnerFaceFor(manifest.harness);
+  const side = runnerSideFor(manifest.harness);
   const reader = new StreamLineReader();
   const decoder = new StringDecoder("utf8");
   let queue: RoutineLine[] = [];
@@ -106,7 +106,7 @@ export async function runStream(
     for (const line of lines) {
       if ("raw" in line) {
         queuedBytes += Buffer.byteLength(line.raw);
-        resultLine = face.resultOfLine(line.raw) ?? resultLine;
+        resultLine = side.resultOfLine(line.raw) ?? resultLine;
       }
       queue.push(line);
     }
@@ -134,8 +134,8 @@ export async function runStream(
   const finished = resultLine as { is_error?: boolean; subtype?: string } | null;
   const ok = !timedOut && finished !== null && finished.is_error !== true && childExit.code === 0;
   const error = ok ? undefined : routineFailureCode({ timedOut, resultIsError: finished?.is_error === true, exitCode: childExit.code, signal: childExit.signal, harness: manifest.harness });
-  const authJson = face.refreshedLogin();
-  runnerLog(face.logNames.finished, {
+  const authJson = side.refreshedLogin();
+  runnerLog(side.logNames.finished, {
     run_id: runId,
     exit_code: childExit.code,
     signal: childExit.signal,

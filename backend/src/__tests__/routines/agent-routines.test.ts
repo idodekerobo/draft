@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
-import { personCreator } from "../../schedules/creator";
+import { personCreator } from "../../routines/creator";
 
 let db: FakeDb;
 mock.module("../../db/client", () => ({ serviceClient: { from: (t: string) => fakeClient(db).from(t), rpc: () => ({}) } }));
 
-const { createAgentRoutine, getRoutineTask, listRoutineRuns, listConnectedProviders, listRoutines, updateRoutine } = await import("../../schedules/service");
+const { createAgentRoutine, getRoutineTask, listRoutineRuns, listConnectedProviders, listRoutines, updateRoutine } = await import("../../routines/service");
 
 const config = { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude" as const, model: null };
 const daily = { schedule: { preset: "daily" as const, time: "09:00", timezone: "UTC" } };
@@ -109,7 +109,7 @@ describe("agent routines", () => {
     const runs = await listRoutineRuns("ws-1", taskId);
     expect(runs!.runs.map((r) => [r.id, r.status])).toEqual([["c", "running"], ["b", "failed"], ["a", "completed"]]);
     expect(runs!.nextCursor).toBeNull();
-    const one = await listRoutineRuns("ws-1", taskId, { runId: "a" });
+    const one = await listRoutineRuns("ws-1", taskId, { sessionId: "a" });
     expect(one!.runs.map((r) => r.id)).toEqual(["a"]);
   });
 
@@ -125,7 +125,7 @@ describe("agent routines", () => {
     const runs = await listRoutineRuns("ws-1", taskId);
     expect(runs!.runs.map((r) => [r.id, r.startedBy])).toEqual([
       ["c", { type: "event", event: "github.pull_request_merged" }],
-      ["b", { type: "run_now" }],
+      ["b", { type: "manual" }],
       ["a", { type: "schedule" }],
     ]);
   });

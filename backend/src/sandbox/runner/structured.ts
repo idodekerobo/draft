@@ -2,10 +2,10 @@ import { createWriteStream } from "node:fs";
 import { classifyFailureChunk } from "draft-core/harnesses/failure";
 import type { FailureCategory, RunnerFailureCode, StructuredResult } from "draft-core/harnesses/types";
 import type { RunnerManifest } from "draft-core/run-manifest";
-import { runnerFaceFor } from "./faces";
 import { buildFailureDiagnostics, type FinalDiagnosticInput } from "./failure";
 import { runnerLog } from "./log";
 import { runHarness } from "./process";
+import { runnerSideFor } from "./sides";
 
 const SCRATCH_STDOUT_PATH = "/run/scratch/claude.stdout.json";
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
@@ -29,8 +29,8 @@ export async function runStructured(
   runId: string,
   scratchStdoutPath: string = SCRATCH_STDOUT_PATH,
 ): Promise<StructuredRunResult> {
-  const face = runnerFaceFor(manifest.harness);
-  const reader = face.structured;
+  const side = runnerSideFor(manifest.harness);
+  const reader = side.structured;
   if (!reader) throw new Error(`${manifest.harness} cannot give a structured result`);
   const startedAt = Date.now();
   const stdoutFile = createWriteStream(scratchStdoutPath, { flags: "wx", mode: 0o600 });
@@ -80,7 +80,7 @@ export async function runStructured(
   };
   const failure = buildFailureDiagnostics(diagnosticsInput);
   const success = failure === null;
-  runnerLog(face.logNames.finished, {
+  runnerLog(side.logNames.finished, {
     run_id: runId,
     elapsed_ms: Date.now() - startedAt,
     exit_code: childExit.code,

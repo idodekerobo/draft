@@ -101,16 +101,16 @@ if (taskId) {
   check("routines.update answers with the change saved", updated.body.routine?.title === "Proof: MCP routine (edited)" && !(updated.body.routine.agent.events?.length), updated.ok ? "" : updated.text);
 
   if (!skipRun) {
-    const started = await call<{ runId: string }>("routines.run", { taskId });
-    check("routines.run answers with a run id", started.ok && !!started.body.runId, started.ok ? "" : started.text);
+    const started = await call<{ sessionId: string }>("routines.run", { taskId });
+    check("routines.run answers with a session id", started.ok && !!started.body.sessionId, started.ok ? "" : started.text);
     let run: Run | undefined;
-    for (let attempt = 0; attempt < 72 && started.body.runId; attempt++) {
-      run = (await call<{ run: Run }>("routines.runs", { taskId, runId: started.body.runId })).body.run;
+    for (let attempt = 0; attempt < 72 && started.body.sessionId; attempt++) {
+      run = (await call<{ run: Run }>("routines.runs", { taskId, sessionId: started.body.sessionId })).body.run;
       if (run && run.status !== "running") break;
       await Bun.sleep(5_000);
     }
-    check("the run finishes, started by Run now", run?.status === "completed" && run.startedBy.type === "run_now", `${run?.status}: ${run?.result ?? run?.skipReason ?? ""}`);
-    const transcript = await call<{ transcript: { lines: string[] } }>("routines.runs", { taskId, runId: started.body.runId, transcript: true });
+    check("the run finishes, started by Run now", run?.status === "completed" && run.startedBy.type === "manual", `${run?.status}: ${run?.result ?? run?.skipReason ?? ""}`);
+    const transcript = await call<{ transcript: { lines: string[] } }>("routines.runs", { taskId, sessionId: started.body.sessionId, transcript: true });
     check("routines.runs { transcript: true } returns the steps", (transcript.body.transcript?.lines.length ?? 0) > 0, transcript.body.transcript?.lines.slice(-1)[0]?.slice(0, 120));
   }
 

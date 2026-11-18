@@ -1,4 +1,4 @@
-import { validateAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
+import { validateAgentRoutineConfig, type AgentRoutineConfig } from "./config";
 import type { RoutineEditability } from "../scheduling/routine-registry";
 import { RoutinePatch, RoutineWhen } from "draft-core/routines";
 

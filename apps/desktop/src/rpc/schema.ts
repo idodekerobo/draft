@@ -391,7 +391,7 @@ export type AppRPCType = {
       openLiveSessionInTerminal: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
       revealLiveSessionFolder: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
-      /** Detect which CLI runners are installed. */
+      /** Detect which CLI harnesses are installed. */
       /** Whether Codex is installed and signed in on this computer. */
       getCodexStatus: { params: void; response: { installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null } };
       /** Opens the browser sign-in, or with `deviceCode` returns a link and a one-time code to enter there. The caller polls getCodexStatus. */
@@ -406,7 +406,7 @@ export type AppRPCType = {
       cancelRoutineCodexLogin: { params: void; response: void };
       /** Opens the user's terminal app running `claude`, whose first run walks through signing in. */
       openClaudeSignIn: { params: void; response: ActionResult };
-      getAvailableRunners: { params: void; response: { runners: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
+      getAvailableHarnesses: { params: void; response: { harnesses: Array<{ name: "claude" | "codex"; installed: boolean; auth: "signed_in" | "signed_out" | "unknown"; version: string | null }> } };
 
       /** Check whether the active workspace already has a bootstrapped context version — used to auto-skip the cloud-bootstrap onboarding step. */
       getWorkspaceContextStatus: { params: void; response: { hasContext: boolean } };

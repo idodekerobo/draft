@@ -1,5 +1,5 @@
 import { GUI_PATH, capture } from "../../../exec";
-import { findRunnerBin } from "../find-bin";
+import { findHarnessBin } from "../find-bin";
 import { readCodexAuth, readCodexVersion, type CodexAuth } from "./codex-check";
 
 export interface CodexStatus {
@@ -25,7 +25,7 @@ export function parseDeviceAuth(output: string): { url: string; code: string } |
 let login: { proc: ReturnType<typeof Bun.spawn> } | null = null;
 
 export async function getCodexStatus(): Promise<CodexStatus> {
-  const bin = findRunnerBin("codex");
+  const bin = findHarnessBin("codex");
   if (!bin) return { installed: false, auth: "unknown", version: null };
   const [auth, version] = await Promise.all([readCodexAuth(bin), readCodexVersion(bin)]);
   return { installed: true, auth, version };
@@ -38,7 +38,7 @@ export async function getCodexStatus(): Promise<CodexStatus> {
  * and the person's own login is not touched.
  */
 export async function startCodexLogin(options: { deviceCode: boolean }, codexHome?: string): Promise<CodexLoginStart> {
-  const bin = findRunnerBin("codex");
+  const bin = findHarnessBin("codex");
   if (!bin) return { ok: false, error: "Codex is not installed on this computer." };
   cancelCodexLogin();
 
@@ -86,7 +86,7 @@ export function cancelCodexLogin(): void {
 }
 
 export async function codexLogout(): Promise<{ ok: true } | { ok: false; error: string }> {
-  const bin = findRunnerBin("codex");
+  const bin = findHarnessBin("codex");
   if (!bin) return { ok: false, error: "Codex is not installed on this computer." };
   cancelCodexLogin();
   try {

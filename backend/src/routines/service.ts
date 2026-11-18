@@ -17,7 +17,7 @@ import {
   type ParsedPreset,
   type Weekday,
 } from "../scheduling/presets";
-import { parseAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
+import { parseAgentRoutineConfig, type AgentRoutineConfig } from "./config";
 import {
   ROUTINE_TASK_TYPES,
   agentRoutineDefinition,
@@ -45,7 +45,7 @@ export interface RoutineLastRun {
 
 export type RoutineRunStatus = "running" | "completed" | "failed" | "skipped";
 
-export type RoutineRunStart = { type: "schedule" } | { type: "run_now" } | { type: "event"; event: RoutineEventName };
+export type RoutineRunStart = { type: "schedule" } | { type: "manual" } | { type: "event"; event: RoutineEventName };
 
 export interface RoutineRun {
   id: string;
@@ -194,7 +194,7 @@ type RunRow = Pick<SessionRow, "id" | "status" | "end_reason" | "started_at" | "
 /** Read from the run's idempotency key, which dispatch writes as "<task>:<occurrence>", "<task>:manual:<id>" or "<task>:<event>:<id>". */
 function startedBy(row: RunRow): RoutineRunStart {
   const rest = row.idempotency_key?.slice(row.scheduled_task_id.length + 1) ?? "";
-  if (rest.startsWith("manual:")) return { type: "run_now" };
+  if (rest.startsWith("manual:")) return { type: "manual" };
   const event = ROUTINE_EVENT_NAMES.find((name) => rest.startsWith(`${name}:`));
   return event ? { type: "event", event } : { type: "schedule" };
 }
@@ -658,13 +658,13 @@ function pickLogged(task: ScheduledTaskRow) {
 const RUN_HISTORY_LIMIT = 50;
 
 /**
- * One routine's runs, newest first, a page at a time; or, with `runId`, just that run, however old. Null when the
+ * One routine's runs, newest first, a page at a time; or, with `sessionId`, just that run, however old. Null when the
  * routine does not exist in this workspace.
  */
 export async function listRoutineRuns(
   workspaceId: string,
   taskId: string,
-  options: { before?: Cursor | null; runId?: string; viewerId?: string | null } = {},
+  options: { before?: Cursor | null; sessionId?: string; viewerId?: string | null } = {},
 ): Promise<{ runs: RoutineRun[]; nextCursor: string | null } | null> {
   const { data: task, error: taskError } = await serviceClient
     .from("scheduled_tasks")
@@ -679,7 +679,7 @@ export async function listRoutineRuns(
   if (options.viewerId !== undefined && !routineVisibleTo(task as Pick<ScheduledTaskRow, "visibility" | "created_by_user_id">, options.viewerId)) return null;
 
   let query = serviceClient.from("sessions").select(RUN_COLUMNS).eq("workspace_id", workspaceId).eq("scheduled_task_id", taskId);
-  if (options.runId) query = query.eq("id", options.runId);
+  if (options.sessionId) query = query.eq("id", options.sessionId);
   else if (options.before) query = query.or(olderThan("started_at", options.before));
   const { data, error } = await query
     .order("started_at", { ascending: false })
@@ -695,7 +695,7 @@ export async function listRoutineRuns(
   const last = rows[rows.length - 1];
   return {
     runs: await withSkipReasons(workspaceId, rows.map((row) => ({ ...toRoutineRun(row), result: results.get(runBySession.get(row.id) ?? "") ?? null }))),
-    nextCursor: !options.runId && rows.length === RUN_HISTORY_LIMIT && last ? formatCursor(last.started_at, last.id) : null,
+    nextCursor: !options.sessionId && rows.length === RUN_HISTORY_LIMIT && last ? formatCursor(last.started_at, last.id) : null,
   };
 }
 

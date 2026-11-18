@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readRunTranscript } from "../../schedules/routine-run-detail";
+import { readRunTranscript } from "../../routines/run-detail";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const event = (seq: number, kind: string, payload: Record<string, unknown>) => ({ session_id: "s-1", workspace_id: "ws-1", seq, kind, payload });

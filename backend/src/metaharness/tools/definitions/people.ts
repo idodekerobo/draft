@@ -101,11 +101,11 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
       if (limited) return limited;
       await syncMembers(client, workspaceId);
 
-      const actor =
+      const createdBy =
         caller.type === "run"
           ? ({ type: "run", runId: caller.run.id, onBehalfOf: caller.run.onBehalfOf } as const)
           : ({ type: "user", userId: caller.userId, isAdmin: await isAdmin(client, caller.userId) } as const);
-      const result = await createPerson(client, workspaceId, actor, input);
+      const result = await createPerson(client, workspaceId, createdBy, input);
       // A new pending person is news for the admins. A failed message never fails the add.
       if (result.created && result.person.status === "pending") {
         try {
