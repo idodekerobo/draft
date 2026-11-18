@@ -31,6 +31,8 @@ function toCodexItem(item: ExecItem): CodexItem | null {
   switch (item.type) {
     case "agent_message":
       return { type: "agentMessage", id, text: item.text };
+    case "plan":
+      return { type: "plan", id, text: item.text };
     case "reasoning":
       return { type: "reasoning", id, summary: item.text ? [item.text] : [] };
     case "command_execution":

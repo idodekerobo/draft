@@ -61,6 +61,7 @@ export function itemEvents(item: CodexItem): Pending[] {
       return text ? [{ kind: "user_message", payload: clip(text, TEXT_MAX_CHARS) }] : [];
     }
     case "agentMessage":
+    case "plan":
       return item.text?.trim() ? [{ kind: "assistant_text", payload: clip(item.text.trim(), TEXT_MAX_CHARS) }] : [];
     case "reasoning": {
       const text = [...(item.summary ?? []), ...(item.content ?? []).filter((part): part is string => typeof part === "string")].join("\n").trim();
