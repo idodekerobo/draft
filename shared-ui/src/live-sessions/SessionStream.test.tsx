@@ -40,6 +40,10 @@ describe("SessionStream", () => {
     const summary = container.querySelector(".ui-stream__item--agent_message summary")!;
     expect(summary.textContent).toContain("Agent");
     expect(summary.textContent).toContain("@test-updater finished");
+    expect(container.querySelector(".ui-stream__agent-body")).toBeNull();
+    const details = container.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     expect(container.querySelector(".ui-stream__agent-body strong")?.textContent).toBe("pass");
   });
 
@@ -84,7 +88,14 @@ describe("SessionStream", () => {
     expect(screen.getByText("Maya")).toBeTruthy();
     expect(container.querySelector("strong")?.textContent).toBe("two");
     expect(screen.getByText("Bash")).toBeTruthy();
+    expect(container.textContent).not.toContain("a.txt");
+    const details = container.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     expect(container.textContent).toContain("a.txt");
+    details.open = false;
+    fireEvent(details, new Event("toggle"));
+    expect(container.querySelector("pre")).toBeNull();
   });
 
   it("puts a teammate's message on the left with their name, and hides the label on the viewer's own", () => {
@@ -151,6 +162,10 @@ describe("SessionStream", () => {
       />,
     );
     expect(screen.getAllByText("Sub-agent")).toHaveLength(1);
+    expect(container.querySelector(".ui-stream__nested")).toBeNull();
+    const details = container.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     expect(container.querySelectorAll(".ui-stream__nested > li")).toHaveLength(2);
   });
 
@@ -165,6 +180,10 @@ describe("SessionStream", () => {
     const title = screen.getByText("Scan inbox");
     expect(title.className).toContain("ui-stream__summary--title");
     expect(container.querySelectorAll("details")).toHaveLength(1);
+    expect(container.querySelector(".ui-stream__nested")).toBeNull();
+    const details = container.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     expect(container.querySelector(".ui-stream__nested")?.textContent).toContain("inner note");
   });
 
@@ -233,4 +252,14 @@ describe("SessionStream", () => {
     expect(screen.getByText("Write it")).toBeTruthy();
     expect(container.querySelector("details")?.hasAttribute("open")).toBe(true);
   });
+});
+
+it("leaves thinking bodies unmounted until opened", () => {
+  const { container } = render(<Stream events={[event("thinking", { text: "hidden reasoning" })]} />);
+  expect(screen.getByText("Thinking")).toBeTruthy();
+  expect(screen.queryByText("hidden reasoning")).toBeNull();
+  const details = container.querySelector("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  expect(screen.getByText("hidden reasoning")).toBeTruthy();
 });

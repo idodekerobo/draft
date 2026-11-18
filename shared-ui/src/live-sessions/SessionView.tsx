@@ -11,6 +11,7 @@ import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
+import { DisclosureState, revealPath, useSessionViewStates, viewStateKey } from "./view-state";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
 import { getHarness, harnessModes, type HarnessId } from "draft-core/harnesses";
@@ -31,7 +32,7 @@ import { teamRoster, type TeamMember } from "./team-roster";
 import { prependToDraft } from "./drafts";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionPresence } from "./useSessionPresence";
-import { useSessionStream } from "./useSessionStream";
+import { useSessionStream, type SessionStreamState } from "./useSessionStream";
 import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
@@ -39,8 +40,6 @@ import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type Live
 
 const SKIPPED_MESSAGE = "The user skipped this.";
 
-/** Scroll offset per session, kept while the app runs; null means the user was following the latest message. */
-const scrollMemory = new Map<string, number | null>();
 const STOPPING_MS = 3_000;
 const HIGHLIGHT_MS = 2_000;
 const COPIED_MS = 1_500;
@@ -179,7 +178,12 @@ export function SessionView(props: SessionViewProps) {
   );
 }
 
-function LoadedSession({
+function LoadedSession(props: SessionViewProps) {
+  const stream = useSessionStream(props.api, props.sessionId);
+  return <SessionContents key={stream.viewer.id} {...props} stream={stream} />;
+}
+
+function SessionContents({
   api,
   sessionId,
   back,
@@ -194,8 +198,29 @@ function LoadedSession({
   devOnly = false,
   agentDefaults,
   focusSeq = null,
-}: SessionViewProps) {
-  const { session, viewer, events, inputs: waiting, refresh } = useSessionStream(api, sessionId);
+  stream,
+}: SessionViewProps & { stream: SessionStreamState }) {
+  const { session, viewer, events, inputs: waiting, refresh } = stream;
+  const viewStates = useSessionViewStates();
+  const stateKey = viewStateKey(sessionId, viewer.id);
+  const savedView = useMemo(() => {
+    viewStates.setViewer(viewer.id);
+    return viewStates.get(stateKey);
+  }, [viewStates, stateKey, viewer.id]);
+  const [expanded, setExpanded] = useState(savedView.expanded);
+  const updateExpanded = useCallback((next: Readonly<Record<number, boolean>>) => {
+    viewStates.get(stateKey).expanded = next;
+    setExpanded(next);
+  }, [viewStates, stateKey]);
+  const changeDisclosure = useCallback((seq: number, open: boolean) => {
+    setExpanded((current) => {
+      const next = { ...current, [seq]: open };
+      viewStates.get(stateKey).expanded = next;
+      return next;
+    });
+  }, [viewStates, stateKey]);
+  const disclosureState = useMemo(() => ({ expanded, change: changeDisclosure }), [expanded, changeDisclosure]);
+  const linkFor = useCallback((seq: number) => messageUrl(shareBaseUrl ?? "", sessionId, seq), [shareBaseUrl, sessionId]);
   const watchers = presenceLine(useSessionPresence(api, sessionId, viewer));
   const viewReported = useRef(false);
   useEffect(() => {
@@ -243,20 +268,20 @@ function LoadedSession({
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (el) scrollMemory.set(sessionId, scrollState.isNearBottom ? null : el.scrollTop);
-  }, [sessionId, scrollRef, scrollState]);
+    if (el) viewStates.get(stateKey).scroll = scrollState.isNearBottom ? null : el.scrollTop;
+  }, [viewStates, stateKey, scrollRef, scrollState]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const saved = scrollMemory.get(sessionId);
+    const saved = savedView.scroll;
     if (saved == null) {
       el.scrollTop = el.scrollHeight;
       return;
     }
     stopScroll();
     el.scrollTop = saved;
-  }, [sessionId, scrollRef, stopScroll]);
+  }, [sessionId, savedView, scrollRef, stopScroll]);
 
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const wantedSeq = useRef<number | null>(null);
@@ -264,7 +289,14 @@ function LoadedSession({
   // A long session arrives in pages, so the linked message can show up after the first render.
   const scrollToWanted = useCallback(() => {
     const seq = wantedSeq.current;
-    const target = seq === null ? null : scrollRef.current?.querySelector(`#${messageDomId(seq)}`);
+    if (seq === null) return;
+    const path = revealPath(logItems, seq);
+    if (!path) return;
+    if (path.some((parent) => expanded[parent] !== true)) {
+      updateExpanded({ ...expanded, ...Object.fromEntries(path.map((parent) => [parent, true])) });
+      return;
+    }
+    const target = scrollRef.current?.querySelector(`#${messageDomId(seq)}`);
     if (seq === null || !target) return;
     wantedSeq.current = null;
     stopScroll();
@@ -272,20 +304,18 @@ function LoadedSession({
     setHighlightSeq(seq);
     clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightSeq(null), HIGHLIGHT_MS);
-  }, [scrollRef, stopScroll]);
+  }, [scrollRef, stopScroll, logItems, expanded, updateExpanded]);
   const showAgent = useCallback(
     (member: TeamMember) => {
       wantedSeq.current = member.hostSeq;
       scrollToWanted();
-      scrollRef.current?.querySelector<HTMLDetailsElement>(`#${messageDomId(member.hostSeq)} > details`)?.setAttribute("open", "");
     },
-    [scrollRef, scrollToWanted],
+    [scrollToWanted],
   );
   useLayoutEffect(() => {
     wantedSeq.current = focusSeq;
-    scrollToWanted();
-    return () => clearTimeout(highlightTimer.current);
-  }, [focusSeq, scrollToWanted]);
+  }, [focusSeq]);
+  useEffect(() => () => clearTimeout(highlightTimer.current), []);
   useLayoutEffect(() => {
     scrollToWanted();
   }, [events.length, scrollToWanted]);
@@ -460,22 +490,24 @@ function LoadedSession({
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="ui-session__column" ref={contentRef}>
-          <SessionStream
-            items={items}
-            ownerName={session.owner_name ?? undefined}
-            hostName={session.host_name}
-            viewerId={viewer.id}
-            viewerName={viewer.name}
-            viewerIsOwner={session.mine ?? false}
-            harness={session.harness}
-            onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
-            onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
-            onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
-            onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}
-            onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void skipQuestions() : undefined}
-            linkFor={shareBaseUrl ? (seq) => messageUrl(shareBaseUrl, sessionId, seq) : undefined}
-            highlightSeq={highlightSeq}
-          />
+          <DisclosureState.Provider value={disclosureState}>
+            <SessionStream
+              items={items}
+              ownerName={session.owner_name ?? undefined}
+              hostName={session.host_name}
+              viewerId={viewer.id}
+              viewerName={viewer.name}
+              viewerIsOwner={session.mine ?? false}
+              harness={session.harness}
+              onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
+              onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
+              onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
+              onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}
+              onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void skipQuestions() : undefined}
+              linkFor={shareBaseUrl ? linkFor : undefined}
+              highlightSeq={highlightSeq}
+            />
+          </DisclosureState.Provider>
         </div>
       </div>
       {!isAtBottom && (
