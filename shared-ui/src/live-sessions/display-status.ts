@@ -1,6 +1,6 @@
 import type { LiveSession } from "./types";
 
-export type DisplayStatusKey = "starting" | "live" | "idle" | "waiting" | "host_offline" | "ended";
+export type DisplayStatusKey = "starting" | "live" | "idle" | "waiting" | "host_offline" | "sleeping" | "ended";
 
 export interface DisplayStatus {
   key: DisplayStatusKey;
@@ -15,12 +15,13 @@ const STATUSES: Record<DisplayStatusKey, DisplayStatus> = {
   idle: { key: "idle", label: "Idle" },
   waiting: { key: "waiting", label: "Waiting for approval" },
   host_offline: { key: "host_offline", label: "Host offline" },
+  sleeping: { key: "sleeping", label: "Sleeping" },
   ended: { key: "ended", label: "Ended" },
 };
 
 /**
- * The one status a person sees. Host offline wins over Waiting for approval, which wins over the stored
- * state, because an offline laptop cannot answer. Idle is not stored: a live session with no event for an hour.
+ * The one status a person sees. Host offline and sleeping win over Waiting for approval, which wins over the stored
+ * state, because neither an offline laptop nor a sleeping session can answer. Idle is not stored: a live session with no event for an hour.
  */
 export function displayStatus(
   session: Pick<LiveSession, "status" | "open_approval_count" | "last_event_at" | "started_at">,
@@ -28,6 +29,7 @@ export function displayStatus(
 ): DisplayStatus {
   if (session.status === "ended") return STATUSES.ended;
   if (session.status === "host_offline") return STATUSES.host_offline;
+  if (session.status === "sleeping") return STATUSES.sleeping;
   if ((session.open_approval_count ?? 0) > 0) return STATUSES.waiting;
   if (session.status === "starting") return STATUSES.starting;
   const lastActive = Date.parse(session.last_event_at ?? session.started_at);

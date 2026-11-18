@@ -92,6 +92,13 @@ describe("deciding a permission request", () => {
     expect((await decide({ decision: "allow" })).status).toBe(409);
   });
 
+  it("refuses a decision on a sleeping session with session_sleeping", async () => {
+    rpcResult = { data: null, error: { message: "session_sleeping" } };
+    const res = await decide({ decision: "allow" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
+  });
+
   it("passes the mode a plan approval switches to, and refuses any other", async () => {
     rpcResult = { data: { outcome: "created" }, error: null };
     expect((await decide({ decision: "allow", permissionMode: "auto" })).status).toBe(201);

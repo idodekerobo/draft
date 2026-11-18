@@ -11,6 +11,11 @@ describe("displayStatus", () => {
     expect(displayStatus({ ...base, status: "live" }, NOW).label).toBe("Live");
     expect(displayStatus({ ...base, status: "ended" }, NOW).label).toBe("Ended");
     expect(displayStatus({ ...base, status: "host_offline" }, NOW).label).toBe("Host offline");
+    expect(displayStatus({ ...base, status: "sleeping" }, NOW).label).toBe("Sleeping");
+  });
+
+  it("shows Sleeping over Waiting for approval, because a sleeping session cannot answer", () => {
+    expect(displayStatus({ ...base, status: "sleeping", open_approval_count: 1 }, NOW).key).toBe("sleeping");
   });
 
   it("shows Idle only for a live session with no event for more than 60 minutes", () => {

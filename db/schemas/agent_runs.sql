@@ -66,6 +66,11 @@ create unique index agent_runs_one_active_synthesis
   on agent_runs (workspace_id)
   where kind = 'synthesis' and status in ('preparing', 'running', 'validating', 'committing');
 
+-- At most one active run per session. Its events come from one run at a time.
+create unique index agent_runs_one_active_per_session
+  on agent_runs (session_id)
+  where session_id is not null and status in ('queued', 'preparing', 'running', 'validating', 'committing');
+
 create trigger agent_runs_set_updated_at
   before update on agent_runs
   for each row execute function set_updated_at();

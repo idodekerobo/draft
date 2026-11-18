@@ -281,7 +281,7 @@ export interface ErrorRow {
   created_at: string;
 }
 
-export type SessionStatus = "starting" | "live" | "host_offline" | "ended";
+export type SessionStatus = "starting" | "live" | "host_offline" | "sleeping" | "ended";
 export type { SessionEventKind } from "draft-core/live-sessions";
 import type { SessionEventKind } from "draft-core/live-sessions";
 
@@ -316,6 +316,9 @@ export interface SessionRow {
   concurrency_key: string | null;
   permission_mode: string | null;
   approval_mode: string | null;
+  runtime: "local" | "cloud";
+  sandbox_volume: unknown | null;
+  seed: unknown | null;
 }
 
 export interface SessionEventRow {

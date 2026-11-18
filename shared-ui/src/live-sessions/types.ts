@@ -28,7 +28,7 @@ export type ComposerInput = Omit<LiveSessionInput, "state"> & {
 export type ApprovalResult =
   | { ok: true }
   | { ok: false; error: "already_decided"; byName: string | null }
-  | { ok: false; error: "request_closed" | "session_ended" | "failed" };
+  | { ok: false; error: "request_closed" | "session_ended" | "session_sleeping" | "failed" };
 
 /** Each app implements this over its own transport. */
 export interface LiveSessionsApi {

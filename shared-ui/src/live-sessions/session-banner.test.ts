@@ -9,6 +9,10 @@ describe("sessionBanner", () => {
     expect(sessionBanner({ ...base, harness_version: null })).toBeNull();
   });
 
+  it("says nothing for a sleeping session, since sleep is a normal state", () => {
+    expect(sessionBanner({ ...base, status: "sleeping" })).toBeNull();
+  });
+
   it("says the host is offline and that messages wait", () => {
     expect(sessionBanner({ ...base, status: "host_offline" })).toBe("Maya's computer is offline. Messages wait until it is back.");
     expect(sessionBanner({ ...base, status: "host_offline", owner_name: null })).toContain("The owner's computer");

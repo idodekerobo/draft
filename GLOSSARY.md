@@ -17,6 +17,7 @@ When you add a concept, add it here first.
 - **Start reason**: why a run started: `schedule`, `event` or `manual`. Stored `agent_runs.trigger.type` values
   `cron` and `system` mean a schedule start and a system start; they are not rewritten.
 - **Runtime**: where a session or run executes: `local` or `cloud`.
+- **Sleeping**: a cloud session's status (`sessions.status`) while no run is in progress. A new run wakes it.
 - **Host**: the process that drives a session's harness and relays its events. The desktop host runs on a person's
   computer; the sandbox host runs in a cloud machine. Column `sessions.host_id`.
 - **Machine**: one computer or VM. A host runs on a machine. Fly VM IDs are `sandbox_machine_id`.

@@ -103,6 +103,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       workspace_id: task.workspace_id,
       owner_user_id: task.created_by_user_id,
       session_type: "routine",
+      runtime: "cloud",
       harness: routine.harness,
       model: routine.model,
       reasoning_effort: routine.reasoningEffort ?? null,
