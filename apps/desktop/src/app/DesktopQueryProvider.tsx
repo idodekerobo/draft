@@ -19,11 +19,12 @@ const api: DraftApi = {
   },
   deleteRoutine: async (id) => {
     const result = await rpc.request.deleteRoutine({ id });
-    if (!result.ok) throw toRoutineError(result.code, result.field);
+    if (!result.ok) throw new Error(result.message ?? toRoutineError(result.code, result.field).message);
   },
   runRoutine: async (id) => {
     const result = await rpc.request.runRoutine({ id });
-    if (!result.ok) throw toRoutineError(result.code, result.field);
+    if (!result.ok) throw new Error(result.message ?? toRoutineError(result.code, result.field).message);
+    return result.outcome;
   },
   getRoutineSlackChannels: () => rpc.request.getRoutineSlackChannels(),
   getRoutineGithubRepos: () => rpc.request.getRoutineGithubRepos(),

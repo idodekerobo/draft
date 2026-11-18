@@ -18,6 +18,7 @@ export type SourceConnectionId = Brand<string, "SourceConnectionId">;
 export type HostMachineId = Brand<string, "HostMachineId">;
 export type SkillId = Brand<string, "SkillId">;
 export type InstructionFileId = Brand<string, "InstructionFileId">;
+export type AgentEventId = Brand<string, "AgentEventId">;
 export type IsoTimestamp = Brand<string, "IsoTimestamp">;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -39,6 +40,8 @@ export const parseScheduledTaskId = uuidParser<ScheduledTaskId>("ScheduledTaskId
 export const parseSourceConnectionId = uuidParser<SourceConnectionId>("SourceConnectionId");
 export const parseSkillId = uuidParser<SkillId>("SkillId");
 export const parseInstructionFileId = uuidParser<InstructionFileId>("InstructionFileId");
+/** Marked pure, like parsePersonId, so the sandbox runner bundle does not change when it does not use it. */
+export const parseAgentEventId = /* @__PURE__ */ uuidParser<AgentEventId>("AgentEventId");
 
 /** A host machine id comes from the desktop app and is not always a UUID. */
 export function parseHostMachineId(raw: string): HostMachineId {
@@ -81,6 +84,7 @@ export type AgentRunTrigger =
   | { type: "cron"; scheduledTaskId: ScheduledTaskId; occurrenceAt: IsoTimestamp }
   | { type: "system"; reason: AgentRunSystemReason }
   | { type: "webhook"; provider: AgentRunWebhookProvider; eventId: string }
+  | { type: "event"; eventIds: ReadonlyArray<AgentEventId> }
   | { type: "manual"; requestedBy: UserId }
   | { type: "retry"; retryOf: AgentRunId };
 

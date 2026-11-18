@@ -196,6 +196,13 @@ export interface ScheduledTaskRow {
   next_due_at: string | null;
   deleted_at: string | null;
   last_enqueued_at: string | null;
+  claimed_occurrence_at: string | null;
+  run_at: string | null;
+  fired_at: string | null;
+  created_via: "app" | "cli" | "mcp" | "run" | "system";
+  created_by_run_id: string | null;
+  trigger_depth: number;
+  visibility: "private" | "shared";
   created_at: string;
   updated_at: string;
   updated_by_user_id: string | null;
@@ -310,6 +317,7 @@ export interface SessionRow {
   raw_uploaded_at: string | null;
   scheduled_task_id: string | null;
   idempotency_key: string | null;
+  concurrency_key: string | null;
   permission_mode: string | null;
   approval_mode: string | null;
 }

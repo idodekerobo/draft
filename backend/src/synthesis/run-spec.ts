@@ -29,10 +29,11 @@ export function synthesisTrigger(input: Pick<SynthesisRunSpecInput, "triggerType
 }
 
 /** The trigger type a person sees for a saved run. The inverse of synthesisTrigger. */
-export function synthesisTriggerType(trigger: unknown): SynthesisRunTriggerType {
+export function synthesisTriggerType(trigger: unknown): SynthesisRunTriggerType | "event" {
   const saved = trigger as { type?: string; reason?: string } | null;
   if (saved?.type === "cron") return "schedule";
   if (saved?.type === "retry") return "retry";
+  if (saved?.type === "event") return "event";
   const reasons: ReadonlyArray<string> = ["source_threshold", "manual", "stale_requeue", "seed_test"];
   return saved?.type === "system" && saved.reason && reasons.includes(saved.reason) ? (saved.reason as SynthesisRunTriggerType) : "manual";
 }

@@ -22,8 +22,11 @@ export interface RoutineRun {
   skipReason?: string | null;
 }
 
+/** What Run now answers. Queued means the run starts when the run in progress ends. Failed means nothing started. */
+export type RoutineRunOutcome = { status: "started"; runId: string; sessionId: string } | { status: "queued" } | { status: "failed" };
+
 export type { RoutineEventName } from "draft-core/routines";
-import type { RoutineEventName } from "draft-core/routines";
+import type { RoutineEventName, RoutineListFilter, RoutineWhen } from "draft-core/routines";
 
 /** Opens one run of an agent routine. The routine tells the caller where to come back to. */
 export type OpenRun = (sessionId: string, routine: Pick<Routine, "id" | "title">) => void;
@@ -67,6 +70,15 @@ export interface Routine {
   lastRun: RoutineLastRun | null;
   updatedByName: string | null;
   agent: AgentRoutine | null;
+  /** One-time, recurring, or triggers only. */
+  kind: NonNullable<RoutineListFilter["kind"]>;
+  /** When a one-time routine runs, and when it ran. */
+  runAt: string | null;
+  firedAt: string | null;
+  madeByAgent: boolean;
+  createdByRunId: string | null;
+  createdBySessionId: string | null;
+  visibility: "shared" | "private";
   canEdit?: boolean;
 }
 
@@ -92,14 +104,21 @@ export interface AgentRoutineEdit {
   canNotify?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
-  events?: RoutineEventName[];
-  onSchedule?: boolean;
+}
+
+/** When a routine runs: a schedule (null turns it off) and/or triggers. A PATCH leaves an omitted part unchanged. */
+export type RoutineRule = Exclude<RoutineWhen, { in: string } | { at: string }>;
+
+/** A schedule a person sets. Only the fields its frequency uses are sent. */
+export interface RoutineScheduleInput {
+  preset: Exclude<RoutinePreset, "custom">;
+  time?: string;
+  weekday?: RoutineWeekday;
+  timezone?: string;
 }
 
 /** Body for PATCH /workspaces/:id/schedules/:taskId. */
-export type RoutinePatch =
-  | { enabled: boolean }
-  | (AgentRoutineEdit & { preset?: Exclude<RoutinePreset, "custom">; time?: string; weekday?: RoutineWeekday; timezone?: string });
+export type RoutinePatch = { enabled: boolean } | (AgentRoutineEdit & { when?: RoutineRule });
 
 /** Body for POST /workspaces/:id/schedules: an agent routine and when it runs. */
 export interface CreateRoutineInput {
@@ -108,13 +127,8 @@ export interface CreateRoutineInput {
   harness: HarnessId;
   model: string | null;
   reasoningEffort?: string | null;
-  preset: Exclude<RoutinePreset, "custom" | "draft_default">;
-  time?: string;
-  weekday?: RoutineWeekday;
-  timezone?: string;
+  when: RoutineRule;
   canNotify?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
-  events?: RoutineEventName[];
-  onSchedule?: boolean;
 }

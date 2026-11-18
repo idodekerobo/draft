@@ -1,5 +1,3 @@
-import { ROUTINE_TRIGGERS } from "draft-core/routines";
-import type { AgentRunTrigger } from "draft-core/run-spec";
 import type { RoutineEventName } from "./config";
 import type { EventFact } from "./event-facts";
 
@@ -21,12 +19,6 @@ export interface RoutineEventPayload {
   /** True when text is only the start of the source. */
   truncated: boolean;
 }
-
-export const eventTrigger = (event: Pick<RoutineEventPayload, "name" | "eventId">): AgentRunTrigger => ({
-  type: "webhook",
-  provider: ROUTINE_TRIGGERS.find((trigger) => trigger.event === event.name)!.provider,
-  eventId: event.eventId,
-});
 
 /** The key that makes one routine run once per event, however often the provider repeats it. */
 export const eventIdempotencyKey = (taskId: string, event: Pick<RoutineEventPayload, "name" | "eventId">) => `${taskId}:${event.name}:${event.eventId}`;

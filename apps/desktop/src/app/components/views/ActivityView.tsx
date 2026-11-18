@@ -4,7 +4,7 @@ import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { ActivityPanel, BackButton, SessionView } from "draft-shared-ui";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 
-export function ActivityView({ onFixInConnections }: { onFixInConnections: () => void }) {
+export function ActivityView({ onFixInConnections, onOpenRoutine }: { onFixInConnections: () => void; onOpenRoutine: (id: string) => void }) {
   const workspaceId = useWorkspaceKey();
   const webAppUrl = useWebAppUrl();
   const [run, setRun] = useState<string | null>(null);
@@ -12,7 +12,7 @@ export function ActivityView({ onFixInConnections }: { onFixInConnections: () =>
   return (
     <div className="activity">
       <div className="ui-page">
-        <ActivityPanel workspaceId={workspaceId} onFixInConnections={onFixInConnections} onOpenRun={setRun} />
+        <ActivityPanel workspaceId={workspaceId} onFixInConnections={onFixInConnections} onOpenRoutine={onOpenRoutine} onOpenRun={setRun} />
       </div>
     </div>
   );

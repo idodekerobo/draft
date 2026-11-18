@@ -25,7 +25,7 @@ export function groupByProvider<T extends { provider: string; providerLabel: str
  * The single "When it runs" section. `schedule` is the caller's schedule fields, shown in schedule mode.
  * A trigger whose connection is missing offers to connect it instead of a checkbox.
  */
-export function WhenFields({ mode, onModeChange, events, onEventsChange, schedule, connectedProviders, onConnect, disabled }: {
+export function WhenFields({ mode, onModeChange, events, onEventsChange, schedule, connectedProviders, onConnect, disabled, fieldError }: {
   mode: WhenMode;
   onModeChange: (mode: WhenMode) => void;
   events: RoutineEventName[];
@@ -35,6 +35,7 @@ export function WhenFields({ mode, onModeChange, events, onEventsChange, schedul
   /** Opens Connections. Without it a missing connection is only named. */
   onConnect?: () => void;
   disabled: boolean;
+  fieldError: (field: string) => ReactNode;
 }) {
   const name = useId();
   const connected = (provider: string) => !connectedProviders || connectedProviders.includes(provider);
@@ -77,6 +78,8 @@ export function WhenFields({ mode, onModeChange, events, onEventsChange, schedul
           {events.length === 0 && <p className="ui-routines__secondary">With no trigger picked, it runs only when someone presses Run now.</p>}
         </div>
       )}
+      {fieldError("events")}
+      {fieldError("when")}
     </fieldset>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import type { HarnessId } from "draft-core/harnesses";
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode, type RefObject } from "react";
 import { AgentFields, isDisconnected, type AgentValue } from "./AgentFields";
 import { defaultAgent, rememberAgent } from "./agent-default";
 import { agentLabel } from "./agent-label";
@@ -9,12 +9,12 @@ import { AbilityFields, RoutinePreview, capabilitiesValid, defaultCapabilities, 
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
-import { ScheduleFields, browserTimezone, presetUsesTime, scheduleSentence, timezoneOptions, type ScheduleValue } from "./schedule-fields";
+import { ScheduleFields, browserTimezone, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions, type ScheduleValue } from "./schedule-fields";
 import type { CreateRoutineInput, RoutineAgentStatus, RoutineEventName, RoutinesResponse } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
 /** Asks what the routine does, which agent runs it, when, and what it may reach. Nothing is saved until Create. */
-export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents }: {
+export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
   onClose: () => void;
   onCreate: (input: CreateRoutineInput) => Promise<void>;
   /** Whether each agent is connected for this workspace's routines, by harness id. */
@@ -26,6 +26,8 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
   renderAgentSetup?: (harness: HarnessId, status: RoutineAgentStatus, refresh: () => void) => ReactNode;
   /** Reads the agents' statuses again. */
   refreshAgents?: () => void;
+  /** The button that opened the dialog. Focus returns to it on close. */
+  returnFocusTo?: RefObject<HTMLElement | null>;
 }) {
   const ids = useId();
   const titleId = `${ids}-title`;
@@ -58,12 +60,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
         harness: agent.harness,
         model: agent.model,
         reasoningEffort: agent.effort,
-        // The schedule is saved even when it is off, so turning it on later starts from it.
-        preset: schedule.preset,
-        ...(usesTime ? { time: schedule.time } : {}),
-        ...(schedule.preset === "weekly" ? { weekday: schedule.weekday } : {}),
-        timezone: schedule.timezone,
-        ...(onSchedule ? {} : { onSchedule: false, ...(events.length ? { events } : {}) }),
+        when: onSchedule ? { schedule: scheduleInput(schedule) } : { schedule: null, events },
         ...(capabilities.canNotify ? { canNotify: true } : {}),
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
         ...(capabilities.github ? { github: capabilities.github } : {}),
@@ -83,7 +80,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
     error?.field === field ? <span className="ui-routines__error" role="alert">{error.message}</span> : null;
 
   return (
-    <Dialog titleId={titleId} onClose={onClose} busy={saving} wide>
+    <Dialog titleId={titleId} onClose={onClose} busy={saving} wide returnFocusTo={returnFocusTo}>
       <header className="ui-dialog__header">
         <h2 id={titleId}>New routine</h2>
         <button type="button" className="ui-routines__btn" aria-label="Close new routine" disabled={saving} onClick={onClose}>Close</button>
@@ -118,6 +115,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
                 connectedProviders={connectedProviders}
                 onConnect={onConnect}
                 disabled={saving}
+                fieldError={fieldError}
                 schedule={<ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />}
               />
               <AbilityFields value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />

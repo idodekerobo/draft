@@ -17,9 +17,24 @@ test("routine activity opens its transcript and displays the result", () => {
   expect(open).toHaveBeenCalledWith("session");
 });
 
+test("a synthesis run an event started is labelled Event", () => {
+  render(<ActivityList runs={[{ ...routine, kind: "synthesis", routineTitle: null, triggerType: "event", outcome: "changed", resultSummary: null }]} onFixInConnections={() => {}} />);
+  expect(screen.getByText("Event synthesis, context updated")).toBeTruthy();
+});
+
 test("completed runs without duration do not claim to still be running", () => {
   render(<ActivityList runs={[{ ...routine, kind: "summarization", startedAt: null }]} onFixInConnections={() => {}} />);
   fireEvent.click(screen.getByText("Summarization"));
   expect(screen.getByText("Unavailable")).toBeTruthy();
   expect(screen.queryByText("Open run")).toBeNull();
+});
+
+
+test("Run again is offered only on one-shot runs and created routines appear under their parent", () => {
+  const again = mock(() => {});
+  render(<ActivityList runs={[{ ...routine, routineId: "task", routineKind: "once", createdRoutines: [{ id: "child", title: "Check back", kind: "once" }] }, { ...routine, id: "rule-run", routineId: "rule", routineKind: "rule" }]} onFixInConnections={() => {}} onRunAgain={again} />);
+  expect(screen.getAllByRole("button", { name: "Run Daily standup again" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Run Daily standup again" }));
+  expect(again).toHaveBeenCalledWith("task");
+  expect(screen.getByText("Created").parentElement?.textContent).toBe("Created Check back");
 });

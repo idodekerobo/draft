@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseSourceConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import type { AgentRunRow } from "../../../types/tables";
@@ -76,6 +76,13 @@ describe("agent run store", () => {
     expect(inserts[0].row.retry_of_run_id).toBe(original);
   });
 
+  it("round-trips the agent events that woke a run", async () => {
+    const { client, inserts } = fakeClient();
+    const woke: AgentRunSpec = { ...spec, trigger: { type: "event", eventIds: [parseAgentEventId("88888888-8888-4888-8888-888888888888")] } };
+    await createAgentRun(client, { spec: woke, idempotencyKey: "event:8" });
+    expect(specFromRow(rowFrom(inserts[0].row))).toEqual(woke);
+  });
+
   it("reads the run a synthesis run was mirrored as, with a system trigger", () => {
     const mirrored = rowFrom({
       id: spec.id, workspace_id: spec.workspaceId, kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, on_behalf_of_user_id: spec.onBehalfOf,
@@ -96,6 +103,7 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, permissions: [{ tool: "made.up_tool" }] })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
+    expect(() => specFromRow({ ...good, trigger: { type: "event", eventIds: ["evt_123"] } })).toThrow();
     expect(() => specFromRow({ ...good, runtime: { type: "local", hostMachineId: "" } })).toThrow();
   });
 });

@@ -19,6 +19,13 @@ function baseTask(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
     next_due_at: "2026-08-05T08:00:00.000Z",
     deleted_at: null,
     last_enqueued_at: null,
+    claimed_occurrence_at: null,
+    run_at: null,
+    fired_at: null,
+    created_via: "system",
+    created_by_run_id: null,
+    trigger_depth: 0,
+    visibility: "shared",
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     updated_by_user_id: null,
@@ -66,7 +73,6 @@ function neverCalledDeps(): DispatchDependencies {
     getPendingSynthesisSourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"],
     getLatestSynthesisRun: mock(async () => null) as unknown as DispatchDependencies["getLatestSynthesisRun"],
     launchSummarizationBatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSummarizationBatch"],
-    dispatchAgentRoutine: mock(shouldNotBeCalled) as unknown as DispatchDependencies["dispatchAgentRoutine"],
   };
 }
 
@@ -101,6 +107,16 @@ describe("dispatchScheduledTask", () => {
     await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
 
     expect(deps.launchSynthesisRun).not.toHaveBeenCalled();
+  });
+
+  it("rejects an agent_routine task, which the event inbox dispatches instead", async () => {
+    const task = baseTask({ task_type: "agent_routine", schedule_kind: "cron" });
+    const client = fakeClient(task);
+    const deps = neverCalledDeps();
+
+    await expect(
+      dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps),
+    ).rejects.toThrow("agent_routine is dispatched from the event inbox");
   });
 
   it("rejects an unsupported task_type rather than silently no-op'ing", async () => {

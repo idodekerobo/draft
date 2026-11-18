@@ -1,5 +1,5 @@
 import { meetingFacts } from "../../routines/event-facts";
-import { fireRoutineEvent } from "../../routines/fire-event";
+import { fireEnqueueRoutineEvents } from "../../events/enqueue-routine-events";
 import { ingestFirefliesMeeting } from "../../ingestion/fireflies/normalize";
 import { authenticateFirefliesWebhookRequest, FirefliesWebhookAuthError } from "./request-auth";
 import { recordRouteError } from "../../errors/route-error";
@@ -35,7 +35,7 @@ export async function POST(
     if (error) throw error;
 
     if (summarizedSourceItemId) {
-      fireRoutineEvent({ workspaceId: connection.workspace_id, name: "fireflies.meeting_summarized", eventId: meetingId, sourceItemId: summarizedSourceItemId, facts: meetingFacts("Fireflies meeting id", meetingId) });
+      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name: "fireflies.meeting_summarized", eventId: meetingId, sourceItemId: summarizedSourceItemId, facts: meetingFacts("Fireflies meeting id", meetingId), concurrencyKey: `fireflies:${meetingId}` });
     }
 
     return new Response(null, { status: 200 });

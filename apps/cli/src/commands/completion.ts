@@ -39,7 +39,7 @@ _draft_completion() {
       integrations:list) flags="--json" ;;
       integrations:disconnect) flags="--json --workspace-key" ;;
       activity:list) flags="--cursor --json" ;;
-      routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --run-id --transcript --cursor --json" ;;
+      routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --run-id --transcript --cursor --in --at --once --upcoming --fired --mine --json" ;;
       *) flags="" ;;
     esac
     COMPREPLY=( $(compgen -W "\$flags" -- "\$cur") )
@@ -177,10 +177,16 @@ _draft() {
           ;;
         routines)
           if (( CURRENT == 3 )); then
-            local subcmds=('list:List scheduled routines' 'options:Show the options for routines' 'create:Create a routine' 'update:Update a routine' 'delete:Delete a routine' 'run:Run a routine now' 'runs:List the runs of a routine')
+            local subcmds=('list:List routines, including one-shots with --once' 'options:Show the options for routines' 'create:Create a routine: once, on a schedule, or on an event' 'update:Update a routine' 'delete:Delete a routine' 'run:Run a routine now' 'runs:List the runs of a routine')
             _describe 'subcommand' subcmds
           else
             _arguments \\
+              '--in=[Run once after a duration, such as 2h]:duration:' \\
+              '--at=[Run once at an ISO time with an offset]:time:' \\
+              '--once[Show one-shot routines]' \\
+              '--upcoming[Show one-shots that have not run yet]' \\
+              '--fired[Show one-shots that have run]' \\
+              '--mine[Show only the routines you made]' \\
               '--on=[Trigger event]:event:' \\
               '--github=[GitHub repository]:repository:' \\
               '--github-access=[GitHub access level]:access:' \\

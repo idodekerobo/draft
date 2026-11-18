@@ -1,47 +1,31 @@
-import { PRESETS, WEEKDAYS, type Preset, type ScheduleInput, type Weekday } from "../scheduling/presets";
+import { RoutineInput, type RoutineEventName, type RoutineWhen } from "draft-core/routines";
 import { validateAgentRoutineConfig, type AgentRoutineConfig } from "../routines/config";
-import { RoutineInput } from "draft-core/routines";
-
-const MAX_STRING_LENGTH = 64;
 
 export type CreateValidation =
-  | { ok: true; config: AgentRoutineConfig; schedule: ScheduleInput; enabled?: boolean }
+  | { ok: true; config: AgentRoutineConfig; when: RoutineWhen; enabled?: boolean }
   | { ok: false; field: string };
 
 /** Body for POST /workspaces/:id/schedules: an agent routine and when it runs. */
 export function validateCreate(body: unknown): CreateValidation {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return { ok: false, field: "body" };
-  const record = body as Record<string, unknown>;
 
-  const scheduleRecord = record.schedule && typeof record.schedule === "object" ? record.schedule as Record<string, unknown> : { preset: record.preset, time: record.time, weekday: record.weekday, timezone: record.timezone };
-  const { preset: _preset, time: _time, weekday: _weekday, timezone: _timezone, ...configFields } = record;
-  const shared = RoutineInput.safeParse({ ...configFields, model: record.model ?? null, schedule: scheduleRecord });
-  if (!shared.success) {
-    const issue = shared.error.issues[0];
-    const field = issue?.path[0] === "schedule" ? String(issue.path[1] ?? "schedule") : String(issue?.path[0] ?? "body");
+  const parsed = RoutineInput.safeParse({ model: null, ...body });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.code === "unrecognized_keys" ? (issue.keys[0] ?? "body") : String(issue?.path[0] ?? "body");
     return { ok: false, field };
   }
-  const { schedule: _schedule, enabled: _enabled, ...routineInput } = shared.data;
-  const checked = validateAgentRoutineConfig(routineInput);
-  if (!checked.ok) return checked;
-  const { config } = checked;
+  const { when, enabled, harness, ...routine } = parsed.data;
+  // The run path fills in the harness before it calls this, so a missing one means a person left it out.
+  if (!harness) return { ok: false, field: "harness" };
 
-  for (const field of ["time", "weekday", "timezone"] as const) {
-    const value = scheduleRecord[field];
-    if (value !== undefined && (typeof value !== "string" || value.length > MAX_STRING_LENGTH)) return { ok: false, field };
-  }
-  if (!PRESETS.includes(scheduleRecord.preset as Preset)) return { ok: false, field: "preset" };
-  if (scheduleRecord.weekday !== undefined && !WEEKDAYS.includes(scheduleRecord.weekday as Weekday)) return { ok: false, field: "weekday" };
+  const checked = validateAgentRoutineConfig({ ...routine, harness, ...triggerFields(when) });
+  if (!checked.ok) return { ok: false, field: checked.field };
+  return { ok: true, config: checked.config, when, ...(enabled !== undefined ? { enabled } : {}) };
+}
 
-  return {
-    ok: true,
-    config,
-    ...(shared.data.enabled !== undefined ? { enabled: shared.data.enabled } : {}),
-    schedule: {
-      preset: scheduleRecord.preset as Preset,
-      time: scheduleRecord.time as string | undefined,
-      weekday: scheduleRecord.weekday as Weekday | undefined,
-      timezone: scheduleRecord.timezone as string | undefined,
-    },
-  };
+/** A once has no triggers. A rule with no schedule is off, so only its triggers and Run now start it. */
+function triggerFields(when: RoutineWhen): { events?: RoutineEventName[]; onSchedule?: false } {
+  if ("in" in when || "at" in when) return {};
+  return { events: when.events, ...(when.schedule == null ? { onSchedule: false as const } : {}) };
 }

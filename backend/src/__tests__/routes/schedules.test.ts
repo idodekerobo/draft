@@ -89,6 +89,7 @@ const queryLogSpy = spyOn(queryLog, "recordAgentQueryLog").mockImplementation(
 afterAll(() => queryLogSpy.mockRestore());
 
 const routeModule = await import("../../routes/schedules");
+const schedulesService = await import("../../schedules/service");
 
 function task(overrides: Row): Row {
   return {
@@ -114,9 +115,9 @@ function task(overrides: Row): Row {
   };
 }
 
-function get(workspaceId = "ws-1", headers?: Record<string, string>) {
+function get(workspaceId = "ws-1", headers?: Record<string, string>, search = "") {
   return routeModule.GET(
-    Object.assign(new Request("http://internal.test", { headers }), { params: { id: workspaceId } }) as never,
+    Object.assign(new Request(`http://internal.test${search}`, { headers }), { params: { id: workspaceId } }) as never,
   );
 }
 
@@ -265,6 +266,44 @@ describe("schedules routes", () => {
       accessResult = Response.json({ error: "forbidden" }, { status: 403 });
       expect((await get()).status).toBe(403);
     });
+
+    describe("list filters in the query string", () => {
+      beforeEach(() => {
+        tables.scheduled_tasks!.push(
+          task({ id: "task-once-upcoming", task_type: "agent_routine", task_key: "key-once-1", config_json: routineConfig, schedule_kind: "once", cron_expression: null, run_at: "2026-12-01T09:00:00.000Z", fired_at: null, created_by_user_id: "user-1" }),
+          task({ id: "task-once-fired", task_type: "agent_routine", task_key: "key-once-2", config_json: routineConfig, schedule_kind: "once", cron_expression: null, run_at: "2026-11-01T09:00:00.000Z", fired_at: "2026-11-01T09:00:02.000Z", created_by_user_id: "user-2" }),
+        );
+      });
+
+      async function listedIds(search: string): Promise<string[]> {
+        const response = await get("ws-1", undefined, search);
+        expect(response.status).toBe(200);
+        return ((await response.json()) as { routines: Row[] }).routines.map((r) => r.id as string).sort();
+      }
+
+      it("hides one-shots unless kind is once, and keeps the default list unchanged", async () => {
+        expect(await listedIds("")).toEqual(["task-1", "task-2", "task-4", "task-agent"]);
+        expect(await listedIds("?kind=once")).toEqual(["task-once-fired", "task-once-upcoming"]);
+      });
+
+      it("filters one-shots by upcoming or fired", async () => {
+        expect(await listedIds("?kind=once&status=upcoming")).toEqual(["task-once-upcoming"]);
+        expect(await listedIds("?kind=once&status=fired")).toEqual(["task-once-fired"]);
+      });
+
+      it("filters by who made the routine", async () => {
+        expect(await listedIds("?kind=once&createdBy=me")).toEqual(["task-once-upcoming"]);
+        expect(await listedIds("?createdBy=me")).toEqual(["task-agent"]);
+      });
+
+      it("refuses a filter value the list does not take, without recording an error", async () => {
+        const response = await get("ws-1", undefined, "?kind=weekly");
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: "invalid_filter", field: "kind" });
+        await Bun.sleep(10);
+        expect(errorRows).toEqual([]);
+      });
+    });
   });
 
   describe("PATCH", () => {
@@ -276,7 +315,7 @@ describe("schedules routes", () => {
     });
 
     it("rebuilds cron and next_due_at when the schedule changes", async () => {
-      const response = await patch("task-2", { preset: "daily", time: "07:30", timezone: "Europe/London" });
+      const response = await patch("task-2", { when: { schedule: { preset: "daily", time: "07:30", timezone: "Europe/London" } } });
       expect(response.status).toBe(200);
       expect(tables.scheduled_tasks![1]).toMatchObject({
         cron_expression: "30 7 * * *",
@@ -293,8 +332,8 @@ describe("schedules routes", () => {
     });
 
     it("restores the Draft default exactly", async () => {
-      await patch("task-1", { preset: "hourly", timezone: "UTC" });
-      await patch("task-1", { preset: "draft_default" });
+      await patch("task-1", { when: { schedule: { preset: "hourly", timezone: "UTC" } } });
+      await patch("task-1", { when: { schedule: { preset: "draft_default" } } });
       expect(tables.scheduled_tasks![0]).toMatchObject({
         cron_expression: "0 0,4,8,9-18,22 * * *",
         timezone: "UTC",
@@ -307,17 +346,37 @@ describe("schedules routes", () => {
       expect(await response.json()).toMatchObject({ error: "invalid_body", field: "cron_expression" });
     });
 
-    it("rejects schedule fields on a toggle-only routine", async () => {
-      const response = await patch("task-4", { preset: "hourly" });
+    it("rejects a when on a toggle-only routine", async () => {
+      const response = await patch("task-4", { when: { schedule: { preset: "hourly" } } });
       expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: "field_not_editable" });
+      expect(await response.json()).toMatchObject({ error: "field_not_editable", field: "when" });
       expect((await patch("task-4", { enabled: false })).status).toBe(200);
     });
 
     it("rejects bad time, timezone, and weekday", async () => {
-      expect((await patch("task-1", { preset: "daily", time: "99:99" })).status).toBe(400);
-      expect((await patch("task-1", { preset: "daily", time: "09:00", timezone: "Nope/Nope" })).status).toBe(400);
-      expect((await patch("task-1", { preset: "weekly", time: "09:00", weekday: "someday" })).status).toBe(400);
+      expect((await patch("task-1", { when: { schedule: { preset: "daily", time: "99:99" } } })).status).toBe(400);
+      expect((await patch("task-1", { when: { schedule: { preset: "daily", time: "09:00", timezone: "Nope/Nope" } } })).status).toBe(400);
+      expect((await patch("task-1", { when: { schedule: { preset: "weekly", time: "09:00", weekday: "someday" } } })).status).toBe(400);
+    });
+
+    it("answers with the refusal code, message and field for a time too far ahead", async () => {
+      const response = await patch("task-agent", { when: { at: "2030-01-01T00:00:00.000Z" } });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "too_far_ahead",
+        field: "at",
+        message: "A routine can be set at most 365 days ahead. You asked for 2030-01-01T00:00:00.000Z.",
+      });
+    });
+
+    it("refuses a once on a repeating routine, and says why", async () => {
+      const response = await patch("task-agent", { when: { in: "1h" } });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "invalid_schedule",
+        field: "when",
+        message: "A routine can't change between once and repeating.",
+      });
     });
 
     it("returns 400 and records the task when a stored schedule cannot be parsed on enable", async () => {
@@ -334,9 +393,11 @@ describe("schedules routes", () => {
       expect((await patch("task-3", { enabled: false })).status).toBe(404);
     });
 
-    it("returns 500 and leaves the caller to roll back when the update fails", async () => {
+    it("returns 500 and leaves the caller to roll back when the update fails, and records it", async () => {
       updateError = { message: "db down" };
       expect((await patch("task-2", { enabled: false })).status).toBe(500);
+      await Bun.sleep(10);
+      expect(errorRows.map((row) => (row.detail_json as Row).code)).toContain("routine_update_failed");
     });
 
     it("edits the prompt and title of an agent routine and keeps the rest of its config", async () => {
@@ -423,6 +484,60 @@ describe("schedules routes", () => {
         Object.assign(new Request("http://internal.test"), { params: { id: "ws-1", taskId: "task-gone" } }) as never,
       );
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe("RUN", () => {
+    const runNow = spyOn(schedulesService, "runRoutineNow");
+    afterAll(() => runNow.mockRestore());
+    beforeEach(() => runNow.mockReset());
+
+    const postRun = (taskId = "task-1") =>
+      routeModule.RUN(
+        Object.assign(new Request("http://internal.test", { method: "POST" }), { params: { id: "ws-1", taskId } }) as never,
+      );
+
+    it("answers 202 with a queued outcome when a run is in progress", async () => {
+      runNow.mockResolvedValueOnce({ status: "queued" });
+      const response = await postRun();
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ outcome: { status: "queued" } });
+    });
+
+    it("answers 202 with the run that started", async () => {
+      runNow.mockResolvedValueOnce({ status: "started", runId: "run-1", sessionId: "s-1" });
+      const response = await postRun();
+      expect(response.status).toBe(202);
+      expect(await response.json()).toEqual({ outcome: { status: "started", runId: "run-1", sessionId: "s-1" } });
+    });
+
+    it("answers 409 codex_login_busy when another Codex run holds the login", async () => {
+      runNow.mockResolvedValueOnce({ status: "failed", code: "routine_lease_busy" });
+      const response = await postRun();
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: "codex_login_busy" });
+    });
+
+    it("answers 502 run_failed for a run that could not start", async () => {
+      runNow.mockResolvedValueOnce({ status: "failed", code: "routine_launch_failed" });
+      const response = await postRun();
+      expect(response.status).toBe(502);
+      expect(await response.json()).toMatchObject({ error: "run_failed" });
+    });
+
+    it("answers 404 for a routine that does not exist", async () => {
+      runNow.mockRejectedValueOnce(new schedulesService.ScheduleServiceError("not_found"));
+      expect((await postRun("task-gone")).status).toBe(404);
+    });
+
+    it("answers 500 and records an unexpected failure", async () => {
+      runNow.mockRejectedValueOnce(new Error("db down"));
+      const response = await postRun();
+      expect(response.status).toBe(500);
+      await Bun.sleep(10);
+      expect(errorRows).toHaveLength(1);
+      expect(errorRows[0]).toMatchObject({ workspace_id: "ws-1", operation: "commit" });
+      expect(errorRows[0]!.detail_json).toMatchObject({ code: "schedules_run_now_failed" });
     });
   });
 });

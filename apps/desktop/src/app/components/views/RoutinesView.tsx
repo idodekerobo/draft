@@ -7,12 +7,12 @@ import { RoutineClaudeSetup, RoutineCodexSetup } from "../connections/RoutineAge
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 
-export function RoutinesView({ onReconnect }: { onReconnect: () => void }) {
+export function RoutinesView({ onReconnect, initialOpenId }: { onReconnect: () => void; initialOpenId?: string }) {
   const workspaceKey = useWorkspaceKey();
   const webAppUrl = useWebAppUrl();
   const [run, setRun] = useState<{ id: string; routine: { id: string; title: string } } | null>(null);
   // The routine whose details were open, so Back lands on them again.
-  const [returnTo, setReturnTo] = useState<string | undefined>(undefined);
+  const [returnTo, setReturnTo] = useState<string | undefined>(initialOpenId);
 
   if (run) {
     return (

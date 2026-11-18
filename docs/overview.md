@@ -10,7 +10,7 @@ You can use the hosted service at [draftai.us](https://draftai.us), or run the o
 
 Draft has a server, a workspace on that server, and clients that talk to it.
 
-**The server** is the Draft backend. It authenticates access, enforces organization, team, and workspace boundaries, ingests data from connected sources, and runs synthesis. You can use the hosted service or self-host the backend yourself.
+**The server** is the Draft backend. It authenticates access, enforces organization, team, and workspace boundaries, ingests data from connected sources, and runs synthesis and routines. You can use the hosted service or self-host the backend yourself.
 
 **The workspace** lives on the server and is the canonical company brain. It contains versioned context, source items, synthesis runs, connected-source state, and coding-agent session data.
 
@@ -18,9 +18,15 @@ Draft has a server, a workspace on that server, and clients that talk to it.
 
 - **Web app** (`apps/web`): sign-up, invites, and device pairing, plus browsing context, activity, connections, and routines in the browser.
 - **Desktop app** (`apps/desktop`): the same workspace views in a native app. It also connects the workspace's data sources (Slack, GitHub, Linear, Fireflies, Granola, Claude Code) and can read a local folder to seed a workspace.
-- **CLI** (`apps/cli`): scriptable access for reading context and skills, connecting sources (`draft integrations connect`), exporting context, and setting up agent integrations, including session capture that uploads local coding-agent sessions when enabled.
+- **CLI** (`apps/cli`): scriptable access for reading context and skills, managing routines and viewing runs, connecting sources (`draft integrations connect`), exporting context, and setting up agent integrations, including session capture that uploads local coding-agent sessions when enabled.
 
-Agents can attach through two supported paths: the remote MCP server for direct, in-session reads, or the CLI for setup, scripts, and explicit context/skill reads. Project-local hooks remain available for coding-session capture. These connection surfaces are intentionally evolving, but the authenticated workspace and API are the stable source of truth.
+Agents can attach through two supported paths: the remote MCP server for in-session context reads and managing routines, or the CLI for setup, scripts, context/skill reads, and routine management. Project-local hooks remain available for coding-session capture. These connection surfaces are intentionally evolving, but the authenticated workspace and API are the stable source of truth.
+
+## Work that runs later
+
+Routines let an agent do work once at a chosen time, on a repeating schedule, or when something happens in a connected tool. You can create them through the CLI or MCP, and routine runs can schedule follow-ups on your behalf within limits on frequency, nesting and access.
+
+The Routines tab manages repeating and event routines. Activity shows pending one-time routines under Upcoming, where you can cancel them, and past runs, where you can inspect results or run a one-time routine again. See [Routines](./routines.md) for examples and limits, or the [CLI](./cli.md#routines) and [MCP](./mcp.md#routines) references for commands and inputs.
 
 ## How information flows
 

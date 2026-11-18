@@ -23,6 +23,13 @@ function routine(overrides: Partial<Routine>): Routine {
     lastCheckedAt: null,
     lastRun: null,
     updatedByName: null,
+    kind: "recurring",
+    runAt: null,
+    firedAt: null,
+    madeByAgent: false,
+    createdByRunId: null,
+    createdBySessionId: null,
+    visibility: "shared",
     agent: null,
     ...overrides,
   };

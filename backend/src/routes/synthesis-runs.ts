@@ -19,7 +19,7 @@ export const GET = withAuth<SynthesisRunsRequest>(async (req, caller) => {
   const before = parseCursor(new URL(req.url).searchParams.get("before"));
   if (before === "invalid") return Response.json({ error: "invalid_cursor" }, { status: 400 });
   try {
-    return Response.json(await listActivity(serviceClient, req.params.id, before));
+    return Response.json(await listActivity(serviceClient, req.params.id, before, caller.userId));
   } catch (error) {
     recordRouteError({ workspaceId: req.params.id, operation: "read", errorCode: "synthesis_runs_read_failed", error });
     return Response.json({ error: "synthesis_runs_read_failed" }, { status: 500 });

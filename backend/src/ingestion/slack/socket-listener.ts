@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 import { CredentialError } from "../../credentials/crypto";
+import { recordError } from "../../errors/record-error";
 import { handleSlackMessageEvent } from "./normalize";
 
 export interface SlackListenerConnection {
@@ -142,6 +143,10 @@ export function connectSlackSocketListener(
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  function record(code: string, message: string, error: unknown): void {
+    void recordError({ client, workspaceId: connection.workspace_id, sourceConnectionId: connection.id, operation: "ingestion", code, message, error });
+  }
+
   async function stopForTerminalFailure(err: unknown, status: "revoked" | "error"): Promise<void> {
     stopped = true;
     const db = client ?? (await import("../../db/client")).serviceClient;
@@ -151,8 +156,12 @@ export function connectSlackSocketListener(
       .eq("id", connection.id)
       .eq("workspace_id", connection.workspace_id)
       .in("status", ["active", "degraded"]);
-    if (error) log("error", connection.id, `failed to persist terminal listener status: ${error}`);
+    if (error) {
+      log("error", connection.id, `failed to persist terminal listener status: ${error}`);
+      record("slack_listener_status_persist_failed", "Saving the Slack listener's stopped status failed", error);
+    }
     log("error", connection.id, `terminal listener failure: ${err} — stopped; not retrying`);
+    record("slack_listener_stopped", "The Slack listener stopped after a failure it can't retry", err);
   }
 
   async function handleConnectFailure(err: unknown, context: string): Promise<void> {
@@ -162,6 +171,7 @@ export function connectSlackSocketListener(
       return;
     }
     log("error", connection.id, `${context}: ${err} — retrying in ${reconnectDelay}ms`);
+    record("slack_listener_connect_failed", `Slack listener: ${context}; retrying`, err);
     scheduleReconnect();
   }
 
@@ -169,7 +179,10 @@ export function connectSlackSocketListener(
     if (stopped) return;
     reconnectTimer = dependencies.setTimeoutFn(() => {
       reconnectDelay = nextReconnectDelay(reconnectDelay);
-      connect().catch((err) => log("error", connection.id, `reconnect error: ${err}`));
+      connect().catch((err) => {
+        log("error", connection.id, `reconnect error: ${err}`);
+        record("slack_listener_connect_failed", "Slack listener reconnect failed", err);
+      });
     }, reconnectDelay);
   }
 
@@ -242,6 +255,7 @@ export function connectSlackSocketListener(
             } catch (err) {
               ws?.close();
               log("error", connection.id, `connection status check failed before ACK: ${err}`);
+              record("slack_listener_status_check_failed", "Checking the Slack connection before acknowledging an event failed", err);
               return;
             }
             if (!ingestible) {
@@ -255,6 +269,9 @@ export function connectSlackSocketListener(
             if (msg.envelope_id) {
               ws?.send(JSON.stringify({ envelope_id: msg.envelope_id }));
             }
+            // Acked above so Slack does not redeliver. DMs are not channel messages, so they are not ingested.
+            // TODO: handle DMs to the bot when replies ship.
+            if (slackEvent.channel_type === "im") return;
             try {
               await dependencies.handleMessage(
                 slackEvent,
@@ -270,6 +287,7 @@ export function connectSlackSocketListener(
               );
             } catch (err) {
               log("error", connection.id, `handleSlackMessageEvent error: ${err}`);
+              record("slack_message_ingest_failed", "Ingesting a Slack message failed", err);
             }
             return;
           }
@@ -306,7 +324,10 @@ export function connectSlackSocketListener(
     }
   };
 
-  connect().catch((err) => log("error", connection.id, `initial connect error: ${err}`));
+  connect().catch((err) => {
+    log("error", connection.id, `initial connect error: ${err}`);
+    record("slack_listener_connect_failed", "Slack listener initial connect failed", err);
+  });
 
   return {
     stop(): void {

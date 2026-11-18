@@ -33,9 +33,11 @@ create table sessions (
                        check (approval_mode in ('ask-for-approval', 'approve-for-me', 'full-access')),
   raw_storage_path   text,
   raw_uploaded_at    timestamptz,
-  -- Routine sessions only. idempotency_key is '<task_id>:<occurrence_at>'.
+  -- Routine sessions only. idempotency_key is '<task>:<kind>:<agent_event id>', kind = timer, manual or an event name.
   scheduled_task_id  uuid,
   idempotency_key    text,
+  -- Runs with the same key are serialized: one live run per (routine, key). Null for skipped runs.
+  concurrency_key    text,
 
   unique (id, workspace_id),
   foreign key (scheduled_task_id, workspace_id)
@@ -49,6 +51,8 @@ create index sessions_unfinished_last_seen_idx on sessions (last_seen)
 
 create unique index sessions_idempotency_key_idx on sessions (workspace_id, idempotency_key)
   where idempotency_key is not null;
+create unique index sessions_one_live_per_key_idx on sessions (scheduled_task_id, concurrency_key)
+  where concurrency_key is not null and status in ('starting', 'live', 'host_offline');
 create index sessions_scheduled_task_idx on sessions (scheduled_task_id, started_at desc)
   where scheduled_task_id is not null;
 

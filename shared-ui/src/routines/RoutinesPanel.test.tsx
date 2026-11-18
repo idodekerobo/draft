@@ -30,6 +30,13 @@ function routine(overrides: Partial<Routine>): Routine {
     lastCheckedAt: null,
     lastRun: null,
     updatedByName: null,
+    kind: "recurring",
+    runAt: null,
+    firedAt: null,
+    madeByAgent: false,
+    createdByRunId: null,
+    createdBySessionId: null,
+    visibility: "shared",
     agent: null,
     ...overrides,
   };
@@ -58,16 +65,16 @@ const baseRoutines = (): Routine[] => [
   }),
 ];
 
-function setup(options: { canEdit?: boolean; routines?: Routine[]; updateRoutine?: DraftApi["updateRoutine"] } = {}) {
+function setup(options: { canEdit?: boolean; routines?: Routine[]; updateRoutine?: DraftApi["updateRoutine"]; getRoutines?: DraftApi["getRoutines"]; onOpenRun?: (sessionId: string, routine: { id: string; title: string }) => void } = {}) {
   const response: RoutinesResponse = { routines: options.routines ?? baseRoutines(), canEdit: options.canEdit ?? true };
   const updateRoutine = mock(options.updateRoutine ?? (async (id: string) => ({ ...response.routines.find((r) => r.id === id)! })));
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => response, updateRoutine, createRoutine: async () => response.routines[0]!, deleteRoutine: async () => {}, getRoutineRuns: async () => [] };
+  const api: DraftApi = { getRuns: async () => ({ runs: [], nextCursor: null }), getRoutines: options.getRoutines ?? (async () => response), updateRoutine, createRoutine: async () => response.routines[0]!, deleteRoutine: async () => {}, getRoutineRuns: async () => [] };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
       <DraftApiProvider api={api}>
         <Suspense fallback="loading">
-          <RoutinesPanel workspaceId="ws-1" />
+          <RoutinesPanel workspaceId="ws-1" onOpenRun={options.onOpenRun} />
         </Suspense>
       </DraftApiProvider>
     </QueryClientProvider>,
@@ -136,8 +143,8 @@ describe("RoutinesPanel", () => {
   it("opens details, closes with Escape and the Close button, and restores focus", async () => {
     setup();
     await ready();
+    // Clicked without focusing first, as WebKit does, so focus must come back from the recorded opener.
     const trigger = screen.getByRole("button", { name: "Update company context" });
-    trigger.focus();
     fireEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog", { hidden: true });
@@ -163,7 +170,7 @@ describe("RoutinesPanel", () => {
 
   it("saves a new schedule and warns about hourly cadence", async () => {
     const { updateRoutine } = setup({
-      updateRoutine: async (id, patch) => ({ ...routine({ id: "sessions" }), ...("preset" in patch ? { preset: patch.preset } : {}) }) as Routine,
+      updateRoutine: async () => routine({ id: "sessions", preset: "hourly" }),
     });
     await ready();
     fireEvent.click(screen.getByRole("button", { name: "Summarize coding sessions" }));
@@ -177,7 +184,7 @@ describe("RoutinesPanel", () => {
     await waitFor(() => expect(updateRoutine).toHaveBeenCalled());
     const [id, patch] = updateRoutine.mock.calls[0]!;
     expect(id).toBe("sessions");
-    expect(patch).toMatchObject({ preset: "hourly" });
+    expect(patch).toEqual({ when: { schedule: { preset: "hourly", timezone: "UTC" } } });
     await waitFor(() => expect(screen.queryByRole("dialog", { hidden: true })).toBeNull());
   });
 
@@ -215,5 +222,50 @@ describe("RoutinesPanel", () => {
     setup({ routines: [] });
     await ready();
     expect(screen.getByText("No routines yet")).toBeTruthy();
+  });
+
+  it("labels only the routines an agent made", async () => {
+    setup({
+      routines: [
+        routine({ id: "agent", title: "Agent digest", madeByAgent: true, createdByRunId: "agent-run-1" }),
+        routine({ id: "manual", title: "Manual digest" }),
+      ],
+    });
+    await ready();
+    const agentRow = screen.getByRole("region", { name: "Agent digest" });
+    expect(within(agentRow).getByText("Made by an agent")).toBeTruthy();
+    const manualRow = screen.getByRole("region", { name: "Manual digest" });
+    expect(within(manualRow).queryByText("Made by an agent")).toBeNull();
+  });
+
+  it("links the label to the run that made the routine when its session is known", async () => {
+    const onOpenRun = mock((_sessionId: string, _routine: { id: string; title: string }) => {});
+    setup({ routines: [routine({ id: "agent", title: "Agent digest", madeByAgent: true, createdByRunId: "agent-run-1", createdBySessionId: "session-1" })], onOpenRun });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Made by an agent: open the run that made Agent digest" }));
+    expect(onOpenRun).toHaveBeenCalledWith("session-1", expect.objectContaining({ id: "agent", title: "Agent digest" }));
+  });
+
+  it("never lists one-time routines, even when the list includes one", async () => {
+    setup({
+      routines: [
+        routine({}),
+        routine({ id: "once", kind: "once", title: "Remind me Friday", scheduleDescription: "Once", runAt: "2099-01-02T10:00:00.000Z", nextRunAt: null, madeByAgent: true }),
+      ],
+    });
+    await ready();
+    expect(screen.queryByText("Remind me Friday")).toBeNull();
+    expect(screen.queryByText("Made by an agent")).toBeNull();
+    expect(screen.getByRole("button", { name: /^All\s*1/ })).toBeTruthy();
+  });
+
+  it("shows the error state, not an empty list, when routines fail to load", async () => {
+    setup({
+      getRoutines: async () => {
+        throw new Error("offline");
+      },
+    });
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Routines couldn’t load/);
+    expect(screen.queryByText("No routines yet")).toBeNull();
   });
 });

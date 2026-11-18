@@ -1,5 +1,5 @@
 import { meetingFacts } from "../../routines/event-facts";
-import { fireRoutineEvent } from "../../routines/fire-event";
+import { fireEnqueueRoutineEvents } from "../../events/enqueue-routine-events";
 import { ingestGranolaNote } from "../../ingestion/granola/normalize";
 import { authenticateGranolaWebhookRequest, GranolaWebhookAuthError } from "./request-auth";
 import { recordRouteError } from "../../errors/route-error";
@@ -40,7 +40,7 @@ export async function POST(
     if (error) throw error;
 
     if (generatedSourceItemId) {
-      fireRoutineEvent({ workspaceId: connection.workspace_id, name: "granola.note_ready", eventId: noteId, sourceItemId: generatedSourceItemId, facts: meetingFacts("Granola note id", noteId) });
+      fireEnqueueRoutineEvents({ workspaceId: connection.workspace_id, sourceConnectionId: connection.id, name: "granola.note_ready", eventId: noteId, sourceItemId: generatedSourceItemId, facts: meetingFacts("Granola note id", noteId), concurrencyKey: `granola:${noteId}` });
     }
 
     return new Response(null, { status: 200 });

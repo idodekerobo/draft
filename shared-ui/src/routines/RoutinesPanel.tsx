@@ -2,7 +2,7 @@
 
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import type { HarnessId } from "draft-core/harnesses";
-import { useId, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
 import { routineRunsQueryOptions, routinesQueryOptions } from "../query/options";
@@ -133,12 +133,16 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
-  const { routines, canEdit, agents, connectedProviders } = data;
+  const { canEdit, agents, connectedProviders } = data;
+  // One-time routines are not listed here; the backend leaves them out by default too.
+  const routines = data.routines.filter((routine) => routine.kind !== "once");
   const [filter, setFilter] = useState<RoutineFilter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const [creating, setCreating] = useState(false);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  // The control a dialog opened from, so focus can go back to it on close.
+  const opener = useRef<HTMLElement | null>(null);
   const labelPrefix = useId();
 
   const { toggle, save, create, remove, run } = useRoutineMutations(workspaceId, (error) =>
@@ -195,7 +199,9 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   function onRunNow(routine: Routine) {
     setPendingFor(routine.id, true);
     run.mutate(routine.id, {
-      onSuccess: () => toast.success(`${routine.title} started.`, { description: "Its run shows in Recent activity." }),
+      onSuccess: (outcome) => {
+        if (outcome.status === "started") toast.success(`${routine.title} started.`, { description: "Its run shows in Recent activity." });
+      },
       onError: (error) => toast.error(`Could not start ${routine.title}`, { description: error.message }),
       onSettled: () => setPendingFor(routine.id, false),
     });
@@ -228,7 +234,14 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onChange={(event) => setSearch(event.target.value)}
         />
         {canEdit && (
-          <button type="button" className="ui-routines__btn ui-routines__btn--primary" onClick={() => setCreating(true)}>
+          <button
+            type="button"
+            className="ui-routines__btn ui-routines__btn--primary"
+            onClick={(event) => {
+              opener.current = event.currentTarget;
+              setCreating(true);
+            }}
+          >
             New routine
           </button>
         )}
@@ -278,7 +291,10 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                       type="button"
                       id={nameId}
                       className="ui-routines__link"
-                      onClick={() => setOpenId(routine.id)}
+                      onClick={(event) => {
+                        opener.current = event.currentTarget;
+                        setOpenId(routine.id);
+                      }}
                       onPointerEnter={() => warmRuns(routine)}
                       onFocus={() => warmRuns(routine)}
                     >
@@ -291,6 +307,13 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                         {routine.agent.createdByName ? ` · by ${routine.agent.createdByName}` : ""}
                       </div>
                     )}
+                    {routine.madeByAgent && (routine.createdBySessionId && onOpenRun ? (
+                      <button type="button" className="ui-routines__made-by ui-routines__made-by--link" aria-label={`Made by an agent: open the run that made ${routine.title}`} onClick={() => onOpenRun(routine.createdBySessionId!, routine)}>
+                        Made by an agent
+                      </button>
+                    ) : (
+                      <span className="ui-routines__made-by">Made by an agent</span>
+                    ))}
                   </div>
                   <div className="ui-routines__schedule">
                     <div className="ui-routines__secondary">{routine.scheduleDescription}</div>
@@ -352,6 +375,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
+          returnFocusTo={opener}
         />
       )}
 
@@ -364,6 +388,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
+          returnFocusTo={opener}
         />
       )}
     </>

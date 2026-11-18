@@ -493,7 +493,14 @@ async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult
   } catch {
     return { ok: false, code: result.response.ok ? "malformed_response" : "request_failed" };
   }
-  if (!result.response.ok) return { ok: false, code: safeBackendError(value) ?? "request_failed" };
+  if (!result.response.ok) {
+    // An invalid or denied call is answered as a tool envelope that says why. Keep that message.
+    const outcome = decodeToolEnvelope(value);
+    if (!outcome.ok && outcome.status !== "malformed" && typeof recordValue(value)?.status === "string") {
+      return { ok: false, code: "request_failed", refusal: outcome.code, message: outcome.message, toolStatus: outcome.status };
+    }
+    return { ok: false, code: safeBackendError(value) ?? "request_failed" };
+  }
 
   const outcome = decodeToolEnvelope(value);
   if (outcome.ok) return { ok: true, output: outcome.output };
@@ -876,6 +883,14 @@ export interface RoutineSummary {
   timezone: string;
   cron: string | null;
   nextRunAt: string | null;
+  kind: "once" | "recurring" | "event";
+  runAt: string | null;
+  firedAt: string | null;
+  madeByAgent: boolean;
+  createdVia: string;
+  createdByRunId: string | null;
+  createdBySessionId: string | null;
+  visibility: "shared" | "private";
   canEdit: boolean;
   updatedByName: string | null;
   agent: RoutineAgent | null;

@@ -10,6 +10,7 @@
 //   webview.requests  — bun calls → renderer responds
 //   webview.messages  — bun sends fire-and-forget → renderer handles
 
+import type { SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
 export interface UserIdentity {
@@ -31,7 +32,7 @@ export interface WorkspaceRun {
   status: "queued" | "preparing" | "running" | "validating" | "committing" |
           "succeeded" | "failed" | "stale" | "cancelled";
   outcome: "changed" | "no_change" | "failure" | "stale" | null;
-  triggerType: "schedule" | "source_threshold" | "manual" | "retry" | "stale_requeue" | "seed_test";
+  triggerType: "schedule" | "source_threshold" | "manual" | "retry" | "stale_requeue" | "seed_test" | "event";
   resultSummary: string | null;
   startedAt: string | null; // ISO 8601
   completedAt: string | null;
@@ -227,7 +228,7 @@ export interface SlackMembershipReconcileResult {
 }
 
 import type { ContextFileEntry } from "draft-shared-ui/context-files";
-import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutineRun, RoutinesResponse } from "draft-shared-ui";
+import type { ApprovalResponse, CreateRoutineInput, LiveSession, LiveSessionEventsPage, LiveSessionInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "draft-shared-ui";
 export type { ContextFileEntry };
 
 // ── RPC schema ─────────────────────────────────────────────────────────────────
@@ -274,10 +275,10 @@ export type AppRPCType = {
       createRoutine: { params: CreateRoutineInput; response: { ok: true; routine: Routine } | { ok: false; code: string; field?: string } };
 
       /** Delete an agent routine: it leaves the list and stops running. Its past runs stay. */
-      deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
+      deleteRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string; message?: string } };
 
-      /** The newest runs of one agent routine. */
-      runRoutine: { params: { id: string }; response: { ok: true } | { ok: false; code: string; field?: string } };
+      /** Start a run of one agent routine now, or queue it behind the run in progress. Failures carry the API error code and offending field. */
+      runRoutine: { params: { id: string }; response: { ok: true; outcome: RoutineRunOutcome } | { ok: false; code: string; field?: string; message?: string } };
       getRoutineSlackChannels: { params: void; response: Array<{ id: string; name: string }> };
       getRoutineGithubRepos: { params: void; response: string[] };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
@@ -458,8 +459,8 @@ export type AppRPCType = {
       /** What "Default" model and effort mean for a harness on this computer, from the harness's own settings. */
       getAgentDefaults: { params: { harness: string }; response: { model: string | null; modelLabel: string | null; effort: string | null } };
 
-      /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Returns [] if signed out or the request fails. */
-      getWorkspaceRuns: { params: { before?: string } | void; response: WorkspaceRun[] };
+      /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Includes upcoming routines on the first page; request failures reject. */
+      getWorkspaceRuns: { params: { before?: string } | void; response: SynthesisRunsPage };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };

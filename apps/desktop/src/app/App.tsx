@@ -33,6 +33,7 @@ const STATUS_POLL_MS = 5_000;
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export function App() {
+  const [activityRoutineId, setActivityRoutineId] = useState<string | undefined>();
   const [activeView, setActiveView]     = useState<View>("sessions");
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
   // app renders immediately instead of waiting on identityRefreshNeeded's
@@ -107,6 +108,7 @@ export function App() {
 
   // A transition keeps the current view on screen if the next one has to wait.
   const handleNavigate = useCallback((view: View) => {
+    setActivityRoutineId(undefined);
     startTransition(() => setActiveView(view));
     track("view_navigated", { view });
   }, [track]);
@@ -162,8 +164,8 @@ export function App() {
                 />
               </div>
               {activeView === "connections" && <ConnectionsView />}
-              {activeView === "activity" && <ActivityView onFixInConnections={() => handleNavigate("connections")} />}
-              {activeView === "routines" && <RoutinesView onReconnect={() => handleNavigate("connections")} />}
+              {activeView === "activity" && <ActivityView onOpenRoutine={(id) => { handleNavigate("routines"); setActivityRoutineId(id); }} onFixInConnections={() => handleNavigate("connections")} />}
+              {activeView === "routines" && <RoutinesView initialOpenId={activityRoutineId} onReconnect={() => handleNavigate("connections")} />}
               {activeView === "sessions" && <SessionsView />}
             </>
           )}

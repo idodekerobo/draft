@@ -62,7 +62,9 @@ async function appendLines(client: SupabaseClient, session: RoutineSession, line
 
 async function finishRun(client: SupabaseClient, session: RoutineSession, result: Record<string, unknown>): Promise<void> {
   // Saved before the session ends, because ending it frees the login for the next run.
-  if (session.harness === "codex") await saveRefreshedCodexLogin(client, session.workspace_id, result.auth_json).catch(() => undefined);
+  if (session.harness === "codex") await saveRefreshedCodexLogin(client, session.workspace_id, result.auth_json).catch((error) =>
+      recordError({ client, workspaceId: session.workspace_id, sessionId: session.id, operation: "scheduling", code: "codex_login_save_failed", message: "Saving the refreshed Codex login after a routine run failed", error }),
+    );
   if (result.ok === true) {
     await endRoutineSession(client, session, "completed");
     return;

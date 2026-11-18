@@ -12,6 +12,9 @@ const realNormalizeModule = await import("../../../ingestion/linear/normalize");
 const RealLinearWebhookAuthError = realRequestAuthModule.LinearWebhookAuthError;
 const realAuthenticateLinearWebhookRequest = realRequestAuthModule.authenticateLinearWebhookRequest;
 const realIngestLinearEvent = realNormalizeModule.ingestLinearEvent;
+const realEnqueueModule = await import("../../../events/enqueue-routine-events");
+const realEnqueueRoutineEvents = realEnqueueModule.enqueueRoutineEvents;
+const realFireEnqueueRoutineEvents = realEnqueueModule.fireEnqueueRoutineEvents;
 
 function restoreRealModules() {
   mock.module("../../../webhooks/linear/request-auth", () => ({
@@ -20,6 +23,10 @@ function restoreRealModules() {
   }));
   mock.module("../../../ingestion/linear/normalize", () => ({
     ingestLinearEvent: realIngestLinearEvent,
+  }));
+  mock.module("../../../events/enqueue-routine-events", () => ({
+    enqueueRoutineEvents: realEnqueueRoutineEvents,
+    fireEnqueueRoutineEvents: realFireEnqueueRoutineEvents,
   }));
 }
 
@@ -97,5 +104,37 @@ describe("POST /webhooks/linear/:connectionKey", () => {
     const text = await response.text();
     expect(text).not.toContain("provider rejected");
     expect(text).not.toContain(canary);
+  });
+
+  it("queues the routine events for a created issue, keyed to the issue", async () => {
+    const connection = { id: "conn-1", workspace_id: "ws-1" };
+    const payload = {
+      type: "Issue" as const,
+      action: "create" as const,
+      webhookTimestamp: Date.now(),
+      data: { id: "issue-1", title: "Ship lifecycle guards" },
+    };
+    mock.module("../../../webhooks/linear/request-auth", () => ({
+      LinearWebhookAuthError: RealLinearWebhookAuthError,
+      authenticateLinearWebhookRequest: async () => ({ connection, payload }),
+    }));
+    mock.module("../../../ingestion/linear/normalize", () => ({ ingestLinearEvent: async () => ({ sourceItemId: "item-1" }) }));
+    const fired: unknown[] = [];
+    mock.module("../../../events/enqueue-routine-events", () => ({ fireEnqueueRoutineEvents: (input: unknown) => fired.push(input) }));
+
+    const { POST } = await import("../../../webhooks/linear/route");
+    expect((await POST(bunRequest("acme-linear"))).status).toBe(200);
+
+    expect(fired).toEqual([
+      {
+        workspaceId: "ws-1",
+        sourceConnectionId: "conn-1",
+        name: "linear.issue_created",
+        eventId: "issue-1",
+        sourceItemId: "item-1",
+        facts: [{ label: "Linear issue id", value: "issue-1" }],
+        concurrencyKey: "linear:issue-1",
+      },
+    ]);
   });
 });

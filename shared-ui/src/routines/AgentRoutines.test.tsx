@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Suspense, type ReactNode } from "react";
 import { DraftApiProvider, type DraftApi } from "../query/api";
-import { RoutineError } from "./errors";
+import { toast } from "../toast";
+import { RoutineError, toRoutineError } from "./errors";
 import { RoutinesPanel } from "./RoutinesPanel";
-import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutineRun, RoutinesResponse } from "./types";
+import type { CreateRoutineInput, Routine, RoutineAgentStatus, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "./types";
 
 afterEach(cleanup);
 
@@ -30,6 +31,13 @@ function agentRoutine(overrides: Partial<Routine> = {}): Routine {
     lastCheckedAt: null,
     lastRun: null,
     updatedByName: null,
+    kind: "recurring",
+    runAt: null,
+    firedAt: null,
+    madeByAgent: false,
+    createdByRunId: null,
+    createdBySessionId: null,
+    visibility: "shared",
     agent: {
       prompt: "Summarize the week.",
       harness: "claude",
@@ -46,17 +54,17 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string } = {}) {
+function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string; runRoutine?: (id: string) => Promise<RoutineRunOutcome> } = {}) {
   const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
   const deleteRoutine = mock(options.deleteRoutine ?? (async () => {}));
-  const runRoutine = mock(async (_id: string) => ({}));
+  const runRoutine = mock(options.runRoutine ?? (async (_id: string): Promise<RoutineRunOutcome> => ({ status: "started", runId: "run-1", sessionId: "s-1" })));
   const getRoutineSlackChannels = mock(async () => [{ id: "C1", name: "general" }, { id: "C2", name: "eng" }]);
   const getRoutineGithubRepos = mock(async () => ["acme/app", "acme/site"]);
   const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
-  const api: DraftApi = { getRuns: async () => [], getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels, getRoutineGithubRepos };
+  const api: DraftApi = { getRuns: async () => ({ runs: [], nextCursor: null }), getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels, getRoutineGithubRepos };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -138,7 +146,7 @@ describe("creating a routine", () => {
 
     await act(async () => fireEvent.click(create));
     await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
-    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ title: "Launch watch", prompt: "List launch risks.", harness: "claude", model: null, preset: "daily", time: "08:30" });
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ title: "Launch watch", prompt: "List launch risks.", harness: "claude", model: null, when: { schedule: { preset: "daily", time: "08:30" } } });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("button", { name: "Launch watch" })).toBeTruthy();
   });
@@ -154,6 +162,30 @@ describe("creating a routine", () => {
 
     expect((await within(dialog).findByRole("alert")).textContent).toBe("Enter a name for this routine.");
     expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("shows a time that has already passed beside When it runs", async () => {
+    setup({ createRoutine: async () => { throw toRoutineError("in_the_past"); } });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "x" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "y" } });
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+
+    const when = within(dialog).getByRole("group", { name: "When it runs" });
+    expect((await within(when).findByRole("alert")).textContent).toBe("That time has already passed. Pick a later time.");
+  });
+
+  it("gives focus back to New routine when the dialog closes", async () => {
+    setup({ routines: [] });
+    await ready();
+    const newRoutine = screen.getByRole("button", { name: "New routine" });
+    fireEvent.click(newRoutine);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(newRoutine);
   });
 
   it("hides New routine from view-only members", async () => {
@@ -268,7 +300,50 @@ describe("editing a routine", () => {
     fireEvent.change(within(dialog).getByLabelText("Time"), { target: { value: "07:15" } });
     await act(async () => fireEvent.click(save(dialog)));
     await waitFor(() => expect(updateRoutine).toHaveBeenCalledTimes(1));
-    expect(updateRoutine.mock.calls[0]![1]).toMatchObject({ prompt: "Summarize Monday.", preset: "daily", time: "07:15" });
+    expect(updateRoutine.mock.calls[0]![1]).toMatchObject({ prompt: "Summarize Monday.", when: { schedule: { preset: "daily", time: "07:15" } } });
+  });
+
+  it("moves a routine off its schedule onto triggers, and sends the schedule as off", async () => {
+    const { updateRoutine } = setup({ connectedProviders: ["github"] });
+    const dialog = await open();
+    fireEvent.click(within(dialog).getByLabelText("When something happens"));
+    fireEvent.click(within(dialog).getByLabelText("A pull request is opened"));
+    await act(async () => fireEvent.click(save(dialog)));
+    await waitFor(() => expect(updateRoutine).toHaveBeenCalledTimes(1));
+    expect(updateRoutine.mock.calls[0]![1]).toEqual({ when: { schedule: null, events: ["github.pull_request_opened"] } });
+  });
+
+  it("puts a triggered routine back on its schedule and clears its triggers", async () => {
+    const { updateRoutine } = setup({
+      connectedProviders: ["github"],
+      routines: [agentRoutine({ agent: { ...agentRoutine().agent!, onSchedule: false, events: ["github.push"] } })],
+    });
+    const dialog = await open();
+    fireEvent.click(within(dialog).getByLabelText("On a schedule"));
+    await act(async () => fireEvent.click(save(dialog)));
+    await waitFor(() => expect(updateRoutine).toHaveBeenCalledTimes(1));
+    expect(updateRoutine.mock.calls[0]![1]).toEqual({ when: { schedule: { preset: "daily", time: "09:00", timezone: "UTC" }, events: [] } });
+  });
+
+  it("shows the saved routine's next run straight away", async () => {
+    const nextRunAt = new Date(Date.now() + 3 * 3_600_000).toISOString();
+    setup({ updateRoutine: async () => agentRoutine({ nextRunAt }) });
+    const dialog = await open();
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Summarize Monday." } });
+    await act(async () => fireEvent.click(save(dialog)));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("In 3 hours")).toBeTruthy();
+  });
+
+  it("shows a schedule error the API names beside that control", async () => {
+    setup({ updateRoutine: async () => { throw toRoutineError("invalid_schedule", "when.schedule.time"); } });
+    const dialog = await open();
+    const time = within(dialog).getByLabelText("Time");
+    fireEvent.change(time, { target: { value: "07:15" } });
+    await act(async () => fireEvent.click(save(dialog)));
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert.textContent).toBe("Enter a valid time.");
+    expect(alert.closest("label")).toBe(time.closest("label"));
   });
 
   it("switches to a connected agent and drops the old model", async () => {
@@ -378,6 +453,28 @@ describe("run now and edit rights", () => {
   });
 });
 
+describe("the run-now toast", () => {
+  afterEach(() => mock.restore());
+
+  it("says the run is queued, and does not say it started, when a run is in progress", async () => {
+    const info = spyOn(toast, "info");
+    const success = spyOn(toast, "success");
+    setup({ runRoutine: async () => ({ status: "queued" }) });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /Run .* now/ }));
+    await waitFor(() => expect(info).toHaveBeenCalledWith("Queued. It runs when the current run ends."));
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it("says the routine started when its run starts now", async () => {
+    const success = spyOn(toast, "success");
+    setup({ runRoutine: async () => ({ status: "started", runId: "run-1", sessionId: "s-1" }) });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: /Run .* now/ }));
+    await waitFor(() => expect(success).toHaveBeenCalledWith("Weekly digest started.", expect.anything()));
+  });
+});
+
 describe("what a routine can do", () => {
   it("shows each run's result under its time", async () => {
     const { getRoutineRuns } = setup();
@@ -445,7 +542,7 @@ describe("when a routine runs", () => {
     expect(within(dialog).queryByText(/email arrives/i)).toBeNull();
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
     await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
-    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ onSchedule: false, events: ["fireflies.meeting_summarized"] });
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ when: { schedule: null, events: ["fireflies.meeting_summarized"] } });
   });
 
   it("offers to connect Fireflies instead of a trigger that cannot fire", async () => {

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { Select } from "../controls/Select";
-import type { RoutinePreset, RoutineWeekday } from "./types";
+import type { RoutinePreset, RoutineScheduleInput, RoutineWeekday } from "./types";
 
 type EditablePreset = Exclude<RoutinePreset, "custom">;
 
@@ -42,6 +42,16 @@ export interface ScheduleValue {
   time: string;
   weekday: RoutineWeekday;
   timezone: string;
+}
+
+/** The schedule as the API takes it. Draft's default schedule has no timezone of its own. */
+export function scheduleInput(value: { preset: Exclude<RoutinePreset, "custom">; time: string; weekday: RoutineWeekday; timezone: string }): RoutineScheduleInput {
+  return {
+    preset: value.preset,
+    ...(presetUsesTime(value.preset) ? { time: value.time } : {}),
+    ...(value.preset === "weekly" ? { weekday: value.weekday } : {}),
+    ...(value.preset === "draft_default" ? {} : { timezone: value.timezone }),
+  };
 }
 
 /** "Runs weekdays at 09:00" for the preview column. */

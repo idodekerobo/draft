@@ -93,7 +93,7 @@ export type ScheduledTaskType =
   | "slack_backfill"
   | "agent_routine";
 
-export type ScheduleKind = "cron" | "interval";
+export type ScheduleKind = "cron" | "interval" | "once";
 
 export type SynthesisRunStatus =
   | "queued"
