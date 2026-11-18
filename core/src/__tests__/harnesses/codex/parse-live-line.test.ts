@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { codexEventsFor, parseCodexLine } from "../../../harnesses/codex/parse-live-line";
 import turn from "./turn-with-command.json";
 
-const lines = turn.map((note, offset) => ({ file: "thread", offset, raw: JSON.stringify(note) }));
+const lines = turn.map((note, position) => ({ stream: "thread", position, raw: JSON.stringify(note) }));
 
 describe("parseCodexLine", () => {
   const events = lines.flatMap(parseCodexLine);
@@ -26,22 +26,22 @@ describe("parseCodexLine", () => {
   });
 
   it("notes a failed or interrupted turn and ignores other notifications", () => {
-    const end = (status: string, error: unknown = null) => ({ file: "thread", offset: 9, raw: JSON.stringify({ method: "turn/completed", params: { threadId: "t", turn: { id: "u", status, error } } }) });
+    const end = (status: string, error: unknown = null) => ({ stream: "thread", position: 9, raw: JSON.stringify({ method: "turn/completed", params: { threadId: "t", turn: { id: "u", status, error } } }) });
     expect(parseCodexLine(end("failed", { message: "No quota" }))[0]).toMatchObject({ kind: "session_note", payload: { text: "No quota" } });
     expect(parseCodexLine(end("interrupted"))[0]!.kind).toBe("session_note");
-    expect(parseCodexLine({ file: "thread", offset: 1, raw: JSON.stringify({ method: "thread/status/changed", params: {} }) })).toEqual([]);
-    expect(parseCodexLine({ file: "thread", offset: 1, raw: "not json" })).toEqual([]);
+    expect(parseCodexLine({ stream: "thread", position: 1, raw: JSON.stringify({ method: "thread/status/changed", params: {} }) })).toEqual([]);
+    expect(parseCodexLine({ stream: "thread", position: 1, raw: "not json" })).toEqual([]);
   });
 
   it("marks a command that exited non-zero as an error", () => {
     const item = { type: "commandExecution", id: "c", command: "false", cwd: "/", aggregatedOutput: "boom", exitCode: 1, status: "failed" };
-    const [, result] = parseCodexLine({ file: "thread", offset: 0, raw: JSON.stringify({ method: "item/completed", params: { threadId: "t", item } }) });
+    const [, result] = parseCodexLine({ stream: "thread", position: 0, raw: JSON.stringify({ method: "item/completed", params: { threadId: "t", item } }) });
     expect(result!.payload).toMatchObject({ is_error: true, content: "boom" });
   });
 });
 
 describe("codex line parser", () => {
   it("notes an oversize line", () => {
-    expect(codexEventsFor({ file: "thread", offset: 2, oversizeBytes: 5 })[0]).toMatchObject({ kind: "session_note" });
+    expect(codexEventsFor({ stream: "thread", position: 2, oversizeBytes: 5 })[0]).toMatchObject({ kind: "session_note" });
   });
 });

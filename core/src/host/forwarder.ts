@@ -4,8 +4,8 @@ import { dirname, join } from "path";
 import type { FileCursor } from "./cursor-store";
 
 export interface ForwardedLine {
-  file: string;
-  offset: number;
+  stream: string;
+  position: number;
   raw?: string;
   /** Set instead of `raw` when the line is too large to post. */
   oversizeBytes?: number;
@@ -44,12 +44,12 @@ export function fingerprintBefore(path: string, offset: number): string {
 }
 
 /** Complete lines in a chunk that starts at `startOffset`. A trailing partial line is left for the next read. */
-export function readCompleteLines(chunk: Buffer, startOffset: number, file = ROOT_FILE): { lines: ForwardedLine[]; consumed: number } {
+export function readCompleteLines(chunk: Buffer, startOffset: number, stream = ROOT_FILE): { lines: ForwardedLine[]; consumed: number } {
   const lines: ForwardedLine[] = [];
   let lineStart = 0;
   for (let i = chunk.indexOf(0x0a); i !== -1; i = chunk.indexOf(0x0a, lineStart)) {
     const raw = chunk.toString("utf8", lineStart, i);
-    if (raw.trim()) lines.push({ file, offset: startOffset + lineStart, raw });
+    if (raw.trim()) lines.push({ stream, position: startOffset + lineStart, raw });
     lineStart = i + 1;
   }
   return { lines, consumed: lineStart };
@@ -191,7 +191,7 @@ export class TranscriptForwarder {
         if (end === -1) break;
         const lineBytes = end - cursor.offset;
         const raw = lineBytes <= MAX_POST_BYTES ? readRange(path, cursor.offset, lineBytes).toString("utf8") : null;
-        lines = raw !== null ? [{ file: label, offset: cursor.offset, raw }] : [{ file: label, offset: cursor.offset, oversizeBytes: lineBytes }];
+        lines = raw !== null ? [{ stream: label, position: cursor.offset, raw }] : [{ stream: label, position: cursor.offset, oversizeBytes: lineBytes }];
         consumed = lineBytes + 1;
       }
 
@@ -222,7 +222,7 @@ export class TranscriptForwarder {
     for (let line of fresh) {
       let bytes = serializedBytes(line);
       if (bytes > MAX_POST_BYTES) {
-        line = { file: line.file, offset: line.offset, oversizeBytes: Buffer.byteLength(line.raw ?? "") };
+        line = { stream: line.stream, position: line.position, oversizeBytes: Buffer.byteLength(line.raw ?? "") };
         bytes = serializedBytes(line);
       }
       if (batchBytes + bytes > MAX_POST_BYTES || batch.length >= MAX_POST_LINES) await flush();

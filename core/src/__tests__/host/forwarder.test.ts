@@ -22,15 +22,15 @@ describe("readCompleteLines", () => {
   it("returns complete lines with their byte offsets and leaves a partial line", () => {
     const { lines, consumed } = readCompleteLines(Buffer.from('{"a":1}\n{"b":2}\n{"c":'), 100);
     expect(lines).toEqual([
-      { file: "root.jsonl", offset: 100, raw: '{"a":1}' },
-      { file: "root.jsonl", offset: 108, raw: '{"b":2}' },
+      { stream: "root.jsonl", position: 100, raw: '{"a":1}' },
+      { stream: "root.jsonl", position: 108, raw: '{"b":2}' },
     ]);
     expect(consumed).toBe(16);
   });
 
   it("counts offsets in bytes, not characters", () => {
     const { lines } = readCompleteLines(Buffer.from('{"t":"é"}\n{"t":"b"}\n'), 0);
-    expect(lines[1]!.offset).toBe(Buffer.byteLength('{"t":"é"}\n'));
+    expect(lines[1]!.position).toBe(Buffer.byteLength('{"t":"é"}\n'));
   });
 
   it("skips blank lines", () => {
@@ -70,7 +70,7 @@ function harness(root: string, options: { cursors?: Record<string, FileCursor>; 
   return { forwarder, posted, posts, state, rootPath };
 }
 
-const raws = (lines: ForwardedLine[], file = "root.jsonl") => lines.filter((l) => l.file === file).map((l) => JSON.parse(l.raw!).n);
+const raws = (lines: ForwardedLine[], stream = "root.jsonl") => lines.filter((l) => l.stream === stream).map((l) => JSON.parse(l.raw!).n);
 
 describe("TranscriptForwarder", () => {
   it("posts each line once as the file grows and holds back a partial line", async () => {
@@ -211,7 +211,7 @@ describe("TranscriptForwarder", () => {
     const second = h.posted[1]!;
     expect(second.raw).toBeUndefined();
     expect(second.oversizeBytes).toBe(Buffer.byteLength(huge));
-    expect(second.offset).toBe(Buffer.byteLength(line(0)) + 1);
+    expect(second.position).toBe(Buffer.byteLength(line(0)) + 1);
     expect(raws(h.posted.filter((l) => l.raw !== undefined))).toEqual([0, 2]);
   });
 

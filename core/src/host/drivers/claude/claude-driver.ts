@@ -313,7 +313,7 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version };
   },
   newNativeSessionId: () => crypto.randomUUID(),
-  async resume({ sessionId, nativeSessionId, model, effort, bin }) {
+  async resume({ sessionId, nativeSessionId, model, effort, options: { bin } }) {
     // The transcript says which folder the conversation ran in, and Claude finds it only from there.
     const transcript = findTranscript(nativeSessionId);
     const folderPath = transcript ? folderOfTranscript(transcript) : null;
@@ -325,7 +325,7 @@ const launcher: HarnessLauncher = {
     await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, resume: true });
     return { folderPath, tmuxSession };
   },
-  async launch({ sessionId, folderPath, model, effort, bin, nativeSessionId }) {
+  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin }, nativeSessionId }) {
     const tmuxSession = tmuxSessionName(sessionId);
     preTrustFolder(folderPath);
     const settingsPath = writeSessionSettings(sessionId);

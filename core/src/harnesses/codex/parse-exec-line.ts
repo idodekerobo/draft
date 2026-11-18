@@ -63,10 +63,10 @@ export function parseCodexExecLine(line: LiveLineInput): ParsedLiveEvent[] {
   if (event?.type === "item.completed" && event.item) {
     const item = toCodexItem(event.item);
     if (!item) return [];
-    base = `${line.file}:${item.id ?? line.offset}`;
+    base = `${line.stream}:${item.id ?? line.position}`;
     events = itemEvents(item);
   } else if (event?.type === "turn.failed" || event?.type === "error") {
-    base = `${line.file}:error:${line.offset}`;
+    base = `${line.stream}:error:${line.position}`;
     events = [{ kind: "session_note", payload: { text: event.error?.message ?? event.message ?? "The turn failed" } }];
   } else {
     return [];
@@ -78,7 +78,7 @@ export function codexExecEventsFor(line: IncomingLine): ParsedLiveEvent[] {
   if ("raw" in line) return parseCodexExecLine(line);
   return [
     {
-      sourceId: `${line.file}:${line.offset}`,
+      sourceId: `${line.stream}:${line.position}`,
       kind: "session_note",
       payload: { text: "A very large item was skipped", reason: "too_large", bytes: line.oversizeBytes },
     },

@@ -224,7 +224,7 @@ class SessionHost {
     this.stepping = true;
     try {
       if (!this.state.ended) {
-        const rotateTo = this.driver.rotationTarget();
+        const rotateTo = this.driver.rotationTarget?.() ?? null;
         if (rotateTo && (await this.rotate(rotateTo))) return;
         if (await this.driver.isAlive()) {
           await this.whileAlive();
@@ -266,7 +266,7 @@ class SessionHost {
     this.persist({ ended: true });
     saveState(this.successor);
     new SessionHost(this.successor).start();
-    this.driver.clearRotation();
+    this.driver.clearRotation?.();
     return true;
   }
 
@@ -327,7 +327,8 @@ class SessionHost {
     await this.driver.stop();
   }
 
-  openInTerminal(): Promise<{ ok: true } | { ok: false; error: string }> {
+  async openInTerminal(): Promise<{ ok: true } | { ok: false; error: string }> {
+    if (!this.driver.openInTerminal) return { ok: false, error: "This agent cannot open in a terminal." };
     return this.driver.openInTerminal();
   }
 
@@ -400,7 +401,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   };
 
   try {
-    state = { ...state, ...(await launcher.launch({ sessionId, folderPath, model, effort, bin: checked.bin, nativeSessionId })) };
+    state = { ...state, ...(await launcher.launch({ sessionId, workspace: { path: folderPath }, model, effort, nativeSessionId, options: { bin: checked.bin } })) };
   } catch (error) {
     console.error("[live-session] launch failed", error);
     await hostServices().fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
@@ -460,7 +461,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
     harnessVersion: checked.version,
   };
   try {
-    state = { ...state, ...(await launcher.resume({ sessionId, nativeSessionId: session.native_session_id, model: state.model ?? null, effort: state.reasoningEffort ?? null, bin: checked.bin })) };
+    state = { ...state, ...(await launcher.resume({ sessionId, nativeSessionId: session.native_session_id, model: state.model ?? null, effort: state.reasoningEffort ?? null, options: { bin: checked.bin } })) };
   } catch (error) {
     console.error("[live-session] resume failed", error);
     await hostServices().fetchServer(`${sessionBase(sessionId)}/end`, { method: "POST", body: JSON.stringify({ hostId, reason: "resume_failed" }) }).catch(() => {});

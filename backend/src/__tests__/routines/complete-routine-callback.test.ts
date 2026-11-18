@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createSandboxCallbackToken } from "../../metaharness/sandbox/callback-token";
-import { completeRoutineRunCallback } from "../../routines/complete-routine-callback";
+import { completeRoutineRunCallback, fromRunnerLine } from "../../routines/complete-routine-callback";
+import { eventsFor } from "draft-core/harnesses/claude/live-lines";
 import { encryptCredentialPayload } from "../../credentials/crypto";
 import { routineHostId } from "../../routines/config";
 import { fakeClient, fakeDb, type FakeDb } from "./fake-client";
@@ -177,5 +178,12 @@ describe("completeRoutineRunCallback for a Codex run", () => {
     expect(response.status).toBe(204);
     expect(db.tables.credentials![0]!.encrypted_payload).toBe(before);
     expect(db.rpcCalls.map((c) => c.name)).toContain("release_credential_lease");
+  });
+});
+
+describe("fromRunnerLine", () => {
+  it("keeps a runner line's event id, which is its file and offset", () => {
+    const [event] = eventsFor(fromRunnerLine({ file: "root.jsonl", offset: 7, oversizeBytes: 9 }));
+    expect(event!.sourceId).toBe("root.jsonl:7");
   });
 });

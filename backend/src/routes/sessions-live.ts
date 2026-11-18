@@ -243,13 +243,14 @@ export const LINES = withAuth<LinesRequest>(async (req, caller) => {
   const incoming = body.lines as IncomingLine[];
   for (const line of incoming) {
     if ("oversizeBytes" in line) {
+      // Stored error rows keep the `file` and `offset` keys they were written with.
       void recordError({
         workspaceId,
         sessionId,
         operation: "session",
         message: "Session line too large to forward",
         code: "line_too_large",
-        detail: { file: line.file, offset: line.offset, bytes: line.oversizeBytes },
+        detail: { file: line.stream, offset: line.position, bytes: line.oversizeBytes },
       });
     }
   }

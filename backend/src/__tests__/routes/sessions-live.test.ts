@@ -124,8 +124,8 @@ function post(path: string, body: unknown, params: Record<string, string> = { id
 }
 
 const userLine = (uuid: string, text: string) => ({
-  file: "root.jsonl",
-  offset: 0,
+  stream: "root.jsonl",
+  position: 0,
   raw: JSON.stringify({ type: "user", uuid, message: { role: "user", content: text } }),
 });
 
@@ -179,7 +179,7 @@ describe("live session routes", () => {
 
   it("does not match sent messages for a batch with no user turn", async () => {
     tables.session_inputs = [{ id: "w1", session_id: SESSION, workspace_id: WS, kind: "message", state: "delivering", payload: { text: "Fix the login bug" }, author_name: "Maya", created_at: "t" }];
-    const assistantLine = { file: "root.jsonl", offset: 1, raw: JSON.stringify({ type: "assistant", uuid: "a1", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } }) };
+    const assistantLine = { stream: "root.jsonl", position: 1, raw: JSON.stringify({ type: "assistant", uuid: "a1", message: { role: "assistant", content: [{ type: "text", text: "Done" }] } }) };
     const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [assistantLine] }));
     expect(res.status).toBe(200);
     expect(rpcCalls.map((c) => c.fn)).toEqual(["append_session_events"]);
@@ -200,7 +200,7 @@ describe("live session routes", () => {
 
   it("parses lines, appends the events and sets the title from the first prompt", async () => {
     const res = await routes.LINES(
-      post("/x", { hostId: "host-1", nativeSessionId: "native-1", lines: [userLine("u1", "Fix the login bug\nsecond line"), { file: "root.jsonl", offset: 5, raw: '{"type":"attachment"}' }] }),
+      post("/x", { hostId: "host-1", nativeSessionId: "native-1", lines: [userLine("u1", "Fix the login bug\nsecond line"), { stream: "root.jsonl", position: 5, raw: '{"type":"attachment"}' }] }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, last_seq: 2, inserted: 2 });
@@ -213,18 +213,18 @@ describe("live session routes", () => {
 
   it("replaces the first-prompt title with Claude Code's ai-title, and a rename beats it", async () => {
     tables.sessions = [session({ title: "Fix the login bug" })];
-    const aiLine = { file: "root.jsonl", offset: 9, raw: '{"type":"ai-title","aiTitle":"Login bug fix"}' };
+    const aiLine = { stream: "root.jsonl", position: 9, raw: '{"type":"ai-title","aiTitle":"Login bug fix"}' };
     await routes.LINES(post("/x", { hostId: "host-1", lines: [aiLine] }));
     expect(updates.map((u) => u.payload)).toEqual([{ title: "Login bug fix" }]);
 
     updates = [];
-    const renamed = { file: "root.jsonl", offset: 10, raw: '{"type":"custom-title","customTitle":"login-work"}' };
+    const renamed = { stream: "root.jsonl", position: 10, raw: '{"type":"custom-title","customTitle":"login-work"}' };
     await routes.LINES(post("/x", { hostId: "host-1", lines: [aiLine, renamed] }));
     expect(updates.map((u) => u.payload)).toEqual([{ title: "login-work" }]);
   });
 
   it("does not call the database when no line has anything to show", async () => {
-    const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [{ file: "root.jsonl", offset: 0, raw: '{"type":"attachment"}' }] }));
+    const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [{ stream: "root.jsonl", position: 0, raw: '{"type":"attachment"}' }] }));
     expect(res.status).toBe(200);
     expect(rpcCalls).toEqual([]);
   });
@@ -252,6 +252,12 @@ describe("live session routes", () => {
     expect((await routes.LINES(post("/x", { hostId: "host-1", lines: [{ raw: 1 }] }))).status).toBe(400);
     const big = post("/x", { hostId: "host-1", lines: [userLine("u1", "x".repeat(5 * 1024 * 1024))] });
     expect((await routes.LINES(big)).status).toBe(413);
+  });
+
+  it("refuses lines in the retired file and offset names", async () => {
+    const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [{ file: "root.jsonl", offset: 0, raw: '{"type":"attachment"}' }] }));
+    expect(res.status).toBe(400);
+    expect(rpcCalls).toHaveLength(0);
   });
 
   it("returns events above the requested seq with the session", async () => {
@@ -522,7 +528,7 @@ describe("live session routes", () => {
 
   it("turns an oversize item into a note and records an error without a body", async () => {
     const res = await routes.LINES(
-      post("/x", { hostId: "host-1", lines: [{ file: "root.jsonl", offset: 40, oversizeBytes: 9_000_000 }] }),
+      post("/x", { hostId: "host-1", lines: [{ stream: "root.jsonl", position: 40, oversizeBytes: 9_000_000 }] }),
     );
     expect(res.status).toBe(200);
     expect(rpcCalls[0].args.p_events).toEqual([
@@ -534,7 +540,7 @@ describe("live session routes", () => {
 
   it("parses sub-agent lines with their agent id", async () => {
     const raw = JSON.stringify({ type: "assistant", uuid: "a1", isSidechain: true, message: { role: "assistant", content: [{ type: "text", text: "listing" }] } });
-    await routes.LINES(post("/x", { hostId: "host-1", lines: [{ file: "subagents/agent-abc.jsonl", offset: 0, raw }] }));
+    await routes.LINES(post("/x", { hostId: "host-1", lines: [{ stream: "subagents/agent-abc.jsonl", position: 0, raw }] }));
     expect(rpcCalls[0].args.p_events).toEqual([
       { source_id: "a1", kind: "assistant_text", payload: { timestamp: null, agent_id: "abc", text: "listing" } },
     ]);

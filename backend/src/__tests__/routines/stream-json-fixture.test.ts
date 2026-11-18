@@ -1,6 +1,7 @@
 import { expect, it } from "bun:test";
 import { eventsFor } from "draft-core/harnesses/claude/live-lines";
 import { StreamLineReader } from "../../sandbox/runner/stream";
+import { fromRunnerLine } from "../../routines/complete-routine-callback";
 
 // The shape `claude -p --output-format stream-json --verbose` prints, one JSON object per line.
 const STREAM = [
@@ -13,7 +14,7 @@ const STREAM = [
 
 it("maps runner lines from a stream-json run to the same events the live viewer shows", () => {
   const lines = new StreamLineReader().push(STREAM);
-  const events = lines.flatMap(eventsFor);
+  const events = lines.map(fromRunnerLine).flatMap(eventsFor);
 
   expect(events.map((e) => e.kind)).toEqual(["assistant_text", "tool_use", "tool_result", "assistant_text"]);
   expect(events.map((e) => e.sourceId)).toEqual(["u-1", "u-1#1", "u-2", "u-3"]);
@@ -24,5 +25,5 @@ it("maps runner lines from a stream-json run to the same events the live viewer 
 it("sends the same line to the same event ids when the stream is chunked differently", () => {
   const reader = new StreamLineReader();
   const chunked = [STREAM.slice(0, 57), STREAM.slice(57, 300), STREAM.slice(300)].flatMap((chunk) => reader.push(chunk));
-  expect(chunked.flatMap(eventsFor).map((e) => e.sourceId)).toEqual(["u-1", "u-1#1", "u-2", "u-3"]);
+  expect(chunked.map(fromRunnerLine).flatMap(eventsFor).map((e) => e.sourceId)).toEqual(["u-1", "u-1#1", "u-2", "u-3"]);
 });

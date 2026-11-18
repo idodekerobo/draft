@@ -15,7 +15,7 @@ import { CODEX_MISSING_MESSAGE, CODEX_SIGNED_OUT_MESSAGE, readCodexAuth, readCod
 import { codexPollMs } from "./poll-interval";
 import { RpcClient, type RpcHandlers } from "./rpc-client";
 
-const THREAD_FILE = "thread";
+const THREAD_STREAM = "thread";
 const MAX_LINE_CHARS = 1_000_000;
 export const TERMINAL_TOKEN_ENV = "DRAFT_CODEX_TOKEN";
 
@@ -147,7 +147,7 @@ export class CodexDriver implements HarnessDriver {
   private readonly broker: ApprovalBroker;
   private readonly requests = new Map<number | string, AbortController>();
   private readonly queue: ForwardedLine[] = [];
-  private offset = 0;
+  private position = 0;
   private flushing = false;
   private recovered = false;
   private reported = new Map<string, string>();
@@ -296,7 +296,7 @@ export class CodexDriver implements HarnessDriver {
 
   private enqueue(note: { method: string; params: unknown }): void {
     const raw = JSON.stringify(note);
-    this.queue.push(raw.length > MAX_LINE_CHARS ? { file: THREAD_FILE, offset: this.offset++, oversizeBytes: raw.length } : { file: THREAD_FILE, offset: this.offset++, raw });
+    this.queue.push(raw.length > MAX_LINE_CHARS ? { stream: THREAD_STREAM, position: this.position++, oversizeBytes: raw.length } : { stream: THREAD_STREAM, position: this.position++, raw });
     void this.drain();
   }
 
@@ -553,7 +553,7 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version: await readCodexVersion(bin) };
   },
   newNativeSessionId: () => "",
-  async resume({ sessionId, nativeSessionId, model, effort, bin }) {
+  async resume({ sessionId, nativeSessionId, model, effort, options: { bin } }) {
     try {
       const connection = await resumeConnection({ bin, sessionId, threadId: nativeSessionId, folderPath: "", model, effort });
       return { folderPath: connection.folderPath };
@@ -561,7 +561,7 @@ const launcher: HarnessLauncher = {
       throw new LaunchError(`Codex could not resume the session: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   },
-  async launch({ sessionId, folderPath, model, effort, bin }) {
+  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin } }) {
     const { server, rpc, route } = await openServer(bin, sessionId);
     try {
       const started = await rpc.request<ThreadStartResult>("thread/start", {

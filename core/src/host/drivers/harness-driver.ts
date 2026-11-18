@@ -45,17 +45,17 @@ export interface HarnessDriver {
   serve(inputs: HostInput[]): Promise<void>;
   /** Milliseconds to wait before the next pass. A driver without it uses the runner's default. */
   pollMs?(): number;
-  /** The native session id the pane moved to after /clear or /fork, or null. */
-  rotationTarget(): string | null;
-  clearRotation(): void;
+  /** The native session id the pane moved to after /clear or /fork, or null. A driver that cannot rotate omits it. */
+  rotationTarget?(): string | null;
+  clearRotation?(): void;
   /** Forwards new lines while the process still runs. True when all of it reached the server. */
   refresh(): Promise<boolean>;
   /** Uploads what is left for the record. True when nothing more is needed. */
   finalize(): Promise<boolean>;
   /** Ends the harness the way its own CLI exits, so its end-of-session work runs. */
   stop(): Promise<void>;
-  /** Opens the user's terminal app on the running session. */
-  openInTerminal(): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Opens the user's terminal app on the running session. A driver without a terminal view omits it. */
+  openInTerminal?(): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 /** A launch failure whose message is safe to show the person. */
@@ -68,12 +68,19 @@ export interface HarnessLauncher {
   readonly id: HarnessId;
   check(): Promise<CheckResult>;
   /** Starts the harness in the folder. Returns the state fields only this harness has. */
-  launch(input: { sessionId: string; folderPath: string; model: string | null; effort: string | null; bin: string; nativeSessionId: string }): Promise<Partial<HostSessionState>>;
+  launch(input: {
+    sessionId: string;
+    workspace: { path: string };
+    model: string | null;
+    effort: string | null;
+    nativeSessionId: string;
+    options: { bin: string };
+  }): Promise<Partial<HostSessionState>>;
   /**
    * Starts an ended session again on this computer, in the same folder with the same conversation.
    * Returns the state fields only this harness has, and the folder.
    */
-  resume(input: { sessionId: string; nativeSessionId: string; model: string | null; effort: string | null; bin: string }): Promise<Partial<HostSessionState> & { folderPath: string }>;
+  resume(input: { sessionId: string; nativeSessionId: string; model: string | null; effort: string | null; options: { bin: string } }): Promise<Partial<HostSessionState> & { folderPath: string }>;
   /** The native session id to send when the session is created. Empty when only the harness knows it. */
   newNativeSessionId(): string;
   /** Shown when `launch` throws. */

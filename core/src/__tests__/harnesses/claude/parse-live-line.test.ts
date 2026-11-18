@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { agentIdFromFile, parseLiveLine } from "../../../harnesses/claude/parse-live-line";
 
-function parse(record: Record<string, unknown>, offset = 0, file = "root.jsonl") {
-  return parseLiveLine({ file, offset, raw: JSON.stringify(record) });
+function parse(record: Record<string, unknown>, position = 0, stream = "root.jsonl") {
+  return parseLiveLine({ stream, position, raw: JSON.stringify(record) });
 }
 
 const user = (content: unknown, extra: Record<string, unknown> = {}) => ({
@@ -133,7 +133,7 @@ describe("parseLiveLine: notes and skips", () => {
   });
 
   it("ignores a truncated line", () => {
-    expect(parseLiveLine({ file: "root.jsonl", offset: 0, raw: '{"type":"us' })).toEqual([]);
+    expect(parseLiveLine({ stream: "root.jsonl", position: 0, raw: '{"type":"us' })).toEqual([]);
   });
 });
 
