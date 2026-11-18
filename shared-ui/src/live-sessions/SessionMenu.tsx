@@ -119,7 +119,7 @@ export function useSessionMenu({ api, items, onDeleted }: UseSessionMenuOptions)
   };
 
   const dialog = confirming && (
-    <Dialog titleId="session-confirm-title" busy={busy} onClose={() => setConfirming(null)}>
+    <Dialog titleId="session-confirm-title" narrow busy={busy} onClose={() => setConfirming(null)}>
       <div className="ui-session__dialog">
         <h2 id="session-confirm-title" className="ui-session__dialog-title">{confirming.label} session?</h2>
         <p className="ui-session__dialog-text">{confirming.confirm}</p>

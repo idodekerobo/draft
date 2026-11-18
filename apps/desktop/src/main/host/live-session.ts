@@ -217,7 +217,8 @@ class SessionRunner {
   private reportInputError(what: string, error: unknown): void {
     const action = hostFailureAction(error);
     if (action === "pause") this.suspend();
-    else if (action === "stop") this.abandon();
+    // Only a session that is gone stops the runner. Other stop codes can come from a mismatched login or host.
+    else if (action === "stop" && error instanceof ServerError && (error.code === "session_ended" || error.code === "session_not_found")) this.abandon();
     else if (action === "retry") console.error(`[live-session] ${what} failed`, error);
   }
 
