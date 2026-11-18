@@ -47,7 +47,6 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
       guest: SANDBOX_GUEST,
       metadata: spec.metadata,
       env: spec.env,
-      skipLaunch: true,
       ...(volumeId === undefined ? {} : { mounts: [{ volume: volumeId, path: VOLUME_PATH }] }),
     });
   const destroyMachine = (machineId: string): Promise<void> => ignoreNotFound(fly.forceDelete(machineId));
@@ -79,7 +78,9 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
 
     async start(ref) {
       try {
-        await fly.start(ref.machine);
+        // Fly refuses start (412) on a machine that is booting from create, so only a stopped machine is started.
+        const machine = await fly.get(ref.machine);
+        if (machine.state !== "starting" && machine.state !== "started") await fly.start(ref.machine);
         await fly.waitForState(ref.machine, "started", { timeoutMs: BOOT_TIMEOUT_MS });
       } catch (error) {
         return cleanUpOrThrow(error, () => destroyMachine(ref.machine));

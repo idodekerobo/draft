@@ -49,7 +49,7 @@ function fakeApi(overrides: Partial<FlyMachinesApi> = {}) {
     },
     get: async (machineId) => {
       calls.push(`get ${machineId}`);
-      return { id: machineId, state: "started" };
+      return { id: machineId, state: "stopped" };
     },
     start: async (machineId) => {
       calls.push(`start ${machineId}`);
@@ -82,7 +82,7 @@ function fakeApi(overrides: Partial<FlyMachinesApi> = {}) {
 }
 
 describe("createFlyProvider.create", () => {
-  it("creates an unlaunched machine with no mount when the spec has no volume", async () => {
+  it("creates a machine with no mount when the spec has no volume", async () => {
     const { api, calls, creates } = fakeApi();
     const ref = await createFlyProvider(config, api).create(spec);
 
@@ -95,7 +95,6 @@ describe("createFlyProvider.create", () => {
       guest: { cpu_kind: "shared", cpus: 2, memory_mb: 4096 },
       metadata: { run_id: "run-1" },
       env: { SECRET: "s" },
-      skipLaunch: true,
     });
     expect(creates[0]).not.toHaveProperty("mounts");
   });
@@ -106,7 +105,7 @@ describe("createFlyProvider.create", () => {
 
     expect(calls).toEqual(["createVolume run_run_42_x", "create"]);
     expect(volumes).toEqual([{ name: "run_run_42_x", region: "iad", sizeGb: 3 }]);
-    expect(creates[0]).toMatchObject({ region: "iad", skipLaunch: true, mounts: [{ volume: "vol_1", path: "/data" }] });
+    expect(creates[0]).toMatchObject({ region: "iad", mounts: [{ volume: "vol_1", path: "/data" }] });
     expect(ref).toEqual(withVolume);
   });
 
@@ -166,7 +165,7 @@ describe("createFlyProvider.start", () => {
 
     await createFlyProvider(config, api).start(plain);
 
-    expect(calls).toEqual(["start machine-1", "wait machine-1 started"]);
+    expect(calls).toEqual(["get machine-1", "start machine-1", "wait machine-1 started"]);
     expect(waits).toEqual([{ timeoutMs: 60_000 }]);
   });
 
@@ -179,7 +178,7 @@ describe("createFlyProvider.start", () => {
     });
 
     await expect(createFlyProvider(config, api).start(withVolume)).rejects.toBe(timeout);
-    expect(calls).toEqual(["start machine-1", "forceDelete machine-1"]);
+    expect(calls).toEqual(["get machine-1", "start machine-1", "forceDelete machine-1"]);
   });
 
   it("destroys the machine and rethrows when Fly refuses to start it", async () => {
@@ -191,7 +190,19 @@ describe("createFlyProvider.start", () => {
     });
 
     await expect(createFlyProvider(config, api).start(plain)).rejects.toBe(refused);
-    expect(calls).toEqual(["forceDelete machine-1"]);
+    expect(calls).toEqual(["get machine-1", "forceDelete machine-1"]);
+  });
+
+  it("only waits for a machine that is already booting from create", async () => {
+    const { api, calls } = fakeApi({
+      get: async (machineId) => {
+        calls.push(`get ${machineId}`);
+        return { id: machineId, state: "starting" };
+      },
+    });
+
+    await createFlyProvider(config, api).start(plain);
+    expect(calls).toEqual(["get machine-1", "wait machine-1 started"]);
   });
 
   it("treats a machine that is already gone as cleaned up, and rethrows the boot timeout", async () => {
