@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseScheduledTaskId, parseIsoTimestamp, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
-import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
+import { personCaller, runCaller, type AnyDraftToolPermission } from "draft-core/tools";
 import { createSlackTools } from "../../../metaharness/tools/definitions/slack";
 import { invokeTool } from "../../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../../metaharness/tools/tool-registry";
@@ -33,7 +33,7 @@ describe("Slack tools", () => {
       post: async (...args) => { posted.push(args); },
     }));
     const audits: Array<{ resultSummary: string | null }> = [];
-    const caller: ToolCaller = { type: "run", run: run([{ tool: "slack.post_message", limits: { channels: ["#general"], maxPerRun: 2 } }]) };
+    const caller = runCaller(run([{ tool: "slack.post_message", limits: { channels: ["#general"], maxPerRun: 2 } }]));
     const result = await invokeTool({ registry, audit: async (entry) => { audits.push(entry); }, authorizeUser: async () => null }, caller, "slack.post_message", { channel: "#GENERAL", text: "Standup is at 10." });
     expect(result).toMatchObject({ status: "ok" });
     expect(audits[0]?.resultSummary).toBe("Posted in #general");
@@ -45,11 +45,11 @@ describe("Slack tools", () => {
       { id: "C1", name: "general", is_member: true }, { id: "C2", name: "private", is_member: false },
     ], response_metadata: { next_cursor: "" } })) as unknown as typeof fetch;
     const registry = new ToolRegistry(createSlackTools(fakeClient(fakeDb()), { fetch: fetchFn, credentialId: async () => "cred", botToken: async () => "xoxb-test", post: async () => {} }));
-    const caller: ToolCaller = { type: "run", run: run([{ tool: "slack.post_message", limits: { channels: ["C1"] } }]) };
+    const caller = runCaller(run([{ tool: "slack.post_message", limits: { channels: ["C1"] } }]));
     const invoke = (channel: string) => invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, caller, "slack.post_message", { channel, text: "hello" });
     expect(await invoke("#private")).toMatchObject({ status: "refused", code: "channel_not_allowed" });
     expect(await invoke("#general")).toMatchObject({ status: "ok" });
-    const denied = { type: "run", run: run([{ tool: "slack.post_message", limits: { channels: ["C2"] } }]) } as ToolCaller;
+    const denied = runCaller(run([{ tool: "slack.post_message", limits: { channels: ["C2"] } }]));
     expect(await invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, denied, "slack.post_message", { channel: "#general", text: "hello" })).toMatchObject({ status: "refused", code: "channel_not_allowed" });
   });
 
@@ -60,10 +60,10 @@ describe("Slack tools", () => {
     const registry = new ToolRegistry(createSlackTools(fakeClient(fakeDb()), {
       fetch: fetchFn, credentialId: async () => "cred", botToken: async () => "xoxb-test", post: async () => {}, countCalls: async () => 1,
     }));
-    const caller: ToolCaller = { type: "run", run: run([{ tool: "slack.post_message", limits: { maxPerRun: 1 } }]) };
+    const caller = runCaller(run([{ tool: "slack.post_message", limits: { maxPerRun: 1 } }]));
     const result = await invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, caller, "slack.post_message", { channel: "C1", text: "hello" });
     expect(result).toMatchObject({ status: "refused", code: "limit_reached" });
-    const user: ToolCaller = { type: "user", userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" };
+    const user = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" });
     const channels = await invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, user, "slack.list_channels", {});
     expect(channels).toMatchObject({ status: "ok", output: [{ id: "C1", name: "general" }] });
   });

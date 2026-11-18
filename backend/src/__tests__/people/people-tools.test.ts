@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
-import type { AnyDraftToolPermission, ToolCaller } from "draft-core/tools";
-import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
+import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
@@ -54,8 +53,8 @@ const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf:
   permissions,
   output: { type: "text" },
 });
-const asRun = (permissions: ReadonlyArray<AnyDraftToolPermission> = SYNTHESIS_PERMISSIONS, onBehalfOf: string | null = OWNER): ToolCaller => ({ type: "run", run: runSpec(permissions, onBehalfOf) });
-const asUser = (userId = OWNER): ToolCaller => ({ type: "user", userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" });
+const asRun = (permissions: ReadonlyArray<AnyDraftToolPermission> = SYNTHESIS_PERMISSIONS, onBehalfOf: string | null = OWNER): ToolCaller => runCaller(runSpec(permissions, onBehalfOf));
+const asUser = (userId = OWNER): ToolCaller => personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" });
 
 const evidence = { quote: "Cory joined the standup as our new intern.", sourceItemId: SOURCE };
 

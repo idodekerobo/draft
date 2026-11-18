@@ -92,7 +92,7 @@ describe("MCP tools that go through the gateway", () => {
     expect(audits[0]).toMatchObject({
       toolName: "context.read",
       status: "ok",
-      caller: { type: "user", userId: USER_ID, workspaceId: WORKSPACE_ID, via: "mcp" },
+      caller: { origin: { kind: "person", userId: USER_ID, via: "mcp" }, workspaceId: WORKSPACE_ID },
       arguments: { dimensions: ["memory"] },
     });
     expect(audits[0]!.resultBytes).toBeGreaterThan(0);

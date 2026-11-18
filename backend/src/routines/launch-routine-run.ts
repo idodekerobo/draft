@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunSpec } from "draft-core/run-spec";
+import { runCaller } from "draft-core/tools";
 import { loadVersionDocuments } from "../metaharness/context/context-store";
 import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
 import { launchSandboxRun, type SandboxDeploymentConfig } from "../sandbox";
@@ -51,7 +52,7 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
 
   const launch = {
     spec: agentRun,
-    bundle: buildRoutineBundle({ organizationId, workspaceId, agentRunId: agentRun.id, audience: { type: "run", run: agentRun }, documents }),
+    bundle: buildRoutineBundle({ organizationId, workspaceId, agentRunId: agentRun.id, audience: runCaller(agentRun), documents }),
     prompt: {
       kind: "text" as const,
       text: renderRoutinePrompt(routine.prompt, {

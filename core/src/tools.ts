@@ -1,7 +1,7 @@
 /**
  * The tools Draft's gateway serves, what a person may limit on them, and who may call them.
  */
-import type { AgentRunSpec, PersonId, UserId, WorkspaceId } from "./run-spec";
+import { AGENT_RUN_KINDS, type AgentRunKind, type AgentRunSpec, type PersonId, type UserId, type WorkspaceId } from "./run-spec";
 
 /** Every tool the Draft gateway can serve. Adding a tool starts here. */
 export const DRAFT_TOOLS = [
@@ -107,10 +107,36 @@ export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
 /** Where a person's call came in: an MCP client, the CLI, or Draft's own app. Only the first two are logged as agent queries. */
 export type UserCallSurface = "mcp" | "cli" | "app";
 
+/** Where a call comes from: a signed-in person through one surface, or an agent run. */
+export type CallerOrigin =
+  | { kind: "person"; userId: UserId; via: UserCallSurface }
+  | { kind: "run"; run: AgentRunSpec };
+
 /** Who is calling a tool. Each surface proves this its own way, then hands the gateway this value. */
-export type ToolCaller =
-  | { type: "run"; run: AgentRunSpec }
-  | { type: "user"; userId: UserId; workspaceId: WorkspaceId; via: UserCallSurface };
+export type ToolCaller = {
+  workspaceId: WorkspaceId;
+  /** Whose private data the call may use. Null means the workspace's shared data only. A person is their own userId. */
+  onBehalfOf: UserId | null;
+  origin: CallerOrigin;
+};
+
+/** A caller whose origin is a signed-in person. */
+export type PersonCaller = ToolCaller & { origin: Extract<CallerOrigin, { kind: "person" }> };
+
+/** Which callers a tool allows: a signed-in person, or one agent run kind. */
+export type AllowedOrigin = "person" | AgentRunKind;
+
+/** Every agent run kind. A tool open to runs allows all of them. */
+export const ANY_RUN: ReadonlyArray<AllowedOrigin> = AGENT_RUN_KINDS;
+
+export const personCaller = (input: { userId: UserId; workspaceId: WorkspaceId; via: UserCallSurface }): ToolCaller =>
+  ({ workspaceId: input.workspaceId, onBehalfOf: input.userId, origin: { kind: "person", userId: input.userId, via: input.via } });
+
+export const runCaller = (run: AgentRunSpec): ToolCaller =>
+  ({ workspaceId: run.workspaceId, onBehalfOf: run.onBehalfOf, origin: { kind: "run", run } });
+
+export const originKind = (caller: ToolCaller): AllowedOrigin =>
+  caller.origin.kind === "person" ? "person" : caller.origin.run.kind;
 
 /** The permission that lets this run call the tool, or null when it has none. */
 export function findToolPermission(run: AgentRunSpec, tool: DraftToolName): AnyDraftToolPermission | null {

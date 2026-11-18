@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
+import { ANY_RUN } from "draft-core/tools";
 import { CURRENT_CREDENTIAL_KEY_VERSION, encryptCredentialPayload } from "../../credentials/crypto";
 import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 import { ToolUserError, type RegisteredTool } from "./tool-registry";
@@ -217,7 +218,7 @@ function buildRemoteTool(client: SupabaseClient, connection: McpConnectionRow, s
     // The server's own claim about what a tool does cannot be trusted, so every remote tool counts as a write.
     access: "write",
     description: `[${connection.display_name ?? slug}] ${remote.description}`.trim(),
-    callers: ["run"],
+    allowedOrigins: ANY_RUN,
     mcp: false,
     modelVisible: true,
     destructive: false,

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { type AgentRunSpec } from "draft-core/run-spec";
-import { DRAFT_TOOLS, findToolPermission, type DraftToolAccess, type DraftToolLimits, type DraftToolName, type ToolCaller } from "draft-core/tools";
+import { ANY_RUN, DRAFT_TOOLS, findToolPermission, type AllowedOrigin, type DraftToolAccess, type DraftToolLimits, type DraftToolName, type ToolCaller } from "draft-core/tools";
 
 export interface ToolContext<I> {
   input: I;
@@ -22,8 +22,8 @@ export const refuse = (code: string, message: string): ToolHandlerResult => ({ s
 export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   name: N;
   description: string;
-  /** Who may call it. Omitted means both. A tool that needs a person's identity says "user" only. */
-  callers?: ReadonlyArray<ToolCaller["type"]>;
+  /** Who may call it. Omitted means a person and any run. A tool that needs a person's identity says "person" only. */
+  allowedOrigins?: ReadonlyArray<AllowedOrigin>;
   /** True when the person-facing MCP server offers this tool. */
   mcp?: boolean;
   /** False for credentials and other HTTP-only tools that are not for model discovery. */
@@ -55,7 +55,7 @@ export interface RegisteredTool {
   name: string;
   access: DraftToolAccess;
   description: string;
-  callers: ReadonlyArray<ToolCaller["type"]>;
+  allowedOrigins: ReadonlyArray<AllowedOrigin>;
   /** True when the person-facing MCP server offers this tool. */
   mcp: boolean;
   modelVisible: boolean;
@@ -78,7 +78,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     name: spec.name,
     access: entry.access,
     description: spec.description,
-    callers: spec.callers ?? ["run", "user"],
+    allowedOrigins: spec.allowedOrigins ?? ["person", ...ANY_RUN],
     mcp: spec.mcp ?? false,
     modelVisible: spec.modelVisible ?? true,
     destructive: spec.destructive ?? false,
@@ -128,7 +128,7 @@ export class ToolRegistry {
 
   /** The tools this run's model may see. A hidden tool, such as a credential, is still callable by name. */
   listFor(run: AgentRunSpec): ReadonlyArray<RegisteredTool> {
-    return this.list().filter((tool) => tool.modelVisible && tool.callers.includes("run") && tool.permission(run) !== null);
+    return this.list().filter((tool) => tool.modelVisible && tool.allowedOrigins.includes(run.kind) && tool.permission(run) !== null);
   }
 
   /** The same tools plus these. Used per request, for the tools a run reaches through a connection. */
@@ -138,6 +138,6 @@ export class ToolRegistry {
 
   /** The tools a signed-in person may call. */
   listForUser(): ReadonlyArray<RegisteredTool> {
-    return this.list().filter((tool) => tool.callers.includes("user"));
+    return this.list().filter((tool) => tool.allowedOrigins.includes("person"));
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { ANY_RUN, runCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import {
   assertSafeMcpUrl,
@@ -182,7 +183,7 @@ describe("remoteToolsForRun", () => {
     const { connectionId } = await connect(db, fakeRemote());
     const offered = await remoteToolsForRun(fakeClient(db), runWith(connectionId));
     expect(offered.map((tool) => tool.name)).toEqual([remoteToolName("linear", "search_issues"), remoteToolName("linear", "create_issue")]);
-    expect(offered[0]).toMatchObject({ name: "mcp.linear.search_issues", callers: ["run"], access: "write" });
+    expect(offered[0]).toMatchObject({ name: "mcp.linear.search_issues", allowedOrigins: [...ANY_RUN], access: "write" });
     expect(offered[0]!.description).toContain("[Linear]");
   });
 
@@ -226,7 +227,7 @@ describe("remoteToolsForRun", () => {
     const registry = new ToolRegistry(await remoteToolsForRun(fakeClient(db), run, { connect: remote.connect }));
     const audits: ToolCallRecord[] = [];
 
-    const result = await invokeTool({ registry, audit: async (record) => void audits.push(record) }, { type: "run", run }, "mcp.linear.search_issues", { query: "bug" });
+    const result = await invokeTool({ registry, audit: async (record) => void audits.push(record) }, runCaller(run), "mcp.linear.search_issues", { query: "bug" });
 
     expect(result).toEqual({ status: "ok", output: "3 issues found" });
     expect(remote.connects).toEqual([{ url: URL_A, token: TOKEN }]);
@@ -245,7 +246,7 @@ describe("remoteToolsForRun", () => {
     const run = runWith(connectionId);
     const registry = new ToolRegistry(await remoteToolsForRun(fakeClient(db), run, { connect: remote.connect }));
     remote.calls.length = 0;
-    const result = await invokeTool({ registry, audit: async () => undefined }, { type: "run", run }, "mcp.linear.search_issues", { query: 5 });
+    const result = await invokeTool({ registry, audit: async () => undefined }, runCaller(run), "mcp.linear.search_issues", { query: 5 });
     expect(result.status).toBe("invalid");
     expect(remote.calls).toEqual([]);
   });
@@ -256,7 +257,7 @@ describe("remoteToolsForRun", () => {
     const { connectionId } = await connect(db, remote);
     const run = runWith(connectionId);
     const registry = new ToolRegistry(await remoteToolsForRun(fakeClient(db), run, { connect: remote.connect }));
-    const call = () => invokeTool({ registry, audit: async () => undefined }, { type: "run", run }, "mcp.linear.search_issues", { query: "bug" });
+    const call = () => invokeTool({ registry, audit: async () => undefined }, runCaller(run), "mcp.linear.search_issues", { query: "bug" });
 
     remote.reply = { isError: true, content: [{ type: "text", text: "rate limited, try later" }] };
     expect(await call()).toEqual({ status: "error", message: "rate limited, try later" });
@@ -273,7 +274,7 @@ describe("remoteToolsForRun", () => {
     const run = runWith(connectionId);
     const registry = new ToolRegistry(await remoteToolsForRun(fakeClient(db), run, { connect: remote.connect }));
     remote.reply = { content: [{ type: "image", data: "abc", mimeType: "image/png" }] };
-    const result = await invokeTool({ registry, audit: async () => undefined }, { type: "run", run }, "mcp.linear.search_issues", { query: "x" });
+    const result = await invokeTool({ registry, audit: async () => undefined }, runCaller(run), "mcp.linear.search_issues", { query: "x" });
     expect(result).toMatchObject({ status: "ok" });
     expect(JSON.parse((result as { output: string }).output)).toEqual([{ type: "image", data: "abc", mimeType: "image/png" }]);
   });
@@ -285,7 +286,7 @@ describe("remoteToolsForRun", () => {
     const named = runWith(connectionId);
     const registry = new ToolRegistry(await remoteToolsForRun(fakeClient(db), named, { connect: remote.connect }));
     const stranger = runWith("99999999-9999-4999-8999-999999999999");
-    const result = await invokeTool({ registry, audit: async () => undefined }, { type: "run", run: stranger }, "mcp.linear.search_issues", { query: "x" });
+    const result = await invokeTool({ registry, audit: async () => undefined }, runCaller(stranger), "mcp.linear.search_issues", { query: "x" });
     expect(result).toMatchObject({ status: "denied", code: "not_permitted" });
   });
 });

@@ -41,7 +41,8 @@ When you add a concept, add it here first.
 - **Person**: a contact record for a teammate. Table `people`. A person may or may not be a user.
 - **Owner**: the user who created a row (`owner_user_id`). Ownership decides who may delete it, not what it may read.
 - **Caller**: who calls a tool (`ToolCaller`).
-- **Origin**: where a call comes from: a person, or a run (by kind: interactive, routine, synthesis, summarization).
+- **Origin**: where a call comes from: a signed-in user calling directly (origin kind `person`, holding a `users` id),
+  or a run (by kind: interactive, routine, synthesis, summarization).
   A cloud session calls as an interactive run.
 - **On behalf of**: whose private data a call or run may use (`onBehalfOf`). Null means the workspace's shared data only.
 - **Workspace**: a team's shared space and tenant boundary. The UI says "team".

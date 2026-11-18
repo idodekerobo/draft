@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { personCaller, runCaller } from "draft-core/tools";
 import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import type { AgentRunRow } from "../../../types/tables";
@@ -108,12 +109,8 @@ describe("agent run store", () => {
 
 describe("audit rows", () => {
   const base = { toolName: "context.read", arguments: { dimensions: ["memory"] }, status: "ok" as const, resultSummary: null, errorCode: null, durationMs: 3, resultBytes: 42 };
-  const user = (via: "mcp" | "cli" | "app") => ({
-    type: "user" as const,
-    userId: parseUserId("33333333-3333-4333-8333-333333333333"),
-    workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
-    via,
-  });
+  const user = (via: "mcp" | "cli" | "app") =>
+    personCaller({ userId: parseUserId("33333333-3333-4333-8333-333333333333"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"), via });
 
   it("writes a person's MCP call to the agent query log under the mcp command name", async () => {
     const { client, inserts } = fakeClient();
@@ -134,7 +131,7 @@ describe("audit rows", () => {
 
   it("writes a run's call to its own table", async () => {
     const { client, inserts } = fakeClient();
-    await auditToDatabase(client)({ ...base, caller: { type: "run", run: spec } } as ToolCallRecord);
+    await auditToDatabase(client)({ ...base, caller: runCaller(spec) } as ToolCallRecord);
     expect(inserts[0]).toMatchObject({ table: "agent_run_tool_calls", row: { agent_run_id: spec.id, tool_name: "context.read", status: "ok", duration_ms: 3 } });
   });
 });

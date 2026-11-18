@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
-import type { ToolCaller } from "draft-core/tools";
+import { personCaller } from "draft-core/tools";
 import { fakeClient, fakeDb } from "../../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -20,7 +20,7 @@ beforeEach(() => {
   serviceDb.tables.errors = [];
 });
 
-const caller: ToolCaller = { type: "user", userId: parseUserId(USER), workspaceId: parseWorkspaceId(WS), via: "mcp" };
+const caller = personCaller({ userId: parseUserId(USER), workspaceId: parseWorkspaceId(WS), via: "mcp" });
 const runRoutine = (input: { taskId: string } = { taskId: TASK }) => {
   const tool = createRoutineTools(fakeClient(fakeDb())).find((candidate) => candidate.name === "routines.run")!;
   return tool.run(caller, input);

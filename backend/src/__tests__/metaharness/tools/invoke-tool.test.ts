@@ -1,16 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
-import { type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
+import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { ANY_RUN, personCaller, runCaller, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { toHttpResponse } from "../../../metaharness/tools/http-result";
 import { toMcpResult } from "../../../metaharness/tools/mcp-result";
 import { defineTool, refuse, ToolRegistry } from "../../../metaharness/tools/tool-registry";
 
-function runWith(permissions: AnyDraftToolPermission[]): ToolCaller {
+function runWith(permissions: AnyDraftToolPermission[], kind: AgentRunKind = "routine"): ToolCaller {
   const run: AgentRunSpec = {
     id: parseAgentRunId("11111111-1111-4111-8111-111111111111"),
-    kind: "routine",
+    kind,
     network: "restricted",
     workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
@@ -23,7 +23,7 @@ function runWith(permissions: AnyDraftToolPermission[]): ToolCaller {
     permissions,
     output: { type: "text" },
   };
-  return { type: "run", run };
+  return runCaller(run);
 }
 
 function setup(options: { authorizeUser?: boolean } = {}) {
@@ -163,12 +163,7 @@ describe("invokeTool", () => {
   });
 
   it("denies person callers unless an authorizer allows them", async () => {
-    const user: ToolCaller = {
-      type: "user",
-      userId: parseUserId("33333333-3333-4333-8333-333333333333"),
-      workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
-      via: "mcp",
-    };
+    const user = personCaller({ userId: parseUserId("33333333-3333-4333-8333-333333333333"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"), via: "mcp" });
     const none = setup();
     expect(await invokeTool(none.deps, user, "context.read", { path: "a.md" })).toMatchObject({ status: "denied", code: "caller_not_authorized" });
     const allowed = setup({ authorizeUser: true });
@@ -176,41 +171,74 @@ describe("invokeTool", () => {
   });
 
   it("passes the refusal's status and body to the edge, and audits the refused call", async () => {
-    const user: ToolCaller = {
-      type: "user",
-      userId: parseUserId("33333333-3333-4333-8333-333333333333"),
-      workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
-      via: "cli",
-    };
+    const user = personCaller({ userId: parseUserId("33333333-3333-4333-8333-333333333333"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"), via: "cli" });
     const refused = setup({ authorizeUser: false });
     const result = await invokeTool(refused.deps, user, "context.read", { path: "a.md" });
     expect(result).toMatchObject({ status: "denied", code: "caller_not_authorized", detail: { status: 403, body: { error: "forbidden" } } });
     expect(refused.calls).toEqual([]);
-    expect(refused.audits[0]).toMatchObject({ status: "denied", caller: { type: "user", via: "cli" } });
+    expect(refused.audits[0]).toMatchObject({ status: "denied", caller: { origin: { kind: "person", via: "cli" } } });
   });
 
   it("audits a person's call with the size of what came back", async () => {
-    const user: ToolCaller = {
-      type: "user",
-      userId: parseUserId("33333333-3333-4333-8333-333333333333"),
-      workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
-      via: "mcp",
-    };
+    const user = personCaller({ userId: parseUserId("33333333-3333-4333-8333-333333333333"), workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"), via: "mcp" });
     const allowed = setup({ authorizeUser: true });
     await invokeTool(allowed.deps, user, "context.read", { path: "a.md" });
-    expect(allowed.audits[0]).toMatchObject({ caller: { type: "user" }, resultBytes: JSON.stringify({ content: "hello" }).length });
+    expect(allowed.audits[0]).toMatchObject({ caller: { origin: { kind: "person" } }, resultBytes: JSON.stringify({ content: "hello" }).length });
   });
 
   it("keeps a tool that needs a person away from a run, and away from a run's tool list", async () => {
-    const personOnly = defineTool({ name: "sources.search", description: "s", callers: ["user"], input: z.object({}), handler: async () => ({ status: "ok", output: {} }) });
+    const personOnly = defineTool({ name: "sources.search", description: "s", allowedOrigins: ["person"], input: z.object({}), handler: async () => ({ status: "ok", output: {} }) });
     const registry = new ToolRegistry([personOnly]);
     const run = runWith([{ tool: "sources.search" }]);
-    if (run.type !== "run") throw new Error("unreachable");
+    if (run.origin.kind !== "run") throw new Error("unreachable");
     const audits: ToolCallRecord[] = [];
     const result = await invokeTool({ registry, audit: async (record) => void audits.push(record) }, run, "sources.search", {});
     expect(result).toMatchObject({ status: "denied", code: "caller_not_authorized" });
-    expect(registry.listFor(run.run)).toEqual([]);
+    expect(registry.listFor(run.origin.run)).toEqual([]);
     expect(registry.listForUser().map((tool) => tool.name)).toEqual(["sources.search"]);
+  });
+});
+
+describe("allowedOrigins", () => {
+  const USER = parseUserId("33333333-3333-4333-8333-333333333333");
+  const WORKSPACE = parseWorkspaceId("22222222-2222-4222-8222-222222222222");
+
+  function gateway() {
+    const audits: ToolCallRecord[] = [];
+    const registry = new ToolRegistry([
+      defineTool({ name: "skills.add", description: "person only", allowedOrigins: ["person"], input: z.object({}), handler: async () => ({ status: "ok", output: { added: true } }) }),
+      defineTool({ name: "context.read", description: "person and any run", input: z.object({}), handler: async () => ({ status: "ok", output: { read: true } }) }),
+      defineTool({ name: "context.write", description: "any run", allowedOrigins: ANY_RUN, input: z.object({}), handler: async () => ({ status: "ok", output: { wrote: true } }) }),
+    ]);
+    const deps = { registry, audit: async (record: ToolCallRecord) => void audits.push(record), authorizeUser: async () => null, now: () => 1_000 };
+    return { deps, audits };
+  }
+
+  it("lets a person call a tool open to people only", async () => {
+    const { deps, audits } = gateway();
+    const result = await invokeTool(deps, personCaller({ userId: USER, workspaceId: WORKSPACE, via: "mcp" }), "skills.add", {});
+    expect(result).toEqual({ status: "ok", output: { added: true } });
+    expect(audits[0]).toMatchObject({ caller: { origin: { kind: "person" } } });
+  });
+
+  it("refuses a routine run a tool open to people only, even when the run holds a permission for it", async () => {
+    const { deps, audits } = gateway();
+    const result = await invokeTool(deps, runWith([{ tool: "skills.add" }], "routine"), "skills.add", {});
+    expect(result).toMatchObject({ status: "denied", code: "caller_not_authorized" });
+    expect(audits[0]).toMatchObject({ status: "denied", errorCode: "caller_not_authorized" });
+  });
+
+  it("lets an interactive run call a default tool its permissions grant, and refuses one it was not granted", async () => {
+    const { deps } = gateway();
+    expect(await invokeTool(deps, runWith([{ tool: "context.read" }], "interactive"), "context.read", {})).toEqual({ status: "ok", output: { read: true } });
+    expect(await invokeTool(deps, runWith([], "interactive"), "context.read", {})).toMatchObject({ status: "denied", code: "not_permitted" });
+  });
+
+  it("lets every kind of run call a tool open to runs, and refuses a person", async () => {
+    const { deps } = gateway();
+    expect((await invokeTool(deps, runWith([{ tool: "context.write" }], "synthesis"), "context.write", {})).status).toBe("ok");
+    expect((await invokeTool(deps, runWith([{ tool: "context.write" }], "routine"), "context.write", {})).status).toBe("ok");
+    expect(await invokeTool(deps, personCaller({ userId: USER, workspaceId: WORKSPACE, via: "mcp" }), "context.write", {})).toMatchObject({ status: "denied", code: "caller_not_authorized" });
   });
 });
 
@@ -218,8 +246,8 @@ describe("ToolRegistry", () => {
   it("lists only the tools a run was given", () => {
     const { deps } = setup();
     const caller = runWith([{ tool: "context.write" }]);
-    if (caller.type !== "run") throw new Error("unreachable");
-    expect(deps.registry.listFor(caller.run).map((tool) => tool.name)).toEqual(["context.write"]);
+    if (caller.origin.kind !== "run") throw new Error("unreachable");
+    expect(deps.registry.listFor(caller.origin.run).map((tool) => tool.name)).toEqual(["context.write"]);
   });
 
   it("refuses to register one tool twice", () => {

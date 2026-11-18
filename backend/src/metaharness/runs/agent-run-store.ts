@@ -147,20 +147,21 @@ export async function loadActiveAgentRunSpec(client: SupabaseClient, runId: stri
  */
 export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord) => Promise<void> {
   return async (record) => {
-    if (record.caller.type === "user") {
-      if (record.caller.via === "app") return;
-      const command = record.caller.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
+    const { origin } = record.caller;
+    if (origin.kind === "person") {
+      if (origin.via === "app") return;
+      const command = origin.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
       if (!isLoggedCommand(command)) return;
       await recordAgentQueryLog(client, {
         workspaceId: record.caller.workspaceId,
-        userId: record.caller.userId,
+        userId: origin.userId,
         command: command as AgentQueryLogCommand,
         argsJson: record.arguments,
         resultBytes: record.resultBytes,
       });
       return;
     }
-    const { run } = record.caller;
+    const { run } = origin;
     const { error } = await client.from("agent_run_tool_calls").insert({
       workspace_id: run.workspaceId,
       agent_run_id: run.id,

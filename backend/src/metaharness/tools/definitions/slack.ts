@@ -81,16 +81,16 @@ export function createSlackTools(client: SupabaseClient, deps: SlackToolDeps = {
     auditArguments: (input) => ({ channel: input.channel, textBytes: Buffer.byteLength(input.text, "utf8") }),
     handler: async ({ input, caller }) => {
       const workspaceId = callerWorkspaceId(caller);
-      if (caller.type === "run") {
-        const limits = findToolPermission(caller.run, "slack.post_message")?.limits as DraftToolLimits["slack.post_message"] | undefined;
+      if (caller.origin.kind === "run") {
+        const limits = findToolPermission(caller.origin.run, "slack.post_message")?.limits as DraftToolLimits["slack.post_message"] | undefined;
         const max = limits?.maxPerRun ?? 10;
-        if ((await countCalls(caller.run.id, "slack.post_message")) >= max) return refuse("limit_reached", `This run has posted ${max} Slack messages, its limit.`);
+        if ((await countCalls(caller.origin.run.id, "slack.post_message")) >= max) return refuse("limit_reached", `This run has posted ${max} Slack messages, its limit.`);
       }
       try {
         const found = await resolveChannel(workspaceId, input.channel);
         if (!found.ok) return refuse("channel_not_allowed", found.error);
-        if (caller.type === "run") {
-          const limits = findToolPermission(caller.run, "slack.post_message")?.limits as DraftToolLimits["slack.post_message"] | undefined;
+        if (caller.origin.kind === "run") {
+          const limits = findToolPermission(caller.origin.run, "slack.post_message")?.limits as DraftToolLimits["slack.post_message"] | undefined;
           const allowed = limits?.channels ?? "joined";
           if (allowed !== "joined" && !allowed.some((value) => value === found.channel.id || normalized(value) === normalized(found.channel.name))) {
             return refuse("channel_not_allowed", "This routine is not allowed to post in that channel.");

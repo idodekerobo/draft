@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
-import type { ToolCaller } from "draft-core/tools";
+import { personCaller, type ToolCaller } from "draft-core/tools";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 import { activityClient, type Row } from "./activity-fake-client";
 
@@ -169,7 +169,7 @@ describe("activity.list tool", () => {
       ],
     };
     const tool = createActivityTools(activityClient(tables)).find((candidate) => candidate.name === "activity.list")!;
-    const callerFor = (userId: string): ToolCaller => ({ type: "user", userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "mcp" });
+    const callerFor = (userId: string): ToolCaller => personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "mcp" });
     const createdTitlesFor = async (userId: string) => {
       const result = await tool.run(callerFor(userId), {});
       expect(result).toMatchObject({ status: "ok" });
@@ -351,7 +351,7 @@ describe("upcoming routines", () => {
       scheduled_tasks: [onceRoutine("task-soon", "2026-11-20T09:00:00.000Z")],
     };
     const tool = createActivityTools(activityClient(tables)).find((candidate) => candidate.name === "activity.list")!;
-    const caller: ToolCaller = { type: "user", userId: parseUserId(ME), workspaceId: parseWorkspaceId(WS), via: "mcp" };
+    const caller: ToolCaller = personCaller({ userId: parseUserId(ME), workspaceId: parseWorkspaceId(WS), via: "mcp" });
 
     const result = await tool.run(caller, {});
 

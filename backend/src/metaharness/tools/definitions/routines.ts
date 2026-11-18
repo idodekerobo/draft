@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
 import { ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
 import type { AgentRunSpec } from "draft-core/run-spec";
-import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
+import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { z } from "zod";
 import { recordError } from "../../../errors/record-error";
 import { countRunToolCalls } from "../../../people/limits";
@@ -25,8 +25,9 @@ type RoutineCaller =
   | { type: "run"; run: AgentRunSpec; userId: string | null; workspaceId: string };
 
 function resolveRoutineCaller(caller: ToolCaller): RoutineCaller {
-  if (caller.type === "run") return { type: "run", run: caller.run, userId: caller.run.onBehalfOf, workspaceId: caller.run.workspaceId };
-  return { type: "user", userId: caller.userId, workspaceId: caller.workspaceId, via: caller.via };
+  const { origin } = caller;
+  if (origin.kind === "run") return { type: "run", run: origin.run, userId: caller.onBehalfOf, workspaceId: caller.workspaceId };
+  return { type: "user", userId: origin.userId, workspaceId: caller.workspaceId, via: origin.via };
 }
 
 /** Where a failure is recorded. Only ids that exist are named, because the errors table checks them. */
@@ -187,7 +188,7 @@ async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input
 
 export function createRoutineTools(client: SupabaseClient) {
   const list = defineTool({
-    name: "routines.list", mcp: true, callers: ["run", "user"], input: RoutineListFilter,
+    name: "routines.list", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: RoutineListFilter,
     description: "List the workspace's routines with their full settings: instructions, agent, schedule, triggers, Slack and GitHub access, last run. Pass taskId for one. missingConnections names triggers or access that can't work until that provider is connected. One-shots are hidden unless kind: \"once\". Filter with status and createdBy.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
@@ -201,7 +202,7 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const options = defineTool({
-    name: "routines.options", mcp: true, callers: ["user"],
+    name: "routines.options", mcp: true, allowedOrigins: ["person"],
     input: z.object({}),
     description: "What a routine can be set to: triggers (and whether each one's provider is connected), schedule presets, agents and whether each can run, Slack channels and GitHub repos it can be given. Call before routines.create or update.",
     handler: async ({ caller }) => {
@@ -245,7 +246,7 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const create = defineTool({
-    name: "routines.create", mcp: true, callers: ["run", "user"], input: RoutineInput,
+    name: "routines.create", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: RoutineInput,
     description: "Create a routine: work Draft runs later. `when` is once (`{in:\"2h\"}` or `{at: ISO}`, at most 365 days ahead), a schedule (`{schedule:{preset…}|{cron,timezone}}`), events (`{events:[…]}`), or a schedule plus events. Use it for follow-ups ('check back in 2 hours') and for recurring work. `prompt` must be a self-contained brief: what to do, why, and what done means. The run that fires can't see this conversation. From a run, settings you leave out are copied from your routine. Call routines.options (people only) for presets and triggers. Answers with the saved routine.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
@@ -257,7 +258,7 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const update = defineTool({
-    name: "routines.update", mcp: true, callers: ["run", "user"], input: z.object({ taskId: UUID, patch: RoutinePatch }),
+    name: "routines.update", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: z.object({ taskId: UUID, patch: RoutinePatch }),
     description: "Change a routine. Send only the fields to change. Send `when` to reschedule; a schedule is sent whole, e.g. `{schedule:{preset:'daily',time:'09:00',timezone:'UTC'}}`. A fired one-shot given a new `when` runs again. null turns Slack posting or GitHub access off; `when.events: []` removes every trigger. A run can change only routines its own runs made. Answers with the saved routine.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
@@ -302,7 +303,7 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const remove = defineTool({
-    name: "routines.delete", mcp: true, callers: ["run", "user"], destructive: true, input: z.object({ taskId: UUID }),
+    name: "routines.delete", mcp: true, allowedOrigins: ["person", ...ANY_RUN], destructive: true, input: z.object({ taskId: UUID }),
     description: "Delete a routine. Confirm with the person first. Its past runs stay readable in the app. A run can delete only routines its own runs made.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
@@ -322,7 +323,7 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const run = defineTool({
-    name: "routines.run", mcp: true, callers: ["run", "user"], input: z.object({ taskId: UUID }),
+    name: "routines.run", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: z.object({ taskId: UUID }),
     description: "Start a run of a routine now. Answers with the run's session id; poll routines.runs with that sessionId for its status and result. If a run is already in progress, this run is queued: it starts when that run ends, and the answer has queued: true and no sessionId.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
@@ -353,7 +354,7 @@ export function createRoutineTools(client: SupabaseClient) {
   });
 
   const runs = defineTool({
-    name: "routines.runs", mcp: true, callers: ["run", "user"],
+    name: "routines.runs", mcp: true, allowedOrigins: ["person", ...ANY_RUN],
     input: z.object({
       taskId: UUID,
       sessionId: UUID.optional().describe("The session id of one run, however old. Omit for the newest runs."),

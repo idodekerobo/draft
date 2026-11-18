@@ -28,9 +28,10 @@ async function routineTitle(client: SupabaseClient, workspaceId: string, schedul
  * its text, so a model cannot leave it out or change it. Run and owner come from the run spec, not from the model.
  */
 export async function attributionLine(client: SupabaseClient, caller: ToolCaller): Promise<string> {
-  if (caller.type === "user") return `Sent by ${await userName(client, caller.userId)} through Draft`;
+  const { origin } = caller;
+  if (origin.kind === "person") return `Sent by ${await userName(client, origin.userId)} through Draft`;
 
-  const { run } = caller;
+  const { run } = origin;
   const owner = run.onBehalfOf ? await userName(client, run.onBehalfOf) : null;
   if (run.kind === "routine" && owner) {
     // A scheduled run names its task in the trigger. An event run is tied to its task through the run's own row.

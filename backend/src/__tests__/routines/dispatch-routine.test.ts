@@ -164,7 +164,7 @@ describe("dispatchAgentRoutine", () => {
   it.each([
     ["was disabled", { id: OWNER_ID, status: "disabled", primary_team_id: TEAM_ID }],
     ["left the team", { id: OWNER_ID, status: "active", primary_team_id: "88888888-8888-4888-8888-888888888888" }],
-  ])("fails with principal_inactive, and launches nothing, when the owner %s", async (_label, owner) => {
+  ])("fails with on_behalf_of_inactive, and launches nothing, when the owner %s", async (_label, owner) => {
     const db = newDb(undefined, owner);
     const launch = okLaunch();
     await dispatch(db, launch);
@@ -172,7 +172,7 @@ describe("dispatchAgentRoutine", () => {
     expect(launch).not.toHaveBeenCalled();
     expect(db.tables.agent_runs).toHaveLength(0);
     expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "failed" });
-    expect(db.tables.errors).toEqual([expect.objectContaining({ detail_json: expect.objectContaining({ code: "principal_inactive" }) })]);
+    expect(db.tables.errors).toEqual([expect.objectContaining({ detail_json: expect.objectContaining({ code: "on_behalf_of_inactive" }) })]);
   });
 
   it("gives a Codex routine a Codex toolset", async () => {

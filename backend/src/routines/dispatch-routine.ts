@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
 import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
-import { PrincipalInactiveError, assertPrincipalActive } from "../metaharness/runs/principal";
+import { OnBehalfOfInactiveError, assertOnBehalfOfActive } from "../metaharness/runs/on-behalf-of";
 import { usableMcpConnections } from "../metaharness/tools/remote-mcp";
 import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../sandbox";
@@ -143,7 +143,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       routine,
       contextVersionId,
     });
-    await assertPrincipalActive(client, run);
+    await assertOnBehalfOfActive(client, run);
     await createAgentRun(client, { spec: run, idempotencyKey, status: "preparing", sessionId, scheduledTaskId: task.id });
 
     const launched = await (options.launch ?? launchRoutineRun)({
@@ -169,7 +169,7 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       });
       return { status: "failed", sessionId, code: "routine_lease_busy" };
     }
-    if (error instanceof PrincipalInactiveError) {
+    if (error instanceof OnBehalfOfInactiveError) {
       await failRoutineSession(client, session, {
         code: error.code,
         note: "The routine's owner is no longer an active member of this workspace, so the run did not start.",

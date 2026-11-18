@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
-import { type UserCallSurface } from "draft-core/tools";
+import { personCaller, type PersonCaller, type UserCallSurface } from "draft-core/tools";
 import { assertWorkspaceAccess } from "../../auth/workspace-access";
 import { auditToDatabase } from "../runs/agent-run-store";
 import { parseToolArgs, toHttpResponse } from "./http-result";
@@ -8,8 +8,8 @@ import { invokeTool, type AuthorizationDenial, type InvokeToolDeps } from "./inv
 import { describeTools, type ToolRegistry } from "./tool-registry";
 
 /** A signed-in person may call a tool only if they belong to the workspace's team. This is the one place that rule is applied. */
-async function authorizeWorkspaceMember(caller: { userId: string; workspaceId: string }): Promise<AuthorizationDenial | null> {
-  const denied = await assertWorkspaceAccess(caller.workspaceId, caller.userId);
+async function authorizeWorkspaceMember(caller: PersonCaller): Promise<AuthorizationDenial | null> {
+  const denied = await assertWorkspaceAccess(caller.workspaceId, caller.origin.userId);
   if (!denied) return null;
   return { status: denied.status, body: await denied.json().catch(() => null) };
 }
@@ -40,7 +40,7 @@ export async function callUserTool(deps: InvokeToolDeps, call: UserToolCall): Pr
 
   let caller;
   try {
-    caller = { type: "user" as const, userId: parseUserId(call.userId), workspaceId: parseWorkspaceId(call.workspaceId), via: call.via };
+    caller = personCaller({ userId: parseUserId(call.userId), workspaceId: parseWorkspaceId(call.workspaceId), via: call.via });
   } catch {
     return Response.json({ error: "workspace_not_found" }, { status: 404 });
   }

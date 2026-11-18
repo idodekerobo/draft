@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { z } from "zod";
 import { parseUserId, parseWorkspaceId } from "draft-core/run-spec";
+import { personCaller } from "draft-core/tools";
 import { invokeTool, type InvokeToolDeps } from "../metaharness/tools/invoke-tool";
 import { toMcpResult } from "../metaharness/tools/mcp-result";
 
@@ -32,7 +33,7 @@ export function registerGatewayTools(server: McpServer, userId: string, gateway:
         if (!workspaceId) return { isError: true, content: [{ type: "text" as const, text: "no_workspace" }] };
         const result = await invokeTool(
           gateway.deps,
-          { type: "user", userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "mcp" },
+          personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "mcp" }),
           tool.name,
           args,
         );
