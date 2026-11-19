@@ -1254,3 +1254,8 @@
   .ui-activity-row .ui-link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; }
 }
 .ui-picker__option--disabled { color: var(--color-text-secondary); cursor: default; }
+.ui-start__copying { justify-content: flex-start; align-items: stretch; max-width: 760px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.ui-start__copying .ui-session__start { margin: 0; }
+.ui-start__queued { align-self: flex-end; max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); font-size: var(--font-size-secondary); }
+.ui-start__queued-text { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-notice); background: var(--color-bg-surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-size-body, 14px); }
+.ui-start__queued .ui-muted { margin: 0; }

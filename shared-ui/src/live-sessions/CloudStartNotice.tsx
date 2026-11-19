@@ -3,7 +3,7 @@ import { cloudStartNotice, elapsedLabel } from "./cloud-start-notice";
 import type { LiveSession } from "./types";
 
 /** A one-second clock, only while a machine is starting, for the elapsed time. */
-function useSecondClock(on: boolean): number {
+export function useSecondClock(on: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;

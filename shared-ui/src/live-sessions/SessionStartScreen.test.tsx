@@ -601,3 +601,25 @@ describe("SessionStartScreen snapshot size", () => {
     expect(start().disabled).toBe(true);
   });
 });
+
+describe("SessionStartScreen while a folder copies", () => {
+  it("shows the copy and the queued message, then returns to the form with the message kept when the copy fails", async () => {
+    let finish!: (result: StartResult) => void;
+    const onStart = mock((_request: StartRequest) => new Promise<StartResult>((resolve) => (finish = resolve)));
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote: async () => null, envFiles: async () => [], githubConnected: true }} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "This folder (snapshot)" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "fix the tests" } });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(await screen.findByText(/Copying marigold to Draft cloud/)).toBeTruthy();
+    expect(screen.getByText("fix the tests")).toBeTruthy();
+    expect(screen.getByText("Queued, waiting for the copy")).toBeTruthy();
+
+    await act(async () => finish({ ok: false, error: "snapshot_upload_failed" }));
+    expect(screen.queryByText(/Copying marigold/)).toBeNull();
+    expect((screen.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("fix the tests");
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+});

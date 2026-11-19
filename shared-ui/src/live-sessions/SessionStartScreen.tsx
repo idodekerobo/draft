@@ -12,6 +12,8 @@ import { usePopover } from "./usePopover";
 import { Toggle } from "../settings/SettingsRow";
 import { branchProblem, cloudRepoFromRemote, cloudStartFailure, repoProblem, type CloudStartField } from "./cloud-start";
 import { EnvChecklist } from "./EnvChecklist";
+import { useSecondClock } from "./CloudStartNotice";
+import { elapsedLabel } from "./cloud-start-notice";
 import { loadRecentRepos, rememberRepo } from "./recent-repos";
 
 /** Above this a snapshot warns that copying takes a while; above the limit it is refused. The desktop app checks the limit again. */
@@ -200,6 +202,8 @@ export function SessionStartScreen({
   const repoEdited = useRef(false);
   const [starting, setStarting] = useState(false);
   const [step, setStep] = useState<string | null>(null);
+  const [copyStartedAt, setCopyStartedAt] = useState<string | null>(null);
+  const now = useSecondClock(copyStartedAt !== null);
   const [recentRepos, setRecentRepos] = useState<string[]>(() => loadRecentRepos());
   const [suggested, setSuggested] = useState<string | null>(null);
   const [branchOptions, setBranchOptions] = useState<string[]>([]);
@@ -360,6 +364,7 @@ export function SessionStartScreen({
       : { ...fields, harness, folderPath: folder! };
     setStarting(true);
     setFailure(null);
+    if (snapshotOn) setCopyStartedAt(new Date().toISOString());
     try {
       const result = snapshotOn ? await onStart(request, setStep) : await onStart(request);
       if (result.ok) {
@@ -369,6 +374,7 @@ export function SessionStartScreen({
     } finally {
       setStarting(false);
       setStep(null);
+      setCopyStartedAt(null);
     }
   }
 
@@ -387,6 +393,24 @@ export function SessionStartScreen({
           <h1 className="ui-session__title">New session</h1>
         </nav>
       </header>
+      {copyStartedAt && folder ? (
+        <div className="ui-start__body ui-start__copying">
+          <div className="ui-session__start ui-session__start--progress" role="status">
+            <p className="ui-session__start-title">
+              {step === "Starting…" ? "Starting Draft cloud" : `Copying ${folderName(folder)} to Draft cloud`}
+              <span className="ui-muted ui-session__start-clock"> {elapsedLabel(copyStartedAt, now)}</span>
+            </p>
+            <p className="ui-muted">
+              {size ? `${size.fileCount.toLocaleString()} files, ${megabytes(size.bytes)}. ` : ""}
+              The session opens when the copy is done. Your message sends once the agent is ready.
+            </p>
+          </div>
+          <div className="ui-start__queued">
+            <p className="ui-start__queued-text">{text}</p>
+            <p className="ui-muted">Queued, waiting for the copy</p>
+          </div>
+        </div>
+      ) : (
       <div className="ui-start__body">
         <p className="ui-start__heading">What should we work on?</p>
         {cloud && (
@@ -568,6 +592,7 @@ export function SessionStartScreen({
         {snapshotOn && !folder && <p className="ui-muted">Choose a folder to copy.</p>}
         {!cloudOn && (setup ?? (line && <p className={blocks(localProblem) ? "ui-error" : "ui-muted"} role="status">{line}</p>))}
       </div>
+      )}
     </div>
   );
 }
