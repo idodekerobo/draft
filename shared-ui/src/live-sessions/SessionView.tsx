@@ -6,7 +6,7 @@ import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
 import { PlanCard } from "./PlanCard";
 import { ModeMenu, nextMode, useSwitching } from "./ModeMenu";
-import { shortName, type HostOffline } from "./input-status";
+import { shortName } from "./input-status";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
@@ -40,6 +40,8 @@ import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
 import { cloudStartFailure } from "./cloud-start";
+import { CloudStartNoticeView } from "./CloudStartNotice";
+import { hostWaitOf } from "./cloud-start-notice";
 
 const SKIPPED_MESSAGE = "The user skipped this.";
 
@@ -290,16 +292,16 @@ function SessionContents({
   const agentName = shortName(harnessId);
   // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
   const hasTerminal = harnessId === "claude";
-  const hostOffline: HostOffline = session.status === "host_offline" && (session.runtime === "cloud" ? "cloud" : "local");
+  const hostWait = hostWaitOf(session);
   // A sleeping session has no run to take a decision, a mode or a model, so those controls wait for the next message.
   const sleeping = session.status === "sleeping";
   const viewerName = viewer.name;
   const items = useMemo<StreamItem[]>(
     () => [
       ...liveText.map((preview) => ({ type: "live" as const, messageId: preview.messageId, text: preview.text })),
-      ...pendingItems(inputs.inputs, stream.recentEvents, { viewerName, ownerName, hostOffline }),
+      ...pendingItems(inputs.inputs, stream.recentEvents, { viewerName, ownerName, hostWait }),
     ],
-    [liveText, inputs.inputs, stream.recentEvents, viewerName, ownerName, hostOffline],
+    [liveText, inputs.inputs, stream.recentEvents, viewerName, ownerName, hostWait],
   );
   const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
@@ -635,6 +637,7 @@ function SessionContents({
       {stream.updateError && <p className="ui-muted ui-session__notice" role="status">{stream.updateError} <button type="button" className="ui-link" onClick={() => void refresh()}>Retry</button></p>}
       {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
       <SessionLinks session={session} onOpenSession={onOpenSession} />
+      <CloudStartNoticeView session={session} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scrollRef} onScroll={() => { onScroll(); if (history && scrollRef.current && scrollRef.current.scrollTop > 0 && scrollRef.current.scrollTop < 200) void older(); }}>
@@ -685,7 +688,7 @@ function SessionContents({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

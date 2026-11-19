@@ -4,7 +4,7 @@ import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { productionStartDeps } from "../cloud-sessions/deps";
 import { parseCloudStart } from "../cloud-sessions/parse-start";
-import { startCloudSession } from "../cloud-sessions/start";
+import { beginCloudSession } from "../cloud-sessions/start";
 import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
 import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-sessions/snapshot-seed";
 import { wakeCloudSession } from "../cloud-sessions/wake";
@@ -80,8 +80,12 @@ async function createCloudSession(workspaceId: string, ownerUserId: string, body
     return Response.json({ ok: false, error: "sandbox_not_configured" }, { status: 500 });
   }
 
-  const started = await startCloudSession(parsed.input, deps);
+  // The client opens the session as soon as the row exists. The sandbox boots behind it, and a failure ends the session.
+  const started = await beginCloudSession(parsed.input, deps);
   if (!started.ok) return Response.json({ ok: false, error: started.error }, { status: started.status });
+  started.launch.catch((error) =>
+    recordError({ workspaceId, sessionId: started.sessionId, operation: "session", code: "cloud_launch_unhandled", message: "Launching a cloud session failed outside its own error handling", error }),
+  );
 
   const { data, error } = await serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", started.sessionId).maybeSingle<SessionRow>();
   if (error || !data) return errorResponse("session_lookup_failed", 500, error, workspaceId, started.sessionId);

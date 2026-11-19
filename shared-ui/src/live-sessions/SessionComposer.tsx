@@ -3,7 +3,7 @@
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { clearDraft, hasDraft, useDraft } from "./drafts";
-import { inputStatusLine, type HostOffline } from "./input-status";
+import { inputStatusLine, type HostWait } from "./input-status";
 import { submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 import { useTypeToFocus } from "./useTypeToFocus";
@@ -57,7 +57,7 @@ export function SessionComposer({
   act,
   ownerName,
   ended,
-  hostOffline = false,
+  hostWait = false,
   autoFocus = false,
   onEmptyEscape,
   onResume,
@@ -65,7 +65,7 @@ export function SessionComposer({
   agentControl,
   onCycleMode,
   sleeping = false,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: HostOffline; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostWait?: HostWait; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -105,7 +105,7 @@ export function SessionComposer({
             <li key={input.id} className="ui-composer__pending-item">
               <span className="ui-composer__author">{input.mine ? "You" : input.author_name}</span>
               <span className="ui-composer__text">{input.text}</span>
-              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now, hostOffline)}</span>
+              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now, hostWait)}</span>
               {input.mine && (input.state === "uncertain" || input.state === "failed") && (
                 <span className="ui-composer__actions">
                   <button type="button" className="ui-link" onClick={() => void act(input.id, "resend")}>Resend</button>

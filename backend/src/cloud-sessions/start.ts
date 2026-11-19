@@ -40,6 +40,17 @@ interface StartFailure {
  * session row exists ends the session as start_failed, fails the run, and destroys any sandbox it made.
  */
 export async function startCloudSession(input: CloudStartInput, deps: StartCloudSessionDeps): Promise<StartCloudSessionOutcome> {
+  const begun = await beginCloudSession(input, deps);
+  return begun.ok ? begun.launch : begun;
+}
+
+export type BegunCloudSession = { ok: true; sessionId: string; launch: Promise<StartCloudSessionOutcome> } | Extract<StartCloudSessionOutcome, { ok: false }>;
+
+/**
+ * Creates the session and its run, then boots the sandbox in `launch`. A caller can answer as soon as the rows
+ * exist and let the sandbox boot behind it. `launch` never rejects: a failure ends the session as start_failed.
+ */
+export async function beginCloudSession(input: CloudStartInput, deps: StartCloudSessionDeps): Promise<BegunCloudSession> {
   const { client, provider } = deps;
   const now = deps.now ?? Date.now;
   const newId = deps.newId ?? randomUUID;
@@ -157,47 +168,53 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     return abandon({ status: 502, response: START_FAILED, code: "run_create_failed", operation: "session", message: "Creating the run of a cloud session failed", cause });
   }
 
-  let hostSeed: SeedSpec;
-  try {
-    hostSeed = await hostSeedFor(seed, snapshots);
-  } catch (cause) {
-    return abandon({ status: 502, response: START_FAILED, code: "snapshot_link_failed", operation: "session", message: "Creating the download link of the folder snapshot failed", cause });
-  }
+  const launchSandbox = async (): Promise<StartCloudSessionOutcome> => {
+    let hostSeed: SeedSpec;
+    try {
+      hostSeed = await hostSeedFor(seed, snapshots);
+    } catch (cause) {
+      return abandon({ status: 502, response: START_FAILED, code: "snapshot_link_failed", operation: "session", message: "Creating the download link of the folder snapshot failed", cause });
+    }
 
-  let created: SandboxRef;
-  try {
-    const env = cloudRunEnv({ sessionId, workspaceId, runId, claudeToken, seed: hostSeed, network: input.network }, deps);
-    created = await provider.create({ runId, env, metadata: { session_id: sessionId, run_id: runId, kind: "cloud_session" }, volume: { sizeGb: CLOUD_VOLUME_GB } });
-  } catch (cause) {
-    return abandon({ status: 502, response: START_FAILED, code: "sandbox_create_failed", operation: "execution", message: "Creating the sandbox of a cloud session failed", cause });
-  }
-  sandbox = created;
+    let created: SandboxRef;
+    try {
+      const env = cloudRunEnv({ sessionId, workspaceId, runId, claudeToken, seed: hostSeed, network: input.network }, deps);
+      created = await provider.create({ runId, env, metadata: { session_id: sessionId, run_id: runId, kind: "cloud_session" }, volume: { sizeGb: CLOUD_VOLUME_GB } });
+    } catch (cause) {
+      return abandon({ status: 502, response: START_FAILED, code: "sandbox_create_failed", operation: "execution", message: "Creating the sandbox of a cloud session failed", cause });
+    }
+    sandbox = created;
 
-  // Saved before the start, so a crash between create and start still leaves the machine findable.
-  try {
-    const { error: sessionError } = await client.from("sessions").update({ sandbox_volume: created.volume }).eq("id", sessionId);
-    if (sessionError) throw sessionError;
-    const { error: runError } = await client.from("agent_runs").update({ sandbox_machine_id: created.machine }).eq("id", runId);
-    if (runError) throw runError;
-  } catch (cause) {
-    return abandon({ status: 502, response: START_FAILED, code: "sandbox_record_failed", operation: "session", message: "Saving the sandbox of a cloud session failed", cause });
-  }
+    // Saved before the start, so a crash between create and start still leaves the machine findable.
+    try {
+      const { error: sessionError } = await client.from("sessions").update({ sandbox_volume: created.volume }).eq("id", sessionId);
+      if (sessionError) throw sessionError;
+      const { error: runError } = await client.from("agent_runs").update({ sandbox_machine_id: created.machine }).eq("id", runId);
+      if (runError) throw runError;
+    } catch (cause) {
+      return abandon({ status: 502, response: START_FAILED, code: "sandbox_record_failed", operation: "session", message: "Saving the sandbox of a cloud session failed", cause });
+    }
 
-  try {
-    await provider.start(created);
-  } catch (cause) {
-    return abandon({ status: 502, response: START_FAILED, code: "sandbox_start_failed", operation: "execution", message: "Starting the sandbox of a cloud session failed", cause });
-  }
+    try {
+      await provider.start(created);
+    } catch (cause) {
+      return abandon({ status: 502, response: START_FAILED, code: "sandbox_start_failed", operation: "execution", message: "Starting the sandbox of a cloud session failed", cause });
+    }
 
-  const { error: runningError } = await client
-    .from("agent_runs")
-    .update({ status: "running", started_at: new Date(now()).toISOString() })
-    .eq("id", runId)
-    .in("status", ACTIVE_AGENT_RUN_STATUSES);
-  if (runningError) {
-    return abandon({ status: 502, response: START_FAILED, code: "run_start_failed", operation: "session", message: "Marking the run of a cloud session as running failed", cause: runningError });
-  }
-  return { ok: true, sessionId };
+    const { error: runningError } = await client
+      .from("agent_runs")
+      .update({ status: "running", started_at: new Date(now()).toISOString() })
+      .eq("id", runId)
+      .in("status", ACTIVE_AGENT_RUN_STATUSES);
+    if (runningError) {
+      return abandon({ status: 502, response: START_FAILED, code: "run_start_failed", operation: "session", message: "Marking the run of a cloud session as running failed", cause: runningError });
+    }
+    return { ok: true, sessionId };
+  };
+  const launch = launchSandbox().catch((cause) =>
+    abandon({ status: 502, response: START_FAILED, code: "sandbox_launch_failed", operation: "execution", message: "Launching the sandbox of a cloud session failed", cause }),
+  );
+  return { ok: true, sessionId, launch };
 }
 
 /** The list shows the repository name where a local session shows its folder. */

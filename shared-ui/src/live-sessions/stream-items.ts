@@ -1,4 +1,4 @@
-import type { HostOffline } from "./input-status";
+import type { HostWait } from "./input-status";
 import { splitAuthor } from "draft-core/live-sessions";
 import type { AnswerValue, ApprovalKind, ComposerInput, LiveQuestion, LiveSessionEvent } from "./types";
 
@@ -9,7 +9,7 @@ export type StreamItem =
   | { type: "note"; seq: number; text: string; interruptedBy?: { id: string; name: string } }
   /** A message from another agent in the team. People's messages are `user`. */
   | { type: "agent_message"; seq: number; at: string; from: string; kind: "idle" | "message" | "handback"; summary: string | null; text: string; agentId: string | null }
-  | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostOffline: HostOffline }
+  | { type: "pending"; key: string; input: ComposerInput; author: string; ownerName: string; hostWait: HostWait }
   /** Text the agent is writing now. It stands in the stream until the stored message replaces it. */
   | { type: "live"; messageId: string; text: string }
   | {

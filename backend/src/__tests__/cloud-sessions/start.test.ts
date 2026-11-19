@@ -3,7 +3,7 @@ import type { SandboxProvider, SandboxRef, SandboxSpec } from "../../metaharness
 import type { SandboxDeploymentConfig } from "../../metaharness/sandbox/config";
 import { CredentialError } from "../../credentials/crypto";
 import { verifyAgentRunToken } from "../../metaharness/runs/run-token";
-import { startCloudSession, type StartCloudSessionDeps } from "../../cloud-sessions/start";
+import { beginCloudSession, startCloudSession, type StartCloudSessionDeps } from "../../cloud-sessions/start";
 import type { CloudStartInput } from "../../cloud-sessions/parse-start";
 import type { SnapshotStore } from "../../cloud-sessions/snapshot-seed";
 import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
@@ -232,6 +232,20 @@ describe("startCloudSession", () => {
     expect(printed).not.toContain(runToken);
     expect(printed).not.toContain(mcpToken);
     expect(JSON.stringify(db.tables.errors)).not.toContain(CLAUDE_TOKEN);
+  });
+
+  it("answers with the session before the sandbox has booted, and finishes the launch behind it", async () => {
+    const fly = fakeProvider();
+    let release!: () => void;
+    const booted = new Promise<void>((resolve) => (release = resolve));
+    const slow = { ...fly.provider, start: async () => { fly.calls.push("start"); await booted; } };
+    const begun = await beginCloudSession(input, deps({ provider: slow }));
+
+    expect(begun.ok).toBe(true);
+    expect(session()).toMatchObject({ status: "starting" });
+    release();
+    expect(await (begun as Extract<typeof begun, { ok: true }>).launch).toEqual({ ok: true, sessionId: SESSION });
+    expect(run()).toMatchObject({ status: "running" });
   });
 
   it("refuses with 409 when the workspace has no Claude login, and creates no session or run", async () => {
