@@ -5,11 +5,15 @@ import { QueryClientContext, type QueryClient } from "@tanstack/react-query";
 import type { StreamItem } from "./stream-items";
 
 export interface SessionViewState {
-  expanded: Readonly<Record<number, boolean>>;
+  expanded: Readonly<Record<string, boolean>>;
   scroll: number | null;
+  anchor?: { seq: number; offset: number; windowSeq?: number };
 }
 
+let nextScope = 0;
+
 export class SessionViewStates {
+  readonly scope = `session-scope-${++nextScope}`;
   private viewer: string | null = null;
 
   setViewer(viewer: string) {
@@ -70,19 +74,21 @@ export function revealPath(items: StreamItem[], seq: number, parents: number[] =
 }
 
 export const DisclosureState = createContext<{
-  expanded: Readonly<Record<number, boolean>>;
-  change(seq: number, open: boolean): void;
+  expanded: Readonly<Record<string, boolean>>;
+  change(seq: string | number, open: boolean): void;
 } | null>(null);
 
-export function Disclosure({ seq, initiallyOpen = false, summary, children }: {
-  seq: number;
+export function Disclosure({ seq, initiallyOpen = false, summary, children, aliases = [] }: {
+  seq: string | number;
+  aliases?: (string | number)[];
   initiallyOpen?: boolean;
   summary: ReactNode;
   children: () => ReactNode;
 }) {
   const state = useContext(DisclosureState);
   const [localOpen, setLocalOpen] = useState(initiallyOpen);
-  const open = state?.expanded[seq] ?? localOpen;
+  const inherited = aliases.map((key) => state?.expanded[key]).find((value) => value !== undefined);
+  const open = state?.expanded[seq] ?? inherited ?? localOpen;
   return (
     <details className="ui-stream__details" open={open} onToggle={(event) => {
       if (event.target !== event.currentTarget) return;

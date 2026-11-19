@@ -33,6 +33,7 @@ export type ApprovalResult =
 /** Each app implements this over its own transport. */
 export interface LiveSessionsApi {
   listSessions(): Promise<LiveSession[]>;
+  fetchView?(sessionId: string, query: import("draft-core/live-sessions").SessionViewQuery): Promise<import("draft-core/live-sessions").SessionViewResponse>;
   fetchEvents(sessionId: string, after: number): Promise<LiveSessionEventsPage>;
   /** Returns the created input when the transport gives it back; otherwise the caller refetches. */
   sendMessage(sessionId: string, text: string): Promise<LiveSessionInput | void>;
@@ -66,3 +67,5 @@ export class SessionNotFoundError extends Error {
     super("session_not_found");
   }
 }
+
+export type { SessionViewQuery, SessionViewResponse, SessionTranscriptPage, SessionAgentSummary, SessionViewSnapshot } from "draft-core/live-sessions";

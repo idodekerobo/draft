@@ -8,11 +8,11 @@ import type { LiveSessionEvent, LiveSessionsApi } from "./types";
 const SWEEP_MS = 5_000;
 
 /** The text the agent is writing now, until the stored message replaces it. */
-export function useLiveText(api: LiveSessionsApi, sessionId: string, events: LiveSessionEvent[]): LivePreview[] {
+export function useLiveText(api: LiveSessionsApi, sessionId: string, events: LiveSessionEvent[], readThrough = events.at(-1)?.seq ?? 0): LivePreview[] {
   const [state, setState] = useState<LiveTextState>(emptyLiveText);
   const lastSeq = useRef(0);
   const latestEvents = useRef(events);
-  lastSeq.current = events.at(-1)?.seq ?? 0;
+  lastSeq.current = readThrough;
   latestEvents.current = events;
 
   useEffect(() => {
