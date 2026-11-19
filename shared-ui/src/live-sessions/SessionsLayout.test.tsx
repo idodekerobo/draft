@@ -137,3 +137,16 @@ describe("SessionsLayout", () => {
     expect(screen.getByText("Host offline")).toBeTruthy();
   });
 });
+
+describe("SessionsLayout where a session runs", () => {
+  it("shows Draft Cloud for a cloud session and the computer's name for a local one, on its own line", () => {
+    setup({
+      sessions: [
+        { ...make("c", "cloud work", NOW), runtime: "cloud" },
+        { ...make("l", "local work", NOW), runtime: "local", host_name: "Maya's MacBook" },
+      ],
+    });
+    expect(screen.getByText("Draft Cloud")).toBeTruthy();
+    expect(screen.getByText("Maya's MacBook")).toBeTruthy();
+  });
+});
