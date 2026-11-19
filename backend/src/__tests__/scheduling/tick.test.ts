@@ -1,6 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runSchedulingTick } from "../../scheduling/tick";
+import type { expireIdleCloudSessions } from "../../cloud-sessions/expire";
+import type { SandboxDeploymentConfig } from "../../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../../types/tables";
 import { createFakeRunsClient, fakeRun } from "../synthesis/fake-runs-client";
 
@@ -8,6 +10,13 @@ const NOW = "2026-08-05T10:00:30.000Z";
 const OCCURRENCE = "2026-08-05T10:00:00.000Z";
 // What claim_due_scheduled_tasks writes into next_due_at for a recurring row: now + 5 minutes.
 const LEASE = "2026-08-05T10:05:30.000Z";
+
+const SANDBOX: SandboxDeploymentConfig = {
+  callbackUrl: "https://api.draft.test/sandbox/callback",
+  callbackSecret: "callback-secret",
+  supabaseUrl: "https://project.supabase.co",
+  provider: { kind: "fly", apiToken: "fly-token", appName: "draft-sandbox", image: `registry.fly.io/draft-sandbox@sha256:${"a".repeat(64)}`, region: "iad" },
+};
 
 function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   return {
@@ -349,6 +358,41 @@ describe("runSchedulingTick", () => {
   it("still advances tasks when the session sweep fails", async () => {
     const { client, updates } = fakeClient({ claimed: [claimed({ id: "task-a" })], failSweep: true });
     await runSchedulingTick({ client, config: fakeConfig, now, dispatch: mock(async () => null), drain: mock(async () => {}) });
+    expect(updates).toHaveLength(1);
+  });
+
+  it("expires idle cloud sessions on every tick, with the provider from its sandbox config", async () => {
+    const expire = mock(async (_options: Parameters<typeof expireIdleCloudSessions>[0]) => ({ expired: 0, skipped: 0, failed: 0 }));
+    const { client } = fakeClient();
+
+    await runSchedulingTick({ client, config: SANDBOX, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire });
+
+    expect(expire).toHaveBeenCalledTimes(1);
+    const options = expire.mock.calls[0]![0];
+    expect(options.client).toBe(client);
+    expect(options.provider).toEqual(expect.objectContaining({ destroy: expect.any(Function) }));
+    expect(options.now?.()).toEqual(now);
+  });
+
+  it("skips the expiry when no sandbox settings are passed", async () => {
+    const expire = mock(async (_options: Parameters<typeof expireIdleCloudSessions>[0]) => ({ expired: 0, skipped: 0, failed: 0 }));
+    const { client, errorInserts } = fakeClient();
+
+    await runSchedulingTick({ client, config: fakeConfig, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire });
+
+    expect(expire).not.toHaveBeenCalled();
+    expect(errorInserts).toHaveLength(0);
+  });
+
+  it("keeps the rest of the tick running when the expiry throws", async () => {
+    const expire = mock(async (_options: Parameters<typeof expireIdleCloudSessions>[0]): Promise<never> => {
+      throw new Error("expiry down");
+    });
+    const { client, updates } = fakeClient({ claimed: [claimed({ id: "task-a" })] });
+
+    await runSchedulingTick({ client, config: SANDBOX, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire });
+
+    expect(expire).toHaveBeenCalledTimes(1);
     expect(updates).toHaveLength(1);
   });
 });

@@ -8,6 +8,8 @@ import { sweepStaleSynthesisRuns } from "../synthesis/reconcile-stale-runs";
 import { retryFailedSynthesisRuns } from "../synthesis/retry-failed-runs";
 import { failStaleRoutineSessions } from "../routines/fail-stale-routine-sessions";
 import { drainEventInbox } from "../events/drain";
+import { expireIdleCloudSessions } from "../cloud-sessions/expire";
+import { providerFor } from "../metaharness/sandbox/providers";
 
 export interface RunSchedulingTickOptions {
   client: SupabaseClient;
@@ -15,6 +17,7 @@ export interface RunSchedulingTickOptions {
   now?: Date;
   dispatch?: typeof dispatchScheduledTask; // injectable for tests
   drain?: typeof drainEventInbox; // injectable for tests
+  expire?: typeof expireIdleCloudSessions; // injectable for tests
 }
 
 const TIMER_CLAIM_LIMIT = 100;
@@ -31,6 +34,7 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
   const now = options.now ?? new Date();
   const dispatch = options.dispatch ?? dispatchScheduledTask;
   const drain = options.drain ?? drainEventInbox;
+  const expire = options.expire ?? expireIdleCloudSessions;
 
   const { data, error } = await options.client.rpc("claim_due_scheduled_tasks", {
     p_now: now.toISOString(),
@@ -109,6 +113,14 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     await retryFailedSynthesisRuns({ client: options.client, config: options.config, now });
   } catch (retryError) {
     await recordTickStepError(options.client, "Failed synthesis run retry failed", retryError);
+  }
+  try {
+    // Bootstrap refuses to start without sandbox settings, so only a caller that passes none reaches this skip.
+    if (options.config?.provider) {
+      await expire({ client: options.client, provider: providerFor(options.config.provider), now: () => now });
+    }
+  } catch (expireError) {
+    await recordTickStepError(options.client, "Idle cloud session expiry failed", expireError);
   }
 }
 
