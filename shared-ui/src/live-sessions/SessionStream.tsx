@@ -260,9 +260,9 @@ export function SessionStream({ liveItems, separateLive = false, ...props }: Par
   if (!liveItems) return <StreamList {...props} />;
   const { onSteer, onCancel, onShowRequest, onSkipQuestions, onDismissPrompt, ...history } = props;
   const hasHistory = history.items.some((item) => item.type !== "approval" || item.resolved !== null);
-  return <>
+  return <div className="ui-stream-group">
     <StreamList {...history} showEmpty={hasHistory || liveItems.length === 0} />
     {separateLive && liveItems.length > 0 && <p className="ui-muted">Latest activity</p>}
     {liveItems.length > 0 && <StreamList {...props} items={liveItems} />}
-  </>;
+  </div>;
 }

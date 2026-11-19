@@ -923,7 +923,8 @@
 .ui-session__menu-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 @media (hover: hover) and (pointer: fine) { .ui-session__menu-item:hover { background: var(--color-bg-hover); } }
 
-.ui-stream { display: flex; flex-direction: column; gap: var(--space-4); }
+.ui-stream, .ui-stream-group { display: flex; flex-direction: column; gap: var(--space-4); }
+.ui-stream-group > p { margin: 0; }
 .ui-stream__item, .ui-stream__item--note, .ui-stream__item--tool, .ui-stream__item--agent_message, .ui-stream__item--thinking { padding: 0; border-bottom: 0; }
 /* Agent rows get room on all sides, so the highlight does not hug the text. Margin keeps the text aligned with other rows. */
 .ui-stream__item--agent, .ui-stream__item--agent_message { padding: var(--space-3); margin-inline: calc(var(--space-3) * -1); border-radius: var(--radius-md); }
