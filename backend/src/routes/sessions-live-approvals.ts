@@ -1,9 +1,10 @@
 import { harnessModes, isEffortFor, isKnownModel } from "draft-core/harnesses";
 import { MAX_DECISION_MESSAGE_CHARS } from "draft-core/live-sessions";
+import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { SessionInputRow } from "../types/tables";
-import { authorName, authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
+import { authorName, authorize, authorizeHostSession, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type DecisionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision">;
 type StopRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/stop">;
@@ -241,14 +242,16 @@ function isHostEvent(value: unknown): value is HostEvent {
 }
 
 /** The host reports what only it can see: a permission request, how one ended, a note such as a Stop. */
-export const HOST_EVENTS = withAuth<HostEventsRequest>(async (req, caller) => {
+export const HOST_EVENTS = withHostAuth<HostEventsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostId = optionalString(parsed.body.hostId, 200);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  const hostId = target.hostId;
   if (!hostId) return errorResponse("missing_host_id", 400);
   const events = parsed.body.events;
   if (!Array.isArray(events) || events.length === 0 || events.length > MAX_HOST_EVENTS || !events.every(isHostEvent)) {

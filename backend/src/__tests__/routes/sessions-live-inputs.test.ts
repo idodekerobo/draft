@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
+import { createAgentRunToken } from "../../metaharness/runs/run-token";
 
 const caller = { userId: "user-2", accessToken: "token-2" };
 let accessResult: Response | null = null;
@@ -406,6 +408,63 @@ describe("matching consumed inputs", () => {
     tables.session_inputs = [waiting("a", "Dev", "go")];
     tables.session_events = [turn(2, "go"), turn(3, "[Dev via Draft] go", { agent_id: "x" }), turn(1, "[Dev via Draft] go")];
     await routes.matchConsumedInputs(WS, SESSION, 1, 3);
+    expect(rpcCalls).toEqual([]);
+  });
+});
+
+describe("cloud host requests", () => {
+  const CLOUD_WS = "11111111-1111-4111-8111-111111111111";
+  const RUN = "22222222-2222-4222-8222-222222222222";
+  const CLOUD_HOST = `cloud:${SESSION}`;
+  const SECRET = "live-inputs-cloud-test-secret";
+  let savedSecret: string | undefined;
+
+  beforeAll(() => {
+    savedSecret = process.env.SANDBOX_CALLBACK_SECRET;
+    process.env.SANDBOX_CALLBACK_SECRET = SECRET;
+  });
+  afterAll(() => {
+    if (savedSecret === undefined) delete process.env.SANDBOX_CALLBACK_SECRET;
+    else process.env.SANDBOX_CALLBACK_SECRET = savedSecret;
+  });
+
+  const cloudRequest = (method: string, path: string, body?: unknown, params: Record<string, string> = { id: CLOUD_WS, sessionId: SESSION, inputId: "i1" }) =>
+    Object.assign(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n" }, SECRET)}` },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+      { params },
+    ) as never;
+
+  beforeEach(() => {
+    tables.sessions = [{ id: SESSION, workspace_id: CLOUD_WS, owner_user_id: "user-2", runtime: "cloud", status: "live", host_id: CLOUD_HOST, last_seq: 0 }];
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+    tables.session_inputs = [
+      { id: "i1", session_id: SESSION, workspace_id: CLOUD_WS, kind: "message", state: "queued", author_user_id: "user-2", author_name: "Priya", payload: { text: "run tests" }, created_at: "t", updated_at: "t" },
+    ];
+  });
+
+  it("gives its own host the waiting messages, and refuses another host", async () => {
+    const res = await routes.INPUTS_PENDING(cloudRequest("GET", "/x", undefined, { id: CLOUD_WS, sessionId: SESSION }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { inputs: Array<{ id: string }> }).inputs.map((i) => i.id)).toEqual(["i1"]);
+
+    expect((await routes.INPUTS_PENDING(cloudRequest("GET", "/x?hostId=host-1", undefined, { id: CLOUD_WS, sessionId: SESSION }))).status).toBe(403);
+  });
+
+  it("moves an input as the session's owner, for its own host only", async () => {
+    const ok = await routes.INPUT_STATE(cloudRequest("POST", "/x", { from: ["queued"], to: "delivering" }));
+    expect(await ok.json()).toEqual({ ok: true, changed: true });
+    expect(rpcCalls[0]).toMatchObject({
+      fn: "host_transition_session_input",
+      args: { p_input_id: "i1", p_owner_user_id: "user-2", p_host_id: CLOUD_HOST },
+    });
+
+    rpcCalls = [];
+    const foreign = await routes.INPUT_STATE(cloudRequest("POST", "/x", { hostId: "host-1", from: ["queued"], to: "delivering" }));
+    expect(foreign.status).toBe(403);
     expect(rpcCalls).toEqual([]);
   });
 });

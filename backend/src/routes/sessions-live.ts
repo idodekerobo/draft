@@ -1,3 +1,4 @@
+import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
@@ -9,7 +10,7 @@ import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, authorizeOwned, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { SESSION_COLUMNS, authorize, authorizeHostMember, authorizeHostSession, authorizeOwned, errorResponse, hostIdFor, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -225,16 +226,18 @@ function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim())?.trim().slice(0, TITLE_MAX_CHARS) ?? "";
 }
 
-export const LINES = withAuth<LinesRequest>(async (req, caller) => {
+export const LINES = withHostAuth<LinesRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
 
-  const hostId = optionalString(body.hostId, 200);
+  const target = hostIdFor(caller, optionalString(body.hostId, 200));
+  if (!target.ok) return target.response;
+  const hostId = target.hostId;
   if (!hostId) return errorResponse("missing_host_id", 400);
   if (!Array.isArray(body.lines) || body.lines.length > MAX_LINES_PER_POST || !body.lines.every(isIncomingLine)) {
     return errorResponse("invalid_lines", 400);
@@ -312,14 +315,16 @@ async function reportedAgent(sessionId: string, workspaceId: string, hostId: str
 }
 
 /** The host says it is alive. A session marked host_offline returns to live. */
-export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
+export const HEARTBEAT = withHostAuth<HeartbeatRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
+  const member = await authorizeHostMember(workspaceId, caller);
+  if (!member.ok) return member.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostId = optionalString(parsed.body.hostId, 200);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  const hostId = target.hostId;
   if (!hostId) return errorResponse("missing_host_id", 400);
 
   const { data, error } = await serviceClient.rpc("heartbeat_session", {
@@ -338,15 +343,16 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
   return Response.json({ ok: true, status: data });
 });
 
-export const END = withAuth<EndRequest>(async (req, caller) => {
+export const END = withHostAuth<EndRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostId = optionalString(parsed.body.hostId, 200);
-  if (hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const reason = optionalString(parsed.body.reason, 100) ?? "ended";
   const { error } = await serviceClient
@@ -405,14 +411,16 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   return Response.json({ ok: true, session: data ?? { ...session, status: "live" } });
 });
 
-export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
+export const RAW_UPLOAD_URLS = withHostAuth<RawRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const files = parsed.body.files;
   if (!Array.isArray(files) || files.length === 0 || files.length > 200 || !files.every((f) => typeof f === "string" && RAW_FILE.test(f))) {
@@ -429,14 +437,16 @@ export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
   return Response.json({ ok: true, uploads });
 });
 
-export const RAW_UPLOAD_COMPLETE = withAuth<RawCompleteRequest>(async (req, caller) => {
+export const RAW_UPLOAD_COMPLETE = withHostAuth<RawCompleteRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const prefix = `${workspaceId}/${sessionId}`;
   const { data: objects, error: listError } = await serviceClient.storage.from(RAW_BUCKET).list(prefix);

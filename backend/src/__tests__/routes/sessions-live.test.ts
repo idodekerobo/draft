@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
+import { createAgentRunToken } from "../../metaharness/runs/run-token";
 
 const caller = { userId: "user-1", accessToken: "token-1" };
 let accessResult: Response | null = null;
@@ -617,5 +619,103 @@ describe("session view route", () => {
     expect(await response.json()).toEqual({page});
     expect(rpcCalls[0]).toMatchObject({fn:"read_session_view",args:{p_session_id:SESSION,p_workspace_id:WS,p_after:10,p_state:false}});
     expect(queriedTables).toEqual([]);
+  });
+});
+
+describe("cloud host requests", () => {
+  const CLOUD_WS = "11111111-1111-4111-8111-111111111111";
+  const RUN = "22222222-2222-4222-8222-222222222222";
+  const CLOUD_HOST = `cloud:${SESSION}`;
+  const SECRET = "live-sessions-cloud-test-secret";
+  let savedSecret: string | undefined;
+
+  beforeAll(() => {
+    savedSecret = process.env.SANDBOX_CALLBACK_SECRET;
+    process.env.SANDBOX_CALLBACK_SECRET = SECRET;
+  });
+  afterAll(() => {
+    if (savedSecret === undefined) delete process.env.SANDBOX_CALLBACK_SECRET;
+    else process.env.SANDBOX_CALLBACK_SECRET = savedSecret;
+  });
+
+  /** A sandbox host calls with its run token, which names the run, the workspace and the session. */
+  const cloudPost = (body: unknown, sessionId = SESSION) =>
+    Object.assign(
+      new Request("http://localhost/x", {
+        method: "POST",
+        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n" }, SECRET)}` },
+        body: JSON.stringify(body),
+      }),
+      { params: { id: CLOUD_WS, sessionId } },
+    ) as never;
+
+  beforeEach(() => {
+    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+  });
+
+  it("posts lines under the cloud host id, and refuses a body that names a desktop host", async () => {
+    expect((await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }))).status).toBe(200);
+    expect(rpcCalls[0]).toMatchObject({ fn: "append_session_events", args: { p_session_id: SESSION, p_workspace_id: CLOUD_WS, p_host_id: CLOUD_HOST } });
+
+    rpcCalls.length = 0;
+    const foreign = await routes.LINES(cloudPost({ hostId: "host-1", lines: [userLine("u2", "hi")] }));
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toEqual({ ok: false, error: "foreign_host" });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("heartbeats under the cloud host id, and refuses another host", async () => {
+    rpcResult = { data: "live", error: null };
+    expect((await routes.HEARTBEAT(cloudPost({}))).status).toBe(200);
+    expect(rpcCalls[0]).toMatchObject({ fn: "heartbeat_session", args: { p_session_id: SESSION, p_workspace_id: CLOUD_WS, p_host_id: CLOUD_HOST } });
+
+    rpcCalls.length = 0;
+    expect((await routes.HEARTBEAT(cloudPost({ hostId: "host-1" }))).status).toBe(403);
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("ends its own session, and refuses an end from another host", async () => {
+    expect((await routes.END(cloudPost({ hostId: "host-1", reason: "user_exit" }))).status).toBe(403);
+    expect(updates).toEqual([]);
+
+    expect((await routes.END(cloudPost({ reason: "user_exit" }))).status).toBe(200);
+    expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
+  });
+
+  it("uploads raw files under its own session folder", async () => {
+    expect((await routes.RAW_UPLOAD_URLS(cloudPost({ files: ["root.jsonl"] }))).status).toBe(200);
+    expect(signedPaths).toEqual([`${CLOUD_WS}/${SESSION}/root.jsonl.gz`]);
+
+    storageObjects = [{ name: "root.jsonl.gz" }];
+    expect((await routes.RAW_UPLOAD_COMPLETE(cloudPost({ hostId: "host-1" }))).status).toBe(403);
+    expect((await routes.RAW_UPLOAD_COMPLETE(cloudPost({}))).status).toBe(200);
+  });
+
+  it("refuses a run that names another session", async () => {
+    tables.sessions.push(session({ id: "session-2", workspace_id: CLOUD_WS, runtime: "cloud", host_id: "cloud:session-2" }));
+    const res = await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }, "session-2"));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: "run_not_for_session" });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("refuses a finished run, and a run on a local session", async () => {
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "succeeded", session_id: SESSION }];
+    const finished = await routes.HEARTBEAT(cloudPost({}));
+    expect(finished.status).toBe(403);
+    expect(await finished.json()).toEqual({ ok: false, error: "run_not_active" });
+
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "local", host_id: "host-1" })];
+    const local = await routes.HEARTBEAT(cloudPost({}));
+    expect(local.status).toBe(403);
+    expect(await local.json()).toEqual({ ok: false, error: "session_not_cloud" });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("does not need team membership, since its token binds it to the session", async () => {
+    accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+    expect((await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }))).status).toBe(200);
   });
 });
