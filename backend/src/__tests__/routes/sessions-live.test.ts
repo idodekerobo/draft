@@ -616,6 +616,6 @@ describe("session view route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({page});
     expect(rpcCalls[0]).toMatchObject({fn:"read_session_view",args:{p_session_id:SESSION,p_workspace_id:WS,p_after:10,p_state:false}});
-    expect(queriedTables).not.toContain("session_inputs");
+    expect(queriedTables).toEqual([]);
   });
 });

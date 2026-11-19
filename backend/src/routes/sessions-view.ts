@@ -50,7 +50,7 @@ export const VIEW = withAuth<ViewRequest>(async (req, caller) => {
   ]);
   if (!authors.ok || (inputs && !inputs.ok) || (recent && !recent.ok)) return errorResponse("session_view_failed", 500, undefined, workspaceId, sessionId);
   if (links instanceof Response) return links;
-  const ids = [...new Set([caller.userId, ...authors.bySeq.values(), ...(result.snapshot ? [result.snapshot.session.owner_user_id] : []), ...(inputs?.inputs.map((i) => i.author_user_id) ?? []), ...(recent?.rows.map((r) => r.author_user_id) ?? [])])];
+  const ids = [...new Set([...(query.state ? [caller.userId] : []), ...authors.bySeq.values(), ...(result.snapshot ? [result.snapshot.session.owner_user_id] : []), ...(inputs?.inputs.map((i) => i.author_user_id) ?? []), ...(recent?.rows.map((r) => r.author_user_id) ?? [])])];
   const names = await loadDisplayNames(serviceClient, ids, []);
   if (!names.ok) return errorResponse(names.code, 500, names.detail, workspaceId, sessionId);
   const named = (events: LiveSessionEvent[]) => events.map((event) => {
