@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
 import { ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
 import type { AgentRunSpec } from "draft-core/run-spec";
-import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
+import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller, type UserCallSurface } from "draft-core/tools";
 import { z } from "zod";
 import { recordError } from "../../../errors/record-error";
 import { countRunToolCalls } from "../../../people/limits";
@@ -21,7 +21,7 @@ const UUID = z.string().uuid();
 
 /** Who a tool call acts for. A run acts for its owner, the person it works for. A run with no owner works for the workspace. */
 type RoutineCaller =
-  | { type: "user"; userId: string; workspaceId: string; via: "app" | "cli" | "mcp" }
+  | { type: "user"; userId: string; workspaceId: string; via: UserCallSurface }
   | { type: "run"; run: AgentRunSpec; userId: string | null; workspaceId: string };
 
 function resolveRoutineCaller(caller: ToolCaller): RoutineCaller {

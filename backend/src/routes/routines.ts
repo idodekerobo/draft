@@ -2,7 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
-import { isAgentRequest } from "../observability/is-agent-request";
+import { callSurface, isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { routineAgentProblem, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../routines/permissions";
@@ -137,7 +137,7 @@ export const POST = withAuth<SchedulesRequest>(async (req, caller) => {
   try {
     const agentProblem = await routineAgentProblem(serviceClient, workspaceId, validation.config.harness);
     if (agentProblem) return Response.json({ error: agentProblem.code, message: agentProblem.message, field: "harness" }, { status: 409 });
-    return Response.json(await createAgentRoutine(workspaceId, personCreator(caller.userId, "app"), validation), { status: 201 });
+    return Response.json(await createAgentRoutine(workspaceId, personCreator(caller.userId, callSurface(req)), validation), { status: 201 });
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
       if (error.code === "forbidden") return Response.json({ error: "forbidden" }, { status: 403 });

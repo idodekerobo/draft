@@ -149,7 +149,7 @@ export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord
   return async (record) => {
     const { origin } = record.caller;
     if (origin.kind === "person") {
-      if (origin.via === "app") return;
+      if (origin.via !== "cli" && origin.via !== "mcp") return;
       const command = origin.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
       if (!isLoggedCommand(command)) return;
       await recordAgentQueryLog(client, {

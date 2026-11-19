@@ -4,7 +4,7 @@ import { callUserTool, listUserTools, userInvokeDeps } from "../metaharness/tool
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
-import { isAgentRequest } from "../observability/is-agent-request";
+import { callSurface } from "../observability/is-agent-request";
 
 type ToolsRequest = Bun.BunRequest<"/workspaces/:id/tools">;
 type ToolRequest = Bun.BunRequest<"/workspaces/:id/tools/:name">;
@@ -27,7 +27,7 @@ export const toolPOST = withAuth<ToolRequest>(async (req, caller) =>
   callUserTool(userDeps(), {
     userId: caller.userId,
     workspaceId: req.params.id,
-    via: isAgentRequest(req) ? "cli" : "app",
+    via: callSurface(req),
     toolName: req.params.name,
     bodyText: await req.text(),
   }),
