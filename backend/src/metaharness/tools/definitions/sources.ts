@@ -1,14 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { ANY_RUN } from "draft-core/tools";
-import { readSource, searchSources } from "../../../services/sources";
+import { listSources, readSource, searchSources } from "../../../services/sources";
 import { syncMembers } from "../../../people/sync-members";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { callerWorkspaceId } from "./shared";
 
 /** The sources service names its own failures; a search or read that broke inside is not a refusal. */
 function sourceRefusal(error: { code: string; message: string }): ToolHandlerResult {
-  if (error.code === "search_failed" || error.code === "read_failed") throw new Error(error.message);
+  if (error.code === "search_failed" || error.code === "read_failed" || error.code === "list_failed") throw new Error(error.message);
   return refuse(error.code, error.message);
 }
 
@@ -16,6 +16,27 @@ const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : un
 
 /** Run callers receive shared sources only; signed-in callers can also see their own private sources. */
 export function createSourceTools(client: SupabaseClient) {
+  const listInput = z.object({
+    provider: z.string().optional(),
+    type: z.array(z.string()).optional(),
+    since: z.string().optional().describe("Inclusive UTC date or timestamp."),
+    until: z.string().optional().describe("Exclusive UTC date or timestamp."),
+    limit: z.number().int().min(1).max(100).optional(),
+    cursor: z.string().optional(),
+  });
+  const list = defineTool({
+    name: "sources.list",
+    mcp: true,
+    description: "List current source evidence newest first without searching its content. Filter by provider, type and date; pass next_cursor back as cursor to continue. Use sources.search to find evidence by keywords and sources.read to inspect an item.",
+    allowedOrigins: ["person", ...ANY_RUN],
+    input: listInput,
+    auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
+    handler: async ({ input, caller }) => {
+      const result = await listSources(client, callerWorkspaceId(caller), caller.origin.kind === "person" ? caller.origin.userId : null, input);
+      return result.ok ? { status: "ok", output: result.value } : sourceRefusal(result.error);
+    },
+  });
+
   const searchInput = z.object({
     query: z.string().min(1).max(512).optional().describe("Keywords. Optional when person is set: then you get that person's sources, newest first."),
     person: z.union([z.string().uuid(), z.literal("me")]).optional().describe("A person id from people.find, or \"me\" for the person you work for. Only sources that mention one of their ids."),
@@ -67,5 +88,5 @@ export function createSourceTools(client: SupabaseClient) {
     },
   });
 
-  return [search, readSourceTool];
+  return [list, search, readSourceTool];
 }

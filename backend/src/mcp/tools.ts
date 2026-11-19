@@ -41,19 +41,16 @@ export function buildMcpServer(userId: string, scopes: string[] = [], gatewayOve
       version: "1.0.0",
       title: "Draft",
       description:
-        "Self-updating documentation about everything happening in the company: product, team, and priorities. You can also read and search sources directly. Docs: https://github.com/idodekerobo/draft/tree/main/docs",
+        "Self-updating documentation about everything happening in the company: product, team, and priorities. Draft app conversations are sessions; ingested evidence, including captured coding sessions, is under sources. Docs: https://github.com/idodekerobo/draft/tree/main/docs",
       websiteUrl: "https://draftai.us",
     },
     {
       instructions:
-        "Draft is the company's self-updating documentation covering product, team, and priorities. To get the latest information, call context.read with dimensions: [\"memory\"] and a period. Memory is a chronological log of daily, weekly, and monthly summaries. A period is a day (YYYY-MM-DD), a week (week-YYYY-MM-DD, using that week's Monday), or a month (YYYY-MM); aliases like today, this-week, and last-month also work. For a longer span, read several periods. Use context.list and context.read with other dimensions for stable background. For direct evidence, use sources.search and sources.read. Use context.export only to save the full context as files on disk. Use skills.list and skills.read only when the user asks for a saved skill or workflow, and skills.add only when the user asks to save one. Routines are agents that run on a schedule or when something happens (a meeting ends, a pull request merges). Call routines.options before routines.create or update: it lists valid triggers, presets, agents, channels and repos. Use routines.list for every routine's settings, routines.run to start one, and routines.runs to read results (add transcript: true only when you need the steps). A trigger or access whose provider isn't connected is refused: call integrations.list, ask the person, then integrations.connect, which returns a link they open themselves. Never ask a person to paste a key into the chat. Use activity.list for everything the workspace's agents have run; lists return nextCursor for older pages.",
+        "Draft is the company's self-updating documentation covering product, team, and priorities. To get the latest information, call context.read with dimensions: [\"memory\"] and a period. Memory is a chronological log of daily, weekly, and monthly summaries. A period is a day (YYYY-MM-DD), a week (week-YYYY-MM-DD, using that week's Monday), or a month (YYYY-MM); aliases like today, this-week, and last-month also work. For a longer span, read several periods. Use context.list and context.read with other dimensions for stable background. Draft app conversations are sessions: use sessions.list and sessions.read to browse them. Ingested evidence is sources: use sources.list to browse, sources.search to find content, and sources.read to inspect an item. Use context.export only to save the full context as files on disk. Use skills.list and skills.read only when the user asks for a saved skill or workflow, and skills.add only when the user asks to save one. Routines are agents that run on a schedule or when something happens (a meeting ends, a pull request merges). Call routines.options before routines.create or update: it lists valid triggers, presets, agents, channels and repos. Use routines.list for every routine's settings, routines.run to start one, and routines.runs to read results (add transcript: true only when you need the steps). A trigger or access whose provider isn't connected is refused: call integrations.list, ask the person, then integrations.connect, which returns a link they open themselves. Never ask a person to paste a key into the chat. Use activity.list for everything the workspace's agents have run; lists return nextCursor for older pages.",
     },
   );
 
   registerGatewayTools(server, userId, gateway, scopes);
-
-  // TODO: sessions.list/read/search — needs a service extraction from
-  // routes/sessions.ts first (window-merging/truncation logic).
 
   return server;
 }

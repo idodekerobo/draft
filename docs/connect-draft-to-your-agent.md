@@ -12,12 +12,14 @@ This guide helps you pick a path, connect, understand what the agent can do, and
 | Install | None. Add one server URL. | Install the `draft` binary |
 | Sign-in | Browser sign-in and consent, handled by the agent | `draft auth login` |
 | Read context | `context.list`, `context.read` | `draft context list`, `draft context read` |
-| Search sources | `sources.search`, `sources.read` | `draft sources search`, `draft sources read` |
+| Browse/search sources | `sources.list`, `sources.search`, `sources.read` | `draft sources list`, `draft sources search`, `draft sources read` |
 | Skills: read | `skills.list`, `skills.read` | `draft skills list`, `draft skills read` |
 | Skills: add | `skills.add` (needs the `write` scope) | `draft skills add` |
 | Export context as files | `context.export` | `draft context export` |
 | List routines | Coming | Coming |
-| Coding sessions | Not available | `draft sessions ...` |
+| Draft app sessions | `sessions.list`, `sessions.read` | `draft sessions list`, `draft sessions read` |
+| Captured coding sessions | `sources.list` / `sources.search` / `sources.read` | `draft sources list --type coding_session`, `draft sources search`, `draft sources read` |
+| Capture setup | CLI only | `draft sources capture enable claude-code --dir <repo>` |
 
 Use MCP when the agent should look things up on its own. Use the CLI when you run commands yourself or write a script.
 
@@ -47,7 +49,7 @@ Use `<your API base URL>/mcp`. See [Self-hosted deployments](./mcp.md#self-hoste
 
 - **You sign in with your Draft account.** The agent never sees your password.
 - **Access stays inside your workspace.** The server checks workspace access on every call.
-- **Read and write are separate scopes.** The server allows `read` and `write`. An agent needs the `write` scope to change anything. Today the only write tool is `skills.add`. It cannot overwrite or delete a skill. Without the scope, the call fails with `insufficient_scope`. The consent screen shows which scopes the agent asks for. Read it before you approve.
+- **Read and write are separate scopes.** The server allows `read` and `write`. An agent needs the `write` scope for tools that change Draft data or take an action, such as editing routines, managing skills or teammates, connecting an integration, or posting to Slack. Without the scope, the call fails with `insufficient_scope`. The consent screen shows which scopes the agent asks for. Read it before you approve.
 - **Export links are short-lived.** A `context.export` link expires after 5 minutes and stops working if you lose workspace access. The export is a copy outside Draft's access control, so treat the files as private.
 - **Reads are logged.** Draft records each agent command in `agent_query_log`: who, which command, its arguments, and the response size. Today this log is for operators. You cannot view it in the app, and it does not record which agent made a call.
 

@@ -39,6 +39,9 @@ _draft_completion() {
       integrations:list) flags="--json" ;;
       integrations:disconnect) flags="--json --workspace-key" ;;
       activity:list) flags="--cursor --json" ;;
+      sessions:list) flags="--provider --since --until --limit --cursor --json" ;;
+      sessions:read) flags="--after-seq --limit --json" ;;
+      sources:list) flags="--provider --type --since --until --limit --cursor --json" ;;
       routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --session-id --transcript --cursor --in --at --once --upcoming --fired --mine --json" ;;
       *) flags="" ;;
     esac

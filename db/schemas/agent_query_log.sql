@@ -4,15 +4,14 @@ create table agent_query_log (
   user_id       uuid references users(id),
   command       text not null
                   check (command in (
+                    'context.read', 'context.export',
                     'sessions.list', 'sessions.read', 'sessions.search',
                     'skills.list', 'skills.read',
-                    'sources.search', 'sources.read',
-                    'context.read', 'context.export',
-                    'routines.list',
+                    'sources.search', 'sources.list', 'sources.read',
                     'mcp.context.list', 'mcp.context.read', 'mcp.context.export',
                     'mcp.sessions.list', 'mcp.sessions.read', 'mcp.sessions.search',
                     'mcp.skills.list', 'mcp.skills.read', 'mcp.skills.add',
-                    'mcp.sources.search', 'mcp.sources.read',
+                    'mcp.sources.search', 'mcp.sources.list', 'mcp.sources.read',
                     'mcp.routines.list'
                   )),
   args_json     jsonb not null default '{}',

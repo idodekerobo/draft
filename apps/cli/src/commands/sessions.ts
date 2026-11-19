@@ -1,4 +1,4 @@
-// commands/sessions.ts — draft sessions enable|rotate|disable|status|ingest|list|read|search
+// commands/sessions.ts — Draft app session commands and local capture hook implementation
 // `ingest` is hook-only: installed as the project's Claude Code SessionEnd hook.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, statSync } from "fs";
@@ -7,9 +7,8 @@ import { dirname, isAbsolute, join, resolve, win32 } from "path";
 import {
   adminRevokeSessionIngestToken,
   connectIntegration,
-  fetchSessionRead,
-  fetchSessions,
-  fetchSessionsSearch,
+  fetchAppSession,
+  fetchAppSessions,
   mintSessionIngestToken,
   requireAccessToken,
   revokeSessionIngestTokenWithGrace,
@@ -68,7 +67,7 @@ function isAgent(value: string): value is Agent {
 function fetchErrorPayload(code: string) {
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
-  if (code === "invalid_ingest_token") return errorPayload(code, "This project's ingest token is no longer valid — run `draft sessions enable claude-code` again.");
+  if (code === "invalid_ingest_token") return errorPayload(code, "This project's ingest token is no longer valid — run `draft sources capture enable claude-code` again.");
   return errorPayload(code, "Could not reach the Draft backend right now. Retry shortly.");
 }
 
@@ -198,7 +197,7 @@ function printSessionsEnableHelp(): void {
       ".claude/settings.json that uploads each finished session.",
   );
   console.log("");
-  console.log(`Usage: ${cyan("draft sessions enable")} <TOOL> [OPTIONS]`);
+  console.log(`Usage: ${cyan("draft sources capture enable")} <TOOL> [OPTIONS]`);
   console.log("");
   console.log("Arguments:");
   console.log("  <TOOL>");
@@ -234,32 +233,28 @@ function printSessionsEnableHelp(): void {
   );
   console.log("");
   console.log(
-    `  Use ${cyan("draft sessions rotate")} to replace the credential (old one keeps\n` +
-      `  working for a short grace window), or ${cyan("draft sessions disable")} to\n` +
+    `  Use ${cyan("draft sources capture rotate")} to replace the credential (old one keeps\n` +
+      `  working for a short grace window), or ${cyan("draft sources capture disable")} to\n` +
       "  revoke it.",
   );
 }
 
 function printSessionsHelp(): void {
-  console.log("Capture, list, and search coding-agent sessions.");
+  console.log("List and read conversations created in the Draft app. Captured coding sessions are source evidence; use `draft sources` for those.");
   console.log("");
   console.log(`Usage: ${cyan("draft sessions")} <COMMAND> [ARGS]`);
   console.log("");
   console.log("Commands:");
   const cmds: [string, string][] = [
-    ["enable <tool> [--dir <path>] [--json]", "Turn on session capture for this project (claude-code only today)"],
-    ["rotate [--dir <path>] [--json]", "Replace this project's ingest credential (short grace window)"],
-    ["disable [--dir <path>] [--json]", "Turn off capture and revoke this project's credential (grace window, not instant)"],
-    ["status [--dir <path>] [--json]", "Show this project's session-capture health"],
-    ["list [--provider <p>] [--user <email>] [--since <ISO>]", "List captured sessions"],
-    ["read <id> [--summary|--transcript]", "Print one session's summary or transcript"],
-    ["search \"<pattern>\"", "Search session summaries by keyword"],
+    ["list [--provider <harness>] [--since <ISO>] [--until <ISO>] [--limit <n>] [--cursor <opaque>] [--json]", "List Draft app sessions"],
+    ["read <id> [--after-seq <n>] [--limit <n>] [--json]", "Read a Draft app session and its events"],
   ];
   for (const [cmd, desc] of cmds) {
     console.log(`  ${cyan(cmd.padEnd(56))}${desc}`);
   }
   console.log("");
-  console.log(`Run ${cyan("draft sessions enable --help")} for details on the credential enable mints.`);
+  console.log(`For captured coding sessions, use ${cyan("draft sources list --type coding_session")}.`);
+  console.log(`Capture setup: ${cyan("draft sources capture enable claude-code --dir <repo>")}.`);
 }
 
 export async function runSessionsEnable(args: string[]): Promise<number> {
@@ -271,8 +266,8 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   if (parsed.error) {
     if (parsed.json) printJsonLine(errorPayload("invalid_usage", parsed.error));
     else {
-      console.error(red(`draft sessions enable: ${parsed.error}`));
-      console.error(`Usage: draft sessions enable <${SUPPORTED_AGENTS.join("|")}> [--dir <path>] [--json]`);
+      console.error(red(`draft sources capture enable: ${parsed.error}`));
+      console.error(`Usage: draft sources capture enable <${SUPPORTED_AGENTS.join("|")}> [--dir <path>] [--json]`);
     }
     return EXIT_USAGE_ERROR;
   }
@@ -281,7 +276,7 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   if (agent !== "claude-code") {
     const message = `${agent} session capture is not yet supported — only claude-code has an install path today.`;
     if (json) printJsonLine(errorPayload("unsupported_agent", message));
-    else console.error(red(`draft sessions enable: ${message}`));
+    else console.error(red(`draft sources capture enable: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -289,7 +284,7 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   if (!existsSync(dir)) {
     const message = `directory not found: ${dir}`;
     if (json) printJsonLine(errorPayload("directory_not_found", message));
-    else console.error(red(`draft sessions enable: ${message}`));
+    else console.error(red(`draft sources capture enable: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -300,7 +295,7 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   if (!settingsCheck.ok) {
     const message = `${settingsPath(dir)} is not valid JSON — fix it by hand, then re-run enable. Left unchanged.`;
     if (json) printJsonLine(errorPayload("malformed_settings", message));
-    else console.error(red(`draft sessions enable: ${message}`));
+    else console.error(red(`draft sources capture enable: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -308,7 +303,7 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
 
   const connected = await connectIntegration({ provider: "claude_session" });
   if (!connected.ok) {
-    printFetchError("draft sessions enable", connected.code, json);
+    printFetchError("draft sources capture enable", connected.code, json);
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -321,7 +316,7 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
     const projectKey = randomUUID();
     const minted = await mintSessionIngestToken({ label: basenameOf(dir), projectKey, allowedProviders: ["claude-code-session"] });
     if (!minted.ok) {
-      printFetchError("draft sessions enable", minted.code, json);
+      printFetchError("draft sources capture enable", minted.code, json);
       return EXIT_OPERATIONAL_ERROR;
     }
     mintedCredentialId = minted.value.id;
@@ -342,7 +337,7 @@ export async function runSessionsEnable(args: string[]): Promise<number> {
   const written = await writeCaptureFiles(dir, config, mintedCredentialId);
   if (!written.ok) {
     if (json) printJsonLine(errorPayload(written.reason, written.message));
-    else console.error(red(`draft sessions enable: ${written.message}`));
+    else console.error(red(`draft sources capture enable: ${written.message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
   const hookChanged = written.hookChanged;
@@ -382,7 +377,7 @@ export async function runSessionsRotate(args: string[]): Promise<number> {
     else if (args[i] !== "--json") {
       const message = `unknown argument: ${args[i]}`;
       if (json) printJsonLine(errorPayload("invalid_usage", message));
-      else console.error(red(`draft sessions rotate: ${message}`));
+      else console.error(red(`draft sources capture rotate: ${message}`));
       return EXIT_USAGE_ERROR;
     }
   }
@@ -390,15 +385,15 @@ export async function runSessionsRotate(args: string[]): Promise<number> {
   const resolvedDir = resolveDir(dir);
   const existing = readLocalConfig(resolvedDir);
   if (!existing || !isScopedConfig(existing)) {
-    const message = `no project ingest credential found at ${configPath(resolvedDir)} — run \`draft sessions enable claude-code\` first.`;
+    const message = `no project ingest credential found at ${configPath(resolvedDir)} — run \`draft sources capture enable claude-code\` first.`;
     if (json) printJsonLine(errorPayload("not_enabled", message));
-    else console.error(red(`draft sessions rotate: ${message}`));
+    else console.error(red(`draft sources capture rotate: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
   const rotated = await rotateSessionIngestToken(existing.ingestToken);
   if (!rotated.ok) {
-    printFetchError("draft sessions rotate", rotated.code, json);
+    printFetchError("draft sources capture rotate", rotated.code, json);
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -409,7 +404,7 @@ export async function runSessionsRotate(args: string[]): Promise<number> {
     await adminRevokeSessionIngestToken(rotated.value.id).catch(() => {});
     const message = err instanceof Error ? err.message : String(err);
     if (json) printJsonLine(errorPayload("setup_failed", message));
-    else console.error(red(`draft sessions rotate: ${message}`));
+    else console.error(red(`draft sources capture rotate: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -435,7 +430,7 @@ export async function runSessionsDisable(args: string[]): Promise<number> {
     else if (args[i] !== "--json") {
       const message = `unknown argument: ${args[i]}`;
       if (json) printJsonLine(errorPayload("invalid_usage", message));
-      else console.error(red(`draft sessions disable: ${message}`));
+      else console.error(red(`draft sources capture disable: ${message}`));
       return EXIT_USAGE_ERROR;
     }
   }
@@ -453,7 +448,7 @@ export async function runSessionsDisable(args: string[]): Promise<number> {
   if (!settingsResult.ok) {
     const message = `${settingsPath(resolvedDir)} is not valid JSON — fix it by hand. The hook was left in place; the credential was still revoked.`;
     if (json) printJsonLine(errorPayload("malformed_settings", message));
-    else console.error(red(`draft sessions disable: ${message}`));
+    else console.error(red(`draft sources capture disable: ${message}`));
     return EXIT_OPERATIONAL_ERROR;
   }
 
@@ -543,7 +538,7 @@ export async function runSessionsStatus(args: string[]): Promise<number> {
     `capture script: ${
       scriptCurrent
         ? `v${scriptVersion} (current)`
-        : `${scriptVersion === null ? "unversioned or missing" : `v${scriptVersion}`} (outdated) — run \`draft sessions enable claude-code\` to update it`
+        : `${scriptVersion === null ? "unversioned or missing" : `v${scriptVersion}`} (outdated) — run \`draft sources capture enable claude-code\` to update it`
     }`,
   );
   console.log(`last ingest attempt: ${lastEvent ? `${lastEvent.status} at ${lastEvent.ts}${lastEvent.detail ? ` (${lastEvent.detail})` : ""}` : "none recorded"}`);
@@ -789,19 +784,23 @@ export async function runSessionsIngest(): Promise<number> {
   return EXIT_SUCCESS;
 }
 
-// ── list ─────────────────────────────────────────────────────────────────
+// ── app sessions ─────────────────────────────────────────────────────────
 
 export async function runSessionsList(args: string[]): Promise<number> {
   const json = args.includes("--json");
   let provider: string | undefined;
-  let user: string | undefined;
   let since: string | undefined;
+  let until: string | undefined;
+  let cursor: string | undefined;
+  let limit: number | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--json") continue;
     if (arg === "--provider") { provider = args[++i]; continue; }
-    if (arg === "--user") { user = args[++i]; continue; }
     if (arg === "--since") { since = args[++i]; continue; }
+    if (arg === "--until") { until = args[++i]; continue; }
+    if (arg === "--cursor") { cursor = args[++i]; continue; }
+    if (arg === "--limit") { limit = Number(args[++i]); continue; }
     if (arg?.startsWith("--")) {
       const message = `unknown flag: ${arg}`;
       if (json) printJsonLine(errorPayload("invalid_usage", message));
@@ -810,45 +809,36 @@ export async function runSessionsList(args: string[]): Promise<number> {
     }
   }
 
-  const result = await fetchSessions({ provider, user, since });
+  const result = await fetchAppSessions({ provider, since, until, limit, cursor });
   if (!result.ok) {
     printFetchError("draft sessions list", result.code, json);
     return EXIT_OPERATIONAL_ERROR;
   }
-
   if (json) {
-    printJsonLine({ sessions: result.value });
+    printJsonLine(result.value);
     return EXIT_SUCCESS;
   }
-
-  if (result.value.length === 0) {
+  if (result.value.sessions.length === 0) {
     console.log("No sessions found.");
     return EXIT_SUCCESS;
   }
-  for (const session of result.value) {
-    const who = session.verified ? session.display ?? "verified" : `${session.display ?? "unknown"} (unverified)`;
-    console.log(`${session.id}  ${session.started_at}  ${session.provider}  ${who}  ${session.project ?? "-"}  summary:${session.summary_status}`);
+  for (const session of result.value.sessions) {
+    console.log(`${session.id}  ${session.started_at}  ${session.harness}  ${session.status}${session.title ? `  ${session.title}` : ""}`);
   }
+  if (result.value.next_cursor) console.log(`More sessions: --cursor ${result.value.next_cursor}`);
   return EXIT_SUCCESS;
 }
 
-// ── read ─────────────────────────────────────────────────────────────────
-
 export async function runSessionsRead(args: string[]): Promise<number> {
   const json = args.includes("--json");
-  const wantsTranscript = args.includes("--transcript");
-  const wantsSummary = args.includes("--summary");
-
-  let grep: string | undefined;
-  let context: number | undefined;
-  let maxBytes: number | undefined;
+  let afterSeq: number | undefined;
+  let limit: number | undefined;
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--json" || arg === "--transcript" || arg === "--summary") continue;
-    if (arg === "--grep") { grep = args[++i]; continue; }
-    if (arg === "--context") { context = Number.parseInt(args[++i] ?? "", 10); continue; }
-    if (arg === "--max-bytes") { maxBytes = Number.parseInt(args[++i] ?? "", 10); continue; }
+    if (arg === "--json") continue;
+    if (arg === "--after-seq") { afterSeq = Number.parseInt(args[++i] ?? "", 10); continue; }
+    if (arg === "--limit") { limit = Number.parseInt(args[++i] ?? "", 10); continue; }
     if (arg?.startsWith("--")) {
       const message = `unknown flag: ${arg}`;
       if (json) printJsonLine(errorPayload("invalid_usage", message));
@@ -857,106 +847,44 @@ export async function runSessionsRead(args: string[]): Promise<number> {
     }
     positional.push(arg!);
   }
-
-  if (wantsTranscript && wantsSummary) {
-    const message = "--summary and --transcript are mutually exclusive";
-    if (json) printJsonLine(errorPayload("invalid_usage", message));
-    else console.error(red(`draft sessions read: ${message}`));
-    return EXIT_USAGE_ERROR;
-  }
   if (positional.length !== 1) {
-    const message = "expected exactly one session id";
-    if (json) printJsonLine(errorPayload("invalid_usage", message));
-    else console.error(red(`draft sessions read: ${message}`));
-    return EXIT_USAGE_ERROR;
-  }
-  if (!wantsTranscript && (grep !== undefined || context !== undefined || maxBytes !== undefined)) {
-    const message = "--grep, --context, and --max-bytes only apply with --transcript";
-    if (json) printJsonLine(errorPayload("invalid_usage", message));
-    else console.error(red(`draft sessions read: ${message}`));
-    return EXIT_USAGE_ERROR;
-  }
-  if (context !== undefined && grep === undefined) {
-    const message = "--context requires --grep";
+    const message = "expected exactly one Draft app session id";
     if (json) printJsonLine(errorPayload("invalid_usage", message));
     else console.error(red(`draft sessions read: ${message}`));
     return EXIT_USAGE_ERROR;
   }
 
-  const mode = wantsTranscript ? "transcript" : "summary";
-  const result = await fetchSessionRead(positional[0]!, mode, { grep, context, maxBytes });
+  const result = await fetchAppSession(positional[0]!, afterSeq, limit);
   if (!result.ok) {
     printFetchError("draft sessions read", result.code, json);
     return EXIT_OPERATIONAL_ERROR;
   }
-
   if (json) {
-    printJsonLine(result.value.kind === "transcript"
-      ? { messages: result.value.messages, windows: result.value.windows, truncated_bytes: result.value.truncated_bytes }
-      : { summary: result.value.summary, occurred_at: result.value.occurred_at });
+    printJsonLine(result.value);
     return EXIT_SUCCESS;
   }
-
-  if (result.value.kind === "transcript") {
-    for (const message of result.value.messages) console.log(`[${message.role}] ${message.content}`);
-    if (result.value.truncated_bytes) console.log(dim(`(truncated ${result.value.truncated_bytes} bytes)`));
-    return EXIT_SUCCESS;
-  }
-  console.log(result.value.summary ?? "(no summary yet)");
+  const session = result.value.session;
+  console.log(`${String(session.harness)}  ${String(session.status)}  ${String(session.started_at)}${typeof session.title === "string" ? `  ${session.title}` : ""}`);
+  for (const event of result.value.events) console.log(`${event.seq}  ${event.created_at}  ${event.kind}  ${JSON.stringify(event.payload)}`);
+  if (result.value.next_after_seq !== null) console.log(`More events: --after-seq ${result.value.next_after_seq}`);
   return EXIT_SUCCESS;
 }
 
-// ── search ───────────────────────────────────────────────────────────────
-
-export async function runSessionsSearch(args: string[]): Promise<number> {
-  const json = args.includes("--json");
-  let provider: string | undefined;
-  let user: string | undefined;
-  let since: string | undefined;
-  const positional: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--json") continue;
-    if (arg === "--provider") { provider = args[++i]; continue; }
-    if (arg === "--user") { user = args[++i]; continue; }
-    if (arg === "--since") { since = args[++i]; continue; }
-    if (arg?.startsWith("--")) {
-      const message = `unknown flag: ${arg}`;
-      if (json) printJsonLine(errorPayload("invalid_usage", message));
-      else console.error(red(`draft sessions search: ${message}`));
+export async function runSessionsCapture(args: string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  if (sub === "--help" || sub === "-h") {
+    console.log("Usage: draft sources capture <enable|status|rotate|disable> [claude-code] [--dir <repo>] [--json]");
+    return EXIT_SUCCESS;
+  }
+  switch (sub) {
+    case "enable": return runSessionsEnable(rest);
+    case "rotate": return runSessionsRotate(rest);
+    case "disable": return runSessionsDisable(rest);
+    case "status": return runSessionsStatus(rest);
+    default:
+      console.error(red(`draft sources capture: unknown subcommand${sub ? ` "${sub}"` : ""}. Use enable, rotate, disable, or status.`));
       return EXIT_USAGE_ERROR;
-    }
-    positional.push(arg!);
   }
-
-  if (positional.length !== 1) {
-    const message = "expected exactly one search pattern";
-    if (json) printJsonLine(errorPayload("invalid_usage", message));
-    else console.error(red(`draft sessions search: ${message}`));
-    return EXIT_USAGE_ERROR;
-  }
-
-  const result = await fetchSessionsSearch({ q: positional[0]!, provider, user, since });
-  if (!result.ok) {
-    printFetchError("draft sessions search", result.code, json);
-    return EXIT_OPERATIONAL_ERROR;
-  }
-
-  if (json) {
-    printJsonLine({ sessions: result.value });
-    return EXIT_SUCCESS;
-  }
-
-  if (result.value.length === 0) {
-    console.log("No matching sessions found.");
-    return EXIT_SUCCESS;
-  }
-  for (const session of result.value) {
-    const who = session.verified ? session.display ?? "verified" : `${session.display ?? "unknown"} (unverified)`;
-    console.log(`${session.session_id}  ${session.occurred_at}  ${session.provider ?? "-"}  ${who}`);
-    console.log(`  ${session.snippet.replace(/\n/g, " ")}`);
-  }
-  return EXIT_SUCCESS;
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────
@@ -967,17 +895,19 @@ export async function runSessions(args: string[]): Promise<number> {
     printSessionsHelp();
     return EXIT_SUCCESS;
   }
+  if (["enable", "rotate", "disable", "status"].includes(sub ?? "")) {
+    console.error(dim(`Deprecated: use draft sources capture ${sub}.`));
+    return runSessionsCapture([sub!, ...rest]);
+  }
   switch (sub) {
-    case "enable": return runSessionsEnable(rest);
-    case "rotate": return runSessionsRotate(rest);
-    case "disable": return runSessionsDisable(rest);
-    case "status": return runSessionsStatus(rest);
     case "ingest": return runSessionsIngest();
     case "list": return runSessionsList(rest);
     case "read": return runSessionsRead(rest);
-    case "search": return runSessionsSearch(rest);
+    case "search":
+      console.error(red("Captured coding sessions are source evidence. Use `draft sources search <query> --type coding_session`."));
+      return EXIT_USAGE_ERROR;
     default:
-      console.error(red(`draft sessions: unknown subcommand${sub ? ` "${sub}"` : ""}. Use enable, rotate, disable, status, list, read, or search.`));
+      console.error(red(`draft sessions: unknown subcommand${sub ? ` "${sub}"` : ""}. Use list or read.`));
       return EXIT_USAGE_ERROR;
   }
 }

@@ -1,5 +1,7 @@
 export const SOURCE_SEARCH_DEFAULT_LIMIT = 10;
 export const SOURCE_SEARCH_MAX_LIMIT = 100;
+export const SOURCE_LIST_DEFAULT_LIMIT = 50;
+export const SOURCE_LIST_MAX_LIMIT = 100;
 export const SOURCE_RESPONSE_DEFAULT_MAX_BYTES = 32_768;
 export const SOURCE_RESPONSE_MIN_MAX_BYTES = 1_024;
 export const SOURCE_RESPONSE_MAX_MAX_BYTES = 262_144;
@@ -19,6 +21,7 @@ export const SOURCE_ERROR_CODES = [
   "invalid_query",
   "invalid_filter",
   "invalid_limit",
+  "list_failed",
   "invalid_max_bytes",
   "invalid_cursor",
   "cursor_mismatch",
@@ -76,6 +79,26 @@ export interface SourceSearchResponse {
   }>;
   next_cursor: string | null;
   consistency: "live";
+  filters: {
+    provider: string | null;
+    type: string[];
+    since: string | null;
+    until: string | null;
+  };
+}
+
+export interface SourceListInput {
+  provider?: string;
+  type?: string[];
+  since?: string;
+  until?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface SourceListResponse {
+  sources: SourceDescriptor[];
+  next_cursor: string | null;
   filters: {
     provider: string | null;
     type: string[];

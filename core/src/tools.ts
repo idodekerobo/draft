@@ -10,7 +10,10 @@ export const DRAFT_TOOLS = [
   { name: "context.list", access: "read" },
   { name: "context.export", access: "read" },
   { name: "sources.search", access: "read" },
+  { name: "sources.list", access: "read" },
   { name: "sources.read", access: "read" },
+  { name: "sessions.list", access: "read" },
+  { name: "sessions.read", access: "read" },
   { name: "skills.list", access: "read" },
   { name: "skills.read", access: "read" },
   { name: "skills.add", access: "write" },
@@ -50,7 +53,10 @@ export interface DraftToolLimits {
   "context.list": Record<string, never>;
   "context.export": Record<string, never>;
   "sources.search": Record<string, never>;
+  "sources.list": Record<string, never>;
   "sources.read": Record<string, never>;
+  "sessions.list": Record<string, never>;
+  "sessions.read": Record<string, never>;
   "skills.list": Record<string, never>;
   "skills.read": Record<string, never>;
   "skills.add": Record<string, never>;
@@ -93,7 +99,7 @@ export const CONTEXT_READ_WRITE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermissio
 /** What a routine may read from the shared company brain. */
 export const ROUTINE_READ_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
-  { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
+  { tool: "sources.search" }, { tool: "sources.list" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
 ];
 
 /** What a synthesis run may do: read and write context, and note new teammates. It can never message anyone. */
