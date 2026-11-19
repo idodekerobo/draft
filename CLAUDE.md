@@ -27,7 +27,7 @@ Key routing rules:
 
 ## Naming
 `GLOSSARY.md` defines every domain word. Use those words in code, SQL, docs and UI. If a name disagrees with the
-glossary, fix the name or update the glossary in the same change. Add a new concept to the glossary first.
+glossary, fix the name or propose a glossary update in the same change. Ask me for explicit approval before making any changes to `GLOSSARY.md`. If a new concept needs a glossary entry, propose it and get my approval before adding it.
 
 ## Database changes (backend/Supabase)
 
