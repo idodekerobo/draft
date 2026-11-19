@@ -526,13 +526,13 @@ describe("SessionStartScreen in Draft cloud from a folder snapshot", () => {
 });
 
 describe("SessionStartScreen GitHub connection", () => {
-  it("blocks a cloud start without GitHub, says why, and opens the place to connect it", async () => {
+  it("lets a cloud start go ahead without GitHub, says what is missing, and opens the place to connect it", async () => {
     const onConnectGithub = mock(() => {});
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} cloud={{ folderRemote: async () => null, envFiles: async () => [], githubConnected: false, onConnectGithub }} />);
     fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
-    expect(screen.getByText(/Connect GitHub to start in Draft cloud/)).toBeTruthy();
+    expect(screen.getByText(/GitHub is not connected/)).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "hi" } });
-    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
     expect(onConnectGithub).toHaveBeenCalled();
   });

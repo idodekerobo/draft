@@ -221,9 +221,7 @@ export function SessionStartScreen({
   const cloudReady = emptyProject || (!repoProblem(repoValue) && !branchProblem(branch) && branch.trim() !== "");
   // The checklist must have loaded, or failed, before a snapshot can start. A failed listing includes no .env files.
   const snapshotReady = folder !== null && (envFiles !== null || envError !== null);
-  // Without GitHub the agent has no repository access and no shared place to work, so a cloud start waits for it.
-  const githubBlocks = cloud?.githubConnected === false;
-  const cloudStartable = !githubBlocks && (snapshotOn ? snapshotReady : cloudReady);
+  const cloudStartable = snapshotOn ? snapshotReady : cloudReady;
 
   // The repository follows the folder's git remote until the person types their own.
   useEffect(() => {
@@ -353,7 +351,8 @@ export function SessionStartScreen({
 
   const repoShown = repoError ?? (failure?.field === "repo" ? failure.message : null);
   const repoHint = suggested && repoValue === suggested && folder ? `From ${folderName(folder)}. Pick a recent repository or paste another URL.` : null;
-  const githubMissing = cloudOn && githubBlocks;
+  // A start without GitHub still works; the agent explains how to connect it when it needs repository access.
+  const githubMissing = cloudOn && cloud?.githubConnected === false;
   const generalFailure = failure && failure.field !== "repo" && failure.field !== "branch" && failure.field !== "network" ? failure.message : null;
   const branchShown = branchError ?? (failure?.field === "branch" ? failure.message : null);
 
@@ -380,8 +379,8 @@ export function SessionStartScreen({
           </div>
         )}
         {githubMissing && (
-          <div className="ui-start__alert" role="alert">
-            <p><strong>Connect GitHub to start in Draft cloud.</strong> Without it the agent cannot clone, push or open pull requests, and teammates have no shared copy of the work.</p>
+          <div className="ui-start__alert" role="note">
+            <p><strong>GitHub is not connected.</strong> The agent cannot clone private repositories, push or open pull requests until it is.</p>
             {cloud?.onConnectGithub && <button type="button" className="ui-btn ui-btn--primary" onClick={cloud.onConnectGithub}>Connect GitHub</button>}
           </div>
         )}
