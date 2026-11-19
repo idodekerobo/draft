@@ -51,6 +51,12 @@ describe("cloudStartFailure", () => {
     expect(cloudStartFailure("claude_not_connected").field).toBe("general");
   });
 
+  it("explains a refused continue-in-chat start in words, under the form", () => {
+    expect(cloudStartFailure("routine_run_not_finished")).toEqual({ field: "general", message: "Wait for this run to finish, then continue it in chat." });
+    expect(cloudStartFailure("routine_run_not_found").field).toBe("general");
+    expect(cloudStartFailure("routine_run_skipped").message).toBe("A skipped run has no history to continue.");
+  });
+
   it("gives an unknown code the general message", () => {
     expect(cloudStartFailure("request_failed_500")).toEqual({ field: "general", message: "The cloud session could not start. Try again." });
   });

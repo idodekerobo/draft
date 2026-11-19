@@ -131,7 +131,7 @@ const now = new Date(NOW);
 
 /** A reconcile that does nothing, so a test with sandbox settings does not reach the real sweep. */
 const idleReconcile = () =>
-  mock(async (_options: Parameters<typeof reconcileCloudSessions>[0]) => ({ hostsLost: 0, volumesDestroyed: 0, failed: 0 }));
+  mock(async (_options: Parameters<typeof reconcileCloudSessions>[0]) => ({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 }));
 
 describe("runSchedulingTick", () => {
   it("claims due timers with the tick's clock and the lease length", async () => {
@@ -409,7 +409,7 @@ describe("runSchedulingTick", () => {
     });
     const reconcile = mock(async (_options: Parameters<typeof reconcileCloudSessions>[0]) => {
       order.push("reconcile");
-      return { hostsLost: 0, volumesDestroyed: 0, failed: 0 };
+      return { hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 };
     });
     const { client } = fakeClient();
 

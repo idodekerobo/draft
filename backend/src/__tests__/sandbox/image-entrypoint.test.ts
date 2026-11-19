@@ -88,6 +88,16 @@ describe("entrypoint.sh", () => {
     expect(entrypoint).toContain("/usr/local/sbin/configure-open-egress.sh");
   });
 
+  it("reads the seed host from a snapshot or a repo, and a routine run's seed has none", () => {
+    const script = /seed_host="\$\(\{ node -e '([\s\S]*?)'; \} 2>\/dev\/null\)"/.exec(read("entrypoint.sh"))![1]!;
+    const hostOf = (seed: unknown) => Bun.spawnSync(["node", "-e", script], { env: { ...process.env, DRAFT_SEED: JSON.stringify(seed) } });
+    expect(hostOf({ kind: "routine_run" })).toMatchObject({ exitCode: 0 });
+    expect(hostOf({ kind: "routine_run" }).stdout.toString()).toBe("");
+    expect(hostOf({ kind: "snapshot", url: "https://files.example.test/a.tgz?sig=x" }).stdout.toString()).toBe("files.example.test");
+    expect(hostOf({ kind: "repo", gitRemote: "https://github.com/acme/app.git", branch: "main" }).stdout.toString()).toBe("github.com");
+    expect(hostOf({ kind: "zip" }).exitCode).not.toBe(0);
+  }, 30_000);
+
   it("never swallows a failure with '|| true'", () => {
     expect(read("entrypoint.sh")).not.toMatch(/\|\|\s*true\b/);
   });

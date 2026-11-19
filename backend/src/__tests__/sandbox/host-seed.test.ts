@@ -59,6 +59,18 @@ describe("prepareWorkspace", () => {
     expect(existsSync(`${root}.partial`)).toBe(false);
   });
 
+  it("starts a routine run's chat in an empty git repository, with no download and no clone", async () => {
+    const root = join(dir, "workspace");
+    const { calls, exec } = recorder();
+
+    const result = await prepareWorkspace({ kind: "routine_run" }, root, { exec, fetch: noFetch });
+
+    expect(result).toBe("prepared");
+    expect(calls).toEqual([{ argv: ["git", "init"], cwd: `${root}.partial` }]);
+    expect(existsSync(root)).toBe(true);
+    expect(existsSync(`${root}.partial`)).toBe(false);
+  });
+
   it("cleans up and hides the remote's token when git fails", async () => {
     const root = join(dir, "workspace");
     const remote = "https://x-access-token:ghp_SECRET123@github.com/acme/app.git";

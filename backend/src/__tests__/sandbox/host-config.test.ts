@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HostConfigError, isVolumeHome, parseHostConfig, parseSeed, scrubPaneSecrets } from "../../sandbox/host/config";
+import { HostConfigError, isVolumeHome, parseHostConfig, parseSeed, scrubPaneSecrets, seedSecrets } from "../../sandbox/host/config";
 
 const env = {
   DRAFT_API_BASE_URL: "https://api.example.test/",
@@ -94,9 +94,14 @@ describe("parseSeed", () => {
     expect(() => parseSeed(JSON.stringify({ kind: "repo", gitRemote: "https://github.com/a/b.git", branch: "a..b" }))).toThrow(HostConfigError);
   });
 
+  it("accepts a routine_run seed with no fields, and it names no secret to redact", () => {
+    expect(parseSeed(JSON.stringify({ kind: "routine_run" }))).toEqual({ kind: "routine_run" });
+    expect(seedSecrets({ kind: "routine_run" })).toEqual([]);
+  });
+
   it("refuses a file remote, an unknown kind, a non-object and invalid JSON", () => {
     expect(() => parseSeed(JSON.stringify({ kind: "repo", gitRemote: "file:///etc", branch: "main" }))).toThrow(HostConfigError);
-    expect(() => parseSeed(JSON.stringify({ kind: "zip" }))).toThrow('DRAFT_SEED kind must be "repo" or "snapshot"');
+    expect(() => parseSeed(JSON.stringify({ kind: "zip" }))).toThrow('DRAFT_SEED kind must be "repo", "snapshot" or "routine_run"');
     expect(() => parseSeed("[]")).toThrow("DRAFT_SEED must be a JSON object");
     expect(() => parseSeed("{not json")).toThrow("DRAFT_SEED is not valid JSON");
   });

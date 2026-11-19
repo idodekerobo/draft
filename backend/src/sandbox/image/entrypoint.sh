@@ -42,6 +42,7 @@ case "${DRAFT_MODE:-routine}" in
     seed_host="$({ node -e '
       const seed = JSON.parse(process.env.DRAFT_SEED);
       if (seed.kind === "snapshot") process.stdout.write(new URL(seed.url).hostname);
+      else if (seed.kind === "routine_run") process.stdout.write("");
       else if (seed.kind === "repo") {
         try {
           process.stdout.write(new URL(seed.gitRemote).hostname);

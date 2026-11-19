@@ -329,6 +329,7 @@ function sequence(...values: string[]): () => string {
 /** A snapshot store holding the objects a test names. Every link it signs is new, so a test can tell launches apart. */
 function fakeSnapshots(objects: string[] = [SNAPSHOT_KEY]) {
   const signed: Array<{ key: string; ttl: number; url: string }> = [];
+  const removed: string[] = [];
   const store: SnapshotStore = {
     async exists(key) {
       return objects.includes(key);
@@ -338,8 +339,11 @@ function fakeSnapshots(objects: string[] = [SNAPSHOT_KEY]) {
       signed.push({ key, ttl, url });
       return url;
     },
+    async remove(keys) {
+      removed.push(...keys);
+    },
   };
-  return { store, signed };
+  return { store, signed, removed };
 }
 
 describe("startCloudSession from a folder snapshot", () => {
@@ -396,6 +400,7 @@ describe("startCloudSession from a folder snapshot", () => {
     const failing: SnapshotStore = {
       exists: async () => { throw new Error("storage 503"); },
       downloadUrl: async () => "unused",
+      remove: async () => undefined,
     };
     const outcome = await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: failing, newId: sequence(RUN, NONCE) }));
 
@@ -410,6 +415,7 @@ describe("startCloudSession from a folder snapshot", () => {
     const failing: SnapshotStore = {
       exists: async () => true,
       downloadUrl: async () => { throw new Error("sign failed"); },
+      remove: async () => undefined,
     };
     const outcome = await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: failing, newId: sequence(RUN, NONCE) }));
 
@@ -427,5 +433,118 @@ describe("startCloudSession from a folder snapshot", () => {
 
     expect(JSON.stringify(logs)).not.toContain(snapshots.signed[0]!.url);
     expect(JSON.stringify(db.tables)).not.toContain(snapshots.signed[0]!.url);
+  });
+});
+
+const ROUTINE_RUN = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const routineInput: CloudStartInput = { ...input, seed: { kind: "routine_run", routineSessionId: ROUTINE_RUN } };
+// The routine run is the first row of its table, so the new chat is found by its id.
+const newSession = () => db.tables.sessions!.find((row) => row.id === SESSION)!;
+const newRun = () => db.tables.agent_runs!.find((row) => row.id === RUN)!;
+
+describe("startCloudSession from a finished routine run", () => {
+  let logs: unknown[][];
+  let spies: Array<{ mockRestore(): void }>;
+  beforeEach(() => {
+    logs = [];
+    spies = ["log", "error", "warn", "info"].map((level) => spyOn(console, level as "log").mockImplementation((...args: unknown[]) => void logs.push(args)));
+    db = fakeDb(
+      {
+        workspaces: [{ id: WS, timezone: "UTC", current_context_version_id: VERSION }],
+        sessions: [
+          { id: ROUTINE_RUN, workspace_id: WS, session_type: "routine", status: "ended", end_reason: "completed", scheduled_task_id: "task-1", idempotency_key: "task-1:manual:r1", started_at: "2026-11-17T09:00:00.000Z", ended_at: "2026-11-17T09:03:00.000Z", deleted_at: null },
+        ],
+        scheduled_tasks: [{ id: "task-1", workspace_id: WS, task_type: "agent_routine", visibility: "shared", created_by_user_id: OWNER, deleted_at: null, config_json: { title: "Digest", prompt: "p", harness: "claude", model: null } }],
+        agent_runs: [{ id: "r-row", workspace_id: WS, session_id: ROUTINE_RUN, trigger: { type: "manual", requestedBy: OWNER } }],
+        users: [{ id: OWNER, display_name: "Ido", email: "ido@example.test" }],
+        errors: [],
+      },
+      { unique: { sessions: [["id"]], agent_runs: [["workspace_id", "idempotency_key"]] }, rpcs: {} },
+    );
+  });
+  afterEach(() => spies.forEach((spy) => spy.mockRestore()));
+
+  it("starts an empty workspace whose first message is the run's history, authored by the caller", async () => {
+    db.rpcs.create_session_input = () => ({ data: { id: "input-1" } });
+    const fly = fakeProvider();
+    const outcome = await startCloudSession(routineInput, deps({ provider: fly.provider }));
+
+    expect(outcome).toEqual({ ok: true, sessionId: SESSION });
+    expect(newSession()).toMatchObject({
+      id: SESSION,
+      title: "Continued: Digest",
+      folder_name: null,
+      git_remote: null,
+      seed: { kind: "routine_run", routineSessionId: ROUTINE_RUN },
+      status: "starting",
+    });
+    const queued = db.rpcCalls.find((call) => call.name === "create_session_input");
+    expect(queued?.args).toMatchObject({ p_session_id: SESSION, p_workspace_id: WS, p_author_user_id: OWNER, p_kind: "message" });
+    expect((queued?.args.p_payload as { text: string }).text).toContain("(taskId task-1)");
+    expect(fly.calls).toEqual(["create", "start"]);
+    expect(fly.created[0]!.env.DRAFT_SEED).toBe(JSON.stringify({ kind: "routine_run" }));
+    expect(newRun()).toMatchObject({ status: "running", sandbox_machine_id: "machine-1" });
+  });
+
+  it("refuses a run that is still going, before any row, run or sandbox exists", async () => {
+    db.tables.sessions![0] = { ...db.tables.sessions![0]!, status: "live", end_reason: null };
+    const fly = fakeProvider();
+    const outcome = await startCloudSession(routineInput, deps({ provider: fly.provider }));
+
+    expect(outcome).toEqual({ ok: false, status: 409, error: "routine_run_not_finished" });
+    expect(db.tables.sessions).toHaveLength(1);
+    expect(db.tables.agent_runs).toHaveLength(1);
+    expect(fly.calls).toEqual([]);
+  });
+
+  it("refuses a run the caller cannot read, as not found", async () => {
+    db.tables.scheduled_tasks![0] = { ...db.tables.scheduled_tasks![0]!, visibility: "private", created_by_user_id: "99999999-9999-4999-8999-999999999999" };
+    const fly = fakeProvider();
+    expect(await startCloudSession(routineInput, deps({ provider: fly.provider }))).toEqual({ ok: false, status: 404, error: "routine_run_not_found" });
+    expect(fly.calls).toEqual([]);
+  });
+
+  it("ends the new chat as start_failed, and creates no sandbox, when its first message cannot be queued", async () => {
+    db.rpcs.create_session_input = () => ({ data: null, error: { message: "queue_full" } });
+    const fly = fakeProvider();
+    const outcome = await startCloudSession(routineInput, deps({ provider: fly.provider }));
+
+    expect(outcome).toEqual({ ok: false, status: 502, error: "start_failed" });
+    expect(fly.calls).toEqual([]);
+    expect(errorCodes()).toEqual(["seed_prompt_failed"]);
+    expect(newSession()).toMatchObject({ status: "ended", end_reason: "start_failed" });
+  });
+});
+
+describe("a snapshot's storage after its start fails", () => {
+  let logs: unknown[][];
+  let spies: Array<{ mockRestore(): void }>;
+  beforeEach(() => {
+    logs = [];
+    spies = ["log", "error", "warn", "info"].map((level) => spyOn(console, level as "log").mockImplementation((...args: unknown[]) => void logs.push(args)));
+  });
+  afterEach(() => spies.forEach((spy) => spy.mockRestore()));
+
+  it("deletes the snapshot when the sandbox cannot be created", async () => {
+    const snapshots = fakeSnapshots();
+    const outcome = await startCloudSession(snapshotInput, deps({ provider: fakeProvider({ create: new Error("fly 500") }).provider, snapshots: snapshots.store, newId: sequence(RUN, NONCE) }));
+
+    expect(outcome).toEqual({ ok: false, status: 502, error: "start_failed" });
+    expect(snapshots.removed).toEqual([SNAPSHOT_KEY]);
+  });
+
+  it("keeps the snapshot when the start is refused before any row exists, so the upload can be retried", async () => {
+    const snapshots = fakeSnapshots([]);
+    await startCloudSession(snapshotInput, deps({ provider: fakeProvider().provider, snapshots: snapshots.store, newId: sequence(RUN, NONCE) }));
+    expect(snapshots.removed).toEqual([]);
+  });
+
+  it("records a failed delete and still reports the start failure", async () => {
+    const snapshots = fakeSnapshots();
+    snapshots.store.remove = async () => { throw new Error("storage 503"); };
+    const outcome = await startCloudSession(snapshotInput, deps({ provider: fakeProvider({ start: new Error("boot") }).provider, snapshots: snapshots.store, newId: sequence(RUN, NONCE) }));
+
+    expect(outcome).toEqual({ ok: false, status: 502, error: "start_failed" });
+    expect(errorCodes()).toEqual(expect.arrayContaining(["sandbox_start_failed", "snapshot_remove_failed"]));
   });
 });

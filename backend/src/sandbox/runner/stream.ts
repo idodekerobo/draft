@@ -70,13 +70,17 @@ export function routineFailureCode(input: { timedOut: boolean; resultIsError: bo
   return "incomplete_result";
 }
 
-/** One harness run whose every output line is sent to the backend as it appears, so the session view fills in live. */
+/**
+ * One harness run whose every output line is sent to the backend as it appears, so the session view fills in live.
+ * `onNativeSessionId` is called once, with the harness's own id for the session, when a line first names it.
+ */
 export async function runStream(
   manifest: RunnerManifest,
   prompt: string,
   timeoutMs: number,
   runId: string,
   post: RoutinePost,
+  onNativeSessionId?: (nativeSessionId: string) => void,
 ): Promise<RoutineEnd> {
   const { StringDecoder } = await import("node:string_decoder");
   const side = runnerSideFor(manifest.harness);
@@ -86,6 +90,7 @@ export async function runStream(
   let queuedBytes = 0;
   let sending: Promise<void> = Promise.resolve();
   let resultLine: { is_error?: boolean; subtype?: string } | null = null;
+  let nativeSessionFound = false;
   let failureCategory: FailureCategory = "none";
   let stderr = "";
 
@@ -107,6 +112,11 @@ export async function runStream(
       if ("raw" in line) {
         queuedBytes += Buffer.byteLength(line.raw);
         resultLine = side.resultOfLine(line.raw) ?? resultLine;
+        const nativeSessionId = nativeSessionFound ? null : side.sessionFile.nativeSessionIdOfLine(line.raw);
+        if (nativeSessionId !== null) {
+          nativeSessionFound = true;
+          onNativeSessionId?.(nativeSessionId);
+        }
       }
       queue.push(line);
     }

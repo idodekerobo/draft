@@ -6,6 +6,7 @@ import { productionStartDeps } from "../cloud-sessions/deps";
 import { parseCloudStart } from "../cloud-sessions/parse-start";
 import { startCloudSession } from "../cloud-sessions/start";
 import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
+import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-sessions/snapshot-seed";
 import { wakeCloudSession } from "../cloud-sessions/wake";
 import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
@@ -447,6 +448,8 @@ export const DELETE = withAuth<DeleteRequest>(async (req, caller) => {
   const { error } = await serviceClient.from("sessions").update({ ...ending, deleted_at: now }).eq("id", sessionId).is("deleted_at", null);
   if (error) return errorResponse("session_delete_failed", 500, error, workspaceId, sessionId);
   await failQueuedInputs(sessionId, "session_ended");
+  const snapshotKey = snapshotKeyOf(owned.session.seed);
+  if (snapshotKey) await discardSnapshot(storageSnapshotStore(serviceClient), snapshotKey, { client: serviceClient, workspaceId, sessionId });
 
   return Response.json({ ok: true });
 });

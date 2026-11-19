@@ -328,3 +328,46 @@ describe("expireIdleCloudSessions", () => {
     expect(db.tables.sessions.filter((row) => row.status === "sleeping").map((row) => row.id)).toEqual(["s50", "s51"]);
   });
 });
+
+describe("expireIdleCloudSessions and a folder snapshot", () => {
+  const KEY = (id: string) => `${WS}/${id}/seed.tar.gz`;
+  const snapshotStore = (failing = false) => {
+    const removed: string[] = [];
+    return {
+      removed,
+      store: {
+        exists: async () => true,
+        downloadUrl: async () => "unused",
+        remove: async (keys: string[]) => {
+          if (failing) throw new Error("storage 503");
+          removed.push(...keys);
+        },
+      },
+    };
+  };
+
+  it("deletes the snapshot of a session it expires, and no other session's", async () => {
+    const db = state(
+      [session("s1", { seed: { kind: "snapshot", storageKey: KEY("s1") } }), session("s2", { seed: { kind: "repo", branch: "main" } })],
+      [run("s1", "machine-s1"), run("s2", "machine-s2")],
+    );
+    const { provider } = fakeProvider();
+    const snapshots = snapshotStore();
+
+    const result = await expireIdleCloudSessions({ client: fakeSupabase(db), provider, snapshots: snapshots.store, now: () => NOW });
+
+    expect(result).toEqual({ expired: 2, skipped: 0, failed: 0 });
+    expect(snapshots.removed).toEqual([KEY("s1")]);
+  });
+
+  it("records a failed snapshot delete, and still reports the session expired", async () => {
+    const db = state([session("s1", { seed: { kind: "snapshot", storageKey: KEY("s1") } })], [run("s1", "machine-s1")]);
+    const { provider } = fakeProvider();
+
+    const result = await expireIdleCloudSessions({ client: fakeSupabase(db), provider, snapshots: snapshotStore(true).store, now: () => NOW });
+
+    expect(result).toEqual({ expired: 1, skipped: 0, failed: 0 });
+    expect(db.tables.sessions[0]).toMatchObject({ status: "ended", end_reason: "expired" });
+    expect(db.tables.errors).toEqual([expect.objectContaining({ detail_json: expect.objectContaining({ code: "snapshot_remove_failed" }) })]);
+  });
+});

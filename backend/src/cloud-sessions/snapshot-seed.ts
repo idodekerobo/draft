@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordError } from "../errors/record-error";
 
 export const SNAPSHOT_BUCKET = "session-seeds";
-const SEED_FILE = "seed.tar.gz";
+export const SEED_FILE = "seed.tar.gz";
 /** Long enough for the host to start and fetch the snapshot. The link is built again on every launch, never stored. */
 export const SNAPSHOT_DOWNLOAD_TTL_SECONDS = 60 * 60;
 
@@ -20,10 +21,18 @@ export function sessionIdOfSnapshotKey(storageKey: string, workspaceId: string):
   return match[2]!;
 }
 
+/** The object key of a session's snapshot, read from its stored seed. Null when the session starts from something else. */
+export function snapshotKeyOf(seed: unknown): string | null {
+  const value = seed as { kind?: unknown; storageKey?: unknown } | null;
+  return value?.kind === "snapshot" && typeof value.storageKey === "string" ? value.storageKey : null;
+}
+
 /** Where a snapshot lives. Production uses the service-role client; tests pass a fake. */
 export interface SnapshotStore {
   exists(storageKey: string): Promise<boolean>;
   downloadUrl(storageKey: string, ttlSeconds: number): Promise<string>;
+  /** Deletes the objects. A key that is already gone is not an error. */
+  remove(storageKeys: string[]): Promise<void>;
 }
 
 export function storageSnapshotStore(client: SupabaseClient): SnapshotStore {
@@ -39,7 +48,28 @@ export function storageSnapshotStore(client: SupabaseClient): SnapshotStore {
       if (error || !data?.signedUrl) throw new Error(`snapshot download link failed: ${error?.message ?? "no URL returned"}`);
       return data.signedUrl;
     },
+    async remove(storageKeys) {
+      if (storageKeys.length === 0) return;
+      const { error } = await client.storage.from(SNAPSHOT_BUCKET).remove(storageKeys);
+      if (error) throw error;
+    },
   };
+}
+
+/**
+ * Deletes a session's snapshot once nothing can start from it again. A failure is recorded and does not stop the
+ * caller: the reconcile sweep removes snapshots of ended sessions, so it tries again.
+ */
+export async function discardSnapshot(
+  snapshots: SnapshotStore,
+  storageKey: string,
+  ref: { client: SupabaseClient; workspaceId: string; sessionId: string },
+): Promise<void> {
+  try {
+    await snapshots.remove([storageKey]);
+  } catch (error) {
+    await recordError({ client: ref.client, workspaceId: ref.workspaceId, sessionId: ref.sessionId, operation: "session", code: "snapshot_remove_failed", message: "Deleting the folder snapshot of a cloud session failed", error });
+  }
 }
 
 /** A signed upload link for a snapshot under this session's key. The desktop PUTs the archive to it. */

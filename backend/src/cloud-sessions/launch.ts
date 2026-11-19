@@ -30,7 +30,10 @@ export interface CloudSessionDeps {
 }
 
 /** A session's seed as its row keeps it. A snapshot keeps its object key, since a download link expires. */
-export type StoredSeed = { kind: "repo"; gitRemote: string; branch: string } | { kind: "snapshot"; storageKey: string };
+export type StoredSeed =
+  | { kind: "repo"; gitRemote: string; branch: string }
+  | { kind: "snapshot"; storageKey: string }
+  | { kind: "routine_run"; routineSessionId: string };
 
 export function snapshotStoreOf(deps: Pick<CloudSessionDeps, "client" | "snapshots">): SnapshotStore {
   return deps.snapshots ?? storageSnapshotStore(deps.client);
@@ -39,6 +42,7 @@ export function snapshotStoreOf(deps: Pick<CloudSessionDeps, "client" | "snapsho
 /** What the host is told to fetch. A snapshot gets a new download link on every launch. */
 export async function hostSeedFor(seed: StoredSeed, snapshots: SnapshotStore): Promise<SeedSpec> {
   if (seed.kind === "repo") return { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch };
+  if (seed.kind === "routine_run") return { kind: "routine_run" };
   return { kind: "snapshot", url: await snapshots.downloadUrl(seed.storageKey, SNAPSHOT_DOWNLOAD_TTL_SECONDS) };
 }
 

@@ -101,6 +101,20 @@ export interface StructuredReader {
   transcript(stdout: string): unknown[];
 }
 
+/** Where a harness keeps the session file of one run, so a routine run can keep it. */
+export interface SessionFileSide {
+  /** The folder the harness writes session files under. The search for a file goes down a few levels from here. */
+  root: string;
+  /** The folder the harness runs in. Its metadata says so. */
+  workingDir: string;
+  /** True for the name of the session file that holds this native session. */
+  isSessionFile(fileName: string, nativeSessionId: string): boolean;
+  /** The native session id a stdout line names, or null when the line names none. */
+  nativeSessionIdOfLine(raw: string): string | null;
+  /** The command that prints the harness CLI's version. */
+  versionCommand: string[];
+}
+
 /** What the sandbox runner needs from a harness. The runner itself does not know any one harness. */
 export interface RunnerSide {
   command(manifest: RunnerManifest, prompt: string, schemaText: string | null, env: NodeJS.ProcessEnv): HarnessCommand;
@@ -116,4 +130,5 @@ export interface RunnerSide {
   refreshedLogin(): string | undefined;
   /** Null when the harness cannot give one structured result. */
   structured: StructuredReader | null;
+  sessionFile: SessionFileSide;
 }

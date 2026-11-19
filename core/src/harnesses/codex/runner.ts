@@ -81,12 +81,13 @@ export function readCodexAuth(): string | undefined {
   }
 }
 
-/** Codex reads the prompt from stdin. It may write inside its work folder only, and keeps no session on disk. */
+/** Codex reads the prompt from stdin. It may write inside its work folder only. A run that keeps its session file writes it to disk. */
 export function codexArgs(manifest: RunnerManifest): string[] {
   if (manifest.harness !== "codex") throw new Error("codexArgs needs a Codex manifest");
   // workspace-write blocks the network for shell commands unless the run's network is open.
   const network = manifest.network === "open" ? ["-c", "sandbox_workspace_write.network_access=true"] : [];
-  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", "--ephemeral", ...(manifest.model ? ["-m", manifest.model] : []), ...(manifest.reasoningEffort ? ["-c", `model_reasoning_effort="${manifest.reasoningEffort}"`] : []), "-"];
+  const persistence = manifest.sessionUpload ? [] : ["--ephemeral"];
+  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", ...persistence, ...(manifest.model ? ["-m", manifest.model] : []), ...(manifest.reasoningEffort ? ["-c", `model_reasoning_effort="${manifest.reasoningEffort}"`] : []), "-"];
 }
 
 /** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */
@@ -118,4 +119,20 @@ export const codexRunner: RunnerSide = {
   resultOfLine: parseCodexResultLine,
   refreshedLogin: readCodexAuth,
   structured: null,
+  sessionFile: {
+    root: `${CODEX_HOME}/sessions`,
+    workingDir: CODEX_WORK_DIR,
+    // Codex writes rollout-<time>-<thread id>.jsonl, in folders by date.
+    isSessionFile: (fileName, nativeSessionId) => fileName.startsWith("rollout-") && fileName.endsWith(`-${nativeSessionId}.jsonl`),
+    nativeSessionIdOfLine: (raw) => {
+      if (!raw.includes('"thread.started"')) return null;
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        return isObject(parsed) && parsed.type === "thread.started" && typeof parsed.thread_id === "string" ? parsed.thread_id : null;
+      } catch {
+        return null;
+      }
+    },
+    versionCommand: ["codex", "--version"],
+  },
 };

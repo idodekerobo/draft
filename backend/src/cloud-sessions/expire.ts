@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordError } from "../errors/record-error";
 import type { SandboxProvider } from "../metaharness/sandbox/providers";
 import { latestMachineId, parseVolumeRef } from "./session-sandbox";
+import { discardSnapshot, snapshotKeyOf, storageSnapshotStore, type SnapshotStore } from "./snapshot-seed";
 
 /** A sleeping cloud session with no event for this long loses its sandbox volume. */
 export const CLOUD_SESSION_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
@@ -10,6 +11,8 @@ const EXPIRY_BATCH = 50;
 export interface ExpireIdleCloudSessionsDeps {
   client: SupabaseClient;
   provider: SandboxProvider;
+  /** Where a snapshot seed is deleted once its session expires. Defaults to the client's storage. */
+  snapshots?: SnapshotStore;
   now?: () => Date;
 }
 
@@ -26,6 +29,7 @@ interface IdleSessionRow {
   id: string;
   workspace_id: string;
   sandbox_volume: unknown;
+  seed: unknown;
 }
 
 /**
@@ -37,7 +41,7 @@ export async function expireIdleCloudSessions(deps: ExpireIdleCloudSessionsDeps)
   const cutoff = new Date(now().getTime() - CLOUD_SESSION_EXPIRY_MS).toISOString();
   const { data, error } = await deps.client
     .from("sessions")
-    .select("id, workspace_id, sandbox_volume")
+    .select("id, workspace_id, sandbox_volume, seed")
     .eq("runtime", "cloud")
     .eq("status", "sleeping")
     .is("deleted_at", null)
@@ -125,5 +129,8 @@ async function expireSession(deps: ExpireIdleCloudSessionsDeps, session: IdleSes
     await fail("session", "session_expire_failed", "Clearing the volume reference of an expired cloud session failed", clearError, { volume_id: volume.id });
     return "failed";
   }
+  // The session is ended and its volume is gone, so its snapshot can go too. A failed delete is retried by the sweep.
+  const snapshotKey = snapshotKeyOf(session.seed);
+  if (snapshotKey) await discardSnapshot(deps.snapshots ?? storageSnapshotStore(client), snapshotKey, { client, workspaceId: session.workspace_id, sessionId: session.id });
   return "expired";
 }

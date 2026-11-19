@@ -7,10 +7,13 @@ const FOLDER_NAME_MAX_CHARS = 200;
 const DEFAULT_FOLDER_NAME = "snapshot";
 const GITHUB_REMOTE = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([A-Za-z0-9._-]{1,100})$/;
 const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type CloudSeed =
   | { kind: "repo"; gitRemote: string; repo: string; branch: string }
-  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string };
+  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
+  /** An empty workspace that continues the history of a finished routine run, which is read over Draft's tools. */
+  | { kind: "routine_run"; routineSessionId: string };
 
 export interface CloudStartInput {
   workspaceId: string;
@@ -62,6 +65,12 @@ function parseSeed(value: unknown, sessionId: unknown, workspaceId: string): See
     const remote = parseGitHubRemote(seed.gitRemote);
     if (!remote || !isSafeBranch(seed.branch) || sessionId !== undefined) return { ok: false, error: "invalid_seed" };
     return { ok: true, seed: { kind: "repo", gitRemote: remote.gitRemote, repo: remote.repo, branch: seed.branch } };
+  }
+
+  // The routine run's session id is inside the seed, so the body has no sessionId for this kind.
+  if (seed.kind === "routine_run") {
+    if (typeof seed.sessionId !== "string" || !UUID.test(seed.sessionId) || sessionId !== undefined) return { ok: false, error: "invalid_seed" };
+    return { ok: true, seed: { kind: "routine_run", routineSessionId: seed.sessionId } };
   }
 
   if (seed.kind === "snapshot") {

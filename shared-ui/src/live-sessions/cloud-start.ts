@@ -50,6 +50,10 @@ const FAILURES: Record<string, CloudStartFailure> = {
   claude_not_connected: { field: "general", message: "This workspace has no Claude Code login. Connect Claude Code, then try again." },
   signed_out: { field: "general", message: "Sign in to Draft Cloud first." },
   start_failed: GENERAL_FAILURE,
+  routine_run_not_found: { field: "general", message: "This routine run is no longer available." },
+  routine_run_not_finished: { field: "general", message: "Wait for this run to finish, then continue it in chat." },
+  routine_run_skipped: { field: "general", message: "A skipped run has no history to continue." },
+  routine_run_private: { field: "general", message: "Private routines can't be continued in chat yet." },
 };
 
 /** Where the cloud seed comes from. A snapshot has no repository or branch field to point at. */

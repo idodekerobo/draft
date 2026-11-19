@@ -8,6 +8,7 @@ let rpcResult: { data: unknown; error: { message: string } | null } = { data: { 
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 let storageObjects: Array<{ name: string }> = [];
 const signedPaths: string[] = [];
+const removedObjects: string[] = [];
 const queriedTables: string[] = [];
 
 type Row = Record<string, unknown>;
@@ -96,6 +97,10 @@ mock.module("../../db/client", () => ({
           return { data: { signedUrl: `https://storage.test/${path}?token=t` }, error: null };
         },
         list: async () => ({ data: storageObjects, error: null }),
+        remove: async (keys: string[]) => {
+          removedObjects.push(...keys);
+          return { data: keys, error: null };
+        },
       }),
     },
   },
@@ -137,6 +142,7 @@ beforeEach(() => {
   rpcCalls.length = 0;
   storageObjects = [];
   signedPaths.length = 0;
+  removedObjects.length = 0;
   queriedTables.length = 0;
   inserted = [];
   updates = [];
@@ -491,6 +497,19 @@ describe("live session routes", () => {
       expect((await del()).status).toBe(200);
       expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "deleted", open_approval_count: 0, deleted_at: expect.any(String) });
       expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_ended" });
+    });
+
+    it("deletes the folder snapshot a cloud session started from, and no other object", async () => {
+      const key = `${WS}/${SESSION}/seed.tar.gz`;
+      tables.sessions = [session({ session_type: "interactive", status: "sleeping", runtime: "cloud", seed: { kind: "snapshot", storageKey: key } })];
+      expect((await del()).status).toBe(200);
+      expect(removedObjects).toEqual([key]);
+    });
+
+    it("leaves the snapshot alone for a session that started from a repository", async () => {
+      tables.sessions = [session({ session_type: "interactive", status: "sleeping", runtime: "cloud", seed: { kind: "repo", branch: "main" } })];
+      expect((await del()).status).toBe(200);
+      expect(removedObjects).toEqual([]);
     });
 
     it("keeps the end details of a session that already ended", async () => {

@@ -45,6 +45,8 @@ export interface LiveSessionsApi {
   setMode(sessionId: string, change: { permissionMode?: string; approvalMode?: string; model?: string | null; reasoningEffort?: string | null }): Promise<void>;
   /** Starts an ended session again on the owner's computer. Only the desktop app offers it. Throws with a message to show. */
   resume?(sessionId: string): Promise<void>;
+  /** Starts a cloud chat that continues a finished routine run, and returns the new session's id. Throws with a code to show. Absent where the app cannot start one. */
+  continueInChat?(sessionId: string): Promise<string>;
   /** Hides the owner's session from everyone in Draft. A live session ends first. Absent where the app cannot delete. Throws on failure. */
   deleteSession?(sessionId: string): Promise<void>;
   /** Calls `onChange` with the names of the other people watching. Returns the stop function. Absent where presence is not available. */

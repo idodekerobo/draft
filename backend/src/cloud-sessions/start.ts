@@ -9,7 +9,9 @@ import type { SandboxRef } from "../metaharness/sandbox/providers";
 import type { ErrorOperation } from "../types/enums";
 import { claudeCredentialRules } from "./claude-credential";
 import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, hostSeedFor, snapshotStoreOf, type CloudSessionDeps } from "./launch";
-import type { CloudStartInput } from "./parse-start";
+import type { CloudSeed, CloudStartInput } from "./parse-start";
+import { loadRoutineRunSource, type RoutineRunSource } from "./routine-seed";
+import { discardSnapshot } from "./snapshot-seed";
 import type { SeedSpec } from "../sandbox/host/config";
 
 export const CLOUD_HOST_NAME = "Draft cloud";
@@ -18,10 +20,10 @@ export const CLOUD_VOLUME_GB = 10;
 
 export type StartCloudSessionDeps = CloudSessionDeps;
 
-export type StartCloudSessionOutcome = { ok: true; sessionId: string } | { ok: false; status: 409 | 500 | 502; error: string };
+export type StartCloudSessionOutcome = { ok: true; sessionId: string } | { ok: false; status: 404 | 409 | 500 | 502; error: string };
 
 interface StartFailure {
-  status: 409 | 502;
+  status: 404 | 409 | 502;
   /** The response code the client gets. */
   response: string;
   /** The error row's code, and the run's failure code. */
@@ -60,6 +62,14 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     if (!uploaded) return { ok: false, status: 409, error: "seed_not_uploaded" };
   }
 
+  // A continued chat names a finished run. Its history is read through Draft's tools, so nothing is copied here.
+  let routineSource: RoutineRunSource | null = null;
+  if (seed.kind === "routine_run") {
+    const loaded = await loadRoutineRunSource(client, workspaceId, ownerUserId, seed.routineSessionId);
+    if (!loaded.ok) return { ok: false, status: loaded.status, error: loaded.error };
+    routineSource = loaded.source;
+  }
+
   const { error: insertError } = await client
     .from("sessions")
     .insert({
@@ -72,8 +82,9 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
       host_id: cloudHostId(sessionId),
       host_name: CLOUD_HOST_NAME,
       git_remote: seed.kind === "repo" ? seed.gitRemote : null,
-      folder_name: seed.kind === "repo" ? repoName(seed.gitRemote) : seed.folderName,
-      seed: seed.kind === "repo" ? { kind: "repo", branch: seed.branch } : { kind: "snapshot", storageKey: seed.storageKey },
+      folder_name: folderNameOf(seed),
+      title: routineSource ? `Continued: ${routineSource.routineTitle}` : null,
+      seed: storedSeedOf(seed),
       runtime: "cloud",
       status: "starting",
     })
@@ -101,8 +112,24 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     }
     if (runCreated) await failRun(client, { workspaceId, sessionId, runId, code: failure.code, message: failure.message, now });
     await endCloudSession(client, { workspaceId, sessionId, reason: START_FAILED, now });
+    // A session that did not start can never start again, so its snapshot is no longer needed.
+    if (seed.kind === "snapshot") await discardSnapshot(snapshots, seed.storageKey, { client, workspaceId, sessionId });
     return { ok: false, status: failure.status, error: failure.response };
   };
+
+  if (routineSource) {
+    const { error: promptError } = await client.rpc("create_session_input", {
+      p_session_id: sessionId,
+      p_workspace_id: workspaceId,
+      p_author_user_id: ownerUserId,
+      p_author_name: null,
+      p_kind: "message",
+      p_payload: { text: routineSource.prompt },
+    });
+    if (promptError) {
+      return abandon({ status: 502, response: START_FAILED, code: "seed_prompt_failed", operation: "session", message: "Queueing the routine run's history for the new chat failed", cause: promptError });
+    }
+  }
 
   try {
     const spec = await cloudRunSpec(client, {
@@ -176,4 +203,17 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
 /** The list shows the repository name where a local session shows its folder. */
 function repoName(gitRemote: string): string {
   return gitRemote.replace(/\.git$/, "").split("/").pop() || gitRemote;
+}
+
+/** The list shows the repository name, the folder's name, or nothing for a chat that continues a routine run. */
+function folderNameOf(seed: CloudSeed): string | null {
+  if (seed.kind === "repo") return repoName(seed.gitRemote);
+  return seed.kind === "snapshot" ? seed.folderName : null;
+}
+
+/** The seed as the session row keeps it. A repository keeps its branch only, since its remote has its own column. */
+function storedSeedOf(seed: CloudSeed): Record<string, unknown> {
+  if (seed.kind === "repo") return { kind: "repo", branch: seed.branch };
+  if (seed.kind === "snapshot") return { kind: "snapshot", storageKey: seed.storageKey };
+  return { kind: "routine_run", routineSessionId: seed.routineSessionId };
 }

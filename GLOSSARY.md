@@ -22,9 +22,14 @@ When you add a concept, add it here first.
   computer; the sandbox host runs in a cloud machine. Column `sessions.host_id`.
 - **Machine**: one computer or VM. A host runs on a machine. Fly VM IDs are `sandbox_machine_id`.
 - **Sandbox**: an isolated cloud machine Draft starts through a `SandboxProvider`. It may have a volume.
-- **Seed**: what a cloud session's workspace starts from. A GitHub repository (`repo`, cloned), or a folder snapshot
-  (`snapshot`, a `tar.gz` in the `session-seeds` bucket that the person packed from their folder). Column `sessions.seed`.
+- **Seed**: what a cloud session's workspace starts from. A GitHub repository (`repo`, cloned), a folder snapshot
+  (`snapshot`, a `tar.gz` in the `session-seeds` bucket that the person packed from their folder), or nothing
+  (`routine_run`, an empty git repository for a chat that continues a finished routine run). Column `sessions.seed`.
   Not a run's context or a routine's input.
+- **Continue in chat**: a new cloud session started from a finished routine run. Its first message names the run, and
+  the agent reads the run's history with `routines.runs`. The routine run keeps its own session.
+- **Session file**: the harness's own transcript file for one run (Claude's `.jsonl` under `~/.claude/projects/`, a
+  Codex rollout). A routine run uploads it, gzipped, to the session's raw folder (`sessions.raw_storage_path`).
 - **Environment**: staging or production. Only that.
 
 ## Agents

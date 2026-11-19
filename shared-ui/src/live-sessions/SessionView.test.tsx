@@ -131,6 +131,45 @@ describe("SessionView", () => {
     expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
   });
 
+  it("offers Continue in chat on a finished routine run, opens the new chat, and shows why a start was refused", async () => {
+    const run: LiveSession = { ...session, session_type: "routine", status: "ended", mine: false };
+    const continueInChat = mock(async (_id: string) => "new-chat");
+    const onOpenSession = mock((_id: string) => {});
+    const withRun = (live: LiveSession, extra: Partial<LiveSessionsApi> = {}) => ({ ...api, ...extra, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [] }) });
+
+    render(<SessionView api={withRun(run, { continueInChat })} sessionId="s1" onOpenSession={onOpenSession} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue in chat" }));
+    await waitFor(() => expect(onOpenSession).toHaveBeenCalledWith("new-chat"));
+    expect(continueInChat).toHaveBeenCalledWith("s1");
+    cleanup();
+
+    const refused = mock(async (_id: string) => { throw new Error("routine_run_not_finished"); });
+    render(<SessionView api={withRun(run, { continueInChat: refused })} sessionId="s1" onOpenSession={onOpenSession} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue in chat" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Wait for this run to finish");
+    expect(onOpenSession).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    render(<SessionView api={withRun({ ...run, status: "live" }, { continueInChat })} sessionId="s1" />);
+    await screen.findByText(/This run follows its routine/);
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withRun({ ...run, session_type: "interactive" }, { continueInChat })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withRun(run)} sessionId="s1" />);
+    await screen.findByText(/This run follows its routine/);
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withRun({ ...run, end_reason: "skipped" }, { continueInChat })} sessionId="s1" />);
+    await screen.findByText(/This run follows its routine/);
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+  });
+
   it("puts menu actions behind a menu button and closes it on Escape", async () => {
     let opened = 0;
     render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} menuItems={() => [{ label: "Open in Terminal", onSelect: () => opened++ }]} />);

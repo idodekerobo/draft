@@ -8,6 +8,8 @@ import { callback, CallbackDeliveryError, reportAndExit, reportRunnerFailure, ty
 import { runnerLog, sanitizeReason } from "./runner/log";
 import { loadRunnerManifest } from "./runner/manifest";
 import { prepareHarness } from "./runner/process";
+import { keepSessionFile } from "./runner/session-file";
+import { runnerSideFor } from "./runner/sides";
 import { runStream } from "./runner/stream";
 import { runStructured } from "./runner/structured";
 
@@ -109,10 +111,22 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
   if (manifest.output.kind === "stream") {
     prepareHarness(manifest, process.env);
     delete process.env.CODEX_AUTH_JSON;
-    const end = await runStream(manifest, prompt, timeoutMs, runId, (result) =>
-      callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
+    let nativeSessionId: string | null = null;
+    const end = await runStream(
+      manifest,
+      prompt,
+      timeoutMs,
+      runId,
+      (result) => callback(callbackUrl, callbackToken, runId, bundleHash, result, undefined),
+      (id) => {
+        nativeSessionId ??= id;
+      },
     );
-    await callback(callbackUrl, callbackToken, runId, bundleHash, end, undefined);
+    // Kept before the final callback, so the callback can say whether the session file reached storage.
+    const rawUploaded = manifest.sessionUpload
+      ? await keepSessionFile({ runId, harness: manifest.harness, side: runnerSideFor(manifest.harness).sessionFile, nativeSessionId, upload: manifest.sessionUpload })
+      : false;
+    await callback(callbackUrl, callbackToken, runId, bundleHash, { ...end, raw_uploaded: rawUploaded }, undefined);
     runnerLog("final", { run_id: runId, status: end.ok ? "completed" : "failed", failure_code: end.error ?? "none" });
     if (!end.ok) process.exitCode = 1;
     return;

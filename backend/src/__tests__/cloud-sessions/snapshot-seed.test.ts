@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SNAPSHOT_BUCKET, createSeedUpload, sessionIdOfSnapshotKey, snapshotKeyFor, storageSnapshotStore } from "../../cloud-sessions/snapshot-seed";
+import { fakeClient, fakeDb } from "../routines/fake-client";
+import { SNAPSHOT_BUCKET, createSeedUpload, discardSnapshot, sessionIdOfSnapshotKey, snapshotKeyFor, snapshotKeyOf, storageSnapshotStore, type SnapshotStore } from "../../cloud-sessions/snapshot-seed";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const SESSION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -9,7 +10,7 @@ const KEY = `${WS}/${SESSION}/seed.tar.gz`;
 type Call = { method: string; args: unknown[] };
 
 /** A storage client over an in-memory list of object keys. Each failure option makes that call return an error. */
-function fakeStorage(options: { objects?: string[]; listError?: boolean; signError?: boolean; uploadError?: boolean } = {}) {
+function fakeStorage(options: { objects?: string[]; listError?: boolean; signError?: boolean; uploadError?: boolean; removeError?: boolean } = {}) {
   const calls: Call[] = [];
   const bucketCalls: string[] = [];
   const objects = options.objects ?? [];
@@ -31,6 +32,11 @@ function fakeStorage(options: { objects?: string[]; listError?: boolean; signErr
       calls.push({ method: "createSignedUploadUrl", args: [path, uploadOptions] });
       if (options.uploadError) return { data: null, error: new Error("upload sign failed") };
       return { data: { signedUrl: `https://project.supabase.co/storage/v1/object/upload/sign/${SNAPSHOT_BUCKET}/${path}?token=u` }, error: null };
+    },
+    async remove(keys: string[]) {
+      calls.push({ method: "remove", args: [keys] });
+      if (options.removeError) return { data: null, error: new Error("remove failed") };
+      return { data: keys.map((name) => ({ name })), error: null };
     },
   };
   const client = {
@@ -99,5 +105,51 @@ describe("createSeedUpload", () => {
   it("throws when the upload link cannot be signed", async () => {
     const storage = fakeStorage({ uploadError: true });
     await expect(createSeedUpload(storage.client, WS, SESSION)).rejects.toThrow("snapshot upload link failed");
+  });
+});
+
+describe("deleting a snapshot", () => {
+  it("removes the named keys from the session-seeds bucket", async () => {
+    const storage = fakeStorage();
+    await storageSnapshotStore(storage.client).remove([KEY]);
+    expect(storage.bucketCalls).toEqual([SNAPSHOT_BUCKET]);
+    expect(storage.calls).toEqual([{ method: "remove", args: [[KEY]] }]);
+  });
+
+  it("does nothing, and calls no storage, for an empty list", async () => {
+    const storage = fakeStorage();
+    await storageSnapshotStore(storage.client).remove([]);
+    expect(storage.calls).toEqual([]);
+  });
+
+  it("throws when the delete fails, so the caller can record it", async () => {
+    await expect(storageSnapshotStore(fakeStorage({ removeError: true }).client).remove([KEY])).rejects.toThrow("remove failed");
+  });
+
+  it("discardSnapshot deletes the key, and records a failed delete without throwing", async () => {
+    const recorded: unknown[] = [];
+    const store: SnapshotStore = {
+      exists: async () => true,
+      downloadUrl: async () => "unused",
+      remove: async (keys) => {
+        recorded.push(keys);
+      },
+    };
+    await discardSnapshot(store, KEY, { client: fakeStorage().client, workspaceId: WS, sessionId: SESSION });
+    expect(recorded).toEqual([[KEY]]);
+
+    const failing: SnapshotStore = { ...store, remove: async () => { throw new Error("storage 503"); } };
+    const db = fakeDb({ errors: [] });
+    await expect(discardSnapshot(failing, KEY, { client: fakeClient(db), workspaceId: WS, sessionId: SESSION })).resolves.toBeUndefined();
+    expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: WS, session_id: SESSION })]);
+    expect((db.tables.errors![0]!.detail_json as { code?: string }).code).toBe("snapshot_remove_failed");
+  });
+
+  it("reads a snapshot key only from a session that starts from a folder snapshot", () => {
+    expect(snapshotKeyOf({ kind: "snapshot", storageKey: KEY })).toBe(KEY);
+    expect(snapshotKeyOf({ kind: "repo", branch: "main" })).toBeNull();
+    expect(snapshotKeyOf({ kind: "routine_run", routineSessionId: SESSION })).toBeNull();
+    expect(snapshotKeyOf({ kind: "snapshot" })).toBeNull();
+    expect(snapshotKeyOf(null)).toBeNull();
   });
 });

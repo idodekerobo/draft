@@ -79,6 +79,8 @@ export function sanitizedClaudeEnv(env: NodeJS.ProcessEnv): Record<string, strin
 }
 
 const CLAUDE_READ_ONLY_TOOLS = ["Read", "Glob", "Grep"];
+const CLAUDE_WORK_DIR = "/run";
+const CLAUDE_PROJECTS_DIR = "/home/agent/.claude/projects";
 
 /** Draft's tool server for a Claude Code run. The header reads the token from the environment. */
 export function claudeMcpConfigJson(mcpUrl: string): string {
@@ -104,7 +106,8 @@ export function claudeArgs(manifest: RunnerManifest, prompt: string, schemaText:
     "dontAsk",
     ...(draftMcpUrl ? ["--mcp-config", claudeMcpConfigJson(draftMcpUrl), "--strict-mcp-config"] : []),
     ...(allowed.length > 0 ? ["--allowedTools", ...allowed] : []),
-    "--no-session-persistence",
+    // A routine run that keeps its session file lets Claude write it to disk.
+    ...(manifest.sessionUpload ? [] : ["--no-session-persistence"]),
     "--output-format",
     "stream-json",
     "--verbose",
@@ -135,7 +138,7 @@ export const claudeRunner: RunnerSide = {
   command: (manifest, prompt, schemaText, env) => ({
     argv: ["claude", ...claudeArgs(manifest, prompt, schemaText)],
     stdin: null,
-    cwd: "/run",
+    cwd: CLAUDE_WORK_DIR,
     env: sanitizedClaudeEnv(env),
   }),
   prepare: () => undefined,
@@ -156,5 +159,21 @@ export const claudeRunner: RunnerSide = {
     payload: (result) => extractStructuredOutput(result as ClaudeEnvelope | null),
     failureOf: (result, current: FailureCategory) => classifyClaudeEnvelopeFailure(result as ClaudeEnvelope | null, current),
     transcript: parseStreamJsonTranscript,
+  },
+  sessionFile: {
+    root: CLAUDE_PROJECTS_DIR,
+    workingDir: CLAUDE_WORK_DIR,
+    // Claude names the file after the session, inside a folder named after the working directory.
+    isSessionFile: (fileName, nativeSessionId) => fileName === `${nativeSessionId}.jsonl`,
+    nativeSessionIdOfLine: (raw) => {
+      if (!raw.includes('"session_id"')) return null;
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        return isObject(parsed) && typeof parsed.session_id === "string" ? parsed.session_id : null;
+      } catch {
+        return null;
+      }
+    },
+    versionCommand: ["claude", "--version"],
   },
 };

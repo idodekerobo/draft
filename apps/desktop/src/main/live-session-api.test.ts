@@ -90,6 +90,24 @@ describe("startCloudLiveSession from a folder snapshot", () => {
   });
 });
 
+describe("startCloudLiveSession from a finished routine run", () => {
+  it("sends the routine run's session as the seed, with no body session id, and returns the new chat", async () => {
+    const { value, fetchServerJSON } = deps(async () => ({ ok: true, session: { id: "s-chat" } }));
+    const continued: CloudStartParams = { runtime: "cloud", model: null, effort: null, network: "restricted", seed: { kind: "routine_run", sessionId: "s-run" } };
+
+    expect(await startCloudLiveSession(continued, value)).toEqual({ ok: true, sessionId: "s-chat" });
+    const [, init] = fetchServerJSON.mock.calls[0]! as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      runtime: "cloud",
+      harness: "claude",
+      model: null,
+      reasoningEffort: null,
+      network: "restricted",
+      seed: { kind: "routine_run", sessionId: "s-run" },
+    });
+  });
+});
+
 describe("uploadLiveSessionSnapshot", () => {
   /** A folder with one source file and one .env file. Packing reads only the listing and the archive size. */
   const folder: SnapshotFs = {

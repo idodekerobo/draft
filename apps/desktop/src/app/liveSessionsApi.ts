@@ -43,6 +43,17 @@ export const liveSessionsApi: LiveSessionsApi = {
     const result = await rpc.request.resumeLiveSession({ sessionId });
     if (!result.ok) throw new Error(result.error);
   },
+  continueInChat: async (sessionId) => {
+    const result = await rpc.request.startLiveSession({
+      runtime: "cloud",
+      model: null,
+      effort: null,
+      network: "restricted",
+      seed: { kind: "routine_run", sessionId },
+    });
+    if (!result.ok) throw new Error(result.error);
+    return result.sessionId;
+  },
   deleteSession: async (sessionId) => {
     const result = await rpc.request.deleteLiveSession({ sessionId });
     if (!result.ok) throw new Error(result.error);

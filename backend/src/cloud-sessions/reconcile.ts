@@ -4,6 +4,7 @@ import { recordError } from "../errors/record-error";
 import type { SandboxProvider } from "../metaharness/sandbox/providers";
 import { latestMachineId, parseVolumeRef } from "./session-sandbox";
 import { type CloudSessionRef, wakeIfUndelivered } from "./undelivered-inputs";
+import { storageSnapshotStore, type SnapshotStore } from "./snapshot-seed";
 
 /** A host silent this long is stuck. A run younger than this may still be booting, so it is left alone. */
 export const RECONCILE_AFTER_MS = 10 * 60 * 1000;
@@ -11,6 +12,9 @@ const RECONCILE_BATCH = 50;
 const STUCK_STATUSES = ["starting", "host_offline"];
 const ACTIVE_STATUSES: readonly string[] = ACTIVE_AGENT_RUN_STATUSES;
 export const HOST_LOST = "host_lost";
+/** A snapshot with no session row is left alone for a day, since its upload may still be starting a session. */
+export const SEED_ORPHAN_AFTER_MS = 24 * 60 * 60 * 1000;
+const SEED_SWEEP_BATCH = 50;
 
 export interface ReconcileCloudSessionsDeps {
   client: SupabaseClient;
@@ -19,6 +23,8 @@ export interface ReconcileCloudSessionsDeps {
   providerName: string;
   /** Starts a run of a session that sleeps with an undelivered input. */
   wake: (session: CloudSessionRef) => Promise<unknown>;
+  /** Where the snapshot sweep deletes. Defaults to the client's storage. */
+  snapshots?: SnapshotStore;
   now?: () => Date;
 }
 
@@ -27,6 +33,8 @@ export interface ReconcileCloudSessionsResult {
   hostsLost: number;
   /** Ended sessions whose sandbox volume was destroyed. */
   volumesDestroyed: number;
+  /** Snapshots of ended sessions, or of uploads that never started a session, that were deleted. */
+  seedsRemoved: number;
   /** Repairs that stopped at a recorded failure. The sweep went on past each one. */
   failed: number;
 }
@@ -61,7 +69,34 @@ interface LeakedSessionRow {
 export async function reconcileCloudSessions(deps: ReconcileCloudSessionsDeps): Promise<ReconcileCloudSessionsResult> {
   const hosts = await reconcileStuckHosts(deps);
   const volumes = await reconcileLeakedVolumes(deps);
-  return { hostsLost: hosts.lost, volumesDestroyed: volumes.destroyed, failed: hosts.failed + volumes.failed };
+  const seeds = await reconcileStaleSeeds(deps);
+  return { hostsLost: hosts.lost, volumesDestroyed: volumes.destroyed, seedsRemoved: seeds.removed, failed: hosts.failed + volumes.failed + seeds.failed };
+}
+
+/**
+ * Deletes folder snapshots that no session needs: those of ended sessions, which a failed delete at the end left
+ * behind, and those of uploads that never became a session. Bounded, so a backlog clears over several sweeps.
+ */
+async function reconcileStaleSeeds(deps: ReconcileCloudSessionsDeps): Promise<{ removed: number; failed: number }> {
+  const now = (deps.now ?? (() => new Date()))();
+  const { data, error } = await deps.client.rpc("list_stale_session_seeds", {
+    p_orphan_before: new Date(now.getTime() - SEED_ORPHAN_AFTER_MS).toISOString(),
+    p_limit: SEED_SWEEP_BATCH,
+  });
+  if (error) {
+    await recordError({ client: deps.client, workspaceId: null, operation: "session", code: "seed_sweep_failed", message: "Listing the folder snapshots no session needs failed", error, allowUnattributed: true });
+    return { removed: 0, failed: 1 };
+  }
+  const keys = ((data ?? []) as Array<{ object_name: string }>).map((row) => row.object_name);
+  if (keys.length === 0) return { removed: 0, failed: 0 };
+
+  try {
+    await (deps.snapshots ?? storageSnapshotStore(deps.client)).remove(keys);
+    return { removed: keys.length, failed: 0 };
+  } catch (cause) {
+    await recordError({ client: deps.client, workspaceId: null, operation: "session", code: "seed_sweep_remove_failed", message: "Deleting folder snapshots that no session needs failed", error: cause, detail: { count: keys.length }, allowUnattributed: true });
+    return { removed: 0, failed: 1 };
+  }
 }
 
 async function reconcileStuckHosts(deps: ReconcileCloudSessionsDeps): Promise<{ lost: number; failed: number }> {

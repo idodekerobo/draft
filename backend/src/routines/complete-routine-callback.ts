@@ -9,6 +9,7 @@ import type { RoutineLine } from "../sandbox/runner/stream";
 import type { SessionRow } from "../types/tables";
 import { parseAgentRoutineConfig, parseRoutineSessionId } from "./config";
 import { endRoutineSession, failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
+import { rawFolderOf } from "./session-upload";
 
 const MAX_LINES_PER_POST = 2000;
 const SESSION_COLUMNS = "id, workspace_id, session_type, status, last_seq, host_id, scheduled_task_id, harness";
@@ -79,6 +80,7 @@ async function finishRun(client: SupabaseClient, session: RoutineSession, result
   if (session.harness === "codex") await saveRefreshedCodexLogin(client, session.workspace_id, result.auth_json).catch((error) =>
       recordError({ client, workspaceId: session.workspace_id, sessionId: session.id, operation: "scheduling", code: "codex_login_save_failed", message: "Saving the refreshed Codex login after a routine run failed", error }),
     );
+  if (result.raw_uploaded === true) await markRawUploaded(client, session);
   if (result.ok === true) {
     await endRoutineSession(client, session, "completed");
     return;
@@ -90,6 +92,18 @@ async function finishRun(client: SupabaseClient, session: RoutineSession, result
     message: `Routine run failed: ${code}`,
     detail: { failure_code: code, diagnostics: isObject(result.diagnostics) ? result.diagnostics : null },
   });
+}
+
+/** The runner keeps the session file in storage before its final message, so the session now points at it. */
+async function markRawUploaded(client: SupabaseClient, session: RoutineSession): Promise<void> {
+  const { error } = await client
+    .from("sessions")
+    .update({ raw_storage_path: `${rawFolderOf(session.workspace_id, session.id)}/`, raw_uploaded_at: new Date().toISOString() })
+    .eq("id", session.id)
+    .eq("workspace_id", session.workspace_id);
+  if (error) {
+    await recordError({ client, workspaceId: session.workspace_id, sessionId: session.id, operation: "session", code: "raw_record_failed", message: "Recording a routine run's session file failed", error });
+  }
 }
 
 /** The session a routine's agent run streams to, or null when the id is not a routine run. */

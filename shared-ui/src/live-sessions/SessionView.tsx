@@ -39,6 +39,7 @@ import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
+import { cloudStartFailure } from "./cloud-start";
 
 const SKIPPED_MESSAGE = "The user skipped this.";
 
@@ -581,6 +582,23 @@ function SessionContents({
     await refresh();
   }, [api, sessionId, refresh]);
 
+  // A finished routine run can become a cloud chat. Its own session stays as the record of the run.
+  const canContinue = Boolean(api.continueInChat) && session.session_type === "routine" && session.status === "ended" && session.end_reason !== "skipped";
+  const [continuing, setContinuing] = useState(false);
+  const continueChat = useCallback(async () => {
+    if (!api.continueInChat) return;
+    setContinuing(true);
+    setActionError(null);
+    try {
+      const newSessionId = await api.continueInChat(sessionId);
+      onOpenSession?.(newSessionId);
+    } catch (error) {
+      setActionError(cloudStartFailure(error instanceof Error ? error.message : "", "repo").message);
+    } finally {
+      setContinuing(false);
+    }
+  }, [api, sessionId, onOpenSession]);
+
   const readOnly = session.session_type === "routine";
   const running = !readOnly && (session.status === "live" || session.status === "starting");
   const banner = sessionBanner(session, devOnly);
@@ -599,6 +617,11 @@ function SessionContents({
           </div>
         </Crumbs>
         <div className="ui-session__actions">
+          {canContinue && (
+            <button type="button" className="ui-btn ui-btn--primary" disabled={continuing} onClick={() => void continueChat()}>
+              {continuing ? "Starting…" : "Continue in chat"}
+            </button>
+          )}
           {running && (
             <button type="button" className="ui-btn" disabled={stopping} title="Stop (Esc in the message box)" onClick={() => void stop()}>
               {stopping ? "Stopping…" : "Stop"}

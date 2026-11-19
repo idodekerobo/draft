@@ -9,6 +9,7 @@ import { resolveInferenceCredential } from "../synthesis/resolve-credential";
 import { buildRoutineBundle, renderRoutinePrompt } from "./build-bundle";
 import { ROUTINE_RUN_TIMEOUT_SECONDS, type AgentRoutineConfig } from "./config";
 import type { RoutineEventPayload } from "./event";
+import { mintRoutineSessionUpload } from "./session-upload";
 import { recordError } from "../errors/record-error";
 
 export interface LaunchRoutineRunInput {
@@ -68,6 +69,8 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
     },
     timeoutSeconds: ROUTINE_RUN_TIMEOUT_SECONDS,
     config,
+    // A run whose links cannot be made still runs. Its session file is just not kept.
+    sessionUpload: (await mintRoutineSessionUpload(client, workspaceId, sessionId)) ?? undefined,
   };
 
   if (routine.harness !== "codex") {

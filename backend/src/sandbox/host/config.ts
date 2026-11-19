@@ -1,7 +1,10 @@
 import { posix } from "node:path";
 
-/** What the sandbox host is told at start. A missing or malformed value stops the host before it does any work. */
-export type SeedSpec = { kind: "repo"; gitRemote: string; branch: string } | { kind: "snapshot"; url: string };
+/**
+ * What the sandbox host is told at start. A missing or malformed value stops the host before it does any work.
+ * A routine_run seed starts an empty workspace: the chat reads the routine's history over Draft's tools.
+ */
+export type SeedSpec = { kind: "repo"; gitRemote: string; branch: string } | { kind: "snapshot"; url: string } | { kind: "routine_run" };
 
 export interface HostConfig {
   apiBase: string;
@@ -74,6 +77,7 @@ export function scrubPaneSecrets(env: Record<string, string | undefined>): void 
 
 /** Values the logs must hide: the seed holds a remote that may embed a token, or a signed URL. */
 export function seedSecrets(seed: SeedSpec): string[] {
+  if (seed.kind === "routine_run") return [];
   return seed.kind === "repo" ? [seed.gitRemote] : [seed.url];
 }
 
@@ -104,7 +108,8 @@ export function parseSeed(raw: string): SeedSpec {
   if (!isRecord(value)) throw new HostConfigError("DRAFT_SEED must be a JSON object");
   if (value.kind === "repo") return parseRepoSeed(value);
   if (value.kind === "snapshot") return parseSnapshotSeed(value);
-  throw new HostConfigError('DRAFT_SEED kind must be "repo" or "snapshot"');
+  if (value.kind === "routine_run") return { kind: "routine_run" };
+  throw new HostConfigError('DRAFT_SEED kind must be "repo", "snapshot" or "routine_run"');
 }
 
 function parseRepoSeed(value: Record<string, unknown>): SeedSpec {

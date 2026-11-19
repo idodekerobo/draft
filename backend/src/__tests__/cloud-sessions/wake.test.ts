@@ -429,6 +429,7 @@ describe("wakeCloudSession from a folder snapshot", () => {
         signed.push(url);
         return url;
       },
+      remove: async () => undefined,
     };
     return { store, signed };
   }
@@ -454,6 +455,15 @@ describe("wakeCloudSession from a folder snapshot", () => {
     expect(links.signed[0]).not.toBe(links.signed[1]);
   });
 
+  it("wakes a chat that continues a routine run with the same empty-workspace seed it started from", async () => {
+    db.tables.sessions = [sleepingSession({ git_remote: null, folder_name: null, seed: { kind: "routine_run", routineSessionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" } })];
+    const fly = fakeProvider({ status: "stopped" });
+    const links = linkStore();
+    expect(await wakeCloudSession(INPUT, depsFor(fly.provider, { snapshots: links.store }))).toEqual({ status: "woken", runId: NEW_RUN });
+    expect(fly.created[0]!.env.DRAFT_SEED).toBe(JSON.stringify({ kind: "routine_run" }));
+    expect(links.signed).toEqual([]);
+  });
+
   it("runs the new run with no GitHub credential", async () => {
     await wakeCloudSession(INPUT, depsFor(fakeProvider({ status: "stopped" }).provider, { snapshots: linkStore().store }));
     const names = (runById(NEW_RUN)!.permissions as Array<{ tool: string }>).map((p) => p.tool);
@@ -465,6 +475,7 @@ describe("wakeCloudSession from a folder snapshot", () => {
     const failing: SnapshotStore = {
       exists: async () => true,
       downloadUrl: async () => { throw new Error("sign failed"); },
+      remove: async () => undefined,
     };
     const outcome = await wakeCloudSession(INPUT, depsFor(fly.provider, { snapshots: failing }));
 

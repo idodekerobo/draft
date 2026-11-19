@@ -91,7 +91,7 @@ describe("reconcileCloudSessions: stuck hosts", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 1, volumesDestroyed: 0, failed: 0 });
+    expect(result).toEqual({ hostsLost: 1, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 });
     expect(runById(db, "run-s1")).toMatchObject({ status: "failed", failure_code: "host_lost", completed_at: NOW.toISOString() });
     expect(byId(db).s1).toMatchObject({ status: "sleeping" });
     expect(errorRows(db)[0]).toMatchObject({ agent_run_id: "run-s1", session_id: "s1" });
@@ -116,7 +116,7 @@ describe("reconcileCloudSessions: stuck hosts", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, failed: 0 });
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 });
     expect(statusCalls).toHaveLength(1);
     expect(runById(db, "run-s1")).toMatchObject({ status: "running" });
     expect(byId(db).s1).toMatchObject({ status: "host_offline" });
@@ -225,7 +225,7 @@ describe("reconcileCloudSessions: stuck hosts", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 1, volumesDestroyed: 0, failed: 1 });
+    expect(result).toEqual({ hostsLost: 1, volumesDestroyed: 0, seedsRemoved: 0, failed: 1 });
     expect(byId(db).s1).toMatchObject({ status: "host_offline" });
     expect(runById(db, "run-s1")).toMatchObject({ status: "running" });
     expect(byId(db).s2).toMatchObject({ status: "sleeping" });
@@ -241,7 +241,7 @@ describe("reconcileCloudSessions: stuck hosts", () => {
 
     const result = await reconcileCloudSessions({ ...deps(db, provider), client });
 
-    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, failed: 1 });
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 1 });
     expect(errorCodes(db)).toEqual(["host_run_lookup_failed"]);
   });
 });
@@ -258,7 +258,7 @@ describe("reconcileCloudSessions: leaked volumes", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 1, failed: 0 });
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 1, seedsRemoved: 0, failed: 0 });
     expect(destroyed).toEqual([{ provider: "fly", machine: "machine-e1", volume: VOLUME_OF("e1") }]);
     expect(byId(db).e1).toMatchObject({ status: "ended", sandbox_volume: null });
     expect(errorRows(db)).toEqual([]);
@@ -290,7 +290,7 @@ describe("reconcileCloudSessions: leaked volumes", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 1, failed: 1 });
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 1, seedsRemoved: 0, failed: 1 });
     expect(destroyed.map((ref) => ref.machine)).toEqual(["machine-e2"]);
     expect(byId(db).e1).toMatchObject({ sandbox_volume: VOLUME_OF("e1") });
     expect(byId(db).e2).toMatchObject({ sandbox_volume: null });
@@ -309,7 +309,7 @@ describe("reconcileCloudSessions: leaked volumes", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, failed: 1 });
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 1 });
     expect(destroyed).toEqual([]);
     expect(errorCodes(db)).toEqual(["sandbox_volume_invalid"]);
   });
@@ -328,7 +328,7 @@ describe("reconcileCloudSessions: leaked volumes", () => {
 
     const result = await reconcileCloudSessions(deps(db, provider));
 
-    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, failed: 0 });
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 });
     expect(destroyed).toEqual([]);
     expect(byId(db).asleep).toMatchObject({ status: "sleeping", sandbox_volume: VOLUME_OF("asleep") });
   });
@@ -348,5 +348,70 @@ describe("reconcileCloudSessions: leaked volumes", () => {
     expect(result.volumesDestroyed).toBe(50);
     expect(destroyed).toHaveLength(50);
     expect(db.tables.sessions!.filter((row) => row.sandbox_volume !== null)).toHaveLength(2);
+  });
+});
+
+describe("reconcileCloudSessions: folder snapshots no session needs", () => {
+  const KEY = (id: string) => `${WS}/${id}/seed.tar.gz`;
+  /** The snapshot store the sweep deletes from. A key in `failing` makes its delete throw. */
+  function snapshots(failing = false) {
+    const removed: string[][] = [];
+    return {
+      removed,
+      store: {
+        exists: async () => true,
+        downloadUrl: async () => "unused",
+        remove: async (keys: string[]) => {
+          if (failing) throw new Error("storage 503");
+          removed.push(keys);
+        },
+      },
+    };
+  }
+  /** The sweep's query returns the names it is given, and records the arguments it was called with. */
+  function stale(db: FakeDb, names: string[]) {
+    const calls: Array<Record<string, unknown>> = [];
+    db.rpcs.list_stale_session_seeds = (args) => {
+      calls.push(args);
+      return { data: names.map((object_name) => ({ object_name })), error: null };
+    };
+    return calls;
+  }
+
+  it("deletes the snapshots the database names, and asks for them a batch at a time, a day past the orphan cutoff", async () => {
+    const db = fakeDb({ sessions: [], agent_runs: [], errors: [] });
+    const calls = stale(db, [KEY("s1"), KEY("s2")]);
+    const store = snapshots();
+
+    const result = await reconcileCloudSessions({ ...deps(db, fakeProvider().provider), snapshots: store.store });
+
+    expect(calls).toEqual([{ p_orphan_before: "2026-11-17T10:00:00.000Z", p_limit: 50 }]);
+    expect(store.removed).toEqual([[KEY("s1"), KEY("s2")]]);
+    expect(result).toEqual({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 2, failed: 0 });
+  });
+
+  it("deletes nothing and touches no storage when the database names no snapshot", async () => {
+    const db = fakeDb({ sessions: [], agent_runs: [], errors: [] });
+    stale(db, []);
+    const store = snapshots();
+
+    const result = await reconcileCloudSessions({ ...deps(db, fakeProvider().provider), snapshots: store.store });
+
+    expect(store.removed).toEqual([]);
+    expect(result.seedsRemoved).toBe(0);
+  });
+
+  it("records a failed listing and a failed delete, and reports each as a failure", async () => {
+    const listing = fakeDb({ sessions: [], agent_runs: [], errors: [] });
+    listing.rpcs.list_stale_session_seeds = () => ({ data: null, error: { message: "rpc down" } });
+    const listed = await reconcileCloudSessions({ ...deps(listing, fakeProvider().provider), snapshots: snapshots().store });
+    expect(listed.failed).toBe(1);
+    expect(errorCodes(listing)).toEqual(["seed_sweep_failed"]);
+
+    const deleting = fakeDb({ sessions: [], agent_runs: [], errors: [] });
+    stale(deleting, [KEY("s1")]);
+    const removed = await reconcileCloudSessions({ ...deps(deleting, fakeProvider().provider), snapshots: snapshots(true).store });
+    expect(removed).toMatchObject({ seedsRemoved: 0, failed: 1 });
+    expect(errorCodes(deleting)).toEqual(["seed_sweep_remove_failed"]);
   });
 });

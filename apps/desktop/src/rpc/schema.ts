@@ -83,10 +83,14 @@ export interface AppState {
   activeProfile: string;
 }
 
-/** What a cloud session starts from: a GitHub repository, or a folder snapshot already uploaded under `sessionId`. */
+/**
+ * What a cloud session starts from: a GitHub repository, a folder snapshot already uploaded under `sessionId`, or the
+ * finished routine run (`sessionId`) that a new chat continues.
+ */
 export type CloudSessionSeed =
   | { kind: "repo"; gitRemote: string; branch: string }
-  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string };
+  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
+  | { kind: "routine_run"; sessionId: string };
 
 export interface SessionLaunchConfig {
   tool: "claude-code" | "codex";

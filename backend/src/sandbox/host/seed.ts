@@ -33,6 +33,7 @@ export async function prepareWorkspace(seed: SeedSpec, root: string, deps: SeedD
   rmSync(partial, { recursive: true, force: true });
   try {
     if (seed.kind === "repo") await cloneRepo(seed, partial, deps);
+    else if (seed.kind === "routine_run") await startEmptyWorkspace(partial, deps);
     else await restoreSnapshot(seed.url, partial, deps);
     renameSync(partial, root);
   } catch (error) {
@@ -44,6 +45,12 @@ export async function prepareWorkspace(seed: SeedSpec, root: string, deps: SeedD
 
 async function cloneRepo(seed: Extract<SeedSpec, { kind: "repo" }>, target: string, deps: SeedDeps): Promise<void> {
   await run(deps, ["git", "clone", "--branch", seed.branch, "--", seed.gitRemote, target], "git clone", seed);
+}
+
+/** An empty git repository, so the agent can work in the same way as in a seeded workspace. */
+async function startEmptyWorkspace(target: string, deps: SeedDeps): Promise<void> {
+  mkdirSync(target, { recursive: true });
+  await run(deps, ["git", "init"], "git init", { kind: "routine_run" }, target);
 }
 
 /** Extracts the archive, then makes it a git repository with one commit, so the agent can commit from the start. */

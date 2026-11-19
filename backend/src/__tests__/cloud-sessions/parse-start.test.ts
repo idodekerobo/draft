@@ -128,4 +128,15 @@ describe("parseCloudStart", () => {
   it("refuses a session id on a repository seed", () => {
     expect(errorOf(parseCloudStart(body({ sessionId: SESSION }), owner))).toBe("invalid_seed");
   });
+
+  it("accepts a routine_run seed that names a routine run by its session id", () => {
+    const result = parseCloudStart(body({ seed: { kind: "routine_run", sessionId: OTHER_SESSION } }), owner);
+    expect(result).toMatchObject({ ok: true, input: { seed: { kind: "routine_run", routineSessionId: OTHER_SESSION }, network: "restricted" } });
+  });
+
+  it("refuses a routine_run seed whose session id is missing, not a UUID, or sent beside a body sessionId", () => {
+    expect(errorOf(parseCloudStart(body({ seed: { kind: "routine_run" } }), owner))).toBe("invalid_seed");
+    expect(errorOf(parseCloudStart(body({ seed: { kind: "routine_run", sessionId: "not-a-uuid" } }), owner))).toBe("invalid_seed");
+    expect(errorOf(parseCloudStart(body({ seed: { kind: "routine_run", sessionId: OTHER_SESSION }, sessionId: SESSION }), owner))).toBe("invalid_seed");
+  });
 });

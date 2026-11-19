@@ -203,8 +203,9 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
 
 /** The seed a session was started from, read back from its row. Null when the row has none. */
 function storedSeedOf(session: SessionRow): StoredSeed | null {
-  const seed = session.seed as { kind?: unknown; branch?: unknown; storageKey?: unknown } | null;
+  const seed = session.seed as { kind?: unknown; branch?: unknown; storageKey?: unknown; routineSessionId?: unknown } | null;
   if (seed?.kind === "snapshot") return typeof seed.storageKey === "string" ? { kind: "snapshot", storageKey: seed.storageKey } : null;
+  if (seed?.kind === "routine_run") return typeof seed.routineSessionId === "string" ? { kind: "routine_run", routineSessionId: seed.routineSessionId } : null;
   if (!session.git_remote || seed?.kind !== "repo" || typeof seed.branch !== "string") return null;
   return { kind: "repo", gitRemote: session.git_remote, branch: seed.branch };
 }

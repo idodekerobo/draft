@@ -6,10 +6,14 @@ import { capture } from "../exec";
 
 export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null };
 
-/** The seed a cloud session starts from: a GitHub repository, or a folder snapshot already uploaded under `sessionId`. */
+/**
+ * The seed a cloud session starts from: a GitHub repository, a folder snapshot already uploaded under `sessionId`,
+ * or the finished routine run (`sessionId`) that a new chat continues.
+ */
 export type CloudSeedParams =
   | { kind: "repo"; gitRemote: string; branch: string }
-  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string };
+  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
+  | { kind: "routine_run"; sessionId: string };
 
 export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSeedParams };
 
@@ -48,7 +52,12 @@ export async function startCloudLiveSession(params: CloudStartParams, deps: Clou
   // A snapshot names its session in the body. The server checks that the key's session is the same one.
   const { seed } = params;
   const sessionFields = seed.kind === "snapshot" ? { sessionId: seed.sessionId } : {};
-  const seedBody = seed.kind === "repo" ? { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch } : { kind: "snapshot", storageKey: seed.storageKey, folderName: seed.folderName };
+  const seedBody =
+    seed.kind === "repo"
+      ? { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch }
+      : seed.kind === "routine_run"
+        ? { kind: "routine_run", sessionId: seed.sessionId }
+        : { kind: "snapshot", storageKey: seed.storageKey, folderName: seed.folderName };
   try {
     const body = await deps.fetchServerJSON<{ ok: true; session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",

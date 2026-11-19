@@ -61,6 +61,17 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
       }
     },
     setMode: (sessionId, change) => post(`${base}/${sessionId}/mode`, change),
+    continueInChat: async (sessionId) => {
+      const body = await post<{ session: { id: string } }>(base, {
+        runtime: "cloud",
+        harness: "claude",
+        model: null,
+        reasoningEffort: null,
+        network: "restricted",
+        seed: { kind: "routine_run", sessionId },
+      });
+      return body.session.id;
+    },
     stop: async (sessionId, options) => {
       try {
         const result = await apiFetch<{ withdrawn?: Array<{ text: string }> }>(`${base}/${sessionId}/stop`, { method: "POST", body: JSON.stringify(options?.keepQueued ? { keepQueued: true } : {}) });
