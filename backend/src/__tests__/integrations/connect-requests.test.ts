@@ -17,10 +17,10 @@ describe("listIntegrations", () => {
     const by = (provider: string) => list.find((item) => item.provider === provider)!;
     expect(by("slack")).toMatchObject({ status: "connected", connectedByYou: true });
     expect(by("github")).toMatchObject({ status: "connected", connectedByYou: false });
-    expect(by("linear")).toMatchObject({ status: "needs_reconnect", connect: { cli: "draft integrations connect linear" } });
+    expect(by("linear")).toMatchObject({ status: "needs_reconnect", connect: { cli: "draft connections connect linear" } });
     expect(by("granola").status).toBe("not_connected");
     expect(by("fireflies").status).toBe("pending");
-    expect(by("claude_session").connect.cli).toBe("draft integrations connect claude-code");
+    expect(by("claude_session").connect.cli).toBe("draft connections connect claude-code");
     expect(by("linear").triggers.map((trigger) => trigger.event)).toEqual(["linear.issue_created", "linear.issue_completed"]);
   });
 });

@@ -49,7 +49,7 @@ export async function listIntegrations(client: SupabaseClient, workspaceId: stri
       ingests: entry.ingests,
       triggers: ROUTINE_TRIGGERS.filter((trigger) => trigger.provider === entry.provider).map(({ event, label }) => ({ event, label })),
       abilities: entry.abilities,
-      connect: { cli: `draft integrations connect ${entry.cliName}`, mcp: `integrations.connect {"provider":"${entry.provider}"}` },
+      connect: { cli: `draft connections connect ${entry.cliName}`, mcp: `connections.connect {"provider":"${entry.provider}"}` },
     };
   });
 }
@@ -102,7 +102,7 @@ export async function createConnectRequest(
     provider: input.provider,
     url: `${deps.appUrl ?? loadConfig().appUrl}/connect/${token}`,
     expiresAt,
-    message: `Ask the person to open this link and connect ${entry.label}. Only they can use it, once, before it expires. Call integrations.list to see when it is connected.`,
+    message: `Ask the person to open this link and connect ${entry.label}. Only they can use it, once, before it expires. Call connections.list to see when it is connected.`,
   };
 }
 
