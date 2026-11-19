@@ -42,7 +42,7 @@ export function useSessionInputs(api: LiveSessionsApi, sessionId: string, inputs
       const session = client.getQueryData<SessionStreamData>(cacheKey)?.session;
       if (session) track?.("session_message_sent", { live_session_id: sessionId, is_owner: session.mine === true });
       if (input) {
-        client.setQueryData<SessionStreamData>(cacheKey, (data) => (data && !data.inputs.some((i) => i.id === input.id) ? { ...data, inputs: [...data.inputs, input] } : data));
+        client.setQueryData<SessionStreamData>(cacheKey, (data) => (data && !data.inputs.some((i) => i.id === input.id) ? { ...data, inputs: [...data.inputs, input], ...(api.fetchView ? { inputRevision: (data.inputRevision ?? 0) + 1 } : {}) } : data));
         void refresh().catch(() => {});
       } else {
         await refresh();

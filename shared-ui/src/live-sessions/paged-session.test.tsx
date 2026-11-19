@@ -61,3 +61,28 @@ it("a superseded focus request warms its cache without replacing the newer windo
  await t.state().history!.focus(6);await waitFor(()=>expect(screen.getByTestId("seqs").textContent).toBe("6"));
  finishFirst({page:page([5])});await waitFor(()=>expect(t.state().history!.loading).toBe(false));expect(screen.getByTestId("seqs").textContent).toBe("6");
 });
+
+it("a live refresh finishing after older pagination keeps the newly loaded history",async()=>{
+ let finishRefresh!:(response:SessionViewResponse)=>void;
+ const t=setup(async q=>q.after!==undefined?new Promise(resolve=>{finishRefresh=resolve;}):q.before!==undefined?{page:page([10],{hasOlder:false})}:{page:page([100]),snapshot:snapshot()});
+ await screen.findByTestId("seqs");fireEvent.click(screen.getByText("refresh"));await waitFor(()=>expect(finishRefresh).toBeDefined());
+ fireEvent.click(screen.getByText("older"));await waitFor(()=>expect(screen.getByTestId("seqs").textContent).toBe("10,100"));
+ finishRefresh({page:page([200],{through:2000,readThrough:2000}),snapshot:snapshot()});
+ await waitFor(()=>expect(screen.getByTestId("seqs").textContent).toBe("10,100,200"));expect(t.state().history!.hasOlder).toBe(false);
+});
+
+it("an optimistic input arriving during refresh survives its older snapshot and triggers a fresh read",async()=>{
+ let finishRefresh!:(response:SessionViewResponse)=>void;let refreshes=0;
+ const input={id:"input-1",author_user_id:"u",author_name:"User",text:"new message",state:"queued" as const,reason:null,created_at:"",updated_at:"",mine:true};
+ const t=setup(async q=>q.after!==undefined?(++refreshes===1?new Promise(resolve=>{finishRefresh=resolve;}):{page:page([]),snapshot:{...snapshot(),inputs:[input]}}):{page:page([100]),snapshot:snapshot()});
+ await screen.findByTestId("seqs");fireEvent.click(screen.getByText("refresh"));await waitFor(()=>expect(finishRefresh).toBeDefined());
+ t.client.setQueryData(t.state().cacheKey,(data:any)=>({...data,inputs:[input],inputRevision:1}));
+ finishRefresh({page:page([]),snapshot:snapshot()});
+ await waitFor(()=>expect(refreshes).toBe(2));expect(t.state().inputs[0]?.id).toBe(input.id);
+});
+
+it("keeps cached conversation visible and exposes a retryable state refresh error",async()=>{
+ const t=setup(async q=>{if(q.after!==undefined)throw new Error("offline");return{page:page([100]),snapshot:snapshot()};});
+ await screen.findByTestId("seqs");fireEvent.click(screen.getByText("refresh"));
+ await waitFor(()=>expect(t.state().updateError).toBe("Session updates are delayed."));expect(screen.getByTestId("seqs").textContent).toBe("100");
+});

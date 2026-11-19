@@ -62,7 +62,8 @@ function AgentTranscript({ agent }: { agent: SessionAgentSummary }) {
         if (next.page.readThrough <= page.readThrough && next.page.hasNewer) throw new Error("Agent cursor did not advance");
         page = mergeTranscriptPage(page, next.page);
       }
-      return page;
+      const current = client.getQueryData<SessionTranscriptPage>(key);
+      return mergeTranscriptPage(current, page);
     },
     staleTime: 0, refetchInterval: SESSION_SAFETY_POLL_MS,
   });

@@ -593,6 +593,7 @@ function SessionContents({
         </div>
       </header>
       {menu.dialog}
+      {stream.updateError && <p className="ui-muted ui-session__notice" role="status">{stream.updateError} <button type="button" className="ui-link" onClick={() => void refresh()}>Retry</button></p>}
       {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
       <SessionLinks session={session} onOpenSession={onOpenSession} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}

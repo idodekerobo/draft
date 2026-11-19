@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { sessionSignalTopic } from "draft-core/live-sessions";
+import { sessionSignalTopic, splitAuthor } from "draft-core/live-sessions";
 import { useQueryClient, useSuspenseQuery } from "../query";
 import { mergeEvents, patchAuthors } from "./merge-events";
 import { mergeTranscriptPage, transcriptEvents } from "./transcript-pages";
@@ -18,6 +18,8 @@ export interface SessionStreamData {
   page?: SessionTranscriptPage;
   agents?: SessionAgentSummary[];
   approvals?: LiveSessionEvent[];
+  inputRevision?: number;
+  stateNeedsRefresh?: boolean;
 }
 
 export interface SessionStreamState extends SessionStreamData {
@@ -25,6 +27,7 @@ export interface SessionStreamState extends SessionStreamData {
   cacheKey: readonly string[];
   readThrough: number;
   recentEvents: LiveSessionEvent[];
+  updateError?: string | null;
   history?: {
     hasOlder: boolean;
     loading: boolean;
@@ -58,7 +61,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
   const [windowVersion, setWindowVersion] = useState(0);
   const focusKey = (seq: number) => [...key, "window", String(seq)];
   useEffect(() => api.watchConnection?.(setConnected), [api]);
-  const { data, refetch } = useSuspenseQuery({
+  const { data, refetch, error: queryError } = useSuspenseQuery({
     queryKey: key,
     queryFn: async ({ client }): Promise<SessionStreamData> => {
       const previous = client.getQueryData<SessionStreamData>(key);
@@ -68,9 +71,16 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
         let page = mergeTranscriptPage(previous?.page, response.page);
         const snapshot = response.snapshot;
         const makeData = (): SessionStreamData => {
+          const current = client.getQueryData<SessionStreamData>(key);
+          if (current?.page) page = mergeTranscriptPage(current.page, page);
           page = { ...page, events: patchAuthors(page.events, snapshot.authors), dependencies: patchAuthors(page.dependencies, snapshot.authors) };
           const events = previous?.page?.events === page.events && previous.page.dependencies === page.dependencies ? previous.events : transcriptEvents(page);
-          return { session: snapshot.session, viewer: snapshot.viewer, inputs: snapshot.inputs, events, page, agents: snapshot.agents, approvals: snapshot.approvals };
+          const localInputs = current?.inputRevision !== previous?.inputRevision ? (current?.inputs ?? []).filter((input) =>
+            !previous?.inputs.some((old) => old.id === input.id) && !snapshot.inputs.some((fresh) => fresh.id === input.id)
+            && !events.some((event) => event.kind === "user_message" && !event.payload.agent_id && !!splitAuthor(event.payload.text ?? "").inputRef && input.id.startsWith(splitAuthor(event.payload.text ?? "").inputRef!))) : [];
+          return { session: snapshot.session, viewer: snapshot.viewer, inputs: [...snapshot.inputs, ...localInputs], events, page,
+            agents: snapshot.agents, approvals: snapshot.approvals, inputRevision: current?.inputRevision, stateNeedsRefresh: localInputs.length > 0 };
+
         };
         syncSessionIntoLists(client, snapshot.session);
         while (page.hasNewer && active.current) {
@@ -101,7 +111,11 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
     staleTime: 0,
     refetchInterval: sessionPollMs(connected),
   });
-  useSignals(api.watchSignals, sessionSignalTopic(sessionId), async () => void (await refetch({ cancelRefetch: false })));
+  const refresh = useCallback(async () => {
+    const response = await refetch({ cancelRefetch: false });
+    if (response.data?.stateNeedsRefresh) await refetch({ cancelRefetch: false });
+  }, [refetch]);
+  useSignals(api.watchSignals, sessionSignalTopic(sessionId), refresh);
   const focused = windowSeq === null ? undefined : client.getQueryData<SessionTranscriptPage>(focusKey(windowSeq));
   const visible = focused ?? data.page;
   const loadOlder = async () => {
@@ -154,7 +168,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
     } finally { if (active.current && request === focusRequest.current) setLoading(false); }
   };
   const events = useMemo(() => focused ? transcriptEvents(focused) : data.events, [focused, data.events, windowVersion]);
-  return { ...data, events, cacheKey: key, recentEvents: data.events, readThrough: data.page?.readThrough ?? data.events.at(-1)?.seq ?? 0,
-    refresh: async () => void (await refetch({ cancelRefetch: false })),
+  return { ...data, events, updateError: queryError ? "Session updates are delayed." : null, cacheKey: key, recentEvents: data.events, readThrough: data.page?.readThrough ?? data.events.at(-1)?.seq ?? 0,
+    refresh,
     history: api.fetchView ? { before: visible?.before ?? null, hasOlder: visible?.hasOlder ?? false, loading, error, failedTarget, focused: windowSeq !== null, loadOlder, focus, latest: () => { focusRequest.current++; setWindowSeq(null); setError(null); setFailedTarget(null); setLoading(false); } } : undefined };
 }
