@@ -110,8 +110,8 @@ export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "people.add_identity", limits: { maxPerRun: 10 } },
 ];
 
-/** Where a person's call came in: an MCP client, the CLI, or Draft's own app. Only the first two are logged as agent queries. */
-export type UserCallSurface = "mcp" | "cli" | "app";
+/** Where a call came in. `app` is an older app with an unknown surface; only CLI/MCP count as external agent queries. */
+export type UserCallSurface = "mcp" | "cli" | "web_app" | "desktop_app" | "app";
 
 /** Where a call comes from: a signed-in person through one surface, or an agent run. */
 export type CallerOrigin =

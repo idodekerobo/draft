@@ -1,3 +1,4 @@
+import { isAgentRequest } from "../observability/is-agent-request";
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
@@ -78,10 +79,11 @@ export const GET = withAuth<SessionsRequest>(async (req, caller) => {
     })),
   };
   const responseText = JSON.stringify(body);
-  void recordAgentQueryLog(serviceClient, {
+  if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
     command: "sessions.list",
+    status: "ok",
     argsJson: { provider, user: userEmail, since },
     resultBytes: Buffer.byteLength(responseText, "utf8"),
   });
@@ -203,10 +205,11 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
     if (truncatedBytes > 0) body.truncated_bytes = truncatedBytes;
 
     const responseText = JSON.stringify(body);
-    void recordAgentQueryLog(serviceClient, {
+    if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
       userId: caller.userId,
       command: "sessions.read",
+      status: "ok",
       argsJson: { sessionId: req.params.sessionId, transcript: true, grep, context, maxBytes },
       resultBytes: Buffer.byteLength(responseText, "utf8"),
     });
@@ -227,10 +230,11 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
     .maybeSingle<Pick<SourceItemRow, "content_markdown" | "occurred_at" | "metadata_json" | "visibility" | "owner_user_id">>();
   if (error) return errorResponse("summary_lookup_failed", 500, error, req.params.id);
   if (!data) {
-    void recordAgentQueryLog(serviceClient, {
+    if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
       userId: caller.userId,
       command: "sessions.read",
+      status: "ok",
       argsJson: { sessionId: req.params.sessionId, transcript: false },
       resultBytes: 0,
     });
@@ -238,7 +242,7 @@ export const READ = withAuth<SessionRequest>(async (req, caller) => {
   }
 
   const responseBody = { summary: data.content_markdown, occurred_at: data.occurred_at };
-  void recordAgentQueryLog(serviceClient, {
+  if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
     command: "sessions.read",

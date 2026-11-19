@@ -372,11 +372,11 @@ describe("routines.list, runs and run from a run", () => {
   it("runs a routine the owner can see, and refuses one that only someone else can see", async () => {
     seed("scheduled_tasks", [routineRow(PRIVATE, PARENT, { visibility: "private" }), routineRow(THEIRS, PARENT, { visibility: "private", created_by_user_id: STRANGER })]);
     expect((await call("routines.run", runCaller(runOf(RUN_1, P)), { taskId: PRIVATE })).status).toBe("ok");
-    expect(runNow).toHaveBeenCalledWith(WS, PRIVATE, OWNER);
+    expect(runNow).toHaveBeenCalledWith(WS, PRIVATE, OWNER, { attribution: { via: "run" } });
     // The service hides another person's private routine, as if it did not exist.
     runNow.mockRejectedValueOnce(new Error("not_found"));
     refusedWith(await call("routines.run", runCaller(runOf(RUN_2, P)), { taskId: THEIRS }), "not_found", "Routine not found.");
-    expect(runNow).toHaveBeenLastCalledWith(WS, THEIRS, OWNER);
+    expect(runNow).toHaveBeenLastCalledWith(WS, THEIRS, OWNER, { attribution: { via: "run" } });
   });
 
   it("refuses a run that starts its own routine again", async () => {

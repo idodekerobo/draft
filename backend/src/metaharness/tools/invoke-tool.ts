@@ -45,8 +45,18 @@ const MAX_AUDITED_ARGUMENT_BYTES = 10_000;
 
 function auditable(value: unknown): Record<string, unknown> {
   const record = typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : { value };
-  const bytes = Buffer.byteLength(JSON.stringify(record) ?? "");
-  return bytes > MAX_AUDITED_ARGUMENT_BYTES ? { truncated: true, bytes } : record;
+  const redact = (value: unknown, depth = 0): unknown => {
+    if (depth > 8) return { truncated: true };
+    if (Array.isArray(value)) return value.map((item) => redact(item, depth + 1));
+    if (value !== null && typeof value === "object") return Object.fromEntries(
+      Object.entries(value).filter(([key]) => !/(?:password|secret|token|credential|authorization|api.?key|auth_json|prompt|content|message|body|text|title|instructions)/i.test(key))
+        .map(([key, item]) => [key, redact(item, depth + 1)]),
+    );
+    return value;
+  };
+  const safe = redact(record) as Record<string, unknown>;
+  const bytes = Buffer.byteLength(JSON.stringify(safe) ?? "");
+  return bytes > MAX_AUDITED_ARGUMENT_BYTES ? { truncated: true, bytes } : safe;
 }
 
 /**
@@ -84,7 +94,7 @@ export async function invokeTool(
   };
 
   const deny = (code: ToolDenialCode, message: string, detail?: AuthorizationDenial) =>
-    finish({ status: "denied", code, message, ...(detail ? { detail } : {}) }, { arguments: rawArguments, code });
+    finish({ status: "denied", code, message, ...(detail ? { detail } : {}) }, { arguments: {}, code });
 
   const tool = deps.registry.get(toolName);
   if (!tool) return deny("unknown_tool", `Unknown tool: ${toolName}`);
@@ -105,7 +115,7 @@ export async function invokeTool(
 
   const parsed = tool.parse(rawArguments);
   if (!parsed.ok) {
-    return finish({ status: "invalid", issues: parsed.issues }, { arguments: rawArguments, summary: parsed.issues.join("; ") });
+    return finish({ status: "invalid", issues: parsed.issues }, { arguments: {}, code: "invalid_arguments" });
   }
 
   const limitReason = tool.checkLimits(limits, parsed.value);

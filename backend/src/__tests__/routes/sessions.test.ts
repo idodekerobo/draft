@@ -163,6 +163,15 @@ function readRequest(sessionId: string, query = ""): Request {
 }
 
 describe("GET /workspaces/:id/sessions", () => {
+  it("excludes desktop and browser reads from external usage", async () => {
+    for (const headers of [{ "x-draft-client": "desktop" }, { origin: "https://draft.example" }]) {
+      const request = listRequest();
+      for (const [key, value] of Object.entries(headers)) if (value) request.headers.set(key, value);
+      expect((await routeModule.GET(request as never)).status).toBe(200);
+    }
+    expect(state.queryLog).toEqual([]);
+  });
+
   it("lists sessions with verified user display and has_summary derived from summary_status", async () => {
     state.sessions.push({
       id: "s1", workspace_id: workspaceId, provider: "claude-code-session", user_id: "user-1", contributor_id: null,

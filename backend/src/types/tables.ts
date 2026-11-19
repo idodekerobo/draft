@@ -197,7 +197,7 @@ export interface ScheduledTaskRow {
   claimed_occurrence_at: string | null;
   run_at: string | null;
   fired_at: string | null;
-  created_via: "app" | "cli" | "mcp" | "run" | "system";
+  created_via: "app" | "web_app" | "desktop_app" | "cli" | "mcp" | "run" | "system";
   created_by_run_id: string | null;
   trigger_depth: number;
   visibility: "private" | "shared";

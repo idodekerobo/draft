@@ -54,7 +54,7 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string; runRoutine?: (id: string) => Promise<RoutineRunOutcome> } = {}) {
+function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string; track?: import("../analytics/events").TrackFn; runRoutine?: (id: string) => Promise<RoutineRunOutcome> } = {}) {
   const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
@@ -68,7 +68,7 @@ function setup(options: { connectedProviders?: RoutinesResponse["connectedProvid
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <DraftApiProvider api={api}>
+      <DraftApiProvider api={api} track={options.track}>
         <Suspense fallback="loading">
           <RoutinesPanel workspaceId="ws-1" onReconnect={options.onReconnect} onOpenRun={onOpenRun} renderAgentSetup={options.renderAgentSetup} initialOpenId={options.initialOpenId} />
         </Suspense>
@@ -131,6 +131,14 @@ describe("run history", () => {
 });
 
 describe("creating a routine", () => {
+  it("reports setup once when New routine opens", async () => {
+    const track = mock((_event: string, _props: unknown) => {});
+    setup({ track: track as never });
+    fireEvent.click(await screen.findByRole("button", { name: "New routine" }));
+    await screen.findByRole("dialog");
+    expect(track.mock.calls).toEqual([["routine_setup_started", {}]]);
+  });
+
   it("sends the request with the chosen schedule and adds the routine to the list", async () => {
     const { createRoutine } = setup({ routines: [] });
     await ready();

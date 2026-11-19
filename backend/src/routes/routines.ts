@@ -2,7 +2,7 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
-import { isAgentRequest } from "../observability/is-agent-request";
+import { callSurface, isAgentRequest } from "../observability/is-agent-request";
 import { recordAgentQueryLog } from "../observability/record-query-log";
 import { routineAgentProblem, routineAgentStatuses } from "../routines/agent-status";
 import { canEditSchedules } from "../routines/permissions";
@@ -55,6 +55,7 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
       workspaceId: req.params.id,
       userId: caller.userId,
       command: "routines.list",
+      status: "ok",
       argsJson: {},
       resultBytes: Buffer.byteLength(body, "utf8"),
     });
@@ -89,7 +90,7 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
     const harness = validation.patch.agent?.harness;
     const agentProblem = harness && harness !== current?.harness ? await routineAgentProblem(serviceClient, workspaceId, harness) : null;
     if (agentProblem) return Response.json({ error: agentProblem.code, message: agentProblem.message, field: "harness" }, { status: 409 });
-    return Response.json(await updateRoutine(routineTask, validation.patch, caller.userId));
+    return Response.json(await updateRoutine(routineTask, validation.patch, caller.userId, new Date(), { via: callSurface(req) }));
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
       if (error.code === "not_found") return Response.json({ error: "not_found" }, { status: 404 });
@@ -110,7 +111,7 @@ export const DELETE = withAuth<ScheduleRequest>(async (req, caller) => {
     if (!routineTask) return Response.json({ error: "not_found" }, { status: 404 });
     // Only a routine that a person made can be deleted. The built-in ones are part of the product.
     if (routineTask.task.task_type !== "agent_routine") return Response.json({ error: "field_not_editable" }, { status: 400 });
-    await deleteRoutine(routineTask, caller.userId);
+    await deleteRoutine(routineTask, caller.userId, new Date(), { via: callSurface(req) });
     return new Response(null, { status: 204 });
   } catch (error) {
     if (error instanceof ScheduleServiceError && error.code === "not_found") {
@@ -137,7 +138,7 @@ export const POST = withAuth<SchedulesRequest>(async (req, caller) => {
   try {
     const agentProblem = await routineAgentProblem(serviceClient, workspaceId, validation.config.harness);
     if (agentProblem) return Response.json({ error: agentProblem.code, message: agentProblem.message, field: "harness" }, { status: 409 });
-    return Response.json(await createAgentRoutine(workspaceId, personCreator(caller.userId, "app"), validation), { status: 201 });
+    return Response.json(await createAgentRoutine(workspaceId, personCreator(caller.userId, callSurface(req)), validation), { status: 201 });
   } catch (error) {
     if (error instanceof ScheduleServiceError) {
       if (error.code === "forbidden") return Response.json({ error: "forbidden" }, { status: 403 });
@@ -170,7 +171,7 @@ export const RUN = withAuth<RunRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(workspaceId, caller.userId);
   if (denied) return denied;
   try {
-    const outcome = await runRoutineNow(workspaceId, taskId, caller.userId);
+    const outcome = await runRoutineNow(workspaceId, taskId, caller.userId, { attribution: { via: callSurface(req) } });
     if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return Response.json({ error: "codex_login_busy", outcome }, { status: 409 });
     if (outcome.status === "failed") return Response.json({ error: "run_failed", outcome }, { status: 502 });
     return Response.json({ outcome }, { status: 202 });

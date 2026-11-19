@@ -79,7 +79,7 @@ describe("MCP tools that go through the gateway", () => {
   it("registers the tools that run through the gateway, and no run-only tool", async () => {
     const result = await rpc("tools/list");
     const names = result.tools!.map((tool) => tool.name).sort();
-    expect(names).toEqual(["activity.list", "context.export", "context.list", "context.read", "integrations.connect", "integrations.list", "people.add_identity", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "routines.create", "routines.delete", "routines.list", "routines.options", "routines.run", "routines.runs", "routines.update", "skills.add", "skills.list", "skills.read", "slack.list_channels", "slack.post_message", "slack.read_channel", "sources.read", "sources.search"]);
+    expect(names).toEqual(["activity.list", "context.export", "context.list", "context.read", "integrations.connect", "integrations.list", "people.add_identity", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "routines.create", "routines.delete", "routines.list", "routines.options", "routines.run", "routines.runs", "routines.update", "sessions.list", "sessions.read", "skills.add", "skills.list", "skills.read", "slack.list_channels", "slack.post_message", "slack.read_channel", "sources.list", "sources.read", "sources.search"]);
   });
 
   it("context.read returns the shape clients already read, and audits it as an MCP call by this person", async () => {
@@ -96,6 +96,14 @@ describe("MCP tools that go through the gateway", () => {
       arguments: { dimensions: ["memory"] },
     });
     expect(audits[0]!.resultBytes).toBeGreaterThan(0);
+  });
+
+  it("records a write-scope refusal as one denied call without retaining the prompt", async () => {
+    const result = await call("routines.create", { title: "Check PR", prompt: "private prompt", harness: "claude", when: { in: "2h" } });
+    expect(result.isError).toBe(true);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ toolName: "routines.create", status: "denied", errorCode: "insufficient_scope", arguments: {} });
+    expect(JSON.stringify(audits)).not.toContain("private prompt");
   });
 
   it("context.list lists the dimensions", async () => {

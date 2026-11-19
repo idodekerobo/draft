@@ -232,13 +232,15 @@ function SessionContents({
   const viewReported = useRef(false);
   useEffect(() => {
     if (viewReported.current) return;
+    if (session.session_type === "routine") {
+      if (session.status !== "ended") return;
+      viewReported.current = true;
+      track?.("routine_result_viewed", { live_session_id: sessionId });
+      return;
+    }
     viewReported.current = true;
-    // Routine runs are not shared sessions: counting them would inflate the view signal.
-    if (session.session_type === "routine") return;
     track?.("session_viewed", { live_session_id: sessionId, is_owner: session.mine === true, entry });
-    // Once per open: the view remounts for another session, and a poll never gets here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [session.session_type, session.status, session.mine, sessionId, track, entry]);
   const inputs = useSessionInputs(api, sessionId, waiting, refresh, track, stream.cacheKey);
   const { scrollRef, contentRef, scrollToBottom, stopScroll, isAtBottom, state: scrollState } = useStickToBottom({
     initial: "instant",

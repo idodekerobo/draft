@@ -3,7 +3,6 @@ import { z } from "zod";
 import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isHarnessId } from "draft-core/harnesses";
-import { isLoggedCommand } from "../../observability/logged-commands";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../../observability/record-query-log";
 import type { AgentRunRow } from "../../types/tables";
 import type { ToolCallRecord } from "../tools/invoke-tool";
@@ -149,15 +148,18 @@ export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord
   return async (record) => {
     const { origin } = record.caller;
     if (origin.kind === "person") {
-      if (origin.via === "app") return;
+      if (origin.via !== "cli" && origin.via !== "mcp") return;
       const command = origin.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
-      if (!isLoggedCommand(command)) return;
       await recordAgentQueryLog(client, {
         workspaceId: record.caller.workspaceId,
         userId: origin.userId,
         command: command as AgentQueryLogCommand,
         argsJson: record.arguments,
         resultBytes: record.resultBytes,
+        surface: origin.via,
+        status: record.status,
+        durationMs: record.durationMs,
+        errorCode: record.errorCode,
       });
       return;
     }

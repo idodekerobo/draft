@@ -37,6 +37,14 @@ describe("agent routines", () => {
     expect(routine).toMatchObject({ taskType: "agent_routine", kind: "recurring", title: "Weekly digest", scheduleDescription: "Daily at 9:00 AM", agent: { prompt: "Summarize the week.", lastRun: null } });
   });
 
+  it("records web and desktop as one creation surface and preserves legacy app attribution", async () => {
+    for (const via of ["web_app", "desktop_app", "app", "cli", "mcp"] as const) {
+      await createAgentRoutine("ws-1", personCreator("user-1", via), { config, when: daily }, NOW);
+      expect(db.tables.scheduled_tasks!.at(-1)).toMatchObject({ created_via: via });
+      expect(db.tables.scheduled_tasks!.at(-1)).not.toHaveProperty("created_platform");
+    }
+  });
+
   it("records who made the routine, through which surface, and whether an agent made it", async () => {
     const routine = await createAgentRoutine("ws-1", { ...personCreator("user-1", "mcp") }, { config, when: daily }, NOW);
     expect(routine).toMatchObject({ createdVia: "mcp", madeByAgent: true, createdByRunId: null, visibility: "shared" });

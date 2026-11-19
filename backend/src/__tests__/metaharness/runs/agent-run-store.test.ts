@@ -116,7 +116,7 @@ describe("audit rows", () => {
     const { client, inserts } = fakeClient();
     await auditToDatabase(client)({ ...base, caller: user("mcp") } as ToolCallRecord);
     expect(inserts).toEqual([
-      { table: "agent_query_log", row: { workspace_id: "22222222-2222-4222-8222-222222222222", user_id: "33333333-3333-4333-8333-333333333333", command: "mcp.context.read", args_json: { dimensions: ["memory"] }, result_bytes: 42 } },
+      { table: "agent_query_log", row: { workspace_id: "22222222-2222-4222-8222-222222222222", user_id: "33333333-3333-4333-8333-333333333333", command: "mcp.context.read", surface: "mcp", status: "ok", duration_ms: 3, error_code: null, args_json: { dimensions: ["memory"] }, result_bytes: 42 } },
     ]);
   });
 

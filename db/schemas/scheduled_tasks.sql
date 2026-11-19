@@ -29,7 +29,7 @@ create table scheduled_tasks (
   -- Who made it. created_by_user_id is always the human owner. 'cli'/'mcp' may be a person or an
   -- outside agent acting for them; 'run' is a Draft agent run; 'system' is a built-in task.
   created_via              text not null default 'app'
-                              check (created_via in ('app', 'cli', 'mcp', 'run', 'system')),
+                              check (created_via in ('app', 'web_app', 'desktop_app', 'cli', 'mcp', 'run', 'system')),
   created_by_run_id        uuid,
   -- 0 for people; a run-made routine is its parent routine's depth + 1.
   trigger_depth            integer not null default 0 check (trigger_depth >= 0),

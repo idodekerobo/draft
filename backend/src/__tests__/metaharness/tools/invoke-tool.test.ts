@@ -119,6 +119,14 @@ describe("invokeTool", () => {
     expect(audits[0].arguments).toEqual({ path: "a.md", bytes: 11 });
   });
 
+  it("does not persist raw invalid or unauthorized credential arguments", async () => {
+    const { deps, audits } = setup();
+    await invokeTool(deps, runWith([]), "context.write", { password: "secret", auth_json: "secret" });
+    await invokeTool(deps, runWith([{ tool: "context.read" }]), "context.read", { path: 5, token: "secret" });
+    expect(audits.map((audit) => audit.arguments)).toEqual([{}, {}]);
+    expect(JSON.stringify(audits)).not.toContain("secret");
+  });
+
   it("passes a conflict back to the agent and audits it as a conflict", async () => {
     const { deps, audits } = setup();
     const result = await invokeTool(deps, runWith([{ tool: "context.write" }]), "context.write", { path: "stale.md", content: "x" });

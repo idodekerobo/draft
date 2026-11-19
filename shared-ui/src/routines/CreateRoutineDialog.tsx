@@ -1,7 +1,8 @@
 "use client";
 
 import type { HarnessId } from "draft-core/harnesses";
-import { useId, useMemo, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useId, useMemo, useState, type ReactNode, type RefObject } from "react";
+import { useDraftTrack } from "../query/api";
 import { AgentFields, isDisconnected, type AgentValue } from "./AgentFields";
 import { defaultAgent, rememberAgent } from "./agent-default";
 import { agentLabel } from "./agent-label";
@@ -29,6 +30,11 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
   /** The button that opened the dialog. Focus returns to it on close. */
   returnFocusTo?: RefObject<HTMLElement | null>;
 }) {
+  const track = useDraftTrack();
+  const reported = useRef(false);
+  useEffect(() => {
+    if (!reported.current) { reported.current = true; track("routine_setup_started", {}); }
+  }, [track]);
   const ids = useId();
   const titleId = `${ids}-title`;
   const [agent, setAgent] = useState<AgentValue>(() => ({ title: "", prompt: "", ...defaultAgent(agents) }));

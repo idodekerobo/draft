@@ -20,7 +20,7 @@ export function createIntegrationTools(client: SupabaseClient) {
     description: "Start connecting a provider. Answers with a link for the person to open: they sign in or enter the key there, so it never passes through you. Ask them before calling. Call integrations.list afterwards to see when it is connected.",
     handler: async ({ caller, input }) => {
       const user = requireUser(caller, "integrations.connect");
-      const result = await createConnectRequest(client, { workspaceId: user.workspaceId, userId: user.userId, provider: input.provider, via: user.via === "app" ? "http" : user.via });
+      const result = await createConnectRequest(client, { workspaceId: user.workspaceId, userId: user.userId, provider: input.provider, via: user.via === "cli" || user.via === "mcp" ? user.via : "http" });
       if (result.status === "too_many_requests") return refuse("too_many_requests", "Too many open connect links. Let the open ones expire (15 minutes) and try again.");
       return { status: "ok", output: result };
     },

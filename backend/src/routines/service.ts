@@ -1,3 +1,4 @@
+import { captureProductEvent, type RoutineAttribution } from "../observability/product-analytics";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ROUTINE_EVENT_NAMES, describeRoutineTriggers, routineProviders, type RoutineEventName, type RoutineListFilter, type RoutineWhen } from "draft-core/routines";
@@ -462,6 +463,7 @@ export async function updateRoutine(
   patch: SchedulePatch,
   userId: string,
   now: Date = new Date(),
+  attribution: RoutineAttribution = {},
 ): Promise<Routine> {
   if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
   const changes: Partial<ScheduledTaskRow> = {};
@@ -538,13 +540,17 @@ export async function updateRoutine(
     }),
   );
 
+  await captureProductEvent(serviceClient, "routine_updated", {
+    userId, workspaceId: task.workspace_id, key: `${task.id}:${(data as ScheduledTaskRow).updated_at}`,
+    properties: { routine_id: task.id, source: attribution.via, task_type: task.task_type },
+  });
   const known = new Map(connection ? [[connection.id, connection]] : []);
   const [routine] = await buildRoutines(task.workspace_id, [data as ScheduledTaskRow], known);
   return routine!;
 }
 
 /** Hides the routine and stops its runs. The row stays, because its past runs point at it. */
-export async function deleteRoutine({ task }: RoutineTask, userId: string, now: Date = new Date()): Promise<void> {
+export async function deleteRoutine({ task }: RoutineTask, userId: string, now: Date = new Date(), attribution: RoutineAttribution = {}): Promise<void> {
   if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
   const { data, error } = await serviceClient
     .from("scheduled_tasks")
@@ -557,6 +563,10 @@ export async function deleteRoutine({ task }: RoutineTask, userId: string, now: 
   if (error) throw error;
   if (!data) throw new ScheduleServiceError("not_found");
 
+  await captureProductEvent(serviceClient, "routine_deleted", {
+    userId, workspaceId: task.workspace_id, key: `${task.id}:${now.toISOString()}`,
+    properties: { routine_id: task.id, source: attribution.via, task_type: task.task_type },
+  });
   console.log(JSON.stringify({ event: "schedule_deleted", workspaceId: task.workspace_id, taskId: task.id, userId }));
 }
 
@@ -570,6 +580,7 @@ export interface RunNowDeps {
   client?: SupabaseClient;
   enqueue?: typeof enqueueEvent;
   drain?: () => Promise<void>;
+  attribution?: RoutineAttribution;
 }
 
 interface RunNowScope {
@@ -625,6 +636,10 @@ export async function runRoutineNow(workspaceId: string, taskId: string, userId:
   }
   if (!eventId) return failRunNow(scope, "event_enqueue_failed", "The run request was not stored", { detail: { duplicate: true } });
 
+  await captureProductEvent(client, "routine_run_requested", {
+    userId, workspaceId, key: eventId,
+    properties: { routine_id: taskId, start_reason: "manual", source: deps.attribution?.via },
+  });
   try {
     await (deps.drain ?? (() => drainEventInbox()))();
   } catch (error) {
@@ -774,6 +789,13 @@ export async function createAgentRoutine(
     throw error;
   }
 
+  const created = data as ScheduledTaskRow;
+  await captureProductEvent(serviceClient, "routine_created", {
+    userId: creator.userId, workspaceId, key: created.id, timestamp: created.created_at,
+    properties: { routine_id: created.id, source: creator.via, creator_run_id: creator.runId,
+      harness: input.config.harness, schedule_kind: created.schedule_kind, visibility: creator.visibility,
+      on_schedule: input.config.onSchedule !== false, event_trigger_count: input.config.events?.length ?? 0 },
+  });
   const [routine] = await buildRoutines(workspaceId, [data as ScheduledTaskRow]);
   return routine!;
 }

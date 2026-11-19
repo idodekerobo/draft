@@ -92,6 +92,13 @@ function searchRequest(query: string): Request {
 }
 
 describe("GET /workspaces/:id/sessions/search", () => {
+  it("excludes web app search from external usage", async () => {
+    const request = searchRequest("?q=migration");
+    request.headers.set("x-draft-client", "web");
+    expect((await routeModule.GET(request as never)).status).toBe(200);
+    expect(state.queryLog).toEqual([]);
+  });
+
   it("requires q", async () => {
     const response = await routeModule.GET(searchRequest("") as never);
     expect(response.status).toBe(400);

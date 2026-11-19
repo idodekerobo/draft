@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { TrackFn } from "../analytics/events";
 import type { SynthesisRunsPage } from "../activity/ActivityList";
 import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "../routines/types";
 
@@ -22,8 +23,11 @@ export interface DraftApi {
 
 const DraftApiContext = createContext<DraftApi | null>(null);
 
-export function DraftApiProvider({ api, children }: { api: DraftApi; children: ReactNode }) {
-  return <DraftApiContext.Provider value={api}>{children}</DraftApiContext.Provider>;
+const DraftTrackContext = createContext<TrackFn>(() => {});
+export const useDraftTrack = () => useContext(DraftTrackContext);
+
+export function DraftApiProvider({ api, children, track }: { api: DraftApi; children: ReactNode; track?: TrackFn }) {
+  return <DraftTrackContext.Provider value={track ?? (() => {})}><DraftApiContext.Provider value={api}>{children}</DraftApiContext.Provider></DraftTrackContext.Provider>;
 }
 
 export function useDraftApi(): DraftApi {

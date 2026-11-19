@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
 import { ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
 import type { AgentRunSpec } from "draft-core/run-spec";
-import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
+import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller, type UserCallSurface } from "draft-core/tools";
 import { z } from "zod";
 import { recordError } from "../../../errors/record-error";
 import { countRunToolCalls } from "../../../people/limits";
@@ -21,7 +21,7 @@ const UUID = z.string().uuid();
 
 /** Who a tool call acts for. A run acts for its owner, the person it works for. A run with no owner works for the workspace. */
 type RoutineCaller =
-  | { type: "user"; userId: string; workspaceId: string; via: "app" | "cli" | "mcp" }
+  | { type: "user"; userId: string; workspaceId: string; via: UserCallSurface }
   | { type: "run"; run: AgentRunSpec; userId: string | null; workspaceId: string };
 
 function resolveRoutineCaller(caller: ToolCaller): RoutineCaller {
@@ -296,7 +296,7 @@ export function createRoutineTools(client: SupabaseClient) {
             if (refusal) return refusal;
           }
         }
-        const updated = await svc.updateRoutine(task, patch.patch, owner, now);
+        const updated = await svc.updateRoutine(task, patch.patch, owner, now, { via: actor.type === "run" ? "run" : actor.via });
         return { status: "ok", output: { routine: (await savedRoutine(actor.workspaceId, owner, input.taskId)) ?? updated } };
       } catch (error) { return runError(error, actor.workspaceId, "routines.update", scope.scheduledTaskId, agentRunOf(actor)); }
     },
@@ -316,7 +316,7 @@ export function createRoutineTools(client: SupabaseClient) {
         if (!task || task.task.task_type !== "agent_routine") return refuse("not_found", "Routine not found.");
         scope.scheduledTaskId = task.task.id;
         if (actor.type === "run" && !(await runMayManage(client, actor.run, task.task))) return refuse("not_permitted", RUN_CHANGE_SCOPE);
-        await svc.deleteRoutine(task, owner);
+        await svc.deleteRoutine(task, owner, new Date(), { via: actor.type === "run" ? "run" : actor.via });
         return { status: "ok", output: { deleted: true } };
       } catch (error) { return runError(error, actor.workspaceId, "routines.delete", scope.scheduledTaskId, agentRunOf(actor)); }
     },
@@ -341,7 +341,7 @@ export function createRoutineTools(client: SupabaseClient) {
             return refuse("limit_reached", `This run has already started ${max} routines, the most one run can.`);
           }
         }
-        const outcome = await svc.runRoutineNow(actor.workspaceId, input.taskId, owner);
+        const outcome = await svc.runRoutineNow(actor.workspaceId, input.taskId, owner, { attribution: { via: actor.type === "run" ? "run" : actor.via } });
         if (outcome.status === "queued") return { status: "ok", output: { sessionId: null, queued: true, message: "Queued. It runs when the current run ends." } };
         if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return refuse("codex_login_busy", "Another Codex run is using the login. Try again when it finishes.");
         if (outcome.status === "failed") return refuse(outcome.code, "The routine could not start.");

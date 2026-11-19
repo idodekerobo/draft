@@ -1,3 +1,4 @@
+import { isAgentRequest } from "../observability/is-agent-request";
 // sessions-search.ts — GET /workspaces/:id/sessions/search?q=<pattern>
 // Searches session summaries (source_items); never returns full content_markdown.
 
@@ -106,10 +107,11 @@ export const GET = withAuth<SessionsSearchRequest>(async (req, caller) => {
   };
 
   const responseText = JSON.stringify(body);
-  void recordAgentQueryLog(serviceClient, {
+  if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
     command: "sessions.search",
+    status: "ok",
     argsJson: { q, provider, since, user: userEmail, limit, offset },
     resultBytes: Buffer.byteLength(responseText, "utf8"),
   });
