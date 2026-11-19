@@ -34,6 +34,8 @@ export type SharedAnalyticsEvent =
   | { event: "integration_connected";      props: { source: string } }
   | { event: "integration_disconnected";   props: { source: string } }
   | { event: "integration_channels_updated"; props: { source: string } }
+  | { event: "routine_setup_started"; props: Record<string, never> }
+  | { event: "routine_result_viewed"; props: { live_session_id: string } }
   | { event: "session_viewed";             props: { live_session_id: string; is_owner: boolean; entry: SessionEntry } }
   | { event: "session_started";            props: { live_session_id: string; harness: HarnessId; model: string; effort: string } }
   | { event: "session_message_sent";       props: { live_session_id: string; is_owner: boolean } };

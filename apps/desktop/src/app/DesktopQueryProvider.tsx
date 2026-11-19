@@ -2,6 +2,7 @@ import { DraftQueryProvider, SessionViewStateProvider, toRoutineError, useWorksp
 import { type ReactNode } from "react";
 import { useUserIdentity } from "./identity/UserIdentityContext";
 import { watchSignals } from "./liveSessionsApi";
+import { useAnalytics } from "./analytics/AnalyticsContext";
 import { rpc } from "./rpc";
 
 const api: DraftApi = {
@@ -44,9 +45,10 @@ function WorkspaceDataSignals() {
 
 export function DesktopQueryProvider({ children }: { children: ReactNode }) {
   const identity = useUserIdentity();
+  const { track } = useAnalytics();
   const scope = `${identity.signedIn}:${identity.workspaceId ?? ""}`;
   return (
-    <DraftQueryProvider api={api}>
+    <DraftQueryProvider api={api} track={track}>
       <SessionViewStateProvider scope={scope}>
         <WorkspaceDataSignals />
         {children}

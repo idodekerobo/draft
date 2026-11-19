@@ -11,9 +11,11 @@ import {
   type SynthesisRunsPage,
 } from "draft-shared-ui";
 import type { ReactNode } from "react";
+import { useAnalytics } from "./analytics/AnalyticsProvider";
 import { apiFetch, ApiError } from "@/lib/api";
 
 export function WebQueryProvider({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
+  const { track } = useAnalytics();
   const api: DraftApi = {
     getRuns: (before) => apiFetch<SynthesisRunsPage>(`/workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`),
     getRoutines: () => apiFetch<RoutinesResponse>(`/workspaces/${workspaceId}/schedules`),
@@ -57,5 +59,5 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
     getRoutineGithubRepos: async () => (await apiFetch<{ repos: string[] }>(`/workspaces/${workspaceId}/routine-repositories`)).repos,
     getRoutineRuns: async (id, before) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`)).runs,
   };
-  return <DraftQueryProvider api={api}>{children}</DraftQueryProvider>;
+  return <DraftQueryProvider api={api} track={track}>{children}</DraftQueryProvider>;
 }

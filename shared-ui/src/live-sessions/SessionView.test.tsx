@@ -684,6 +684,15 @@ describe("SessionView view event", () => {
     expect(track.mock.calls[0]![0]).toBe("session_viewed");
   });
 
+  it("reports an ended routine result once without counting a multiplayer view", async () => {
+    const track = mock((_event: string, _props: unknown) => {});
+    const endedApi: LiveSessionsApi = { ...routineApi, fetchEvents: async () => ({ viewer, session: { ...routineSession, status: "ended" }, events: [], inputs: [] }) };
+    render(<SessionView api={endedApi} sessionId="s1" track={track as never} />);
+    await screen.findByRole("heading", { name: "Weekly digest" });
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track.mock.calls[0]).toEqual(["routine_result_viewed", { live_session_id: "s1" }]);
+  });
+
   it("does not report a routine run, even when the page passes a tracker", async () => {
     const track = mock((_event: string, _props: unknown) => {});
     render(<SessionView api={routineApi} sessionId="s1" track={track as never} />);
