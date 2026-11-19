@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HostConfigError, parseHostConfig, parseSeed } from "../../sandbox/host/config";
+import { HostConfigError, isVolumeHome, parseHostConfig, parseSeed } from "../../sandbox/host/config";
 
 const env = {
   DRAFT_API_BASE_URL: "https://api.example.test/",
@@ -84,5 +84,26 @@ describe("parseSeed", () => {
     const raw = JSON.stringify({ kind: "repo", gitRemote: `https://x-access-token:${secret}@github.com/acme/app.git with spaces`, branch: "main" });
     expect(messageOf(() => parseSeed(raw))).not.toContain(secret);
     expect(messageOf(() => parseSeed(`{"kind":"repo","gitRemote":"${secret}`))).not.toContain(secret);
+  });
+});
+
+describe("isVolumeHome", () => {
+  it("accepts /data and paths under it", () => {
+    expect(isVolumeHome("/data")).toBe(true);
+    expect(isVolumeHome("/data/")).toBe(true);
+    expect(isVolumeHome("/data/home/agent")).toBe(true);
+  });
+
+  it("refuses any other HOME, including a sibling that starts with the same letters", () => {
+    expect(isVolumeHome("/root")).toBe(false);
+    expect(isVolumeHome("/home/agent")).toBe(false);
+    expect(isVolumeHome("/database")).toBe(false);
+    expect(isVolumeHome("data")).toBe(false);
+    expect(isVolumeHome("")).toBe(false);
+  });
+
+  it("refuses a path that only reaches /data through dot segments", () => {
+    expect(isVolumeHome("/data/../etc")).toBe(false);
+    expect(isVolumeHome("/data/..")).toBe(false);
   });
 });

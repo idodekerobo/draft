@@ -33,6 +33,10 @@ export interface SessionActivity {
   lastInputAt: number;
   /** Ms since epoch each permission request still open was asked. */
   openApprovalsSince: number[];
+  /** Inputs the last answer from the server held, queued or being delivered. */
+  pendingInputs: number;
+  /** Ms since epoch of the last answer from the server, or 0 when none came yet. */
+  inputsCheckedAt: number;
 }
 
 const running = new Map<string, SessionHost>();
@@ -54,6 +58,7 @@ class SessionHost {
   private pending: HostInput[] = [];
   private finished = false;
   private lastInputAt = Date.now();
+  private inputsCheckedAt = 0;
   private readonly openSince = new Map<string, number>();
   private readonly base: string;
 
@@ -232,6 +237,7 @@ class SessionHost {
       }
       this.topics.open();
       this.inputWake.answered(this.pending.length);
+      this.inputsCheckedAt = Date.now();
       if (this.pending.length > 0) this.lastInputAt = Date.now();
     }
     await this.driver.serve(this.pending);
@@ -372,6 +378,8 @@ class SessionHost {
       turnRunning: (await this.driver.turnRunning?.()) ?? false,
       lastInputAt: this.lastInputAt,
       openApprovalsSince: [...this.openSince.values()],
+      pendingInputs: this.pending.length,
+      inputsCheckedAt: this.inputsCheckedAt,
     };
   }
 

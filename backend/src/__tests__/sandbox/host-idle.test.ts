@@ -3,11 +3,34 @@ import { canSleep, type IdleSnapshot } from "../../sandbox/host/idle";
 
 const MINUTE = 60_000;
 const now = 100 * MINUTE;
-const quiet: IdleSnapshot = { now, turnRunning: false, lastInputAt: now - 10 * MINUTE, openApprovalsSince: [] };
+const quiet: IdleSnapshot = {
+  now,
+  turnRunning: false,
+  lastInputAt: now - 10 * MINUTE,
+  openApprovalsSince: [],
+  pendingInputs: 0,
+  inputsCheckedAt: now - 1_000,
+};
 
 describe("canSleep", () => {
   it("sleeps once no turn runs, no approval waits and ten minutes passed since the last input", () => {
     expect(canSleep(quiet)).toBe(true);
+  });
+
+  it("stays awake while any input is queued, however long ago the last input came", () => {
+    expect(canSleep({ ...quiet, pendingInputs: 1, lastInputAt: now - 60 * MINUTE })).toBe(false);
+  });
+
+  it("stays awake while an input waits behind a prompt that is still open", () => {
+    expect(canSleep({ ...quiet, pendingInputs: 2, openApprovalsSince: [now - 90 * MINUTE] })).toBe(false);
+  });
+
+  it("does not sleep on an input check that is older than thirty seconds", () => {
+    expect(canSleep({ ...quiet, inputsCheckedAt: now - 30_000 - 1 })).toBe(false);
+  });
+
+  it("does not sleep before the first input check", () => {
+    expect(canSleep({ ...quiet, inputsCheckedAt: 0 })).toBe(false);
   });
 
   it("stays awake while a turn runs, however long ago the last input came", () => {

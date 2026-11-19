@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { ServerError, SessionExpiredError } from "draft-core/host/services";
-import { buildHostServices } from "../../sandbox/host/cloud-services";
+import { buildHostServices, HttpStatusError, TransportError } from "../../sandbox/host/cloud-services";
 
 const config = { apiBase: "https://api.example.test", runToken: "run-secret", sessionId: "sess-1", workspaceId: "ws-1" };
 
@@ -55,19 +55,32 @@ describe("fetchServer", () => {
     expect(error).toMatchObject({ code: "request_failed_502" });
   });
 
+  it("keeps the HTTP status on a server error, so a startup retry can tell a 5xx from a 4xx", async () => {
+    const { host } = hostWith(() => new Response("<html>unavailable</html>", { status: 503 }));
+
+    const error = await errorOf(() => host.fetchServer("workspaces/ws-1/live-sessions/sess-1/heartbeat"));
+
+    expect(error).toBeInstanceOf(HttpStatusError);
+    expect(error).toMatchObject({ code: "request_failed_503", status: 503 });
+  });
+
   it("pauses the session when the run token is rejected", async () => {
     const { host } = hostWith(() => new Response(null, { status: 401 }));
 
     expect(await errorOf(() => host.fetchServer("workspaces/ws-1/live-sessions/sess-1/heartbeat"))).toBeInstanceOf(SessionExpiredError);
   });
 
-  it("lets a network failure through unchanged, so the host retries it", async () => {
+  it("reports a network failure as a TransportError that keeps the cause, so a startup retry can see it", async () => {
     const failure = new TypeError("fetch failed");
     const { host } = hostWith(() => {
       throw failure;
     });
 
-    expect(await errorOf(() => host.fetchServer("workspaces/ws-1/live-sessions/sess-1/heartbeat"))).toBe(failure);
+    const error = await errorOf(() => host.fetchServer("workspaces/ws-1/live-sessions/sess-1/heartbeat"));
+
+    expect(error).toBeInstanceOf(TransportError);
+    expect(error).toMatchObject({ message: "transport_failed: fetch failed" });
+    expect((error as Error).cause).toBe(failure);
   });
 });
 

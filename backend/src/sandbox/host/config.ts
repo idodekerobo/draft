@@ -1,5 +1,6 @@
-/** What the sandbox host is told at start. A missing or malformed value stops the host before it does any work. */
+import { posix } from "node:path";
 
+/** What the sandbox host is told at start. A missing or malformed value stops the host before it does any work. */
 export type SeedSpec = { kind: "repo"; gitRemote: string; branch: string } | { kind: "snapshot"; url: string };
 
 export interface HostConfig {
@@ -21,6 +22,12 @@ const MAX_REMOTE_CHARS = 2048;
 const REMOTE_PATTERN = /^(?:(?:https|ssh):\/\/[^\s-]\S*|[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*:\S+)$/;
 
 export const cloudHostId = (sessionId: string) => `cloud:${sessionId}`;
+
+/** HOME holds the harness login and the workspace on the sandbox volume, so it must be /data or under it. */
+export function isVolumeHome(home: string): boolean {
+  const normalized = posix.normalize(home).replace(/\/+$/, "");
+  return normalized === "/data" || normalized.startsWith("/data/");
+}
 
 export function parseHostConfig(env: Record<string, string | undefined>): HostConfig {
   const missing = REQUIRED.filter((name) => !env[name]);

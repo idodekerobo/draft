@@ -6,9 +6,10 @@ import { attachLiveSession, type AttachedSession } from "draft-core/host/live-se
 import { installHostServices, type HostServices } from "draft-core/host/services";
 import type { LiveSession, LiveSessionEventsPage } from "draft-core/live-sessions";
 import { buildHostServices } from "./host/cloud-services";
-import { cloudHostId, parseHostConfig, seedSecrets, type HostConfig } from "./host/config";
+import { cloudHostId, isVolumeHome, parseHostConfig, seedSecrets, type HostConfig } from "./host/config";
 import { canSleep } from "./host/idle";
 import { hostLog, messageOf, setRedactions } from "./host/log";
+import { withStartupRetry } from "./host/retry";
 import { liveSeedDeps, prepareWorkspace } from "./host/seed";
 
 /** The workspace on the sandbox volume. HOME is on the same volume, so a sleeping session keeps its conversation. */
@@ -32,7 +33,14 @@ export async function runHost(env: Record<string, string | undefined>): Promise<
     hostLog("error", "config_invalid", { reason: messageOf(error) });
     return 2;
   }
+  if (!isVolumeHome(config.home)) {
+    hostLog("error", "home_not_on_volume", { home: config.home, expected: "/data" });
+    return 1;
+  }
   setRedactions([config.runToken, ...seedSecrets(config.seed)]);
+  // The agent's pane inherits this environment; it must not see the host's run token or the seed.
+  delete env.DRAFT_RUN_TOKEN;
+  delete env.DRAFT_SEED;
   const services = buildHostServices(config);
   installHostServices(services);
   const hostId = cloudHostId(config.sessionId);
@@ -40,7 +48,10 @@ export async function runHost(env: Record<string, string | undefined>): Promise<
 
   let row: SessionRow;
   try {
-    row = (await services.fetchServerJSON<LiveSessionEventsPage>(`${base}/events?after=0&limit=1`)).session;
+    const page = await withStartupRetry(() => services.fetchServerJSON<LiveSessionEventsPage>(`${base}/events?after=0&limit=1`), {
+      onRetry: retryLog("session_load"),
+    });
+    row = page.session;
   } catch (error) {
     hostLog("error", "session_load_failed", { reason: messageOf(error) });
     await endSession(services, base, hostId, "host_failed");
@@ -64,6 +75,16 @@ export async function runHost(env: Record<string, string | undefined>): Promise<
   } catch (error) {
     hostLog("error", "seed_failed", { reason: messageOf(error) });
     await endSession(services, base, hostId, "seed_failed");
+    return 1;
+  }
+
+  try {
+    await withStartupRetry(() => services.fetchServer(`${base}/heartbeat`, { method: "POST", body: JSON.stringify({ hostId }) }), {
+      onRetry: retryLog("first_heartbeat"),
+    });
+  } catch (error) {
+    hostLog("error", "heartbeat_failed", { reason: messageOf(error) });
+    await endSession(services, base, hostId, "host_failed");
     return 1;
   }
 
@@ -154,6 +175,7 @@ async function endSession(services: HostServices, base: string, hostId: string, 
 }
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+const retryLog = (step: string) => (retry: number, error: unknown) => hostLog("info", "startup_retry", { step, retry, reason: messageOf(error) });
 
 if (import.meta.main) {
   runHost(process.env).then(
