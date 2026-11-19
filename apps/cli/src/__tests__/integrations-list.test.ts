@@ -276,16 +276,16 @@ describe("connections help and completion", () => {
     expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');
     expect(bash.stdout).toContain('connections:connect) flags="--json --wait --no-open');
     expect(bash.stdout).toContain('routines:*) flags="--on --github --github-access');
-    expect(bash.stdout).toContain('compgen -W "github fireflies linear slack granola"');
+    expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola"');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
     expect(zsh.exitCode).toBe(0);
     for (const command of ["add:", "auth:", "context:", "people:", "sources:", "sessions:", "skills:", "connections:", "update:", "completion:"]) {
       expect(zsh.stdout).toContain(`'${command}`);
     }
-    expect(zsh.stdout).toContain("'list:Show each integration and what it unlocks'");
-    expect(zsh.stdout).toContain("'connect:Connect a hosted integration'");
-    expect(zsh.stdout).toContain("'disconnect:Disconnect a hosted integration'");
+    expect(zsh.stdout).toContain("'list:Show each connection and what it unlocks'");
+    expect(zsh.stdout).toContain("'connect:Connect a hosted connection'");
+    expect(zsh.stdout).toContain("'disconnect:Disconnect a hosted connection'");
     expect(zsh.stdout).toContain("'github:GitHub'");
     expect(zsh.stdout).toContain("'claude-code:Claude Code'");
     expect(zsh.stdout).toContain("'--wait[Wait until connected]'");

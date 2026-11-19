@@ -70,8 +70,8 @@ describe("draft add — tool-to-file mapping", () => {
       const content = readFileSync(join(project, file), "utf8");
       expect(content).toContain("### Hosted connections");
       expect(content).toContain("draft connections list");
-      expect(content).toContain("draft connections connect <github|linear|slack|fireflies|granola|claude-code>");
-      expect(content).toContain("draft connections disconnect <github|linear|slack|fireflies|granola>");
+      expect(content).toContain("draft connections connect <github|slack|linear|fireflies|granola|claude-code>");
+      expect(content).toContain("draft connections disconnect <github|slack|linear|fireflies|granola>");
     });
 
     test(`${tool} writes the latest-information subsection to ${file}`, async () => {

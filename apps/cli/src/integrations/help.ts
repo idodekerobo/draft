@@ -1,6 +1,10 @@
 // integrations/help.ts — usage text for `draft connections`. Each subcommand has its own page so agents read only what they need.
 
-const PROVIDERS = "github, slack, linear, fireflies, granola, claude-code";
+import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
+import { DISCONNECT_PROVIDERS } from "./types.ts";
+
+const PROVIDERS = HOSTED_CONNECTION_PROVIDERS.join(", ");
+const DISCONNECTABLE_PROVIDERS = DISCONNECT_PROVIDERS.filter((provider) => provider !== "claude-code").join(", ");
 
 export function integrationsGroupHelp(): string {
   return `Usage: draft connections <command> [options]
@@ -61,7 +65,7 @@ Examples:
     case "disconnect":
       return `Usage: draft connections disconnect <provider> [--json] [--workspace-key]
 
-Providers: github, slack, linear, fireflies, granola
+Providers: ${DISCONNECTABLE_PROVIDERS}
 
 Flags:
   --json             Print the result as JSON

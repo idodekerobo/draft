@@ -3,19 +3,15 @@
 import { callPersonTool, type ToolCallResult } from "../cloud-client.ts";
 import { SCHEMA_VERSION, EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, errorPayload } from "../utils/json-output.ts";
 import { red } from "../utils/output.ts";
+import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
 import { PROVIDER_LABELS } from "./types.ts";
 
-export const CONNECT_CLI_PROVIDERS = ["github", "slack", "linear", "fireflies", "granola", "claude-code"] as const;
+export const CONNECT_CLI_PROVIDERS = HOSTED_CONNECTION_PROVIDERS;
 export type ConnectCliProvider = (typeof CONNECT_CLI_PROVIDERS)[number];
 
-const BACKEND_PROVIDER: Record<ConnectCliProvider, string> = {
-  github: "github",
-  slack: "slack",
-  linear: "linear",
-  fireflies: "fireflies",
-  granola: "granola",
-  "claude-code": "claude_session",
-};
+function toBackendProvider(provider: ConnectCliProvider): string {
+  return provider === "claude-code" ? "claude_session" : provider;
+}
 
 const POLL_INTERVAL_MS = 3_000;
 
@@ -103,7 +99,7 @@ export async function runAgentConnect(
   options: ParsedAgentConnectArgs,
   deps: AgentConnectDeps = defaultAgentConnectDeps,
 ): Promise<number> {
-  const backendProvider = BACKEND_PROVIDER[options.provider];
+  const backendProvider = toBackendProvider(options.provider);
   const label = PROVIDER_LABELS[options.provider];
 
   const started = await deps.callTool("connections.connect", { provider: backendProvider });

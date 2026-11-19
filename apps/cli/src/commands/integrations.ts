@@ -3,11 +3,11 @@ import {
   disconnectIntegration,
 } from "../cloud-client.ts";
 import {
-  BACKEND_PROVIDER_BY_CLI,
   isDisconnectProvider,
   isNetworkDisconnectProvider,
   type DisconnectProvider,
 } from "../integrations/types.ts";
+import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
 import { createIntegrationOutput, INTEGRATION_ERROR_REGISTRY, type IntegrationErrorCode } from "../integrations/safe-output.ts";
 import { isInteractiveTerminal, parseAgentConnectArgs, runAgentConnect } from "../integrations/agent.ts";
 import { integrationsGroupHelp, integrationsSubcommandHelp } from "../integrations/help.ts";
@@ -272,7 +272,7 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
   }
 
   const result = await disconnectIntegration(
-    BACKEND_PROVIDER_BY_CLI[parsed.provider],
+    parsed.provider === "claude-code" ? "claude_session" : parsed.provider,
     parsed.provider === "granola" ? (parsed.workspaceKey ? "workspace" : "personal") : undefined,
   );
   if (!result.ok) {
@@ -282,7 +282,7 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
   return output.event({ status: "disconnected", provider: parsed.provider });
 }
 
-const CONNECT_PROVIDERS = new Set(["github", "linear", "claude-code", "slack", "fireflies", "granola"]);
+const CONNECT_PROVIDERS = new Set<string>(HOSTED_CONNECTION_PROVIDERS);
 
 function hasExplicitCredentialSource(args: string[]): boolean {
   return args.some((arg) => arg.startsWith("--credential-"));

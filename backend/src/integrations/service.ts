@@ -1,17 +1,29 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ROUTINE_TRIGGERS } from "draft-core/routines";
+import { HOSTED_CONNECTION_PROVIDERS, type HostedConnectionProvider } from "draft-core/integrations/hosted-connections";
 import { loadConfig } from "../config";
 
+type ConnectionMetadata = {
+  provider: string;
+  label: string;
+  ingests: string;
+  abilities: readonly string[];
+};
+const CONNECTION_METADATA_BY_PROVIDER = {
+  github: { provider: "github", label: "GitHub", ingests: "pull requests and commits", abilities: ["A routine can read repos, or open pull requests in them"] },
+  slack: { provider: "slack", label: "Slack", ingests: "messages in the channels you pick", abilities: ["A routine can post in channels", "A routine can message teammates"] },
+  linear: { provider: "linear", label: "Linear", ingests: "issues, comments and projects", abilities: [] },
+  fireflies: { provider: "fireflies", label: "Fireflies", ingests: "meeting transcripts and summaries", abilities: [] },
+  granola: { provider: "granola", label: "Granola", ingests: "meeting notes", abilities: [] },
+  "claude-code": { provider: "claude_session", label: "Claude Code", ingests: "summaries of captured Claude Code sessions", abilities: [] },
+} as const satisfies Record<HostedConnectionProvider, ConnectionMetadata>;
+
 /** The providers a workspace can connect, what each brings in, and what it lets a routine do. */
-export const INTEGRATIONS = [
-  { provider: "github", cliName: "github", label: "GitHub", ingests: "pull requests and commits", abilities: ["A routine can read repos, or open pull requests in them"] },
-  { provider: "slack", cliName: "slack", label: "Slack", ingests: "messages in the channels you pick", abilities: ["A routine can post in channels", "A routine can message teammates"] },
-  { provider: "linear", cliName: "linear", label: "Linear", ingests: "issues, comments and projects", abilities: [] },
-  { provider: "fireflies", cliName: "fireflies", label: "Fireflies", ingests: "meeting transcripts and summaries", abilities: [] },
-  { provider: "granola", cliName: "granola", label: "Granola", ingests: "meeting notes", abilities: [] },
-  { provider: "claude_session", cliName: "claude-code", label: "Claude Code", ingests: "summaries of captured Claude Code sessions", abilities: [] },
-] as const;
+export const INTEGRATIONS = HOSTED_CONNECTION_PROVIDERS.map((cliName) => ({
+  ...CONNECTION_METADATA_BY_PROVIDER[cliName],
+  cliName,
+}));
 export type IntegrationProvider = (typeof INTEGRATIONS)[number]["provider"];
 export const INTEGRATION_PROVIDERS = INTEGRATIONS.map((entry) => entry.provider) as [IntegrationProvider, ...IntegrationProvider[]];
 
