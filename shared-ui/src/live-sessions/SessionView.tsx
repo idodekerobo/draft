@@ -294,6 +294,7 @@ function SessionContents({
   // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
   const hasTerminal = harnessId === "claude";
   const hostWait = hostWaitOf(session);
+  const hostName = displayHostName(session);
   // A sleeping session has no run to take a decision, a mode or a model, so those controls wait for the next message.
   const sleeping = session.status === "sleeping";
   const viewerName = viewer.name;
@@ -441,9 +442,9 @@ function SessionContents({
     finally { olderRequest.current = false; }
   };
   const agentRuntime = useMemo(() => ({ api, sessionId, cacheKey: stream.cacheKey, target: agentTarget, mounted: scrollToWanted,
-    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: displayHostName(session.host_name),
+    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: hostName,
     viewerId: viewer.id, viewerName, viewerIsOwner: session.mine ?? false,
-  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, displayHostName(session.host_name), viewer.id, viewerName, session.mine]);
+  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, hostName, viewer.id, viewerName, session.mine]);
 
   const stop = useCallback(async () => {
     setStopping(true);
@@ -652,7 +653,7 @@ function SessionContents({
               liveItems={items}
               separateLive={history?.focused}
               ownerName={session.owner_name ?? undefined}
-              hostName={displayHostName(session.host_name)}
+              hostName={hostName}
               viewerId={viewer.id}
               viewerName={viewer.name}
               viewerIsOwner={session.mine ?? false}
@@ -682,11 +683,11 @@ function SessionContents({
             {session.status !== "ended" &&
               approvals.map((approval) =>
                 approval.kind === "plan" && approval.plan ? (
-                  <PlanCard key={approval.requestId} approval={approval} hostName={displayHostName(session.host_name)} agent={agentName} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <PlanCard key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ) : approval.kind === "question" && approval.questions.length > 0 ? (
-                  <QuestionCard key={approval.requestId} approval={approval} hostName={displayHostName(session.host_name)} agent={agentName} hasTerminal={hasTerminal} sleeping={sleeping} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} hasTerminal={hasTerminal} sleeping={sleeping} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
-                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={displayHostName(session.host_name)} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
             <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />

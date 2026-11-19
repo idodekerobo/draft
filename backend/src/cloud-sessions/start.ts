@@ -14,7 +14,6 @@ import { loadRoutineRunSource, type RoutineRunSource } from "./routine-seed";
 import { discardSnapshot } from "./snapshot-seed";
 import type { SeedSpec } from "../sandbox/host/config";
 
-export const CLOUD_HOST_NAME = "Draft cloud";
 /** The volume that holds the workspace and HOME, so a sleeping session keeps its files. */
 export const CLOUD_VOLUME_GB = 10;
 
@@ -101,7 +100,8 @@ export async function beginCloudSession(input: CloudStartInput, deps: StartCloud
       model: input.model,
       reasoning_effort: input.reasoningEffort,
       host_id: cloudHostId(sessionId),
-      host_name: CLOUD_HOST_NAME,
+      // A sandbox has no machine name to show; the app names the place from runtime.
+      host_name: null,
       git_remote: seed.kind === "repo" ? seed.gitRemote : null,
       folder_name: folderNameOf(seed),
       title: routineSource ? `Continued: ${routineSource.routineTitle}` : null,

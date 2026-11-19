@@ -120,7 +120,7 @@ describe("startCloudSession", () => {
       owner_user_id: OWNER,
       runtime: "cloud",
       host_id: `cloud:${SESSION}`,
-      host_name: "Draft cloud",
+      host_name: null,
       status: "starting",
       harness: "claude",
       model: "haiku",
