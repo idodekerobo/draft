@@ -17,7 +17,10 @@ Sign-in asks for the `read` and `write` OAuth scopes. Your agent works in your t
 | `context.list` | List the workspace's available context dimensions. |
 | `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. |
 | `context.export` | Return a download link to the full context as a zip of markdown files, plus the commands to fetch and unzip it. The link expires after 5 minutes and stops working if the user loses workspace access. The file bytes skip the model's context window, so prefer this over `context.read` when the user wants files on disk. |
-| `sources.search` | Full-text search across stored source items (Slack, GitHub, meetings, coding sessions). Filter by provider, type and date. |
+| `sessions.list` | `{ provider?, since?, until?, limit?, cursor? }` — list interactive Draft app conversations newest first. `provider` is the harness id, such as `codex`; continue with `next_cursor`. |
+| `sessions.read` | `{ session_id, after_seq?, limit? }` — read a Draft app session and a page of its events. Continue with `next_after_seq`. |
+| `sources.list` | `{ provider?, type?, since?, until?, limit?, cursor? }` — browse active ingested source items without a content query. Use `type: ["coding_session"]` to list captured coding sessions; continue with `next_cursor`. |
+| `sources.search` | Full-text search across stored source items (Slack, GitHub, meetings, captured coding sessions). Filter by provider, type and date. |
 | `sources.read` | Read one source item by ID, in the default or another captured representation. `structured` returns the provider's own fields. |
 
 ### Routines
@@ -149,6 +152,17 @@ draft context read --all
 draft skills list
 ~~~
 
+List app sessions and captured source evidence separately:
+
+~~~bash
+draft sessions list --provider codex
+draft sources list --type coding_session
+draft sources search "database migration" --type coding_session
+draft sources read <source_item_id> --representation transcript
+~~~
+
+Session listing and reading are user-scoped MCP tools. Source list/search/read are available to signed-in users and, subject to run permissions, agent runs. Capture setup remains an explicit CLI operation because it installs a local repository hook; there is no MCP capture-write tool.
+
 To make Draft discoverable from a project instruction file:
 
 ~~~bash
@@ -156,7 +170,7 @@ draft add claude-code --dir /path/to/project
 draft add codex --dir /path/to/project
 ~~~
 
-`draft add` writes a small managed block to `CLAUDE.md` or `AGENTS.md`; it does not copy the company brain into the repository. Use `draft sessions enable claude-code --dir ...` separately when the project should capture completed Claude Code sessions.
+`draft add` writes a small managed block to `CLAUDE.md` or `AGENTS.md`; it does not copy the company brain into the repository. Use `draft sources capture enable claude-code --dir ...` separately when the repository should capture completed Claude Code sessions.
 
 ## Self-hosted deployments
 

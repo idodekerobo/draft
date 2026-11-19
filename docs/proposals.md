@@ -2,7 +2,7 @@
 
 Draft turns activity from connected tools into proposed changes to the company brain.
 
-The current hosted architecture stores source items, schedules synthesis runs, and commits validated context versions in the workspace. The desktop app displays workspace context and synthesis activity. The CLI can inspect captured coding-agent sessions.
+The current hosted architecture stores source items, schedules synthesis runs, and commits validated context versions in the workspace. The desktop app displays workspace context and synthesis activity. The CLI and MCP expose Draft app sessions separately from captured coding-session source evidence.
 
 ## The current flow
 

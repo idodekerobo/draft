@@ -3,6 +3,8 @@ import { personSearchTerms } from "../people/search-terms";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   SOURCE_FULL_SUMMARY_MAX_BYTES,
+  SOURCE_LIST_DEFAULT_LIMIT,
+  SOURCE_LIST_MAX_LIMIT,
   SOURCE_QUERY_MAX_CHARACTERS,
   SOURCE_RESPONSE_DEFAULT_MAX_BYTES,
   SOURCE_RESPONSE_MAX_MAX_BYTES,
@@ -17,6 +19,8 @@ import {
   type SourceReadResponse,
   type SourceRepresentation,
   type SourceRepresentationKind,
+  type SourceListInput,
+  type SourceListResponse,
   type SourceSearchInput,
   type SourceSearchResponse,
   type SourceTimeBasis,
@@ -60,6 +64,14 @@ interface ReadCursor {
   offset: number;
 }
 
+interface ListCursor {
+  v: 1;
+  kind: "list";
+  binding: string;
+  occurred_at: string;
+  id: string;
+}
+
 const ITEM_TYPES = new Set([
   "meeting_transcript", "meeting_notes", "message", "coding_session", "document", "provider_event",
 ]);
@@ -72,7 +84,7 @@ function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
-function encodeCursor(value: SearchCursor | ReadCursor): string {
+function encodeCursor(value: SearchCursor | ReadCursor | ListCursor): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
 
@@ -121,6 +133,24 @@ function parseReadCursor(value: string, sourceItemId: string, representation: So
   }
 }
 
+function parseListCursor(value: string, binding: string): SourceResult<ListCursor> {
+  try {
+    const parsed = decodeCursor(value);
+    if (!parsed || typeof parsed !== "object") return failure("invalid_cursor", "Invalid source list cursor.");
+    const cursor = parsed as Record<string, unknown>;
+    if (!hasExactKeys(cursor, ["v", "kind", "binding", "occurred_at", "id"]) ||
+        cursor.v !== 1 || cursor.kind !== "list" || typeof cursor.binding !== "string" ||
+        typeof cursor.occurred_at !== "string" || Number.isNaN(Date.parse(cursor.occurred_at)) ||
+        typeof cursor.id !== "string" || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(cursor.id)) {
+      return failure("invalid_cursor", "Invalid source list cursor.");
+    }
+    if (cursor.binding !== binding) return failure("cursor_mismatch", "Cursor does not match the source list filters.");
+    return { ok: true, value: { ...(cursor as unknown as ListCursor), occurred_at: new Date(cursor.occurred_at).toISOString() } };
+  } catch {
+    return failure("invalid_cursor", "Invalid source list cursor.");
+  }
+}
+
 function parseMaxBytes(value: number | undefined): SourceResult<number> {
   const maxBytes = value ?? SOURCE_RESPONSE_DEFAULT_MAX_BYTES;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < SOURCE_RESPONSE_MIN_MAX_BYTES || maxBytes > SOURCE_RESPONSE_MAX_MAX_BYTES) {
@@ -139,6 +169,10 @@ function normalizeDate(value: string | undefined, endExclusive: boolean): Source
 }
 
 function searchBinding(input: { query: string | null; person: string | null; provider: string | null; type: string[]; since: string | null; until: string | null }): string {
+  return createHash("sha256").update(JSON.stringify(input)).digest("base64url");
+}
+
+function listBinding(input: { provider: string | null; type: string[]; since: string | null; until: string | null }): string {
   return createHash("sha256").update(JSON.stringify(input)).digest("base64url");
 }
 
@@ -286,6 +320,98 @@ export async function searchSources(
     return failure("response_budget_too_small", "max_bytes is too small for source metadata.");
   }
   return { ok: true, value: response };
+}
+
+export async function listSources(
+  client: SupabaseClient,
+  workspaceId: string,
+  callerUserId: string | null,
+  input: SourceListInput,
+): Promise<SourceResult<SourceListResponse>> {
+  const limit = input.limit ?? SOURCE_LIST_DEFAULT_LIMIT;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > SOURCE_LIST_MAX_LIMIT) {
+    return failure("invalid_limit", `limit must be between 1 and ${SOURCE_LIST_MAX_LIMIT}.`);
+  }
+  const sinceResult = normalizeDate(input.since, false);
+  if (!sinceResult.ok) return sinceResult;
+  const untilResult = normalizeDate(input.until, true);
+  if (!untilResult.ok) return untilResult;
+  if (sinceResult.value && untilResult.value && sinceResult.value >= untilResult.value) {
+    return failure("invalid_filter", "since must be earlier than until.");
+  }
+  const types = [...new Set(input.type ?? [])].sort();
+  if (types.some((type) => !ITEM_TYPES.has(type))) return failure("invalid_filter", "Unknown source type.");
+  const filters = { provider: input.provider ?? null, type: types, since: sinceResult.value, until: untilResult.value };
+  const binding = listBinding(filters);
+  const cursorResult = input.cursor ? parseListCursor(input.cursor, binding) : { ok: true as const, value: null };
+  if (!cursorResult.ok) return cursorResult;
+
+  let query = client.from("source_items")
+    .select("id, external_version, item_type, representation_kind, occurred_at, source_time_start, source_time_end, metadata_json, content_markdown, sanitized_raw_json, captured_session_id, connections!inner(provider)")
+    .eq("workspace_id", workspaceId)
+    .eq("lifecycle_status", "active")
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (filters.provider) query = query.eq("connections.provider", filters.provider);
+  if (types.length) query = query.in("item_type", types);
+  if (filters.since) query = query.gte("occurred_at", filters.since);
+  if (filters.until) query = query.lt("occurred_at", filters.until);
+  if (cursorResult.value) {
+    const { occurred_at, id } = cursorResult.value;
+    const older = `occurred_at.lt.${occurred_at},and(occurred_at.eq.${occurred_at},id.lt.${id})`;
+    if (callerUserId) {
+      query = query.or([
+        `and(visibility.eq.shared,occurred_at.lt.${occurred_at})`,
+        `and(visibility.eq.shared,occurred_at.eq.${occurred_at},id.lt.${id})`,
+        `and(owner_user_id.eq.${callerUserId},occurred_at.lt.${occurred_at})`,
+        `and(owner_user_id.eq.${callerUserId},occurred_at.eq.${occurred_at},id.lt.${id})`,
+      ].join(","));
+    } else {
+      query = query.eq("visibility", "shared").or(older);
+    }
+  } else if (callerUserId) {
+    query = query.or(`visibility.eq.shared,owner_user_id.eq.${callerUserId}`);
+  } else {
+    query = query.eq("visibility", "shared");
+  }
+  const { data, error } = await query.limit(limit + 1);
+  if (error) return failure("list_failed", "Source listing failed.");
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const page = rows.slice(0, limit);
+  const sources: SourceDescriptor[] = [];
+  for (const item of page) {
+    const connection = item.connections as { provider: string } | { provider: string }[] | null;
+    const provider = Array.isArray(connection) ? connection[0]?.provider : connection?.provider;
+    if (!provider) return failure("list_failed", "Source provider lookup failed.");
+    const metadata = item.metadata_json as Record<string, unknown>;
+    sources.push(descriptor({
+      source_item_id: item.id as string,
+      source_version: item.external_version as string,
+      title: typeof metadata.title === "string" ? metadata.title : null,
+      provider,
+      item_type: item.item_type as string,
+      representation_kind: item.representation_kind as SourceRepresentationKind,
+      occurred_at: item.occurred_at as string,
+      source_time_start: item.source_time_start as string | null,
+      source_time_end: item.source_time_end as string | null,
+      metadata_json: metadata,
+      content_markdown: item.content_markdown as string,
+      sanitized_raw_json: item.sanitized_raw_json,
+      captured_session_id: item.captured_session_id as string | null,
+      excerpt: "",
+      rank: 0,
+    }));
+  }
+  const last = page.at(-1);
+  const nextCursor = rows.length > limit && last ? encodeCursor({
+    v: 1,
+    kind: "list",
+    binding,
+    occurred_at: last.occurred_at as string,
+    id: last.id as string,
+  }) : null;
+  return { ok: true, value: { sources, next_cursor: nextCursor, filters } };
 }
 
 function meetingTranscript(raw: unknown): string | null {

@@ -227,101 +227,68 @@ draft add cursor --dir /path/to/project
 
 The command is project-local. It does not install a global daemon or initialize a local company-brain repository. The generated instructions tell the agent how to use the CLI to read the current workspace.
 
-## Coding sessions
+## Sessions
 
-Enable Claude Code session capture for a project:
-
-~~~bash
-draft sessions enable claude-code --dir /path/to/project
-draft sessions status --dir /path/to/project
-draft sessions rotate --dir /path/to/project
-draft sessions disable --dir /path/to/project
-~~~
-
-The enable command writes a project-local capture script and SessionEnd hook. The hook reads the completed transcript locally and posts it to the configured API. The resulting ingest credential is scoped to this one project and provider — a token minted for one project cannot submit sessions under another.
-
-This credential is committed to git as part of `.claude/draft/config.json` and is readable by anyone with access to the repo. That is by design: possession of the file is what authorizes submitting sessions, the same way any other project-local tooling config works. The credential is ingest-only — holding it lets someone submit sessions, not read, list, or search them. `enable` prints this plainly, and the same fact is available as `credentialScope` in `--json` output.
-
-Until `.claude/draft/config.json` and the SessionEnd hook in `.claude/settings.json` are committed and pushed, only sessions in your own working copy are captured — every other clone or pull gets no hook, no config, and no error, so their sessions are silently never captured. Commit and push both files right after enabling.
-
-`draft sessions rotate` mints a replacement credential for the same project and writes it to the local config; the old credential keeps working for a short grace window before it stops, so one contributor rotating doesn't immediately break capture for teammates who haven't pulled yet. `draft sessions disable` revokes the credential the same way (grace window, not instant) and removes the local hook.
-
-List and inspect captured sessions:
+`draft sessions` lists interactive conversations created in the Draft app. `draft activity list` shows agent runs; captured coding sessions are ingested evidence and live under `draft sources`.
 
 ~~~bash
 draft sessions list
-draft sessions search "pattern"
-draft sessions read <session-id> --summary
-draft sessions read <session-id> --transcript
+draft sessions list --provider codex --since 2026-11-17
+draft sessions read <session-id>
 ~~~
 
-Session listing and reading are workspace-scoped and require authentication.
+`--provider` filters by the app harness (`claude`, `codex`, and others). Listing is newest first and paginated; pass the returned cursor to continue. Reading returns session details and a page of events; use `--after-seq` to continue through a long event feed. `--json` returns machine-readable output.
 
 ## Sources
 
-Context is Draft's maintained business map. Sources are direct evidence across providers — search and read them when the map is incomplete or a claim needs direct support.
+Context is Draft's maintained business map. Sources are ingested evidence across providers, including captured coding sessions. List sources to browse the catalog, search to find matching content, and read an item to inspect its captured representation.
 
 ```bash
-draft sources search "renewal date" --provider slack --since 2026-08-01
-draft sources search "billing bug" --type coding_session,github_event --limit 20
-draft sources read <source_item_id>
+draft sources list --type coding_session
+draft sources list --provider claude_session --type coding_session --since 2026-11-17
+draft sources search "database migration" --type coding_session
 draft sources read <source_item_id> --representation transcript
 ```
 
+### `draft sources list [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>] [--limit <n>] [--cursor <opaque>] [--json]`
+
+Lists active source items newest first without searching their content. `--type coding_session` narrows the catalog to captured coding sessions. Results contain source metadata and available representations; use `sources.read` for content. The default page contains 50 items; the maximum is 100. Cursors continue the same filters and sort order.
+
 ### `draft sources search "<query>" [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>] [--limit <n>] [--max-bytes <n>] [--cursor <opaque>] [--json]`
 
-Full-text searches each source item's stored default representation — a summary, rendered source content, or mixed content, depending on the provider. A readable original transcript may not be searchable: search only ever covers what was captured as the default representation.
+Full-text searches each source item's stored default representation — a summary, rendered source content, or mixed content, depending on the provider. A readable original transcript may not be searchable: search only covers what was captured as the default representation.
 
-- `--provider <p>` — restrict to one provider (e.g. `slack`, `github`, `fireflies`, `granola`, `coding_session`).
+- `--provider <p>` — restrict to one provider (for example `slack`, `github`, or `claude_session`).
 - `--type <t[,t...]>` — restrict to one or more item types, comma-separated.
-- `--since` / `--until` — UTC timestamps; filters on source-time overlap, not ingestion time.
+- `--since` / `--until` — UTC timestamps; `since` is inclusive and `until` is exclusive.
 - `--limit <n>` — default 10, maximum 100.
 - `--max-bytes <n>` — caps the serialized response; default 32,768, accepted range 1,024–262,144.
-- `--cursor <opaque>` — continue a previous page. Cursors are versioned and bound to the exact query/filters that produced them; changing any filter, or a source changing underneath the page, fails the continuation explicitly (`cursor_mismatch`, `source_changed`, `source_superseded`) rather than silently returning different results.
+- `--cursor <opaque>` — continue a previous page. Search cursors bind to the query and filters.
 
-Results are ranked by relevance, then recency, and include full summary content up to 2,048 bytes or an excerpt beyond that. `consistency: "live"` on every response — there is no cached or eventually-consistent mode.
+Results are ranked by relevance, then recency. `consistency: "live"` means there is no cached or eventually-consistent mode.
 
 ### `draft sources read <source_item_id> [--representation default|transcript|messages|structured] [--max-bytes <n>] [--cursor <opaque>] [--json]`
 
-Reads one source item's content directly, bypassing search ranking. `--representation` selects which captured form to read — `default` (the summary/rendered/mixed content search indexes), or a provider-specific `transcript`/`messages`/`structured` form when one was captured. Requesting a representation that wasn't captured for that source returns `representation_unavailable` — Draft never substitutes a summary for a transcript.
+Reads one source item's content directly. `default` returns the stored searchable content. A provider-specific `transcript`, `messages`, or `structured` representation is available only when it was captured. Large content pages through `--cursor`.
 
-Large content pages through `--cursor`, the same continuation-and-invalidation model as search: a cursor is bound to the specific source version and representation it was issued for, so an edit or version change between pages is reported (`source_changed`/`source_superseded`), not silently followed.
+### Capture Claude Code sessions
 
-The calling agent owns investigation, comparison across sources, and answer generation — `sources search`/`sources read` return evidence only.
+Capture setup installs a project-local Claude Code SessionEnd hook:
+
+~~~bash
+draft sources capture enable claude-code --dir /path/to/project
+draft sources capture status --dir /path/to/project
+draft sources capture rotate --dir /path/to/project
+draft sources capture disable --dir /path/to/project
+~~~
+
+The hook reads the completed transcript locally and posts it to Draft. The ingest credential is scoped to this project and provider, and is committed in `.claude/draft/config.json`; anyone with repo access can use it to submit sessions, but it cannot read or search them. Until the config and `.claude/settings.json` hook are committed and pushed, capture only works in the current working copy.
+
+Only Claude Code capture is supported today. The `draft sessions enable|status|rotate|disable` forms remain deprecated aliases. Codex app sessions appear under `draft sessions`; Codex capture as source evidence is not supported.
 
 ## Output and updates
 
-Commands support --json for machine-readable output. draft update checks for and installs a newer compiled release. Updates replace the CLI binary; they do not replace the server-side workspace.
-
-```bash
-draft sessions read <session-id> --transcript --grep "database migration"
-draft sessions read <session-id> --transcript --grep "error" --context 3
-draft sessions read <session-id> --transcript --max-bytes 20000
-```
-
-- `--grep "<pattern>"` — case-insensitive regex match against raw message content. A malformed pattern returns a usage error, not a crash.
-- `--context <n>` — include `n` messages before/after each match (default 0). Requires `--grep`. Overlapping windows are merged; the JSON response's `windows: [{start_seq, end_seq}]` array marks the returned ranges explicitly, since the result usually isn't a contiguous transcript.
-- `--max-bytes <n>` — cap the serialized response size, truncating from the end. Composes with `--grep`: filtering happens first, then truncation if the filtered result is still too large. `truncated_bytes` in the JSON response reports how much was cut.
-
-These three flags only apply with `--transcript` — combining any of them with `--summary` is a usage error.
-
-### `draft sessions search "<pattern>"  [--provider <name>] [--user <email>] [--since <iso8601>] [--json]`
-
-Searches session **summaries** by keyword — a different corpus than `sessions read --transcript --grep`:
-
-| Command | Corpus | Backed by |
-|---|---|---|
-| `sessions search` | summaries (`source_items.content_markdown`) | GIN tsvector index |
-| `sessions read --transcript --grep` | raw turns (`agent_messages.content`) | sequential scan, one session |
-
-`search` never returns full summary text — only a short snippet around each match, so it stays cheap to skim across many sessions. Use `sessions read <id>` to fetch a session's full summary once you've found the one you want.
-
-```bash
-draft sessions search "database migration"
-draft sessions search "auth bug" --since 2026-08-01
-```
-
-List sessions and read summaries first. Fetch a full transcript, or use `--grep`, only when the summary is missing, stale, or insufficient.
+Commands support `--json` for machine-readable output. `draft update` checks for and installs a newer compiled release. Updates replace the CLI binary; they do not replace the server-side workspace.
 
 ---
 

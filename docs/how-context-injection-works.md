@@ -88,7 +88,7 @@ draft auth whoami
 Check that the project hook is installed:
 
 ~~~bash
-draft sessions status --dir /path/to/project
+draft sources capture status --dir /path/to/project
 ~~~
 
 If the project points at a self-hosted deployment, verify DRAFT_API_BASE_URL and the matching Supabase public configuration. A local hook can still exit successfully when the API is unavailable; inspect the local project/runtime logs and the backend logs for the failed upload.

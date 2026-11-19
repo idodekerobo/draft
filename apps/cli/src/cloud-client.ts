@@ -17,7 +17,7 @@ import {
 } from "draft-core/auth-state";
 import { getCliRuntimeConfig } from "./runtime-config.ts";
 import { decodeToolEnvelope } from "draft-core/tool-envelope";
-import type { SourceReadInput, SourceReadResponse, SourceSearchInput, SourceSearchResponse } from "draft-core/sources";
+import type { SourceListInput, SourceListResponse, SourceReadInput, SourceReadResponse, SourceSearchInput, SourceSearchResponse } from "draft-core/sources";
 import { normalizeBackfillSummary, type HostedConnectionBackfillSummary } from "draft-core/integrations/hosted-connections";
 
 export interface WhoamiBody {
@@ -966,6 +966,53 @@ export function fetchSourcesSearch(input: SourceSearchInput): Promise<FetchResul
     const body = recordValue(value);
     return body && Array.isArray(body.results) && typeof body.consistency === "string"
       ? body as unknown as SourceSearchResponse
+      : null;
+  });
+}
+
+export function fetchSourcesList(input: SourceListInput): Promise<FetchResult<SourceListResponse>> {
+  return callTool("sources.list", input, (value) => {
+    const body = recordValue(value);
+    return body && Array.isArray(body.sources) && (body.next_cursor === null || typeof body.next_cursor === "string")
+      ? body as unknown as SourceListResponse
+      : null;
+  });
+}
+
+export interface AppSessionSummary {
+  id: string;
+  harness: string;
+  model: string | null;
+  title: string | null;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  last_event_at: string | null;
+  folder_name: string | null;
+  mine: boolean;
+}
+
+export interface AppSessionEventsPage {
+  session: Record<string, unknown>;
+  events: Array<{ seq: number; kind: string; payload: unknown; created_at: string }>;
+  next_after_seq: number | null;
+}
+
+export function fetchAppSessions(input: { provider?: string; since?: string; until?: string; limit?: number; cursor?: string }): Promise<FetchResult<{ sessions: AppSessionSummary[]; next_cursor: string | null }>> {
+  return callTool("sessions.list", input, (value) => {
+    const body = recordValue(value);
+    return body && Array.isArray(body.sessions) && (body.next_cursor === null || typeof body.next_cursor === "string")
+      ? body as unknown as { sessions: AppSessionSummary[]; next_cursor: string | null }
+      : null;
+  });
+}
+
+export function fetchAppSession(sessionId: string, afterSeq?: number, limit?: number): Promise<FetchResult<AppSessionEventsPage>> {
+  return callTool("sessions.read", { session_id: sessionId, after_seq: afterSeq, limit }, (value) => {
+    const body = recordValue(value);
+    return body && recordValue(body.session) && Array.isArray(body.events) &&
+      (body.next_after_seq === null || typeof body.next_after_seq === "number")
+      ? body as unknown as AppSessionEventsPage
       : null;
   });
 }

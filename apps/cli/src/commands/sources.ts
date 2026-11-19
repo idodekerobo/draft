@@ -1,18 +1,54 @@
-import type { SourceReadInput, SourceSearchInput, SourceRepresentation } from "draft-core/sources";
-import { fetchSourceRead, fetchSourcesSearch } from "../cloud-client.ts";
+import type { SourceListInput, SourceReadInput, SourceSearchInput, SourceRepresentation } from "draft-core/sources";
+import { fetchSourceRead, fetchSourcesList, fetchSourcesSearch } from "../cloud-client.ts";
+import { runSessionsCapture } from "./sessions.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { cyan, red } from "../utils/output.ts";
 
 function printHelp(): void {
-  console.log("Search and read cross-provider source evidence. Context is Draft's maintained business map; sources are direct stored evidence.");
+  console.log("Browse, search, and read ingested source evidence. Context is Draft's maintained business map; sources are direct stored evidence.");
   console.log("");
   console.log(`Usage: ${cyan("draft sources")} <COMMAND> [ARGS]`);
   console.log("");
   console.log("Commands:");
+  console.log("  list [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>] [--limit <n>] [--cursor <opaque>] [--json]");
   console.log("  search <query> [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>] [--limit <n>] [--max-bytes <n>] [--cursor <opaque>] [--json]");
   console.log("  read <source_item_id> [--representation default|transcript|messages|structured] [--max-bytes <n>] [--cursor <opaque>] [--json]");
+  console.log("  capture enable claude-code [--dir <repo>] [--json]");
+  console.log("  capture status|rotate|disable [--dir <repo>] [--json]");
   console.log("");
   console.log("Search covers the stored default representation, which can be a summary, rendered source, or mixed content. A transcript may be readable without being searchable. The calling agent owns investigation and answer generation.");
+}
+
+async function runList(args: string[]): Promise<number> {
+  const json = args.includes("--json");
+  const input: Partial<SourceListInput> = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "--json") continue;
+    const flag = ["--provider", "--type", "--since", "--until", "--limit", "--cursor"].find((name) => arg === name || arg.startsWith(`${name}=`));
+    if (!flag) return usage(`draft sources list: unknown flag: ${arg}`, json);
+    const parsed = valueAfter(args, i, flag);
+    if (parsed.error) return usage(`draft sources list: ${parsed.error}`, json);
+    i = parsed.next;
+    const value = parsed.value!;
+    if (flag === "--provider") input.provider = value;
+    else if (flag === "--type") input.type = value.split(",").filter(Boolean);
+    else if (flag === "--since") input.since = value;
+    else if (flag === "--until") input.until = value;
+    else if (flag === "--limit") input.limit = Number(value);
+    else input.cursor = value;
+  }
+  const result = await fetchSourcesList(input as SourceListInput);
+  if (!result.ok) return printFailure("draft sources list", result.code, json);
+  if (json) printJsonLine(result.value);
+  else if (result.value.sources.length === 0) console.log("No sources found.");
+  else {
+    for (const source of result.value.sources) {
+      console.log(`${source.source_item_id}  ${source.occurred_at}  ${source.provider}/${source.item_type}${source.title ? `  ${source.title}` : ""}`);
+    }
+    if (result.value.next_cursor) console.log(`More results: --cursor ${result.value.next_cursor}`);
+  }
+  return EXIT_SUCCESS;
 }
 
 function valueAfter(args: string[], index: number, flag: string): { value?: string; next: number; error?: string } {
@@ -113,9 +149,11 @@ function usage(message: string, json: boolean): number {
 }
 
 export async function runSources(args: string[]): Promise<number> {
-  if (args.includes("--help") || args.includes("-h")) { printHelp(); return EXIT_SUCCESS; }
   const [subcommand, ...rest] = args;
+  if ((args.includes("--help") || args.includes("-h")) && subcommand !== "capture") { printHelp(); return EXIT_SUCCESS; }
+  if (subcommand === "list") return runList(rest);
   if (subcommand === "search") return runSearch(rest);
   if (subcommand === "read") return runRead(rest);
-  return usage(`draft sources: unknown subcommand${subcommand ? ` "${subcommand}"` : ""}. Use search or read.`, args.includes("--json"));
+  if (subcommand === "capture") return runSessionsCapture(rest);
+  return usage(`draft sources: unknown subcommand${subcommand ? ` "${subcommand}"` : ""}. Use list, search, read, or capture.`, args.includes("--json"));
 }

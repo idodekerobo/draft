@@ -9,7 +9,7 @@ export const CAPTURE_CONFIG_FILE = "config.json";
 export const HOOK_SCRIPT_FILE = "capture-session.sh";
 export const HOOK_COMMAND = `"\${CLAUDE_PROJECT_DIR}/${DRAFT_DIR}/${HOOK_SCRIPT_FILE}"`;
 
-// Bump when buildCaptureScript changes, so `sessions status` can flag stale copies.
+// Bump when buildCaptureScript changes, so `sources capture status` can flag stale copies.
 export const CAPTURE_SCRIPT_VERSION = 4;
 
 // Must exceed the curl caps in the script (20s upload + 5s error report).
@@ -22,7 +22,7 @@ export const HOOK_TIMEOUT_SECONDS = 30;
 export function buildCaptureScript(): string {
   return String.raw`#!/usr/bin/env bash
 # draft-capture-script-version: ${CAPTURE_SCRIPT_VERSION}
-# Installed by draft sessions enable -- do not edit by hand, re-run enable instead.
+# Installed by draft sources capture enable -- do not edit by hand, re-run enable instead.
 # Claude Code SessionEnd hook. Uses the draft CLI when it is installed, else posts
 # the transcript with curl. Network calls are time-capped. Always exits 0.
 SCRIPT_VERSION=${CAPTURE_SCRIPT_VERSION}
@@ -220,7 +220,7 @@ export function removeSessionEndHook(settings: ClaudeSettings): ClaudeSettings {
 }
 
 // Checks the same three locations the hook script itself checks, so
-// `sessions status` can report which one (if any) resolved.
+// `sources capture status` can report which one (if any) resolved.
 export function resolveDraftBinaryPath(env: NodeJS.ProcessEnv, isExecutable: (path: string) => boolean): string | null {
   const home = env.HOME;
   if (home) {
