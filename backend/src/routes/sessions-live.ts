@@ -2,7 +2,11 @@ import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { productionStartDeps } from "../cloud-sessions/deps";
+import { parseCloudStart } from "../cloud-sessions/parse-start";
+import { startCloudSession } from "../cloud-sessions/start";
 import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { eventsForHarness } from "../ingestion/harness-lines";
@@ -22,6 +26,7 @@ type DeleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
 type ReopenRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/reopen">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
+type HostSleepRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/host/sleep">;
 
 const MAX_LINES_PER_POST = 2000;
 const MAX_EVENTS_PAGE = 1000;
@@ -59,6 +64,27 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
   return Response.json({ sessions: named.sessions });
 });
 
+/** A cloud session starts its first run in a sandbox now. A failure ends the session, and the response says why. */
+async function createCloudSession(workspaceId: string, ownerUserId: string, body: Record<string, unknown>): Promise<Response> {
+  const parsed = parseCloudStart(body, { workspaceId, ownerUserId });
+  if (!parsed.ok) return Response.json({ ok: false, error: parsed.error }, { status: 400 });
+
+  let deps: ReturnType<typeof productionStartDeps>;
+  try {
+    deps = productionStartDeps();
+  } catch (error) {
+    await recordError({ workspaceId, operation: "session", code: "sandbox_config_invalid", message: "The sandbox settings for cloud sessions are missing or invalid", error });
+    return Response.json({ ok: false, error: "sandbox_not_configured" }, { status: 500 });
+  }
+
+  const started = await startCloudSession(parsed.input, deps);
+  if (!started.ok) return Response.json({ ok: false, error: started.error }, { status: started.status });
+
+  const { data, error } = await serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", started.sessionId).maybeSingle<SessionRow>();
+  if (error || !data) return errorResponse("session_lookup_failed", 500, error, workspaceId, started.sessionId);
+  return Response.json({ ok: true, session: data }, { status: 201 });
+}
+
 export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const denied = await authorize(req.params.id, caller.userId);
   if (denied) return denied;
@@ -66,6 +92,11 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
+
+  if (body.runtime !== undefined && body.runtime !== "local") {
+    if (body.runtime === "cloud") return createCloudSession(req.params.id, caller.userId, body);
+    return errorResponse("unknown_runtime", 400);
+  }
 
   const hostId = optionalString(body.hostId, 200);
   if (!hostId) return errorResponse("missing_host_id", 400);
@@ -364,6 +395,52 @@ export const END = withHostAuth<EndRequest>(async (req, caller) => {
   await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
 
   return Response.json({ ok: true });
+});
+
+const SLEEPABLE_STATUSES = ["starting", "live", "host_offline"];
+
+/**
+ * The cloud host says its session is idle and it is stopping. Its run succeeds first, so no active run blocks the
+ * next wake, then the session sleeps. The machine stops by itself; nothing here stops it.
+ */
+export const HOST_SLEEP = withHostAuth<HostSleepRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  if (caller.kind !== "cloud_host") return errorResponse("cloud_host_only", 403);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
+  if (!owned.ok) return owned.response;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+
+  const status = owned.session.status;
+  if (!SLEEPABLE_STATUSES.includes(status)) return errorResponse(status === "ended" ? "session_ended" : "session_sleeping", 409);
+
+  const { error: runError } = await serviceClient
+    .from("agent_runs")
+    .update({ status: "succeeded", completed_at: new Date().toISOString() })
+    .eq("id", caller.runId)
+    .in("status", ACTIVE_AGENT_RUN_STATUSES);
+  if (runError) {
+    await recordError({ workspaceId, sessionId, agentRunId: caller.runId, operation: "session", code: "session_sleep_failed", message: "Ending the run of a sleeping cloud session failed", error: runError });
+    return Response.json({ ok: false, error: "session_sleep_failed" }, { status: 500 });
+  }
+
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .update({ status: "sleeping" })
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .in("status", SLEEPABLE_STATUSES)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    await recordError({ workspaceId, sessionId, agentRunId: caller.runId, operation: "session", code: "session_sleep_failed", message: "Sleeping a cloud session failed", error });
+    return Response.json({ ok: false, error: "session_sleep_failed" }, { status: 500 });
+  }
+  if (!data) return errorResponse("session_changed", 409);
+  return Response.json({ ok: true, status: "sleeping" });
 });
 
 /**

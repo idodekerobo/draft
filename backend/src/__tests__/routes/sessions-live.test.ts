@@ -171,6 +171,29 @@ describe("live session routes", () => {
     expect(res.status).toBe(400);
   });
 
+  it("creates a local session when the body says runtime local", async () => {
+    const res = await routes.CREATE(post("/x", { runtime: "local", hostId: "host-1" }, { id: WS }));
+    expect(res.status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ host_id: "host-1", workspace_id: WS });
+  });
+
+  it("refuses an unknown runtime and an invalid cloud body before it writes anything", async () => {
+    const sessionsBefore = tables.sessions!.length;
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ runtime: "gcp", hostId: "host-1" }, "unknown_runtime"],
+      [{ runtime: "cloud", harness: "codex", seed: { kind: "repo", gitRemote: "https://github.com/acme/app", branch: "main" } }, "harness_not_supported"],
+      [{ runtime: "cloud", seed: { kind: "repo", gitRemote: "http://github.com/acme/app", branch: "main" } }, "invalid_seed"],
+      [{ runtime: "cloud", seed: { kind: "snapshot", storageKey: `${WS}/snap.tgz` } }, "snapshot_not_supported"],
+    ];
+    for (const [body, error] of cases) {
+      const res = await routes.CREATE(post("/x", body, { id: WS }));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ ok: false, error });
+    }
+    expect(inserted).toEqual([]);
+    expect(tables.sessions).toHaveLength(sessionsBefore);
+  });
+
   it("refuses lines for a session the caller does not own", async () => {
     tables.sessions = [session({ owner_user_id: "someone-else" })];
     const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [userLine("u1", "hi")] }));
@@ -717,5 +740,47 @@ describe("cloud host requests", () => {
   it("does not need team membership, since its token binds it to the session", async () => {
     accessResult = Response.json({ error: "forbidden" }, { status: 403 });
     expect((await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }))).status).toBe(200);
+  });
+
+  describe("sleep", () => {
+    it("ends the run as succeeded and then sleeps the session when the cloud host asks", async () => {
+      const res = await routes.HOST_SLEEP(cloudPost({ hostId: CLOUD_HOST }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, status: "sleeping" });
+      expect(updates.map((u) => u.table)).toEqual(["agent_runs", "sessions"]);
+      expect(updates[0].payload).toMatchObject({ status: "succeeded", completed_at: expect.any(String) });
+      expect(updates[1].payload).toEqual({ status: "sleeping" });
+    });
+
+    it("sleeps a session that is starting, live or offline", async () => {
+      for (const status of ["starting", "live", "host_offline"]) {
+        tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status })];
+        updates = [];
+        expect((await routes.HOST_SLEEP(cloudPost({}))).status).toBe(200);
+      }
+    });
+
+    it("refuses a user caller, since only a cloud host sleeps its session", async () => {
+      const res = await routes.HOST_SLEEP(post("/x", {}, { id: CLOUD_WS, sessionId: SESSION }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ ok: false, error: "cloud_host_only" });
+      expect(updates).toEqual([]);
+    });
+
+    it("refuses a host that names another host, and a session that is already sleeping or ended", async () => {
+      expect((await routes.HOST_SLEEP(cloudPost({ hostId: "host-1" }))).status).toBe(403);
+      expect(updates).toEqual([]);
+
+      tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status: "ended" })];
+      const ended = await routes.HOST_SLEEP(cloudPost({}));
+      expect(ended.status).toBe(409);
+      expect(await ended.json()).toEqual({ ok: false, error: "session_ended" });
+
+      tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status: "sleeping" })];
+      const sleeping = await routes.HOST_SLEEP(cloudPost({}));
+      expect(sleeping.status).toBe(409);
+      expect(await sleeping.json()).toEqual({ ok: false, error: "session_sleeping" });
+      expect(updates).toEqual([]);
+    });
   });
 });
