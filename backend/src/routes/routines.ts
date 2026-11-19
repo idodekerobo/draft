@@ -55,6 +55,7 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
       workspaceId: req.params.id,
       userId: caller.userId,
       command: "routines.list",
+      status: "ok",
       argsJson: {},
       resultBytes: Buffer.byteLength(body, "utf8"),
     });

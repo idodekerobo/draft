@@ -27,13 +27,19 @@ export function registerGatewayTools(server: McpServer, userId: string, gateway:
         annotations: { readOnlyHint: tool.access === "read", destructiveHint: tool.destructive, openWorldHint: false },
       },
       async (args: unknown) => {
-        // A tool that changes something needs the connection's write scope, which the person approved at sign-in.
-        if (tool.access === "write" && !scopes.includes("write")) return { isError: true, content: [{ type: "text" as const, text: READ_ONLY_CONNECTION }] };
         const workspaceId = await gateway.resolveWorkspaceId(userId);
         if (!workspaceId) return { isError: true, content: [{ type: "text" as const, text: "no_workspace" }] };
+        const caller = personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "mcp" });
+        if (tool.access === "write" && !scopes.includes("write")) {
+          try {
+            await gateway.deps.audit({ caller, toolName: tool.name, arguments: {}, status: "denied", resultBytes: 0,
+              resultSummary: null, errorCode: "insufficient_scope", durationMs: 0 });
+          } catch { console.error(JSON.stringify({ source: "mcp", event: "audit_failed", tool: tool.name })); }
+          return { isError: true, content: [{ type: "text" as const, text: READ_ONLY_CONNECTION }] };
+        }
         const result = await invokeTool(
           gateway.deps,
-          personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(workspaceId), via: "mcp" }),
+          caller,
           tool.name,
           args,
         );

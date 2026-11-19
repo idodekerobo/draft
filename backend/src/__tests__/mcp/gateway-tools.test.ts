@@ -98,6 +98,14 @@ describe("MCP tools that go through the gateway", () => {
     expect(audits[0]!.resultBytes).toBeGreaterThan(0);
   });
 
+  it("records a write-scope refusal as one denied call without retaining the prompt", async () => {
+    const result = await call("routines.create", { title: "Check PR", prompt: "private prompt", harness: "claude", when: { in: "2h" } });
+    expect(result.isError).toBe(true);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ toolName: "routines.create", status: "denied", errorCode: "insufficient_scope", arguments: {} });
+    expect(JSON.stringify(audits)).not.toContain("private prompt");
+  });
+
   it("context.list lists the dimensions", async () => {
     const result = await call("context.list");
     expect(JSON.parse(result.content[0]!.text)).toEqual({ dimensions: [{ name: "product", path: "product/index.md" }] });

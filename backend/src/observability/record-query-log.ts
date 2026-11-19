@@ -10,6 +10,10 @@ export interface RecordAgentQueryLogInput {
   command: AgentQueryLogCommand;
   argsJson: Record<string, unknown>;
   resultBytes: number;
+  surface?: "cli" | "mcp";
+  status?: "ok" | "conflict" | "refused" | "denied" | "invalid" | "error";
+  durationMs?: number;
+  errorCode?: string | null;
 }
 
 /** Best-effort: never blocks or fails the request it's called from. */
@@ -21,6 +25,10 @@ export async function recordAgentQueryLog(client: SupabaseClient, input: RecordA
       command: input.command,
       args_json: input.argsJson,
       result_bytes: input.resultBytes,
+      surface: input.surface ?? (input.command.startsWith("mcp.") ? "mcp" : "cli"),
+      status: input.status ?? null,
+      duration_ms: input.durationMs ?? null,
+      error_code: input.errorCode ?? null,
     });
     if (error) console.error("recordAgentQueryLog: insert failed", error);
   } catch (err) {
