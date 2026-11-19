@@ -79,7 +79,7 @@ begin
       count(*) filter(where kind = 'tool_use') as steps
     from session_events where session_id = p_session_id and seq <= h and nullif(payload->>'agent_id', '') is not null
     group by payload->>'agent_id'
-  ), spawns as (
+  ), spawns_all as (
     select e.seq, e.payload->'input' as input, r.payload as result,
       substring(r.payload->>'content' from 'agent_?[iI]d:\s*([A-Za-z0-9_-]+)') as id
     from session_events e left join lateral (
@@ -88,9 +88,15 @@ begin
     ) r on true
     where e.session_id = p_session_id and e.seq <= h and e.kind = 'tool_use'
       and nullif(e.payload->>'agent_id', '') is null and e.payload->>'name' in ('Agent', 'Task')
+  ), spawns as (
+    select distinct on (coalesce(id, 'spawn:' || seq))
+      first_value(seq) over (partition by coalesce(id, 'spawn:' || seq) order by seq) as seq,
+      first_value(input) over (partition by coalesce(id, 'spawn:' || seq) order by seq) as input,
+      spawns_all.seq as latest_spawn_seq, result, id
+    from spawns_all order by coalesce(id, 'spawn:' || seq), spawns_all.seq desc
   ), catalog as (
     select coalesce(spawns.id, stats.id) as id, spawns.seq as host_seq, stats.first_seq, stats.last_seq,
-      coalesce(stats.steps, 0) as steps, spawns.input, spawns.result
+      coalesce(stats.steps, 0) as steps, spawns.input, spawns.result, spawns.latest_spawn_seq
     from spawns full join stats on spawns.id = stats.id
   ) select coalesce(jsonb_agg(jsonb_build_object(
       'key', case when id is not null then 'agent:' || id else 'spawn:' || host_seq end,
@@ -102,13 +108,13 @@ begin
         when coalesce((select max(seq) from session_events where session_id = p_session_id and seq <= h
           and kind = 'session_note' and nullif(payload->>'agent_id', '') is null
           and payload->'agent_message'->>'from' = catalog.input->>'name' and payload->'agent_message'->>'type' = 'idle'), 0)
-        > coalesce((select max(seq) from session_events where session_id = p_session_id and seq <= h
+        > greatest(coalesce(catalog.latest_spawn_seq, 0), coalesce((select max(seq) from session_events where session_id = p_session_id and seq <= h
           and kind = 'session_note' and payload->>'agent_id' = catalog.id
-          and payload->'agent_message'->>'from' is distinct from catalog.input->>'name'), 0) then 'idle'
+          and payload->'agent_message'->>'from' is distinct from catalog.input->>'name'), 0)) then 'idle'
         else 'working' end
     ) order by coalesce(host_seq, first_seq)), '[]') into agents from catalog;
   return response || jsonb_build_object('snapshot', jsonb_build_object('session', to_jsonb(s), 'approvals', approvals, 'agents', agents));
 end;
 $$;
-revoke all on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) from public;
+revoke all on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) from public, anon, authenticated;
 grant execute on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) to service_role;

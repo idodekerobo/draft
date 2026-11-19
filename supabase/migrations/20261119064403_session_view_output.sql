@@ -110,5 +110,5 @@ begin
   return response || jsonb_build_object('snapshot', jsonb_build_object('session', to_jsonb(s), 'approvals', approvals, 'agents', agents));
 end;
 $$;
-revoke all on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) from public;
+revoke all on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) from public, anon, authenticated;
 grant execute on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) to service_role;
