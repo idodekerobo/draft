@@ -31,7 +31,10 @@ describe("which calls by a person reach the agent query log", () => {
       await audit(record(tool.name, "mcp"));
     }
     expect(inserted).toHaveLength(DRAFT_TOOLS.length * 2);
-    expect(inserted.some((row) => row.command === "mcp.routines.create")).toBe(true);
+    for (const tool of ["routines.create", "sources.list", "sessions.list", "sessions.read"]) {
+      expect(inserted.some((row) => row.command === tool)).toBe(true);
+      expect(inserted.some((row) => row.command === `mcp.${tool}`)).toBe(true);
+    }
     expect(inserted.every((row) => row.status === "ok" && row.duration_ms === 1)).toBe(true);
   });
 
